@@ -14,5 +14,4 @@ export const scopes = [
 export const userAgent = 'Sir Cuddles <philihp@gmail.com> eve-hangar'
 export const sso = new SingleSignOn(EVE_CLIENT_ID, EVE_SECRET_KEY, EVE_CALLBACK_URL, {
   userAgent,
-  endpoint: undefined,
 })

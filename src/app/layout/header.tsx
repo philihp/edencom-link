@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { createClient } from '@/utils/supabase/server'
 
 const Header = async () => {
-  const supabase = createClient()
+  const supabase = await createClient()
 
   const {
     data: { user },

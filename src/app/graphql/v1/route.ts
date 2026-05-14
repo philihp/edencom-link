@@ -1,7 +1,7 @@
 import { createYoga, createSchema } from 'graphql-yoga'
 import { gql } from 'graphql-tag'
 import { cost } from 'eve-industry'
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
 
 const typeDefs = gql`
@@ -38,13 +38,13 @@ const typeDefs = gql`
 `
 
 type Context = {
-  dataSource: ReturnType<typeof createClient>
+  dataSource: Awaited<ReturnType<typeof createClient>>
 }
 
-const handleRequest = (req: NextRequest, res: NextResponse) => {
-  const context: Context = { dataSource: createClient() }
+const handleRequest = async (req: NextRequest) => {
+  const context: Context = { dataSource: await createClient() }
 
-  return createYoga({
+  return createYoga<Context>({
     schema: createSchema({
       typeDefs,
       resolvers: {
@@ -155,7 +155,7 @@ const handleRequest = (req: NextRequest, res: NextResponse) => {
     graphqlEndpoint: '/graphql/v1',
     fetchAPI: { Response },
     context,
-  })(req, res)
+  }).handleRequest(req, context)
 }
 
 export { handleRequest as GET, handleRequest as POST, handleRequest as OPTIONS }
