@@ -4,7 +4,7 @@ import { createClient } from '@/utils/supabase/server'
 import { register } from './actions'
 
 const CharacterPage = async () => {
-  const supabase = createClient()
+  const supabase = await createClient()
 
   const { data, error: authError } = await supabase.auth.getUser()
   if (authError || !data?.user) {

@@ -3,7 +3,7 @@
 import { createClient } from '@/utils/supabase/server'
 
 export const searchType = async (typeNameSubstring: string): Promise<[string, string][]> => {
-  const supabase = createClient()
+  const supabase = await createClient()
   const { data, error } = await supabase
     .schema('evesde')
     .from('invTypes')

@@ -6,7 +6,7 @@ import ChangePassword from './changePassword'
 import { LogoffButton } from './logoffButton'
 
 const SettingsPage = async () => {
-  const supabase = createClient()
+  const supabase = await createClient()
 
   const { data, error } = await supabase.auth.getUser()
   if (error || !data?.user) {

@@ -1,8 +1,8 @@
-import SingleSignOn from '../../sso.js'
+import SingleSignOn from '../../sso'
 
-const EVE_CLIENT_ID = process.env.EVE_CLIENT_ID
-const EVE_SECRET_KEY = process.env.EVE_SECRET_KEY
-const EVE_CALLBACK_URL = process.env.EVE_CALLBACK_URL
+const EVE_CLIENT_ID = process.env.EVE_CLIENT_ID!
+const EVE_SECRET_KEY = process.env.EVE_SECRET_KEY!
+const EVE_CALLBACK_URL = process.env.EVE_CALLBACK_URL!
 
 export const scopes = [
   'publicData',
@@ -14,5 +14,4 @@ export const scopes = [
 export const userAgent = 'Sir Cuddles <philihp@gmail.com> eve-hangar'
 export const sso = new SingleSignOn(EVE_CLIENT_ID, EVE_SECRET_KEY, EVE_CALLBACK_URL, {
   userAgent,
-  endpoint: undefined,
 })

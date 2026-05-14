@@ -4,13 +4,14 @@ import { filtersForRigs, rigsForFilter } from './modifiers'
 import { flatten, map } from 'ramda'
 
 type BlueprintTypeParams = {
-  params: {
+  params: Promise<{
     typeID: string
-  }
+  }>
 }
 
-const BlueprintType = async ({ params: { typeID } }: BlueprintTypeParams) => {
-  const supabase = createClient()
+const BlueprintType = async ({ params }: BlueprintTypeParams) => {
+  const { typeID } = await params
+  const supabase = await createClient()
 
   const {
     data: { productTypeID },
