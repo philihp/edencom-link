@@ -1,0 +1,55 @@
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12pt;
+  list-style: none;
+  padding: 0;
+  margin: 12pt 0;
+}
+
+.tile {
+  display: flex;
+  gap: 10pt;
+  padding: 10pt;
+  border: 1px solid #ccc;
+  border-radius: 6pt;
+  background: #fafafa;
+}
+
+.avatar {
+  width: 64px;
+  height: 64px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: #ddd;
+  border: 1px solid #bbb;
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 2pt;
+  min-width: 0;
+  flex: 1;
+}
+
+.name {
+  font-weight: bold;
+  font-size: 11pt;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.meta {
+  font-size: 9pt;
+  color: #666;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.metaLabel {
+  color: #999;
+  margin-right: 4pt;
+}
