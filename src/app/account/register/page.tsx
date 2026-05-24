@@ -1,7 +1,7 @@
 'use client'
 
-import { useState } from 'react'
-import { Turnstile } from '@marsidev/react-turnstile'
+import { useRef, useState } from 'react'
+import { Turnstile, type TurnstileInstance } from '@marsidev/react-turnstile'
 
 import { register } from './actions'
 
@@ -10,8 +10,11 @@ const RegisterPage = () => {
   const [color, setColor] = useState('#000000')
   const [response, setResponse] = useState('')
   const [captchaToken, setCaptchaToken] = useState<string>('')
+  const turnstileRef = useRef<TurnstileInstance>(undefined)
   const signupAndReturn = async (formData: FormData) => {
     const { error } = await register(formData, captchaToken)
+    setCaptchaToken('')
+    turnstileRef.current?.reset()
     if (error?.message) {
       setDisabled(false)
       setResponse(error?.message)
@@ -56,6 +59,7 @@ const RegisterPage = () => {
         </>
       )}
       <Turnstile
+        ref={turnstileRef}
         siteKey={process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? ''}
         onSuccess={setCaptchaToken}
         options={{
