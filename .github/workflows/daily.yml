@@ -9,7 +9,7 @@ jobs:
   refresh:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       # once a day, we want to download the export from Steve and cache it.
       - run: echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
