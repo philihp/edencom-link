@@ -9,7 +9,11 @@ import { sso } from '../sso'
 
 const upsertCharacter =
   (supabase: SupabaseClient) => async (columns: { user_id: string; owner: string; name: string }) => {
-    const response = await supabase.from('character').upsert(columns, { onConflict: 'owner' }).select()
+    const response = await supabase
+      .schema('hangar')
+      .from('character')
+      .upsert(columns, { onConflict: 'user_id, owner' })
+      .select()
     if (response.error) console.error(response.error)
     return response.data?.[0]?.id
   }
@@ -25,7 +29,11 @@ const upsertToken =
     expires_at: string
     scope: string[]
   }) => {
-    const response = await supabase.from('token').upsert(columns, { onConflict: 'character_id, scope' }).select()
+    const response = await supabase
+      .schema('hangar')
+      .from('token')
+      .upsert(columns, { onConflict: 'character_id, scope' })
+      .select()
     if (response.error) console.error(response.error)
     return response.data?.[0]?.id
   }
