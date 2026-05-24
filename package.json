@@ -11,7 +11,7 @@
     "@vercel/analytics": "1.5.0",
     "@vercel/speed-insights": "1.2.0",
     "eve-industry": "0.1.0",
-    "form-urlencoded": "6.1.5",
+    "form-urlencoded": "6.1.6",
     "graphql-tag": "2.12.6",
     "graphql-yoga": "5.21.0",
     "jsonwebtoken": "9.0.2",
