@@ -26,12 +26,17 @@ export const authenticate = async () => {
 }
 
 export const upsertCharacter = async (columns) => {
-  const response = await supabase.from('character').upsert(columns, { onConflict: 'owner' }).select()
+  const response = await supabase
+    .schema('hangar')
+    .from('character')
+    .upsert(columns, { onConflict: 'user_id, owner' })
+    .select()
   return response.data?.[0]?.id
 }
 
 export const upsertToken = async (columns) => {
   const response = await supabase
+    .schema('hangar')
     .from('token')
     .upsert(columns, { onConflict: ['character_id', 'scope'] })
     .select()
@@ -41,6 +46,7 @@ export const upsertToken = async (columns) => {
 
 export const upsertAssets = async (assets) => {
   const response = await supabase
+    .schema('hangar')
     .from('asset')
     .upsert(assets, { onConflict: ['item_id'] })
     .select()
@@ -48,7 +54,7 @@ export const upsertAssets = async (assets) => {
 }
 
 export const selectCharacters = async (columns, owner) => {
-  let query = supabase.from('character').select(columns)
+  let query = supabase.schema('hangar').from('character').select(columns)
   if (owner !== undefined) query = query.eq('owner', owner)
   const response = await query
   return response?.data?.map((r) => r.id)
@@ -56,6 +62,7 @@ export const selectCharacters = async (columns, owner) => {
 
 export const selectToken = async (character_id, scope = []) => {
   const response = await supabase
+    .schema('hangar')
     .from('token')
     .select('refresh_token, scope')
     .eq('character_id', character_id)
