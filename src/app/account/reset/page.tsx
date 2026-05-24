@@ -1,7 +1,7 @@
 'use client'
 
-import { useState } from 'react'
-import { Turnstile } from '@marsidev/react-turnstile'
+import { useRef, useState } from 'react'
+import { Turnstile, type TurnstileInstance } from '@marsidev/react-turnstile'
 
 import { reset } from './actions'
 
@@ -9,9 +9,12 @@ const ResetPage = () => {
   const [disabled, setDisabled] = useState(false)
   const [emailSent, setEmailSent] = useState(false)
   const [captchaToken, setCaptchaToken] = useState<string>('')
+  const turnstileRef = useRef<TurnstileInstance>(undefined)
 
   const resetAndReturn = async (formData: FormData) => {
     await reset(formData, captchaToken)
+    setCaptchaToken('')
+    turnstileRef.current?.reset()
     setEmailSent(true)
   }
 
@@ -44,6 +47,7 @@ const ResetPage = () => {
         </>
       )}
       <Turnstile
+        ref={turnstileRef}
         siteKey={process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? ''}
         onSuccess={setCaptchaToken}
         options={{
