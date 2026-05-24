@@ -83,3 +83,12 @@ create policy "Users read own assets"
       select id from hangar.character where user_id = (select auth.uid())
     )
   );
+
+-- Explicit grants on the tables we just created. `alter default privileges`
+-- above only applies to tables created by the role that ran the statement,
+-- so this belt-and-suspenders grant ensures PostgREST's `authenticated` /
+-- `anon` / `service_role` roles can actually reach these tables. Re-runnable.
+grant select, insert, update, delete on hangar.character to authenticated;
+grant select, insert, update, delete on hangar.token     to authenticated;
+grant select                          on hangar.asset    to authenticated;
+grant all on hangar.character, hangar.token, hangar.asset to service_role;
