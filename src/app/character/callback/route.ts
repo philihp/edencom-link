@@ -14,8 +14,9 @@ const upsertCharacter =
       .from('character')
       .upsert(columns, { onConflict: 'user_id, owner' })
       .select()
-    if (response.error) console.error(response.error)
-    return response.data?.[0]?.id
+    if (response.error) throw new Error(`upsert character failed: ${JSON.stringify(response.error)}`)
+    if (!response.data?.[0]?.id) throw new Error(`upsert character returned no row: ${JSON.stringify(response)}`)
+    return response.data[0].id
   }
 
 const upsertToken =
@@ -34,8 +35,9 @@ const upsertToken =
       .from('token')
       .upsert(columns, { onConflict: 'character_id, scope' })
       .select()
-    if (response.error) console.error(response.error)
-    return response.data?.[0]?.id
+    if (response.error) throw new Error(`upsert token failed: ${JSON.stringify(response.error)}`)
+    if (!response.data?.[0]?.id) throw new Error(`upsert token returned no row: ${JSON.stringify(response)}`)
+    return response.data[0].id
   }
 
 export const GET = async (request: NextRequest) => {
@@ -43,7 +45,8 @@ export const GET = async (request: NextRequest) => {
   const {
     data: { user },
   } = await supabase.auth.getUser()
-  const user_id = user?.id ?? ''
+  if (!user?.id) throw new Error('no authenticated supabase user on /character/callback')
+  const user_id = user.id
 
   const { searchParams } = new URL(request.url)
   const code = searchParams.get('code')
