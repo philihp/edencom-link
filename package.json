@@ -25,6 +25,7 @@
     "build": "next build",
     "connect": "node src/connect.js",
     "dev": "next dev",
+    "heartbeat": "node src/heartbeat.js",
     "hourly": "node src/hourly.js",
     "refresh": "node src/refresh.js",
     "lint": "eslint .",

@@ -92,3 +92,14 @@ grant select, insert, update, delete on hangar.character to authenticated;
 grant select, insert, update, delete on hangar.token     to authenticated;
 grant select                          on hangar.asset    to authenticated;
 grant all on hangar.character, hangar.token, hangar.asset to service_role;
+
+create table if not exists hangar.heartbeat (
+  id uuid primary key default gen_random_uuid(),
+  job text not null,
+  ran_at timestamptz not null default now()
+);
+create index if not exists heartbeat_ran_at_idx
+  on hangar.heartbeat (ran_at desc);
+
+alter table hangar.heartbeat enable row level security;
+grant all on hangar.heartbeat to service_role;
