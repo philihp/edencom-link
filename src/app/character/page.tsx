@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 
 import { createClient } from '@/utils/supabase/server'
 import { register } from './actions'
+import styles from './character.module.css'
 
 const CharacterPage = async () => {
   const supabase = await createClient()
@@ -16,7 +17,22 @@ const CharacterPage = async () => {
   return (
     <>
       <h1>Characters</h1>
-      <ul>{characters?.map((c) => <li key={`character-${c.id}`}>{JSON.stringify(c)}</li>)}</ul>
+      <ul className={styles.grid}>
+        {characters?.map((c) => (
+          <li key={`character-${c.id}`} className={styles.tile}>
+            <div className={styles.avatar} aria-hidden="true" />
+            <div className={styles.body}>
+              <div className={styles.name}>{c.name}</div>
+              <div className={styles.meta}>
+                <span className={styles.metaLabel}>Location:</span>
+              </div>
+              <div className={styles.meta}>
+                <span className={styles.metaLabel}>Ship:</span>
+              </div>
+            </div>
+          </li>
+        ))}
+      </ul>
       {error && (
         <>
           <strong>
