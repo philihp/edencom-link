@@ -102,33 +102,33 @@
 
 .suffix {
   display: inline-block;
-  width: 1.4em;
-  height: 1.4em;
-  line-height: 1.4em;
   border-radius: 50%;
-  text-align: center;
-  font-size: 0.8em;
-  font-weight: bold;
-  text-transform: lowercase;
   margin-left: 5pt;
   vertical-align: middle;
+  overflow: hidden;
+  box-sizing: content-box;
 }
 
 .suffixNone {
+  width: 4px;
+  height: 4px;
   background: #fef0d9;
 }
 
 .suffixK {
+  width: 6px;
+  height: 6px;
   background: #fdcc8a;
-  color: #5a3a00;
 }
 
 .suffixM {
+  width: 8px;
+  height: 8px;
   background: #fc8d59;
-  color: #fff;
 }
 
 .suffixB {
+  width: 10px;
+  height: 10px;
   background: #d7301f;
-  color: #fff;
 }
