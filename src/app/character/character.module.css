@@ -53,3 +53,32 @@
   color: #999;
   margin-right: 4pt;
 }
+
+.sales {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 10pt;
+  margin: 12pt 0;
+}
+
+.sales th,
+.sales td {
+  border-bottom: 1px solid #eee;
+  padding: 6pt 8pt;
+  text-align: left;
+}
+
+.sales th {
+  background: #fafafa;
+  font-weight: bold;
+}
+
+.sales td:nth-child(3),
+.sales td:nth-child(4),
+.sales td:nth-child(5),
+.sales th:nth-child(3),
+.sales th:nth-child(4),
+.sales th:nth-child(5) {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
