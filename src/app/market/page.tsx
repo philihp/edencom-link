@@ -12,6 +12,7 @@ const MarketPage = async () => {
   }
 
   const { data: characters } = await supabase.schema('hangar').from('character').select('id, name')
+  const characterIds = characters?.map((c) => c.id) ?? []
 
   // eslint-disable-next-line react-hooks/purity
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
@@ -19,6 +20,7 @@ const MarketPage = async () => {
     .schema('hangar')
     .from('market_transaction')
     .select('transaction_id, character_id, date, type_id, quantity, unit_price, seen_at')
+    .in('character_id', characterIds)
     .eq('is_buy', false)
     .gte('date', sevenDaysAgo)
     .order('date', { ascending: false })
