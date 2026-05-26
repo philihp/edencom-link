@@ -14,9 +14,14 @@ export type Sale = {
   seen_at: string
 }
 
+type Character = {
+  id: string
+  name: string
+}
+
 type RecentSalesProps = {
   sales: Sale[]
-  characterName: Record<string, string>
+  characters: Character[]
 }
 
 const THRESHOLDS: Array<{ label: string; value: number }> = [
@@ -28,6 +33,8 @@ const THRESHOLDS: Array<{ label: string; value: number }> = [
 ]
 
 const THRESHOLD_STORAGE_KEY = 'market.recentSales.threshold'
+const CHARACTER_STORAGE_KEY = 'market.recentSales.characterId'
+const ALL_CHARACTERS = ''
 
 const iskTier = (n: number) => {
   const abs = Math.abs(n)
@@ -59,28 +66,51 @@ const formatDate = (iso: string) =>
     hour12: false,
   }).format(new Date(iso))
 
-export const RecentSales = ({ sales, characterName }: RecentSalesProps) => {
+export const RecentSales = ({ sales, characters }: RecentSalesProps) => {
+  const characterName: Record<string, string> = Object.fromEntries(characters.map((c) => [c.id, c.name]))
+
   const [threshold, setThreshold] = usePersist(THRESHOLD_STORAGE_KEY, 0, (raw) => {
     const parsed = Number(raw)
     return THRESHOLDS.some((t) => t.value === parsed) ? parsed : undefined
   })
 
-  const filtered = sales.filter((s) => Number(s.unit_price) * Number(s.quantity) >= threshold)
+  const [characterId, setCharacterId] = usePersist<string>(CHARACTER_STORAGE_KEY, ALL_CHARACTERS, (raw) =>
+    raw === ALL_CHARACTERS || characters.some((c) => c.id === raw) ? raw : undefined,
+  )
+
+  const filtered = sales.filter(
+    (s) =>
+      Number(s.unit_price) * Number(s.quantity) >= threshold &&
+      (characterId === ALL_CHARACTERS || s.character_id === characterId),
+  )
 
   return (
     <section>
       <div className={styles.salesHeader}>
         <h2>Recent Sales (last 7 days)</h2>
-        <label className={styles.salesFilter}>
-          Filter:&nbsp;
-          <select value={threshold} onChange={(e) => setThreshold(Number(e.target.value))}>
-            {THRESHOLDS.map((t) => (
-              <option key={t.value} value={t.value}>
-                {t.label}
-              </option>
-            ))}
-          </select>
-        </label>
+        <div className={styles.salesFilters}>
+          <label className={styles.salesFilter}>
+            Character:&nbsp;
+            <select value={characterId} onChange={(e) => setCharacterId(e.target.value)}>
+              <option value={ALL_CHARACTERS}>All characters</option>
+              {characters.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className={styles.salesFilter}>
+            Filter:&nbsp;
+            <select value={threshold} onChange={(e) => setThreshold(Number(e.target.value))}>
+              {THRESHOLDS.map((t) => (
+                <option key={t.value} value={t.value}>
+                  {t.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
       </div>
       {filtered.length > 0 ? (
         <table className={styles.sales}>

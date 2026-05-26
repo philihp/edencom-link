@@ -23,12 +23,12 @@ const MarketPage = async () => {
     .gte('date', sevenDaysAgo)
     .order('date', { ascending: false })
 
-  const characterName: Record<string, string> = Object.fromEntries(characters?.map((c) => [c.id, c.name]) ?? [])
+  const sortedCharacters = [...(characters ?? [])].sort((a, b) => a.name.localeCompare(b.name))
 
   return (
     <>
       <h1>Market</h1>
-      <RecentSales sales={sales ?? []} characterName={characterName} />
+      <RecentSales sales={sales ?? []} characters={sortedCharacters} />
     </>
   )
 }
