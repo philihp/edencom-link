@@ -54,6 +54,23 @@
   margin-right: 4pt;
 }
 
+.salesHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12pt;
+  margin-top: 16pt;
+}
+
+.salesHeader h2 {
+  margin: 0;
+}
+
+.salesFilter {
+  font-size: 10pt;
+  color: #555;
+}
+
 .sales {
   width: 100%;
   border-collapse: collapse;
