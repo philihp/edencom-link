@@ -103,3 +103,27 @@ create index if not exists heartbeat_ran_at_idx
 
 alter table hangar.heartbeat enable row level security;
 grant all on hangar.heartbeat to service_role;
+
+create table if not exists hangar.wallet (
+  id uuid primary key default gen_random_uuid(),
+  character_id uuid not null references hangar.character(id) on delete cascade,
+  balance numeric(20, 2) not null,
+  recorded_at timestamptz not null default now()
+);
+create index if not exists wallet_character_id_recorded_at_idx
+  on hangar.wallet (character_id, recorded_at desc);
+
+alter table hangar.wallet enable row level security;
+
+create policy "Users read own wallets"
+  on hangar.wallet
+  for select
+  to authenticated
+  using (
+    character_id in (
+      select id from hangar.character where user_id = (select auth.uid())
+    )
+  );
+
+grant select on hangar.wallet to authenticated;
+grant all    on hangar.wallet to service_role;
