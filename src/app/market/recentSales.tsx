@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import styles from './character.module.css'
+import styles from './market.module.css'
 import { TypeName } from './typeName'
 
 export type Sale = {
