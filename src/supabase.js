@@ -38,7 +38,7 @@ export const upsertToken = async (columns) => {
   const response = await supabase
     .schema('hangar')
     .from('token')
-    .upsert(columns, { onConflict: ['character_id', 'scope'] })
+    .upsert(columns, { onConflict: ['character_id'] })
     .select()
   if (response.error) console.error(response.error)
   return response.data?.[0]?.id

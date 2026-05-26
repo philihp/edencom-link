@@ -45,7 +45,7 @@ create table hangar.token (
   scope text[] not null default '{}',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  unique (character_id, scope)
+  unique (character_id)
 );
 create index token_character_id_idx on hangar.token (character_id);
 create index token_user_id_idx on hangar.token (user_id);
@@ -130,3 +130,31 @@ create policy "Users read own wallets"
 
 grant select on hangar.wallet to authenticated;
 grant all    on hangar.wallet to service_role;
+
+-- Collapse hangar.token so there is at most one row per character, keeping the
+-- row with the most scopes (ties broken by most recently updated).
+delete from hangar.token
+where id in (
+  select id from (
+    select id,
+      row_number() over (
+        partition by character_id
+        order by coalesce(array_length(scope, 1), 0) desc, updated_at desc
+      ) as rn
+    from hangar.token
+  ) ranked
+  where rn > 1
+);
+
+alter table hangar.token drop constraint if exists token_character_id_scope_key;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'token_character_id_key'
+      and conrelid = 'hangar.token'::regclass
+  ) then
+    alter table hangar.token add constraint token_character_id_key unique (character_id);
+  end if;
+end $$;
