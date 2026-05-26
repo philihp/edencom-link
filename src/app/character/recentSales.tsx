@@ -36,7 +36,16 @@ const formatIsk = (raw: string | number) => {
   return n.toPrecision(4)
 }
 
-const formatDate = (iso: string) => new Date(iso).toLocaleString()
+const formatDate = (iso: string) =>
+  new Intl.DateTimeFormat('sv-SE', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).format(new Date(iso))
 
 export const RecentSales = ({ sales, characterName }: RecentSalesProps) => {
   const [threshold, setThreshold] = useState(0)
