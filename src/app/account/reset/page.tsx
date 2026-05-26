@@ -46,16 +46,18 @@ const ResetPage = () => {
           Check your email for a link.
         </>
       )}
-      <Turnstile
-        ref={turnstileRef}
-        siteKey={process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? ''}
-        onSuccess={setCaptchaToken}
-        options={{
-          action: 'reset',
-          theme: 'light',
-          size: 'normal',
-        }}
-      />
+      {process.env.NODE_ENV === 'production' && (
+        <Turnstile
+          ref={turnstileRef}
+          siteKey={process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? ''}
+          onSuccess={setCaptchaToken}
+          options={{
+            action: 'reset',
+            theme: 'light',
+            size: 'normal',
+          }}
+        />
+      )}
     </form>
   )
 }
