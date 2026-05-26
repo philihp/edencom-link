@@ -8,7 +8,7 @@ export const register = async (formData: FormData, captchaToken: string) => {
   const { data, error } = await supabase.auth.signUp({
     email: `${formData.get('email')}`,
     password: `${formData.get('password')}`,
-    options: { captchaToken },
+    ...(process.env.NODE_ENV === 'production' ? { options: { captchaToken } } : {}),
   })
 
   return { data, error }

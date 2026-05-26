@@ -8,7 +8,7 @@ export const login = async (formData: FormData, captchaToken: string) => {
   const { error } = await supabase.auth.signInWithPassword({
     email: `${formData.get('email')}`,
     password: `${formData.get('password')}`,
-    options: { captchaToken },
+    ...(process.env.NODE_ENV === 'production' ? { options: { captchaToken } } : {}),
   })
 
   return error?.message
