@@ -34,7 +34,7 @@ const upsertToken =
     const response = await supabase
       .schema('hangar')
       .from('token')
-      .upsert(columns, { onConflict: 'character_id, scope' })
+      .upsert(columns, { onConflict: 'character_id' })
       .select()
     if (response.error) throw new Error(`upsert token failed: ${JSON.stringify(response.error)}`)
     if (!response.data?.[0]?.id) throw new Error(`upsert token returned no row: ${JSON.stringify(response)}`)
