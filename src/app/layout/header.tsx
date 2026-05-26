@@ -27,6 +27,12 @@ const Header = async () => {
           &nbsp;|&nbsp;
           <Link href="/character/">Characters</Link>
           &nbsp;|&nbsp;
+          <Link href="/market">Market</Link>
+          &nbsp;|&nbsp;
+          <Link href="/industry">Industry</Link>
+          &nbsp;|&nbsp;
+          <Link href="/structures">Structures</Link>
+          &nbsp;|&nbsp;
           <Link href="/account/settings">Settings</Link> ]
         </>
       )}

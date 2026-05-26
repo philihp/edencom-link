@@ -3,7 +3,6 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/utils/supabase/server'
 import { register } from './actions'
 import styles from './character.module.css'
-import { RecentSales } from './recentSales'
 
 const CharacterPage = async () => {
   const supabase = await createClient()
@@ -27,18 +26,6 @@ const CharacterPage = async () => {
   }
   const formatIsk = (raw: string | number) =>
     new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(raw))
-
-  // eslint-disable-next-line react-hooks/purity
-  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
-  const { data: sales } = await supabase
-    .schema('hangar')
-    .from('market_transaction')
-    .select('transaction_id, character_id, date, type_id, quantity, unit_price, seen_at')
-    .eq('is_buy', false)
-    .gte('date', sevenDaysAgo)
-    .order('date', { ascending: false })
-
-  const characterName: Record<string, string> = Object.fromEntries(characters?.map((c) => [c.id, c.name]) ?? [])
 
   return (
     <>
@@ -72,7 +59,6 @@ const CharacterPage = async () => {
           </li>
         ))}
       </ul>
-      <RecentSales sales={sales ?? []} characterName={characterName} />
       {error && (
         <>
           <strong>

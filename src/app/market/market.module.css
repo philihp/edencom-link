@@ -1,0 +1,78 @@
+.salesHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12pt;
+  margin-top: 16pt;
+}
+
+.salesHeader h2 {
+  margin: 0;
+}
+
+.salesFilter {
+  font-size: 10pt;
+  color: #555;
+}
+
+.sales {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 10pt;
+  margin: 12pt 0;
+}
+
+.sales th,
+.sales td {
+  border-bottom: 1px solid #eee;
+  padding: 6pt 8pt;
+  text-align: left;
+}
+
+.sales th {
+  background: #fafafa;
+  font-weight: bold;
+}
+
+.sales td:nth-child(3),
+.sales td:nth-child(4),
+.sales td:nth-child(5),
+.sales th:nth-child(3),
+.sales th:nth-child(4),
+.sales th:nth-child(5) {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.suffix {
+  display: inline-block;
+  border-radius: 50%;
+  margin-left: 5pt;
+  vertical-align: middle;
+  overflow: hidden;
+  box-sizing: content-box;
+}
+
+.suffixNone {
+  width: 4px;
+  height: 4px;
+  background: #fef0d9;
+}
+
+.suffixK {
+  width: 6px;
+  height: 6px;
+  background: #fdcc8a;
+}
+
+.suffixM {
+  width: 8px;
+  height: 8px;
+  background: #fc8d59;
+}
+
+.suffixB {
+  width: 10px;
+  height: 10px;
+  background: #d7301f;
+}
