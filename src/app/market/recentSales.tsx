@@ -1,8 +1,8 @@
 'use client'
 
-import { useEffect, useState } from 'react'
 import styles from './market.module.css'
 import { TypeName } from './typeName'
+import { usePersist } from './usePersist'
 
 export type Sale = {
   transaction_id: string | number
@@ -60,19 +60,10 @@ const formatDate = (iso: string) =>
   }).format(new Date(iso))
 
 export const RecentSales = ({ sales, characterName }: RecentSalesProps) => {
-  const [threshold, setThreshold] = useState(0)
-
-  useEffect(() => {
-    const saved = window.localStorage.getItem(THRESHOLD_STORAGE_KEY)
-    if (saved === null) return
-    const parsed = Number(saved)
-    if (THRESHOLDS.some((t) => t.value === parsed)) setThreshold(parsed)
-  }, [])
-
-  const handleThresholdChange = (value: number) => {
-    setThreshold(value)
-    window.localStorage.setItem(THRESHOLD_STORAGE_KEY, String(value))
-  }
+  const [threshold, setThreshold] = usePersist(THRESHOLD_STORAGE_KEY, 0, (raw) => {
+    const parsed = Number(raw)
+    return THRESHOLDS.some((t) => t.value === parsed) ? parsed : undefined
+  })
 
   const filtered = sales.filter((s) => Number(s.unit_price) * Number(s.quantity) >= threshold)
 
@@ -82,7 +73,7 @@ export const RecentSales = ({ sales, characterName }: RecentSalesProps) => {
         <h2>Recent Sales (last 7 days)</h2>
         <label className={styles.salesFilter}>
           Filter:&nbsp;
-          <select value={threshold} onChange={(e) => handleThresholdChange(Number(e.target.value))}>
+          <select value={threshold} onChange={(e) => setThreshold(Number(e.target.value))}>
             {THRESHOLDS.map((t) => (
               <option key={t.value} value={t.value}>
                 {t.label}
