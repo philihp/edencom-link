@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/utils/supabase/server'
 import { register } from './actions'
 import styles from './character.module.css'
+import { TypeName } from './typeName'
 
 const CharacterPage = async () => {
   const supabase = await createClient()
@@ -78,7 +79,7 @@ const CharacterPage = async () => {
           <thead>
             <tr>
               <th>Character</th>
-              <th>Type ID</th>
+              <th>Type</th>
               <th>Qty</th>
               <th>Unit Price</th>
               <th>Total</th>
@@ -90,7 +91,9 @@ const CharacterPage = async () => {
             {sales.map((s) => (
               <tr key={`sale-${s.transaction_id}`}>
                 <td>{characterName.get(s.character_id) ?? '—'}</td>
-                <td>{s.type_id}</td>
+                <td>
+                  <TypeName typeID={Number(s.type_id)} />
+                </td>
                 <td>{s.quantity}</td>
                 <td>{formatIsk(s.unit_price)}</td>
                 <td>{formatIsk(Number(s.unit_price) * Number(s.quantity))}</td>
