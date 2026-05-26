@@ -244,3 +244,43 @@ end $$;
 
 grant select on hangar.industry_job to authenticated;
 grant all    on hangar.industry_job to service_role;
+
+alter table hangar.character add column if not exists corporation_id bigint;
+create index if not exists character_corporation_id_idx on hangar.character (corporation_id);
+
+create table if not exists hangar.corp_structure (
+  structure_id bigint primary key,
+  corporation_id bigint not null,
+  type_id bigint not null,
+  system_id bigint not null,
+  profile_id bigint,
+  name text,
+  state text,
+  fuel_expires timestamptz,
+  unanchors_at timestamptz,
+  reinforce_hour int,
+  next_reinforce_hour int,
+  next_reinforce_apply timestamptz,
+  next_reinforce_weekday int,
+  services jsonb,
+  last_seen_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists corp_structure_corporation_id_idx
+  on hangar.corp_structure (corporation_id);
+
+alter table hangar.corp_structure enable row level security;
+
+create policy "Users read structures for own corps"
+  on hangar.corp_structure
+  for select
+  to authenticated
+  using (
+    corporation_id in (
+      select corporation_id from hangar.character
+      where user_id = (select auth.uid()) and corporation_id is not null
+    )
+  );
+
+grant select on hangar.corp_structure to authenticated;
+grant all    on hangar.corp_structure to service_role;

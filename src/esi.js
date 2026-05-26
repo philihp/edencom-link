@@ -77,6 +77,47 @@ export const wallet = async (access_token, characterID) => {
   return await response.json()
 }
 
+export const character = async (access_token, characterID) => {
+  const response = await fetch(
+    `https://esi.evetech.net/latest/characters/${characterID}/?` +
+      new URLSearchParams({
+        token: access_token,
+      }),
+    {
+      method: 'GET',
+      headers: {
+        'User-Agent': userAgent,
+      },
+    }
+  )
+  if (!response.ok) {
+    throw new Error(`character ${characterID}: ${response.status} ${response.statusText}`)
+  }
+  return await response.json()
+}
+
+export const corpStructures = async (access_token, corporationID, page = 1) => {
+  const response = await fetch(
+    `https://esi.evetech.net/latest/corporations/${corporationID}/structures/?` +
+      new URLSearchParams({
+        token: access_token,
+        page,
+      }),
+    {
+      method: 'GET',
+      headers: {
+        'User-Agent': userAgent,
+      },
+    }
+  )
+  if (!response.ok) {
+    throw new Error(`corpStructures ${corporationID}: ${response.status} ${response.statusText}`)
+  }
+  const pages = response.headers.get('x-pages')
+  const data = await response.json()
+  return [data, pages]
+}
+
 export const assetNames = async (access_token, characterID, ids) => {
   const params = new URLSearchParams({
     token: access_token,
