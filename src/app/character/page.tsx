@@ -24,8 +24,21 @@ const CharacterPage = async () => {
   for (const w of wallets ?? []) {
     if (!latestBalance.has(w.character_id)) latestBalance.set(w.character_id, w.balance)
   }
-  const formatIsk = (raw: string) =>
+  const formatIsk = (raw: string | number) =>
     new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(raw))
+
+  // eslint-disable-next-line react-hooks/purity
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
+  const { data: sales } = await supabase
+    .schema('hangar')
+    .from('market_transaction')
+    .select('transaction_id, character_id, date, type_id, quantity, unit_price, seen_at')
+    .eq('is_buy', false)
+    .gte('date', sevenDaysAgo)
+    .order('date', { ascending: false })
+
+  const characterName = new Map<string, string>(characters?.map((c) => [c.id, c.name]) ?? [])
+  const formatDate = (iso: string) => new Date(iso).toLocaleString()
 
   return (
     <>
@@ -59,6 +72,37 @@ const CharacterPage = async () => {
           </li>
         ))}
       </ul>
+      <h2>Recent Sales (last 7 days)</h2>
+      {sales && sales.length > 0 ? (
+        <table className={styles.sales}>
+          <thead>
+            <tr>
+              <th>Character</th>
+              <th>Type ID</th>
+              <th>Qty</th>
+              <th>Unit Price</th>
+              <th>Total</th>
+              <th>Sold</th>
+              <th>Seen</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sales.map((s) => (
+              <tr key={`sale-${s.transaction_id}`}>
+                <td>{characterName.get(s.character_id) ?? '—'}</td>
+                <td>{s.type_id}</td>
+                <td>{s.quantity}</td>
+                <td>{formatIsk(s.unit_price)}</td>
+                <td>{formatIsk(Number(s.unit_price) * Number(s.quantity))}</td>
+                <td>{formatDate(s.date)}</td>
+                <td>{formatDate(s.seen_at)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : (
+        <p>No sales in the last 7 days.</p>
+      )}
       {error && (
         <>
           <strong>

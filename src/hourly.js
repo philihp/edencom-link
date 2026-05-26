@@ -1,4 +1,4 @@
-import { userAgent, wallet } from './esi.js'
+import { transactions, userAgent, wallet } from './esi.js'
 import SingleSignOn from './sso.js'
 import { sudoSupabase } from './supabase.js'
 
@@ -52,8 +52,31 @@ const execute = async () => {
         .insert({ character_id: tokenRow.character_id, balance })
       if (insertError) throw insertError
       console.log(`wallet ${tokenRow.character_id} (${characterID}): ${balance}`)
+
+      const txns = await transactions(access_token, characterID)
+      if (txns.length > 0) {
+        const rows = txns.map((t) => ({
+          transaction_id: t.transaction_id,
+          character_id: tokenRow.character_id,
+          date: t.date,
+          type_id: t.type_id,
+          quantity: t.quantity,
+          unit_price: t.unit_price,
+          is_buy: t.is_buy,
+          is_personal: t.is_personal,
+          client_id: t.client_id,
+          location_id: t.location_id,
+          journal_ref_id: t.journal_ref_id,
+        }))
+        const { error: txError } = await sudoSupabase
+          .schema('hangar')
+          .from('market_transaction')
+          .upsert(rows, { onConflict: 'transaction_id', ignoreDuplicates: true })
+        if (txError) throw txError
+        console.log(`transactions ${tokenRow.character_id} (${characterID}): ${txns.length} fetched`)
+      }
     } catch (e) {
-      console.error(`wallet refresh failed for ${tokenRow.character_id}:`, e)
+      console.error(`refresh failed for ${tokenRow.character_id}:`, e)
     }
   }
 }

@@ -158,3 +158,35 @@ begin
     alter table hangar.token add constraint token_character_id_key unique (character_id);
   end if;
 end $$;
+
+create table if not exists hangar.market_transaction (
+  transaction_id bigint primary key,
+  character_id uuid not null references hangar.character(id) on delete cascade,
+  date timestamptz not null,
+  type_id bigint not null,
+  quantity bigint not null,
+  unit_price numeric(20, 2) not null,
+  is_buy boolean not null,
+  is_personal boolean not null,
+  client_id bigint not null,
+  location_id bigint not null,
+  journal_ref_id bigint not null,
+  seen_at timestamptz not null default now()
+);
+create index if not exists market_transaction_character_id_date_idx
+  on hangar.market_transaction (character_id, date desc);
+
+alter table hangar.market_transaction enable row level security;
+
+create policy "Users read own transactions"
+  on hangar.market_transaction
+  for select
+  to authenticated
+  using (
+    character_id in (
+      select id from hangar.character where user_id = (select auth.uid())
+    )
+  );
+
+grant select on hangar.market_transaction to authenticated;
+grant all    on hangar.market_transaction to service_role;
