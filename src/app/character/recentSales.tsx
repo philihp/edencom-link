@@ -27,13 +27,23 @@ const THRESHOLDS: Array<{ label: string; value: number }> = [
   { label: '≥ 1B ISK', value: 1_000_000_000 },
 ]
 
-const formatIsk = (raw: string | number) => {
-  const n = Number(raw)
+const iskTier = (n: number) => {
   const abs = Math.abs(n)
-  if (abs >= 1_000_000_000) return `${(n / 1_000_000_000).toPrecision(4)}b`
-  if (abs >= 1_000_000) return `${(n / 1_000_000).toPrecision(4)}m`
-  if (abs >= 1_000) return `${(n / 1_000).toPrecision(4)}k`
-  return n.toPrecision(4)
+  if (abs >= 1_000_000_000) return { value: n / 1_000_000_000, suffix: 'b', className: styles.suffixB }
+  if (abs >= 1_000_000) return { value: n / 1_000_000, suffix: 'm', className: styles.suffixM }
+  if (abs >= 1_000) return { value: n / 1_000, suffix: 'k', className: styles.suffixK }
+  return { value: n, suffix: '', className: styles.suffixNone }
+}
+
+const IskPrice = ({ raw }: { raw: string | number }) => {
+  const n = Number(raw)
+  const { value, suffix, className } = iskTier(n)
+  return (
+    <>
+      {value.toPrecision(4)}
+      <span className={`${styles.suffix} ${className}`}>{suffix}</span>
+    </>
+  )
 }
 
 const formatDate = (iso: string) => new Date(iso).toLocaleString()
@@ -79,8 +89,12 @@ export const RecentSales = ({ sales, characterName }: RecentSalesProps) => {
                   <TypeName typeID={Number(s.type_id)} />
                 </td>
                 <td>{s.quantity}</td>
-                <td>{formatIsk(s.unit_price)}</td>
-                <td>{formatIsk(Number(s.unit_price) * Number(s.quantity))}</td>
+                <td>
+                  <IskPrice raw={s.unit_price} />
+                </td>
+                <td>
+                  <IskPrice raw={Number(s.unit_price) * Number(s.quantity)} />
+                </td>
                 <td>{formatDate(s.date)}</td>
                 <td>{formatDate(s.seen_at)}</td>
               </tr>
