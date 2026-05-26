@@ -27,8 +27,14 @@ const THRESHOLDS: Array<{ label: string; value: number }> = [
   { label: '≥ 1B ISK', value: 1_000_000_000 },
 ]
 
-const formatIsk = (raw: string | number) =>
-  new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(raw))
+const formatIsk = (raw: string | number) => {
+  const n = Number(raw)
+  const abs = Math.abs(n)
+  if (abs >= 1_000_000_000) return `${(n / 1_000_000_000).toPrecision(4)}b`
+  if (abs >= 1_000_000) return `${(n / 1_000_000).toPrecision(4)}m`
+  if (abs >= 1_000) return `${(n / 1_000).toPrecision(4)}k`
+  return n.toPrecision(4)
+}
 
 const formatDate = (iso: string) => new Date(iso).toLocaleString()
 
