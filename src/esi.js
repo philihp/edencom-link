@@ -19,6 +19,25 @@ export const assets = async (access_token, characterID, page = 1) => {
   return [data, pages]
 }
 
+export const wallet = async (access_token, characterID) => {
+  const response = await fetch(
+    `https://esi.evetech.net/latest/characters/${characterID}/wallet/?` +
+      new URLSearchParams({
+        token: access_token,
+      }),
+    {
+      method: 'GET',
+      headers: {
+        'User-Agent': userAgent,
+      },
+    }
+  )
+  if (!response.ok) {
+    throw new Error(`wallet ${characterID}: ${response.status} ${response.statusText}`)
+  }
+  return await response.json()
+}
+
 export const assetNames = async (access_token, characterID, ids) => {
   const params = new URLSearchParams({
     token: access_token,
