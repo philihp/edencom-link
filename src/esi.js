@@ -91,7 +91,8 @@ export const character = async (access_token, characterID) => {
     }
   )
   if (!response.ok) {
-    throw new Error(`character ${characterID}: ${response.status} ${response.statusText}`)
+    const body = await response.text().catch(() => '')
+    throw new Error(`character ${characterID}: ${response.status} ${response.statusText} body=${body.slice(0, 500)}`)
   }
   return await response.json()
 }
@@ -111,7 +112,10 @@ export const corpStructures = async (access_token, corporationID, page = 1) => {
     }
   )
   if (!response.ok) {
-    throw new Error(`corpStructures ${corporationID}: ${response.status} ${response.statusText}`)
+    const body = await response.text().catch(() => '')
+    throw new Error(
+      `corpStructures ${corporationID} page=${page}: ${response.status} ${response.statusText} body=${body.slice(0, 500)}`
+    )
   }
   const pages = response.headers.get('x-pages')
   const data = await response.json()
