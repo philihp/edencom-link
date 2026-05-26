@@ -8,7 +8,8 @@ import { createClient } from '@/utils/supabase/server'
 import { sso } from '../sso'
 
 const upsertCharacter =
-  (supabase: SupabaseClient) => async (columns: { user_id: string; owner: string; name: string }) => {
+  (supabase: SupabaseClient) =>
+  async (columns: { user_id: string; owner: string; name: string; character_id: number }) => {
     const response = await supabase
       .schema('hangar')
       .from('character')
@@ -56,11 +57,12 @@ export const GET = async (request: NextRequest) => {
   } = info
   const issued_at = new Date(iat * 1000).toISOString()
   const expires_at = new Date(exp * 1000).toISOString()
+  const eve_character_id = Number(sub.split(':')[2])
 
   // why are we doing this, again? can this be deleted?
   await sso.getAccessToken(refresh_token, true)
 
-  const character_id = await upsertCharacter(supabase)({ user_id, owner, name })
+  const character_id = await upsertCharacter(supabase)({ user_id, owner, name, character_id: eve_character_id })
   const token_id = await upsertToken(supabase)({
     user_id,
     character_id,

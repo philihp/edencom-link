@@ -18,6 +18,7 @@ create table hangar.character (
   user_id uuid not null references auth.users(id) on delete cascade,
   owner text not null,
   name text not null,
+  character_id bigint,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique (user_id, owner)
@@ -103,6 +104,8 @@ create index if not exists heartbeat_ran_at_idx
 
 alter table hangar.heartbeat enable row level security;
 grant all on hangar.heartbeat to service_role;
+
+alter table hangar.character add column if not exists character_id bigint;
 
 create table if not exists hangar.wallet (
   id uuid primary key default gen_random_uuid(),
