@@ -7,7 +7,7 @@ const cache = new Map<number, Promise<string | null>>()
 const lookupName = (typeID: number): Promise<string | null> => {
   const cached = cache.get(typeID)
   if (cached) return cached
-  const promise = fetch(`https://eve-build-calculator.philihp.com/api/type/${typeID}`)
+  const promise = fetch(`/api/build-calculator/type/${typeID}`)
     .then((res) => (res.ok ? res.json() : null))
     .then((type: { name?: { en?: string } | string } | null) => {
       if (!type) return null
