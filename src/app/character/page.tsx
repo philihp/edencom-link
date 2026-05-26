@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/utils/supabase/server'
 import { register } from './actions'
 import styles from './character.module.css'
-import { TypeName } from './typeName'
+import { RecentSales } from './recentSales'
 
 const CharacterPage = async () => {
   const supabase = await createClient()
@@ -38,8 +38,7 @@ const CharacterPage = async () => {
     .gte('date', sevenDaysAgo)
     .order('date', { ascending: false })
 
-  const characterName = new Map<string, string>(characters?.map((c) => [c.id, c.name]) ?? [])
-  const formatDate = (iso: string) => new Date(iso).toLocaleString()
+  const characterName: Record<string, string> = Object.fromEntries(characters?.map((c) => [c.id, c.name]) ?? [])
 
   return (
     <>
@@ -73,39 +72,7 @@ const CharacterPage = async () => {
           </li>
         ))}
       </ul>
-      <h2>Recent Sales (last 7 days)</h2>
-      {sales && sales.length > 0 ? (
-        <table className={styles.sales}>
-          <thead>
-            <tr>
-              <th>Character</th>
-              <th>Type</th>
-              <th>Qty</th>
-              <th>Unit Price</th>
-              <th>Total</th>
-              <th>Sold</th>
-              <th>Seen</th>
-            </tr>
-          </thead>
-          <tbody>
-            {sales.map((s) => (
-              <tr key={`sale-${s.transaction_id}`}>
-                <td>{characterName.get(s.character_id) ?? '—'}</td>
-                <td>
-                  <TypeName typeID={Number(s.type_id)} />
-                </td>
-                <td>{s.quantity}</td>
-                <td>{formatIsk(s.unit_price)}</td>
-                <td>{formatIsk(Number(s.unit_price) * Number(s.quantity))}</td>
-                <td>{formatDate(s.date)}</td>
-                <td>{formatDate(s.seen_at)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      ) : (
-        <p>No sales in the last 7 days.</p>
-      )}
+      <RecentSales sales={sales ?? []} characterName={characterName} />
       {error && (
         <>
           <strong>
