@@ -190,3 +190,57 @@ create policy "Users read own transactions"
 
 grant select on hangar.market_transaction to authenticated;
 grant all    on hangar.market_transaction to service_role;
+
+create table if not exists hangar.industry_job (
+  job_id bigint primary key,
+  character_id uuid not null references hangar.character(id) on delete cascade,
+  installer_id bigint not null,
+  facility_id bigint not null,
+  station_id bigint,
+  activity_id smallint not null,
+  blueprint_id bigint not null,
+  blueprint_type_id bigint not null,
+  blueprint_location_id bigint not null,
+  output_location_id bigint not null,
+  product_type_id bigint,
+  runs integer not null,
+  cost numeric(20, 2),
+  licensed_runs integer,
+  probability real,
+  status text not null,
+  duration integer not null,
+  start_date timestamptz not null,
+  end_date timestamptz not null,
+  pause_date timestamptz,
+  completed_date timestamptz,
+  completed_character_id bigint,
+  successful_runs integer,
+  seen_at timestamptz not null default now()
+);
+create index if not exists industry_job_character_id_end_date_idx
+  on hangar.industry_job (character_id, end_date desc);
+
+alter table hangar.industry_job enable row level security;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_policies
+    where schemaname = 'hangar'
+      and tablename = 'industry_job'
+      and policyname = 'Users read own industry jobs'
+  ) then
+    create policy "Users read own industry jobs"
+      on hangar.industry_job
+      for select
+      to authenticated
+      using (
+        character_id in (
+          select id from hangar.character where user_id = (select auth.uid())
+        )
+      );
+  end if;
+end $$;
+
+grant select on hangar.industry_job to authenticated;
+grant all    on hangar.industry_job to service_role;
