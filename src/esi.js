@@ -38,6 +38,26 @@ export const transactions = async (access_token, characterID) => {
   return await response.json()
 }
 
+export const industryJobs = async (access_token, characterID) => {
+  const response = await fetch(
+    `https://esi.evetech.net/latest/characters/${characterID}/industry/jobs/?` +
+      new URLSearchParams({
+        token: access_token,
+        include_completed: 'true',
+      }),
+    {
+      method: 'GET',
+      headers: {
+        'User-Agent': userAgent,
+      },
+    }
+  )
+  if (!response.ok) {
+    throw new Error(`industry jobs ${characterID}: ${response.status} ${response.statusText}`)
+  }
+  return await response.json()
+}
+
 export const wallet = async (access_token, characterID) => {
   const response = await fetch(
     `https://esi.evetech.net/latest/characters/${characterID}/wallet/?` +
