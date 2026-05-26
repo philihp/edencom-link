@@ -99,3 +99,36 @@
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
+
+.suffix {
+  display: inline-block;
+  width: 1.4em;
+  height: 1.4em;
+  line-height: 1.4em;
+  border-radius: 50%;
+  text-align: center;
+  font-size: 0.8em;
+  font-weight: bold;
+  text-transform: lowercase;
+  margin-left: 5pt;
+  vertical-align: middle;
+}
+
+.suffixNone {
+  background: #fef0d9;
+}
+
+.suffixK {
+  background: #fdcc8a;
+  color: #5a3a00;
+}
+
+.suffixM {
+  background: #fc8d59;
+  color: #fff;
+}
+
+.suffixB {
+  background: #d7301f;
+  color: #fff;
+}
