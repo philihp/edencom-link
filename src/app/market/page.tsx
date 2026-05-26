@@ -1,7 +1,9 @@
 import { redirect } from 'next/navigation'
 
 import { createClient } from '@/utils/supabase/server'
-import { RecentSales } from './recentSales'
+import { RecentSales, type Sale } from './recentSales'
+
+const ESI_TRANSACTION_LIMIT = 2500
 
 const MarketPage = async () => {
   const supabase = await createClient()
@@ -13,22 +15,30 @@ const MarketPage = async () => {
 
   const { data: characters } = await supabase.schema('hangar').from('character').select('id, name')
 
-  // eslint-disable-next-line react-hooks/purity
-  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
-  const { data: sales } = await supabase
-    .schema('hangar')
-    .from('market_transaction')
-    .select('transaction_id, character_id, date, type_id, quantity, unit_price, seen_at')
-    .eq('is_buy', false)
-    .gte('date', sevenDaysAgo)
-    .order('date', { ascending: false })
+  const perCharacterSales = await Promise.all(
+    (characters ?? []).map(async (c) => {
+      const { data: rows } = await supabase
+        .schema('hangar')
+        .from('market_transaction')
+        .select('transaction_id, character_id, date, type_id, quantity, unit_price, seen_at, is_buy')
+        .eq('character_id', c.id)
+        .order('date', { ascending: false })
+        .limit(ESI_TRANSACTION_LIMIT)
+      return rows ?? []
+    })
+  )
+
+  const sales: Sale[] = perCharacterSales
+    .flat()
+    .filter((s) => !s.is_buy)
+    .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
 
   const characterName: Record<string, string> = Object.fromEntries(characters?.map((c) => [c.id, c.name]) ?? [])
 
   return (
     <>
       <h1>Market</h1>
-      <RecentSales sales={sales ?? []} characterName={characterName} />
+      <RecentSales sales={sales} characterName={characterName} />
     </>
   )
 }

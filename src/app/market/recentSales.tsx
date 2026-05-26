@@ -66,6 +66,7 @@ export const RecentSales = ({ sales, characterName }: RecentSalesProps) => {
     const saved = window.localStorage.getItem(THRESHOLD_STORAGE_KEY)
     if (saved === null) return
     const parsed = Number(saved)
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- hydration-safe restore from localStorage
     if (THRESHOLDS.some((t) => t.value === parsed)) setThreshold(parsed)
   }, [])
 
@@ -79,7 +80,7 @@ export const RecentSales = ({ sales, characterName }: RecentSalesProps) => {
   return (
     <section>
       <div className={styles.salesHeader}>
-        <h2>Recent Sales (last 7 days)</h2>
+        <h2>Recent Sales</h2>
         <label className={styles.salesFilter}>
           Filter:&nbsp;
           <select value={threshold} onChange={(e) => handleThresholdChange(Number(e.target.value))}>
