@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import styles from './market.module.css'
 import { TypeName } from './typeName'
 
@@ -26,6 +26,8 @@ const THRESHOLDS: Array<{ label: string; value: number }> = [
   { label: '≥ 100M ISK', value: 100_000_000 },
   { label: '≥ 1B ISK', value: 1_000_000_000 },
 ]
+
+const THRESHOLD_STORAGE_KEY = 'market.recentSales.threshold'
 
 const iskTier = (n: number) => {
   const abs = Math.abs(n)
@@ -60,6 +62,18 @@ const formatDate = (iso: string) =>
 export const RecentSales = ({ sales, characterName }: RecentSalesProps) => {
   const [threshold, setThreshold] = useState(0)
 
+  useEffect(() => {
+    const saved = window.localStorage.getItem(THRESHOLD_STORAGE_KEY)
+    if (saved === null) return
+    const parsed = Number(saved)
+    if (THRESHOLDS.some((t) => t.value === parsed)) setThreshold(parsed)
+  }, [])
+
+  const handleThresholdChange = (value: number) => {
+    setThreshold(value)
+    window.localStorage.setItem(THRESHOLD_STORAGE_KEY, String(value))
+  }
+
   const filtered = sales.filter((s) => Number(s.unit_price) * Number(s.quantity) >= threshold)
 
   return (
@@ -68,7 +82,7 @@ export const RecentSales = ({ sales, characterName }: RecentSalesProps) => {
         <h2>Recent Sales (last 7 days)</h2>
         <label className={styles.salesFilter}>
           Filter:&nbsp;
-          <select value={threshold} onChange={(e) => setThreshold(Number(e.target.value))}>
+          <select value={threshold} onChange={(e) => handleThresholdChange(Number(e.target.value))}>
             {THRESHOLDS.map((t) => (
               <option key={t.value} value={t.value}>
                 {t.label}
