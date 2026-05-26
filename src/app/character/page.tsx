@@ -33,7 +33,16 @@ const CharacterPage = async () => {
       <ul className={styles.grid}>
         {characters?.map((c) => (
           <li key={`character-${c.id}`} className={styles.tile}>
-            <div className={styles.avatar} aria-hidden="true" />
+            {c.character_id ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                className={styles.avatar}
+                src={`https://images.evetech.net/characters/${c.character_id}/portrait?size=128`}
+                alt={c.name}
+              />
+            ) : (
+              <div className={styles.avatar} aria-hidden="true" />
+            )}
             <div className={styles.body}>
               <div className={styles.name}>{c.name}</div>
               <div className={styles.meta}>
