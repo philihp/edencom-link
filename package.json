@@ -26,6 +26,7 @@
     "dev": "next dev",
     "heartbeat": "node src/heartbeat.js",
     "hourly": "node src/hourly.js",
+    "structures": "node src/structures.js",
     "refresh": "node src/refresh.js",
     "lint": "eslint .",
     "ping": "node src/ping-db.js",
