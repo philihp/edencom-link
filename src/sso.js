@@ -47,16 +47,7 @@ class SingleSignOn {
     })
     return `${this.endpoint}/v2/oauth/authorize?${search.toString()}`
   }
-  async getAccessToken(code, isRefreshToken = false) {
-    const payload = !isRefreshToken
-      ? {
-          grant_type: 'authorization_code',
-          code,
-        }
-      : {
-          grant_type: 'refresh_token',
-          refresh_token: code,
-        }
+  async getToken(payload) {
     const response = await fetch(`${this.endpoint}/v2/oauth/token`, {
       method: 'POST',
       body: formUrlEncoded(payload),
@@ -85,6 +76,14 @@ class SingleSignOn {
       )
     })
     return data
+  }
+  async exchangeAuthCode(code) {
+    const grant_type = 'authorization_code'
+    return this.getToken({ grant_type, code })
+  }
+  async refreshAccessToken(refresh_token) {
+    const grant_type = 'refresh_tokene'
+    return this.getToken({ grant_type, refresh_token })
   }
   getKey(header, callback) {
     this.#jwks.getSigningKey(header.kid, (err, key) => {

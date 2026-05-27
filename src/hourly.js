@@ -12,7 +12,7 @@ const INDUSTRY_SCOPE = 'esi-industry.read_character_jobs.v1'
 const sso = new SingleSignOn(EVE_CLIENT_ID, EVE_SECRET_KEY, EVE_CALLBACK_URL, { userAgent })
 
 const refreshToken = async (tokenRow) => {
-  const refreshed = await sso.getAccessToken(tokenRow.refresh_token, true)
+  const refreshed = await sso.getAccessToken(tokenRow.refresh_token)
   const { access_token, refresh_token } = refreshed
   const { sub, scp = [], iat, exp } = refreshed.decoded_access_token
   const characterID = sub.split(':')[2]

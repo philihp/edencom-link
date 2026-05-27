@@ -16,7 +16,7 @@ const sso = new SingleSignOn(EVE_CLIENT_ID, EVE_SECRET_KEY, EVE_CALLBACK_URL, { 
 const tail = (s) => (typeof s === 'string' && s.length > 4 ? s.slice(-4) : '????')
 
 const refreshToken = async (tokenRow) => {
-  const refreshed = await sso.getAccessToken(tokenRow.refresh_token, true)
+  const refreshed = await sso.refreshAccessToken(tokenRow.refresh_token)
   const { access_token, refresh_token } = refreshed
   const { sub, scp = [], iat, exp } = refreshed.decoded_access_token
   const characterID = sub.split(':')[2]

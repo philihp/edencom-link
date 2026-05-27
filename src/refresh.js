@@ -26,7 +26,7 @@ const accessToken = async (character_id) => {
     access_token,
     refresh_token,
     decoded_access_token: { scp = [], iat, exp, sub },
-  } = await sso.getAccessToken(old_token, true)
+  } = await sso.refreshAccessToken(old_token)
   const characterID = sub.split(':')[2]
   await upsertToken({
     character_id,
