@@ -15,6 +15,8 @@ export const sudoSupabase = createClient(supabaseUrl, supabaseServiceKey, {
   },
 })
 
+export const sudoSupabaseAdmin = sudoSupabase.auth.admin
+
 export const authenticate = async () => {
   const { data, error } = await supabase.auth.signInWithPassword({
     email: supabaseUsername,
