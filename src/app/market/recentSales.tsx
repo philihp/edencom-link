@@ -1,7 +1,6 @@
 'use client'
 
 import styles from './market.module.css'
-import { TypeName } from './typeName'
 import { usePersist } from './usePersist'
 
 export type Sale = {
@@ -22,6 +21,7 @@ type Character = {
 type RecentSalesProps = {
   sales: Sale[]
   characters: Character[]
+  typeNames: Record<number, string>
 }
 
 const THRESHOLDS: Array<{ label: string; value: number }> = [
@@ -66,7 +66,7 @@ const formatDate = (iso: string) =>
     hour12: false,
   }).format(new Date(iso))
 
-export const RecentSales = ({ sales, characters }: RecentSalesProps) => {
+export const RecentSales = ({ sales, characters, typeNames }: RecentSalesProps) => {
   const characterName: Record<string, string> = Object.fromEntries(characters.map((c) => [c.id, c.name]))
 
   const [threshold, setThreshold] = usePersist(THRESHOLD_STORAGE_KEY, 0, (raw) => {
@@ -129,9 +129,7 @@ export const RecentSales = ({ sales, characters }: RecentSalesProps) => {
             {filtered.map((s) => (
               <tr key={`sale-${s.transaction_id}`}>
                 <td>{characterName[s.character_id] ?? '—'}</td>
-                <td>
-                  <TypeName typeID={Number(s.type_id)} />
-                </td>
+                <td>{typeNames[Number(s.type_id)] ?? `#${s.type_id}`}</td>
                 <td>{s.quantity}</td>
                 <td>
                   <IskPrice raw={s.unit_price} />

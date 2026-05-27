@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation'
 
 import { createClient } from '@/utils/supabase/server'
+import { fetchTypeNames } from '../typeNames'
 import { ActiveJobs, type Job } from './activeJobs'
 
 const IndustryPage = async () => {
@@ -24,13 +25,22 @@ const IndustryPage = async () => {
 
   const sortedCharacters = [...(characters ?? [])].sort((a, b) => a.name.localeCompare(b.name))
 
+  const jobRows = (jobs ?? []) as Job[]
+  const typeNames = await fetchTypeNames(
+    jobRows.flatMap((j) => {
+      const ids = [Number(j.blueprint_type_id)]
+      if (j.product_type_id != null) ids.push(Number(j.product_type_id))
+      return ids
+    }),
+  )
+
   // eslint-disable-next-line react-hooks/purity
   const initialNow = Date.now()
 
   return (
     <>
       <h1>Industry</h1>
-      <ActiveJobs jobs={(jobs ?? []) as Job[]} characters={sortedCharacters} initialNow={initialNow} />
+      <ActiveJobs jobs={jobRows} characters={sortedCharacters} initialNow={initialNow} typeNames={typeNames} />
     </>
   )
 }
