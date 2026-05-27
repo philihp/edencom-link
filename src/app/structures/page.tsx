@@ -15,6 +15,24 @@ type Structure = {
   last_seen_at: string
 }
 
+type JournalEntry = {
+  corporation_id: number
+  division: number
+  entry_id: string | number
+  date: string
+  ref_type: string
+  amount: string | number | null
+  balance: string | number | null
+  description: string | null
+  reason: string | null
+}
+
+const formatIsk = (raw: string | number | null) => {
+  if (raw === null) return '—'
+  const n = Number(raw)
+  return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
 const StructuresPage = async () => {
   const supabase = await createClient()
 
@@ -33,6 +51,17 @@ const StructuresPage = async () => {
     .order('structure_id', { ascending: true })
 
   const list = (structures ?? []) as Structure[]
+
+  // eslint-disable-next-line react-hooks/purity
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
+  const { data: journal } = await supabase
+    .schema('hangar')
+    .from('corp_wallet_journal')
+    .select('corporation_id, division, entry_id, date, ref_type, amount, balance, description, reason')
+    .gte('date', sevenDaysAgo)
+    .order('date', { ascending: false })
+
+  const journalEntries = (journal ?? []) as JournalEntry[]
 
   return (
     <>
@@ -75,6 +104,38 @@ const StructuresPage = async () => {
           No structures visible. Re-link a director character on the <a href="/character">Characters</a> page so the
           hourly job can fetch them.
         </p>
+      )}
+
+      <h2>Corp Wallet (last 7 days)</h2>
+      {journalEntries.length > 0 ? (
+        <table>
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Corp ID</th>
+              <th>Div</th>
+              <th>Ref Type</th>
+              <th>Amount</th>
+              <th>Balance</th>
+              <th>Description</th>
+            </tr>
+          </thead>
+          <tbody>
+            {journalEntries.map((e) => (
+              <tr key={`journal-${e.corporation_id}-${e.division}-${e.entry_id}`}>
+                <td>{e.date}</td>
+                <td>{e.corporation_id}</td>
+                <td>{e.division}</td>
+                <td>{e.ref_type}</td>
+                <td>{formatIsk(e.amount)}</td>
+                <td>{formatIsk(e.balance)}</td>
+                <td>{e.description ?? '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : (
+        <p>No corp wallet activity in the last 7 days.</p>
       )}
     </>
   )

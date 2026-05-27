@@ -122,6 +122,31 @@ export const corpStructures = async (access_token, corporationID, page = 1) => {
   return [data, pages]
 }
 
+export const corpWalletJournal = async (access_token, corporationID, division, page = 1) => {
+  const response = await fetch(
+    `https://esi.evetech.net/latest/corporations/${corporationID}/wallets/${division}/journal/?` +
+      new URLSearchParams({
+        token: access_token,
+        page,
+      }),
+    {
+      method: 'GET',
+      headers: {
+        'User-Agent': userAgent,
+      },
+    }
+  )
+  if (!response.ok) {
+    const body = await response.text().catch(() => '')
+    throw new Error(
+      `corpWalletJournal ${corporationID} div=${division} page=${page}: ${response.status} ${response.statusText} body=${body.slice(0, 500)}`
+    )
+  }
+  const pages = response.headers.get('x-pages')
+  const data = await response.json()
+  return [data, pages]
+}
+
 export const assetNames = async (access_token, characterID, ids) => {
   const params = new URLSearchParams({
     token: access_token,
