@@ -108,10 +108,10 @@ export const groupsWithFilter = reduce(
   toPairs(filters) as [id: string, attr: FilterAttrs][]
 )
 
-export const filtersUsed = (groupID: string, categoryID: string) => {
+export const filtersUsed = (groupID: number, categoryID: number) => {
   const allFiltersUsed = [
-    ...filter(([thisGroupID]) => (groupID as any) === (thisGroupID as any), groupsWithFilter),
-    ...filter(([thisCategoryID]) => (categoryID as any) === (thisCategoryID as any), categoriesWithFilter),
+    ...filter(([thisGroupID]) => groupID === thisGroupID, groupsWithFilter),
+    ...filter(([thisCategoryID]) => categoryID === thisCategoryID, categoriesWithFilter),
   ]
   return map(([groupID, filterID]) => filterID, allFiltersUsed)
 }
