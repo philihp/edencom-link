@@ -1,168 +1,83 @@
 export const userAgent = 'Sir Cuddles <philihp@gmail.com> eve-hangar'
 
-export const assets = async (access_token, characterID, page = 1) => {
-  const assetResponse = await fetch(
-    `https://esi.evetech.net/latest/characters/${characterID}/assets/?` +
-      new URLSearchParams({
-        token: access_token,
-        page,
-      }),
-    {
-      method: 'GET',
-      headers: {
-        'User-Agent': userAgent,
-      },
-    }
-  )
-  const pages = assetResponse.headers.get('x-pages')
-  const data = await assetResponse.json()
-  return [data, pages]
-}
+const ESI_BASE = 'https://esi.evetech.net/latest'
 
-export const transactions = async (access_token, characterID) => {
-  const response = await fetch(
-    `https://esi.evetech.net/latest/characters/${characterID}/wallet/transactions/?` +
-      new URLSearchParams({
-        token: access_token,
-      }),
-    {
-      method: 'GET',
-      headers: {
-        'User-Agent': userAgent,
-      },
-    }
-  )
-  if (!response.ok) {
-    throw new Error(`transactions ${characterID}: ${response.status} ${response.statusText}`)
+const esiFetch = async (path, { access_token, params = {}, method = 'GET', body, label } = {}) => {
+  const search = new URLSearchParams({ token: access_token, ...params })
+  const headers = { 'User-Agent': userAgent }
+  if (body !== undefined) {
+    headers['Content-Type'] = 'application/json'
+    headers['Cache-Control'] = 'no-cache'
   }
-  return await response.json()
-}
-
-export const industryJobs = async (access_token, characterID) => {
-  const response = await fetch(
-    `https://esi.evetech.net/latest/characters/${characterID}/industry/jobs/?` +
-      new URLSearchParams({
-        token: access_token,
-        include_completed: 'true',
-      }),
-    {
-      method: 'GET',
-      headers: {
-        'User-Agent': userAgent,
-      },
-    }
-  )
-  if (!response.ok) {
-    throw new Error(`industry jobs ${characterID}: ${response.status} ${response.statusText}`)
-  }
-  return await response.json()
-}
-
-export const wallet = async (access_token, characterID) => {
-  const response = await fetch(
-    `https://esi.evetech.net/latest/characters/${characterID}/wallet/?` +
-      new URLSearchParams({
-        token: access_token,
-      }),
-    {
-      method: 'GET',
-      headers: {
-        'User-Agent': userAgent,
-      },
-    }
-  )
-  if (!response.ok) {
-    throw new Error(`wallet ${characterID}: ${response.status} ${response.statusText}`)
-  }
-  return await response.json()
-}
-
-export const character = async (access_token, characterID) => {
-  const response = await fetch(
-    `https://esi.evetech.net/latest/characters/${characterID}/?` +
-      new URLSearchParams({
-        token: access_token,
-      }),
-    {
-      method: 'GET',
-      headers: {
-        'User-Agent': userAgent,
-      },
-    }
-  )
-  if (!response.ok) {
-    const body = await response.text().catch(() => '')
-    throw new Error(`character ${characterID}: ${response.status} ${response.statusText} body=${body.slice(0, 500)}`)
-  }
-  return await response.json()
-}
-
-export const corpStructures = async (access_token, corporationID, page = 1) => {
-  const response = await fetch(
-    `https://esi.evetech.net/latest/corporations/${corporationID}/structures/?` +
-      new URLSearchParams({
-        token: access_token,
-        page,
-      }),
-    {
-      method: 'GET',
-      headers: {
-        'User-Agent': userAgent,
-      },
-    }
-  )
-  if (!response.ok) {
-    const body = await response.text().catch(() => '')
-    throw new Error(
-      `corpStructures ${corporationID} page=${page}: ${response.status} ${response.statusText} body=${body.slice(0, 500)}`
-    )
-  }
-  const pages = response.headers.get('x-pages')
-  const data = await response.json()
-  return [data, pages]
-}
-
-export const corpWalletJournal = async (access_token, corporationID, division, page = 1) => {
-  const response = await fetch(
-    `https://esi.evetech.net/latest/corporations/${corporationID}/wallets/${division}/journal/?` +
-      new URLSearchParams({
-        token: access_token,
-        page,
-      }),
-    {
-      method: 'GET',
-      headers: {
-        'User-Agent': userAgent,
-      },
-    }
-  )
-  if (!response.ok) {
-    const body = await response.text().catch(() => '')
-    throw new Error(
-      `corpWalletJournal ${corporationID} div=${division} page=${page}: ${response.status} ${response.statusText} body=${body.slice(0, 500)}`
-    )
-  }
-  const pages = response.headers.get('x-pages')
-  const data = await response.json()
-  return [data, pages]
-}
-
-export const assetNames = async (access_token, characterID, ids) => {
-  const params = new URLSearchParams({
-    token: access_token,
+  const response = await fetch(`${ESI_BASE}${path}?${search}`, {
+    method,
+    headers,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
   })
-  const assetResponse = await fetch(
-    `https://esi.evetech.net/latest/characters/${characterID}/assets/names/?` + params,
-    {
-      method: 'POST',
-      headers: {
-        'User-Agent': userAgent,
-        'Content-Type': 'application/json',
-        'Cache-Control': 'no-cache',
-      },
-      body: JSON.stringify(ids),
-    }
-  )
-  // const data = await assetResponse.json()
-  return await assetResponse.json()
+  if (!response.ok) {
+    const text = await response.text().catch(() => '')
+    throw new Error(`${label ?? path}: ${response.status} ${response.statusText} body=${text.slice(0, 500)}`)
+  }
+  return response
 }
+
+const esiJson = async (path, opts) => (await esiFetch(path, opts)).json()
+
+const esiPaged = async (path, opts) => {
+  const response = await esiFetch(path, opts)
+  return [await response.json(), response.headers.get('x-pages')]
+}
+
+export const assets = (access_token, characterID, page = 1) =>
+  esiPaged(`/characters/${characterID}/assets/`, {
+    access_token,
+    params: { page },
+    label: `assets ${characterID} page=${page}`,
+  })
+
+export const transactions = (access_token, characterID) =>
+  esiJson(`/characters/${characterID}/wallet/transactions/`, {
+    access_token,
+    label: `transactions ${characterID}`,
+  })
+
+export const industryJobs = (access_token, characterID) =>
+  esiJson(`/characters/${characterID}/industry/jobs/`, {
+    access_token,
+    params: { include_completed: 'true' },
+    label: `industry jobs ${characterID}`,
+  })
+
+export const wallet = (access_token, characterID) =>
+  esiJson(`/characters/${characterID}/wallet/`, {
+    access_token,
+    label: `wallet ${characterID}`,
+  })
+
+export const character = (access_token, characterID) =>
+  esiJson(`/characters/${characterID}/`, {
+    access_token,
+    label: `character ${characterID}`,
+  })
+
+export const corpStructures = (access_token, corporationID, page = 1) =>
+  esiPaged(`/corporations/${corporationID}/structures/`, {
+    access_token,
+    params: { page },
+    label: `corpStructures ${corporationID} page=${page}`,
+  })
+
+export const corpWalletJournal = (access_token, corporationID, division, page = 1) =>
+  esiPaged(`/corporations/${corporationID}/wallets/${division}/journal/`, {
+    access_token,
+    params: { page },
+    label: `corpWalletJournal ${corporationID} div=${division} page=${page}`,
+  })
+
+export const assetNames = (access_token, characterID, ids) =>
+  esiJson(`/characters/${characterID}/assets/names/`, {
+    access_token,
+    method: 'POST',
+    body: ids,
+    label: `assetNames ${characterID}`,
+  })
