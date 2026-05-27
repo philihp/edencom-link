@@ -61,7 +61,7 @@ export const GET = async (request: NextRequest) => {
   const eve_character_id = Number(sub.split(':')[2])
 
   // why are we doing this, again? can this be deleted?
-  await sso.refreshAccessToken(refresh_token)
+  await sso.getAccessToken(refresh_token, true)
 
   const character_id = await upsertCharacter(supabase)({ user_id, owner, name, character_id: eve_character_id })
   const token_id = await upsertToken(supabase)({
