@@ -284,3 +284,51 @@ create policy "Users read structures for own corps"
 
 grant select on hangar.corp_structure to authenticated;
 grant all    on hangar.corp_structure to service_role;
+
+create table if not exists hangar.corp_wallet_journal (
+  corporation_id bigint not null,
+  division smallint not null,
+  entry_id bigint not null,
+  date timestamptz not null,
+  ref_type text not null,
+  amount numeric(20, 2),
+  balance numeric(20, 2),
+  reason text,
+  description text,
+  first_party_id bigint,
+  second_party_id bigint,
+  context_id bigint,
+  context_id_type text,
+  tax numeric(20, 2),
+  tax_receiver_id bigint,
+  seen_at timestamptz not null default now(),
+  primary key (corporation_id, division, entry_id)
+);
+create index if not exists corp_wallet_journal_corp_date_idx
+  on hangar.corp_wallet_journal (corporation_id, date desc);
+
+alter table hangar.corp_wallet_journal enable row level security;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_policies
+    where schemaname = 'hangar'
+      and tablename = 'corp_wallet_journal'
+      and policyname = 'Users read journal for own corps'
+  ) then
+    create policy "Users read journal for own corps"
+      on hangar.corp_wallet_journal
+      for select
+      to authenticated
+      using (
+        corporation_id in (
+          select corporation_id from hangar.character
+          where user_id = (select auth.uid()) and corporation_id is not null
+        )
+      );
+  end if;
+end $$;
+
+grant select on hangar.corp_wallet_journal to authenticated;
+grant all    on hangar.corp_wallet_journal to service_role;

@@ -11,6 +11,7 @@ export const scopes = [
   'esi-industry.read_character_jobs.v1',
   'esi-markets.read_character_orders.v1',
   'esi-corporations.read_structures.v1',
+  'esi-wallet.read_corporation_wallets.v1',
   // 'esi-characters.read_blueprints.v1',
 ]
 
