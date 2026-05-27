@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react'
 
-import { TypeName } from '../market/typeName'
 import { usePersist } from '../market/usePersist'
 import styles from './industry.module.css'
 
@@ -27,6 +26,7 @@ type ActiveJobsProps = {
   jobs: Job[]
   characters: Character[]
   initialNow: number
+  typeNames: Record<number, string>
 }
 
 const ACTIVITY_NAMES: Record<number, string> = {
@@ -64,7 +64,7 @@ const formatRemaining = (endIso: string, now: number) => {
   return `${minutes}m`
 }
 
-export const ActiveJobs = ({ jobs, characters, initialNow }: ActiveJobsProps) => {
+export const ActiveJobs = ({ jobs, characters, initialNow, typeNames }: ActiveJobsProps) => {
   const characterName: Record<string, string> = Object.fromEntries(characters.map((c) => [c.id, c.name]))
 
   const [characterId, setCharacterId] = usePersist<string>(CHARACTER_STORAGE_KEY, ALL_CHARACTERS, (raw) =>
@@ -116,11 +116,11 @@ export const ActiveJobs = ({ jobs, characters, initialNow }: ActiveJobsProps) =>
               <tr key={`job-${j.job_id}`}>
                 <td>{characterName[j.character_id] ?? '—'}</td>
                 <td>{ACTIVITY_NAMES[j.activity_id] ?? `#${j.activity_id}`}</td>
+                <td>{typeNames[Number(j.blueprint_type_id)] ?? `#${j.blueprint_type_id}`}</td>
                 <td>
-                  <TypeName typeID={Number(j.blueprint_type_id)} />
-                </td>
-                <td>
-                  {j.product_type_id != null ? <TypeName typeID={Number(j.product_type_id)} /> : '—'}
+                  {j.product_type_id != null
+                    ? (typeNames[Number(j.product_type_id)] ?? `#${j.product_type_id}`)
+                    : '—'}
                 </td>
                 <td>{j.runs}</td>
                 <td>{formatDate(j.start_date)}</td>

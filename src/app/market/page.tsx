@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation'
 
 import { createClient } from '@/utils/supabase/server'
+import { fetchTypeNames } from '../typeNames'
 import { RecentSales } from './recentSales'
 
 const MarketPage = async () => {
@@ -25,10 +26,12 @@ const MarketPage = async () => {
 
   const sortedCharacters = [...(characters ?? [])].sort((a, b) => a.name.localeCompare(b.name))
 
+  const typeNames = await fetchTypeNames((sales ?? []).map((s) => Number(s.type_id)))
+
   return (
     <>
       <h1>Market</h1>
-      <RecentSales sales={sales ?? []} characters={sortedCharacters} />
+      <RecentSales sales={sales ?? []} characters={sortedCharacters} typeNames={typeNames} />
     </>
   )
 }
