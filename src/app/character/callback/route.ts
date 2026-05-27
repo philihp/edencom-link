@@ -51,6 +51,7 @@ export const GET = async (request: NextRequest) => {
 
   const { searchParams } = new URL(request.url)
   const code = searchParams.get('code')
+  if (!code) throw new Error('no code on /character/callback')
   const { access_token, refresh_token, ...info } = await sso.getAccessToken(code)
   const {
     decoded_access_token: { name, owner, sub, scp = [], iat, exp },
@@ -60,7 +61,7 @@ export const GET = async (request: NextRequest) => {
   const eve_character_id = Number(sub.split(':')[2])
 
   // why are we doing this, again? can this be deleted?
-  await sso.getAccessToken(refresh_token, true)
+  await sso.refreshAccessToken(refresh_token)
 
   const character_id = await upsertCharacter(supabase)({ user_id, owner, name, character_id: eve_character_id })
   const token_id = await upsertToken(supabase)({

@@ -1,6 +1,6 @@
 import { pipe, reduce, pluck, range, splitEvery } from 'ramda'
 import { userAgent, assets, assetNames } from './esi.js'
-import SingleSignOn from './sso.js'
+import SingleSignOn from 'eve-sso'
 import { authenticate, selectCharacters, selectToken, upsertToken, upsertAssets } from './supabase.js'
 
 const EVE_CLIENT_ID = process.env.EVE_CLIENT_ID
@@ -26,7 +26,7 @@ const accessToken = async (character_id) => {
     access_token,
     refresh_token,
     decoded_access_token: { scp = [], iat, exp, sub },
-  } = await sso.getAccessToken(old_token, true)
+  } = await sso.refreshAccessToken(old_token)
   const characterID = sub.split(':')[2]
   await upsertToken({
     character_id,

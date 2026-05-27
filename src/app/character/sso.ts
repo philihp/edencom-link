@@ -1,4 +1,4 @@
-import SingleSignOn from '../../sso.js'
+import SingleSignOn from 'eve-sso'
 
 const EVE_CLIENT_ID = process.env.EVE_CLIENT_ID
 const EVE_SECRET_KEY = process.env.EVE_SECRET_KEY
@@ -16,6 +16,6 @@ export const scopes = [
 ]
 
 export const userAgent = 'Sir Cuddles <philihp@gmail.com> eve-hangar'
-export const sso = new SingleSignOn(EVE_CLIENT_ID, EVE_SECRET_KEY, EVE_CALLBACK_URL, {
+export const sso = new SingleSignOn(EVE_CLIENT_ID!, EVE_SECRET_KEY!, EVE_CALLBACK_URL!, {
   userAgent,
 })
