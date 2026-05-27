@@ -15,23 +15,12 @@ export const sudoSupabase = createClient(supabaseUrl, supabaseServiceKey, {
   },
 })
 
-export const sudoSupabaseAdmin = sudoSupabase.auth.admin
-
 export const authenticate = async () => {
   const { data, error } = await supabase.auth.signInWithPassword({
     email: supabaseUsername,
     password: supabasePassword,
   })
   return error ?? data
-}
-
-export const upsertCharacter = async (columns) => {
-  const response = await supabase
-    .schema('hangar')
-    .from('character')
-    .upsert(columns, { onConflict: 'user_id, owner' })
-    .select()
-  return response.data?.[0]?.id
 }
 
 export const upsertToken = async (columns) => {
