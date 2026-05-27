@@ -53,12 +53,12 @@ const StructuresPage = async () => {
   const list = (structures ?? []) as Structure[]
 
   // eslint-disable-next-line react-hooks/purity
-  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
   const { data: journal } = await supabase
     .schema('hangar')
     .from('corp_wallet_journal')
     .select('corporation_id, division, entry_id, date, ref_type, amount, balance, description, reason')
-    .gte('date', sevenDaysAgo)
+    .gte('date', thirtyDaysAgo)
     .order('date', { ascending: false })
 
   const journalEntries = (journal ?? []) as JournalEntry[]
@@ -106,7 +106,7 @@ const StructuresPage = async () => {
         </p>
       )}
 
-      <h2>Corp Wallet (last 7 days)</h2>
+      <h2>Corp Wallet (last 30 days)</h2>
       {journalEntries.length > 0 ? (
         <table>
           <thead>
@@ -135,7 +135,7 @@ const StructuresPage = async () => {
           </tbody>
         </table>
       ) : (
-        <p>No corp wallet activity in the last 7 days.</p>
+        <p>No corp wallet activity in the last 30 days.</p>
       )}
     </>
   )

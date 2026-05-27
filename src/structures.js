@@ -8,7 +8,7 @@ const EVE_CALLBACK_URL = process.env.EVE_CALLBACK_URL
 
 const STRUCTURES_SCOPE = 'esi-corporations.read_structures.v1'
 const WALLET_SCOPE = 'esi-wallet.read_corporation_wallets.v1'
-const JOURNAL_LOOKBACK_MS = 7 * 24 * 60 * 60 * 1000
+const JOURNAL_LOOKBACK_MS = 30 * 24 * 60 * 60 * 1000
 const WALLET_DIVISIONS = [1, 2, 3, 4, 5, 6, 7]
 
 const sso = new SingleSignOn(EVE_CLIENT_ID, EVE_SECRET_KEY, EVE_CALLBACK_URL, { userAgent })
