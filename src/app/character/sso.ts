@@ -15,7 +15,5 @@ export const scopes = [
   // 'esi-characters.read_blueprints.v1',
 ]
 
-export const userAgent = 'Sir Cuddles <philihp@gmail.com> eve-hangar'
-export const sso = new SingleSignOn(EVE_CLIENT_ID!, EVE_SECRET_KEY!, EVE_CALLBACK_URL!, {
-  userAgent,
-})
+export const userAgent = 'philihp@gmail.com eve-hangar discord:philihp'
+export const sso = new SingleSignOn(EVE_CLIENT_ID!, EVE_SECRET_KEY!, EVE_CALLBACK_URL!, userAgent)
