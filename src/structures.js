@@ -1,7 +1,6 @@
 import SingleSignOn from 'eve-sso'
 import { pullCorpWalletJournals } from './corpWalletJournal.js'
 import { character as fetchCharacter, corpStructures, corpWalletJournal, userAgent } from './esi.js'
-import SingleSignOn from './sso.js'
 import { sudoSupabase } from './supabase.js'
 
 const EVE_CLIENT_ID = process.env.EVE_CLIENT_ID
