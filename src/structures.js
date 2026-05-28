@@ -47,7 +47,8 @@ const execute = async () => {
     console.log(`[structures]   token ${t.id} character ${t.character_id} refresh ...${tail(t.refresh_token)}`)
   }
 
-  const seenCorps = new Set()
+  const seenStructureCorps = new Set()
+  const seenWalletCorps = new Set()
   for (const tokenRow of tokens ?? []) {
     const t0 = Date.now()
     const ctx = `character=${tokenRow.character_id} token=${tokenRow.id}`
@@ -87,70 +88,75 @@ const execute = async () => {
         console.log(`[structures] ${ctx}: character.corporation_id updated (status=${charUpdateStatus})`)
       }
 
-      if (seenCorps.has(corporation_id)) {
-        console.log(`[structures] ${ctx}: corp ${corporation_id} already pulled this run, skipping structures fetch`)
-        continue
-      }
-      seenCorps.add(corporation_id)
-
-      const all = []
-      console.log(`[structures] ${ctx}: fetching corp ${corporation_id} structures page 1`)
-      const [firstPage, pagesHeader] = await corpStructures(access_token, corporation_id, 1)
-      console.log(
-        `[structures] ${ctx}: corp ${corporation_id} page 1 returned ${firstPage?.length ?? 0} rows, x-pages=${pagesHeader}`
-      )
-      all.push(...firstPage)
-      const totalPages = Math.max(1, Number.parseInt(pagesHeader, 10) || 1)
-      for (let page = 2; page <= totalPages; page++) {
-        console.log(`[structures] ${ctx}: fetching corp ${corporation_id} structures page ${page}/${totalPages}`)
-        const [more] = await corpStructures(access_token, corporation_id, page)
-        console.log(`[structures] ${ctx}: corp ${corporation_id} page ${page} returned ${more?.length ?? 0} rows`)
-        all.push(...more)
-      }
-
-      const now = new Date().toISOString()
-      const rows = all.map((s) => ({
-        structure_id: s.structure_id,
-        corporation_id: s.corporation_id,
-        type_id: s.type_id,
-        system_id: s.system_id,
-        profile_id: s.profile_id ?? null,
-        name: s.name ?? null,
-        state: s.state ?? null,
-        fuel_expires: s.fuel_expires ?? null,
-        unanchors_at: s.unanchors_at ?? null,
-        reinforce_hour: s.reinforce_hour ?? null,
-        next_reinforce_hour: s.next_reinforce_hour ?? null,
-        next_reinforce_apply: s.next_reinforce_apply ?? null,
-        next_reinforce_weekday: s.next_reinforce_weekday ?? null,
-        services: s.services ?? null,
-        last_seen_at: now,
-        updated_at: now,
-      }))
-
-      if (rows.length > 0) {
-        console.log(
-          `[structures] ${ctx}: upserting ${rows.length} structure row(s) for corp ${corporation_id} sample=${JSON.stringify(rows[0])}`
-        )
-        const { error: upsertErr, status: upsertStatus } = await sudoSupabase
-          .schema('hangar')
-          .from('corp_structure')
-          .upsert(rows, { onConflict: 'structure_id' })
-        if (upsertErr) {
-          console.error(
-            `[structures] ${ctx}: upsert failed status=${upsertStatus} code=${upsertErr.code} message=${upsertErr.message} details=${upsertErr.details} hint=${upsertErr.hint}`
-          )
-          throw upsertErr
-        }
-        console.log(`[structures] ${ctx}: upsert ok (status=${upsertStatus})`)
+      if (seenStructureCorps.has(corporation_id)) {
+        console.log(`[structures] ${ctx}: corp ${corporation_id} structures already pulled this run, skipping`)
       } else {
-        console.log(`[structures] ${ctx}: corp ${corporation_id} returned zero structures, nothing to upsert`)
+        seenStructureCorps.add(corporation_id)
+
+        const all = []
+        console.log(`[structures] ${ctx}: fetching corp ${corporation_id} structures page 1`)
+        const [firstPage, pagesHeader] = await corpStructures(access_token, corporation_id, 1)
+        console.log(
+          `[structures] ${ctx}: corp ${corporation_id} page 1 returned ${firstPage?.length ?? 0} rows, x-pages=${pagesHeader}`
+        )
+        all.push(...firstPage)
+        const totalPages = Math.max(1, Number.parseInt(pagesHeader, 10) || 1)
+        for (let page = 2; page <= totalPages; page++) {
+          console.log(`[structures] ${ctx}: fetching corp ${corporation_id} structures page ${page}/${totalPages}`)
+          const [more] = await corpStructures(access_token, corporation_id, page)
+          console.log(`[structures] ${ctx}: corp ${corporation_id} page ${page} returned ${more?.length ?? 0} rows`)
+          all.push(...more)
+        }
+
+        const now = new Date().toISOString()
+        const rows = all.map((s) => ({
+          structure_id: s.structure_id,
+          corporation_id: s.corporation_id,
+          type_id: s.type_id,
+          system_id: s.system_id,
+          profile_id: s.profile_id ?? null,
+          name: s.name ?? null,
+          state: s.state ?? null,
+          fuel_expires: s.fuel_expires ?? null,
+          unanchors_at: s.unanchors_at ?? null,
+          reinforce_hour: s.reinforce_hour ?? null,
+          next_reinforce_hour: s.next_reinforce_hour ?? null,
+          next_reinforce_apply: s.next_reinforce_apply ?? null,
+          next_reinforce_weekday: s.next_reinforce_weekday ?? null,
+          services: s.services ?? null,
+          last_seen_at: now,
+          updated_at: now,
+        }))
+
+        if (rows.length > 0) {
+          console.log(
+            `[structures] ${ctx}: upserting ${rows.length} structure row(s) for corp ${corporation_id} sample=${JSON.stringify(rows[0])}`
+          )
+          const { error: upsertErr, status: upsertStatus } = await sudoSupabase
+            .schema('hangar')
+            .from('corp_structure')
+            .upsert(rows, { onConflict: 'structure_id' })
+          if (upsertErr) {
+            console.error(
+              `[structures] ${ctx}: upsert failed status=${upsertStatus} code=${upsertErr.code} message=${upsertErr.message} details=${upsertErr.details} hint=${upsertErr.hint}`
+            )
+            throw upsertErr
+          }
+          console.log(`[structures] ${ctx}: upsert ok (status=${upsertStatus})`)
+        } else {
+          console.log(`[structures] ${ctx}: corp ${corporation_id} returned zero structures, nothing to upsert`)
+        }
+
+        const dt = Date.now() - t0
+        console.log(`[structures] ${ctx}: done corp ${corporation_id} ${rows.length} fetched in ${dt}ms`)
       }
 
-      const dt = Date.now() - t0
-      console.log(`[structures] ${ctx}: done corp ${corporation_id} ${rows.length} fetched in ${dt}ms`)
-
-      if (scope.includes(WALLET_SCOPE)) {
+      if (!scope.includes(WALLET_SCOPE)) {
+        console.log(`[structures] ${ctx}: corp ${corporation_id} token lacks ${WALLET_SCOPE}, skipping wallet journal`)
+      } else if (seenWalletCorps.has(corporation_id)) {
+        console.log(`[structures] ${ctx}: corp ${corporation_id} wallet journal already pulled this run, skipping`)
+      } else {
+        seenWalletCorps.add(corporation_id)
         await pullCorpWalletJournals({ access_token, corporation_id, ctx })
       }
     } catch (e) {
