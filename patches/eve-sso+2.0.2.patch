@@ -1,0 +1,15 @@
+diff --git a/node_modules/eve-sso/dist/esm/index.js b/node_modules/eve-sso/dist/esm/index.js
+index 59bc880..0ea6e85 100644
+--- a/node_modules/eve-sso/dist/esm/index.js
++++ b/node_modules/eve-sso/dist/esm/index.js
+@@ -1,7 +1,9 @@
+ import formUrlEncoded from 'form-urlencoded';
+ import jwt from 'jsonwebtoken';
+ import jwks from 'jwks-rsa';
+-const { name, version, homepage } = require('../package');
++const name = 'eve-sso';
++const version = '2.0.2';
++const homepage = 'http://github.com/philihp/eve-sso';
+ export class HTTPFetchError extends Error {
+     response;
+     constructor(response) {

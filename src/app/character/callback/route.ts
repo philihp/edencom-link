@@ -53,9 +53,8 @@ export const GET = async (request: NextRequest) => {
   const code = searchParams.get('code')
   if (!code) throw new Error('no code on /character/callback')
   const { access_token, refresh_token, ...info } = await sso.getAccessToken(code)
-  const {
-    decoded_access_token: { name, owner, sub, scp = [], iat, exp },
-  } = info
+  const { name, owner, sub, scp = [], exp } = info.decoded_access_token
+  const { iat } = info.decoded_access_token as unknown as { iat: number }
   const issued_at = new Date(iat * 1000).toISOString()
   const expires_at = new Date(exp * 1000).toISOString()
   const eve_character_id = Number(sub.split(':')[2])

@@ -28,6 +28,7 @@
     "refresh": "node src/refresh.js",
     "lint": "eslint .",
     "ping": "node src/ping-db.js",
+    "postinstall": "patch-package",
     "prepare": "husky",
     "pretty": "prettier --write src/",
     "start": "next start"
@@ -45,6 +46,7 @@
     "eslint-config-next": "16.2.6",
     "husky": "9.1.7",
     "lint-staged": "17.0.5",
+    "patch-package": "^8.0.1",
     "prettier": "3.8.3",
     "supabase": "2.101.0",
     "typescript": "6.0.3",
