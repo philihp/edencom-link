@@ -1,5 +1,6 @@
+import SingleSignOn from 'eve-sso'
 import { pullCorpWalletJournals } from './corpWalletJournal.js'
-import { character as fetchCharacter, corpStructures, userAgent } from './esi.js'
+import { character as fetchCharacter, corpStructures, corpWalletJournal, userAgent } from './esi.js'
 import SingleSignOn from './sso.js'
 import { sudoSupabase } from './supabase.js'
 
@@ -10,7 +11,7 @@ const EVE_CALLBACK_URL = process.env.EVE_CALLBACK_URL
 const STRUCTURES_SCOPE = 'esi-corporations.read_structures.v1'
 const WALLET_SCOPE = 'esi-wallet.read_corporation_wallets.v1'
 
-const sso = new SingleSignOn(EVE_CLIENT_ID, EVE_SECRET_KEY, EVE_CALLBACK_URL, { userAgent })
+const sso = new SingleSignOn(EVE_CLIENT_ID, EVE_SECRET_KEY, EVE_CALLBACK_URL, userAgent)
 
 const tail = (s) => (typeof s === 'string' && s.length > 4 ? s.slice(-4) : '????')
 

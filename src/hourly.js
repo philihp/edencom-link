@@ -1,5 +1,5 @@
 import { industryJobs, transactions, userAgent, wallet } from './esi.js'
-import SingleSignOn from './sso.js'
+import SingleSignOn from 'eve-sso'
 import { sudoSupabase } from './supabase.js'
 
 const EVE_CLIENT_ID = process.env.EVE_CLIENT_ID
@@ -9,7 +9,7 @@ const EVE_CALLBACK_URL = process.env.EVE_CALLBACK_URL
 const WALLET_SCOPE = 'esi-wallet.read_character_wallet.v1'
 const INDUSTRY_SCOPE = 'esi-industry.read_character_jobs.v1'
 
-const sso = new SingleSignOn(EVE_CLIENT_ID, EVE_SECRET_KEY, EVE_CALLBACK_URL, { userAgent })
+const sso = new SingleSignOn(EVE_CLIENT_ID, EVE_SECRET_KEY, EVE_CALLBACK_URL, userAgent)
 
 const refreshToken = async (tokenRow) => {
   const refreshed = await sso.getAccessToken(tokenRow.refresh_token, true)

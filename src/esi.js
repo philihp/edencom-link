@@ -1,4 +1,4 @@
-export const userAgent = 'Sir Cuddles <philihp@gmail.com> eve-hangar'
+export const userAgent = 'philihp@gmail.com eve-hangar discord:philihp'
 
 const ESI_BASE = 'https://esi.evetech.net/latest'
 

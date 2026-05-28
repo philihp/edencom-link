@@ -1,13 +1,13 @@
 import { pipe, reduce, pluck, range, splitEvery } from 'ramda'
 import { userAgent, assets, assetNames } from './esi.js'
-import SingleSignOn from './sso.js'
+import SingleSignOn from 'eve-sso'
 import { authenticate, selectCharacters, selectToken, upsertToken, upsertAssets } from './supabase.js'
 
 const EVE_CLIENT_ID = process.env.EVE_CLIENT_ID
 const EVE_SECRET_KEY = process.env.EVE_SECRET_KEY
 const EVE_CALLBACK_URL = process.env.EVE_CALLBACK_URL
 
-const sso = new SingleSignOn(EVE_CLIENT_ID, EVE_SECRET_KEY, EVE_CALLBACK_URL, { userAgent })
+const sso = new SingleSignOn(EVE_CLIENT_ID, EVE_SECRET_KEY, EVE_CALLBACK_URL, userAgent)
 
 const scopes = [
   'publicData',
