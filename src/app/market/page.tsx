@@ -26,12 +26,12 @@ const MarketPage = async () => {
 
   const sortedCharacters = [...(characters ?? [])].sort((a, b) => a.name.localeCompare(b.name))
 
-  const typeNames = await fetchTypeNames((sales ?? []).map((s) => Number(s.type_id)))
+  const typeNamesPromise = fetchTypeNames((sales ?? []).map((s) => Number(s.type_id)))
 
   return (
     <>
       <h1>Market</h1>
-      <RecentSales sales={sales ?? []} characters={sortedCharacters} typeNames={typeNames} />
+      <RecentSales sales={sales ?? []} characters={sortedCharacters} typeNamesPromise={typeNamesPromise} />
     </>
   )
 }

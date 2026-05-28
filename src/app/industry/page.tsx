@@ -34,12 +34,8 @@ const IndustryPage = async () => {
   )
 
   const jobRows = (jobs ?? []) as Job[]
-  const typeNames = await fetchTypeNames(
-    jobRows.flatMap((j) => {
-      const ids = [Number(j.blueprint_type_id)]
-      if (j.product_type_id != null) ids.push(Number(j.product_type_id))
-      return ids
-    })
+  const typeNamesPromise = fetchTypeNames(
+    jobRows.flatMap((j) => (j.product_type_id != null ? [Number(j.product_type_id)] : []))
   )
 
   // eslint-disable-next-line react-hooks/purity
@@ -52,7 +48,7 @@ const IndustryPage = async () => {
         jobs={jobRows}
         characters={sortedCharacters}
         initialNow={initialNow}
-        typeNames={typeNames}
+        typeNamesPromise={typeNamesPromise}
         stationNames={stationNames}
       />
     </>
