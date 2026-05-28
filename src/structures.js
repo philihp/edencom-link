@@ -1,5 +1,7 @@
-import { character as fetchCharacter, corpStructures, corpWalletJournal, userAgent } from './esi.js'
 import SingleSignOn from 'eve-sso'
+import { pullCorpWalletJournals } from './corpWalletJournal.js'
+import { character as fetchCharacter, corpStructures, corpWalletJournal, userAgent } from './esi.js'
+import SingleSignOn from './sso.js'
 import { sudoSupabase } from './supabase.js'
 
 const EVE_CLIENT_ID = process.env.EVE_CLIENT_ID
@@ -8,8 +10,6 @@ const EVE_CALLBACK_URL = process.env.EVE_CALLBACK_URL
 
 const STRUCTURES_SCOPE = 'esi-corporations.read_structures.v1'
 const WALLET_SCOPE = 'esi-wallet.read_corporation_wallets.v1'
-const JOURNAL_LOOKBACK_MS = 30 * 24 * 60 * 60 * 1000
-const WALLET_DIVISIONS = [1, 2, 3, 4, 5, 6, 7]
 
 const sso = new SingleSignOn(EVE_CLIENT_ID, EVE_SECRET_KEY, EVE_CALLBACK_URL, userAgent)
 
@@ -152,53 +152,7 @@ const execute = async () => {
       console.log(`[structures] ${ctx}: done corp ${corporation_id} ${rows.length} fetched in ${dt}ms`)
 
       if (scope.includes(WALLET_SCOPE)) {
-        const cutoff = Date.now() - JOURNAL_LOOKBACK_MS
-        for (const division of WALLET_DIVISIONS) {
-          const journalRows = []
-          try {
-            for (let page = 1; ; page++) {
-              const [entries, pagesHeader] = await corpWalletJournal(access_token, corporation_id, division, page)
-              if (!Array.isArray(entries) || entries.length === 0) break
-              let oldestMs = Infinity
-              for (const e of entries) {
-                const ms = new Date(e.date).getTime()
-                if (ms < oldestMs) oldestMs = ms
-                if (ms < cutoff) continue
-                journalRows.push({
-                  corporation_id,
-                  division,
-                  entry_id: e.id,
-                  date: e.date,
-                  ref_type: e.ref_type,
-                  amount: e.amount ?? null,
-                  balance: e.balance ?? null,
-                  reason: e.reason ?? null,
-                  description: e.description ?? null,
-                  first_party_id: e.first_party_id ?? null,
-                  second_party_id: e.second_party_id ?? null,
-                  context_id: e.context_id ?? null,
-                  context_id_type: e.context_id_type ?? null,
-                  tax: e.tax ?? null,
-                  tax_receiver_id: e.tax_receiver_id ?? null,
-                })
-              }
-              const totalPages = Math.max(1, Number.parseInt(pagesHeader, 10) || 1)
-              if (oldestMs < cutoff || page >= totalPages) break
-            }
-            if (journalRows.length > 0) {
-              const { error: jErr } = await sudoSupabase
-                .schema('hangar')
-                .from('corp_wallet_journal')
-                .upsert(journalRows, { onConflict: 'corporation_id,division,entry_id', ignoreDuplicates: true })
-              if (jErr) throw jErr
-            }
-            console.log(`[corp-wallet] ${ctx}: corp ${corporation_id} div ${division} ${journalRows.length} entries`)
-          } catch (jErr) {
-            console.error(
-              `[corp-wallet] ${ctx}: corp ${corporation_id} div ${division} FAILED message=${jErr?.message}`
-            )
-          }
-        }
+        await pullCorpWalletJournals({ access_token, corporation_id, ctx })
       }
     } catch (e) {
       const dt = Date.now() - t0
