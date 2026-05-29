@@ -25,6 +25,14 @@ const IndustryPage = async () => {
 
   const sortedCharacters = [...(characters ?? [])].sort((a, b) => a.name.localeCompare(b.name))
 
+  // Map structure (station) ids to their names so the jobs table can link to them.
+  const { data: structures } = await supabase.schema('hangar').from('corp_structure').select('structure_id, name')
+  const stationNames: Record<string, string> = Object.fromEntries(
+    ((structures ?? []) as Array<{ structure_id: number | string; name: string | null }>)
+      .filter((s) => s.name != null)
+      .map((s) => [String(s.structure_id), s.name as string])
+  )
+
   const jobRows = (jobs ?? []) as Job[]
   const typeNames = await fetchTypeNames(
     jobRows.flatMap((j) => {
@@ -40,7 +48,13 @@ const IndustryPage = async () => {
   return (
     <>
       <h1>Industry</h1>
-      <ActiveJobs jobs={jobRows} characters={sortedCharacters} initialNow={initialNow} typeNames={typeNames} />
+      <ActiveJobs
+        jobs={jobRows}
+        characters={sortedCharacters}
+        initialNow={initialNow}
+        typeNames={typeNames}
+        stationNames={stationNames}
+      />
     </>
   )
 }
