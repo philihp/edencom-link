@@ -2,10 +2,11 @@
 
 import { useEffect, useState } from 'react'
 
+import { DateTime } from '../DateTime'
 import { usePersist } from '../market/usePersist'
 import retro from '../retro.module.css'
 import styles from './industry.module.css'
-import { ACTIVITY_NAMES, formatDate } from './jobFields'
+import { ACTIVITY_NAMES } from './jobFields'
 
 export type Job = {
   job_id: number | string
@@ -83,7 +84,7 @@ export const ActiveJobs = ({ jobs, characters, initialNow, typeNames }: ActiveJo
       </div>
       {filtered.length > 0 ? (
         <>
-          <table className={retro.retro} border={3} cellPadding={0} cellSpacing={2}>
+          <table className={retro.retro} border={3} cellPadding={2} cellSpacing={0}>
             <thead>
               <tr>
                 <th>Character</th>
@@ -110,8 +111,12 @@ export const ActiveJobs = ({ jobs, characters, initialNow, typeNames }: ActiveJo
                   </td>
                   <td>{j.runs}</td>
                   <td>{(j.station_id ?? j.facility_id) != null ? String(j.station_id ?? j.facility_id) : '—'}</td>
-                  <td>{formatDate(j.start_date)}</td>
-                  <td>{formatDate(j.end_date)}</td>
+                  <td>
+                    <DateTime value={j.start_date} />
+                  </td>
+                  <td>
+                    <DateTime value={j.end_date} />
+                  </td>
                   <td>{formatRemaining(j.end_date, now)}</td>
                 </tr>
               ))}
