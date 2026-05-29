@@ -3,7 +3,7 @@
 }
 
 .welcome {
-  border: 1px solid var(--clay);
+  border: 1px solid var(--accent);
   border-radius: var(--radius);
   background: var(--paper-raised);
   padding: 18px 20px;
@@ -18,7 +18,7 @@
 }
 
 .spark {
-  color: var(--clay);
+  color: var(--accent);
   margin-right: 8px;
 }
 
@@ -42,7 +42,7 @@
 }
 
 .caret {
-  color: var(--clay);
+  color: var(--accent);
   font-weight: 600;
 }
 

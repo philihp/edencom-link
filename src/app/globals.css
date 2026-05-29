@@ -1,7 +1,7 @@
 /*
  * Claude Code inspired theme.
  *
- * Warm Anthropic palette (cream paper + clay/coral accent). Following the
+ * Warm Anthropic palette (cream paper + green accent). Following the
  * claude.ai convention: a sans for static UI (labels, chrome, headers), a
  * Claude-style serif (Tiempos/Copernicus, with a free serif fallback) for the
  * dynamic text specific to a thing (names, titles), and a monospace face for
@@ -18,10 +18,10 @@
   --line: #ddd9cc;
   --line-soft: #e8e5da;
 
-  /* Claude clay / coral accent */
-  --clay: #d97757;
-  --clay-strong: #c45c3a;
-  --clay-tint: #f6e9e2;
+  /* Green accent */
+  --accent: #2f8f4f;
+  --accent-strong: #246b3c;
+  --accent-tint: #e3efe4;
 
   /* Hyperlinks use the classic browser blue / purple. */
   --link: #0000ee;
@@ -55,9 +55,9 @@
     --ink-faint: #8a877e;
     --line: #38342d;
     --line-soft: #2d2a24;
-    --clay: #e08a6c;
-    --clay-strong: #d97757;
-    --clay-tint: #2e241f;
+    --accent: #6cc486;
+    --accent-strong: #57b673;
+    --accent-tint: #23301f;
     --link: #6ea8fe;
     --link-visited: #c699f7;
   }
@@ -185,8 +185,8 @@ button {
   font-family: var(--sans);
   font-size: 13px;
   color: var(--paper-raised);
-  background: var(--clay);
-  border: 1px solid var(--clay-strong);
+  background: var(--accent);
+  border: 1px solid var(--accent-strong);
   border-radius: var(--radius-sm);
   cursor: pointer;
   transition:
@@ -195,7 +195,7 @@ button {
 }
 
 button:hover {
-  background: var(--clay-strong);
+  background: var(--accent-strong);
 }
 
 button:active {
@@ -224,8 +224,8 @@ input:focus,
 select:focus,
 textarea:focus {
   outline: none;
-  border-color: var(--clay);
-  box-shadow: 0 0 0 2px var(--clay-tint);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-tint);
 }
 
 label {
@@ -233,5 +233,5 @@ label {
 }
 
 ::selection {
-  background: var(--clay-tint);
+  background: var(--accent-tint);
 }
