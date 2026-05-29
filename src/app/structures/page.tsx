@@ -49,7 +49,9 @@ const StructuresPage = async () => {
   const list = (structures ?? []) as Structure[]
 
   // Total up every transaction's amount (unit price × quantity) per structure it happened at.
-  const structureIds = list.map((s) => s.structure_id)
+  // structure_id / location_id are bigints, which PostgREST may return as strings; key the map by
+  // string on both sides so the lookup doesn't silently miss (and totals don't all read as zero).
+  const structureIds = list.map((s) => Number(s.structure_id))
   const { data: transactions } = structureIds.length
     ? await supabase
         .schema('hangar')
@@ -58,9 +60,9 @@ const StructuresPage = async () => {
         .in('location_id', structureIds)
     : { data: [] }
 
-  const totalByStructure = new Map<number, number>()
+  const totalByStructure = new Map<string, number>()
   for (const t of (transactions ?? []) as Transaction[]) {
-    const id = Number(t.location_id)
+    const id = String(t.location_id)
     totalByStructure.set(id, (totalByStructure.get(id) ?? 0) + Number(t.unit_price) * Number(t.quantity))
   }
 
@@ -95,7 +97,7 @@ const StructuresPage = async () => {
                   {/* Upwell structures share their structure_id with the station/facility id industry jobs run at. */}
                   <td>{s.structure_id}</td>
                   <td>{s.name ?? '—'}</td>
-                  <td>{formatIsk(totalByStructure.get(s.structure_id) ?? 0)}</td>
+                  <td>{formatIsk(totalByStructure.get(String(s.structure_id)) ?? 0)}</td>
                   <td>{s.corporation_id}</td>
                   <td>{s.type_id}</td>
                   <td>{s.system_id}</td>
