@@ -26,6 +26,7 @@ type JobRow = {
 
 type JournalRow = {
   amount: number | string | null
+  context_id: number | string | null
   description: string | null
 }
 
@@ -60,10 +61,11 @@ const StructuresPage = async () => {
 
   const list = (structures ?? []) as Structure[]
 
-  // Tax revenue each structure generates. Each industry-tax journal entry references a job by id in
-  // its description; outer-join those job ids to the industry_job table to find the structure
-  // (station_id, falling back to facility_id) the job is installed in, then sum the journal amounts.
-  // Bigint ids can come back from PostgREST as strings, so key every map by string.
+  // Tax revenue each structure generates. Each industry-tax journal entry references its job via
+  // context_id (context_id_type = industry_job_id); outer-join those job ids to the industry_job
+  // table to find the structure (station_id, falling back to facility_id) the job is installed in,
+  // then sum the journal amounts. Bigint ids can come back from PostgREST as strings, so key every
+  // map by string.
   const structureIds = list.map((s) => Number(s.structure_id))
   const { data: jobs } = structureIds.length
     ? await supabase
@@ -103,18 +105,21 @@ const StructuresPage = async () => {
   const { data: journal } = await supabase
     .schema('hangar')
     .from('corp_wallet_journal')
-    .select('amount, description')
+    .select('amount, context_id, description')
     .eq('ref_type', 'industry_job_tax')
 
   const totalByStructure = new Map<string, number>()
   let unaccounted = 0
   for (const entry of (journal ?? []) as JournalRow[]) {
     const amount = Number(entry.amount ?? 0)
-    // The job id is interpolated into the description; find the token that joins to a known job.
-    let structureId: string | undefined
-    for (const token of entry.description?.match(/\d+/g) ?? []) {
-      structureId = structureByJob.get(token)
-      if (structureId) break
+    // The job id is the entry's context_id; fall back to parsing it out of the description for older
+    // entries (or any ref_type variants) where ESI didn't populate context_id.
+    let structureId = entry.context_id != null ? structureByJob.get(String(entry.context_id)) : undefined
+    if (!structureId) {
+      for (const token of entry.description?.match(/\d+/g) ?? []) {
+        structureId = structureByJob.get(token)
+        if (structureId) break
+      }
     }
     if (structureId) {
       totalByStructure.set(structureId, (totalByStructure.get(structureId) ?? 0) + amount)
