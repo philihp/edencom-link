@@ -96,12 +96,12 @@ const StructuresPage = async () => {
     }
   }
 
-  // Revenue from structure clone bays (jump clone installation fees).
+  // Revenue from structure clone bays (jump clone installation and activation fees).
   const { data: cloneJournal } = await supabase
     .schema('hangar')
     .from('corp_wallet_journal')
     .select('amount')
-    .eq('ref_type', 'jump_clone_installation_fee')
+    .in('ref_type', ['jump_clone_installation_fee', 'jump_clone_activation_fee'])
 
   const cloneRevenue = ((cloneJournal ?? []) as Array<{ amount: number | string | null }>).reduce(
     (sum, entry) => sum + Number(entry.amount ?? 0),
