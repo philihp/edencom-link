@@ -72,18 +72,27 @@ const StructuresPage = async () => {
     if (structureId != null) structureByJob.set(String(j.job_id), String(structureId))
   }
 
-  const { data: journal } = await supabase.schema('hangar').from('corp_wallet_journal').select('amount, description')
+  const { data: journal } = await supabase
+    .schema('hangar')
+    .from('corp_wallet_journal')
+    .select('amount, description')
+    .eq('ref_type', 'industry_job_tax')
 
   const totalByStructure = new Map<string, number>()
+  let unaccounted = 0
   for (const entry of (journal ?? []) as JournalRow[]) {
-    if (!entry.description) continue
+    const amount = Number(entry.amount ?? 0)
     // The job id is interpolated into the description; find the token that joins to a known job.
-    for (const token of entry.description.match(/\d+/g) ?? []) {
-      const structureId = structureByJob.get(token)
-      if (structureId) {
-        totalByStructure.set(structureId, (totalByStructure.get(structureId) ?? 0) + Number(entry.amount ?? 0))
-        break
-      }
+    let structureId: string | undefined
+    for (const token of entry.description?.match(/\d+/g) ?? []) {
+      structureId = structureByJob.get(token)
+      if (structureId) break
+    }
+    if (structureId) {
+      totalByStructure.set(structureId, (totalByStructure.get(structureId) ?? 0) + amount)
+    } else {
+      // Tax we received but can't tie to one of our structures (e.g. jobs not in our table).
+      unaccounted += amount
     }
   }
 
@@ -137,6 +146,7 @@ const StructuresPage = async () => {
               ))}
             </tbody>
           </table>
+          <p>Unaccounted tax revenue: {formatIsk(unaccounted)} ISK</p>
           <p className={retro.bestViewedIn}>Best viewed in Netscape Navigator 3.0 at 800&times;600</p>
         </>
       ) : (
