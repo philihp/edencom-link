@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation'
 
 import { createClient } from '@/utils/supabase/server'
+import { DateTime } from '../DateTime'
 import retro from '../retro.module.css'
 
 type Structure = {
@@ -69,7 +70,7 @@ const StructuresPage = async () => {
       <h1>Structures</h1>
       {list.length > 0 ? (
         <>
-          <table className={retro.retro} border={3} cellPadding={0} cellSpacing={2}>
+          <table className={retro.retro} border={3} cellPadding={2} cellSpacing={0}>
             <thead>
               <tr>
                 <th>Structure ID</th>
@@ -98,10 +99,16 @@ const StructuresPage = async () => {
                   <td>{s.type_id}</td>
                   <td>{s.system_id}</td>
                   <td>{s.state ?? '—'}</td>
-                  <td>{s.fuel_expires ?? '—'}</td>
-                  <td>{s.unanchors_at ?? '—'}</td>
+                  <td>
+                    <DateTime value={s.fuel_expires} />
+                  </td>
+                  <td>
+                    <DateTime value={s.unanchors_at} />
+                  </td>
                   <td>{s.services?.map((svc) => svc.name).join(', ') ?? '—'}</td>
-                  <td>{s.last_seen_at}</td>
+                  <td>
+                    <DateTime value={s.last_seen_at} />
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -117,7 +124,7 @@ const StructuresPage = async () => {
 
       <h2>Corp Wallet (last 30 days)</h2>
       {journalEntries.length > 0 ? (
-        <table className={retro.retro} border={3} cellPadding={0} cellSpacing={2}>
+        <table className={retro.retro} border={3} cellPadding={2} cellSpacing={0}>
           <thead>
             <tr>
               <th>Date</th>
@@ -132,7 +139,9 @@ const StructuresPage = async () => {
           <tbody>
             {journalEntries.map((e) => (
               <tr key={`journal-${e.corporation_id}-${e.division}-${e.entry_id}`}>
-                <td>{e.date}</td>
+                <td>
+                  <DateTime value={e.date} />
+                </td>
                 <td>{e.corporation_id}</td>
                 <td>{e.division}</td>
                 <td>{e.ref_type}</td>

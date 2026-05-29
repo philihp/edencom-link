@@ -2,7 +2,8 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 
 import { createClient } from '@/utils/supabase/server'
-import { ACTIVITY_NAMES, formatDate } from '../../industry/jobFields'
+import { DateTime } from '../../DateTime'
+import { ACTIVITY_NAMES } from '../../industry/jobFields'
 import { fetchTypeNames } from '../../typeNames'
 import retro from '../../retro.module.css'
 
@@ -116,7 +117,7 @@ const StructurePage = async ({ params }: StructureParams) => {
         <Link href="/structures">&laquo; Back to Structures</Link>
       </p>
 
-      <table className={retro.retro} border={3} cellPadding={0} cellSpacing={2}>
+      <table className={retro.retro} border={3} cellPadding={2} cellSpacing={0}>
         <tbody>
           <tr>
             <th>Structure ID</th>
@@ -150,11 +151,15 @@ const StructurePage = async ({ params }: StructureParams) => {
           </tr>
           <tr>
             <th>Fuel Expires</th>
-            <td>{show(s.fuel_expires)}</td>
+            <td>
+              <DateTime value={s.fuel_expires} />
+            </td>
           </tr>
           <tr>
             <th>Unanchors At</th>
-            <td>{show(s.unanchors_at)}</td>
+            <td>
+              <DateTime value={s.unanchors_at} />
+            </td>
           </tr>
           <tr>
             <th>Reinforce Hour</th>
@@ -170,7 +175,9 @@ const StructurePage = async ({ params }: StructureParams) => {
           </tr>
           <tr>
             <th>Next Reinforce Apply</th>
-            <td>{show(s.next_reinforce_apply)}</td>
+            <td>
+              <DateTime value={s.next_reinforce_apply} />
+            </td>
           </tr>
           <tr>
             <th>Services</th>
@@ -178,18 +185,22 @@ const StructurePage = async ({ params }: StructureParams) => {
           </tr>
           <tr>
             <th>Last Seen</th>
-            <td>{s.last_seen_at}</td>
+            <td>
+              <DateTime value={s.last_seen_at} />
+            </td>
           </tr>
           <tr>
             <th>Updated At</th>
-            <td>{show(s.updated_at)}</td>
+            <td>
+              <DateTime value={s.updated_at} />
+            </td>
           </tr>
         </tbody>
       </table>
 
       <h2>Industry Jobs</h2>
       {jobs.length > 0 ? (
-        <table className={retro.retro} border={3} cellPadding={0} cellSpacing={2}>
+        <table className={retro.retro} border={3} cellPadding={2} cellSpacing={0}>
           <thead>
             <tr>
               <th>Character</th>
@@ -213,8 +224,12 @@ const StructurePage = async ({ params }: StructureParams) => {
                 </td>
                 <td>{j.runs}</td>
                 <td>{j.status}</td>
-                <td>{formatDate(j.start_date)}</td>
-                <td>{formatDate(j.end_date)}</td>
+                <td>
+                  <DateTime value={j.start_date} />
+                </td>
+                <td>
+                  <DateTime value={j.end_date} />
+                </td>
               </tr>
             ))}
           </tbody>

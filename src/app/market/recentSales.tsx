@@ -1,5 +1,6 @@
 'use client'
 
+import { DateTime } from '../DateTime'
 import styles from './market.module.css'
 import { usePersist } from './usePersist'
 
@@ -55,17 +56,6 @@ const IskPrice = ({ raw }: { raw: string | number }) => {
   )
 }
 
-const formatDate = (iso: string) =>
-  new Intl.DateTimeFormat('sv-SE', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false,
-  }).format(new Date(iso))
-
 export const RecentSales = ({ sales, characters, typeNames }: RecentSalesProps) => {
   const characterName: Record<string, string> = Object.fromEntries(characters.map((c) => [c.id, c.name]))
 
@@ -75,13 +65,13 @@ export const RecentSales = ({ sales, characters, typeNames }: RecentSalesProps) 
   })
 
   const [characterId, setCharacterId] = usePersist<string>(CHARACTER_STORAGE_KEY, ALL_CHARACTERS, (raw) =>
-    raw === ALL_CHARACTERS || characters.some((c) => c.id === raw) ? raw : undefined,
+    raw === ALL_CHARACTERS || characters.some((c) => c.id === raw) ? raw : undefined
   )
 
   const filtered = sales.filter(
     (s) =>
       Number(s.unit_price) * Number(s.quantity) >= threshold &&
-      (characterId === ALL_CHARACTERS || s.character_id === characterId),
+      (characterId === ALL_CHARACTERS || s.character_id === characterId)
   )
 
   return (
@@ -137,8 +127,12 @@ export const RecentSales = ({ sales, characters, typeNames }: RecentSalesProps) 
                 <td>
                   <IskPrice raw={Number(s.unit_price) * Number(s.quantity)} />
                 </td>
-                <td>{formatDate(s.date)}</td>
-                <td>{formatDate(s.seen_at)}</td>
+                <td>
+                  <DateTime value={s.date} />
+                </td>
+                <td>
+                  <DateTime value={s.seen_at} />
+                </td>
               </tr>
             ))}
           </tbody>
