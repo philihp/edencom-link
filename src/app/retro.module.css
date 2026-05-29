@@ -1,60 +1,39 @@
 /*
- * Retro "HTML 3.2 / Netscape Navigator" table styling.
- * Replicates the beveled, silver-and-navy look of a table hand-written
- * in 1996 — back when <FONT> tags roamed the earth and every page was
- * "Best viewed in Netscape Navigator 3.0 at 800x600".
+ * Subtle retro table styling — beveled borders reminiscent of an old
+ * HTML table, but with default text and no loud color fills.
  */
 
 .retro {
-  font-family: 'Times New Roman', Times, serif;
-  font-size: 12pt;
-  background: #c0c0c0;
-  color: #000080;
-  border: 4px outset #c0c0c0;
+  border: 2px outset #c0c0c0;
   border-spacing: 2px;
   margin: 12pt 0;
 }
 
 .retro caption {
-  font-family: 'Comic Sans MS', 'Times New Roman', cursive, serif;
   font-weight: bold;
-  font-size: 14pt;
-  color: #ff0000;
-  background: #ffff00;
-  border: 3px ridge #808080;
+  border: 1.5px ridge #808080;
   padding: 4pt;
   margin-bottom: 4pt;
 }
 
 .retro th {
-  font-family: Arial, Helvetica, sans-serif;
-  background: #000080;
-  color: #ffff00;
-  border: 3px outset #c0c0c0;
+  border: 1.5px outset #c0c0c0;
   padding: 3pt 8pt;
   text-align: left;
   white-space: nowrap;
 }
 
 .retro td {
-  background: #ffffff;
-  color: #000000;
-  border: 2px inset #c0c0c0;
+  border: 1px inset #c0c0c0;
   padding: 2pt 8pt;
   text-align: left;
 }
 
-/* Station / structure IDs get the classic green terminal monospace look. */
+/* IDs keep a bolder weight to stand out. */
 .id {
-  font-family: 'Courier New', Courier, monospace;
   font-weight: bold;
-  color: #008000;
 }
 
-/* The obligatory <BLINK>-flavored "best viewed in Netscape" disclaimer. */
 .bestViewedIn {
-  font-family: 'Comic Sans MS', 'Times New Roman', cursive, serif;
-  font-size: 9pt;
-  color: #808080;
   margin: 4pt 0 16pt;
 }
