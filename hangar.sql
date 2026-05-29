@@ -285,6 +285,47 @@ create policy "Users read structures for own corps"
 grant select on hangar.corp_structure to authenticated;
 grant all    on hangar.corp_structure to service_role;
 
+-- Rigs (and other fitted modules) installed in Upwell structures. ESI has no
+-- dedicated structure-fitting endpoint; these come from the corporation assets
+-- endpoint as items whose location_id is the structure_id and whose
+-- location_flag is a RigSlot (RigSlot0..RigSlot7).
+create table if not exists hangar.corp_structure_rig (
+  structure_id bigint not null,
+  location_flag text not null,
+  type_id bigint not null,
+  corporation_id bigint not null,
+  updated_at timestamptz not null default now(),
+  primary key (structure_id, location_flag)
+);
+create index if not exists corp_structure_rig_corporation_id_idx
+  on hangar.corp_structure_rig (corporation_id);
+
+alter table hangar.corp_structure_rig enable row level security;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_policies
+    where schemaname = 'hangar'
+      and tablename = 'corp_structure_rig'
+      and policyname = 'Users read structure rigs for own corps'
+  ) then
+    create policy "Users read structure rigs for own corps"
+      on hangar.corp_structure_rig
+      for select
+      to authenticated
+      using (
+        corporation_id in (
+          select corporation_id from hangar.character
+          where user_id = (select auth.uid()) and corporation_id is not null
+        )
+      );
+  end if;
+end $$;
+
+grant select on hangar.corp_structure_rig to authenticated;
+grant all    on hangar.corp_structure_rig to service_role;
+
 create table if not exists hangar.corp_wallet_journal (
   corporation_id bigint not null,
   division smallint not null,
