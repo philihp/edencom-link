@@ -110,9 +110,7 @@ export const ActiveJobs = ({ jobs, characters, initialNow, typeNames }: ActiveJo
                       : '—'}
                   </td>
                   <td>{j.runs}</td>
-                  <td className={retro.id}>
-                    {(j.station_id ?? j.facility_id) != null ? String(j.station_id ?? j.facility_id) : '—'}
-                  </td>
+                  <td>{(j.station_id ?? j.facility_id) != null ? String(j.station_id ?? j.facility_id) : '—'}</td>
                   <td>{formatDate(j.start_date)}</td>
                   <td>{formatDate(j.end_date)}</td>
                   <td>{formatRemaining(j.end_date, now)}</td>

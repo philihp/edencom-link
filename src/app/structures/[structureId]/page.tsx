@@ -75,9 +75,8 @@ const StructurePage = async ({ params }: StructureParams) => {
       <>
         <h1>Structure not found</h1>
         <p>
-          No structure <span className={retro.id}>{structureId}</span> is visible. It may not exist, or you may need to
-          re-link a director character on the <a href="/character">Characters</a> page. Back to{' '}
-          <Link href="/structures">Structures</Link>.
+          No structure {structureId} is visible. It may not exist, or you may need to re-link a director character on
+          the <a href="/character">Characters</a> page. Back to <Link href="/structures">Structures</Link>.
         </p>
       </>
     )
@@ -122,7 +121,7 @@ const StructurePage = async ({ params }: StructureParams) => {
         <tbody>
           <tr>
             <th>Structure ID</th>
-            <td className={retro.id}>{s.structure_id}</td>
+            <td>{s.structure_id}</td>
           </tr>
           <tr>
             <th>Name</th>
@@ -131,21 +130,20 @@ const StructurePage = async ({ params }: StructureParams) => {
           <tr>
             <th>Type</th>
             <td>
-              {typeName ? `${typeName} ` : ''}
-              <span className={retro.id}>#{s.type_id}</span>
+              {typeName ? `${typeName} ` : ''}#{s.type_id}
             </td>
           </tr>
           <tr>
             <th>System ID</th>
-            <td className={retro.id}>{s.system_id}</td>
+            <td>{s.system_id}</td>
           </tr>
           <tr>
             <th>Corp ID</th>
-            <td className={retro.id}>{s.corporation_id}</td>
+            <td>{s.corporation_id}</td>
           </tr>
           <tr>
             <th>Profile ID</th>
-            <td className={retro.id}>{show(s.profile_id)}</td>
+            <td>{show(s.profile_id)}</td>
           </tr>
           <tr>
             <th>State</th>
