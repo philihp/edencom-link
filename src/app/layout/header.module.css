@@ -6,7 +6,7 @@
 }
 
 .brand:hover {
-  color: var(--green) !important;
+  color: var(--link) !important;
   text-decoration: none;
 }
 
