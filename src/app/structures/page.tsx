@@ -96,6 +96,18 @@ const StructuresPage = async () => {
     }
   }
 
+  // Revenue from structure clone bays (jump clone install/activation fees etc.).
+  const { data: cloneJournal } = await supabase
+    .schema('hangar')
+    .from('corp_wallet_journal')
+    .select('amount')
+    .ilike('ref_type', '%clone%')
+
+  const cloneRevenue = ((cloneJournal ?? []) as Array<{ amount: number | string | null }>).reduce(
+    (sum, entry) => sum + Number(entry.amount ?? 0),
+    0
+  )
+
   return (
     <>
       <h1>Structures</h1>
@@ -147,6 +159,7 @@ const StructuresPage = async () => {
             </tbody>
           </table>
           <p>Unaccounted tax revenue: {formatIsk(unaccounted)} ISK</p>
+          <p>Clone revenue: {formatIsk(cloneRevenue)} ISK</p>
           <p className={retro.bestViewedIn}>Best viewed in Netscape Navigator 3.0 at 800&times;600</p>
         </>
       ) : (
