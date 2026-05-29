@@ -1,9 +1,11 @@
 /*
  * Claude Code inspired theme.
  *
- * Warm Anthropic palette (cream paper + clay/coral accent) with a clean
- * proportional sans for text and a monospace face reserved for code and
- * numeric data. Light by default, with a dark variant for prefers-color-scheme.
+ * Warm Anthropic palette (cream paper + clay/coral accent). Reading text is
+ * set in a Claude-style serif (Tiempos/Copernicus, with a free serif
+ * fallback); the monospace face is reserved for code and numeric data, and a
+ * sans is used for interactive controls. Light by default, with a dark variant
+ * for prefers-color-scheme.
  */
 
 :root {
@@ -24,7 +26,12 @@
   --radius: 10px;
   --radius-sm: 7px;
 
-  /* Proportional sans for text. */
+  /* Claude reading serif — Tiempos/Copernicus with a free serif fallback. */
+  --serif:
+    'Tiempos Text', Tiempos, Copernicus, ui-serif, Charter, 'Iowan Old Style',
+    Georgia, Cambria, 'Times New Roman', serif;
+
+  /* Proportional sans for interactive controls. */
   --sans:
     ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
     Helvetica, Arial, sans-serif;
@@ -60,8 +67,8 @@ body {
   padding: 0 16px 48px;
   background: var(--paper);
   color: var(--ink);
-  font-family: var(--sans);
-  font-size: 14px;
+  font-family: var(--serif);
+  font-size: 15px;
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
 }
@@ -135,6 +142,7 @@ header {
   background: var(--paper-raised);
   border: 1px solid var(--line);
   border-radius: var(--radius);
+  font-family: var(--sans);
   font-size: 13px;
   color: var(--ink-soft);
 }
