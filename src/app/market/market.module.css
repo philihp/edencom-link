@@ -18,7 +18,7 @@
 
 .salesFilter {
   font-size: 10pt;
-  color: #555;
+  color: var(--ink-soft);
 }
 
 .sales {
@@ -30,14 +30,15 @@
 
 .sales th,
 .sales td {
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid var(--line-soft);
   padding: 6pt 8pt;
   text-align: left;
 }
 
 .sales th {
-  background: #fafafa;
-  font-weight: bold;
+  background: var(--paper-raised);
+  color: var(--ink-soft);
+  font-weight: 600;
 }
 
 .sales td:nth-child(3),
