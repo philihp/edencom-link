@@ -39,6 +39,7 @@
 }
 
 .name {
+  font-family: var(--serif);
   font-weight: bold;
   font-size: 11pt;
   overflow: hidden;

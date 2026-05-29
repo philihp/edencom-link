@@ -118,8 +118,8 @@ export const RecentSales = ({ sales, characters, typeNames }: RecentSalesProps) 
           <tbody>
             {filtered.map((s) => (
               <tr key={`sale-${s.transaction_id}`}>
-                <td>{characterName[s.character_id] ?? '—'}</td>
-                <td>{typeNames[Number(s.type_id)] ?? `#${s.type_id}`}</td>
+                <td className="serif">{characterName[s.character_id] ?? '—'}</td>
+                <td className="serif">{typeNames[Number(s.type_id)] ?? `#${s.type_id}`}</td>
                 <td>{s.quantity}</td>
                 <td>
                   <IskPrice raw={s.unit_price} />

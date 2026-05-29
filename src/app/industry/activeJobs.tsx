@@ -101,10 +101,10 @@ export const ActiveJobs = ({ jobs, characters, initialNow, typeNames }: ActiveJo
             <tbody>
               {filtered.map((j) => (
                 <tr key={`job-${j.job_id}`}>
-                  <td>{characterName[j.character_id] ?? '—'}</td>
+                  <td className="serif">{characterName[j.character_id] ?? '—'}</td>
                   <td>{ACTIVITY_NAMES[j.activity_id] ?? `#${j.activity_id}`}</td>
-                  <td>{typeNames[Number(j.blueprint_type_id)] ?? `#${j.blueprint_type_id}`}</td>
-                  <td>
+                  <td className="serif">{typeNames[Number(j.blueprint_type_id)] ?? `#${j.blueprint_type_id}`}</td>
+                  <td className="serif">
                     {j.product_type_id != null
                       ? (typeNames[Number(j.product_type_id)] ?? `#${j.product_type_id}`)
                       : '—'}

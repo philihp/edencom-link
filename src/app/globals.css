@@ -1,11 +1,11 @@
 /*
  * Claude Code inspired theme.
  *
- * Warm Anthropic palette (cream paper + clay/coral accent). Reading text is
- * set in a Claude-style serif (Tiempos/Copernicus, with a free serif
- * fallback); the monospace face is reserved for code and numeric data, and a
- * sans is used for interactive controls. Light by default, with a dark variant
- * for prefers-color-scheme.
+ * Warm Anthropic palette (cream paper + clay/coral accent). Following the
+ * claude.ai convention: a sans for static UI (labels, chrome, headers), a
+ * Claude-style serif (Tiempos/Copernicus, with a free serif fallback) for the
+ * dynamic text specific to a thing (names, titles), and a monospace face for
+ * code and numeric data. Light by default, dark via prefers-color-scheme.
  */
 
 :root {
@@ -67,8 +67,8 @@ body {
   padding: 0 16px 48px;
   background: var(--paper);
   color: var(--ink);
-  font-family: var(--serif);
-  font-size: 15px;
+  font-family: var(--sans);
+  font-size: 14px;
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
 }
@@ -123,6 +123,11 @@ h1 {
 
 h2 {
   font-size: 17px;
+}
+
+/* Serif for dynamic, item-specific text — a thing's name or title. */
+.serif {
+  font-family: var(--serif);
 }
 
 code,

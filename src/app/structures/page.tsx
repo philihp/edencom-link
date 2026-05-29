@@ -168,7 +168,7 @@ const StructuresPage = async () => {
                   </td>
                   {/* Upwell structures share their structure_id with the station/facility id industry jobs run at. */}
                   <td className={retro.num}>{s.structure_id}</td>
-                  <td>{s.name ?? '—'}</td>
+                  <td className="serif">{s.name ?? '—'}</td>
                   <td className={retro.num}>{formatIskMillions(totalByStructure.get(String(s.structure_id)) ?? 0)}</td>
                   <td className={retro.num}>{s.corporation_id}</td>
                   <td className={retro.num}>{s.type_id}</td>
