@@ -1,0 +1,9 @@
+.footer {
+  margin: 16px 0 8px;
+  color: var(--ink-faint);
+  font-size: 12px;
+}
+
+.footer a {
+  font-family: var(--mono);
+}

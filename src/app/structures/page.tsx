@@ -218,7 +218,6 @@ const StructuresPage = async () => {
             <span>Clone revenue:</span>
             <span className={styles.footerValue}>{formatMisk(cloneRevenue)}</span>
           </div>
-          <p className={styles.bestViewedIn}>Best viewed in Netscape Navigator 3.0 at 800&times;600</p>
         </>
       ) : (
         <p>

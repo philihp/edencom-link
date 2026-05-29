@@ -40,9 +40,3 @@
   text-align: right;
   white-space: nowrap;
 }
-
-.bestViewedIn {
-  margin: 4pt 0 16pt;
-  color: var(--ink-faint);
-  font-size: 12px;
-}

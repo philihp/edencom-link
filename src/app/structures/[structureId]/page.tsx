@@ -233,8 +233,6 @@ const StructurePage = async ({ params }: StructureParams) => {
       ) : (
         <p>No industry jobs known at this structure.</p>
       )}
-
-      <p className={retro.bestViewedIn}>Best viewed in Netscape Navigator 3.0 at 800&times;600</p>
     </>
   )
 }

@@ -153,9 +153,3 @@
   font-variant-numeric: tabular-nums;
   text-align: right;
 }
-
-.bestViewedIn {
-  margin: 4pt 0 16pt;
-  color: var(--ink-faint);
-  font-size: 12px;
-}

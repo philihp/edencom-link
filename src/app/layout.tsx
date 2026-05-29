@@ -4,6 +4,7 @@ import { SpeedInsights } from '@vercel/speed-insights/next'
 import type { Metadata } from 'next'
 import './globals.css'
 import Header from './layout/header'
+import Footer from './layout/footer'
 
 export const metadata: Metadata = {
   title: 'EVE Hangar',
@@ -38,6 +39,7 @@ const RootLayout = async ({
         <Header />
         <hr />
         {children}
+        <Footer />
         <Analytics />
         <SpeedInsights />
       </body>
