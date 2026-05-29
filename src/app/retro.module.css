@@ -1,35 +1,44 @@
 /*
- * Plain data table — soft warm borders that match the Claude Code theme.
+ * Data table — clean, borderless Claude look. A single rule under the header
+ * row, hairline separators between rows, and no surrounding box.
  */
 
 .retro {
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  border-spacing: 0;
-  border-collapse: separate;
-  overflow: hidden;
+  border-collapse: collapse;
   margin: 16px 0;
   font-size: 13px;
 }
 
 .retro th {
   border-bottom: 1px solid var(--line);
-  background: var(--paper-raised);
   color: var(--ink-soft);
   font-weight: 600;
-  padding: 6px 10px;
+  padding: 8px 12px;
   text-align: left;
   white-space: nowrap;
 }
 
 .retro td {
   border-bottom: 1px solid var(--line-soft);
-  padding: 6px 10px;
+  padding: 8px 12px;
   text-align: left;
+  vertical-align: top;
 }
 
-.retro tr:last-child td {
+.retro tbody tr:last-child td {
   border-bottom: none;
+}
+
+.retro tbody tr:hover td {
+  background: var(--paper-raised);
+}
+
+/* Numeric cells: the only place we use the fixed-width face. */
+.num {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
 }
 
 .bestViewedIn {

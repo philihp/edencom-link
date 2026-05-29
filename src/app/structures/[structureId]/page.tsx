@@ -112,12 +112,12 @@ const StructurePage = async ({ params }: StructureParams) => {
 
   return (
     <>
-      <h1>{s.name ?? `Structure #${s.structure_id}`}</h1>
+      <h1 className="serif">{s.name ?? `Structure #${s.structure_id}`}</h1>
       <p>
         <Link href="/structures">&laquo; Back to Structures</Link>
       </p>
 
-      <table className={retro.retro} border={3} cellPadding={2} cellSpacing={0}>
+      <table className={retro.retro}>
         <tbody>
           <tr>
             <th>Structure ID</th>
@@ -126,7 +126,7 @@ const StructurePage = async ({ params }: StructureParams) => {
           <tr>
             <th>Type</th>
             <td>
-              {typeName ? `${typeName} ` : ''}#{s.type_id}
+              {typeName ? <span className="serif">{typeName} </span> : ''}#{s.type_id}
             </td>
           </tr>
           <tr>
@@ -196,14 +196,14 @@ const StructurePage = async ({ params }: StructureParams) => {
 
       <h2>Industry Jobs</h2>
       {jobs.length > 0 ? (
-        <table className={retro.retro} border={3} cellPadding={2} cellSpacing={0}>
+        <table className={retro.retro}>
           <thead>
             <tr>
               <th>Character</th>
               <th>Activity</th>
               <th>Blueprint</th>
               <th>Product</th>
-              <th>Runs</th>
+              <th className={retro.num}>Runs</th>
               <th>Status</th>
               <th>Start</th>
               <th>End</th>
@@ -212,13 +212,13 @@ const StructurePage = async ({ params }: StructureParams) => {
           <tbody>
             {jobs.map((j) => (
               <tr key={`job-${j.job_id}`}>
-                <td>{characterName[j.character_id] ?? '—'}</td>
+                <td className="serif">{characterName[j.character_id] ?? '—'}</td>
                 <td>{ACTIVITY_NAMES[j.activity_id] ?? `#${j.activity_id}`}</td>
-                <td>{typeNames[Number(j.blueprint_type_id)] ?? `#${j.blueprint_type_id}`}</td>
-                <td>
+                <td className="serif">{typeNames[Number(j.blueprint_type_id)] ?? `#${j.blueprint_type_id}`}</td>
+                <td className="serif">
                   {j.product_type_id != null ? (typeNames[Number(j.product_type_id)] ?? `#${j.product_type_id}`) : '—'}
                 </td>
-                <td>{j.runs}</td>
+                <td className={retro.num}>{j.runs}</td>
                 <td>{j.status}</td>
                 <td>
                   <DateTime value={j.start_date} />
