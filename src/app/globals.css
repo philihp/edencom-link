@@ -148,8 +148,7 @@ kbd {
 /* Terminal-style top bar. */
 header {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
+  align-items: baseline;
   gap: 4px;
   padding: 14px 18px;
   margin-top: 20px;
