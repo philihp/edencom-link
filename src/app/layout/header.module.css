@@ -1,7 +1,21 @@
+.bar {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+}
+
+.top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+}
+
 .brand {
   font-weight: 600;
   color: var(--ink) !important;
-  margin-right: auto;
   letter-spacing: -0.01em;
 }
 
@@ -10,16 +24,15 @@
   text-decoration: none;
 }
 
+.user {
+  color: var(--ink-faint);
+}
+
 .nav {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-}
-
-.user {
-  color: var(--ink-faint);
-  margin-right: 4px;
 }
 
 .bracket {

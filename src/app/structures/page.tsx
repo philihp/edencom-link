@@ -100,6 +100,7 @@ const StructuresPage = async () => {
   }
 
   const systemNames = await fetchSystemNames(list.map((s) => Number(s.system_id)))
+  const structureTypeNames = await fetchTypeNames(list.map((s) => Number(s.type_id)))
 
   const { data: journal } = await supabase
     .schema('hangar')
@@ -167,8 +168,8 @@ const StructuresPage = async () => {
                     <span className={`${styles.value} ${styles.num}`}>
                       {formatMisk(totalByStructure.get(String(s.structure_id)) ?? 0)}
                     </span>
-                    <span className={styles.label}>Type ID</span>
-                    <span className={`${styles.value} ${styles.num}`}>{s.type_id}</span>
+                    <span className={styles.label}>Type</span>
+                    <span className={styles.value}>{structureTypeNames[Number(s.type_id)] ?? `#${s.type_id}`}</span>
                     <span className={styles.label}>System</span>
                     <span className={styles.value}>{systemNames[Number(s.system_id)] ?? s.system_id}</span>
                     <span className={styles.label}>Fuel Expires</span>

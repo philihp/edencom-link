@@ -32,6 +32,7 @@ type ActiveJobsProps = {
   characters: Character[]
   initialNow: number
   typeNames: Record<number, string>
+  stationNames: Record<string, string>
 }
 
 const CHARACTER_STORAGE_KEY = 'industry.activeJobs.characterId'
@@ -49,7 +50,7 @@ const formatRemaining = (endIso: string, now: number) => {
   return `${minutes}m`
 }
 
-export const ActiveJobs = ({ jobs, characters, initialNow, typeNames }: ActiveJobsProps) => {
+export const ActiveJobs = ({ jobs, characters, initialNow, typeNames, stationNames }: ActiveJobsProps) => {
   const characterName: Record<string, string> = Object.fromEntries(characters.map((c) => [c.id, c.name]))
 
   const [characterId, setCharacterId] = usePersist<string>(CHARACTER_STORAGE_KEY, ALL_CHARACTERS, (raw) =>
@@ -89,10 +90,9 @@ export const ActiveJobs = ({ jobs, characters, initialNow, typeNames }: ActiveJo
               <tr>
                 <th>Character</th>
                 <th>Activity</th>
-                <th>Blueprint</th>
                 <th>Product</th>
                 <th className={retro.num}>Runs</th>
-                <th className={retro.num}>Station ID</th>
+                <th>Station</th>
                 <th>Start</th>
                 <th>End</th>
                 <th>Remaining</th>
@@ -103,15 +103,19 @@ export const ActiveJobs = ({ jobs, characters, initialNow, typeNames }: ActiveJo
                 <tr key={`job-${j.job_id}`}>
                   <td className="serif">{characterName[j.character_id] ?? '—'}</td>
                   <td>{ACTIVITY_NAMES[j.activity_id] ?? `#${j.activity_id}`}</td>
-                  <td className="serif">{typeNames[Number(j.blueprint_type_id)] ?? `#${j.blueprint_type_id}`}</td>
                   <td className="serif">
                     {j.product_type_id != null
                       ? (typeNames[Number(j.product_type_id)] ?? `#${j.product_type_id}`)
                       : '—'}
                   </td>
                   <td className={retro.num}>{j.runs}</td>
-                  <td className={retro.num}>
-                    {(j.station_id ?? j.facility_id) != null ? String(j.station_id ?? j.facility_id) : '—'}
+                  <td>
+                    {(() => {
+                      const stationId = j.station_id ?? j.facility_id
+                      if (stationId == null) return '—'
+                      const name = stationNames[String(stationId)]
+                      return name ? <a href={`/structures/${stationId}`}>{name}</a> : String(stationId)
+                    })()}
                   </td>
                   <td>
                     <DateTime value={j.start_date} />
