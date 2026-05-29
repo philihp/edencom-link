@@ -36,7 +36,6 @@
 }
 
 .jobs th {
-  background: var(--paper-raised);
   color: var(--ink-soft);
   font-weight: 600;
 }

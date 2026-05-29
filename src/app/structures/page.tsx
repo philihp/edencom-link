@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 
 import { createClient } from '@/utils/supabase/server'
 import { DateTime } from '../DateTime'
+import { formatMisk } from '../isk'
 import { fetchTypeNames } from '../typeNames'
 import styles from './structures.module.css'
 
@@ -34,13 +35,6 @@ type RigRow = {
   structure_id: number | string
   location_flag: string
   type_id: number | string
-}
-
-// Money is shown in millions of ISK, e.g. "1,234 mISK".
-const formatMisk = (raw: string | number | null) => {
-  if (raw === null) return '—'
-  const n = Number(raw) / 1_000_000
-  return `${n.toLocaleString('en-US', { maximumFractionDigits: 0 })} mISK`
 }
 
 const StructuresPage = async () => {
