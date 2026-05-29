@@ -89,7 +89,9 @@ const StructuresPage = async () => {
             <tbody>
               {list.map((s) => (
                 <tr key={`structure-${s.structure_id}`}>
-                  <td className={retro.id}>{s.structure_id}</td>
+                  <td className={retro.id}>
+                    <a href={`/structures/${s.structure_id}`}>{s.structure_id}</a>
+                  </td>
                   {/* Upwell structures share their structure_id with the station/facility id industry jobs run at. */}
                   <td className={retro.id}>{s.structure_id}</td>
                   <td>{s.name ?? '—'}</td>

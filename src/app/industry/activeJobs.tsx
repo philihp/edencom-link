@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react'
 import { usePersist } from '../market/usePersist'
 import retro from '../retro.module.css'
 import styles from './industry.module.css'
+import { ACTIVITY_NAMES, formatDate } from './jobFields'
 
 export type Job = {
   job_id: number | string
@@ -32,28 +33,8 @@ type ActiveJobsProps = {
   typeNames: Record<number, string>
 }
 
-const ACTIVITY_NAMES: Record<number, string> = {
-  1: 'Manufacturing',
-  3: 'TE Research',
-  4: 'ME Research',
-  5: 'Copying',
-  7: 'Reverse Engineering',
-  8: 'Invention',
-  9: 'Reactions',
-}
-
 const CHARACTER_STORAGE_KEY = 'industry.activeJobs.characterId'
 const ALL_CHARACTERS = ''
-
-const formatDate = (iso: string) =>
-  new Intl.DateTimeFormat('sv-SE', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).format(new Date(iso))
 
 const formatRemaining = (endIso: string, now: number) => {
   const ms = new Date(endIso).getTime() - now
