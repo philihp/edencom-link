@@ -6,7 +6,9 @@
  * These are stylized outlines, not exact models — enough to tell families apart.
  */
 
-const CITADELS = new Set([35832, 35833, 35834])
+// Engineering complexes (Raitaru / Azbel / Sotiyo) and refineries
+// (Athanor / Tatara); everything else (the citadels, and unknown types) falls
+// back to the citadel spindle.
 const ENGINEERING = new Set([35825, 35826, 35827])
 const REFINERIES = new Set([35835, 35836])
 

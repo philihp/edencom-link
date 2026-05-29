@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/utils/supabase/server'
 import { DateTime } from '../DateTime'
 import { formatMisk } from '../isk'
+import { fetchSystemNames } from '../systemNames'
 import { fetchTypeNames } from '../typeNames'
 import { StructureSilhouette } from './silhouette'
 import styles from './structures.module.css'
@@ -98,6 +99,8 @@ const StructuresPage = async () => {
     else rigsByStructure.set(key, [name])
   }
 
+  const systemNames = await fetchSystemNames(list.map((s) => Number(s.system_id)))
+
   const { data: journal } = await supabase
     .schema('hangar')
     .from('corp_wallet_journal')
@@ -164,25 +167,13 @@ const StructuresPage = async () => {
                     <span className={`${styles.value} ${styles.num}`}>
                       {formatMisk(totalByStructure.get(String(s.structure_id)) ?? 0)}
                     </span>
-                    <span className={styles.label}>Corp ID</span>
-                    <span className={`${styles.value} ${styles.num}`}>{s.corporation_id}</span>
                     <span className={styles.label}>Type ID</span>
                     <span className={`${styles.value} ${styles.num}`}>{s.type_id}</span>
-                    <span className={styles.label}>System ID</span>
-                    <span className={`${styles.value} ${styles.num}`}>{s.system_id}</span>
-                    <span className={styles.label}>State</span>
-                    <span className={styles.value}>{s.state ?? '—'}</span>
+                    <span className={styles.label}>System</span>
+                    <span className={styles.value}>{systemNames[Number(s.system_id)] ?? s.system_id}</span>
                     <span className={styles.label}>Fuel Expires</span>
                     <span className={styles.value}>
                       <DateTime value={s.fuel_expires} />
-                    </span>
-                    <span className={styles.label}>Unanchors At</span>
-                    <span className={styles.value}>
-                      <DateTime value={s.unanchors_at} />
-                    </span>
-                    <span className={styles.label}>Last Seen</span>
-                    <span className={styles.value}>
-                      <DateTime value={s.last_seen_at} />
                     </span>
                   </div>
 
