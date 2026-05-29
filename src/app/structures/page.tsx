@@ -36,11 +36,11 @@ type RigRow = {
   type_id: number | string
 }
 
-// Tax revenue is shown in millions of ISK.
-const formatIskMillions = (raw: string | number | null) => {
+// Money is shown in millions of ISK, e.g. "1,234 mISK".
+const formatMisk = (raw: string | number | null) => {
   if (raw === null) return '—'
   const n = Number(raw) / 1_000_000
-  return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  return `${n.toLocaleString('en-US', { maximumFractionDigits: 0 })} mISK`
 }
 
 const StructuresPage = async () => {
@@ -153,7 +153,7 @@ const StructuresPage = async () => {
                 <th className={retro.num}>Structure ID</th>
                 <th className={retro.num}>Station ID</th>
                 <th>Name</th>
-                <th className={retro.num}>Tax Revenue (M ISK)</th>
+                <th className={retro.num}>Revenue</th>
                 <th className={retro.num}>Corp ID</th>
                 <th className={retro.num}>Type ID</th>
                 <th className={retro.num}>System ID</th>
@@ -174,7 +174,7 @@ const StructuresPage = async () => {
                   {/* Upwell structures share their structure_id with the station/facility id industry jobs run at. */}
                   <td className={retro.num}>{s.structure_id}</td>
                   <td className="serif">{s.name ?? '—'}</td>
-                  <td className={retro.num}>{formatIskMillions(totalByStructure.get(String(s.structure_id)) ?? 0)}</td>
+                  <td className={retro.num}>{formatMisk(totalByStructure.get(String(s.structure_id)) ?? 0)}</td>
                   <td className={retro.num}>{s.corporation_id}</td>
                   <td className={retro.num}>{s.type_id}</td>
                   <td className={retro.num}>{s.system_id}</td>
@@ -194,8 +194,12 @@ const StructuresPage = async () => {
               ))}
             </tbody>
           </table>
-          <p>Unaccounted tax revenue: {formatIskMillions(unaccounted)} M ISK</p>
-          <p>Clone revenue: {formatIskMillions(cloneRevenue)} M ISK</p>
+          <p>
+            Unaccounted tax revenue: <span className={retro.num}>{formatMisk(unaccounted)}</span>
+          </p>
+          <p>
+            Clone revenue: <span className={retro.num}>{formatMisk(cloneRevenue)}</span>
+          </p>
           <p className={retro.bestViewedIn}>Best viewed in Netscape Navigator 3.0 at 800&times;600</p>
         </>
       ) : (
