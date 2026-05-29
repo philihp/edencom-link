@@ -1,7 +1,7 @@
 /*
  * Claude Code inspired theme.
  *
- * Warm Anthropic palette (cream paper + green accent). Following the
+ * Warm Anthropic palette (cream paper + indigo accent). Following the
  * claude.ai convention: a sans for static UI (labels, chrome, headers), a
  * Claude-style serif (Tiempos/Copernicus, with a free serif fallback) for the
  * dynamic text specific to a thing (names, titles), and a monospace face for
@@ -18,10 +18,10 @@
   --line: #ddd9cc;
   --line-soft: #e8e5da;
 
-  /* Green accent */
-  --accent: #2f8f4f;
-  --accent-strong: #246b3c;
-  --accent-tint: #e3efe4;
+  /* Indigo accent */
+  --accent: #4f46e5;
+  --accent-strong: #4338ca;
+  --accent-tint: #e7e6fb;
 
   /* Hyperlinks use the classic browser blue / purple. */
   --link: #0000ee;
@@ -55,9 +55,9 @@
     --ink-faint: #8a877e;
     --line: #38342d;
     --line-soft: #2d2a24;
-    --accent: #6cc486;
-    --accent-strong: #57b673;
-    --accent-tint: #23301f;
+    --accent: #a5b4fc;
+    --accent-strong: #818cf8;
+    --accent-tint: #25244a;
     --link: #6ea8fe;
     --link-visited: #c699f7;
   }
