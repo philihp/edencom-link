@@ -69,8 +69,7 @@ const StructuresPage = async () => {
       <h1>Structures</h1>
       {list.length > 0 ? (
         <>
-          <table className={retro.retro} border={3} cellPadding={4} cellSpacing={2}>
-            <caption>~*~ Corporation Structures ~*~</caption>
+          <table className={retro.retro} border={3} cellPadding={0} cellSpacing={2}>
             <thead>
               <tr>
                 <th>Structure ID</th>
@@ -118,8 +117,7 @@ const StructuresPage = async () => {
 
       <h2>Corp Wallet (last 30 days)</h2>
       {journalEntries.length > 0 ? (
-        <table className={retro.retro} border={3} cellPadding={4} cellSpacing={2}>
-          <caption>~*~ Corp Wallet ~*~</caption>
+        <table className={retro.retro} border={3} cellPadding={0} cellSpacing={2}>
           <thead>
             <tr>
               <th>Date</th>
