@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation'
 
 import { createClient } from '@/utils/supabase/server'
+import retro from '../retro.module.css'
 
 type Structure = {
   structure_id: number
@@ -45,7 +46,7 @@ const StructuresPage = async () => {
     .schema('hangar')
     .from('corp_structure')
     .select(
-      'structure_id, corporation_id, type_id, system_id, name, state, fuel_expires, unanchors_at, services, last_seen_at',
+      'structure_id, corporation_id, type_id, system_id, name, state, fuel_expires, unanchors_at, services, last_seen_at'
     )
     .order('corporation_id', { ascending: true })
     .order('structure_id', { ascending: true })
@@ -67,38 +68,45 @@ const StructuresPage = async () => {
     <>
       <h1>Structures</h1>
       {list.length > 0 ? (
-        <table>
-          <thead>
-            <tr>
-              <th>Structure ID</th>
-              <th>Name</th>
-              <th>Corp ID</th>
-              <th>Type ID</th>
-              <th>System ID</th>
-              <th>State</th>
-              <th>Fuel Expires</th>
-              <th>Unanchors At</th>
-              <th>Services</th>
-              <th>Last Seen</th>
-            </tr>
-          </thead>
-          <tbody>
-            {list.map((s) => (
-              <tr key={`structure-${s.structure_id}`}>
-                <td>{s.structure_id}</td>
-                <td>{s.name ?? '—'}</td>
-                <td>{s.corporation_id}</td>
-                <td>{s.type_id}</td>
-                <td>{s.system_id}</td>
-                <td>{s.state ?? '—'}</td>
-                <td>{s.fuel_expires ?? '—'}</td>
-                <td>{s.unanchors_at ?? '—'}</td>
-                <td>{s.services?.map((svc) => svc.name).join(', ') ?? '—'}</td>
-                <td>{s.last_seen_at}</td>
+        <>
+          <table className={retro.retro} border={3} cellPadding={4} cellSpacing={2}>
+            <caption>~*~ Corporation Structures ~*~</caption>
+            <thead>
+              <tr>
+                <th>Structure ID</th>
+                <th>Station ID</th>
+                <th>Name</th>
+                <th>Corp ID</th>
+                <th>Type ID</th>
+                <th>System ID</th>
+                <th>State</th>
+                <th>Fuel Expires</th>
+                <th>Unanchors At</th>
+                <th>Services</th>
+                <th>Last Seen</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {list.map((s) => (
+                <tr key={`structure-${s.structure_id}`}>
+                  <td className={retro.id}>{s.structure_id}</td>
+                  {/* Upwell structures share their structure_id with the station/facility id industry jobs run at. */}
+                  <td className={retro.id}>{s.structure_id}</td>
+                  <td>{s.name ?? '—'}</td>
+                  <td>{s.corporation_id}</td>
+                  <td>{s.type_id}</td>
+                  <td>{s.system_id}</td>
+                  <td>{s.state ?? '—'}</td>
+                  <td>{s.fuel_expires ?? '—'}</td>
+                  <td>{s.unanchors_at ?? '—'}</td>
+                  <td>{s.services?.map((svc) => svc.name).join(', ') ?? '—'}</td>
+                  <td>{s.last_seen_at}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className={retro.bestViewedIn}>Best viewed in Netscape Navigator 3.0 at 800&times;600</p>
+        </>
       ) : (
         <p>
           No structures visible. Re-link a director character on the <a href="/character">Characters</a> page so the
@@ -108,7 +116,8 @@ const StructuresPage = async () => {
 
       <h2>Corp Wallet (last 30 days)</h2>
       {journalEntries.length > 0 ? (
-        <table>
+        <table className={retro.retro} border={3} cellPadding={4} cellSpacing={2}>
+          <caption>~*~ Corp Wallet ~*~</caption>
           <thead>
             <tr>
               <th>Date</th>

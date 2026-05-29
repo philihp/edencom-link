@@ -18,7 +18,7 @@ const IndustryPage = async () => {
     .schema('hangar')
     .from('industry_job')
     .select(
-      'job_id, character_id, activity_id, blueprint_type_id, product_type_id, runs, status, start_date, end_date',
+      'job_id, character_id, activity_id, blueprint_type_id, product_type_id, runs, status, start_date, end_date, station_id, facility_id'
     )
     .eq('status', 'active')
     .order('end_date', { ascending: true })
@@ -31,7 +31,7 @@ const IndustryPage = async () => {
       const ids = [Number(j.blueprint_type_id)]
       if (j.product_type_id != null) ids.push(Number(j.product_type_id))
       return ids
-    }),
+    })
   )
 
   // eslint-disable-next-line react-hooks/purity
