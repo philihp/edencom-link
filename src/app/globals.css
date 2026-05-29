@@ -23,6 +23,13 @@
   --clay-strong: #c45c3a;
   --clay-tint: #f6e9e2;
 
+  /* Header accent (green, not the Claude orange). */
+  --green: #2e7d32;
+
+  /* Hyperlinks use the classic browser blue / purple. */
+  --link: #0000ee;
+  --link-visited: #551a8b;
+
   --radius: 10px;
   --radius-sm: 7px;
 
@@ -54,6 +61,9 @@
     --clay: #e08a6c;
     --clay-strong: #d97757;
     --clay-tint: #2e241f;
+    --green: #5cc46a;
+    --link: #6ea8fe;
+    --link-visited: #c699f7;
   }
 }
 
@@ -99,12 +109,15 @@ img {
 }
 
 a {
-  color: var(--clay-strong);
+  color: var(--link);
   text-decoration: none;
 }
 
+a:visited {
+  color: var(--link-visited);
+}
+
 a:hover {
-  color: var(--clay);
   text-decoration: underline;
   text-underline-offset: 2px;
 }
@@ -152,18 +165,19 @@ header {
   color: var(--ink-soft);
 }
 
-header a {
+header a,
+header a:visited {
   color: var(--ink-soft);
 }
 
 header a:hover {
-  color: var(--clay);
+  color: var(--green);
 }
 
 /* The leading "✻ EVE Hangar" mark, set apart from the nav. */
 header::before {
   content: '✻';
-  color: var(--clay);
+  color: var(--green);
   margin-right: 8px;
   font-size: 15px;
 }
