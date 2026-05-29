@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/utils/supabase/server'
 import { DateTime } from '../DateTime'
 import retro from '../retro.module.css'
+import { fetchTypeNames } from '../typeNames'
 
 type Structure = {
   structure_id: number
@@ -26,6 +27,12 @@ type JobRow = {
 type JournalRow = {
   amount: number | string | null
   description: string | null
+}
+
+type RigRow = {
+  structure_id: number | string
+  location_flag: string
+  type_id: number | string
 }
 
 const formatIsk = (raw: string | number | null) => {
@@ -70,6 +77,27 @@ const StructuresPage = async () => {
   for (const j of (jobs ?? []) as JobRow[]) {
     const structureId = j.station_id ?? j.facility_id
     if (structureId != null) structureByJob.set(String(j.job_id), String(structureId))
+  }
+
+  // Rigs fitted to each structure (pulled from corp assets by the structures job).
+  const { data: rigRows } = structureIds.length
+    ? await supabase
+        .schema('hangar')
+        .from('corp_structure_rig')
+        .select('structure_id, location_flag, type_id')
+        .in('structure_id', structureIds)
+        .order('location_flag', { ascending: true })
+    : { data: [] }
+
+  const rigList = (rigRows ?? []) as RigRow[]
+  const rigTypeNames = await fetchTypeNames(rigList.map((r) => Number(r.type_id)))
+  const rigsByStructure = new Map<string, string[]>()
+  for (const r of rigList) {
+    const key = String(r.structure_id)
+    const name = rigTypeNames[Number(r.type_id)] ?? String(r.type_id)
+    const existing = rigsByStructure.get(key)
+    if (existing) existing.push(name)
+    else rigsByStructure.set(key, [name])
   }
 
   const { data: journal } = await supabase
@@ -127,6 +155,7 @@ const StructuresPage = async () => {
                 <th>Fuel Expires</th>
                 <th>Unanchors At</th>
                 <th>Services</th>
+                <th>Rigs</th>
                 <th>Last Seen</th>
               </tr>
             </thead>
@@ -151,6 +180,7 @@ const StructuresPage = async () => {
                     <DateTime value={s.unanchors_at} />
                   </td>
                   <td>{s.services?.map((svc) => svc.name).join(', ') ?? '—'}</td>
+                  <td>{rigsByStructure.get(String(s.structure_id))?.join(', ') ?? '—'}</td>
                   <td>
                     <DateTime value={s.last_seen_at} />
                   </td>

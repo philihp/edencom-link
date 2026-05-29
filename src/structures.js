@@ -1,6 +1,6 @@
 import SingleSignOn from 'eve-sso'
 import { pullCorpWalletJournals } from './corpWalletJournal.js'
-import { character as fetchCharacter, corpStructures, corpWalletJournal, userAgent } from './esi.js'
+import { character as fetchCharacter, corpAssets, corpStructures, corpWalletJournal, userAgent } from './esi.js'
 import { sudoSupabase } from './supabase.js'
 
 const EVE_CLIENT_ID = process.env.EVE_CLIENT_ID
@@ -9,6 +9,11 @@ const EVE_CALLBACK_URL = process.env.EVE_CALLBACK_URL
 
 const STRUCTURES_SCOPE = 'esi-corporations.read_structures.v1'
 const WALLET_SCOPE = 'esi-wallet.read_corporation_wallets.v1'
+const ASSETS_SCOPE = 'esi-assets.read_corporation_assets.v1'
+
+// Items fitted to an Upwell structure show up in corp assets with location_id
+// equal to the structure_id and a RigSlotN location_flag.
+const isRigSlot = (flag) => typeof flag === 'string' && flag.startsWith('RigSlot')
 
 const sso = new SingleSignOn(EVE_CLIENT_ID, EVE_SECRET_KEY, EVE_CALLBACK_URL, userAgent)
 
@@ -49,6 +54,7 @@ const execute = async () => {
 
   const seenStructureCorps = new Set()
   const seenWalletCorps = new Set()
+  const seenAssetCorps = new Set()
   for (const tokenRow of tokens ?? []) {
     const t0 = Date.now()
     const ctx = `character=${tokenRow.character_id} token=${tokenRow.id}`
@@ -149,6 +155,73 @@ const execute = async () => {
 
         const dt = Date.now() - t0
         console.log(`[structures] ${ctx}: done corp ${corporation_id} ${rows.length} fetched in ${dt}ms`)
+      }
+
+      if (!scope.includes(ASSETS_SCOPE)) {
+        console.log(`[structures] ${ctx}: corp ${corporation_id} token lacks ${ASSETS_SCOPE}, skipping structure rigs`)
+      } else if (seenAssetCorps.has(corporation_id)) {
+        console.log(`[structures] ${ctx}: corp ${corporation_id} assets already pulled this run, skipping rigs`)
+      } else {
+        seenAssetCorps.add(corporation_id)
+        try {
+          // Our structures double as asset location_ids; only keep rigs fitted to them.
+          const { data: ownStructures, error: ownErr } = await sudoSupabase
+            .schema('hangar')
+            .from('corp_structure')
+            .select('structure_id')
+            .eq('corporation_id', corporation_id)
+          if (ownErr) throw ownErr
+          const structureIds = new Set((ownStructures ?? []).map((s) => Number(s.structure_id)))
+
+          const ta = Date.now()
+          const assets = []
+          console.log(`[structures] ${ctx}: fetching corp ${corporation_id} assets page 1`)
+          const [firstAssetPage, assetPagesHeader] = await corpAssets(access_token, corporation_id, 1)
+          assets.push(...firstAssetPage)
+          const assetPages = Math.max(1, Number.parseInt(assetPagesHeader, 10) || 1)
+          for (let page = 2; page <= assetPages; page++) {
+            const [more] = await corpAssets(access_token, corporation_id, page)
+            assets.push(...more)
+          }
+          console.log(
+            `[structures] ${ctx}: corp ${corporation_id} returned ${assets.length} asset(s) across ${assetPages} page(s)`
+          )
+
+          const now = new Date().toISOString()
+          const rigRows = assets
+            .filter((a) => isRigSlot(a.location_flag) && structureIds.has(Number(a.location_id)))
+            .map((a) => ({
+              structure_id: a.location_id,
+              location_flag: a.location_flag,
+              type_id: a.type_id,
+              corporation_id,
+              updated_at: now,
+            }))
+
+          // Replace this corp's rig rows wholesale so removed/swapped rigs don't linger.
+          if (structureIds.size > 0) {
+            const { error: delErr } = await sudoSupabase
+              .schema('hangar')
+              .from('corp_structure_rig')
+              .delete()
+              .eq('corporation_id', corporation_id)
+            if (delErr) throw delErr
+          }
+          if (rigRows.length > 0) {
+            const { error: rigErr } = await sudoSupabase
+              .schema('hangar')
+              .from('corp_structure_rig')
+              .upsert(rigRows, { onConflict: 'structure_id,location_flag' })
+            if (rigErr) throw rigErr
+          }
+          console.log(
+            `[structures] ${ctx}: corp ${corporation_id} stored ${rigRows.length} structure rig(s) in ${Date.now() - ta}ms`
+          )
+        } catch (e) {
+          console.error(
+            `[structures] ${ctx}: corp ${corporation_id} rig pull FAILED name=${e?.name} message=${e?.message}`
+          )
+        }
       }
 
       if (!scope.includes(WALLET_SCOPE)) {

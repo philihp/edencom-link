@@ -67,6 +67,13 @@ export const corpStructures = (access_token, corporationID, page = 1) =>
     label: `corpStructures ${corporationID} page=${page}`,
   })
 
+export const corpAssets = (access_token, corporationID, page = 1) =>
+  esiPaged(`/corporations/${corporationID}/assets/`, {
+    access_token,
+    params: { page },
+    label: `corpAssets ${corporationID} page=${page}`,
+  })
+
 export const corpWalletJournal = (access_token, corporationID, division, page = 1) =>
   esiPaged(`/corporations/${corporationID}/wallets/${division}/journal/`, {
     access_token,
