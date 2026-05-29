@@ -128,7 +128,6 @@ export const ActiveJobs = ({ jobs, characters, initialNow, typeNames, stationNam
               ))}
             </tbody>
           </table>
-          <p className={retro.bestViewedIn}>Best viewed in Netscape Navigator 3.0 at 800&times;600</p>
         </>
       ) : (
         <p>No active industry jobs.</p>
