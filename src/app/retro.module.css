@@ -1,37 +1,30 @@
 /*
- * Subtle retro table styling — beveled borders reminiscent of an old
- * HTML table, but with default text and no loud color fills.
+ * Plain table styling — thin solid borders, default text, no colors.
  */
 
 .retro {
-  border: 2px outset #c0c0c0;
+  border: 2px solid;
   border-spacing: 2px;
   margin: 12pt 0;
 }
 
 .retro caption {
-  font-weight: bold;
-  border: 1.5px ridge #808080;
+  border: 1.5px solid;
   padding: 4pt;
   margin-bottom: 4pt;
 }
 
 .retro th {
-  border: 1.5px outset #c0c0c0;
+  border: 1.5px solid;
   padding: 3pt 8pt;
   text-align: left;
   white-space: nowrap;
 }
 
 .retro td {
-  border: 1px inset #c0c0c0;
+  border: 1px solid;
   padding: 2pt 8pt;
   text-align: left;
-}
-
-/* IDs keep a bolder weight to stand out. */
-.id {
-  font-weight: bold;
 }
 
 .bestViewedIn {
