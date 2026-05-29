@@ -1,29 +1,23 @@
 /*
- * Plain table styling — thin solid borders, default text, no colors.
+ * Plain table styling — beveled grey borders, no cell padding.
  */
 
 .retro {
-  border: 2px solid;
+  border: 2px outset #808080;
   border-spacing: 2px;
   margin: 12pt 0;
 }
 
-.retro caption {
-  border: 1.5px solid;
-  padding: 4pt;
-  margin-bottom: 4pt;
-}
-
 .retro th {
-  border: 1.5px solid;
-  padding: 3pt 8pt;
+  border: 1px solid #808080;
+  padding: 0;
   text-align: left;
   white-space: nowrap;
 }
 
 .retro td {
-  border: 1px solid;
-  padding: 2pt 8pt;
+  border: 1px inset #808080;
+  padding: 0;
   text-align: left;
 }
 

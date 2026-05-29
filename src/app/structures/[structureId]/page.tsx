@@ -116,8 +116,7 @@ const StructurePage = async ({ params }: StructureParams) => {
         <Link href="/structures">&laquo; Back to Structures</Link>
       </p>
 
-      <table className={retro.retro} border={3} cellPadding={4} cellSpacing={2}>
-        <caption>~*~ Structure Attributes ~*~</caption>
+      <table className={retro.retro} border={3} cellPadding={0} cellSpacing={2}>
         <tbody>
           <tr>
             <th>Structure ID</th>
@@ -190,8 +189,7 @@ const StructurePage = async ({ params }: StructureParams) => {
 
       <h2>Industry Jobs</h2>
       {jobs.length > 0 ? (
-        <table className={retro.retro} border={3} cellPadding={4} cellSpacing={2}>
-          <caption>~*~ Jobs Running Here ~*~</caption>
+        <table className={retro.retro} border={3} cellPadding={0} cellSpacing={2}>
           <thead>
             <tr>
               <th>Character</th>

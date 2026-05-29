@@ -83,8 +83,7 @@ export const ActiveJobs = ({ jobs, characters, initialNow, typeNames }: ActiveJo
       </div>
       {filtered.length > 0 ? (
         <>
-          <table className={retro.retro} border={3} cellPadding={4} cellSpacing={2}>
-            <caption>~*~ Active Industry Jobs ~*~</caption>
+          <table className={retro.retro} border={3} cellPadding={0} cellSpacing={2}>
             <thead>
               <tr>
                 <th>Character</th>
