@@ -17,16 +17,10 @@ type Structure = {
   last_seen_at: string
 }
 
-type JournalEntry = {
-  corporation_id: number
-  division: number
-  entry_id: string | number
-  date: string
-  ref_type: string
-  amount: string | number | null
-  balance: string | number | null
-  description: string | null
-  reason: string | null
+type Transaction = {
+  location_id: number | string
+  unit_price: number | string
+  quantity: number | string
 }
 
 const formatIsk = (raw: string | number | null) => {
@@ -54,16 +48,21 @@ const StructuresPage = async () => {
 
   const list = (structures ?? []) as Structure[]
 
-  // eslint-disable-next-line react-hooks/purity
-  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
-  const { data: journal } = await supabase
-    .schema('hangar')
-    .from('corp_wallet_journal')
-    .select('corporation_id, division, entry_id, date, ref_type, amount, balance, description, reason')
-    .gte('date', thirtyDaysAgo)
-    .order('date', { ascending: false })
+  // Total up every transaction's amount (unit price × quantity) per structure it happened at.
+  const structureIds = list.map((s) => s.structure_id)
+  const { data: transactions } = structureIds.length
+    ? await supabase
+        .schema('hangar')
+        .from('market_transaction')
+        .select('location_id, unit_price, quantity')
+        .in('location_id', structureIds)
+    : { data: [] }
 
-  const journalEntries = (journal ?? []) as JournalEntry[]
+  const totalByStructure = new Map<number, number>()
+  for (const t of (transactions ?? []) as Transaction[]) {
+    const id = Number(t.location_id)
+    totalByStructure.set(id, (totalByStructure.get(id) ?? 0) + Number(t.unit_price) * Number(t.quantity))
+  }
 
   return (
     <>
@@ -76,6 +75,7 @@ const StructuresPage = async () => {
                 <th>Structure ID</th>
                 <th>Station ID</th>
                 <th>Name</th>
+                <th>Transactions Total</th>
                 <th>Corp ID</th>
                 <th>Type ID</th>
                 <th>System ID</th>
@@ -95,6 +95,7 @@ const StructuresPage = async () => {
                   {/* Upwell structures share their structure_id with the station/facility id industry jobs run at. */}
                   <td>{s.structure_id}</td>
                   <td>{s.name ?? '—'}</td>
+                  <td>{formatIsk(totalByStructure.get(s.structure_id) ?? 0)}</td>
                   <td>{s.corporation_id}</td>
                   <td>{s.type_id}</td>
                   <td>{s.system_id}</td>
@@ -120,40 +121,6 @@ const StructuresPage = async () => {
           No structures visible. Re-link a director character on the <a href="/character">Characters</a> page so the
           hourly job can fetch them.
         </p>
-      )}
-
-      <h2>Corp Wallet (last 30 days)</h2>
-      {journalEntries.length > 0 ? (
-        <table className={retro.retro} border={3} cellPadding={2} cellSpacing={0}>
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>Corp ID</th>
-              <th>Div</th>
-              <th>Ref Type</th>
-              <th>Amount</th>
-              <th>Balance</th>
-              <th>Description</th>
-            </tr>
-          </thead>
-          <tbody>
-            {journalEntries.map((e) => (
-              <tr key={`journal-${e.corporation_id}-${e.division}-${e.entry_id}`}>
-                <td>
-                  <DateTime value={e.date} />
-                </td>
-                <td>{e.corporation_id}</td>
-                <td>{e.division}</td>
-                <td>{e.ref_type}</td>
-                <td>{formatIsk(e.amount)}</td>
-                <td>{formatIsk(e.balance)}</td>
-                <td>{e.description ?? '—'}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      ) : (
-        <p>No corp wallet activity in the last 30 days.</p>
       )}
     </>
   )
