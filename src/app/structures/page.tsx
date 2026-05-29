@@ -4,6 +4,7 @@ import { createClient } from '@/utils/supabase/server'
 import { DateTime } from '../DateTime'
 import { formatMisk } from '../isk'
 import { fetchTypeNames } from '../typeNames'
+import { StructureSilhouette } from './silhouette'
 import styles from './structures.module.css'
 
 type Structure = {
@@ -147,6 +148,7 @@ const StructuresPage = async () => {
               const services = s.services?.map((svc) => svc.name) ?? []
               return (
                 <li key={`structure-${s.structure_id}`} className={styles.tile}>
+                  <StructureSilhouette typeId={s.type_id} className={styles.silhouette} />
                   <div className={styles.head}>
                     <div>
                       <a href={`/structures/${s.structure_id}`} className={styles.name}>
@@ -155,10 +157,13 @@ const StructuresPage = async () => {
                       {/* Upwell structures share their structure_id with the station/facility id industry jobs run at. */}
                       <span className={styles.subId}>#{s.structure_id}</span>
                     </div>
-                    <span className={styles.revenue}>{formatMisk(totalByStructure.get(String(s.structure_id)) ?? 0)}</span>
                   </div>
 
                   <div className={styles.fields}>
+                    <span className={styles.label}>Revenue</span>
+                    <span className={`${styles.value} ${styles.num}`}>
+                      {formatMisk(totalByStructure.get(String(s.structure_id)) ?? 0)}
+                    </span>
                     <span className={styles.label}>Corp ID</span>
                     <span className={`${styles.value} ${styles.num}`}>{s.corporation_id}</span>
                     <span className={styles.label}>Type ID</span>
