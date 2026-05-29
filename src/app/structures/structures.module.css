@@ -1,0 +1,160 @@
+/*
+ * Structures as a responsive tile grid — two per row on phones, packing in
+ * more columns as the viewport grows (SwiftUI LazyVGrid feel).
+ */
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  list-style: none;
+  padding: 0;
+  margin: 16px 0;
+}
+
+@media (min-width: 640px) {
+  .grid {
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  }
+}
+
+.tile {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--paper-raised);
+  transition: border-color 0.12s ease;
+  min-width: 0;
+}
+
+.tile:hover {
+  border-color: var(--clay);
+}
+
+.head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.name {
+  font-family: var(--serif);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--ink) !important;
+  overflow-wrap: anywhere;
+}
+
+.name:hover {
+  color: var(--clay) !important;
+  text-decoration: none;
+}
+
+.subId {
+  display: block;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  color: var(--ink-faint);
+  margin-top: 2px;
+}
+
+.revenue {
+  flex-shrink: 0;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+
+/* Label / value pairs. */
+.fields {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 5px 12px;
+  margin: 0;
+  font-size: 12px;
+}
+
+.label {
+  color: var(--ink-faint);
+  white-space: nowrap;
+}
+
+.value {
+  margin: 0;
+  text-align: right;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.num {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* A titled section (services, rigs). */
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sectionLabel {
+  font-size: 11px;
+  color: var(--ink-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.empty {
+  font-size: 12px;
+  color: var(--ink-faint);
+}
+
+/* Rigs rendered as tiles-within-the-tile. */
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.chip {
+  font-family: var(--serif);
+  font-size: 12px;
+  padding: 3px 9px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--paper);
+  color: var(--ink-soft);
+}
+
+.footer {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 4px 12px;
+  justify-content: start;
+  margin: 16px 0;
+  font-size: 13px;
+}
+
+.footerValue {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.bestViewedIn {
+  margin: 4pt 0 16pt;
+  color: var(--ink-faint);
+  font-size: 12px;
+}

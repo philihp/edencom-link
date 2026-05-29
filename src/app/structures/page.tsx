@@ -2,8 +2,8 @@ import { redirect } from 'next/navigation'
 
 import { createClient } from '@/utils/supabase/server'
 import { DateTime } from '../DateTime'
-import retro from '../retro.module.css'
 import { fetchTypeNames } from '../typeNames'
+import styles from './structures.module.css'
 
 type Structure = {
   structure_id: number
@@ -147,60 +147,87 @@ const StructuresPage = async () => {
       <h1>Structures</h1>
       {list.length > 0 ? (
         <>
-          <table className={retro.retro}>
-            <thead>
-              <tr>
-                <th className={retro.num}>Structure ID</th>
-                <th className={retro.num}>Station ID</th>
-                <th>Name</th>
-                <th className={retro.num}>Revenue</th>
-                <th className={retro.num}>Corp ID</th>
-                <th className={retro.num}>Type ID</th>
-                <th className={retro.num}>System ID</th>
-                <th>State</th>
-                <th>Fuel Expires</th>
-                <th>Unanchors At</th>
-                <th>Services</th>
-                <th>Rigs</th>
-                <th>Last Seen</th>
-              </tr>
-            </thead>
-            <tbody>
-              {list.map((s) => (
-                <tr key={`structure-${s.structure_id}`}>
-                  <td className={retro.num}>
-                    <a href={`/structures/${s.structure_id}`}>{s.structure_id}</a>
-                  </td>
-                  {/* Upwell structures share their structure_id with the station/facility id industry jobs run at. */}
-                  <td className={retro.num}>{s.structure_id}</td>
-                  <td className="serif">{s.name ?? '—'}</td>
-                  <td className={retro.num}>{formatMisk(totalByStructure.get(String(s.structure_id)) ?? 0)}</td>
-                  <td className={retro.num}>{s.corporation_id}</td>
-                  <td className={retro.num}>{s.type_id}</td>
-                  <td className={retro.num}>{s.system_id}</td>
-                  <td>{s.state ?? '—'}</td>
-                  <td>
-                    <DateTime value={s.fuel_expires} />
-                  </td>
-                  <td>
-                    <DateTime value={s.unanchors_at} />
-                  </td>
-                  <td>{s.services?.map((svc) => svc.name).join(', ') ?? '—'}</td>
-                  <td>{rigsByStructure.get(String(s.structure_id))?.join(', ') ?? '—'}</td>
-                  <td>
-                    <DateTime value={s.last_seen_at} />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <p>
-            Unaccounted tax revenue: <span className={retro.num}>{formatMisk(unaccounted)}</span>
-          </p>
-          <p>
-            Clone revenue: <span className={retro.num}>{formatMisk(cloneRevenue)}</span>
-          </p>
-          <p className={retro.bestViewedIn}>Best viewed in Netscape Navigator 3.0 at 800&times;600</p>
+          <ul className={styles.grid}>
+            {list.map((s) => {
+              const rigs = rigsByStructure.get(String(s.structure_id)) ?? []
+              const services = s.services?.map((svc) => svc.name) ?? []
+              return (
+                <li key={`structure-${s.structure_id}`} className={styles.tile}>
+                  <div className={styles.head}>
+                    <div>
+                      <a href={`/structures/${s.structure_id}`} className={styles.name}>
+                        {s.name ?? `Structure #${s.structure_id}`}
+                      </a>
+                      {/* Upwell structures share their structure_id with the station/facility id industry jobs run at. */}
+                      <span className={styles.subId}>#{s.structure_id}</span>
+                    </div>
+                    <span className={styles.revenue}>{formatMisk(totalByStructure.get(String(s.structure_id)) ?? 0)}</span>
+                  </div>
+
+                  <div className={styles.fields}>
+                    <span className={styles.label}>Corp ID</span>
+                    <span className={`${styles.value} ${styles.num}`}>{s.corporation_id}</span>
+                    <span className={styles.label}>Type ID</span>
+                    <span className={`${styles.value} ${styles.num}`}>{s.type_id}</span>
+                    <span className={styles.label}>System ID</span>
+                    <span className={`${styles.value} ${styles.num}`}>{s.system_id}</span>
+                    <span className={styles.label}>State</span>
+                    <span className={styles.value}>{s.state ?? '—'}</span>
+                    <span className={styles.label}>Fuel Expires</span>
+                    <span className={styles.value}>
+                      <DateTime value={s.fuel_expires} />
+                    </span>
+                    <span className={styles.label}>Unanchors At</span>
+                    <span className={styles.value}>
+                      <DateTime value={s.unanchors_at} />
+                    </span>
+                    <span className={styles.label}>Last Seen</span>
+                    <span className={styles.value}>
+                      <DateTime value={s.last_seen_at} />
+                    </span>
+                  </div>
+
+                  <div className={styles.section}>
+                    <span className={styles.sectionLabel}>Services</span>
+                    {services.length > 0 ? (
+                      <ul className={styles.chips}>
+                        {services.map((svc, i) => (
+                          <li key={`svc-${s.structure_id}-${i}`} className={styles.chip}>
+                            {svc}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <span className={styles.empty}>—</span>
+                    )}
+                  </div>
+
+                  <div className={styles.section}>
+                    <span className={styles.sectionLabel}>Rigs</span>
+                    {rigs.length > 0 ? (
+                      <ul className={styles.chips}>
+                        {rigs.map((rig, i) => (
+                          <li key={`rig-${s.structure_id}-${i}`} className={styles.chip}>
+                            {rig}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <span className={styles.empty}>—</span>
+                    )}
+                  </div>
+                </li>
+              )
+            })}
+          </ul>
+
+          <div className={styles.footer}>
+            <span>Unaccounted tax revenue:</span>
+            <span className={styles.footerValue}>{formatMisk(unaccounted)}</span>
+            <span>Clone revenue:</span>
+            <span className={styles.footerValue}>{formatMisk(cloneRevenue)}</span>
+          </div>
+          <p className={styles.bestViewedIn}>Best viewed in Netscape Navigator 3.0 at 800&times;600</p>
         </>
       ) : (
         <p>
