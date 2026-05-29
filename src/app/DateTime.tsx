@@ -17,5 +17,13 @@ export const DateTime = ({ value, fallback = '—' }: DateTimeProps) => {
   if (value === null || value === undefined || value === '') return <>{fallback}</>
   const date = value instanceof Date ? value : new Date(value)
   if (Number.isNaN(date.getTime())) return <>{fallback}</>
-  return <time dateTime={date.toISOString()}>{formatter.format(date)}</time>
+  // Keep the date and the time each unbreakable, so the only place a wrap can
+  // happen is the (regular, breaking) space between them.
+  const [datePart, timePart] = formatter.format(date).split(' ')
+  return (
+    <time dateTime={date.toISOString()}>
+      <span style={{ whiteSpace: 'nowrap' }}>{datePart}</span>
+      {timePart ? <> <span style={{ whiteSpace: 'nowrap' }}>{timePart}</span></> : null}
+    </time>
+  )
 }
