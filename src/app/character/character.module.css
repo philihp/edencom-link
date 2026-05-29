@@ -10,10 +10,15 @@
 .tile {
   display: flex;
   gap: 10pt;
-  padding: 10pt;
-  border: 1px solid #ccc;
-  border-radius: 6pt;
-  background: #fafafa;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--paper-raised);
+  transition: border-color 0.12s ease;
+}
+
+.tile:hover {
+  border-color: var(--clay);
 }
 
 .avatar {
@@ -21,8 +26,8 @@
   height: 64px;
   flex-shrink: 0;
   border-radius: 50%;
-  background: #ddd;
-  border: 1px solid #bbb;
+  background: var(--line-soft);
+  border: 1px solid var(--line);
 }
 
 .body {
@@ -43,13 +48,13 @@
 
 .meta {
   font-size: 9pt;
-  color: #666;
+  color: var(--ink-soft);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .metaLabel {
-  color: #999;
+  color: var(--ink-faint);
   margin-right: 4pt;
 }

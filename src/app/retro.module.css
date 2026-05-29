@@ -1,27 +1,39 @@
 /*
- * Plain table styling — beveled grey borders, padded cells, no spacing.
+ * Plain data table — soft warm borders that match the Claude Code theme.
  */
 
 .retro {
-  border: 1px outset #808080;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
   border-spacing: 0;
-  margin: 12pt 0;
+  border-collapse: separate;
+  overflow: hidden;
+  margin: 16px 0;
+  font-size: 13px;
 }
 
 .retro th {
-  border: 1px outset #808080;
-  background: #efefef;
-  padding: 2px;
+  border-bottom: 1px solid var(--line);
+  background: var(--paper-raised);
+  color: var(--ink-soft);
+  font-weight: 600;
+  padding: 6px 10px;
   text-align: left;
   white-space: nowrap;
 }
 
 .retro td {
-  border: 1px inset #808080;
-  padding: 2px;
+  border-bottom: 1px solid var(--line-soft);
+  padding: 6px 10px;
   text-align: left;
+}
+
+.retro tr:last-child td {
+  border-bottom: none;
 }
 
 .bestViewedIn {
   margin: 4pt 0 16pt;
+  color: var(--ink-faint);
+  font-size: 12px;
 }

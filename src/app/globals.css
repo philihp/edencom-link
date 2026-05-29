@@ -1,10 +1,83 @@
+/*
+ * Claude Code inspired theme.
+ *
+ * Warm Anthropic palette (cream paper + clay/coral accent) paired with a
+ * monospace, terminal-flavored type system. Light by default, with a dark
+ * "terminal" variant when the OS prefers dark mode.
+ */
+
+:root {
+  /* Anthropic warm neutrals */
+  --paper: #f0eee6;
+  --paper-raised: #faf9f5;
+  --ink: #1f1e1d;
+  --ink-soft: #53514c;
+  --ink-faint: #8a877e;
+  --line: #ddd9cc;
+  --line-soft: #e8e5da;
+
+  /* Claude clay / coral accent */
+  --clay: #d97757;
+  --clay-strong: #c45c3a;
+  --clay-tint: #f6e9e2;
+
+  --radius: 10px;
+  --radius-sm: 7px;
+
+  --mono:
+    'SF Mono', 'JetBrains Mono', 'Fira Code', 'Cascadia Code', ui-monospace,
+    'Menlo', 'Consolas', monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #1a1815;
+    --paper-raised: #24211d;
+    --ink: #f0eee6;
+    --ink-soft: #c4bfb3;
+    --ink-faint: #8a877e;
+    --line: #38342d;
+    --line-soft: #2d2a24;
+    --clay: #e08a6c;
+    --clay-strong: #d97757;
+    --clay-tint: #2e241f;
+  }
+}
+
 html,
 body {
   text-rendering: geometricPrecision;
 }
 
+body {
+  margin: 0;
+  padding: 0 16px 48px;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 14px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
 * {
   box-sizing: border-box;
+}
+
+/* Page content sits in a centered "prompt" column. */
+body > header,
+body > hr,
+body > main,
+body > div,
+body > form,
+body > section {
+  max-width: 980px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+main {
+  padding-top: 4px;
 }
 
 img {
@@ -12,7 +85,131 @@ img {
   display: block;
 }
 
+a {
+  color: var(--clay-strong);
+  text-decoration: none;
+}
+
+a:hover {
+  color: var(--clay);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+h1,
+h2,
+h3 {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+}
+
+h1 {
+  font-size: 22px;
+}
+
+h2 {
+  font-size: 17px;
+}
+
+code,
+pre,
+kbd {
+  font-family: var(--mono);
+}
+
+/* Terminal-style top bar. */
+header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding: 14px 18px;
+  margin-top: 20px;
+  background: var(--paper-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+
+header a {
+  color: var(--ink-soft);
+}
+
+header a:hover {
+  color: var(--clay);
+}
+
+/* The leading "✻ EVE Hangar" mark, set apart from the nav. */
+header::before {
+  content: '✻';
+  color: var(--clay);
+  margin-right: 8px;
+  font-size: 15px;
+}
+
+/* The <hr/> between header and content reads as a faint divider. */
+hr {
+  border: none;
+  border-top: 1px solid var(--line-soft);
+  margin: 18px auto;
+}
+
+/* Buttons styled like a focused prompt action. */
 button {
-  margin: 5pt 0;
-  padding: 5pt 10pt;
+  margin: 6px 0;
+  padding: 7px 14px;
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--paper-raised);
+  background: var(--clay);
+  border: 1px solid var(--clay-strong);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition:
+    background 0.12s ease,
+    transform 0.04s ease;
+}
+
+button:hover {
+  background: var(--clay-strong);
+}
+
+button:active {
+  transform: translateY(1px);
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Inputs read like terminal fields. */
+input,
+select,
+textarea {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--ink);
+  background: var(--paper-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--clay);
+  box-shadow: 0 0 0 2px var(--clay-tint);
+}
+
+label {
+  color: var(--ink-soft);
+}
+
+::selection {
+  background: var(--clay-tint);
 }

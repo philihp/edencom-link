@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { createClient } from '@/utils/supabase/server'
+import styles from './header.module.css'
 
 const Header = async () => {
   const supabase = await createClient()
@@ -10,31 +11,33 @@ const Header = async () => {
   const userId = user?.email ?? undefined
   return (
     <header>
-      EVE Hangar
+      <Link href="/" className={styles.brand}>
+        EVE Hangar
+      </Link>
       {!userId && (
-        <>
-          &nbsp;[&nbsp;
-          <Link href="/account/login">Login</Link>
-          &nbsp;|&nbsp;
-          <Link href="/account/register">Register</Link>
-          &nbsp;]
-        </>
+        <nav className={styles.nav}>
+          <span className={styles.bracket}>[</span>
+          <Link href="/account/login">login</Link>
+          <span className={styles.sep}>|</span>
+          <Link href="/account/register">register</Link>
+          <span className={styles.bracket}>]</span>
+        </nav>
       )}
       {userId && (
-        <>
-          &nbsp;[&nbsp;
-          {userId}
-          &nbsp;|&nbsp;
-          <Link href="/character/">Characters</Link>
-          &nbsp;|&nbsp;
-          <Link href="/market">Market</Link>
-          &nbsp;|&nbsp;
-          <Link href="/industry">Industry</Link>
-          &nbsp;|&nbsp;
-          <Link href="/structures">Structures</Link>
-          &nbsp;|&nbsp;
-          <Link href="/account/settings">Settings</Link> ]
-        </>
+        <nav className={styles.nav}>
+          <span className={styles.user}>{userId}</span>
+          <span className={styles.bracket}>[</span>
+          <Link href="/character/">characters</Link>
+          <span className={styles.sep}>|</span>
+          <Link href="/market">market</Link>
+          <span className={styles.sep}>|</span>
+          <Link href="/industry">industry</Link>
+          <span className={styles.sep}>|</span>
+          <Link href="/structures">structures</Link>
+          <span className={styles.sep}>|</span>
+          <Link href="/account/settings">settings</Link>
+          <span className={styles.bracket}>]</span>
+        </nav>
       )}
     </header>
   )

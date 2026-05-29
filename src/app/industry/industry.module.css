@@ -18,7 +18,7 @@
 
 .jobsFilter {
   font-size: 10pt;
-  color: #555;
+  color: var(--ink-soft);
 }
 
 .jobs {
@@ -30,14 +30,15 @@
 
 .jobs th,
 .jobs td {
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid var(--line-soft);
   padding: 6pt 8pt;
   text-align: left;
 }
 
 .jobs th {
-  background: #fafafa;
-  font-weight: bold;
+  background: var(--paper-raised);
+  color: var(--ink-soft);
+  font-weight: 600;
 }
 
 .jobs td:nth-child(5),
