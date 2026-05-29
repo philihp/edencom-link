@@ -17,10 +17,15 @@ type Structure = {
   last_seen_at: string
 }
 
-type Transaction = {
-  location_id: number | string
-  unit_price: number | string
-  quantity: number | string
+type JobRow = {
+  job_id: number | string
+  station_id: number | string | null
+  facility_id: number | string | null
+}
+
+type JournalRow = {
+  amount: number | string | null
+  description: string | null
 }
 
 const formatIsk = (raw: string | number | null) => {
@@ -48,21 +53,60 @@ const StructuresPage = async () => {
 
   const list = (structures ?? []) as Structure[]
 
-  // Total up every transaction's amount (unit price × quantity) per structure it happened at.
-  const structureIds = list.map((s) => s.structure_id)
-  const { data: transactions } = structureIds.length
+  // Tax revenue each structure generates. Each industry-tax journal entry references a job by id in
+  // its description; outer-join those job ids to the industry_job table to find the structure
+  // (station_id, falling back to facility_id) the job is installed in, then sum the journal amounts.
+  // Bigint ids can come back from PostgREST as strings, so key every map by string.
+  const structureIds = list.map((s) => Number(s.structure_id))
+  const { data: jobs } = structureIds.length
     ? await supabase
         .schema('hangar')
-        .from('market_transaction')
-        .select('location_id, unit_price, quantity')
-        .in('location_id', structureIds)
+        .from('industry_job')
+        .select('job_id, station_id, facility_id')
+        .or(`station_id.in.(${structureIds.join(',')}),facility_id.in.(${structureIds.join(',')})`)
     : { data: [] }
 
-  const totalByStructure = new Map<number, number>()
-  for (const t of (transactions ?? []) as Transaction[]) {
-    const id = Number(t.location_id)
-    totalByStructure.set(id, (totalByStructure.get(id) ?? 0) + Number(t.unit_price) * Number(t.quantity))
+  const structureByJob = new Map<string, string>()
+  for (const j of (jobs ?? []) as JobRow[]) {
+    const structureId = j.station_id ?? j.facility_id
+    if (structureId != null) structureByJob.set(String(j.job_id), String(structureId))
   }
+
+  const { data: journal } = await supabase
+    .schema('hangar')
+    .from('corp_wallet_journal')
+    .select('amount, description')
+    .eq('ref_type', 'industry_job_tax')
+
+  const totalByStructure = new Map<string, number>()
+  let unaccounted = 0
+  for (const entry of (journal ?? []) as JournalRow[]) {
+    const amount = Number(entry.amount ?? 0)
+    // The job id is interpolated into the description; find the token that joins to a known job.
+    let structureId: string | undefined
+    for (const token of entry.description?.match(/\d+/g) ?? []) {
+      structureId = structureByJob.get(token)
+      if (structureId) break
+    }
+    if (structureId) {
+      totalByStructure.set(structureId, (totalByStructure.get(structureId) ?? 0) + amount)
+    } else {
+      // Tax we received but can't tie to one of our structures (e.g. jobs not in our table).
+      unaccounted += amount
+    }
+  }
+
+  // Revenue from structure clone bays (jump clone installation and activation fees).
+  const { data: cloneJournal } = await supabase
+    .schema('hangar')
+    .from('corp_wallet_journal')
+    .select('amount')
+    .in('ref_type', ['jump_clone_installation_fee', 'jump_clone_activation_fee'])
+
+  const cloneRevenue = ((cloneJournal ?? []) as Array<{ amount: number | string | null }>).reduce(
+    (sum, entry) => sum + Number(entry.amount ?? 0),
+    0
+  )
 
   return (
     <>
@@ -75,7 +119,7 @@ const StructuresPage = async () => {
                 <th>Structure ID</th>
                 <th>Station ID</th>
                 <th>Name</th>
-                <th>Transactions Total</th>
+                <th>Tax Revenue</th>
                 <th>Corp ID</th>
                 <th>Type ID</th>
                 <th>System ID</th>
@@ -95,7 +139,7 @@ const StructuresPage = async () => {
                   {/* Upwell structures share their structure_id with the station/facility id industry jobs run at. */}
                   <td>{s.structure_id}</td>
                   <td>{s.name ?? '—'}</td>
-                  <td>{formatIsk(totalByStructure.get(s.structure_id) ?? 0)}</td>
+                  <td>{formatIsk(totalByStructure.get(String(s.structure_id)) ?? 0)}</td>
                   <td>{s.corporation_id}</td>
                   <td>{s.type_id}</td>
                   <td>{s.system_id}</td>
@@ -114,6 +158,8 @@ const StructuresPage = async () => {
               ))}
             </tbody>
           </table>
+          <p>Unaccounted tax revenue: {formatIsk(unaccounted)} ISK</p>
+          <p>Clone revenue: {formatIsk(cloneRevenue)} ISK</p>
           <p className={retro.bestViewedIn}>Best viewed in Netscape Navigator 3.0 at 800&times;600</p>
         </>
       ) : (

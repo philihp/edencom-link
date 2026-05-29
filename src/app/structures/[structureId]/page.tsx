@@ -124,10 +124,6 @@ const StructurePage = async ({ params }: StructureParams) => {
             <td>{s.structure_id}</td>
           </tr>
           <tr>
-            <th>Name</th>
-            <td>{show(s.name)}</td>
-          </tr>
-          <tr>
             <th>Type</th>
             <td>
               {typeName ? `${typeName} ` : ''}#{s.type_id}
