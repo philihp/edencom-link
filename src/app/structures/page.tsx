@@ -53,9 +53,9 @@ const StructuresPage = async () => {
 
   const list = (structures ?? []) as Structure[]
 
-  // Total the corp wallet activity per structure. Each industry-tax journal entry references a job
-  // by id in its description; outer-join those job ids to the industry_job table to find the
-  // structure (station_id, falling back to facility_id) the job is installed in, then sum amounts.
+  // Tax revenue each structure generates. Each industry-tax journal entry references a job by id in
+  // its description; outer-join those job ids to the industry_job table to find the structure
+  // (station_id, falling back to facility_id) the job is installed in, then sum the journal amounts.
   // Bigint ids can come back from PostgREST as strings, so key every map by string.
   const structureIds = list.map((s) => Number(s.structure_id))
   const { data: jobs } = structureIds.length
@@ -98,7 +98,7 @@ const StructuresPage = async () => {
                 <th>Structure ID</th>
                 <th>Station ID</th>
                 <th>Name</th>
-                <th>Transactions Total</th>
+                <th>Tax Revenue</th>
                 <th>Corp ID</th>
                 <th>Type ID</th>
                 <th>System ID</th>
