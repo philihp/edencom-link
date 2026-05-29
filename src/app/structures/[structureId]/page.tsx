@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/utils/supabase/server'
 import { DateTime } from '../../DateTime'
 import { ACTIVITY_NAMES } from '../../industry/jobFields'
+import { fetchSystemNames } from '../../systemNames'
 import { fetchTypeNames } from '../../typeNames'
 import retro from '../../retro.module.css'
 
@@ -38,6 +39,12 @@ type Job = {
   end_date: string
   station_id: number | string | null
   facility_id: number | string | null
+}
+
+type Rig = {
+  structure_id: number | string
+  location_flag: string
+  type_id: number | string
 }
 
 type StructureParams = {
@@ -99,8 +106,19 @@ const StructurePage = async ({ params }: StructureParams) => {
   const { data: characters } = await supabase.schema('hangar').from('character').select('id, name')
   const characterName: Record<string, string> = Object.fromEntries((characters ?? []).map((c) => [c.id, c.name]))
 
+  // Rigs fitted to this structure (pulled from corp assets by the structures job).
+  const { data: rigData } = await supabase
+    .schema('hangar')
+    .from('corp_structure_rig')
+    .select('structure_id, location_flag, type_id')
+    .eq('structure_id', structureId)
+    .order('location_flag', { ascending: true })
+
+  const rigs = (rigData ?? []) as Rig[]
+
   const typeNames = await fetchTypeNames([
     Number(s.type_id),
+    ...rigs.map((r) => Number(r.type_id)),
     ...jobs.flatMap((j) => {
       const ids = [Number(j.blueprint_type_id)]
       if (j.product_type_id != null) ids.push(Number(j.product_type_id))
@@ -108,7 +126,10 @@ const StructurePage = async ({ params }: StructureParams) => {
     }),
   ])
 
+  const systemNames = await fetchSystemNames([Number(s.system_id)])
+
   const typeName = typeNames[Number(s.type_id)]
+  const systemName = systemNames[Number(s.system_id)]
 
   return (
     <>
@@ -126,16 +147,12 @@ const StructurePage = async ({ params }: StructureParams) => {
           <tr>
             <th>Type</th>
             <td>
-              {typeName ? <span className="serif">{typeName} </span> : ''}#{s.type_id}
+              <span className="serif">{typeName ?? `#${s.type_id}`}</span>
             </td>
           </tr>
           <tr>
-            <th>System ID</th>
-            <td>{s.system_id}</td>
-          </tr>
-          <tr>
-            <th>Corp ID</th>
-            <td>{s.corporation_id}</td>
+            <th>System</th>
+            <td>{systemName ?? s.system_id}</td>
           </tr>
           <tr>
             <th>Profile ID</th>
@@ -178,6 +195,12 @@ const StructurePage = async ({ params }: StructureParams) => {
           <tr>
             <th>Services</th>
             <td>{s.services?.map((svc) => `${svc.name} (${svc.state})`).join(', ') ?? '—'}</td>
+          </tr>
+          <tr>
+            <th>Rigs</th>
+            <td>
+              {rigs.length > 0 ? rigs.map((r) => typeNames[Number(r.type_id)] ?? `#${r.type_id}`).join(', ') : '—'}
+            </td>
           </tr>
           <tr>
             <th>Last Seen</th>
