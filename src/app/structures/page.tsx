@@ -17,10 +17,15 @@ type Structure = {
   last_seen_at: string
 }
 
-type Transaction = {
-  location_id: number | string
-  unit_price: number | string
-  quantity: number | string
+type JobRow = {
+  job_id: number | string
+  station_id: number | string | null
+  facility_id: number | string | null
+}
+
+type JournalRow = {
+  amount: number | string | null
+  description: string | null
 }
 
 const formatIsk = (raw: string | number | null) => {
@@ -48,22 +53,38 @@ const StructuresPage = async () => {
 
   const list = (structures ?? []) as Structure[]
 
-  // Total up every transaction's amount (unit price × quantity) per structure it happened at.
-  // structure_id / location_id are bigints, which PostgREST may return as strings; key the map by
-  // string on both sides so the lookup doesn't silently miss (and totals don't all read as zero).
+  // Total the corp wallet activity per structure. Each industry-tax journal entry references a job
+  // by id in its description; outer-join those job ids to the industry_job table to find the
+  // structure (station_id, falling back to facility_id) the job is installed in, then sum amounts.
+  // Bigint ids can come back from PostgREST as strings, so key every map by string.
   const structureIds = list.map((s) => Number(s.structure_id))
-  const { data: transactions } = structureIds.length
+  const { data: jobs } = structureIds.length
     ? await supabase
         .schema('hangar')
-        .from('market_transaction')
-        .select('location_id, unit_price, quantity')
-        .in('location_id', structureIds)
+        .from('industry_job')
+        .select('job_id, station_id, facility_id')
+        .or(`station_id.in.(${structureIds.join(',')}),facility_id.in.(${structureIds.join(',')})`)
     : { data: [] }
 
+  const structureByJob = new Map<string, string>()
+  for (const j of (jobs ?? []) as JobRow[]) {
+    const structureId = j.station_id ?? j.facility_id
+    if (structureId != null) structureByJob.set(String(j.job_id), String(structureId))
+  }
+
+  const { data: journal } = await supabase.schema('hangar').from('corp_wallet_journal').select('amount, description')
+
   const totalByStructure = new Map<string, number>()
-  for (const t of (transactions ?? []) as Transaction[]) {
-    const id = String(t.location_id)
-    totalByStructure.set(id, (totalByStructure.get(id) ?? 0) + Number(t.unit_price) * Number(t.quantity))
+  for (const entry of (journal ?? []) as JournalRow[]) {
+    if (!entry.description) continue
+    // The job id is interpolated into the description; find the token that joins to a known job.
+    for (const token of entry.description.match(/\d+/g) ?? []) {
+      const structureId = structureByJob.get(token)
+      if (structureId) {
+        totalByStructure.set(structureId, (totalByStructure.get(structureId) ?? 0) + Number(entry.amount ?? 0))
+        break
+      }
+    }
   }
 
   return (
