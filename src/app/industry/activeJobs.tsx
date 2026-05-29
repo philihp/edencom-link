@@ -84,15 +84,15 @@ export const ActiveJobs = ({ jobs, characters, initialNow, typeNames }: ActiveJo
       </div>
       {filtered.length > 0 ? (
         <>
-          <table className={retro.retro} border={3} cellPadding={2} cellSpacing={0}>
+          <table className={retro.retro}>
             <thead>
               <tr>
                 <th>Character</th>
                 <th>Activity</th>
                 <th>Blueprint</th>
                 <th>Product</th>
-                <th>Runs</th>
-                <th>Station ID</th>
+                <th className={retro.num}>Runs</th>
+                <th className={retro.num}>Station ID</th>
                 <th>Start</th>
                 <th>End</th>
                 <th>Remaining</th>
@@ -109,8 +109,10 @@ export const ActiveJobs = ({ jobs, characters, initialNow, typeNames }: ActiveJo
                       ? (typeNames[Number(j.product_type_id)] ?? `#${j.product_type_id}`)
                       : '—'}
                   </td>
-                  <td>{j.runs}</td>
-                  <td>{(j.station_id ?? j.facility_id) != null ? String(j.station_id ?? j.facility_id) : '—'}</td>
+                  <td className={retro.num}>{j.runs}</td>
+                  <td className={retro.num}>
+                    {(j.station_id ?? j.facility_id) != null ? String(j.station_id ?? j.facility_id) : '—'}
+                  </td>
                   <td>
                     <DateTime value={j.start_date} />
                   </td>

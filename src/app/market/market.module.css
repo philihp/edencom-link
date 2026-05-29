@@ -28,7 +28,6 @@
   margin: 12pt 0;
 }
 
-.sales th,
 .sales td {
   border-bottom: 1px solid var(--line-soft);
   padding: 6pt 8pt;
@@ -36,9 +35,15 @@
 }
 
 .sales th {
-  background: var(--paper-raised);
+  border-bottom: 1px solid var(--line);
+  padding: 6pt 8pt;
+  text-align: left;
   color: var(--ink-soft);
   font-weight: 600;
+}
+
+.sales tbody tr:last-child td {
+  border-bottom: none;
 }
 
 .sales td:nth-child(3),
@@ -49,6 +54,13 @@
 .sales th:nth-child(5) {
   text-align: right;
   font-variant-numeric: tabular-nums;
+}
+
+/* Numeric columns are the only place we use the fixed-width face. */
+.sales td:nth-child(3),
+.sales td:nth-child(4),
+.sales td:nth-child(5) {
+  font-family: var(--mono);
 }
 
 .suffix {

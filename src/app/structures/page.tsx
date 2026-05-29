@@ -35,9 +35,10 @@ type RigRow = {
   type_id: number | string
 }
 
-const formatIsk = (raw: string | number | null) => {
+// Tax revenue is shown in millions of ISK.
+const formatIskMillions = (raw: string | number | null) => {
   if (raw === null) return '—'
-  const n = Number(raw)
+  const n = Number(raw) / 1_000_000
   return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
@@ -141,16 +142,16 @@ const StructuresPage = async () => {
       <h1>Structures</h1>
       {list.length > 0 ? (
         <>
-          <table className={retro.retro} border={3} cellPadding={2} cellSpacing={0}>
+          <table className={retro.retro}>
             <thead>
               <tr>
-                <th>Structure ID</th>
-                <th>Station ID</th>
+                <th className={retro.num}>Structure ID</th>
+                <th className={retro.num}>Station ID</th>
                 <th>Name</th>
-                <th>Tax Revenue</th>
-                <th>Corp ID</th>
-                <th>Type ID</th>
-                <th>System ID</th>
+                <th className={retro.num}>Tax Revenue (M ISK)</th>
+                <th className={retro.num}>Corp ID</th>
+                <th className={retro.num}>Type ID</th>
+                <th className={retro.num}>System ID</th>
                 <th>State</th>
                 <th>Fuel Expires</th>
                 <th>Unanchors At</th>
@@ -162,16 +163,16 @@ const StructuresPage = async () => {
             <tbody>
               {list.map((s) => (
                 <tr key={`structure-${s.structure_id}`}>
-                  <td>
+                  <td className={retro.num}>
                     <a href={`/structures/${s.structure_id}`}>{s.structure_id}</a>
                   </td>
                   {/* Upwell structures share their structure_id with the station/facility id industry jobs run at. */}
-                  <td>{s.structure_id}</td>
+                  <td className={retro.num}>{s.structure_id}</td>
                   <td>{s.name ?? '—'}</td>
-                  <td>{formatIsk(totalByStructure.get(String(s.structure_id)) ?? 0)}</td>
-                  <td>{s.corporation_id}</td>
-                  <td>{s.type_id}</td>
-                  <td>{s.system_id}</td>
+                  <td className={retro.num}>{formatIskMillions(totalByStructure.get(String(s.structure_id)) ?? 0)}</td>
+                  <td className={retro.num}>{s.corporation_id}</td>
+                  <td className={retro.num}>{s.type_id}</td>
+                  <td className={retro.num}>{s.system_id}</td>
                   <td>{s.state ?? '—'}</td>
                   <td>
                     <DateTime value={s.fuel_expires} />
@@ -188,8 +189,8 @@ const StructuresPage = async () => {
               ))}
             </tbody>
           </table>
-          <p>Unaccounted tax revenue: {formatIsk(unaccounted)} ISK</p>
-          <p>Clone revenue: {formatIsk(cloneRevenue)} ISK</p>
+          <p>Unaccounted tax revenue: {formatIskMillions(unaccounted)} M ISK</p>
+          <p>Clone revenue: {formatIskMillions(cloneRevenue)} M ISK</p>
           <p className={retro.bestViewedIn}>Best viewed in Netscape Navigator 3.0 at 800&times;600</p>
         </>
       ) : (

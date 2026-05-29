@@ -117,7 +117,7 @@ const StructurePage = async ({ params }: StructureParams) => {
         <Link href="/structures">&laquo; Back to Structures</Link>
       </p>
 
-      <table className={retro.retro} border={3} cellPadding={2} cellSpacing={0}>
+      <table className={retro.retro}>
         <tbody>
           <tr>
             <th>Structure ID</th>
@@ -196,14 +196,14 @@ const StructurePage = async ({ params }: StructureParams) => {
 
       <h2>Industry Jobs</h2>
       {jobs.length > 0 ? (
-        <table className={retro.retro} border={3} cellPadding={2} cellSpacing={0}>
+        <table className={retro.retro}>
           <thead>
             <tr>
               <th>Character</th>
               <th>Activity</th>
               <th>Blueprint</th>
               <th>Product</th>
-              <th>Runs</th>
+              <th className={retro.num}>Runs</th>
               <th>Status</th>
               <th>Start</th>
               <th>End</th>
@@ -218,7 +218,7 @@ const StructurePage = async ({ params }: StructureParams) => {
                 <td>
                   {j.product_type_id != null ? (typeNames[Number(j.product_type_id)] ?? `#${j.product_type_id}`) : '—'}
                 </td>
-                <td>{j.runs}</td>
+                <td className={retro.num}>{j.runs}</td>
                 <td>{j.status}</td>
                 <td>
                   <DateTime value={j.start_date} />
