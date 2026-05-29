@@ -1,6 +1,7 @@
 'use client'
 
 import { DateTime } from '../DateTime'
+import { formatMisk } from '../isk'
 import styles from './market.module.css'
 import { usePersist } from './usePersist'
 
@@ -36,25 +37,6 @@ const THRESHOLDS: Array<{ label: string; value: number }> = [
 const THRESHOLD_STORAGE_KEY = 'market.recentSales.threshold'
 const CHARACTER_STORAGE_KEY = 'market.recentSales.characterId'
 const ALL_CHARACTERS = ''
-
-const iskTier = (n: number) => {
-  const abs = Math.abs(n)
-  if (abs >= 1_000_000_000) return { value: n / 1_000_000_000, suffix: 'b', className: styles.suffixB }
-  if (abs >= 1_000_000) return { value: n / 1_000_000, suffix: 'm', className: styles.suffixM }
-  if (abs >= 1_000) return { value: n / 1_000, suffix: 'k', className: styles.suffixK }
-  return { value: n, suffix: '', className: styles.suffixNone }
-}
-
-const IskPrice = ({ raw }: { raw: string | number }) => {
-  const n = Number(raw)
-  const { value, suffix, className } = iskTier(n)
-  return (
-    <>
-      {value.toPrecision(4)}
-      <span className={`${styles.suffix} ${className}`}>{suffix}</span>
-    </>
-  )
-}
 
 export const RecentSales = ({ sales, characters, typeNames }: RecentSalesProps) => {
   const characterName: Record<string, string> = Object.fromEntries(characters.map((c) => [c.id, c.name]))
@@ -121,12 +103,8 @@ export const RecentSales = ({ sales, characters, typeNames }: RecentSalesProps) 
                 <td className="serif">{characterName[s.character_id] ?? '—'}</td>
                 <td className="serif">{typeNames[Number(s.type_id)] ?? `#${s.type_id}`}</td>
                 <td>{s.quantity}</td>
-                <td>
-                  <IskPrice raw={s.unit_price} />
-                </td>
-                <td>
-                  <IskPrice raw={Number(s.unit_price) * Number(s.quantity)} />
-                </td>
+                <td>{formatMisk(s.unit_price)}</td>
+                <td>{formatMisk(Number(s.unit_price) * Number(s.quantity))}</td>
                 <td>
                   <DateTime value={s.date} />
                 </td>
