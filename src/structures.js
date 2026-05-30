@@ -1,11 +1,7 @@
-import SingleSignOn from 'eve-sso'
 import { pullCorpWalletJournals } from './corpWalletJournal.js'
-import { character as fetchCharacter, corpAssets, corpStructures, corpWalletJournal, userAgent } from './esi.js'
+import { character as fetchCharacter, corpAssets, corpStructures, corpWalletJournal } from './esi.js'
 import { sudoSupabase } from './supabase.js'
-
-const EVE_CLIENT_ID = process.env.EVE_CLIENT_ID
-const EVE_SECRET_KEY = process.env.EVE_SECRET_KEY
-const EVE_CALLBACK_URL = process.env.EVE_CALLBACK_URL
+import { refreshAccessToken } from './tokenRefresh.js'
 
 const STRUCTURES_SCOPE = 'esi-corporations.read_structures.v1'
 const WALLET_SCOPE = 'esi-wallet.read_corporation_wallets.v1'
@@ -15,25 +11,7 @@ const ASSETS_SCOPE = 'esi-assets.read_corporation_assets.v1'
 // equal to the structure_id and a RigSlotN location_flag.
 const isRigSlot = (flag) => typeof flag === 'string' && flag.startsWith('RigSlot')
 
-const sso = new SingleSignOn(EVE_CLIENT_ID, EVE_SECRET_KEY, EVE_CALLBACK_URL, userAgent)
-
 const tail = (s) => (typeof s === 'string' && s.length > 4 ? s.slice(-4) : '????')
-
-const refreshToken = async (tokenRow) => {
-  const refreshed = await sso.getAccessToken(tokenRow.refresh_token, true)
-  const { access_token, refresh_token } = refreshed
-  const { sub, scp = [], iat, exp } = refreshed.decoded_access_token
-  const characterID = sub.split(':')[2]
-  const scope = [scp].flat()
-  const issued_at = new Date(iat * 1000).toISOString()
-  const expires_at = new Date(exp * 1000).toISOString()
-  await sudoSupabase
-    .schema('hangar')
-    .from('token')
-    .update({ access_token, refresh_token, issued_at, expires_at, scope })
-    .eq('id', tokenRow.id)
-  return { access_token, characterID, scope, issued_at, expires_at }
-}
 
 const execute = async () => {
   const { data: tokens, error } = await sudoSupabase
@@ -60,7 +38,7 @@ const execute = async () => {
     const ctx = `character=${tokenRow.character_id} token=${tokenRow.id}`
     try {
       console.log(`[structures] ${ctx}: refreshing token (refresh ...${tail(tokenRow.refresh_token)})`)
-      const { access_token, characterID, scope, issued_at, expires_at } = await refreshToken(tokenRow)
+      const { access_token, characterID, scope, issued_at, expires_at } = await refreshAccessToken(tokenRow)
       console.log(
         `[structures] ${ctx}: refreshed characterID=${characterID} issued=${issued_at} expires=${expires_at} scope=${JSON.stringify(scope)}`
       )
