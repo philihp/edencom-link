@@ -48,6 +48,10 @@ const execute = async () => {
     //'fTWbcvorPidXBXybfbo/JpND0Qc=' // international blue
   )
 
+  if (!characters?.length) {
+    console.error('no character found for owner')
+    process.exit(1)
+  }
   const character_id = characters[0]
   const [refresh_token, characterID] = await accessToken(character_id)
 
