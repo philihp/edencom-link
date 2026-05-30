@@ -43,3 +43,15 @@ jobs:
           PGUSER: postgres.${{ vars.SUPABASE_PROJECT_REF }}
           PGPASSWORD: ${{ secrets.SUPABASE_PASSWORD }}
           PGDATABASE: postgres
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22.x
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm install
+      - run: npm run daily
+        env:
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}

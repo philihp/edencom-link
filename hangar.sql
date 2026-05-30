@@ -373,3 +373,31 @@ end $$;
 
 grant select on hangar.corp_wallet_journal to authenticated;
 grant all    on hangar.corp_wallet_journal to service_role;
+
+create table if not exists hangar.eve_name (
+  id bigint primary key,
+  name text not null,
+  category text not null,
+  resolved_at timestamptz not null default now()
+);
+
+alter table hangar.eve_name enable row level security;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_policies
+    where schemaname = 'hangar'
+      and tablename = 'eve_name'
+      and policyname = 'Authenticated read eve_name'
+  ) then
+    create policy "Authenticated read eve_name"
+      on hangar.eve_name
+      for select
+      to authenticated
+      using (true);
+  end if;
+end $$;
+
+grant select on hangar.eve_name to authenticated;
+grant all    on hangar.eve_name to service_role;
