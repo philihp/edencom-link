@@ -153,3 +153,33 @@
   font-variant-numeric: tabular-nums;
   text-align: right;
 }
+
+.unaccountedNote {
+  margin: -8px 0 12px;
+  max-width: 60ch;
+  color: var(--ink-faint);
+  font-size: 12px;
+}
+
+.breakdown {
+  margin: 0 0 16px;
+  font-size: 13px;
+}
+
+.breakdown summary {
+  cursor: pointer;
+  color: var(--ink-faint);
+}
+
+.breakdownGrid {
+  display: grid;
+  gap: 4px 12px;
+  margin: 8px 0 0 16px;
+}
+
+.breakdownRow {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 12px;
+  justify-content: start;
+}

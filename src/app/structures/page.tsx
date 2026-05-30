@@ -31,6 +31,7 @@ type JournalRow = {
   amount: number | string | null
   context_id: number | string | null
   description: string | null
+  first_party_id: number | string | null
 }
 
 type RigRow = {
@@ -105,10 +106,12 @@ const StructuresPage = async () => {
   const { data: journal } = await supabase
     .schema('hangar')
     .from('corp_wallet_journal')
-    .select('amount, context_id, description')
+    .select('amount, context_id, description, first_party_id')
     .eq('ref_type', 'industry_job_tax')
 
   const totalByStructure = new Map<string, number>()
+  // Unaccounted tax broken down by the party that paid it (the character/corp that ran the job).
+  const unaccountedByParty = new Map<string, number>()
   let unaccounted = 0
   for (const entry of (journal ?? []) as JournalRow[]) {
     const amount = Number(entry.amount ?? 0)
@@ -126,8 +129,13 @@ const StructuresPage = async () => {
     } else {
       // Tax we received but can't tie to one of our structures (e.g. jobs not in our table).
       unaccounted += amount
+      const party = entry.first_party_id != null ? String(entry.first_party_id) : 'unknown'
+      unaccountedByParty.set(party, (unaccountedByParty.get(party) ?? 0) + amount)
     }
   }
+
+  // Largest payers first; ids that can't be resolved to names show raw (no non-SDE name source).
+  const unaccountedParties = [...unaccountedByParty.entries()].sort((a, b) => b[1] - a[1])
 
   // Revenue from structure clone bays (jump clone installation and activation fees).
   const { data: cloneJournal } = await supabase
@@ -218,6 +226,25 @@ const StructuresPage = async () => {
             <span>Clone revenue:</span>
             <span className={styles.footerValue}>{formatMisk(cloneRevenue)}</span>
           </div>
+          <p className={styles.unaccountedNote}>
+            <em>
+              Unaccounted revenue comes from industry jobs started by players we can&rsquo;t see, so we can&rsquo;t tie
+              the tax back to one of our structures.
+            </em>
+          </p>
+          {unaccountedParties.length > 0 && (
+            <details className={styles.breakdown}>
+              <summary>Breakdown by payer ({unaccountedParties.length})</summary>
+              <div className={styles.breakdownGrid}>
+                {unaccountedParties.map(([party, amount]) => (
+                  <span key={`party-${party}`} className={styles.breakdownRow}>
+                    <span>{party === 'unknown' ? 'Unknown' : party}</span>
+                    <span className={styles.footerValue}>{formatMisk(amount)}</span>
+                  </span>
+                ))}
+              </div>
+            </details>
+          )}
         </>
       ) : (
         <p>
