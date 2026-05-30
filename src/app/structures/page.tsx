@@ -134,8 +134,53 @@ const StructuresPage = async () => {
     }
   }
 
-  // Largest payers first; ids that can't be resolved to names show raw (no non-SDE name source).
+  // Largest payers first.
   const unaccountedParties = [...unaccountedByParty.entries()].sort((a, b) => b[1] - a[1])
+
+  // Resolve each payer (a character) to their name and the corp they fly for. Names come from the
+  // eve_name table and corp affiliations from character_corp, both populated by the daily job; ids
+  // not yet resolved fall back to showing the raw id.
+  const partyIds = unaccountedParties.map(([party]) => party).filter((p) => p !== 'unknown')
+  const payerNames = new Map<string, string>()
+  const payerCorps = new Map<string, string>()
+  if (partyIds.length > 0) {
+    const partyIdNums = partyIds.map(Number)
+    const { data: charNames } = await supabase
+      .schema('hangar')
+      .from('eve_name')
+      .select('id, name')
+      .in('id', partyIdNums)
+    for (const r of (charNames ?? []) as Array<{ id: number | string; name: string }>) {
+      payerNames.set(String(r.id), r.name)
+    }
+
+    const { data: affiliations } = await supabase
+      .schema('hangar')
+      .from('character_corp')
+      .select('character_id, corporation_id')
+      .in('character_id', partyIdNums)
+    const corpByParty = new Map<string, string>()
+    const corpIds = new Set<number>()
+    for (const a of (affiliations ?? []) as Array<{ character_id: number | string; corporation_id: number | string }>) {
+      corpByParty.set(String(a.character_id), String(a.corporation_id))
+      corpIds.add(Number(a.corporation_id))
+    }
+    if (corpIds.size > 0) {
+      const { data: corpNames } = await supabase
+        .schema('hangar')
+        .from('eve_name')
+        .select('id, name')
+        .in('id', [...corpIds])
+      const corpNameById = new Map<string, string>()
+      for (const r of (corpNames ?? []) as Array<{ id: number | string; name: string }>) {
+        corpNameById.set(String(r.id), r.name)
+      }
+      for (const [party, corpId] of corpByParty) {
+        const name = corpNameById.get(corpId)
+        if (name) payerCorps.set(party, name)
+      }
+    }
+  }
 
   // Revenue from structure clone bays (jump clone installation and activation fees).
   const { data: cloneJournal } = await supabase
@@ -236,12 +281,19 @@ const StructuresPage = async () => {
             <details className={styles.breakdown}>
               <summary>Breakdown by payer ({unaccountedParties.length})</summary>
               <div className={styles.breakdownGrid}>
-                {unaccountedParties.map(([party, amount]) => (
-                  <span key={`party-${party}`} className={styles.breakdownRow}>
-                    <span>{party === 'unknown' ? 'Unknown' : party}</span>
-                    <span className={styles.footerValue}>{formatMisk(amount)}</span>
-                  </span>
-                ))}
+                {unaccountedParties.map(([party, amount]) => {
+                  const name = party === 'unknown' ? 'Unknown' : (payerNames.get(party) ?? party)
+                  const corp = party === 'unknown' ? undefined : payerCorps.get(party)
+                  return (
+                    <span key={`party-${party}`} className={styles.breakdownRow}>
+                      <span className={styles.payer}>
+                        <span>{name}</span>
+                        {corp && <span className={styles.payerCorp}>{corp}</span>}
+                      </span>
+                      <span className={styles.footerValue}>{formatMisk(amount)}</span>
+                    </span>
+                  )
+                })}
               </div>
             </details>
           )}

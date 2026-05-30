@@ -182,4 +182,16 @@
   grid-template-columns: auto auto;
   gap: 12px;
   justify-content: start;
+  align-items: baseline;
+}
+
+.payer {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.payerCorp {
+  color: var(--ink-faint);
+  font-size: 11px;
 }
