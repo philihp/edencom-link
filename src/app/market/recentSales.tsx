@@ -2,6 +2,7 @@
 
 import { DateTime } from '../DateTime'
 import { formatMisk } from '../isk'
+import { TypeName } from '../typeName'
 import styles from './market.module.css'
 import { usePersist } from './usePersist'
 
@@ -23,7 +24,7 @@ type Character = {
 type RecentSalesProps = {
   sales: Sale[]
   characters: Character[]
-  typeNames: Record<number, string>
+  typeNamesPromise: Promise<Record<number, string>>
 }
 
 const THRESHOLDS: Array<{ label: string; value: number }> = [
@@ -38,7 +39,7 @@ const THRESHOLD_STORAGE_KEY = 'market.recentSales.threshold'
 const CHARACTER_STORAGE_KEY = 'market.recentSales.characterId'
 const ALL_CHARACTERS = ''
 
-export const RecentSales = ({ sales, characters, typeNames }: RecentSalesProps) => {
+export const RecentSales = ({ sales, characters, typeNamesPromise }: RecentSalesProps) => {
   const characterName: Record<string, string> = Object.fromEntries(characters.map((c) => [c.id, c.name]))
 
   const [threshold, setThreshold] = usePersist(THRESHOLD_STORAGE_KEY, 0, (raw) => {
@@ -101,7 +102,9 @@ export const RecentSales = ({ sales, characters, typeNames }: RecentSalesProps) 
             {filtered.map((s) => (
               <tr key={`sale-${s.transaction_id}`}>
                 <td className="serif">{characterName[s.character_id] ?? '—'}</td>
-                <td className="serif">{typeNames[Number(s.type_id)] ?? `#${s.type_id}`}</td>
+                <td className="serif">
+                  <TypeName id={Number(s.type_id)} promise={typeNamesPromise} />
+                </td>
                 <td>{s.quantity}</td>
                 <td>{formatMisk(s.unit_price)}</td>
                 <td>{formatMisk(Number(s.unit_price) * Number(s.quantity))}</td>

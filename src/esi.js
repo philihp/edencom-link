@@ -3,7 +3,7 @@ export const userAgent = 'philihp@gmail.com eve-hangar discord:philihp'
 const ESI_BASE = 'https://esi.evetech.net/latest'
 
 const esiFetch = async (path, { access_token, params = {}, method = 'GET', body, label } = {}) => {
-  const search = new URLSearchParams({ token: access_token, ...params })
+  const search = new URLSearchParams({ ...(access_token ? { token: access_token } : {}), ...params })
   const headers = { 'User-Agent': userAgent }
   if (body !== undefined) {
     headers['Content-Type'] = 'application/json'
@@ -87,4 +87,11 @@ export const assetNames = (access_token, characterID, ids) =>
     method: 'POST',
     body: ids,
     label: `assetNames ${characterID}`,
+  })
+
+export const universeNames = (ids) =>
+  esiJson(`/universe/names/`, {
+    method: 'POST',
+    body: ids,
+    label: `universeNames(${ids.length})`,
   })
