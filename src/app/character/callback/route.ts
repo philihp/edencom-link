@@ -12,7 +12,7 @@ const upsertCharacter =
   async (columns: { user_id: string; owner: string; name: string; character_id: number }) => {
     const response = await supabase
       .schema('hangar')
-      .from('character')
+      .from('registration')
       .upsert(columns, { onConflict: 'user_id, owner' })
       .select()
     if (response.error) throw new Error(`upsert character failed: ${JSON.stringify(response.error)}`)

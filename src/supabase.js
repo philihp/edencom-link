@@ -28,7 +28,7 @@ export const authenticate = async () => {
 export const upsertCharacter = async (columns) => {
   const response = await supabase
     .schema('hangar')
-    .from('character')
+    .from('registration')
     .upsert(columns, { onConflict: 'user_id, owner' })
     .select()
   return response.data?.[0]?.id
@@ -54,7 +54,7 @@ export const upsertAssets = async (assets) => {
 }
 
 export const selectCharacters = async (columns, owner) => {
-  let query = supabase.schema('hangar').from('character').select(columns)
+  let query = supabase.schema('hangar').from('registration').select(columns)
   if (owner !== undefined) query = query.eq('owner', owner)
   const response = await query
   return response?.data?.map((r) => r.id)

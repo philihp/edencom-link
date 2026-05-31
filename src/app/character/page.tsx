@@ -15,7 +15,7 @@ const CharacterPage = async () => {
     redirect('/')
   }
 
-  const { data: characters, status, statusText, error } = await supabase.schema('hangar').from('character').select()
+  const { data: characters, status, statusText, error } = await supabase.schema('hangar').from('registration').select()
 
   const { data: wallets } = await supabase
     .schema('hangar')

@@ -12,7 +12,7 @@ const MarketPage = async () => {
     redirect('/')
   }
 
-  const { data: characters } = await supabase.schema('hangar').from('character').select('id, name')
+  const { data: characters } = await supabase.schema('hangar').from('registration').select('id, name')
 
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
   const { data: sales } = await supabase

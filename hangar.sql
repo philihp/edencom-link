@@ -13,7 +13,7 @@ alter default privileges in schema hangar
 alter default privileges in schema hangar
   grant all on functions to anon, authenticated, service_role;
 
-create table hangar.character (
+create table hangar.registration (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
   owner text not null,
@@ -23,12 +23,12 @@ create table hangar.character (
   updated_at timestamptz not null default now(),
   unique (user_id, owner)
 );
-create index character_user_id_idx on hangar.character (user_id);
+create index character_user_id_idx on hangar.registration (user_id);
 
-alter table hangar.character enable row level security;
+alter table hangar.registration enable row level security;
 
 create policy "Users manage own characters"
-  on hangar.character
+  on hangar.registration
   for all
   to authenticated
   using (user_id = (select auth.uid()))
@@ -37,7 +37,7 @@ create policy "Users manage own characters"
 create table hangar.token (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
-  character_id uuid not null references hangar.character(id) on delete cascade,
+  character_id uuid not null references hangar.registration(id) on delete cascade,
   access_token text not null,
   refresh_token text not null,
   issued_at timestamptz not null,
@@ -84,7 +84,7 @@ end $$;
 create table if not exists hangar.asset_over_time (
   id bigint generated always as identity primary key,
   item_id bigint not null,
-  character_id uuid not null references hangar.character(id) on delete cascade,
+  character_id uuid not null references hangar.registration(id) on delete cascade,
   type_id bigint not null,
   location_id bigint,
   location_flag text,
@@ -134,7 +134,7 @@ begin
       to authenticated
       using (
         character_id in (
-          select id from hangar.character where user_id = (select auth.uid())
+          select id from hangar.registration where user_id = (select auth.uid())
         )
       );
   end if;
@@ -149,13 +149,13 @@ create or replace view hangar.asset with (security_invoker = on) as
 -- above only applies to tables created by the role that ran the statement,
 -- so this belt-and-suspenders grant ensures PostgREST's `authenticated` /
 -- `anon` / `service_role` roles can actually reach these tables. Re-runnable.
-grant select, insert, update, delete on hangar.character       to authenticated;
+grant select, insert, update, delete on hangar.registration       to authenticated;
 grant select, insert, update, delete on hangar.token           to authenticated;
 -- The view runs with the invoker's rights, so authenticated needs select on the
 -- underlying table for the `asset` view to resolve (RLS still scopes the rows).
 grant select                          on hangar.asset_over_time to authenticated;
 grant select                          on hangar.asset           to authenticated;
-grant all on hangar.character, hangar.token, hangar.asset_over_time to service_role;
+grant all on hangar.registration, hangar.token, hangar.asset_over_time to service_role;
 
 create table if not exists hangar.heartbeat (
   id uuid primary key default gen_random_uuid(),
@@ -168,11 +168,11 @@ create index if not exists heartbeat_ran_at_idx
 alter table hangar.heartbeat enable row level security;
 grant all on hangar.heartbeat to service_role;
 
-alter table hangar.character add column if not exists character_id bigint;
+alter table hangar.registration add column if not exists character_id bigint;
 
 create table if not exists hangar.wallet (
   id uuid primary key default gen_random_uuid(),
-  character_id uuid not null references hangar.character(id) on delete cascade,
+  character_id uuid not null references hangar.registration(id) on delete cascade,
   balance numeric(20, 2) not null,
   recorded_at timestamptz not null default now()
 );
@@ -187,7 +187,7 @@ create policy "Users read own wallets"
   to authenticated
   using (
     character_id in (
-      select id from hangar.character where user_id = (select auth.uid())
+      select id from hangar.registration where user_id = (select auth.uid())
     )
   );
 
@@ -224,7 +224,7 @@ end $$;
 
 create table if not exists hangar.market_transaction (
   transaction_id bigint primary key,
-  character_id uuid not null references hangar.character(id) on delete cascade,
+  character_id uuid not null references hangar.registration(id) on delete cascade,
   date timestamptz not null,
   type_id bigint not null,
   quantity bigint not null,
@@ -247,7 +247,7 @@ create policy "Users read own transactions"
   to authenticated
   using (
     character_id in (
-      select id from hangar.character where user_id = (select auth.uid())
+      select id from hangar.registration where user_id = (select auth.uid())
     )
   );
 
@@ -256,7 +256,7 @@ grant all    on hangar.market_transaction to service_role;
 
 create table if not exists hangar.industry_job (
   job_id bigint primary key,
-  character_id uuid not null references hangar.character(id) on delete cascade,
+  character_id uuid not null references hangar.registration(id) on delete cascade,
   installer_id bigint not null,
   facility_id bigint not null,
   station_id bigint,
@@ -299,7 +299,7 @@ begin
       to authenticated
       using (
         character_id in (
-          select id from hangar.character where user_id = (select auth.uid())
+          select id from hangar.registration where user_id = (select auth.uid())
         )
       );
   end if;
@@ -308,8 +308,8 @@ end $$;
 grant select on hangar.industry_job to authenticated;
 grant all    on hangar.industry_job to service_role;
 
-alter table hangar.character add column if not exists corporation_id bigint;
-create index if not exists character_corporation_id_idx on hangar.character (corporation_id);
+alter table hangar.registration add column if not exists corporation_id bigint;
+create index if not exists character_corporation_id_idx on hangar.registration (corporation_id);
 
 create table if not exists hangar.corp_structure (
   structure_id bigint primary key,
@@ -340,7 +340,7 @@ create policy "Users read structures for own corps"
   to authenticated
   using (
     corporation_id in (
-      select corporation_id from hangar.character
+      select corporation_id from hangar.registration
       where user_id = (select auth.uid()) and corporation_id is not null
     )
   );
@@ -379,7 +379,7 @@ begin
       to authenticated
       using (
         corporation_id in (
-          select corporation_id from hangar.character
+          select corporation_id from hangar.registration
           where user_id = (select auth.uid()) and corporation_id is not null
         )
       );
@@ -427,7 +427,7 @@ begin
       to authenticated
       using (
         corporation_id in (
-          select corporation_id from hangar.character
+          select corporation_id from hangar.registration
           where user_id = (select auth.uid()) and corporation_id is not null
         )
       );
