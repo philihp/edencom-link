@@ -1,63 +1,40 @@
 /*
- * Locations where the user holds assets, as a responsive tile grid mirroring
- * the structures page — two per row on phones, packing in more as it widens.
+ * Locations where the logged-in user holds assets, one row per location with a
+ * stack tally, styled to match the other data tables in the app.
  */
 
-.grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 12px;
-  list-style: none;
-  padding: 0;
-  margin: 16px 0;
+.assets {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 10pt;
+  margin: 12pt 0;
 }
 
-@media (min-width: 640px) {
-  .grid {
-    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  }
+.assets td {
+  border-bottom: 1px solid var(--line-soft);
+  padding: 6pt 8pt;
+  text-align: left;
 }
 
-.tile {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 14px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--paper-raised);
-  transition: border-color 0.12s ease;
-  min-width: 0;
-}
-
-.tile:hover {
-  border-color: var(--accent);
-}
-
-.head {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.name {
-  font-family: var(--serif);
-  font-size: 16px;
-  font-weight: 600;
-  line-height: 1.25;
-  color: var(--ink);
-  overflow-wrap: anywhere;
-}
-
-.system {
-  font-size: 12px;
-  color: var(--ink-faint);
-  overflow-wrap: anywhere;
-}
-
-.count {
-  font-family: var(--mono);
-  font-variant-numeric: tabular-nums;
-  font-size: 12px;
+.assets th {
+  border-bottom: 1px solid var(--line);
+  padding: 6pt 8pt;
+  text-align: left;
   color: var(--ink-soft);
+  font-weight: 600;
+}
+
+.assets tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* The stack count is the only numeric column. */
+.assets td:nth-child(3),
+.assets th:nth-child(3) {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.assets td:nth-child(3) {
+  font-family: var(--mono);
 }
