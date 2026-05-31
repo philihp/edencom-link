@@ -33,10 +33,7 @@ const AssetsPage = async () => {
     redirect('/')
   }
 
-  const { data: assets } = await supabase
-    .schema('hangar')
-    .from('asset')
-    .select('item_id, location_id, location_type')
+  const { data: assets } = await supabase.schema('hangar').from('asset').select('item_id, location_id, location_type')
 
   const list = (assets ?? []) as Asset[]
   const assetByItem = new Map(list.map((a) => [String(a.item_id), a]))
@@ -77,7 +74,11 @@ const AssetsPage = async () => {
     .from('corp_structure')
     .select('structure_id, name, system_id')
   const { data: playerStructures } = locationIds.length
-    ? await supabase.schema('hangar').from('structure').select('structure_id, name, system_id').in('structure_id', locationIds)
+    ? await supabase
+        .schema('hangar')
+        .from('structure')
+        .select('structure_id, name, system_id')
+        .in('structure_id', locationIds)
     : { data: [] }
 
   const structureById = new Map<string, Structure>()
@@ -121,23 +122,28 @@ const AssetsPage = async () => {
     <>
       <h1>Assets</h1>
       {rows.length > 0 ? (
-        <ul className={styles.grid}>
-          {rows.map((loc) => {
-            const system = systemFor(loc)
-            const name = labelFor(loc)
-            return (
-              <li key={`location-${loc.id}`} className={styles.tile}>
-                <div className={styles.head}>
-                  <span className={styles.name}>{name}</span>
-                  {system && system !== name && <span className={styles.system}>{system}</span>}
-                </div>
-                <span className={styles.count}>
-                  {loc.count} {loc.count === 1 ? 'stack' : 'stacks'}
-                </span>
-              </li>
-            )
-          })}
-        </ul>
+        <table className={styles.assets}>
+          <thead>
+            <tr>
+              <th>Location</th>
+              <th>System</th>
+              <th>Stacks</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((loc) => {
+              const system = systemFor(loc)
+              const name = labelFor(loc)
+              return (
+                <tr key={`location-${loc.id}`}>
+                  <td className="serif">{name}</td>
+                  <td>{system && system !== name ? system : '—'}</td>
+                  <td>{loc.count}</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
       ) : (
         <p>
           No assets visible. Link a character with the <code>esi-assets.read_assets.v1</code> scope on the{' '}
