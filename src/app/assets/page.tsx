@@ -1,9 +1,9 @@
 import { redirect } from 'next/navigation'
 
 import { createClient } from '@/utils/supabase/server'
+import retro from '../retro.module.css'
 import { fetchStationNames } from '../stationNames'
 import { fetchSystemNames } from '../systemNames'
-import styles from './assets.module.css'
 
 // Bigint ids arrive from PostgREST as strings, so every id is kept as a string
 // and only converted to a number at the API/system-lookup boundary.
@@ -122,12 +122,12 @@ const AssetsPage = async () => {
     <>
       <h1>Assets</h1>
       {rows.length > 0 ? (
-        <table className={styles.assets}>
+        <table className={retro.retro}>
           <thead>
             <tr>
               <th>Location</th>
               <th>System</th>
-              <th>Stacks</th>
+              <th className={retro.num}>Stacks</th>
             </tr>
           </thead>
           <tbody>
@@ -138,7 +138,7 @@ const AssetsPage = async () => {
                 <tr key={`location-${loc.id}`}>
                   <td className="serif">{name}</td>
                   <td>{system && system !== name ? system : '—'}</td>
-                  <td>{loc.count}</td>
+                  <td className={retro.num}>{loc.count}</td>
                 </tr>
               )
             })}
