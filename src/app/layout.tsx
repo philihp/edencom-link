@@ -5,6 +5,7 @@ import type { Metadata } from 'next'
 import './globals.css'
 import Header from './layout/header'
 import Footer from './layout/footer'
+import { resolveTheme } from './theme/resolveTheme'
 
 export const metadata: Metadata = {
   title: 'Edencom Link',
@@ -33,8 +34,11 @@ const RootLayout = async ({
 }: Readonly<{
   children: React.ReactNode
 }>) => {
+  // Light by day / dark by night at the visitor's location; undefined falls
+  // back to the device's prefers-color-scheme (see globals.css).
+  const theme = await resolveTheme()
   return (
-    <html lang="en">
+    <html lang="en" data-theme={theme}>
       <body>
         <Header />
         <hr />
