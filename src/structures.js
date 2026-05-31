@@ -1,5 +1,5 @@
 import { pullCorpWalletJournals } from './corpWalletJournal.js'
-import { character as fetchCharacter, corpAssets, corpStructures, corpWalletJournal } from './esi.js'
+import { character as fetchCharacter, corpAssets, corpStructures, corpWalletJournal, universeNames } from './esi.js'
 import { sudoSupabase } from './supabase.js'
 import { refreshAccessToken } from './tokenRefresh.js'
 
@@ -13,7 +13,34 @@ const isRigSlot = (flag) => typeof flag === 'string' && flag.startsWith('RigSlot
 
 const tail = (s) => (typeof s === 'string' && s.length > 4 ? s.slice(-4) : '????')
 
+// Corp names are public; resolve once per run and reuse so log lines read as
+// "Corp Name (98000001)" instead of a bare id.
+const corpNameCache = new Map()
+const resolveCorpName = async (corporation_id) => {
+  if (corpNameCache.has(corporation_id)) return corpNameCache.get(corporation_id)
+  let name = null
+  try {
+    const [n] = await universeNames([corporation_id])
+    name = n?.name ?? null
+  } catch (e) {
+    console.warn(`[structures] universe/names corp ${corporation_id} failed: ${e?.message}`)
+  }
+  corpNameCache.set(corporation_id, name)
+  return name
+}
+const corpLabelFor = (name, corporation_id) => (name ? `${name} (${corporation_id})` : `${corporation_id}`)
+
 const execute = async () => {
+  const { data: characters, error: charactersError } = await sudoSupabase
+    .schema('hangar')
+    .from('character')
+    .select('id, name')
+  if (charactersError) {
+    console.error('[structures] character lookup failed:', charactersError)
+    process.exit(1)
+  }
+  const characterName = new Map((characters ?? []).map((c) => [c.id, c.name]))
+
   const { data: tokens, error } = await sudoSupabase
     .schema('hangar')
     .from('token')
@@ -27,7 +54,10 @@ const execute = async () => {
 
   console.log(`[structures] found ${tokens?.length ?? 0} token(s) with ${STRUCTURES_SCOPE}`)
   for (const t of tokens ?? []) {
-    console.log(`[structures]   token ${t.id} character ${t.character_id} refresh ...${tail(t.refresh_token)}`)
+    const name = characterName.get(t.character_id) ?? '?'
+    console.log(
+      `[structures]   token ${t.id} character ${name} (${t.character_id}) refresh ...${tail(t.refresh_token)}`
+    )
   }
 
   const seenStructureCorps = new Set()
@@ -35,7 +65,8 @@ const execute = async () => {
   const seenAssetCorps = new Set()
   for (const tokenRow of tokens ?? []) {
     const t0 = Date.now()
-    const ctx = `character=${tokenRow.character_id} token=${tokenRow.id}`
+    const name = characterName.get(tokenRow.character_id) ?? '?'
+    const ctx = `character=${name} (${tokenRow.character_id}) token=${tokenRow.id}`
     try {
       console.log(`[structures] ${ctx}: refreshing token (refresh ...${tail(tokenRow.refresh_token)})`)
       const { access_token, characterID, scope, issued_at, expires_at } = await refreshAccessToken(tokenRow)
@@ -53,11 +84,12 @@ const execute = async () => {
       const info = await fetchCharacter(access_token, characterID)
       const corporation_id = info?.corporation_id
       const alliance_id = info?.alliance_id ?? null
-      console.log(`[structures] ${ctx}: character corporation_id=${corporation_id} alliance_id=${alliance_id}`)
       if (!corporation_id) {
         console.error(`[structures] ${ctx}: character payload missing corporation_id, raw=${JSON.stringify(info)}`)
         continue
       }
+      const corpLabel = corpLabelFor(await resolveCorpName(corporation_id), corporation_id)
+      console.log(`[structures] ${ctx}: character corporation=${corpLabel} alliance_id=${alliance_id}`)
 
       const { error: charUpdateErr, status: charUpdateStatus } = await sudoSupabase
         .schema('hangar')
@@ -73,22 +105,22 @@ const execute = async () => {
       }
 
       if (seenStructureCorps.has(corporation_id)) {
-        console.log(`[structures] ${ctx}: corp ${corporation_id} structures already pulled this run, skipping`)
+        console.log(`[structures] ${ctx}: corp ${corpLabel} structures already pulled this run, skipping`)
       } else {
         seenStructureCorps.add(corporation_id)
 
         const all = []
-        console.log(`[structures] ${ctx}: fetching corp ${corporation_id} structures page 1`)
+        console.log(`[structures] ${ctx}: fetching corp ${corpLabel} structures page 1`)
         const [firstPage, pagesHeader] = await corpStructures(access_token, corporation_id, 1)
         console.log(
-          `[structures] ${ctx}: corp ${corporation_id} page 1 returned ${firstPage?.length ?? 0} rows, x-pages=${pagesHeader}`
+          `[structures] ${ctx}: corp ${corpLabel} page 1 returned ${firstPage?.length ?? 0} rows, x-pages=${pagesHeader}`
         )
         all.push(...firstPage)
         const totalPages = Math.max(1, Number.parseInt(pagesHeader, 10) || 1)
         for (let page = 2; page <= totalPages; page++) {
-          console.log(`[structures] ${ctx}: fetching corp ${corporation_id} structures page ${page}/${totalPages}`)
+          console.log(`[structures] ${ctx}: fetching corp ${corpLabel} structures page ${page}/${totalPages}`)
           const [more] = await corpStructures(access_token, corporation_id, page)
-          console.log(`[structures] ${ctx}: corp ${corporation_id} page ${page} returned ${more?.length ?? 0} rows`)
+          console.log(`[structures] ${ctx}: corp ${corpLabel} page ${page} returned ${more?.length ?? 0} rows`)
           all.push(...more)
         }
 
@@ -114,7 +146,7 @@ const execute = async () => {
 
         if (rows.length > 0) {
           console.log(
-            `[structures] ${ctx}: upserting ${rows.length} structure row(s) for corp ${corporation_id} sample=${JSON.stringify(rows[0])}`
+            `[structures] ${ctx}: upserting ${rows.length} structure row(s) for corp ${corpLabel} sample=${JSON.stringify(rows[0])}`
           )
           const { error: upsertErr, status: upsertStatus } = await sudoSupabase
             .schema('hangar')
@@ -128,17 +160,17 @@ const execute = async () => {
           }
           console.log(`[structures] ${ctx}: upsert ok (status=${upsertStatus})`)
         } else {
-          console.log(`[structures] ${ctx}: corp ${corporation_id} returned zero structures, nothing to upsert`)
+          console.log(`[structures] ${ctx}: corp ${corpLabel} returned zero structures, nothing to upsert`)
         }
 
         const dt = Date.now() - t0
-        console.log(`[structures] ${ctx}: done corp ${corporation_id} ${rows.length} fetched in ${dt}ms`)
+        console.log(`[structures] ${ctx}: done corp ${corpLabel} ${rows.length} fetched in ${dt}ms`)
       }
 
       if (!scope.includes(ASSETS_SCOPE)) {
-        console.log(`[structures] ${ctx}: corp ${corporation_id} token lacks ${ASSETS_SCOPE}, skipping structure rigs`)
+        console.log(`[structures] ${ctx}: corp ${corpLabel} token lacks ${ASSETS_SCOPE}, skipping structure rigs`)
       } else if (seenAssetCorps.has(corporation_id)) {
-        console.log(`[structures] ${ctx}: corp ${corporation_id} assets already pulled this run, skipping rigs`)
+        console.log(`[structures] ${ctx}: corp ${corpLabel} assets already pulled this run, skipping rigs`)
       } else {
         seenAssetCorps.add(corporation_id)
         try {
@@ -153,7 +185,7 @@ const execute = async () => {
 
           const ta = Date.now()
           const assets = []
-          console.log(`[structures] ${ctx}: fetching corp ${corporation_id} assets page 1`)
+          console.log(`[structures] ${ctx}: fetching corp ${corpLabel} assets page 1`)
           const [firstAssetPage, assetPagesHeader] = await corpAssets(access_token, corporation_id, 1)
           assets.push(...firstAssetPage)
           const assetPages = Math.max(1, Number.parseInt(assetPagesHeader, 10) || 1)
@@ -162,7 +194,7 @@ const execute = async () => {
             assets.push(...more)
           }
           console.log(
-            `[structures] ${ctx}: corp ${corporation_id} returned ${assets.length} asset(s) across ${assetPages} page(s)`
+            `[structures] ${ctx}: corp ${corpLabel} returned ${assets.length} asset(s) across ${assetPages} page(s)`
           )
 
           const now = new Date().toISOString()
@@ -193,22 +225,20 @@ const execute = async () => {
             if (rigErr) throw rigErr
           }
           console.log(
-            `[structures] ${ctx}: corp ${corporation_id} stored ${rigRows.length} structure rig(s) in ${Date.now() - ta}ms`
+            `[structures] ${ctx}: corp ${corpLabel} stored ${rigRows.length} structure rig(s) in ${Date.now() - ta}ms`
           )
         } catch (e) {
-          console.error(
-            `[structures] ${ctx}: corp ${corporation_id} rig pull FAILED name=${e?.name} message=${e?.message}`
-          )
+          console.error(`[structures] ${ctx}: corp ${corpLabel} rig pull FAILED name=${e?.name} message=${e?.message}`)
         }
       }
 
       if (!scope.includes(WALLET_SCOPE)) {
-        console.log(`[structures] ${ctx}: corp ${corporation_id} token lacks ${WALLET_SCOPE}, skipping wallet journal`)
+        console.log(`[structures] ${ctx}: corp ${corpLabel} token lacks ${WALLET_SCOPE}, skipping wallet journal`)
       } else if (seenWalletCorps.has(corporation_id)) {
-        console.log(`[structures] ${ctx}: corp ${corporation_id} wallet journal already pulled this run, skipping`)
+        console.log(`[structures] ${ctx}: corp ${corpLabel} wallet journal already pulled this run, skipping`)
       } else {
         seenWalletCorps.add(corporation_id)
-        await pullCorpWalletJournals({ access_token, corporation_id, ctx })
+        await pullCorpWalletJournals({ access_token, corporation_id, ctx, corpLabel })
       }
     } catch (e) {
       const dt = Date.now() - t0

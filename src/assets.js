@@ -69,7 +69,9 @@ const reconcile = async (character_id, fetched) => {
   const { data: current, error } = await sudoSupabase
     .schema('hangar')
     .from('asset_over_time')
-    .select('id, item_id, type_id, location_id, location_flag, location_type, quantity, is_singleton, is_blueprint_copy')
+    .select(
+      'id, item_id, type_id, location_id, location_flag, location_type, quantity, is_singleton, is_blueprint_copy'
+    )
     .eq('character_id', character_id)
     .eq('is_current', true)
   if (error) throw error
@@ -132,6 +134,16 @@ const reconcile = async (character_id, fetched) => {
 }
 
 const execute = async () => {
+  const { data: characters, error: charactersError } = await sudoSupabase
+    .schema('hangar')
+    .from('character')
+    .select('id, name')
+  if (charactersError) {
+    console.error('[assets] character lookup failed:', charactersError)
+    process.exit(1)
+  }
+  const characterName = new Map((characters ?? []).map((c) => [c.id, c.name]))
+
   const { data: tokens, error } = await sudoSupabase
     .schema('hangar')
     .from('token')
@@ -147,7 +159,8 @@ const execute = async () => {
 
   for (const tokenRow of tokens ?? []) {
     const t0 = Date.now()
-    const ctx = `character=${tokenRow.character_id} token=${tokenRow.id}`
+    const name = characterName.get(tokenRow.character_id) ?? '?'
+    const ctx = `character=${name} (${tokenRow.character_id}) token=${tokenRow.id}`
     try {
       const { access_token, characterID, scope } = await refreshToken(tokenRow)
       if (!scope.includes(ASSETS_SCOPE)) {
