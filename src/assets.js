@@ -68,7 +68,7 @@ const fetchAssets = async (access_token, characterID) => {
 const reconcile = async (character_id, fetched) => {
   const { data: current, error } = await sudoSupabase
     .schema('hangar')
-    .from('asset')
+    .from('asset_over_time')
     .select('id, item_id, type_id, location_id, location_flag, location_type, quantity, is_singleton, is_blueprint_copy')
     .eq('character_id', character_id)
     .eq('is_current', true)
@@ -109,7 +109,7 @@ const reconcile = async (character_id, fetched) => {
   for (const ids of chunk(touchIds, 200)) {
     const { error: touchErr } = await sudoSupabase
       .schema('hangar')
-      .from('asset')
+      .from('asset_over_time')
       .update({ last_seen_at: now })
       .in('id', ids)
     if (touchErr) throw touchErr
@@ -118,13 +118,13 @@ const reconcile = async (character_id, fetched) => {
   for (const ids of chunk(closeIds, 200)) {
     const { error: closeErr } = await sudoSupabase
       .schema('hangar')
-      .from('asset')
+      .from('asset_over_time')
       .update({ is_current: false })
       .in('id', ids)
     if (closeErr) throw closeErr
   }
   for (const rows of chunk(inserts, 1000)) {
-    const { error: insertErr } = await sudoSupabase.schema('hangar').from('asset').insert(rows)
+    const { error: insertErr } = await sudoSupabase.schema('hangar').from('asset_over_time').insert(rows)
     if (insertErr) throw insertErr
   }
 

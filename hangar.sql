@@ -59,15 +59,29 @@ create policy "Users manage own tokens"
   using (user_id = (select auth.uid()))
   with check (user_id = (select auth.uid()));
 
--- Assets are stored as a slowly changing dimension (SCD type 2): each row is a
--- versioned snapshot of one item's state. When the hourly extract sees an item
--- whose tracked attributes (location, quantity, ...) differ from its current
--- row, that row is closed (is_current = false) and a new row is inserted, so the
--- full history is retained and holdings can be reconstructed at any past time.
--- last_seen_at on the open row is extended every run the item is seen unchanged;
--- once the item changes or disappears, its row's last_seen_at marks the last time
--- that version was observed.
-create table hangar.asset (
+-- Assets are stored as a slowly changing dimension (SCD type 2) in
+-- asset_over_time: each row is a versioned snapshot of one item's state. When the
+-- hourly extract sees an item whose tracked attributes (location, quantity, ...)
+-- differ from its current row, that row is closed (is_current = false) and a new
+-- row is inserted, so the full history is retained and holdings can be
+-- reconstructed at any past time. last_seen_at on the open row is extended every
+-- run the item is seen unchanged; once the item changes or disappears, its row's
+-- last_seen_at marks the last time that version was observed. The `asset` view
+-- below exposes just the live rows.
+
+-- Existing deployments imported assets into a table literally named `asset`;
+-- rename it out of the way so `asset` can become the current-only view.
+do $$
+begin
+  if exists (
+    select 1 from information_schema.tables
+    where table_schema = 'hangar' and table_name = 'asset' and table_type = 'BASE TABLE'
+  ) then
+    alter table hangar.asset rename to asset_over_time;
+  end if;
+end $$;
+
+create table if not exists hangar.asset_over_time (
   id bigint generated always as identity primary key,
   item_id bigint not null,
   character_id uuid not null references hangar.character(id) on delete cascade,
@@ -82,50 +96,66 @@ create table hangar.asset (
   first_seen_at timestamptz not null default now(),
   last_seen_at timestamptz not null default now()
 );
-create index if not exists asset_character_id_idx on hangar.asset (character_id);
+create index if not exists asset_over_time_character_id_idx on hangar.asset_over_time (character_id);
 -- At most one live row per item; also the conflict target the extract relies on.
-create unique index if not exists asset_current_item_idx on hangar.asset (item_id) where is_current;
+create unique index if not exists asset_over_time_current_item_idx on hangar.asset_over_time (item_id) where is_current;
 -- Time-travel lookups walking an item's version history.
-create index if not exists asset_item_id_idx on hangar.asset (item_id, last_seen_at desc);
+create index if not exists asset_over_time_item_id_idx on hangar.asset_over_time (item_id, last_seen_at desc);
 
 -- Evolve existing deployments to the SCD shape above.
-alter table hangar.asset add column if not exists is_current    boolean     not null default true;
-alter table hangar.asset add column if not exists first_seen_at timestamptz not null default now();
-alter table hangar.asset add column if not exists last_seen_at  timestamptz not null default now();
+alter table hangar.asset_over_time add column if not exists is_current    boolean     not null default true;
+alter table hangar.asset_over_time add column if not exists first_seen_at timestamptz not null default now();
+alter table hangar.asset_over_time add column if not exists last_seen_at  timestamptz not null default now();
 do $$
 begin
   -- Swap the item_id primary key for a surrogate id so one item can have many
   -- historical rows.
   if not exists (
     select 1 from information_schema.columns
-    where table_schema = 'hangar' and table_name = 'asset' and column_name = 'id'
+    where table_schema = 'hangar' and table_name = 'asset_over_time' and column_name = 'id'
   ) then
-    alter table hangar.asset drop constraint if exists asset_pkey;
-    alter table hangar.asset add column id bigint generated always as identity;
-    alter table hangar.asset add primary key (id);
+    alter table hangar.asset_over_time drop constraint if exists asset_pkey;
+    alter table hangar.asset_over_time add column id bigint generated always as identity;
+    alter table hangar.asset_over_time add primary key (id);
   end if;
 end $$;
 
-alter table hangar.asset enable row level security;
+alter table hangar.asset_over_time enable row level security;
 
-create policy "Users read own assets"
-  on hangar.asset
-  for select
-  to authenticated
-  using (
-    character_id in (
-      select id from hangar.character where user_id = (select auth.uid())
-    )
-  );
+do $$
+begin
+  if not exists (
+    select 1 from pg_policies
+    where schemaname = 'hangar' and tablename = 'asset_over_time' and policyname = 'Users read own assets'
+  ) then
+    create policy "Users read own assets"
+      on hangar.asset_over_time
+      for select
+      to authenticated
+      using (
+        character_id in (
+          select id from hangar.character where user_id = (select auth.uid())
+        )
+      );
+  end if;
+end $$;
+
+-- Live snapshot of assets. security_invoker keeps the underlying RLS in force for
+-- the querying (authenticated) role rather than running as the view owner.
+create or replace view hangar.asset with (security_invoker = on) as
+  select * from hangar.asset_over_time where is_current;
 
 -- Explicit grants on the tables we just created. `alter default privileges`
 -- above only applies to tables created by the role that ran the statement,
 -- so this belt-and-suspenders grant ensures PostgREST's `authenticated` /
 -- `anon` / `service_role` roles can actually reach these tables. Re-runnable.
-grant select, insert, update, delete on hangar.character to authenticated;
-grant select, insert, update, delete on hangar.token     to authenticated;
-grant select                          on hangar.asset    to authenticated;
-grant all on hangar.character, hangar.token, hangar.asset to service_role;
+grant select, insert, update, delete on hangar.character       to authenticated;
+grant select, insert, update, delete on hangar.token           to authenticated;
+-- The view runs with the invoker's rights, so authenticated needs select on the
+-- underlying table for the `asset` view to resolve (RLS still scopes the rows).
+grant select                          on hangar.asset_over_time to authenticated;
+grant select                          on hangar.asset           to authenticated;
+grant all on hangar.character, hangar.token, hangar.asset_over_time to service_role;
 
 create table if not exists hangar.heartbeat (
   id uuid primary key default gen_random_uuid(),
