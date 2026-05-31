@@ -491,3 +491,36 @@ end $$;
 
 grant select on hangar.character_corp to authenticated;
 grant all    on hangar.character_corp to service_role;
+
+-- Cache of player Upwell structure details (name, system) resolved from ESI's
+-- authenticated /universe/structures endpoint by the structures job. Lets the
+-- assets UI show a name/system for structures that aren't our own corp's (those
+-- live in corp_structure) and aren't in the SDE.
+create table if not exists hangar.structure (
+  structure_id bigint primary key,
+  name text,
+  system_id bigint,
+  type_id bigint,
+  resolved_at timestamptz not null default now()
+);
+
+alter table hangar.structure enable row level security;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_policies
+    where schemaname = 'hangar'
+      and tablename = 'structure'
+      and policyname = 'Authenticated read structure'
+  ) then
+    create policy "Authenticated read structure"
+      on hangar.structure
+      for select
+      to authenticated
+      using (true);
+  end if;
+end $$;
+
+grant select on hangar.structure to authenticated;
+grant all    on hangar.structure to service_role;

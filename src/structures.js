@@ -1,6 +1,7 @@
 import { pullCorpWalletJournals } from './corpWalletJournal.js'
 import { character as fetchCharacter, corpAssets, corpStructures, universeNames } from './esi.js'
 import { resolveCorpJournalNames } from './resolveNames.js'
+import { resolveStructureNames } from './structureNames.js'
 import { sudoSupabase } from './supabase.js'
 import { refreshAccessToken } from './tokenRefresh.js'
 
@@ -254,6 +255,14 @@ const execute = async () => {
     await resolveCorpJournalNames()
   } catch (e) {
     console.error(`[structures] name resolution FAILED name=${e?.name} message=${e?.message}`)
+  }
+
+  // Name the foreign player structures characters hold assets in (own-corp ones are
+  // already covered by corp_structure above), so the assets page can label them.
+  try {
+    await resolveStructureNames()
+  } catch (e) {
+    console.error(`[structures] structure-name resolution FAILED name=${e?.name} message=${e?.message}`)
   }
 }
 
