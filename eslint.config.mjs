@@ -1,6 +1,6 @@
 import js from '@eslint/js'
+import globals from 'globals'
 import tseslint from 'typescript-eslint'
-import nextCoreWebVitals from 'eslint-config-next/core-web-vitals'
 
 const config = [
   {
@@ -8,7 +8,14 @@ const config = [
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
-  ...nextCoreWebVitals,
+  {
+    languageOptions: {
+      globals: {
+        ...globals.browser,
+        ...globals.node,
+      },
+    },
+  },
   {
     rules: {
       '@typescript-eslint/no-explicit-any': 'off',

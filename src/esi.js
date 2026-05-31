@@ -95,3 +95,10 @@ export const universeNames = (ids) =>
     body: ids,
     label: `universeNames(${ids.length})`,
   })
+
+export const characterAffiliations = (ids) =>
+  esiJson(`/characters/affiliation/`, {
+    method: 'POST',
+    body: ids,
+    label: `characterAffiliations(${ids.length})`,
+  })

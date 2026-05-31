@@ -14,7 +14,6 @@ const MarketPage = async () => {
 
   const { data: characters } = await supabase.schema('hangar').from('character').select('id, name')
 
-  // eslint-disable-next-line react-hooks/purity
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
   const { data: sales } = await supabase
     .schema('hangar')

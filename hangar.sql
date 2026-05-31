@@ -464,3 +464,30 @@ end $$;
 
 grant select on hangar.eve_name to authenticated;
 grant all    on hangar.eve_name to service_role;
+
+create table if not exists hangar.character_corp (
+  character_id bigint primary key,
+  corporation_id bigint not null,
+  resolved_at timestamptz not null default now()
+);
+
+alter table hangar.character_corp enable row level security;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_policies
+    where schemaname = 'hangar'
+      and tablename = 'character_corp'
+      and policyname = 'Authenticated read character_corp'
+  ) then
+    create policy "Authenticated read character_corp"
+      on hangar.character_corp
+      for select
+      to authenticated
+      using (true);
+  end if;
+end $$;
+
+grant select on hangar.character_corp to authenticated;
+grant all    on hangar.character_corp to service_role;
