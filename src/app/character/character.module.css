@@ -59,3 +59,24 @@
   color: var(--ink-faint);
   margin-right: 4pt;
 }
+
+.warning {
+  margin: 12pt 0;
+  padding: 10pt 12pt;
+  border: 1px solid #d9a441;
+  border-left-width: 3px;
+  border-radius: var(--radius);
+  background: color-mix(in srgb, #d9a441 12%, var(--paper-raised));
+}
+
+.warningTitle {
+  display: block;
+  font-family: var(--serif);
+  font-size: 10pt;
+}
+
+.warningBody {
+  margin: 4pt 0 0;
+  font-size: 9pt;
+  color: var(--ink-soft);
+}
