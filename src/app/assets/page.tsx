@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation'
 
 import { createClient } from '@/utils/supabase/server'
+import { fetchStationNames } from '../stationNames'
 import { fetchSystemNames } from '../systemNames'
 import styles from './assets.module.css'
 
@@ -75,6 +76,12 @@ const AssetsPage = async () => {
 
   const structureById = new Map(((structures ?? []) as Structure[]).map((s) => [String(s.structure_id), s]))
 
+  // NPC station names come from eve-build-calculator (same curated source as the
+  // type/system lookups); player structures aren't there, so those still resolve
+  // via corp_structure above.
+  const stationIds = [...byLocation.values()].filter((loc) => loc.type === 'station').map((loc) => Number(loc.id))
+  const stationNames = await fetchStationNames(stationIds)
+
   const systemIds = new Set<number>()
   for (const loc of byLocation.values()) {
     if (loc.type === 'solar_system') systemIds.add(Number(loc.id))
@@ -86,8 +93,8 @@ const AssetsPage = async () => {
   const labelFor = (loc: Root): string => {
     const structure = structureById.get(loc.id)
     if (structure) return structure.name ?? `Structure #${loc.id}`
+    if (loc.type === 'station') return stationNames[Number(loc.id)] ?? `Station #${loc.id}`
     if (loc.type === 'solar_system') return systemNames[Number(loc.id)] ?? `System #${loc.id}`
-    if (loc.type === 'station') return `Station #${loc.id}`
     return `Location #${loc.id}`
   }
 
