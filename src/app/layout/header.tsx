@@ -14,7 +14,7 @@ const Header = async () => {
       <div className={styles.bar}>
         <div className={styles.top}>
           <Link href="/" className={styles.brand}>
-            EVE Hangar
+            Edencom Link
           </Link>
           {userId && <span className={styles.user}>{userId}</span>}
         </div>
