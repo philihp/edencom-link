@@ -69,9 +69,17 @@ create table hangar.asset (
   quantity bigint,
   is_singleton boolean,
   is_blueprint_copy boolean,
-  updated_at timestamptz not null default now()
+  first_seen_at timestamptz not null default now(),
+  last_seen_at timestamptz not null default now()
 );
 create index asset_character_id_idx on hangar.asset (character_id);
+
+-- Evolve existing deployments: track when an item was first and last sighted by
+-- the hourly assets extract instead of a single updated_at. first_seen_at is kept
+-- out of the upsert payload so its `default now()` sticks from the first sighting;
+-- last_seen_at is written every run.
+alter table hangar.asset add column if not exists first_seen_at timestamptz not null default now();
+alter table hangar.asset add column if not exists last_seen_at  timestamptz not null default now();
 
 alter table hangar.asset enable row level security;
 
