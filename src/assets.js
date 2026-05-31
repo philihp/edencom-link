@@ -10,6 +10,26 @@ const ASSETS_SCOPE = 'esi-assets.read_assets.v1'
 
 const sso = new SingleSignOn(EVE_CLIENT_ID, EVE_SECRET_KEY, EVE_CALLBACK_URL, userAgent)
 
+// Keep id lists under PostgREST's URL length limit when filtering with .in().
+const chunk = (arr, n) => {
+  const out = []
+  for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n))
+  return out
+}
+
+// The tracked attributes that define a version of an item. Two sightings with
+// the same signature are the "same" row; any difference opens a new SCD row.
+const signature = (a) =>
+  JSON.stringify([
+    Number(a.type_id),
+    a.location_id == null ? null : Number(a.location_id),
+    a.location_flag ?? null,
+    a.location_type ?? null,
+    a.quantity == null ? null : Number(a.quantity),
+    a.is_singleton ?? null,
+    !!a.is_blueprint_copy,
+  ])
+
 const refreshToken = async (tokenRow) => {
   const refreshed = await sso.getAccessToken(tokenRow.refresh_token, true)
   const { access_token, refresh_token } = refreshed
@@ -28,6 +48,87 @@ const refreshToken = async (tokenRow) => {
     })
     .eq('id', tokenRow.id)
   return { access_token, characterID, scope }
+}
+
+const fetchAssets = async (access_token, characterID) => {
+  const all = []
+  const [firstPage, pagesHeader] = await assets(access_token, characterID, 1)
+  all.push(...firstPage)
+  const totalPages = Math.max(1, Number.parseInt(pagesHeader, 10) || 1)
+  for (let page = 2; page <= totalPages; page++) {
+    const [more] = await assets(access_token, characterID, page)
+    all.push(...more)
+  }
+  return { all, totalPages }
+}
+
+// Reconcile the freshly fetched assets against the character's current (open)
+// rows: unchanged items get their last_seen_at extended, changed items have
+// their old row closed and a new one inserted, and vanished items are closed.
+const reconcile = async (character_id, fetched) => {
+  const { data: current, error } = await sudoSupabase
+    .schema('hangar')
+    .from('asset')
+    .select('id, item_id, type_id, location_id, location_flag, location_type, quantity, is_singleton, is_blueprint_copy')
+    .eq('character_id', character_id)
+    .eq('is_current', true)
+  if (error) throw error
+
+  const currentByItem = new Map((current ?? []).map((r) => [Number(r.item_id), r]))
+
+  const now = new Date().toISOString()
+  const touchIds = [] // unchanged: bump last_seen_at on the open row
+  const closeIds = [] // changed or gone: close the old open row
+  const inserts = [] // changed or new: open a fresh version
+
+  for (const a of fetched) {
+    const cur = currentByItem.get(Number(a.item_id))
+    if (cur && signature(cur) === signature(a)) {
+      touchIds.push(cur.id)
+    } else {
+      if (cur) closeIds.push(cur.id)
+      // first_seen_at is left to its `default now()` so it marks this version's debut.
+      inserts.push({
+        item_id: a.item_id,
+        character_id,
+        type_id: a.type_id,
+        location_id: a.location_id ?? null,
+        location_flag: a.location_flag ?? null,
+        location_type: a.location_type ?? null,
+        quantity: a.quantity ?? null,
+        is_singleton: a.is_singleton ?? null,
+        is_blueprint_copy: !!a.is_blueprint_copy,
+        last_seen_at: now,
+      })
+    }
+    currentByItem.delete(Number(a.item_id))
+  }
+  // Anything still open but not seen this run has left the character's assets.
+  for (const cur of currentByItem.values()) closeIds.push(cur.id)
+
+  for (const ids of chunk(touchIds, 200)) {
+    const { error: touchErr } = await sudoSupabase
+      .schema('hangar')
+      .from('asset')
+      .update({ last_seen_at: now })
+      .in('id', ids)
+    if (touchErr) throw touchErr
+  }
+  // Close before inserting so the unique-current-per-item index never collides.
+  for (const ids of chunk(closeIds, 200)) {
+    const { error: closeErr } = await sudoSupabase
+      .schema('hangar')
+      .from('asset')
+      .update({ is_current: false })
+      .in('id', ids)
+    if (closeErr) throw closeErr
+  }
+  for (const rows of chunk(inserts, 1000)) {
+    const { error: insertErr } = await sudoSupabase.schema('hangar').from('asset').insert(rows)
+    if (insertErr) throw insertErr
+  }
+
+  return { touched: touchIds.length, opened: inserts.length, closed: closeIds.length }
 }
 
 const execute = async () => {
@@ -54,43 +155,13 @@ const execute = async () => {
         continue
       }
 
-      const all = []
-      const [firstPage, pagesHeader] = await assets(access_token, characterID, 1)
-      all.push(...firstPage)
-      const totalPages = Math.max(1, Number.parseInt(pagesHeader, 10) || 1)
-      for (let page = 2; page <= totalPages; page++) {
-        const [more] = await assets(access_token, characterID, page)
-        all.push(...more)
-      }
-
-      const now = new Date().toISOString()
-      // first_seen_at is intentionally omitted: the column's `default now()` sets
-      // it on insert, and leaving it out of the upsert payload means it is never
-      // overwritten when an existing item_id conflicts. last_seen_at is sent every
-      // run so it always reflects the most recent sighting.
-      const rows = all.map((a) => ({
-        item_id: a.item_id,
-        character_id: tokenRow.character_id,
-        type_id: a.type_id,
-        location_id: a.location_id ?? null,
-        location_flag: a.location_flag ?? null,
-        location_type: a.location_type ?? null,
-        quantity: a.quantity ?? null,
-        is_singleton: a.is_singleton ?? null,
-        is_blueprint_copy: !!a.is_blueprint_copy,
-        last_seen_at: now,
-      }))
-
-      if (rows.length > 0) {
-        const { error: upsertErr } = await sudoSupabase
-          .schema('hangar')
-          .from('asset')
-          .upsert(rows, { onConflict: 'item_id' })
-        if (upsertErr) throw upsertErr
-      }
+      const { all, totalPages } = await fetchAssets(access_token, characterID)
+      const { touched, opened, closed } = await reconcile(tokenRow.character_id, all)
 
       const dt = Date.now() - t0
-      console.log(`[assets] ${ctx}: ${rows.length} asset(s) across ${totalPages} page(s) in ${dt}ms`)
+      console.log(
+        `[assets] ${ctx}: ${all.length} asset(s) across ${totalPages} page(s); ${touched} unchanged, ${opened} opened, ${closed} closed in ${dt}ms`
+      )
     } catch (e) {
       const dt = Date.now() - t0
       console.error(`[assets] ${ctx}: FAILED after ${dt}ms name=${e?.name} message=${e?.message}\n${e?.stack ?? e}`)

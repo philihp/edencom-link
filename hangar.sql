@@ -59,8 +59,17 @@ create policy "Users manage own tokens"
   using (user_id = (select auth.uid()))
   with check (user_id = (select auth.uid()));
 
+-- Assets are stored as a slowly changing dimension (SCD type 2): each row is a
+-- versioned snapshot of one item's state. When the hourly extract sees an item
+-- whose tracked attributes (location, quantity, ...) differ from its current
+-- row, that row is closed (is_current = false) and a new row is inserted, so the
+-- full history is retained and holdings can be reconstructed at any past time.
+-- last_seen_at on the open row is extended every run the item is seen unchanged;
+-- once the item changes or disappears, its row's last_seen_at marks the last time
+-- that version was observed.
 create table hangar.asset (
-  item_id bigint primary key,
+  id bigint generated always as identity primary key,
+  item_id bigint not null,
   character_id uuid not null references hangar.character(id) on delete cascade,
   type_id bigint not null,
   location_id bigint,
@@ -69,17 +78,33 @@ create table hangar.asset (
   quantity bigint,
   is_singleton boolean,
   is_blueprint_copy boolean,
+  is_current boolean not null default true,
   first_seen_at timestamptz not null default now(),
   last_seen_at timestamptz not null default now()
 );
-create index asset_character_id_idx on hangar.asset (character_id);
+create index if not exists asset_character_id_idx on hangar.asset (character_id);
+-- At most one live row per item; also the conflict target the extract relies on.
+create unique index if not exists asset_current_item_idx on hangar.asset (item_id) where is_current;
+-- Time-travel lookups walking an item's version history.
+create index if not exists asset_item_id_idx on hangar.asset (item_id, last_seen_at desc);
 
--- Evolve existing deployments: track when an item was first and last sighted by
--- the hourly assets extract instead of a single updated_at. first_seen_at is kept
--- out of the upsert payload so its `default now()` sticks from the first sighting;
--- last_seen_at is written every run.
+-- Evolve existing deployments to the SCD shape above.
+alter table hangar.asset add column if not exists is_current    boolean     not null default true;
 alter table hangar.asset add column if not exists first_seen_at timestamptz not null default now();
 alter table hangar.asset add column if not exists last_seen_at  timestamptz not null default now();
+do $$
+begin
+  -- Swap the item_id primary key for a surrogate id so one item can have many
+  -- historical rows.
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'hangar' and table_name = 'asset' and column_name = 'id'
+  ) then
+    alter table hangar.asset drop constraint if exists asset_pkey;
+    alter table hangar.asset add column id bigint generated always as identity;
+    alter table hangar.asset add primary key (id);
+  end if;
+end $$;
 
 alter table hangar.asset enable row level security;
 
