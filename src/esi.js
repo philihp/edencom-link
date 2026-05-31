@@ -96,6 +96,14 @@ export const universeNames = (ids) =>
     label: `universeNames(${ids.length})`,
   })
 
+// Resolve a single player Upwell structure. Requires esi-universe.read_structures.v1
+// and docking access for the token's character, else ESI returns 403.
+export const universeStructure = (access_token, structureID) =>
+  esiJson(`/universe/structures/${structureID}/`, {
+    access_token,
+    label: `universeStructure ${structureID}`,
+  })
+
 export const characterAffiliations = (ids) =>
   esiJson(`/characters/affiliation/`, {
     method: 'POST',

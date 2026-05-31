@@ -16,7 +16,7 @@ type Asset = {
 type Structure = {
   structure_id: number | string
   name: string | null
-  system_id: number | string
+  system_id: number | string | null
 }
 
 // The place an item ultimately sits. Items can be nested (a module in a ship in
@@ -66,19 +66,27 @@ const AssetsPage = async () => {
     else byLocation.set(root.id, { ...root, count: 1 })
   }
 
-  // Names + systems for the locations we can resolve: our corp's structures from
-  // the corp_structure table, and in-space `solar_system` locations whose id is
-  // the system itself. NPC stations have no non-SDE source, so they show raw ids.
-  const { data: structures } = await supabase
+  // Structure names + systems come from two caches: our own corp's structures
+  // (corp_structure) and foreign player structures characters hold assets in,
+  // resolved from ESI by the structures job (hangar.structure). Own-corp entries
+  // win on overlap. In-space `solar_system` locations are the system itself.
+  const locationIds = [...byLocation.keys()].map(Number).filter((n) => Number.isFinite(n))
+
+  const { data: corpStructures } = await supabase
     .schema('hangar')
     .from('corp_structure')
     .select('structure_id, name, system_id')
+  const { data: playerStructures } = locationIds.length
+    ? await supabase.schema('hangar').from('structure').select('structure_id, name, system_id').in('structure_id', locationIds)
+    : { data: [] }
 
-  const structureById = new Map(((structures ?? []) as Structure[]).map((s) => [String(s.structure_id), s]))
+  const structureById = new Map<string, Structure>()
+  for (const s of (playerStructures ?? []) as Structure[]) structureById.set(String(s.structure_id), s)
+  // Own-corp structures override the ESI-resolved cache.
+  for (const s of (corpStructures ?? []) as Structure[]) structureById.set(String(s.structure_id), s)
 
   // NPC station names come from eve-build-calculator (same curated source as the
-  // type/system lookups); player structures aren't there, so those still resolve
-  // via corp_structure above.
+  // type/system lookups).
   const stationIds = [...byLocation.values()].filter((loc) => loc.type === 'station').map((loc) => Number(loc.id))
   const stationNames = await fetchStationNames(stationIds)
 
@@ -86,7 +94,7 @@ const AssetsPage = async () => {
   for (const loc of byLocation.values()) {
     if (loc.type === 'solar_system') systemIds.add(Number(loc.id))
     const structure = structureById.get(loc.id)
-    if (structure) systemIds.add(Number(structure.system_id))
+    if (structure?.system_id != null) systemIds.add(Number(structure.system_id))
   }
   const systemNames = await fetchSystemNames(systemIds)
 
@@ -100,7 +108,7 @@ const AssetsPage = async () => {
 
   const systemFor = (loc: Root): string | undefined => {
     const structure = structureById.get(loc.id)
-    if (structure) return systemNames[Number(structure.system_id)] ?? `#${structure.system_id}`
+    if (structure?.system_id != null) return systemNames[Number(structure.system_id)] ?? `#${structure.system_id}`
     if (loc.type === 'solar_system') return systemNames[Number(loc.id)]
     return undefined
   }

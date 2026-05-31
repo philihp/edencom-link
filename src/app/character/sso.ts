@@ -13,6 +13,7 @@ export const scopes = [
   'esi-corporations.read_structures.v1',
   'esi-wallet.read_corporation_wallets.v1',
   'esi-assets.read_corporation_assets.v1',
+  'esi-universe.read_structures.v1',
   // 'esi-characters.read_blueprints.v1',
 ]
 
