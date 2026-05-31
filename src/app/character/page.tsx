@@ -1,7 +1,10 @@
+import Link from 'next/link'
 import { redirect } from 'next/navigation'
 
 import { createClient } from '@/utils/supabase/server'
 import { register } from './actions'
+import { requiredScopes } from './scopes'
+import { getEnabledScopes } from './userScopes'
 import styles from './character.module.css'
 
 const CharacterPage = async () => {
@@ -27,9 +30,24 @@ const CharacterPage = async () => {
   const formatIsk = (raw: string | number) =>
     new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(raw))
 
+  // If the player has turned off every optional ESI scope, characters they add
+  // grant nothing beyond identification, so almost no features will work.
+  const enabledScopes = await getEnabledScopes(supabase, data.user.id)
+  const hasNoOptionalScopes = enabledScopes.every((scope) => requiredScopes.includes(scope))
+
   return (
     <>
       <h1>Characters</h1>
+      {hasNoOptionalScopes && (
+        <div className={styles.warning} role="alert">
+          <strong className={styles.warningTitle}>Limited access selected</strong>
+          <p className={styles.warningBody}>
+            You haven&apos;t enabled any ESI permissions, so characters you add will only be identified — no wallet,
+            assets, industry, market, or structure data can be tracked. Choose what to share in{' '}
+            <Link href="/account/settings">settings</Link>.
+          </p>
+        </div>
+      )}
       <ul className={styles.grid}>
         {characters?.map((c) => (
           <li key={`character-${c.id}`} className={styles.tile}>
