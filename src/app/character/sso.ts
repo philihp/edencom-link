@@ -1,21 +1,14 @@
 import SingleSignOn from 'eve-sso'
 
+import { defaultScopes } from './scopes'
+
 const EVE_CLIENT_ID = process.env.EVE_CLIENT_ID
 const EVE_SECRET_KEY = process.env.EVE_SECRET_KEY
 const EVE_CALLBACK_URL = process.env.EVE_CALLBACK_URL
 
-export const scopes = [
-  'publicData',
-  'esi-wallet.read_character_wallet.v1',
-  'esi-assets.read_assets.v1',
-  'esi-industry.read_character_jobs.v1',
-  'esi-markets.read_character_orders.v1',
-  'esi-corporations.read_structures.v1',
-  'esi-wallet.read_corporation_wallets.v1',
-  'esi-assets.read_corporation_assets.v1',
-  'esi-universe.read_structures.v1',
-  // 'esi-characters.read_blueprints.v1',
-]
+// Every scope we may request. The set actually requested for a given player is
+// narrowed to their saved preferences in the register flow; see scopes.ts.
+export const scopes = defaultScopes
 
 export const userAgent = 'philihp@gmail.com edencom-link discord:philihp'
 export const sso = new SingleSignOn(EVE_CLIENT_ID!, EVE_SECRET_KEY!, EVE_CALLBACK_URL!, userAgent)

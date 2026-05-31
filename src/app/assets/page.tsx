@@ -86,11 +86,6 @@ const AssetsPage = async () => {
   for (const s of (corpStructures ?? []) as Structure[]) structureById.set(String(s.structure_id), s)
 
   // NPC station names come from eve-build-calculator (same curated source as the
-  // type/system lookups).
-  const stationIds = [...byLocation.values()].filter((loc) => loc.type === 'station').map((loc) => Number(loc.id))
-  const stationNames = await fetchStationNames(stationIds)
-
-  // NPC station names come from eve-build-calculator (same curated source as the
   // type/system lookups); player structures aren't there, so those still resolve
   // via corp_structure above.
   const stationIds = [...byLocation.values()].filter((loc) => loc.type === 'station').map((loc) => Number(loc.id))

@@ -1,0 +1,59 @@
+.intro {
+  color: var(--ink-soft);
+  max-width: 60ch;
+  margin: 0 0 12pt;
+}
+
+.selectAll {
+  margin-bottom: 12pt;
+}
+
+.list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 16pt;
+  display: flex;
+  flex-direction: column;
+  gap: 8pt;
+}
+
+.item {
+  padding: 10pt 12pt;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--paper-raised);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8pt;
+  cursor: pointer;
+}
+
+.name {
+  font-family: var(--serif);
+  font-weight: bold;
+}
+
+.badge {
+  font-size: 8pt;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-faint);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 1pt 5pt;
+}
+
+.why {
+  font-size: 9pt;
+  color: var(--ink-soft);
+  margin: 6pt 0 0 24pt;
+}
+
+.without {
+  font-size: 9pt;
+  color: var(--accent);
+  margin: 4pt 0 0 24pt;
+}
