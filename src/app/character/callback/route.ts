@@ -12,7 +12,7 @@ const upsertCharacter =
   async (columns: { user_id: string; owner: string; name: string; character_id: number }) => {
     const response = await supabase
       .schema('hangar')
-      .from('character')
+      .from('registration')
       .upsert(columns, { onConflict: 'user_id, owner' })
       .select()
     if (response.error) throw new Error(`upsert character failed: ${JSON.stringify(response.error)}`)
@@ -24,7 +24,7 @@ const upsertToken =
   (supabase: SupabaseClient) =>
   async (columns: {
     user_id: string
-    character_id: string
+    registration_id: string
     access_token: string
     refresh_token: string
     issued_at: string
@@ -34,7 +34,7 @@ const upsertToken =
     const response = await supabase
       .schema('hangar')
       .from('token')
-      .upsert(columns, { onConflict: 'character_id' })
+      .upsert(columns, { onConflict: 'registration_id' })
       .select()
     if (response.error) throw new Error(`upsert token failed: ${JSON.stringify(response.error)}`)
     if (!response.data?.[0]?.id) throw new Error(`upsert token returned no row: ${JSON.stringify(response)}`)
@@ -62,10 +62,10 @@ export const GET = async (request: NextRequest) => {
   // why are we doing this, again? can this be deleted?
   await sso.getAccessToken(refresh_token, true)
 
-  const character_id = await upsertCharacter(supabase)({ user_id, owner, name, character_id: eve_character_id })
+  const registration_id = await upsertCharacter(supabase)({ user_id, owner, name, character_id: eve_character_id })
   const token_id = await upsertToken(supabase)({
     user_id,
-    character_id,
+    registration_id,
     access_token,
     refresh_token,
     issued_at,

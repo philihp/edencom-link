@@ -24,7 +24,7 @@ export const resolveStructureNames = async () => {
   const { data: tokens, error } = await sudoSupabase
     .schema('hangar')
     .from('token')
-    .select('id, character_id, refresh_token')
+    .select('id, registration_id, refresh_token')
     .contains('scope', [UNIVERSE_STRUCTURES_SCOPE])
   if (error) throw error
 

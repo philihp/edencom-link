@@ -15,17 +15,20 @@ const CharacterPage = async () => {
     redirect('/')
   }
 
-  const { data: characters, status, statusText, error } = await supabase.schema('hangar').from('character').select()
+  const { data: characters, status, statusText, error } = await supabase
+    .schema('hangar')
+    .from('registration')
+    .select()
 
   const { data: wallets } = await supabase
     .schema('hangar')
     .from('wallet')
-    .select('character_id, balance, recorded_at')
+    .select('registration_id, balance, recorded_at')
     .order('recorded_at', { ascending: false })
 
   const latestBalance = new Map<string, string>()
   for (const w of wallets ?? []) {
-    if (!latestBalance.has(w.character_id)) latestBalance.set(w.character_id, w.balance)
+    if (!latestBalance.has(w.registration_id)) latestBalance.set(w.registration_id, w.balance)
   }
   const formatIsk = (raw: string | number) =>
     new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(raw))

@@ -8,7 +8,7 @@ import { usePersist } from './usePersist'
 
 export type Sale = {
   transaction_id: string | number
-  character_id: string
+  registration_id: string
   date: string
   type_id: number | string
   quantity: number | string
@@ -54,7 +54,7 @@ export const RecentSales = ({ sales, characters, typeNamesPromise }: RecentSales
   const filtered = sales.filter(
     (s) =>
       Number(s.unit_price) * Number(s.quantity) >= threshold &&
-      (characterId === ALL_CHARACTERS || s.character_id === characterId)
+      (characterId === ALL_CHARACTERS || s.registration_id === characterId)
   )
 
   return (
@@ -101,7 +101,7 @@ export const RecentSales = ({ sales, characters, typeNamesPromise }: RecentSales
           <tbody>
             {filtered.map((s) => (
               <tr key={`sale-${s.transaction_id}`}>
-                <td className="serif">{characterName[s.character_id] ?? '—'}</td>
+                <td className="serif">{characterName[s.registration_id] ?? '—'}</td>
                 <td className="serif">
                   <TypeName id={Number(s.type_id)} promise={typeNamesPromise} />
                 </td>

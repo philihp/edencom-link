@@ -8,7 +8,7 @@ const INDUSTRY_SCOPE = 'esi-industry.read_character_jobs.v1'
 const execute = async () => {
   const { data: characters, error: charactersError } = await sudoSupabase
     .schema('hangar')
-    .from('character')
+    .from('registration')
     .select('id, name')
   if (charactersError) {
     console.error(charactersError)
@@ -19,7 +19,7 @@ const execute = async () => {
   const { data: tokens, error } = await sudoSupabase
     .schema('hangar')
     .from('token')
-    .select('id, character_id, refresh_token')
+    .select('id, registration_id, refresh_token')
     .contains('scope', [WALLET_SCOPE])
 
   if (error) {
@@ -28,22 +28,22 @@ const execute = async () => {
   }
 
   for (const tokenRow of tokens ?? []) {
-    const name = characterName.get(tokenRow.character_id) ?? '?'
+    const name = characterName.get(tokenRow.registration_id) ?? '?'
     try {
       const { access_token, characterID } = await refreshAccessToken(tokenRow)
       const balance = await wallet(access_token, characterID)
       const { error: insertError } = await sudoSupabase
         .schema('hangar')
         .from('wallet')
-        .insert({ character_id: tokenRow.character_id, balance })
+        .insert({ registration_id: tokenRow.registration_id, balance })
       if (insertError) throw insertError
-      console.log(`wallet ${name} ${tokenRow.character_id} (${characterID}): ${balance}`)
+      console.log(`wallet ${name} ${tokenRow.registration_id} (${characterID}): ${balance}`)
 
       const txns = await transactions(access_token, characterID)
       if (txns.length > 0) {
         const rows = txns.map((t) => ({
           transaction_id: t.transaction_id,
-          character_id: tokenRow.character_id,
+          registration_id: tokenRow.registration_id,
           date: t.date,
           type_id: t.type_id,
           quantity: t.quantity,
@@ -59,17 +59,17 @@ const execute = async () => {
           .from('market_transaction')
           .upsert(rows, { onConflict: 'transaction_id', ignoreDuplicates: true })
         if (txError) throw txError
-        console.log(`transactions ${name} ${tokenRow.character_id} (${characterID}): ${txns.length} fetched`)
+        console.log(`transactions ${name} ${tokenRow.registration_id} (${characterID}): ${txns.length} fetched`)
       }
     } catch (e) {
-      console.error(`refresh failed for ${name} ${tokenRow.character_id}:`, e)
+      console.error(`refresh failed for ${name} ${tokenRow.registration_id}:`, e)
     }
   }
 
   const { data: industryTokens, error: industryTokensError } = await sudoSupabase
     .schema('hangar')
     .from('token')
-    .select('id, character_id, refresh_token')
+    .select('id, registration_id, refresh_token')
     .contains('scope', [INDUSTRY_SCOPE])
 
   if (industryTokensError) {
@@ -78,14 +78,14 @@ const execute = async () => {
   }
 
   for (const tokenRow of industryTokens ?? []) {
-    const name = characterName.get(tokenRow.character_id) ?? '?'
+    const name = characterName.get(tokenRow.registration_id) ?? '?'
     try {
       const { access_token, characterID } = await refreshAccessToken(tokenRow)
       const jobs = await industryJobs(access_token, characterID)
       if (jobs.length > 0) {
         const rows = jobs.map((j) => ({
           job_id: j.job_id,
-          character_id: tokenRow.character_id,
+          registration_id: tokenRow.registration_id,
           installer_id: j.installer_id,
           facility_id: j.facility_id,
           station_id: j.station_id ?? null,
@@ -114,9 +114,9 @@ const execute = async () => {
           .upsert(rows, { onConflict: 'job_id' })
         if (jobError) throw jobError
       }
-      console.log(`industry ${name} ${tokenRow.character_id} (${characterID}): ${jobs.length} jobs`)
+      console.log(`industry ${name} ${tokenRow.registration_id} (${characterID}): ${jobs.length} jobs`)
     } catch (e) {
-      console.error(`industry refresh failed for ${name} ${tokenRow.character_id}:`, e)
+      console.error(`industry refresh failed for ${name} ${tokenRow.registration_id}:`, e)
     }
   }
 }

@@ -11,7 +11,7 @@ import { ACTIVITY_NAMES } from './jobFields'
 
 export type Job = {
   job_id: number | string
-  character_id: string
+  registration_id: string
   activity_id: number
   blueprint_type_id: number | string
   product_type_id: number | string | null
@@ -58,7 +58,7 @@ export const ActiveJobs = ({ jobs, characters, initialNow, typeNamesPromise, sta
     raw === ALL_CHARACTERS || characters.some((c) => c.id === raw) ? raw : undefined
   )
 
-  const filtered = jobs.filter((j) => characterId === ALL_CHARACTERS || j.character_id === characterId)
+  const filtered = jobs.filter((j) => characterId === ALL_CHARACTERS || j.registration_id === characterId)
 
   const [now, setNow] = useState<number>(initialNow)
   useEffect(() => {
@@ -102,7 +102,7 @@ export const ActiveJobs = ({ jobs, characters, initialNow, typeNamesPromise, sta
             <tbody>
               {filtered.map((j) => (
                 <tr key={`job-${j.job_id}`}>
-                  <td className="serif">{characterName[j.character_id] ?? '—'}</td>
+                  <td className="serif">{characterName[j.registration_id] ?? '—'}</td>
                   <td>{ACTIVITY_NAMES[j.activity_id] ?? `#${j.activity_id}`}</td>
                   <td className="serif">
                     {j.product_type_id != null ? (

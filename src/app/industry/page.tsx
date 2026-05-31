@@ -12,13 +12,13 @@ const IndustryPage = async () => {
     redirect('/')
   }
 
-  const { data: characters } = await supabase.schema('hangar').from('character').select('id, name')
+  const { data: characters } = await supabase.schema('hangar').from('registration').select('id, name')
 
   const { data: jobs } = await supabase
     .schema('hangar')
     .from('industry_job')
     .select(
-      'job_id, character_id, activity_id, blueprint_type_id, product_type_id, runs, status, start_date, end_date, station_id, facility_id'
+      'job_id, registration_id, activity_id, blueprint_type_id, product_type_id, runs, status, start_date, end_date, station_id, facility_id'
     )
     .eq('status', 'active')
     .order('end_date', { ascending: true })

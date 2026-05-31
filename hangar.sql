@@ -13,7 +13,76 @@ alter default privileges in schema hangar
 alter default privileges in schema hangar
   grant all on functions to anon, authenticated, service_role;
 
-create table hangar.character (
+-- Rename the `character` table to `registration` and realign every relationship
+-- that pointed at it. Idempotent and guarded so it is a no-op on a fresh install
+-- (the create statements below already produce the `registration` shape) and on
+-- re-runs. A plain rename keeps foreign keys, index contents, and dependent policy
+-- expressions pointing at the renamed objects automatically; these steps only
+-- realign the leftover identifiers (table, columns, indexes, constraint, policy).
+-- This must run before the create-if-not-exists statements below, otherwise an
+-- existing deployment would get a second, empty `registration` table.
+do $$
+begin
+  if exists (
+    select 1 from information_schema.tables
+    where table_schema = 'hangar' and table_name = 'character' and table_type = 'BASE TABLE'
+  ) then
+    alter table hangar.character rename to registration;
+  end if;
+
+  -- The table's own index and policy keep their old names through a table rename.
+  alter index if exists hangar.character_user_id_idx rename to registration_user_id_idx;
+  alter index if exists hangar.character_corporation_id_idx rename to registration_corporation_id_idx;
+  if exists (
+    select 1 from pg_policies
+    where schemaname = 'hangar' and tablename = 'registration'
+      and policyname = 'Users manage own characters'
+  ) then
+    alter policy "Users manage own characters" on hangar.registration
+      rename to "Users manage own registrations";
+  end if;
+
+  -- Repoint the uuid foreign keys that referenced hangar.character(id). The plain
+  -- column rename keeps each FK and its dependent index/policy pointing at the
+  -- renamed table; only the column identifier needs realigning. (The bigint EVE
+  -- character ids -- registration.character_id, character_corp, completed_character_id,
+  -- client_id -- are a different concept and are intentionally left untouched.)
+  if exists (select 1 from information_schema.columns
+             where table_schema = 'hangar' and table_name = 'token' and column_name = 'character_id') then
+    alter table hangar.token rename column character_id to registration_id;
+  end if;
+  if exists (select 1 from information_schema.columns
+             where table_schema = 'hangar' and table_name = 'asset_over_time' and column_name = 'character_id') then
+    alter table hangar.asset_over_time rename column character_id to registration_id;
+  end if;
+  if exists (select 1 from information_schema.columns
+             where table_schema = 'hangar' and table_name = 'wallet' and column_name = 'character_id') then
+    alter table hangar.wallet rename column character_id to registration_id;
+  end if;
+  if exists (select 1 from information_schema.columns
+             where table_schema = 'hangar' and table_name = 'market_transaction' and column_name = 'character_id') then
+    alter table hangar.market_transaction rename column character_id to registration_id;
+  end if;
+  if exists (select 1 from information_schema.columns
+             where table_schema = 'hangar' and table_name = 'industry_job' and column_name = 'character_id') then
+    alter table hangar.industry_job rename column character_id to registration_id;
+  end if;
+
+  -- Realign the dependent indexes and the token uniqueness constraint.
+  alter index if exists hangar.token_character_id_idx rename to token_registration_id_idx;
+  alter index if exists hangar.asset_over_time_character_id_idx rename to asset_over_time_registration_id_idx;
+  alter index if exists hangar.wallet_character_id_recorded_at_idx rename to wallet_registration_id_recorded_at_idx;
+  alter index if exists hangar.market_transaction_character_id_date_idx rename to market_transaction_registration_id_date_idx;
+  alter index if exists hangar.industry_job_character_id_end_date_idx rename to industry_job_registration_id_end_date_idx;
+  if exists (
+    select 1 from pg_constraint
+    where conname = 'token_character_id_key' and connamespace = 'hangar'::regnamespace
+  ) then
+    alter table hangar.token rename constraint token_character_id_key to token_registration_id_key;
+  end if;
+end $$;
+
+create table if not exists hangar.registration (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
   owner text not null,
@@ -23,21 +92,30 @@ create table hangar.character (
   updated_at timestamptz not null default now(),
   unique (user_id, owner)
 );
-create index character_user_id_idx on hangar.character (user_id);
+create index if not exists registration_user_id_idx on hangar.registration (user_id);
 
-alter table hangar.character enable row level security;
+alter table hangar.registration enable row level security;
 
-create policy "Users manage own characters"
-  on hangar.character
-  for all
-  to authenticated
-  using (user_id = (select auth.uid()))
-  with check (user_id = (select auth.uid()));
+do $$
+begin
+  if not exists (
+    select 1 from pg_policies
+    where schemaname = 'hangar' and tablename = 'registration'
+      and policyname = 'Users manage own registrations'
+  ) then
+    create policy "Users manage own registrations"
+      on hangar.registration
+      for all
+      to authenticated
+      using (user_id = (select auth.uid()))
+      with check (user_id = (select auth.uid()));
+  end if;
+end $$;
 
-create table hangar.token (
+create table if not exists hangar.token (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
-  character_id uuid not null references hangar.character(id) on delete cascade,
+  registration_id uuid not null references hangar.registration(id) on delete cascade,
   access_token text not null,
   refresh_token text not null,
   issued_at timestamptz not null,
@@ -45,19 +123,28 @@ create table hangar.token (
   scope text[] not null default '{}',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  unique (character_id)
+  unique (registration_id)
 );
-create index token_character_id_idx on hangar.token (character_id);
-create index token_user_id_idx on hangar.token (user_id);
+create index if not exists token_registration_id_idx on hangar.token (registration_id);
+create index if not exists token_user_id_idx on hangar.token (user_id);
 
 alter table hangar.token enable row level security;
 
-create policy "Users manage own tokens"
-  on hangar.token
-  for all
-  to authenticated
-  using (user_id = (select auth.uid()))
-  with check (user_id = (select auth.uid()));
+do $$
+begin
+  if not exists (
+    select 1 from pg_policies
+    where schemaname = 'hangar' and tablename = 'token'
+      and policyname = 'Users manage own tokens'
+  ) then
+    create policy "Users manage own tokens"
+      on hangar.token
+      for all
+      to authenticated
+      using (user_id = (select auth.uid()))
+      with check (user_id = (select auth.uid()));
+  end if;
+end $$;
 
 -- Assets are stored as a slowly changing dimension (SCD type 2) in
 -- asset_over_time: each row is a versioned snapshot of one item's state. When the
@@ -84,7 +171,7 @@ end $$;
 create table if not exists hangar.asset_over_time (
   id bigint generated always as identity primary key,
   item_id bigint not null,
-  character_id uuid not null references hangar.character(id) on delete cascade,
+  registration_id uuid not null references hangar.registration(id) on delete cascade,
   type_id bigint not null,
   location_id bigint,
   location_flag text,
@@ -96,7 +183,7 @@ create table if not exists hangar.asset_over_time (
   first_seen_at timestamptz not null default now(),
   last_seen_at timestamptz not null default now()
 );
-create index if not exists asset_over_time_character_id_idx on hangar.asset_over_time (character_id);
+create index if not exists asset_over_time_registration_id_idx on hangar.asset_over_time (registration_id);
 -- At most one live row per item; also the conflict target the extract relies on.
 create unique index if not exists asset_over_time_current_item_idx on hangar.asset_over_time (item_id) where is_current;
 -- Time-travel lookups walking an item's version history.
@@ -133,8 +220,8 @@ begin
       for select
       to authenticated
       using (
-        character_id in (
-          select id from hangar.character where user_id = (select auth.uid())
+        registration_id in (
+          select id from hangar.registration where user_id = (select auth.uid())
         )
       );
   end if;
@@ -149,13 +236,13 @@ create or replace view hangar.asset with (security_invoker = on) as
 -- above only applies to tables created by the role that ran the statement,
 -- so this belt-and-suspenders grant ensures PostgREST's `authenticated` /
 -- `anon` / `service_role` roles can actually reach these tables. Re-runnable.
-grant select, insert, update, delete on hangar.character       to authenticated;
+grant select, insert, update, delete on hangar.registration    to authenticated;
 grant select, insert, update, delete on hangar.token           to authenticated;
 -- The view runs with the invoker's rights, so authenticated needs select on the
 -- underlying table for the `asset` view to resolve (RLS still scopes the rows).
 grant select                          on hangar.asset_over_time to authenticated;
 grant select                          on hangar.asset           to authenticated;
-grant all on hangar.character, hangar.token, hangar.asset_over_time to service_role;
+grant all on hangar.registration, hangar.token, hangar.asset_over_time to service_role;
 
 create table if not exists hangar.heartbeat (
   id uuid primary key default gen_random_uuid(),
@@ -168,28 +255,37 @@ create index if not exists heartbeat_ran_at_idx
 alter table hangar.heartbeat enable row level security;
 grant all on hangar.heartbeat to service_role;
 
-alter table hangar.character add column if not exists character_id bigint;
+alter table hangar.registration add column if not exists character_id bigint;
 
 create table if not exists hangar.wallet (
   id uuid primary key default gen_random_uuid(),
-  character_id uuid not null references hangar.character(id) on delete cascade,
+  registration_id uuid not null references hangar.registration(id) on delete cascade,
   balance numeric(20, 2) not null,
   recorded_at timestamptz not null default now()
 );
-create index if not exists wallet_character_id_recorded_at_idx
-  on hangar.wallet (character_id, recorded_at desc);
+create index if not exists wallet_registration_id_recorded_at_idx
+  on hangar.wallet (registration_id, recorded_at desc);
 
 alter table hangar.wallet enable row level security;
 
-create policy "Users read own wallets"
-  on hangar.wallet
-  for select
-  to authenticated
-  using (
-    character_id in (
-      select id from hangar.character where user_id = (select auth.uid())
-    )
-  );
+do $$
+begin
+  if not exists (
+    select 1 from pg_policies
+    where schemaname = 'hangar' and tablename = 'wallet'
+      and policyname = 'Users read own wallets'
+  ) then
+    create policy "Users read own wallets"
+      on hangar.wallet
+      for select
+      to authenticated
+      using (
+        registration_id in (
+          select id from hangar.registration where user_id = (select auth.uid())
+        )
+      );
+  end if;
+end $$;
 
 grant select on hangar.wallet to authenticated;
 grant all    on hangar.wallet to service_role;
@@ -201,7 +297,7 @@ where id in (
   select id from (
     select id,
       row_number() over (
-        partition by character_id
+        partition by registration_id
         order by coalesce(array_length(scope, 1), 0) desc, updated_at desc
       ) as rn
     from hangar.token
@@ -215,16 +311,16 @@ do $$
 begin
   if not exists (
     select 1 from pg_constraint
-    where conname = 'token_character_id_key'
+    where conname = 'token_registration_id_key'
       and conrelid = 'hangar.token'::regclass
   ) then
-    alter table hangar.token add constraint token_character_id_key unique (character_id);
+    alter table hangar.token add constraint token_registration_id_key unique (registration_id);
   end if;
 end $$;
 
 create table if not exists hangar.market_transaction (
   transaction_id bigint primary key,
-  character_id uuid not null references hangar.character(id) on delete cascade,
+  registration_id uuid not null references hangar.registration(id) on delete cascade,
   date timestamptz not null,
   type_id bigint not null,
   quantity bigint not null,
@@ -236,27 +332,36 @@ create table if not exists hangar.market_transaction (
   journal_ref_id bigint not null,
   seen_at timestamptz not null default now()
 );
-create index if not exists market_transaction_character_id_date_idx
-  on hangar.market_transaction (character_id, date desc);
+create index if not exists market_transaction_registration_id_date_idx
+  on hangar.market_transaction (registration_id, date desc);
 
 alter table hangar.market_transaction enable row level security;
 
-create policy "Users read own transactions"
-  on hangar.market_transaction
-  for select
-  to authenticated
-  using (
-    character_id in (
-      select id from hangar.character where user_id = (select auth.uid())
-    )
-  );
+do $$
+begin
+  if not exists (
+    select 1 from pg_policies
+    where schemaname = 'hangar' and tablename = 'market_transaction'
+      and policyname = 'Users read own transactions'
+  ) then
+    create policy "Users read own transactions"
+      on hangar.market_transaction
+      for select
+      to authenticated
+      using (
+        registration_id in (
+          select id from hangar.registration where user_id = (select auth.uid())
+        )
+      );
+  end if;
+end $$;
 
 grant select on hangar.market_transaction to authenticated;
 grant all    on hangar.market_transaction to service_role;
 
 create table if not exists hangar.industry_job (
   job_id bigint primary key,
-  character_id uuid not null references hangar.character(id) on delete cascade,
+  registration_id uuid not null references hangar.registration(id) on delete cascade,
   installer_id bigint not null,
   facility_id bigint not null,
   station_id bigint,
@@ -280,8 +385,8 @@ create table if not exists hangar.industry_job (
   successful_runs integer,
   seen_at timestamptz not null default now()
 );
-create index if not exists industry_job_character_id_end_date_idx
-  on hangar.industry_job (character_id, end_date desc);
+create index if not exists industry_job_registration_id_end_date_idx
+  on hangar.industry_job (registration_id, end_date desc);
 
 alter table hangar.industry_job enable row level security;
 
@@ -298,8 +403,8 @@ begin
       for select
       to authenticated
       using (
-        character_id in (
-          select id from hangar.character where user_id = (select auth.uid())
+        registration_id in (
+          select id from hangar.registration where user_id = (select auth.uid())
         )
       );
   end if;
@@ -308,8 +413,8 @@ end $$;
 grant select on hangar.industry_job to authenticated;
 grant all    on hangar.industry_job to service_role;
 
-alter table hangar.character add column if not exists corporation_id bigint;
-create index if not exists character_corporation_id_idx on hangar.character (corporation_id);
+alter table hangar.registration add column if not exists corporation_id bigint;
+create index if not exists registration_corporation_id_idx on hangar.registration (corporation_id);
 
 create table if not exists hangar.corp_structure (
   structure_id bigint primary key,
@@ -340,7 +445,7 @@ create policy "Users read structures for own corps"
   to authenticated
   using (
     corporation_id in (
-      select corporation_id from hangar.character
+      select corporation_id from hangar.registration
       where user_id = (select auth.uid()) and corporation_id is not null
     )
   );
@@ -379,7 +484,7 @@ begin
       to authenticated
       using (
         corporation_id in (
-          select corporation_id from hangar.character
+          select corporation_id from hangar.registration
           where user_id = (select auth.uid()) and corporation_id is not null
         )
       );
@@ -427,7 +532,7 @@ begin
       to authenticated
       using (
         corporation_id in (
-          select corporation_id from hangar.character
+          select corporation_id from hangar.registration
           where user_id = (select auth.uid()) and corporation_id is not null
         )
       );

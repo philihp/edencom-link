@@ -65,14 +65,14 @@ const fetchAssets = async (access_token, characterID) => {
 // Reconcile the freshly fetched assets against the character's current (open)
 // rows: unchanged items get their last_seen_at extended, changed items have
 // their old row closed and a new one inserted, and vanished items are closed.
-const reconcile = async (character_id, fetched) => {
+const reconcile = async (registration_id, fetched) => {
   const { data: current, error } = await sudoSupabase
     .schema('hangar')
     .from('asset_over_time')
     .select(
       'id, item_id, type_id, location_id, location_flag, location_type, quantity, is_singleton, is_blueprint_copy'
     )
-    .eq('character_id', character_id)
+    .eq('registration_id', registration_id)
     .eq('is_current', true)
   if (error) throw error
 
@@ -92,7 +92,7 @@ const reconcile = async (character_id, fetched) => {
       // first_seen_at is left to its `default now()` so it marks this version's debut.
       inserts.push({
         item_id: a.item_id,
-        character_id,
+        registration_id,
         type_id: a.type_id,
         location_id: a.location_id ?? null,
         location_flag: a.location_flag ?? null,
@@ -136,7 +136,7 @@ const reconcile = async (character_id, fetched) => {
 const execute = async () => {
   const { data: characters, error: charactersError } = await sudoSupabase
     .schema('hangar')
-    .from('character')
+    .from('registration')
     .select('id, name')
   if (charactersError) {
     console.error('[assets] character lookup failed:', charactersError)
@@ -147,7 +147,7 @@ const execute = async () => {
   const { data: tokens, error } = await sudoSupabase
     .schema('hangar')
     .from('token')
-    .select('id, character_id, refresh_token')
+    .select('id, registration_id, refresh_token')
     .contains('scope', [ASSETS_SCOPE])
 
   if (error) {
@@ -159,8 +159,8 @@ const execute = async () => {
 
   for (const tokenRow of tokens ?? []) {
     const t0 = Date.now()
-    const name = characterName.get(tokenRow.character_id) ?? '?'
-    const ctx = `character=${name} (${tokenRow.character_id}) token=${tokenRow.id}`
+    const name = characterName.get(tokenRow.registration_id) ?? '?'
+    const ctx = `character=${name} (${tokenRow.registration_id}) token=${tokenRow.id}`
     try {
       const { access_token, characterID, scope } = await refreshToken(tokenRow)
       if (!scope.includes(ASSETS_SCOPE)) {
@@ -169,7 +169,7 @@ const execute = async () => {
       }
 
       const { all, totalPages } = await fetchAssets(access_token, characterID)
-      const { touched, opened, closed } = await reconcile(tokenRow.character_id, all)
+      const { touched, opened, closed } = await reconcile(tokenRow.registration_id, all)
 
       const dt = Date.now() - t0
       console.log(

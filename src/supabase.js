@@ -28,7 +28,7 @@ export const authenticate = async () => {
 export const upsertCharacter = async (columns) => {
   const response = await supabase
     .schema('hangar')
-    .from('character')
+    .from('registration')
     .upsert(columns, { onConflict: 'user_id, owner' })
     .select()
   return response.data?.[0]?.id
@@ -38,7 +38,7 @@ export const upsertToken = async (columns) => {
   const response = await supabase
     .schema('hangar')
     .from('token')
-    .upsert(columns, { onConflict: ['character_id'] })
+    .upsert(columns, { onConflict: ['registration_id'] })
     .select()
   if (response.error) console.error(response.error)
   return response.data?.[0]?.id
@@ -54,18 +54,18 @@ export const upsertAssets = async (assets) => {
 }
 
 export const selectCharacters = async (columns, owner) => {
-  let query = supabase.schema('hangar').from('character').select(columns)
+  let query = supabase.schema('hangar').from('registration').select(columns)
   if (owner !== undefined) query = query.eq('owner', owner)
   const response = await query
   return response?.data?.map((r) => r.id)
 }
 
-export const selectToken = async (character_id, scope = []) => {
+export const selectToken = async (registration_id, scope = []) => {
   const response = await supabase
     .schema('hangar')
     .from('token')
     .select('refresh_token, scope')
-    .eq('character_id', character_id)
+    .eq('registration_id', registration_id)
     .contains('scope', [scope].flat())
     .order('expires_at', { ascending: true })
   return response

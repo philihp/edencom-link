@@ -35,7 +35,7 @@ const corpLabelFor = (name, corporation_id) => (name ? `${name} (${corporation_i
 const execute = async () => {
   const { data: characters, error: charactersError } = await sudoSupabase
     .schema('hangar')
-    .from('character')
+    .from('registration')
     .select('id, name')
   if (charactersError) {
     console.error('[structures] character lookup failed:', charactersError)
@@ -46,7 +46,7 @@ const execute = async () => {
   const { data: tokens, error } = await sudoSupabase
     .schema('hangar')
     .from('token')
-    .select('id, character_id, refresh_token')
+    .select('id, registration_id, refresh_token')
     .contains('scope', [STRUCTURES_SCOPE])
 
   if (error) {
@@ -56,9 +56,9 @@ const execute = async () => {
 
   console.log(`[structures] found ${tokens?.length ?? 0} token(s) with ${STRUCTURES_SCOPE}`)
   for (const t of tokens ?? []) {
-    const name = characterName.get(t.character_id) ?? '?'
+    const name = characterName.get(t.registration_id) ?? '?'
     console.log(
-      `[structures]   token ${t.id} character ${name} (${t.character_id}) refresh ...${tail(t.refresh_token)}`
+      `[structures]   token ${t.id} character ${name} (${t.registration_id}) refresh ...${tail(t.refresh_token)}`
     )
   }
 
@@ -67,8 +67,8 @@ const execute = async () => {
   const seenAssetCorps = new Set()
   for (const tokenRow of tokens ?? []) {
     const t0 = Date.now()
-    const name = characterName.get(tokenRow.character_id) ?? '?'
-    const ctx = `character=${name} (${tokenRow.character_id}) token=${tokenRow.id}`
+    const name = characterName.get(tokenRow.registration_id) ?? '?'
+    const ctx = `character=${name} (${tokenRow.registration_id}) token=${tokenRow.id}`
     try {
       console.log(`[structures] ${ctx}: refreshing token (refresh ...${tail(tokenRow.refresh_token)})`)
       const { access_token, characterID, scope, issued_at, expires_at } = await refreshAccessToken(tokenRow)
@@ -95,9 +95,9 @@ const execute = async () => {
 
       const { error: charUpdateErr, status: charUpdateStatus } = await sudoSupabase
         .schema('hangar')
-        .from('character')
+        .from('registration')
         .update({ corporation_id })
-        .eq('id', tokenRow.character_id)
+        .eq('id', tokenRow.registration_id)
       if (charUpdateErr) {
         console.error(
           `[structures] ${ctx}: character.corporation_id update failed status=${charUpdateStatus} code=${charUpdateErr.code} message=${charUpdateErr.message} details=${charUpdateErr.details} hint=${charUpdateErr.hint}`

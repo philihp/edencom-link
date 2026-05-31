@@ -29,7 +29,7 @@ type Structure = {
 
 type Job = {
   job_id: number | string
-  character_id: string
+  registration_id: string
   activity_id: number
   blueprint_type_id: number | string
   product_type_id: number | string | null
@@ -96,14 +96,14 @@ const StructurePage = async ({ params }: StructureParams) => {
     .schema('hangar')
     .from('industry_job')
     .select(
-      'job_id, character_id, activity_id, blueprint_type_id, product_type_id, runs, status, start_date, end_date, station_id, facility_id'
+      'job_id, registration_id, activity_id, blueprint_type_id, product_type_id, runs, status, start_date, end_date, station_id, facility_id'
     )
     .or(`station_id.eq.${structureId},facility_id.eq.${structureId}`)
     .order('end_date', { ascending: true })
 
   const jobs = (jobsData ?? []) as Job[]
 
-  const { data: characters } = await supabase.schema('hangar').from('character').select('id, name')
+  const { data: characters } = await supabase.schema('hangar').from('registration').select('id, name')
   const characterName: Record<string, string> = Object.fromEntries((characters ?? []).map((c) => [c.id, c.name]))
 
   // Rigs fitted to this structure (pulled from corp assets by the structures job).
@@ -235,7 +235,7 @@ const StructurePage = async ({ params }: StructureParams) => {
           <tbody>
             {jobs.map((j) => (
               <tr key={`job-${j.job_id}`}>
-                <td className="serif">{characterName[j.character_id] ?? '—'}</td>
+                <td className="serif">{characterName[j.registration_id] ?? '—'}</td>
                 <td>{ACTIVITY_NAMES[j.activity_id] ?? `#${j.activity_id}`}</td>
                 <td className="serif">{typeNames[Number(j.blueprint_type_id)] ?? `#${j.blueprint_type_id}`}</td>
                 <td className="serif">
