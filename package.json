@@ -20,6 +20,7 @@
   },
   "scripts": {
     "build": "next build",
+    "assets": "node src/assets.js",
     "connect": "node src/connect.js",
     "daily": "node src/daily.js",
     "dev": "next dev",
