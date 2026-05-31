@@ -96,13 +96,9 @@ create table if not exists hangar.asset_over_time (
   first_seen_at timestamptz not null default now(),
   last_seen_at timestamptz not null default now()
 );
-create index if not exists asset_over_time_character_id_idx on hangar.asset_over_time (character_id);
--- At most one live row per item; also the conflict target the extract relies on.
-create unique index if not exists asset_over_time_current_item_idx on hangar.asset_over_time (item_id) where is_current;
--- Time-travel lookups walking an item's version history.
-create index if not exists asset_over_time_item_id_idx on hangar.asset_over_time (item_id, last_seen_at desc);
 
--- Evolve existing deployments to the SCD shape above.
+-- Evolve existing deployments to the SCD shape above. These run before the
+-- indexes below because the partial index references is_current.
 alter table hangar.asset_over_time add column if not exists is_current    boolean     not null default true;
 alter table hangar.asset_over_time add column if not exists first_seen_at timestamptz not null default now();
 alter table hangar.asset_over_time add column if not exists last_seen_at  timestamptz not null default now();
@@ -119,6 +115,12 @@ begin
     alter table hangar.asset_over_time add primary key (id);
   end if;
 end $$;
+
+create index if not exists asset_over_time_character_id_idx on hangar.asset_over_time (character_id);
+-- At most one live row per item; also the conflict target the extract relies on.
+create unique index if not exists asset_over_time_current_item_idx on hangar.asset_over_time (item_id) where is_current;
+-- Time-travel lookups walking an item's version history.
+create index if not exists asset_over_time_item_id_idx on hangar.asset_over_time (item_id, last_seen_at desc);
 
 alter table hangar.asset_over_time enable row level security;
 
