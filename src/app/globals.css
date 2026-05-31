@@ -32,22 +32,40 @@
 
   /* Claude reading serif — Tiempos/Copernicus with a free serif fallback. */
   --serif:
-    'Tiempos Text', Tiempos, Copernicus, ui-serif, Charter, 'Iowan Old Style',
-    Georgia, Cambria, 'Times New Roman', serif;
+    'Tiempos Text', Tiempos, Copernicus, ui-serif, Charter, 'Iowan Old Style', Georgia, Cambria, 'Times New Roman',
+    serif;
 
   /* Proportional sans for interactive controls. */
-  --sans:
-    ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
-    Helvetica, Arial, sans-serif;
+  --sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
 
   /* Fixed-width face — reserved for code and numbers. */
-  --mono:
-    'SF Mono', 'JetBrains Mono', 'Fira Code', 'Cascadia Code', ui-monospace,
-    'Menlo', 'Consolas', monospace;
+  --mono: 'SF Mono', 'JetBrains Mono', 'Fira Code', 'Cascadia Code', ui-monospace, 'Menlo', 'Consolas', monospace;
+}
+
+/*
+ * Dark theme. Driven primarily by data-theme="dark" on <html>, which the server
+ * sets from the visitor's location (light by day, dark by night — see
+ * src/app/theme). When the location is unknown no attribute is set, and we fall
+ * back to the device's prefers-color-scheme. The two blocks below are kept
+ * identical; CSS can't share a custom-property set across a media boundary.
+ */
+:root[data-theme='dark'] {
+  --paper: #1a1815;
+  --paper-raised: #24211d;
+  --ink: #f0eee6;
+  --ink-soft: #c4bfb3;
+  --ink-faint: #8a877e;
+  --line: #38342d;
+  --line-soft: #2d2a24;
+  --accent: #a5b4fc;
+  --accent-strong: #818cf8;
+  --accent-tint: #25244a;
+  --link: #6ea8fe;
+  --link-visited: #c699f7;
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme]) {
     --paper: #1a1815;
     --paper-raised: #24211d;
     --ink: #f0eee6;
