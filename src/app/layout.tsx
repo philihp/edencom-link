@@ -7,7 +7,7 @@ import Header from './layout/header'
 import Footer from './layout/footer'
 
 export const metadata: Metadata = {
-  title: 'EVE Hangar',
+  title: 'Edencom Link',
   // Stop mobile browsers from turning long numeric IDs into "tap to dial" links.
   formatDetection: { telephone: false },
   icons: {

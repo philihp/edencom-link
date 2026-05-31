@@ -7,7 +7,7 @@ export default function Home() {
       <section className={styles.welcome}>
         <p className={styles.title}>
           <span className={styles.spark}>✻</span>
-          Welcome to EVE Hangar
+          Welcome to Edencom Link
         </p>
         <p className={styles.tip}>
           Your market, industry, and structure data — tracked from ESI and
