@@ -1,5 +1,6 @@
 import { pullCorpWalletJournals } from './corpWalletJournal.js'
-import { character as fetchCharacter, corpAssets, corpStructures, corpWalletJournal, universeNames } from './esi.js'
+import { character as fetchCharacter, corpAssets, corpStructures, universeNames } from './esi.js'
+import { resolveCorpJournalNames } from './resolveNames.js'
 import { sudoSupabase } from './supabase.js'
 import { refreshAccessToken } from './tokenRefresh.js'
 
@@ -244,6 +245,15 @@ const execute = async () => {
       const dt = Date.now() - t0
       console.error(`[structures] ${ctx}: FAILED after ${dt}ms name=${e?.name} message=${e?.message}\n${e?.stack ?? e}`)
     }
+  }
+
+  // Cache names for the journal parties we just pulled (industry-tax payers etc.) so the structures
+  // page shows who paid instead of a raw id. Doing it here keeps names within an hour of the journal
+  // rather than waiting on the once-a-day job.
+  try {
+    await resolveCorpJournalNames()
+  } catch (e) {
+    console.error(`[structures] name resolution FAILED name=${e?.name} message=${e?.message}`)
   }
 }
 
