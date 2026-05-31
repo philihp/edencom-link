@@ -24,6 +24,9 @@ const ScopeSettings = ({ scopes, enabled }: ScopeSettingsProps) => {
 
   const selectAll = () => setChecked(Object.fromEntries(scopes.map((s) => [s.scope, true])))
 
+  // Required scopes stay checked since they are always granted.
+  const unselectAll = () => setChecked(Object.fromEntries(scopes.map((s) => [s.scope, Boolean(s.required)])))
+
   const save = async (formData: FormData) => {
     const error = await saveScopePreferences(formData)
     if (error) {
@@ -44,9 +47,14 @@ const ScopeSettings = ({ scopes, enabled }: ScopeSettingsProps) => {
         apply to characters you add from now on.
       </p>
       <form>
-        <button type="button" className={styles.selectAll} onClick={selectAll}>
-          Select all
-        </button>
+        <div className={styles.bulkActions}>
+          <button type="button" onClick={selectAll}>
+            Select all
+          </button>
+          <button type="button" onClick={unselectAll}>
+            Unselect all
+          </button>
+        </div>
         <ul className={styles.list}>
           {scopes.map((s) => (
             <li key={s.scope} className={styles.item}>
