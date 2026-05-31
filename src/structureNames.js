@@ -39,11 +39,15 @@ export const resolveStructureNames = async () => {
 
       // Candidate structures = root locations in this character's assets that sit in
       // the player-structure id range and aren't one of the character's own items.
-      const { data: assets } = await sudoSupabase
+      // Read asset_over_time (the base table service_role can reach) filtered to the
+      // live rows, rather than the `asset` view, which is only granted to authenticated.
+      const { data: assets, error: assetsErr } = await sudoSupabase
         .schema('hangar')
-        .from('asset')
+        .from('asset_over_time')
         .select('item_id, location_id')
         .eq('character_id', tokenRow.character_id)
+        .eq('is_current', true)
+      if (assetsErr) throw assetsErr
       const itemIds = new Set((assets ?? []).map((a) => Number(a.item_id)))
       const candidates = new Set()
       for (const a of assets ?? []) {
