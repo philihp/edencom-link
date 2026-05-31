@@ -38,7 +38,7 @@ const fetchDivision = async (access_token, corporation_id, division, cutoff) => 
   return rows
 }
 
-export const pullCorpWalletJournals = async ({ access_token, corporation_id, ctx }) => {
+export const pullCorpWalletJournals = async ({ access_token, corporation_id, ctx, corpLabel = corporation_id }) => {
   const cutoff = Date.now() - JOURNAL_LOOKBACK_MS
   for (const division of WALLET_DIVISIONS) {
     try {
@@ -50,9 +50,9 @@ export const pullCorpWalletJournals = async ({ access_token, corporation_id, ctx
           .upsert(rows, { onConflict: 'corporation_id,division,entry_id', ignoreDuplicates: true })
         if (error) throw error
       }
-      console.log(`[corp-wallet] ${ctx}: corp ${corporation_id} div ${division} ${rows.length} entries`)
+      console.log(`[corp-wallet] ${ctx}: corp ${corpLabel} div ${division} ${rows.length} entries`)
     } catch (e) {
-      console.error(`[corp-wallet] ${ctx}: corp ${corporation_id} div ${division} FAILED message=${e?.message}`)
+      console.error(`[corp-wallet] ${ctx}: corp ${corpLabel} div ${division} FAILED message=${e?.message}`)
     }
   }
 }

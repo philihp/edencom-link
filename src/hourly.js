@@ -6,6 +6,16 @@ const WALLET_SCOPE = 'esi-wallet.read_character_wallet.v1'
 const INDUSTRY_SCOPE = 'esi-industry.read_character_jobs.v1'
 
 const execute = async () => {
+  const { data: characters, error: charactersError } = await sudoSupabase
+    .schema('hangar')
+    .from('character')
+    .select('id, name')
+  if (charactersError) {
+    console.error(charactersError)
+    process.exit(1)
+  }
+  const characterName = new Map((characters ?? []).map((c) => [c.id, c.name]))
+
   const { data: tokens, error } = await sudoSupabase
     .schema('hangar')
     .from('token')
@@ -18,6 +28,7 @@ const execute = async () => {
   }
 
   for (const tokenRow of tokens ?? []) {
+    const name = characterName.get(tokenRow.character_id) ?? '?'
     try {
       const { access_token, characterID } = await refreshAccessToken(tokenRow)
       const balance = await wallet(access_token, characterID)
@@ -26,7 +37,7 @@ const execute = async () => {
         .from('wallet')
         .insert({ character_id: tokenRow.character_id, balance })
       if (insertError) throw insertError
-      console.log(`wallet ${tokenRow.character_id} (${characterID}): ${balance}`)
+      console.log(`wallet ${name} ${tokenRow.character_id} (${characterID}): ${balance}`)
 
       const txns = await transactions(access_token, characterID)
       if (txns.length > 0) {
@@ -48,10 +59,10 @@ const execute = async () => {
           .from('market_transaction')
           .upsert(rows, { onConflict: 'transaction_id', ignoreDuplicates: true })
         if (txError) throw txError
-        console.log(`transactions ${tokenRow.character_id} (${characterID}): ${txns.length} fetched`)
+        console.log(`transactions ${name} ${tokenRow.character_id} (${characterID}): ${txns.length} fetched`)
       }
     } catch (e) {
-      console.error(`refresh failed for ${tokenRow.character_id}:`, e)
+      console.error(`refresh failed for ${name} ${tokenRow.character_id}:`, e)
     }
   }
 
@@ -67,6 +78,7 @@ const execute = async () => {
   }
 
   for (const tokenRow of industryTokens ?? []) {
+    const name = characterName.get(tokenRow.character_id) ?? '?'
     try {
       const { access_token, characterID } = await refreshAccessToken(tokenRow)
       const jobs = await industryJobs(access_token, characterID)
@@ -102,9 +114,9 @@ const execute = async () => {
           .upsert(rows, { onConflict: 'job_id' })
         if (jobError) throw jobError
       }
-      console.log(`industry ${tokenRow.character_id} (${characterID}): ${jobs.length} jobs`)
+      console.log(`industry ${name} ${tokenRow.character_id} (${characterID}): ${jobs.length} jobs`)
     } catch (e) {
-      console.error(`industry refresh failed for ${tokenRow.character_id}:`, e)
+      console.error(`industry refresh failed for ${name} ${tokenRow.character_id}:`, e)
     }
   }
 }
