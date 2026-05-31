@@ -1,36 +1,21 @@
 /*
- * Sunrise / sunset for a location, backed by the `suncalc3` library. Used to
- * drive the day/night theme from where the visitor actually is rather than
- * from their device clock or OS preference.
+ * Whether the sun is currently up at a location, backed by the `@hebcal/noaa`
+ * library (NOAA solar algorithm). Used to drive the day/night theme from where
+ * the visitor actually is rather than from their device clock or OS preference.
  */
 
-import SunCalc from 'suncalc3'
-
-export type SunTimes = {
-  /** Sunrise (UTC), or null during polar day/night. */
-  sunrise: Date | null
-  /** Sunset (UTC), or null during polar day/night. */
-  sunset: Date | null
-  /** Solar noon (UTC) — always defined. */
-  transit: Date
-}
-
-/** Sunrise, sunset and solar noon for the day nearest `date` at the location. */
-export const getSunTimes = (latitude: number, longitude: number, date: Date = new Date()): SunTimes => {
-  const t = SunCalc.getSunTimes(date, latitude, longitude)
-  // During polar day/night there is no rise/set; suncalc3 flags those as invalid.
-  return {
-    sunrise: t.sunriseStart.valid ? t.sunriseStart.value : null,
-    sunset: t.sunsetEnd.valid ? t.sunsetEnd.value : null,
-    transit: t.solarNoon.value,
-  }
-}
+import { NOAACalculator } from '@hebcal/noaa'
+// @hebcal/noaa types its Temporal arguments against the global `Temporal`
+// namespace and installs the temporal-polyfill global itself at load time; this
+// side-effect import brings in the matching global type so we can build the
+// ZonedDateTime it expects.
+import 'temporal-polyfill/global'
 
 /** Whether the sun is currently above the horizon at the given location. */
 export const isDaytime = (latitude: number, longitude: number, date: Date = new Date()): boolean => {
+  const when = Temporal.Instant.fromEpochMilliseconds(date.getTime()).toZonedDateTimeISO('UTC')
   // The sun's upper limb meets the horizon at -0.833° (allowing for
-  // refraction); above that it's daytime. Using the sun's altitude directly
+  // refraction); above that it's daytime. Using the sun's elevation directly
   // handles polar day/night without special-casing.
-  const { altitudeDegrees } = SunCalc.getPosition(date, latitude, longitude)
-  return altitudeDegrees > -0.833
+  return NOAACalculator.getSolarElevation(when, latitude, longitude) > -0.833
 }
