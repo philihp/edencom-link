@@ -34,7 +34,6 @@ const CharacterPage = async () => {
         {characters?.map((c) => (
           <li key={`character-${c.id}`} className={styles.tile}>
             {c.character_id ? (
-              // eslint-disable-next-line @next/next/no-img-element
               <img
                 className={styles.avatar}
                 src={`https://images.evetech.net/characters/${c.character_id}/portrait?size=128`}

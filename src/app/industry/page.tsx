@@ -38,7 +38,6 @@ const IndustryPage = async () => {
     jobRows.flatMap((j) => (j.product_type_id != null ? [Number(j.product_type_id)] : []))
   )
 
-  // eslint-disable-next-line react-hooks/purity
   const initialNow = Date.now()
 
   return (
