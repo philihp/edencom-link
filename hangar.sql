@@ -524,3 +524,34 @@ end $$;
 
 grant select on hangar.structure to authenticated;
 grant all    on hangar.structure to service_role;
+
+-- Per-user preferences. `enabled_scopes` is the set of ESI OAuth scopes the
+-- user has opted into requesting when they add a character; an absent row means
+-- "request everything" (see src/app/character/userScopes.ts).
+create table if not exists hangar.user_settings (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  enabled_scopes text[] not null default '{}',
+  updated_at timestamptz not null default now()
+);
+
+alter table hangar.user_settings enable row level security;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_policies
+    where schemaname = 'hangar'
+      and tablename = 'user_settings'
+      and policyname = 'Users manage own settings'
+  ) then
+    create policy "Users manage own settings"
+      on hangar.user_settings
+      for all
+      to authenticated
+      using (user_id = (select auth.uid()))
+      with check (user_id = (select auth.uid()));
+  end if;
+end $$;
+
+grant select, insert, update, delete on hangar.user_settings to authenticated;
+grant all                            on hangar.user_settings to service_role;
