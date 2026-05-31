@@ -4,7 +4,9 @@
   margin: 0 0 12pt;
 }
 
-.selectAll {
+.bulkActions {
+  display: flex;
+  gap: 8pt;
   margin-bottom: 12pt;
 }
 
