@@ -223,11 +223,13 @@ const StructuresPage = async () => {
                       {formatMisk(totalByStructure.get(String(s.structure_id)) ?? 0)}
                     </span>
                     <span className={styles.label}>Type</span>
-                    <span className={styles.value}>{structureTypeNames[Number(s.type_id)] ?? `#${s.type_id}`}</span>
+                    <span className={`${styles.value} serif`}>
+                      {structureTypeNames[Number(s.type_id)] ?? `#${s.type_id}`}
+                    </span>
                     <span className={styles.label}>System</span>
-                    <span className={styles.value}>{systemNames[Number(s.system_id)] ?? s.system_id}</span>
+                    <span className={`${styles.value} serif`}>{systemNames[Number(s.system_id)] ?? s.system_id}</span>
                     <span className={styles.label}>Fuel Expires</span>
-                    <span className={styles.value}>
+                    <span className={`${styles.value} serif`}>
                       <DateTime value={s.fuel_expires} />
                     </span>
                   </div>
