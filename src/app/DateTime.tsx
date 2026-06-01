@@ -21,7 +21,7 @@ export const DateTime = ({ value, fallback = '—' }: DateTimeProps) => {
   // happen is the (regular, breaking) space between them.
   const [datePart, timePart] = formatter.format(date).split(' ')
   return (
-    <time dateTime={date.toISOString()}>
+    <time className="serif" dateTime={date.toISOString()}>
       <span style={{ whiteSpace: 'nowrap' }}>{datePart}</span>
       {timePart ? (
         <>
