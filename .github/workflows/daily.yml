@@ -55,23 +55,19 @@ jobs:
           cache-dependency-path: package-lock.json
       - run: npm install
       - name: Heartbeat start
-        run: npm run heartbeat
+        run: npm run heartbeat -- daily start
         env:
           SUPABASE_URL: ${{ vars.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-          HEARTBEAT_JOB: daily
-          HEARTBEAT_PHASE: start
       - run: npm run daily
         env:
           SUPABASE_URL: ${{ vars.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
       - name: Heartbeat end
-        run: npm run heartbeat
+        run: npm run heartbeat -- daily end
         env:
           SUPABASE_URL: ${{ vars.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-          HEARTBEAT_JOB: daily
-          HEARTBEAT_PHASE: end
