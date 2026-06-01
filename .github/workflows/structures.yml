@@ -16,10 +16,22 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
       - run: npm install
+      - name: Heartbeat start
+        run: npm run heartbeat -- structures start
+        env:
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
       - run: npm run structures
         env:
           EVE_CLIENT_ID: ${{ vars.EVE_CLIENT_ID }}
           EVE_SECRET_KEY: ${{ secrets.EVE_SECRET_KEY }}
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      - name: Heartbeat end
+        run: npm run heartbeat -- structures end
+        env:
           SUPABASE_URL: ${{ vars.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}

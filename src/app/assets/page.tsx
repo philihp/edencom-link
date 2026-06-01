@@ -1,9 +1,11 @@
 import { redirect } from 'next/navigation'
 
 import { createClient } from '@/utils/supabase/server'
+import { DateTime } from '../DateTime'
 import retro from '../retro.module.css'
 import { fetchStationNames } from '../stationNames'
 import { fetchSystemNames } from '../systemNames'
+import styles from './assets.module.css'
 
 // Bigint ids arrive from PostgREST as strings, so every id is kept as a string
 // and only converted to a number at the API/system-lookup boundary.
@@ -118,6 +120,19 @@ const AssetsPage = async () => {
   // Busiest locations first, then by name for a stable order.
   const rows = [...byLocation.values()].sort((a, b) => b.count - a.count || labelFor(a).localeCompare(labelFor(b)))
 
+  // When the Assets background job last finished. Each scheduled run writes a
+  // hangar.heartbeat row stamped with ended_at and a link to the workflow run; we
+  // read back the most recent completed one.
+  const { data: lastRun } = await supabase
+    .schema('hangar')
+    .from('heartbeat')
+    .select('ended_at, run_url')
+    .eq('job', 'assets')
+    .not('ended_at', 'is', null)
+    .order('ended_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
   return (
     <>
       <h1>Assets</h1>
@@ -150,6 +165,16 @@ const AssetsPage = async () => {
           <a href="/character">Characters</a> page so the hourly job can fetch them.
         </p>
       )}
+      <p className={styles.lastRun}>
+        Assets last refreshed:{' '}
+        {lastRun?.run_url ? (
+          <a href={lastRun.run_url}>
+            <DateTime value={lastRun.ended_at} fallback="never" />
+          </a>
+        ) : (
+          <DateTime value={lastRun?.ended_at} fallback="never" />
+        )}
+      </p>
     </>
   )
 }

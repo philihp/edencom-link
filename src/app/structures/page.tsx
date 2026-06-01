@@ -194,6 +194,19 @@ const StructuresPage = async () => {
     0
   )
 
+  // When the Structures background job last finished. Each scheduled run writes a
+  // hangar.heartbeat row stamped with ended_at and a link to the workflow run; we
+  // read back the most recent completed one.
+  const { data: lastRun } = await supabase
+    .schema('hangar')
+    .from('heartbeat')
+    .select('ended_at, run_url')
+    .eq('job', 'structures')
+    .not('ended_at', 'is', null)
+    .order('ended_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
   return (
     <>
       <h1>Structures</h1>
@@ -304,6 +317,16 @@ const StructuresPage = async () => {
           hourly job can fetch them.
         </p>
       )}
+      <p className={styles.lastRun}>
+        Structures last refreshed:{' '}
+        {lastRun?.run_url ? (
+          <a href={lastRun.run_url}>
+            <DateTime value={lastRun.ended_at} fallback="never" />
+          </a>
+        ) : (
+          <DateTime value={lastRun?.ended_at} fallback="never" />
+        )}
+      </p>
     </>
   )
 }

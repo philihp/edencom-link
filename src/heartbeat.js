@@ -1,12 +1,10 @@
-import { sudoSupabase } from './supabase.js'
+import { recordHeartbeat } from './supabase.js'
 
-const job = process.env.HEARTBEAT_JOB ?? 'daily'
+// Run as its own step from the scheduled workflows, once before the job
+// (`npm run heartbeat -- <job> start`) and once after (`... <job> end`),
+// keeping the heartbeat bookkeeping out of the job scripts themselves.
+const job = process.argv[2] ?? 'daily'
+const phase = process.argv[3] ?? 'end'
 
-const { error } = await sudoSupabase.schema('hangar').from('heartbeat').insert({ job })
-
-if (error) {
-  console.error(error)
-  process.exit(1)
-}
-
-console.log(`heartbeat recorded: ${job}`)
+const ok = await recordHeartbeat(job, phase)
+if (!ok) process.exit(1)
