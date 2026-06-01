@@ -35,7 +35,7 @@ const AssetsPage = async () => {
     redirect('/')
   }
 
-  const { data: assets } = await supabase.schema('hangar').from('asset').select('item_id, location_id, location_type')
+  const { data: assets } = await supabase.from('asset').select('item_id, location_id, location_type')
 
   const list = (assets ?? []) as Asset[]
   const assetByItem = new Map(list.map((a) => [String(a.item_id), a]))
@@ -67,20 +67,13 @@ const AssetsPage = async () => {
 
   // Structure names + systems come from two caches: our own corp's structures
   // (corp_structure) and foreign player structures characters hold assets in,
-  // resolved from ESI by the structures job (hangar.structure). Own-corp entries
+  // resolved from ESI by the structures job (public.structure). Own-corp entries
   // win on overlap. In-space `solar_system` locations are the system itself.
   const locationIds = [...byLocation.keys()].map(Number).filter((n) => Number.isFinite(n))
 
-  const { data: corpStructures } = await supabase
-    .schema('hangar')
-    .from('corp_structure')
-    .select('structure_id, name, system_id')
+  const { data: corpStructures } = await supabase.from('corp_structure').select('structure_id, name, system_id')
   const { data: playerStructures } = locationIds.length
-    ? await supabase
-        .schema('hangar')
-        .from('structure')
-        .select('structure_id, name, system_id')
-        .in('structure_id', locationIds)
+    ? await supabase.from('structure').select('structure_id, name, system_id').in('structure_id', locationIds)
     : { data: [] }
 
   const structureById = new Map<string, Structure>()
@@ -121,10 +114,9 @@ const AssetsPage = async () => {
   const rows = [...byLocation.values()].sort((a, b) => b.count - a.count || labelFor(a).localeCompare(labelFor(b)))
 
   // When the Assets background job last finished. Each scheduled run writes a
-  // hangar.heartbeat row stamped with ended_at and a link to the workflow run; we
+  // public.heartbeat row stamped with ended_at and a link to the workflow run; we
   // read back the most recent completed one.
   const { data: lastRun } = await supabase
-    .schema('hangar')
     .from('heartbeat')
     .select('ended_at, run_url')
     .eq('job', 'assets')

@@ -29,7 +29,7 @@ const githubRun = () => {
   return { run_id: Number(runId), run_attempt: attempt, run_url }
 }
 
-// Record a scheduled job's progress in hangar.heartbeat. Workflows call this as
+// Record a scheduled job's progress in public.heartbeat. Workflows call this as
 // two separate steps — once with phase "start" before the job and once with
 // "end" after — so each run is a single row stamped with started_at, ended_at,
 // and a link to the workflow run. The two steps of one GitHub run upsert onto
@@ -46,7 +46,7 @@ export const recordHeartbeat = async (job, phase = 'end') => {
     run_url,
     ...(phase === 'start' ? { started_at: now } : { ended_at: now }),
   }
-  const table = sudoSupabase.schema('hangar').from('heartbeat')
+  const table = sudoSupabase.from('heartbeat')
   const { error } =
     run_id != null ? await table.upsert(row, { onConflict: 'job,run_id,run_attempt' }) : await table.insert(row)
   if (error) {
@@ -66,17 +66,12 @@ export const authenticate = async () => {
 }
 
 export const upsertCharacter = async (columns) => {
-  const response = await supabase
-    .schema('hangar')
-    .from('registration')
-    .upsert(columns, { onConflict: 'user_id, owner' })
-    .select()
+  const response = await supabase.from('registration').upsert(columns, { onConflict: 'user_id, owner' }).select()
   return response.data?.[0]?.id
 }
 
 export const upsertToken = async (columns) => {
   const response = await supabase
-    .schema('hangar')
     .from('token')
     .upsert(columns, { onConflict: ['character_id'] })
     .select()
@@ -86,7 +81,6 @@ export const upsertToken = async (columns) => {
 
 export const upsertAssets = async (assets) => {
   const response = await supabase
-    .schema('hangar')
     .from('asset')
     .upsert(assets, { onConflict: ['item_id'] })
     .select()
@@ -94,7 +88,7 @@ export const upsertAssets = async (assets) => {
 }
 
 export const selectCharacters = async (columns, owner) => {
-  let query = supabase.schema('hangar').from('registration').select(columns)
+  let query = supabase.from('registration').select(columns)
   if (owner !== undefined) query = query.eq('owner', owner)
   const response = await query
   return response?.data?.map((r) => r.id)
@@ -102,7 +96,6 @@ export const selectCharacters = async (columns, owner) => {
 
 export const selectToken = async (character_id, scope = []) => {
   const response = await supabase
-    .schema('hangar')
     .from('token')
     .select('refresh_token, scope')
     .eq('character_id', character_id)

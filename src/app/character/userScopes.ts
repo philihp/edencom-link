@@ -7,12 +7,7 @@ import { defaultScopes, optionalScopes, requiredScopes } from './scopes'
 // always include the required scopes and add back whichever optional scopes
 // the player left checked.
 export const getEnabledScopes = async (supabase: SupabaseClient, userId: string): Promise<string[]> => {
-  const { data } = await supabase
-    .schema('hangar')
-    .from('user_settings')
-    .select('enabled_scopes')
-    .eq('user_id', userId)
-    .maybeSingle()
+  const { data } = await supabase.from('user_settings').select('enabled_scopes').eq('user_id', userId).maybeSingle()
 
   if (!data) return defaultScopes
 

@@ -29,7 +29,6 @@ export const resolveCorpJournalNames = async () => {
   const cutoff = new Date(Date.now() - LOOKBACK_MS).toISOString()
 
   const { data: journal, error: journalErr } = await sudoSupabase
-    .schema('hangar')
     .from('corp_wallet_journal')
     .select('first_party_id, second_party_id')
     .gte('date', cutoff)
@@ -41,7 +40,7 @@ export const resolveCorpJournalNames = async () => {
     if (r.second_party_id != null) ids.add(Number(r.second_party_id))
   }
 
-  const { data: known, error: knownErr } = await sudoSupabase.schema('hangar').from('eve_name').select('id')
+  const { data: known, error: knownErr } = await sudoSupabase.from('eve_name').select('id')
   if (knownErr) throw knownErr
   for (const k of known ?? []) ids.delete(Number(k.id))
 
@@ -62,7 +61,7 @@ export const resolveCorpJournalNames = async () => {
   }
 
   const rows = resolved.map((n) => ({ id: n.id, name: n.name, category: n.category }))
-  const { error: upErr } = await sudoSupabase.schema('hangar').from('eve_name').upsert(rows, { onConflict: 'id' })
+  const { error: upErr } = await sudoSupabase.from('eve_name').upsert(rows, { onConflict: 'id' })
   if (upErr) throw upErr
 
   const characterCount = rows.filter((r) => r.category === 'character').length

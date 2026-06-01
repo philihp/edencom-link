@@ -15,7 +15,7 @@ type ScopeSettingsProps = {
 
 const ScopeSettings = ({ scopes, enabled }: ScopeSettingsProps) => {
   const [checked, setChecked] = useState<Record<string, boolean>>(() =>
-    Object.fromEntries(scopes.map((s) => [s.scope, Boolean(s.required) || enabled.includes(s.scope)])),
+    Object.fromEntries(scopes.map((s) => [s.scope, Boolean(s.required) || enabled.includes(s.scope)]))
   )
   const [response, setResponse] = useState('')
   const [color, setColor] = useState('#000000')

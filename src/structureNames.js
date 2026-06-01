@@ -13,7 +13,7 @@ const STRUCTURE_ID_FLOOR = 100_000_000_000
 // doesn't silently truncate the candidate/own-item sets.
 const ASSET_PAGE = 1000
 
-// Resolve and cache (in hangar.structure) the names/systems of the player
+// Resolve and cache (in public.structure) the names/systems of the player
 // structures characters hold assets in. Candidates are pooled across *all*
 // linked characters and each is attempted against *every* scoped token until one
 // can dock and resolve it — a structure only needs a single character with
@@ -22,7 +22,6 @@ const ASSET_PAGE = 1000
 // corp's, plus anything resolved before).
 export const resolveStructureNames = async () => {
   const { data: tokens, error } = await sudoSupabase
-    .schema('hangar')
     .from('token')
     .select('id, character_id, refresh_token')
     .contains('scope', [UNIVERSE_STRUCTURES_SCOPE])
@@ -32,8 +31,8 @@ export const resolveStructureNames = async () => {
   if (!tokens || tokens.length === 0) return
 
   // Ids we don't need to resolve: our own corp structures and anything already cached.
-  const { data: corpStructs } = await sudoSupabase.schema('hangar').from('corp_structure').select('structure_id')
-  const { data: knownStructs } = await sudoSupabase.schema('hangar').from('structure').select('structure_id')
+  const { data: corpStructs } = await sudoSupabase.from('corp_structure').select('structure_id')
+  const { data: knownStructs } = await sudoSupabase.from('structure').select('structure_id')
   const resolved = new Set()
   for (const s of corpStructs ?? []) resolved.add(Number(s.structure_id))
   for (const s of knownStructs ?? []) resolved.add(Number(s.structure_id))
@@ -47,7 +46,6 @@ export const resolveStructureNames = async () => {
   const locationIds = new Set()
   for (let from = 0; ; from += ASSET_PAGE) {
     const { data: rows, error: assetsErr } = await sudoSupabase
-      .schema('hangar')
       .from('asset_over_time')
       .select('item_id, location_id')
       .eq('is_current', true)
@@ -106,19 +104,16 @@ export const resolveStructureNames = async () => {
       )
       continue
     }
-    const { error: upErr } = await sudoSupabase
-      .schema('hangar')
-      .from('structure')
-      .upsert(
-        {
-          structure_id: structureID,
-          name: info?.name ?? null,
-          system_id: info?.solar_system_id ?? null,
-          type_id: info?.type_id ?? null,
-          resolved_at: new Date().toISOString(),
-        },
-        { onConflict: 'structure_id' }
-      )
+    const { error: upErr } = await sudoSupabase.from('structure').upsert(
+      {
+        structure_id: structureID,
+        name: info?.name ?? null,
+        system_id: info?.solar_system_id ?? null,
+        type_id: info?.type_id ?? null,
+        resolved_at: new Date().toISOString(),
+      },
+      { onConflict: 'structure_id' }
+    )
     if (upErr) {
       console.warn(`[structures] structure ${structureID} upsert failed: ${upErr.message}`)
       continue

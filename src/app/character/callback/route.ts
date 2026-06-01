@@ -10,11 +10,7 @@ import { sso } from '../sso'
 const upsertCharacter =
   (supabase: SupabaseClient) =>
   async (columns: { user_id: string; owner: string; name: string; character_id: number }) => {
-    const response = await supabase
-      .schema('hangar')
-      .from('registration')
-      .upsert(columns, { onConflict: 'user_id, owner' })
-      .select()
+    const response = await supabase.from('registration').upsert(columns, { onConflict: 'user_id, owner' }).select()
     if (response.error) throw new Error(`upsert character failed: ${JSON.stringify(response.error)}`)
     if (!response.data?.[0]?.id) throw new Error(`upsert character returned no row: ${JSON.stringify(response)}`)
     return response.data[0].id
@@ -31,11 +27,7 @@ const upsertToken =
     expires_at: string
     scope: string[]
   }) => {
-    const response = await supabase
-      .schema('hangar')
-      .from('token')
-      .upsert(columns, { onConflict: 'character_id' })
-      .select()
+    const response = await supabase.from('token').upsert(columns, { onConflict: 'character_id' }).select()
     if (response.error) throw new Error(`upsert token failed: ${JSON.stringify(response.error)}`)
     if (!response.data?.[0]?.id) throw new Error(`upsert token returned no row: ${JSON.stringify(response)}`)
     return response.data[0].id

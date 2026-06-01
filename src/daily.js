@@ -8,11 +8,7 @@ const BATCH_SIZE = 1000
 // industry tax and which corp they fly for. Affiliations are public (no token) and resolved in
 // batches; any corp we haven't seen a name for yet gets resolved into eve_name too.
 const resolveCharacterCorps = async () => {
-  const { data: chars, error: charsErr } = await sudoSupabase
-    .schema('hangar')
-    .from('eve_name')
-    .select('id')
-    .eq('category', 'character')
+  const { data: chars, error: charsErr } = await sudoSupabase.from('eve_name').select('id').eq('category', 'character')
   if (charsErr) throw charsErr
 
   const ids = (chars ?? []).map((c) => Number(c.id)).filter((n) => Number.isFinite(n) && n > 0)
@@ -37,16 +33,13 @@ const resolveCharacterCorps = async () => {
       corporation_id: a.corporation_id,
       resolved_at: new Date().toISOString(),
     }))
-  const { error: upErr } = await sudoSupabase
-    .schema('hangar')
-    .from('character_corp')
-    .upsert(rows, { onConflict: 'character_id' })
+  const { error: upErr } = await sudoSupabase.from('character_corp').upsert(rows, { onConflict: 'character_id' })
   if (upErr) throw upErr
   console.log(`[daily] upserted ${rows.length} character corp affiliation(s)`)
 
   // Resolve names for any corporations we don't already have a name for.
   const corpIds = new Set(rows.map((r) => Number(r.corporation_id)).filter((n) => Number.isFinite(n) && n > 0))
-  const { data: known, error: knownErr } = await sudoSupabase.schema('hangar').from('eve_name').select('id')
+  const { data: known, error: knownErr } = await sudoSupabase.from('eve_name').select('id')
   if (knownErr) throw knownErr
   for (const k of known ?? []) corpIds.delete(Number(k.id))
 
@@ -60,7 +53,7 @@ const resolveCharacterCorps = async () => {
   if (resolved.length === 0) return
 
   const nameRows = resolved.map((n) => ({ id: n.id, name: n.name, category: n.category }))
-  const { error: nameErr } = await sudoSupabase.schema('hangar').from('eve_name').upsert(nameRows, { onConflict: 'id' })
+  const { error: nameErr } = await sudoSupabase.from('eve_name').upsert(nameRows, { onConflict: 'id' })
   if (nameErr) throw nameErr
   console.log(`[daily] upserted ${nameRows.length} corporation name(s)`)
 }

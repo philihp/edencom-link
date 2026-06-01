@@ -19,7 +19,6 @@ export const refreshAccessToken = async (tokenRow) => {
   const issued_at = new Date(iat * 1000).toISOString()
   const expires_at = new Date(exp * 1000).toISOString()
   await sudoSupabase
-    .schema('hangar')
     .from('token')
     .update({ access_token, refresh_token, issued_at, expires_at, scope })
     .eq('id', tokenRow.id)

@@ -33,10 +33,7 @@ const resolveCorpName = async (corporation_id) => {
 const corpLabelFor = (name, corporation_id) => (name ? `${name} (${corporation_id})` : `${corporation_id}`)
 
 const execute = async () => {
-  const { data: characters, error: charactersError } = await sudoSupabase
-    .schema('hangar')
-    .from('registration')
-    .select('id, name')
+  const { data: characters, error: charactersError } = await sudoSupabase.from('registration').select('id, name')
   if (charactersError) {
     console.error('[structures] character lookup failed:', charactersError)
     process.exit(1)
@@ -44,7 +41,6 @@ const execute = async () => {
   const characterName = new Map((characters ?? []).map((c) => [c.id, c.name]))
 
   const { data: tokens, error } = await sudoSupabase
-    .schema('hangar')
     .from('token')
     .select('id, character_id, refresh_token')
     .contains('scope', [STRUCTURES_SCOPE])
@@ -94,7 +90,6 @@ const execute = async () => {
       console.log(`[structures] ${ctx}: character corporation=${corpLabel} alliance_id=${alliance_id}`)
 
       const { error: charUpdateErr, status: charUpdateStatus } = await sudoSupabase
-        .schema('hangar')
         .from('registration')
         .update({ corporation_id })
         .eq('id', tokenRow.character_id)
@@ -151,7 +146,6 @@ const execute = async () => {
             `[structures] ${ctx}: upserting ${rows.length} structure row(s) for corp ${corpLabel} sample=${JSON.stringify(rows[0])}`
           )
           const { error: upsertErr, status: upsertStatus } = await sudoSupabase
-            .schema('hangar')
             .from('corp_structure')
             .upsert(rows, { onConflict: 'structure_id' })
           if (upsertErr) {
@@ -178,7 +172,6 @@ const execute = async () => {
         try {
           // Our structures double as asset location_ids; only keep rigs fitted to them.
           const { data: ownStructures, error: ownErr } = await sudoSupabase
-            .schema('hangar')
             .from('corp_structure')
             .select('structure_id')
             .eq('corporation_id', corporation_id)
@@ -213,7 +206,6 @@ const execute = async () => {
           // Replace this corp's rig rows wholesale so removed/swapped rigs don't linger.
           if (structureIds.size > 0) {
             const { error: delErr } = await sudoSupabase
-              .schema('hangar')
               .from('corp_structure_rig')
               .delete()
               .eq('corporation_id', corporation_id)
@@ -221,7 +213,6 @@ const execute = async () => {
           }
           if (rigRows.length > 0) {
             const { error: rigErr } = await sudoSupabase
-              .schema('hangar')
               .from('corp_structure_rig')
               .upsert(rigRows, { onConflict: 'structure_id,location_flag' })
             if (rigErr) throw rigErr

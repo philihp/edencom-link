@@ -9,10 +9,7 @@ export default function Home() {
           <span className={styles.spark}>✻</span>
           Welcome to Edencom Link
         </p>
-        <p className={styles.tip}>
-          Your market, industry, and structure data — tracked from ESI and
-          ready to read.
-        </p>
+        <p className={styles.tip}>Your market, industry, and structure data — tracked from ESI and ready to read.</p>
       </section>
 
       <div className={styles.prompt}>
