@@ -136,7 +136,7 @@ const reconcile = async (character_id, fetched) => {
 const execute = async () => {
   const { data: characters, error: charactersError } = await sudoSupabase
     .schema('hangar')
-    .from('character')
+    .from('registration')
     .select('id, name')
   if (charactersError) {
     console.error('[assets] character lookup failed:', charactersError)

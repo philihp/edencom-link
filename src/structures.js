@@ -35,7 +35,7 @@ const corpLabelFor = (name, corporation_id) => (name ? `${name} (${corporation_i
 const execute = async () => {
   const { data: characters, error: charactersError } = await sudoSupabase
     .schema('hangar')
-    .from('character')
+    .from('registration')
     .select('id, name')
   if (charactersError) {
     console.error('[structures] character lookup failed:', charactersError)
@@ -95,7 +95,7 @@ const execute = async () => {
 
       const { error: charUpdateErr, status: charUpdateStatus } = await sudoSupabase
         .schema('hangar')
-        .from('character')
+        .from('registration')
         .update({ corporation_id })
         .eq('id', tokenRow.character_id)
       if (charUpdateErr) {

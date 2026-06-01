@@ -12,7 +12,7 @@ const IndustryPage = async () => {
     redirect('/')
   }
 
-  const { data: characters } = await supabase.schema('hangar').from('character').select('id, name')
+  const { data: characters } = await supabase.schema('hangar').from('registration').select('id, name')
 
   const { data: jobs } = await supabase
     .schema('hangar')

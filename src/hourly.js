@@ -8,7 +8,7 @@ const INDUSTRY_SCOPE = 'esi-industry.read_character_jobs.v1'
 const execute = async () => {
   const { data: characters, error: charactersError } = await sudoSupabase
     .schema('hangar')
-    .from('character')
+    .from('registration')
     .select('id, name')
   if (charactersError) {
     console.error(charactersError)

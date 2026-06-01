@@ -103,7 +103,7 @@ const StructurePage = async ({ params }: StructureParams) => {
 
   const jobs = (jobsData ?? []) as Job[]
 
-  const { data: characters } = await supabase.schema('hangar').from('character').select('id, name')
+  const { data: characters } = await supabase.schema('hangar').from('registration').select('id, name')
   const characterName: Record<string, string> = Object.fromEntries((characters ?? []).map((c) => [c.id, c.name]))
 
   // Rigs fitted to this structure (pulled from corp assets by the structures job).
