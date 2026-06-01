@@ -1,3 +1,35 @@
+# Project overview
+
+EVE Online hangar/wallet/industry tracker. Package name `edencom-link` (private). Deployed on Vercel.
+
+- **Stack:** Next.js 16 (App Router) + React 19 + TypeScript 6, ESM (`"type": "module"`). Supabase (Postgres) for storage. GraphQL via graphql-yoga. `ramda` for utilities.
+- **Node:** 24.16.0 (`.node-version`). **Package manager:** npm (`package-lock.json`).
+- **Path alias:** `@/*` → `./src/*`.
+
+## Commands
+
+- `npm run dev` — Next dev server (default port 3000).
+- `npm run build` / `npm start` — production build / serve.
+- `npm run lint` — `eslint .` (flat config `eslint.config.mjs`; `no-explicit-any` is off, unused vars allowed with `^_` prefix).
+- `npm run pretty` — `prettier --write src/` (config: `@philihp/prettier-config`).
+- **No test runner / no `test` script** — there are no automated tests. No `typecheck` script (rely on `next build` / editor).
+- Pre-commit: husky + lint-staged auto-format & `eslint --fix` staged files.
+- Cron scripts (run via GitHub Actions, see below): `npm run hourly` / `daily` / `assets` / `structures` / `heartbeat`. `connect`, `ping`, `refresh` are DB/token utilities.
+
+## Layout
+
+- `src/app/` — Next.js App Router. Page routes: `account/`, `assets/`, `blueprint/`, `character/`, `industry/`, `market/`, `structures/`, plus `graphql/`, `theme/`, `layout/` (Header/Footer), `private/`. Shared helpers at top level: `typeNames.ts`/`typeName.tsx`, `systemNames.ts`, `stationNames.ts`, `isk.ts`, `DateTime.tsx`.
+- `src/` (Node cron/scripts): `esi.js` (ESI API wrapper), `supabase.js` (clients — anon + `sudoSupabase` service role that bypasses RLS), `hourly.js`, `daily.js`, `assets.js`, `structures.js`, `corpWalletJournal.js`, `resolveNames.js`, `structureNames.js`, `tokenRefresh.js`/`refresh.js`, `proxy.ts`, `utils/`.
+- `hangar.sql` — Supabase schema (schema name `hangar`); `policies.sql` — RLS policies.
+- `.github/workflows/` — `hourly.yml`, `daily.yml`, `assets.yml`, `structures.yml`, `migrate.yml`, `heartbeat.yml` (each a scheduled cron + manual dispatch).
+
+## Database & ESI
+
+- DB is the `hangar` Postgres schema in Supabase. Key tables: `registration`, `token`, `asset_over_time` (SCD type-2: `is_current` + `last_seen_at`), `wallet`, `market_transaction`, `industry_job`, `corp_structure`(+`_rig`), `corp_wallet_journal`, `character_corp`, `eve_name`, `structure`, `user_settings`. RLS enforced; cron uses service-role key.
+- ESI base `https://esi.evetech.net/latest` via `src/esi.js`. Tokens (eve-sso OAuth) refreshed per character before fetching.
+- **Data flow:** ESI → DB (cron scripts) → Next.js server components read DB. Server components must NOT call ESI directly.
+- Env vars (`.env.example`): `EVE_CLIENT_ID`/`EVE_SECRET_KEY`/`EVE_CALLBACK_URL`, `SUPABASE_URL`/`SUPABASE_KEY`/`SUPABASE_SERVICE_KEY`/`SUPABASE_PROJECT_REF`, `NEXT_PUBLIC_SUPABASE_URL`/`NEXT_PUBLIC_SUPABASE_ANON_KEY`, Turnstile keys.
+
 # Workflow
 
 - Before committing to a new feature branch, check what branch it branched from and rebase onto the latest upstream of that base (typically `origin/main`) first. This avoids opening PRs that include changes already merged on the base.
