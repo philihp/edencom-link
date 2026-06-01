@@ -2,6 +2,7 @@
 
 import { DateTime } from '../DateTime'
 import { formatMiskValue } from '../isk'
+import { CharacterName } from '../names'
 import { TypeName } from '../typeName'
 import styles from './market.module.css'
 import { usePersist } from './usePersist'
@@ -101,8 +102,10 @@ export const RecentSales = ({ sales, characters, typeNamesPromise }: RecentSales
           <tbody>
             {filtered.map((s) => (
               <tr key={`sale-${s.transaction_id}`}>
-                <td className="serif">{characterName[s.character_id] ?? '—'}</td>
-                <td className="serif">
+                <td>
+                  <CharacterName name={characterName[s.character_id]} />
+                </td>
+                <td>
                   <TypeName id={Number(s.type_id)} promise={typeNamesPromise} />
                 </td>
                 <td>{s.quantity}</td>

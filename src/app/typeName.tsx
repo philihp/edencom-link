@@ -13,7 +13,11 @@ const Resolved = ({ id, promise }: TypeNameProps) => {
 }
 
 export const TypeName = ({ id, promise }: TypeNameProps) => (
-  <Suspense fallback={`#${id}`}>
-    <Resolved id={id} promise={promise} />
-  </Suspense>
+  // A type/item name is always dynamic, item-specific text, so it owns the serif
+  // face (see globals.css) rather than relying on each caller to add it.
+  <span className="serif">
+    <Suspense fallback={`#${id}`}>
+      <Resolved id={id} promise={promise} />
+    </Suspense>
+  </span>
 )

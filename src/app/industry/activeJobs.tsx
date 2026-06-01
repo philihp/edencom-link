@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 
 import { DateTime } from '../DateTime'
 import { usePersist } from '../market/usePersist'
+import { CharacterName } from '../names'
 import retro from '../retro.module.css'
 import { TypeName } from '../typeName'
 import styles from './industry.module.css'
@@ -102,9 +103,11 @@ export const ActiveJobs = ({ jobs, characters, initialNow, typeNamesPromise, sta
             <tbody>
               {filtered.map((j) => (
                 <tr key={`job-${j.job_id}`}>
-                  <td className="serif">{characterName[j.character_id] ?? '—'}</td>
+                  <td>
+                    <CharacterName name={characterName[j.character_id]} />
+                  </td>
                   <td className="serif">{ACTIVITY_NAMES[j.activity_id] ?? `#${j.activity_id}`}</td>
-                  <td className="serif">
+                  <td>
                     {j.product_type_id != null ? (
                       <TypeName id={Number(j.product_type_id)} promise={typeNamesPromise} />
                     ) : (

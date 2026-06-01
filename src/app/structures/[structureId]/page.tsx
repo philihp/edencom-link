@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/utils/supabase/server'
 import { DateTime } from '../../DateTime'
 import { ACTIVITY_NAMES } from '../../industry/jobFields'
+import { CharacterName, Name, SystemName } from '../../names'
 import { fetchSystemNames } from '../../systemNames'
 import { fetchTypeNames } from '../../typeNames'
 import retro from '../../retro.module.css'
@@ -144,12 +145,14 @@ const StructurePage = async ({ params }: StructureParams) => {
           <tr>
             <th>Type</th>
             <td>
-              <span className="serif">{typeName ?? `#${s.type_id}`}</span>
+              <Name name={typeName} id={s.type_id} />
             </td>
           </tr>
           <tr>
             <th>System</th>
-            <td>{systemName ?? s.system_id}</td>
+            <td>
+              <SystemName name={systemName} id={s.system_id} />
+            </td>
           </tr>
           <tr>
             <th>Profile ID</th>
@@ -232,11 +235,19 @@ const StructurePage = async ({ params }: StructureParams) => {
           <tbody>
             {jobs.map((j) => (
               <tr key={`job-${j.job_id}`}>
-                <td className="serif">{characterName[j.character_id] ?? '—'}</td>
-                <td>{ACTIVITY_NAMES[j.activity_id] ?? `#${j.activity_id}`}</td>
-                <td className="serif">{typeNames[Number(j.blueprint_type_id)] ?? `#${j.blueprint_type_id}`}</td>
-                <td className="serif">
-                  {j.product_type_id != null ? (typeNames[Number(j.product_type_id)] ?? `#${j.product_type_id}`) : '—'}
+                <td>
+                  <CharacterName name={characterName[j.character_id]} />
+                </td>
+                <td className="serif">{ACTIVITY_NAMES[j.activity_id] ?? `#${j.activity_id}`}</td>
+                <td>
+                  <Name name={typeNames[Number(j.blueprint_type_id)]} id={j.blueprint_type_id} />
+                </td>
+                <td>
+                  {j.product_type_id != null ? (
+                    <Name name={typeNames[Number(j.product_type_id)]} id={j.product_type_id} />
+                  ) : (
+                    '—'
+                  )}
                 </td>
                 <td className={retro.num}>{j.runs}</td>
                 <td>{j.status}</td>

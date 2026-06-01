@@ -152,7 +152,16 @@ h2 {
   font-size: 17px;
 }
 
-/* Serif for dynamic, item-specific text — a thing's name or title. */
+/*
+ * Typography roles:
+ *   --serif  dynamic, item-specific text — a thing's name, title or value
+ *   --sans   static UI chrome — labels, headers, controls (the page default)
+ *   --mono   numbers and code (see `.num` in retro.module.css, `code`/`pre` below)
+ *
+ * Prefer the self-serif components (`TypeName`, `DateTime`, and the `Name`
+ * family in names.tsx) for entity names and timestamps; reach for this `.serif`
+ * utility for one-off dynamic text that has no dedicated component.
+ */
 .serif {
   font-family: var(--serif);
 }
