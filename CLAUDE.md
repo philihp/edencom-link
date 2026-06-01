@@ -20,8 +20,8 @@ EVE Online hangar/wallet/industry tracker. Package name `edencom-link` (private)
 
 - `src/app/` — Next.js App Router. Page routes: `account/`, `assets/`, `character/`, `industry/`, `market/`, `structures/`, plus `theme/`, `layout/` (Header/Footer), `private/`. Shared helpers at top level: `typeNames.ts`/`typeName.tsx`, `systemNames.ts`, `stationNames.ts`, `isk.ts`, `DateTime.tsx`.
 - `src/` (Node cron/scripts): `esi.js` (ESI API wrapper), `supabase.js` (clients — anon + `sudoSupabase` service role that bypasses RLS), `hourly.js`, `daily.js`, `assets.js`, `structures.js`, `corpWalletJournal.js`, `resolveNames.js`, `structureNames.js`, `tokenRefresh.js`/`refresh.js`, `proxy.ts`, `utils/`.
-- `schema.sql` — canonical Supabase schema for a fresh install (in the default `public` schema). Incremental, idempotent changes live under `migrations/` (applied by the Migrate workflow).
-- `.github/workflows/` — `hourly.yml`, `daily.yml`, `assets.yml`, `structures.yml`, `migrate.yml`, `heartbeat.yml` (each a scheduled cron + manual dispatch).
+- `schema.sql` — the single source of truth for the Supabase schema (in the default `public` schema). It's a full reset: it DROPs the app's tables and recreates them, so re-running wipes data. No separate migrations system — to change the schema, edit this file and re-run it.
+- `.github/workflows/` — `hourly.yml`, `daily.yml`, `assets.yml`, `structures.yml`, `heartbeat.yml` (each a scheduled cron + manual dispatch).
 
 ## Database & ESI
 
