@@ -103,7 +103,7 @@ export const ActiveJobs = ({ jobs, characters, initialNow, typeNamesPromise, sta
               {filtered.map((j) => (
                 <tr key={`job-${j.job_id}`}>
                   <td className="serif">{characterName[j.character_id] ?? '—'}</td>
-                  <td>{ACTIVITY_NAMES[j.activity_id] ?? `#${j.activity_id}`}</td>
+                  <td className="serif">{ACTIVITY_NAMES[j.activity_id] ?? `#${j.activity_id}`}</td>
                   <td className="serif">
                     {j.product_type_id != null ? (
                       <TypeName id={Number(j.product_type_id)} promise={typeNamesPromise} />
@@ -112,7 +112,7 @@ export const ActiveJobs = ({ jobs, characters, initialNow, typeNamesPromise, sta
                     )}
                   </td>
                   <td className={retro.num}>{j.runs}</td>
-                  <td>
+                  <td className="serif">
                     {(() => {
                       const stationId = j.station_id ?? j.facility_id
                       if (stationId == null) return '—'
@@ -126,7 +126,7 @@ export const ActiveJobs = ({ jobs, characters, initialNow, typeNamesPromise, sta
                   <td>
                     <DateTime value={j.end_date} />
                   </td>
-                  <td>{formatRemaining(j.end_date, now)}</td>
+                  <td className="serif">{formatRemaining(j.end_date, now)}</td>
                 </tr>
               ))}
             </tbody>

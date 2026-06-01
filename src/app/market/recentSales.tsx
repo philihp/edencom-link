@@ -1,7 +1,7 @@
 'use client'
 
 import { DateTime } from '../DateTime'
-import { formatMisk } from '../isk'
+import { formatMiskValue } from '../isk'
 import { TypeName } from '../typeName'
 import styles from './market.module.css'
 import { usePersist } from './usePersist'
@@ -92,8 +92,8 @@ export const RecentSales = ({ sales, characters, typeNamesPromise }: RecentSales
               <th>Character</th>
               <th>Type</th>
               <th>Qty</th>
-              <th>Unit Price</th>
-              <th>Total</th>
+              <th>Unit (mISK)</th>
+              <th>Total (mISK)</th>
               <th>Sold</th>
               <th>Seen</th>
             </tr>
@@ -106,8 +106,8 @@ export const RecentSales = ({ sales, characters, typeNamesPromise }: RecentSales
                   <TypeName id={Number(s.type_id)} promise={typeNamesPromise} />
                 </td>
                 <td>{s.quantity}</td>
-                <td>{formatMisk(s.unit_price)}</td>
-                <td>{formatMisk(Number(s.unit_price) * Number(s.quantity))}</td>
+                <td>{formatMiskValue(s.unit_price)}</td>
+                <td>{formatMiskValue(Number(s.unit_price) * Number(s.quantity))}</td>
                 <td>
                   <DateTime value={s.date} />
                 </td>

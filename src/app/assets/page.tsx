@@ -148,7 +148,7 @@ const AssetsPage = async () => {
             <tr>
               <th>Location</th>
               <th>System</th>
-              <th className={retro.num}>Stacks</th>
+              <th className={retro.num}>Items</th>
             </tr>
           </thead>
           <tbody>
@@ -158,7 +158,7 @@ const AssetsPage = async () => {
               return (
                 <tr key={`location-${loc.id}`}>
                   <td className="serif">{name}</td>
-                  <td>{system && system !== name ? system : '—'}</td>
+                  <td className="serif">{system && system !== name ? system : '—'}</td>
                   <td className={retro.num}>{loc.count}</td>
                 </tr>
               )
