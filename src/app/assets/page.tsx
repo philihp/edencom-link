@@ -35,9 +35,23 @@ const AssetsPage = async () => {
     redirect('/')
   }
 
-  const { data: assets } = await supabase.from('asset').select('item_id, location_id, location_type')
-
-  const list = (assets ?? []) as Asset[]
+  // PostgREST caps a single select (Supabase's default API "Max rows" is 1000), but a
+  // hangar can hold tens of thousands of items. The location buckets are built by walking
+  // each item up its location_id chain through the items we own, so a truncated set breaks
+  // the walk: it stops at an intermediate ship/container whose own row was past the cap and
+  // emits that item id as a phantom `Location #…`. Page through every current asset first.
+  const PAGE = 1000
+  const list: Asset[] = []
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabase
+      .from('asset')
+      .select('item_id, location_id, location_type')
+      .order('id', { ascending: true })
+      .range(from, from + PAGE - 1)
+    if (error || !data || data.length === 0) break
+    list.push(...(data as Asset[]))
+    if (data.length < PAGE) break
+  }
   const assetByItem = new Map(list.map((a) => [String(a.item_id), a]))
 
   const rootLocation = (a: Asset): Root | null => {
