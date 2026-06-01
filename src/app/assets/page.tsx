@@ -120,14 +120,16 @@ const AssetsPage = async () => {
   // Busiest locations first, then by name for a stable order.
   const rows = [...byLocation.values()].sort((a, b) => b.count - a.count || labelFor(a).localeCompare(labelFor(b)))
 
-  // When the Assets background job last finished. Each scheduled job writes a row
-  // to hangar.heartbeat on completion; we read back the most recent one.
+  // When the Assets background job last finished. Each scheduled run writes a
+  // hangar.heartbeat row stamped with ended_at and a link to the workflow run; we
+  // read back the most recent completed one.
   const { data: lastRun } = await supabase
     .schema('hangar')
     .from('heartbeat')
-    .select('ran_at')
+    .select('ended_at, run_url')
     .eq('job', 'assets')
-    .order('ran_at', { ascending: false })
+    .not('ended_at', 'is', null)
+    .order('ended_at', { ascending: false })
     .limit(1)
     .maybeSingle()
 
@@ -164,7 +166,14 @@ const AssetsPage = async () => {
         </p>
       )}
       <p className={styles.lastRun}>
-        Assets last refreshed: <DateTime value={lastRun?.ran_at} fallback="never" />
+        Assets last refreshed:{' '}
+        {lastRun?.run_url ? (
+          <a href={lastRun.run_url}>
+            <DateTime value={lastRun.ended_at} fallback="never" />
+          </a>
+        ) : (
+          <DateTime value={lastRun?.ended_at} fallback="never" />
+        )}
       </p>
     </>
   )

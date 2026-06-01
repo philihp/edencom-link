@@ -1,6 +1,6 @@
 import { assets, userAgent } from './esi.js'
 import SingleSignOn from 'eve-sso'
-import { recordHeartbeat, sudoSupabase } from './supabase.js'
+import { sudoSupabase } from './supabase.js'
 
 const EVE_CLIENT_ID = process.env.EVE_CLIENT_ID
 const EVE_SECRET_KEY = process.env.EVE_SECRET_KEY
@@ -180,8 +180,6 @@ const execute = async () => {
       console.error(`[assets] ${ctx}: FAILED after ${dt}ms name=${e?.name} message=${e?.message}\n${e?.stack ?? e}`)
     }
   }
-
-  await recordHeartbeat('assets')
 }
 
 execute()

@@ -157,17 +157,29 @@ grant select                          on hangar.asset_over_time to authenticated
 grant select                          on hangar.asset           to authenticated;
 grant all on hangar.registration, hangar.token, hangar.asset_over_time to service_role;
 
+-- One row per job run. The scheduled workflows write a heartbeat as two steps:
+-- a 'start' step stamps started_at before the job runs and an 'end' step stamps
+-- ended_at once it finishes, both keyed on the GitHub Actions run so they land
+-- on the same row. run_url links straight back to that workflow run.
 create table if not exists hangar.heartbeat (
   id uuid primary key default gen_random_uuid(),
   job text not null,
+  run_id bigint,
+  run_attempt integer,
+  run_url text,
+  started_at timestamptz,
+  ended_at timestamptz,
   ran_at timestamptz not null default now()
 );
+-- Pairs the start/end steps of a single workflow run onto one row. Local runs
+-- (no run id) fall back to plain inserts, and Postgres keeps null keys distinct.
+create unique index if not exists heartbeat_run_idx
+  on hangar.heartbeat (job, run_id, run_attempt);
 create index if not exists heartbeat_ran_at_idx
   on hangar.heartbeat (ran_at desc);
--- Lets the UI find the most recent run of a single job (e.g. "structures",
--- "assets") with an index-only scan instead of filtering the whole table.
-create index if not exists heartbeat_job_ran_at_idx
-  on hangar.heartbeat (job, ran_at desc);
+-- Lets the UI find a job's most recent completion with an index scan.
+create index if not exists heartbeat_job_ended_at_idx
+  on hangar.heartbeat (job, ended_at desc);
 
 alter table hangar.heartbeat enable row level security;
 

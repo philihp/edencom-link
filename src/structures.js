@@ -2,7 +2,7 @@ import { pullCorpWalletJournals } from './corpWalletJournal.js'
 import { character as fetchCharacter, corpAssets, corpStructures, universeNames } from './esi.js'
 import { resolveCorpJournalNames } from './resolveNames.js'
 import { resolveStructureNames } from './structureNames.js'
-import { recordHeartbeat, sudoSupabase } from './supabase.js'
+import { sudoSupabase } from './supabase.js'
 import { refreshAccessToken } from './tokenRefresh.js'
 
 const STRUCTURES_SCOPE = 'esi-corporations.read_structures.v1'
@@ -264,8 +264,6 @@ const execute = async () => {
   } catch (e) {
     console.error(`[structures] structure-name resolution FAILED name=${e?.name} message=${e?.message}`)
   }
-
-  await recordHeartbeat('structures')
 }
 
 execute()
