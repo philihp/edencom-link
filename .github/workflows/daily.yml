@@ -11,38 +11,42 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      # once a day, we want to download the export from Steve and cache it.
-      - run: echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
-        id: date
-      - uses: actions/cache@v5
-        id: cache
-        with:
-          path: postgres-latest.dmp.bz2
-          key: active-${{ steps.date.outputs.date }}  
-      - if: steps.cache.outputs.cache-hit != 'true'
-        run: curl -L -o postgres-latest.dmp.bz2 https://www.fuzzwork.co.uk/dump/postgres-latest.dmp.bz2
-
-      # decompress it
-      - run: bzip2 --keep --decompress postgres-latest.dmp.bz2
-
-      # and then convert it to an SQL file we can import into Supabase
-      - run: pg_restore --no-owner --role=postgres --clean --if-exists -f postgres-latest.sql postgres-latest.dmp
-
-      - run: sed -i 's/public\./evesde\./g' postgres-latest.sql
-
-      - run: psql -p 6543 -d postgres < postgres-latest.sql
-        env:
-          PGHOST: ${{ vars.SUPABASE_HOST }}
-          PGUSER: postgres.${{ vars.SUPABASE_PROJECT_REF }}
-          PGPASSWORD: ${{ secrets.SUPABASE_PASSWORD }}
-          PGDATABASE: postgres
-
-      - run: psql -p 6543 -d postgres < policies.sql
-        env:
-          PGHOST: ${{ vars.SUPABASE_HOST }}
-          PGUSER: postgres.${{ vars.SUPABASE_PROJECT_REF }}
-          PGPASSWORD: ${{ secrets.SUPABASE_PASSWORD }}
-          PGDATABASE: postgres
+      # DEPRECATED: the evesde SDE import (Fuzzwork dump + RLS policies) is no
+      # longer used — SDE lookups now go through eve-build-calculator instead of
+      # the evesde schema. Kept commented for reference.
+      #
+      # # once a day, we want to download the export from Steve and cache it.
+      # - run: echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
+      #   id: date
+      # - uses: actions/cache@v5
+      #   id: cache
+      #   with:
+      #     path: postgres-latest.dmp.bz2
+      #     key: active-${{ steps.date.outputs.date }}
+      # - if: steps.cache.outputs.cache-hit != 'true'
+      #   run: curl -L -o postgres-latest.dmp.bz2 https://www.fuzzwork.co.uk/dump/postgres-latest.dmp.bz2
+      #
+      # # decompress it
+      # - run: bzip2 --keep --decompress postgres-latest.dmp.bz2
+      #
+      # # and then convert it to an SQL file we can import into Supabase
+      # - run: pg_restore --no-owner --role=postgres --clean --if-exists -f postgres-latest.sql postgres-latest.dmp
+      #
+      # - run: sed -i 's/public\./evesde\./g' postgres-latest.sql
+      #
+      # - run: psql -p 6543 -d postgres < postgres-latest.sql
+      #   env:
+      #     PGHOST: ${{ vars.SUPABASE_HOST }}
+      #     PGUSER: postgres.${{ vars.SUPABASE_PROJECT_REF }}
+      #     PGPASSWORD: ${{ secrets.SUPABASE_PASSWORD }}
+      #     PGDATABASE: postgres
+      #
+      # - run: psql -p 6543 -d postgres < policies.sql
+      #   env:
+      #     PGHOST: ${{ vars.SUPABASE_HOST }}
+      #     PGUSER: postgres.${{ vars.SUPABASE_PROJECT_REF }}
+      #     PGPASSWORD: ${{ secrets.SUPABASE_PASSWORD }}
+      #     PGDATABASE: postgres
 
       - uses: actions/setup-node@v6
         with:
