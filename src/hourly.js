@@ -1,5 +1,5 @@
 import { industryJobs, transactions, wallet } from './esi.js'
-import { sudoSupabase } from './supabase.js'
+import { recordHeartbeat, sudoSupabase } from './supabase.js'
 import { refreshAccessToken } from './tokenRefresh.js'
 
 const WALLET_SCOPE = 'esi-wallet.read_character_wallet.v1'
@@ -119,6 +119,8 @@ const execute = async () => {
       console.error(`industry refresh failed for ${name} ${tokenRow.character_id}:`, e)
     }
   }
+
+  await recordHeartbeat('hourly')
 }
 
 execute()

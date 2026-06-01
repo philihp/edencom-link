@@ -194,6 +194,17 @@ const StructuresPage = async () => {
     0
   )
 
+  // When the Structures background job last finished. Each scheduled job writes a
+  // row to hangar.heartbeat on completion; we read back the most recent one.
+  const { data: lastRun } = await supabase
+    .schema('hangar')
+    .from('heartbeat')
+    .select('ran_at')
+    .eq('job', 'structures')
+    .order('ran_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
   return (
     <>
       <h1>Structures</h1>
@@ -304,6 +315,9 @@ const StructuresPage = async () => {
           hourly job can fetch them.
         </p>
       )}
+      <p className={styles.lastRun}>
+        Structures last refreshed: <DateTime value={lastRun?.ran_at} fallback="never" />
+      </p>
     </>
   )
 }

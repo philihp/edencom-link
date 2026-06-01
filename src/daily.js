@@ -1,6 +1,6 @@
 import { characterAffiliations } from './esi.js'
 import { resolveBatch, resolveCorpJournalNames } from './resolveNames.js'
-import { sudoSupabase } from './supabase.js'
+import { recordHeartbeat, sudoSupabase } from './supabase.js'
 
 const BATCH_SIZE = 1000
 
@@ -73,6 +73,8 @@ const execute = async () => {
     console.error('[daily] FAILED', e)
     process.exit(1)
   }
+
+  await recordHeartbeat('daily')
 }
 
 execute()

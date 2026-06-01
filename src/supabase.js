@@ -17,6 +17,20 @@ export const sudoSupabase = createClient(supabaseUrl, supabaseServiceKey, {
 
 export const sudoSupabaseAdmin = sudoSupabase.auth.admin
 
+// Record that a scheduled job ran by inserting a row into hangar.heartbeat. The
+// UI reads the latest row per job to show when each extract last completed.
+// Returns true on success, false (after logging) on failure so callers can
+// decide whether a failed heartbeat should fail the whole job.
+export const recordHeartbeat = async (job) => {
+  const { error } = await sudoSupabase.schema('hangar').from('heartbeat').insert({ job })
+  if (error) {
+    console.error(`[heartbeat] failed to record "${job}":`, error)
+    return false
+  }
+  console.log(`[heartbeat] recorded: ${job}`)
+  return true
+}
+
 export const authenticate = async () => {
   const { data, error } = await supabase.auth.signInWithPassword({
     email: supabaseUsername,

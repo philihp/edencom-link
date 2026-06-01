@@ -164,9 +164,31 @@ create table if not exists hangar.heartbeat (
 );
 create index if not exists heartbeat_ran_at_idx
   on hangar.heartbeat (ran_at desc);
+-- Lets the UI find the most recent run of a single job (e.g. "structures",
+-- "assets") with an index-only scan instead of filtering the whole table.
+create index if not exists heartbeat_job_ran_at_idx
+  on hangar.heartbeat (job, ran_at desc);
 
 alter table hangar.heartbeat enable row level security;
-grant all on hangar.heartbeat to service_role;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_policies
+    where schemaname = 'hangar'
+      and tablename = 'heartbeat'
+      and policyname = 'Authenticated read heartbeat'
+  ) then
+    create policy "Authenticated read heartbeat"
+      on hangar.heartbeat
+      for select
+      to authenticated
+      using (true);
+  end if;
+end $$;
+
+grant select on hangar.heartbeat to authenticated;
+grant all    on hangar.heartbeat to service_role;
 
 alter table hangar.registration add column if not exists character_id bigint;
 

@@ -1,9 +1,11 @@
 import { redirect } from 'next/navigation'
 
 import { createClient } from '@/utils/supabase/server'
+import { DateTime } from '../DateTime'
 import retro from '../retro.module.css'
 import { fetchStationNames } from '../stationNames'
 import { fetchSystemNames } from '../systemNames'
+import styles from './assets.module.css'
 
 // Bigint ids arrive from PostgREST as strings, so every id is kept as a string
 // and only converted to a number at the API/system-lookup boundary.
@@ -118,6 +120,17 @@ const AssetsPage = async () => {
   // Busiest locations first, then by name for a stable order.
   const rows = [...byLocation.values()].sort((a, b) => b.count - a.count || labelFor(a).localeCompare(labelFor(b)))
 
+  // When the Assets background job last finished. Each scheduled job writes a row
+  // to hangar.heartbeat on completion; we read back the most recent one.
+  const { data: lastRun } = await supabase
+    .schema('hangar')
+    .from('heartbeat')
+    .select('ran_at')
+    .eq('job', 'assets')
+    .order('ran_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
   return (
     <>
       <h1>Assets</h1>
@@ -150,6 +163,9 @@ const AssetsPage = async () => {
           <a href="/character">Characters</a> page so the hourly job can fetch them.
         </p>
       )}
+      <p className={styles.lastRun}>
+        Assets last refreshed: <DateTime value={lastRun?.ran_at} fallback="never" />
+      </p>
     </>
   )
 }
