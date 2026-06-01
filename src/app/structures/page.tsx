@@ -49,7 +49,6 @@ const StructuresPage = async () => {
   }
 
   const { data: structures } = await supabase
-    .schema('hangar')
     .from('corp_structure')
     .select(
       'structure_id, corporation_id, type_id, system_id, name, state, fuel_expires, unanchors_at, services, last_seen_at'
@@ -67,7 +66,6 @@ const StructuresPage = async () => {
   const structureIds = list.map((s) => Number(s.structure_id))
   const { data: jobs } = structureIds.length
     ? await supabase
-        .schema('hangar')
         .from('industry_job')
         .select('job_id, station_id, facility_id')
         .or(`station_id.in.(${structureIds.join(',')}),facility_id.in.(${structureIds.join(',')})`)
@@ -82,7 +80,6 @@ const StructuresPage = async () => {
   // Rigs fitted to each structure (pulled from corp assets by the structures job).
   const { data: rigRows } = structureIds.length
     ? await supabase
-        .schema('hangar')
         .from('corp_structure_rig')
         .select('structure_id, location_flag, type_id')
         .in('structure_id', structureIds)
@@ -104,7 +101,6 @@ const StructuresPage = async () => {
   const structureTypeNames = await fetchTypeNames(list.map((s) => Number(s.type_id)))
 
   const { data: journal } = await supabase
-    .schema('hangar')
     .from('corp_wallet_journal')
     .select('amount, context_id, description, first_party_id')
     .eq('ref_type', 'industry_job_tax')
@@ -145,17 +141,12 @@ const StructuresPage = async () => {
   const payerCorps = new Map<string, string>()
   if (partyIds.length > 0) {
     const partyIdNums = partyIds.map(Number)
-    const { data: charNames } = await supabase
-      .schema('hangar')
-      .from('eve_name')
-      .select('id, name')
-      .in('id', partyIdNums)
+    const { data: charNames } = await supabase.from('eve_name').select('id, name').in('id', partyIdNums)
     for (const r of (charNames ?? []) as Array<{ id: number | string; name: string }>) {
       payerNames.set(String(r.id), r.name)
     }
 
     const { data: affiliations } = await supabase
-      .schema('hangar')
       .from('character_corp')
       .select('character_id, corporation_id')
       .in('character_id', partyIdNums)
@@ -167,7 +158,6 @@ const StructuresPage = async () => {
     }
     if (corpIds.size > 0) {
       const { data: corpNames } = await supabase
-        .schema('hangar')
         .from('eve_name')
         .select('id, name')
         .in('id', [...corpIds])
@@ -184,7 +174,6 @@ const StructuresPage = async () => {
 
   // Revenue from structure clone bays (jump clone installation and activation fees).
   const { data: cloneJournal } = await supabase
-    .schema('hangar')
     .from('corp_wallet_journal')
     .select('amount')
     .in('ref_type', ['jump_clone_installation_fee', 'jump_clone_activation_fee'])
@@ -195,10 +184,9 @@ const StructuresPage = async () => {
   )
 
   // When the Structures background job last finished. Each scheduled run writes a
-  // hangar.heartbeat row stamped with ended_at and a link to the workflow run; we
+  // public.heartbeat row stamped with ended_at and a link to the workflow run; we
   // read back the most recent completed one.
   const { data: lastRun } = await supabase
-    .schema('hangar')
     .from('heartbeat')
     .select('ended_at, run_url')
     .eq('job', 'structures')

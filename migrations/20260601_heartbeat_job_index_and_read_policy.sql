@@ -10,32 +10,32 @@
 -- completion per job" lookup, and open read access to the authenticated UI
 -- client (the table previously only granted service_role).
 
-alter table hangar.heartbeat add column if not exists run_id bigint;
-alter table hangar.heartbeat add column if not exists run_attempt integer;
-alter table hangar.heartbeat add column if not exists run_url text;
-alter table hangar.heartbeat add column if not exists started_at timestamptz;
-alter table hangar.heartbeat add column if not exists ended_at timestamptz;
+alter table public.heartbeat add column if not exists run_id bigint;
+alter table public.heartbeat add column if not exists run_attempt integer;
+alter table public.heartbeat add column if not exists run_url text;
+alter table public.heartbeat add column if not exists started_at timestamptz;
+alter table public.heartbeat add column if not exists ended_at timestamptz;
 
 create unique index if not exists heartbeat_run_idx
-  on hangar.heartbeat (job, run_id, run_attempt);
+  on public.heartbeat (job, run_id, run_attempt);
 create index if not exists heartbeat_job_ended_at_idx
-  on hangar.heartbeat (job, ended_at desc);
+  on public.heartbeat (job, ended_at desc);
 
 do $$
 begin
   if not exists (
     select 1 from pg_policies
-    where schemaname = 'hangar'
+    where schemaname = 'public'
       and tablename = 'heartbeat'
       and policyname = 'Authenticated read heartbeat'
   ) then
     create policy "Authenticated read heartbeat"
-      on hangar.heartbeat
+      on public.heartbeat
       for select
       to authenticated
       using (true);
   end if;
 end $$;
 
-grant select on hangar.heartbeat to authenticated;
-grant all    on hangar.heartbeat to service_role;
+grant select on public.heartbeat to authenticated;
+grant all    on public.heartbeat to service_role;

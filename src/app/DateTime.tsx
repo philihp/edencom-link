@@ -23,7 +23,12 @@ export const DateTime = ({ value, fallback = '—' }: DateTimeProps) => {
   return (
     <time dateTime={date.toISOString()}>
       <span style={{ whiteSpace: 'nowrap' }}>{datePart}</span>
-      {timePart ? <> <span style={{ whiteSpace: 'nowrap' }}>{timePart}</span></> : null}
+      {timePart ? (
+        <>
+          {' '}
+          <span style={{ whiteSpace: 'nowrap' }}>{timePart}</span>
+        </>
+      ) : null}
     </time>
   )
 }

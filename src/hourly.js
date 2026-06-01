@@ -6,10 +6,7 @@ const WALLET_SCOPE = 'esi-wallet.read_character_wallet.v1'
 const INDUSTRY_SCOPE = 'esi-industry.read_character_jobs.v1'
 
 const execute = async () => {
-  const { data: characters, error: charactersError } = await sudoSupabase
-    .schema('hangar')
-    .from('registration')
-    .select('id, name')
+  const { data: characters, error: charactersError } = await sudoSupabase.from('registration').select('id, name')
   if (charactersError) {
     console.error(charactersError)
     process.exit(1)
@@ -17,7 +14,6 @@ const execute = async () => {
   const characterName = new Map((characters ?? []).map((c) => [c.id, c.name]))
 
   const { data: tokens, error } = await sudoSupabase
-    .schema('hangar')
     .from('token')
     .select('id, character_id, refresh_token')
     .contains('scope', [WALLET_SCOPE])
@@ -33,7 +29,6 @@ const execute = async () => {
       const { access_token, characterID } = await refreshAccessToken(tokenRow)
       const balance = await wallet(access_token, characterID)
       const { error: insertError } = await sudoSupabase
-        .schema('hangar')
         .from('wallet')
         .insert({ character_id: tokenRow.character_id, balance })
       if (insertError) throw insertError
@@ -55,7 +50,6 @@ const execute = async () => {
           journal_ref_id: t.journal_ref_id,
         }))
         const { error: txError } = await sudoSupabase
-          .schema('hangar')
           .from('market_transaction')
           .upsert(rows, { onConflict: 'transaction_id', ignoreDuplicates: true })
         if (txError) throw txError
@@ -67,7 +61,6 @@ const execute = async () => {
   }
 
   const { data: industryTokens, error: industryTokensError } = await sudoSupabase
-    .schema('hangar')
     .from('token')
     .select('id, character_id, refresh_token')
     .contains('scope', [INDUSTRY_SCOPE])
@@ -108,10 +101,7 @@ const execute = async () => {
           completed_character_id: j.completed_character_id ?? null,
           successful_runs: j.successful_runs ?? null,
         }))
-        const { error: jobError } = await sudoSupabase
-          .schema('hangar')
-          .from('industry_job')
-          .upsert(rows, { onConflict: 'job_id' })
+        const { error: jobError } = await sudoSupabase.from('industry_job').upsert(rows, { onConflict: 'job_id' })
         if (jobError) throw jobError
       }
       console.log(`industry ${name} ${tokenRow.character_id} (${characterID}): ${jobs.length} jobs`)

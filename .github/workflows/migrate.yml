@@ -1,6 +1,6 @@
 name: Migrate
 
-# Manually-triggered DDL migrations against the hangar schema. Run this after
+# Manually-triggered DDL migrations against the public schema. Run this after
 # merging a change that adds files under migrations/. Every migration is
 # idempotent, so re-running the workflow is a no-op.
 on:

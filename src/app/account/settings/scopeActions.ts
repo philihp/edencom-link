@@ -19,7 +19,6 @@ export const saveScopePreferences = async (formData: FormData) => {
   const enabled_scopes = [...requiredScopes, ...selectedOptional]
 
   const { error: upsertError } = await supabase
-    .schema('hangar')
     .from('user_settings')
     .upsert({ user_id: user.id, enabled_scopes, updated_at: new Date().toISOString() }, { onConflict: 'user_id' })
 

@@ -15,10 +15,9 @@ const CharacterPage = async () => {
     redirect('/')
   }
 
-  const { data: characters, status, statusText, error } = await supabase.schema('hangar').from('registration').select()
+  const { data: characters, status, statusText, error } = await supabase.from('registration').select()
 
   const { data: wallets } = await supabase
-    .schema('hangar')
     .from('wallet')
     .select('character_id, balance, recorded_at')
     .order('recorded_at', { ascending: false })

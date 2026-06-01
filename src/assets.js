@@ -37,7 +37,6 @@ const refreshToken = async (tokenRow) => {
   const characterID = sub.split(':')[2]
   const scope = [scp].flat()
   await sudoSupabase
-    .schema('hangar')
     .from('token')
     .update({
       access_token,
@@ -67,7 +66,6 @@ const fetchAssets = async (access_token, characterID) => {
 // their old row closed and a new one inserted, and vanished items are closed.
 const reconcile = async (character_id, fetched) => {
   const { data: current, error } = await sudoSupabase
-    .schema('hangar')
     .from('asset_over_time')
     .select(
       'id, item_id, type_id, location_id, location_flag, location_type, quantity, is_singleton, is_blueprint_copy'
@@ -109,24 +107,16 @@ const reconcile = async (character_id, fetched) => {
   for (const cur of currentByItem.values()) closeIds.push(cur.id)
 
   for (const ids of chunk(touchIds, 200)) {
-    const { error: touchErr } = await sudoSupabase
-      .schema('hangar')
-      .from('asset_over_time')
-      .update({ last_seen_at: now })
-      .in('id', ids)
+    const { error: touchErr } = await sudoSupabase.from('asset_over_time').update({ last_seen_at: now }).in('id', ids)
     if (touchErr) throw touchErr
   }
   // Close before inserting so the unique-current-per-item index never collides.
   for (const ids of chunk(closeIds, 200)) {
-    const { error: closeErr } = await sudoSupabase
-      .schema('hangar')
-      .from('asset_over_time')
-      .update({ is_current: false })
-      .in('id', ids)
+    const { error: closeErr } = await sudoSupabase.from('asset_over_time').update({ is_current: false }).in('id', ids)
     if (closeErr) throw closeErr
   }
   for (const rows of chunk(inserts, 1000)) {
-    const { error: insertErr } = await sudoSupabase.schema('hangar').from('asset_over_time').insert(rows)
+    const { error: insertErr } = await sudoSupabase.from('asset_over_time').insert(rows)
     if (insertErr) throw insertErr
   }
 
@@ -134,10 +124,7 @@ const reconcile = async (character_id, fetched) => {
 }
 
 const execute = async () => {
-  const { data: characters, error: charactersError } = await sudoSupabase
-    .schema('hangar')
-    .from('registration')
-    .select('id, name')
+  const { data: characters, error: charactersError } = await sudoSupabase.from('registration').select('id, name')
   if (charactersError) {
     console.error('[assets] character lookup failed:', charactersError)
     process.exit(1)
@@ -145,7 +132,6 @@ const execute = async () => {
   const characterName = new Map((characters ?? []).map((c) => [c.id, c.name]))
 
   const { data: tokens, error } = await sudoSupabase
-    .schema('hangar')
     .from('token')
     .select('id, character_id, refresh_token')
     .contains('scope', [ASSETS_SCOPE])

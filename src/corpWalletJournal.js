@@ -45,7 +45,6 @@ export const pullCorpWalletJournals = async ({ access_token, corporation_id, ctx
       const rows = await fetchDivision(access_token, corporation_id, division, cutoff)
       if (rows.length > 0) {
         const { error } = await sudoSupabase
-          .schema('hangar')
           .from('corp_wallet_journal')
           .upsert(rows, { onConflict: 'corporation_id,division,entry_id', ignoreDuplicates: true })
         if (error) throw error

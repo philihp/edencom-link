@@ -21,7 +21,8 @@ export const esiScopes: EsiScope[] = [
     scope: 'publicData',
     name: 'Public data',
     why: 'Identifies the pilot you are adding (character name and owner hash) so the login can be attached to the right character. This is the minimum EVE requires to complete a login.',
-    without: 'we could not tell which character you authorized, so the character cannot be added at all. This scope is required.',
+    without:
+      'we could not tell which character you authorized, so the character cannot be added at all. This scope is required.',
     required: true,
   },
   {
