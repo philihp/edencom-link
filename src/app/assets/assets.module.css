@@ -3,3 +3,28 @@
   color: var(--ink-faint);
   font-size: 12px;
 }
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12pt;
+}
+
+.header h1 {
+  margin: 0;
+}
+
+.filters {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12pt;
+  margin: 0 0 12pt;
+}
+
+.filter {
+  font-size: 10pt;
+  color: var(--ink-soft);
+}
+

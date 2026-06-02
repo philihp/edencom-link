@@ -2,16 +2,16 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 
 import { createClient } from '@/utils/supabase/server'
-import retro from '../../retro.module.css'
 import { fetchStationNames, fetchStationSystems } from '../../stationNames'
 import { fetchSystemNames } from '../../systemNames'
-import { TypeName } from '../../typeName'
 import { fetchTypeNames } from '../../typeNames'
+import { LocationAssets, type ItemRow } from './locationAssets'
 
 // Bigint ids arrive from PostgREST as strings; keep them as strings and only
 // convert at the API/system-lookup boundary (mirrors the assets index page).
 type Asset = {
   item_id: number | string
+  character_id: string
   type_id: number | string
   location_id: number | string | null
   location_flag: string | null
@@ -42,7 +42,7 @@ const AssetLocationPage = async ({ params }: { params: Promise<{ locationId: str
   for (let from = 0; ; from += PAGE) {
     const { data, error } = await supabase
       .from('asset')
-      .select('item_id, type_id, location_id, location_flag, location_type, quantity, is_singleton')
+      .select('item_id, character_id, type_id, location_id, location_flag, location_type, quantity, is_singleton')
       .order('id', { ascending: true })
       .range(from, from + PAGE - 1)
     if (error || !data || data.length === 0) break
@@ -102,15 +102,26 @@ const AssetLocationPage = async ({ params }: { params: Promise<{ locationId: str
     : (stationNames[numericId] ?? (locationType === 'solar_system' ? systemNames[numericId] : undefined))
   const systemName = systemId != null ? (systemNames[systemId] ?? `#${systemId}`) : undefined
 
+  const { data: characters } = await supabase.from('registration').select('id, name')
+  const sortedCharacters = [...(characters ?? [])].sort((a, b) => a.name.localeCompare(b.name))
+
   // Resolve type names without blocking render: fire the lookup and let each
   // TypeName stream in (Suspense), falling back to #id. A big hangar can hold
   // hundreds of distinct types, and awaiting them all here times the page out.
   const typeNamesPromise = fetchTypeNames(rootItems.map((a) => Number(a.type_id)))
 
   // Containers/ships (those holding items) first, then a stable id order.
-  const rows = rootItems
-    .map((a) => ({ asset: a, contents: contentsCount(String(a.item_id)) }))
-    .sort((a, b) => b.contents - a.contents || Number(a.asset.type_id) - Number(b.asset.type_id))
+  const rows: ItemRow[] = rootItems
+    .map((a) => ({
+      itemId: String(a.item_id),
+      characterId: a.character_id,
+      typeId: Number(a.type_id),
+      quantity: a.quantity,
+      isSingleton: a.is_singleton,
+      flag: a.location_flag,
+      contents: contentsCount(String(a.item_id)),
+    }))
+    .sort((a, b) => b.contents - a.contents || a.typeId - b.typeId)
 
   return (
     <>
@@ -124,32 +135,7 @@ const AssetLocationPage = async ({ params }: { params: Promise<{ locationId: str
         <Link href="/assets">&laquo; Back to Assets</Link>
       </p>
 
-      {rows.length > 0 ? (
-        <table className={retro.retro}>
-          <thead>
-            <tr>
-              <th>Item</th>
-              <th className={retro.num}>Quantity</th>
-              <th>Hangar</th>
-              <th className={retro.num}>Contents</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map(({ asset, contents }) => (
-              <tr key={`item-${asset.item_id}`}>
-                <td>
-                  <TypeName id={Number(asset.type_id)} promise={typeNamesPromise} />
-                </td>
-                <td className={retro.num}>{asset.is_singleton ? '—' : (asset.quantity ?? 1)}</td>
-                <td>{asset.location_flag ?? '—'}</td>
-                <td className={retro.num}>{contents > 0 ? contents : '—'}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      ) : (
-        <p>No assets known at this location.</p>
-      )}
+      <LocationAssets rows={rows} characters={sortedCharacters} typeNamesPromise={typeNamesPromise} />
     </>
   )
 }
