@@ -11,6 +11,7 @@ export type ItemRow = {
   itemId: string
   characterId: string
   typeId: number
+  name: string | null
   quantity: number | string | null
   isSingleton: boolean | null
   flag: string | null
@@ -50,10 +51,10 @@ export const LocationAssets = ({ rows, characters, typeNamesPromise }: LocationA
                   {row.contents > 0 ? (
                     // Ships and containers hold items — drill into them.
                     <Link href={`/assets/${row.itemId}`}>
-                      <TypeName id={row.typeId} promise={typeNamesPromise} />
+                      <TypeName id={row.typeId} name={row.name} promise={typeNamesPromise} />
                     </Link>
                   ) : (
-                    <TypeName id={row.typeId} promise={typeNamesPromise} />
+                    <TypeName id={row.typeId} name={row.name} promise={typeNamesPromise} />
                   )}
                 </td>
                 <td className={retro.num}>{row.isSingleton ? '—' : (row.quantity ?? 1)}</td>

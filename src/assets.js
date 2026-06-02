@@ -1,4 +1,4 @@
-import { assets, userAgent } from './esi.js'
+import { assets, assetNames, userAgent } from './esi.js'
 import SingleSignOn from 'eve-sso'
 import { sudoSupabase } from './supabase.js'
 
@@ -28,7 +28,26 @@ const signature = (a) =>
     a.quantity == null ? null : Number(a.quantity),
     a.is_singleton ?? null,
     !!a.is_blueprint_copy,
+    a.name ?? null,
   ])
+
+// ESI only names singleton items (assembled ships, containers). Resolve them in
+// chunks (the names endpoint caps at 1000 ids) into a Map item_id → name. Best
+// effort: a failed chunk just leaves those items unnamed this run.
+const fetchNames = async (access_token, characterID, fetched) => {
+  const ids = fetched.filter((a) => a.is_singleton).map((a) => Number(a.item_id))
+  const names = new Map()
+  for (const part of chunk(ids, 1000)) {
+    if (part.length === 0) continue
+    try {
+      const rows = await assetNames(access_token, characterID, part)
+      for (const r of rows ?? []) names.set(Number(r.item_id), r.name ?? null)
+    } catch (e) {
+      console.error(`[assets] assetNames failed for ${characterID}: ${e?.message}`)
+    }
+  }
+  return names
+}
 
 const refreshToken = async (tokenRow) => {
   const refreshed = await sso.getAccessToken(tokenRow.refresh_token, true)
@@ -64,17 +83,35 @@ const fetchAssets = async (access_token, characterID) => {
 // Reconcile the freshly fetched assets against the character's current (open)
 // rows: unchanged items get their last_seen_at extended, changed items have
 // their old row closed and a new one inserted, and vanished items are closed.
-const reconcile = async (character_id, fetched) => {
-  const { data: current, error } = await sudoSupabase
-    .from('asset_over_time')
-    .select(
-      'id, item_id, type_id, location_id, location_flag, location_type, quantity, is_singleton, is_blueprint_copy'
-    )
-    .eq('character_id', character_id)
-    .eq('is_current', true)
-  if (error) throw error
+const reconcile = async (character_id, fetched, hasName) => {
+  const baseCols =
+    'id, item_id, type_id, location_id, location_flag, location_type, quantity, is_singleton, is_blueprint_copy'
+  // Page through every open row: PostgREST caps a select at the API "Max rows"
+  // limit (1000), but a character can hold tens of thousands of items. Reading a
+  // truncated set makes the un-read items look new, so they'd be re-inserted and
+  // collide with their existing current row on asset_over_time_current_item_idx.
+  const PAGE = 1000
+  const current = []
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await sudoSupabase
+      .from('asset_over_time')
+      .select(hasName ? `${baseCols}, name` : baseCols)
+      .eq('character_id', character_id)
+      .eq('is_current', true)
+      .order('id', { ascending: true })
+      .range(from, from + PAGE - 1)
+    if (error) throw error
+    if (!data || data.length === 0) break
+    current.push(...data)
+    if (data.length < PAGE) break
+  }
 
-  const currentByItem = new Map((current ?? []).map((r) => [Number(r.item_id), r]))
+  const currentByItem = new Map(current.map((r) => [Number(r.item_id), r]))
+
+  // ESI can return the same item twice across pages if assets shift mid-fetch;
+  // collapse to one entry per item so we never queue two inserts for it.
+  const fetchedByItem = new Map(fetched.map((a) => [Number(a.item_id), a]))
+  fetched = [...fetchedByItem.values()]
 
   const now = new Date().toISOString()
   const touchIds = [] // unchanged: bump last_seen_at on the open row
@@ -99,6 +136,7 @@ const reconcile = async (character_id, fetched) => {
         is_singleton: a.is_singleton ?? null,
         is_blueprint_copy: !!a.is_blueprint_copy,
         last_seen_at: now,
+        ...(hasName ? { name: a.name ?? null } : {}),
       })
     }
     currentByItem.delete(Number(a.item_id))
@@ -141,6 +179,12 @@ const execute = async () => {
     process.exit(1)
   }
 
+  // Tolerate the name column not existing yet (migration not applied): probe it
+  // once and skip name fetching/storage entirely until it's present.
+  const { error: probeError } = await sudoSupabase.from('asset_over_time').select('name').limit(1)
+  const hasName = !probeError
+  if (!hasName) console.log('[assets] name column absent; skipping asset names (apply the migration to enable)')
+
   console.log(`[assets] found ${tokens?.length ?? 0} token(s) with ${ASSETS_SCOPE}`)
 
   for (const tokenRow of tokens ?? []) {
@@ -155,7 +199,11 @@ const execute = async () => {
       }
 
       const { all, totalPages } = await fetchAssets(access_token, characterID)
-      const { touched, opened, closed } = await reconcile(tokenRow.character_id, all)
+      if (hasName) {
+        const names = await fetchNames(access_token, characterID, all)
+        for (const a of all) a.name = names.get(Number(a.item_id)) ?? null
+      }
+      const { touched, opened, closed } = await reconcile(tokenRow.character_id, all, hasName)
 
       const dt = Date.now() - t0
       console.log(
