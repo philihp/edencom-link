@@ -1,5 +1,7 @@
 'use client'
 
+import Link from 'next/link'
+
 import retro from '../../retro.module.css'
 import { TypeName } from '../../typeName'
 import styles from '../assets.module.css'
@@ -45,7 +47,14 @@ export const LocationAssets = ({ rows, characters, typeNamesPromise }: LocationA
             {filtered.map((row) => (
               <tr key={`item-${row.itemId}`}>
                 <td>
-                  <TypeName id={row.typeId} promise={typeNamesPromise} />
+                  {row.contents > 0 ? (
+                    // Ships and containers hold items — drill into them.
+                    <Link href={`/assets/${row.itemId}`}>
+                      <TypeName id={row.typeId} promise={typeNamesPromise} />
+                    </Link>
+                  ) : (
+                    <TypeName id={row.typeId} promise={typeNamesPromise} />
+                  )}
                 </td>
                 <td className={retro.num}>{row.isSingleton ? '—' : (row.quantity ?? 1)}</td>
                 <td>{row.flag ?? '—'}</td>

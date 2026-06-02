@@ -59,6 +59,7 @@ const AssetLocationPage = async ({ params }: { params: Promise<{ locationId: str
     if (siblings) siblings.push(a)
     else childrenByParent.set(key, [a])
   }
+  const assetByItem = new Map(list.map((a) => [String(a.item_id), a]))
 
   // Root-level assets at this location: ships, containers and loose stacks that
   // sit directly in the station/structure/system (not nested in another item).
@@ -72,35 +73,57 @@ const AssetLocationPage = async ({ params }: { params: Promise<{ locationId: str
     return kids.reduce((n, k) => n + 1 + contentsCount(String(k.item_id), seen), 0)
   }
 
-  // Resolve the location's own name/system the same way the index page does:
-  // own-corp + foreign player structures from the DB, NPC stations and systems
-  // from eve-build-calculator.
-  const numericId = Number(locationId)
-  const { data: corpStructures } = await supabase
-    .from('corp_structure')
-    .select('structure_id, name, system_id')
-    .eq('structure_id', numericId)
-  const { data: playerStructures } = await supabase
-    .from('structure')
-    .select('structure_id, name, system_id')
-    .eq('structure_id', numericId)
-  const structure = ((corpStructures?.[0] ?? playerStructures?.[0]) ?? null) as Structure | null
+  // The id is either a place (station / structure / solar system) or one of our
+  // own items — a ship or container the user drilled into. Resolve the heading
+  // and the "back" target accordingly.
+  const self = assetByItem.get(locationId)
 
-  const locationType = rootItems[0]?.location_type ?? null
-  const [stationNames, stationSystems] = await Promise.all([
-    fetchStationNames([numericId]),
-    fetchStationSystems([numericId]),
-  ])
+  let heading: string
+  let backHref = '/assets'
+  let backLabel = 'Back to Assets'
+  let systemName: string | undefined
 
-  const systemId = structure?.system_id != null ? Number(structure.system_id) : stationSystems[numericId]
-  const systemNames = await fetchSystemNames(
-    [systemId, locationType === 'solar_system' ? numericId : undefined].filter((n): n is number => n != null),
-  )
+  if (self) {
+    // A ship/container: title it by its type, and step back to whatever holds it.
+    const typeNames = await fetchTypeNames([Number(self.type_id)])
+    heading = typeNames[Number(self.type_id)] ?? `#${self.type_id}`
+    if (self.location_id != null) {
+      backHref = `/assets/${self.location_id}`
+      backLabel = 'Back'
+    }
+  } else {
+    // Resolve the location's own name/system the same way the index page does:
+    // own-corp + foreign player structures from the DB, NPC stations and systems
+    // from eve-build-calculator.
+    const numericId = Number(locationId)
+    const { data: corpStructures } = await supabase
+      .from('corp_structure')
+      .select('structure_id, name, system_id')
+      .eq('structure_id', numericId)
+    const { data: playerStructures } = await supabase
+      .from('structure')
+      .select('structure_id, name, system_id')
+      .eq('structure_id', numericId)
+    const structure = ((corpStructures?.[0] ?? playerStructures?.[0]) ?? null) as Structure | null
 
-  const locationName = structure
-    ? (structure.name ?? `Structure #${locationId}`)
-    : (stationNames[numericId] ?? (locationType === 'solar_system' ? systemNames[numericId] : undefined))
-  const systemName = systemId != null ? (systemNames[systemId] ?? `#${systemId}`) : undefined
+    const locationType = rootItems[0]?.location_type ?? null
+    const [stationNames, stationSystems] = await Promise.all([
+      fetchStationNames([numericId]),
+      fetchStationSystems([numericId]),
+    ])
+
+    const systemId = structure?.system_id != null ? Number(structure.system_id) : stationSystems[numericId]
+    const systemNames = await fetchSystemNames(
+      [systemId, locationType === 'solar_system' ? numericId : undefined].filter((n): n is number => n != null),
+    )
+
+    heading =
+      (structure
+        ? (structure.name ?? `Structure #${locationId}`)
+        : (stationNames[numericId] ?? (locationType === 'solar_system' ? systemNames[numericId] : undefined))) ??
+      `Location #${locationId}`
+    systemName = systemId != null ? (systemNames[systemId] ?? `#${systemId}`) : undefined
+  }
 
   const { data: characters } = await supabase.from('registration').select('id, name')
   const sortedCharacters = [...(characters ?? [])].sort((a, b) => a.name.localeCompare(b.name))
@@ -125,14 +148,14 @@ const AssetLocationPage = async ({ params }: { params: Promise<{ locationId: str
 
   return (
     <>
-      <h1 className="serif">{locationName ?? `Location #${locationId}`}</h1>
-      {systemName && systemName !== locationName ? (
+      <h1 className="serif">{heading}</h1>
+      {systemName && systemName !== heading ? (
         <p>
           System: <span className="serif">{systemName}</span>
         </p>
       ) : null}
       <p>
-        <Link href="/assets">&laquo; Back to Assets</Link>
+        <Link href={backHref}>&laquo; {backLabel}</Link>
       </p>
 
       <LocationAssets rows={rows} characters={sortedCharacters} typeNamesPromise={typeNamesPromise} />
