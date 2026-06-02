@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/utils/supabase/server'
 import { DateTime } from '../DateTime'
 import retro from '../retro.module.css'
-import { fetchStationNames } from '../stationNames'
+import { fetchStationNames, fetchStationSystems } from '../stationNames'
 import { fetchSystemNames } from '../systemNames'
 import styles from './assets.module.css'
 
@@ -99,13 +99,16 @@ const AssetsPage = async () => {
   // type/system lookups); player structures aren't there, so those still resolve
   // via corp_structure above.
   const stationIds = [...byLocation.values()].filter((loc) => loc.type === 'station').map((loc) => Number(loc.id))
-  const stationNames = await fetchStationNames(stationIds)
+  const [stationNames, stationSystems] = await Promise.all([fetchStationNames(stationIds), fetchStationSystems(stationIds)])
 
   const systemIds = new Set<number>()
   for (const loc of byLocation.values()) {
     if (loc.type === 'solar_system') systemIds.add(Number(loc.id))
     const structure = structureById.get(loc.id)
     if (structure?.system_id != null) systemIds.add(Number(structure.system_id))
+    // NPC stations aren't in corp_structure/structure; their system comes from
+    // the calculator's station lookup above.
+    if (loc.type === 'station' && stationSystems[Number(loc.id)] != null) systemIds.add(stationSystems[Number(loc.id)])
   }
   const systemNames = await fetchSystemNames(systemIds)
 
@@ -121,6 +124,10 @@ const AssetsPage = async () => {
     const structure = structureById.get(loc.id)
     if (structure?.system_id != null) return systemNames[Number(structure.system_id)] ?? `#${structure.system_id}`
     if (loc.type === 'solar_system') return systemNames[Number(loc.id)]
+    if (loc.type === 'station') {
+      const systemId = stationSystems[Number(loc.id)]
+      if (systemId != null) return systemNames[systemId] ?? `#${systemId}`
+    }
     return undefined
   }
 
