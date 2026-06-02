@@ -23,6 +23,8 @@
     "assets": "node src/assets.js",
     "connect": "node src/connect.js",
     "daily": "node src/daily.js",
+    "db:new": "supabase migration new",
+    "db:push": "supabase db push",
     "dev": "next dev",
     "heartbeat": "node src/heartbeat.js",
     "hourly": "node src/hourly.js",
