@@ -1,4 +1,5 @@
 import { redirect } from 'next/navigation'
+import { Suspense } from 'react'
 
 import { createClient } from '@/utils/supabase/server'
 import { DateTime } from '../DateTime'
@@ -35,6 +36,29 @@ const AssetsPage = async () => {
   if (authError || !auth?.user) {
     redirect('/')
   }
+
+  // The location buckets are expensive to build (every asset is paged in and walked
+  // up its location chain, then station/structure/system names are resolved), so the
+  // page shell streams immediately and the table streams in once Locations() resolves.
+  return (
+    <Suspense fallback={<AssetsLoading />}>
+      <Locations />
+    </Suspense>
+  )
+}
+export default AssetsPage
+
+const AssetsLoading = () => (
+  <section>
+    <div className={styles.header}>
+      <h1>Assets</h1>
+    </div>
+    <p>Loading locations…</p>
+  </section>
+)
+
+const Locations = async () => {
+  const supabase = await createClient()
 
   // PostgREST caps a single select (Supabase's default API "Max rows" is 1000), but a
   // hangar can hold tens of thousands of items. The location buckets are built by walking
@@ -173,4 +197,3 @@ const AssetsPage = async () => {
     </>
   )
 }
-export default AssetsPage
