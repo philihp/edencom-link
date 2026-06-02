@@ -4,7 +4,6 @@ import { Name } from '../../names'
 import { fetchTypeNames } from '../../typeNames'
 import { fetchType, resolveProductTypeID } from '../api'
 import { filtersUsed } from './filters'
-import { groupCategory } from './groupCategory'
 import { rigsForFilter } from './modifiers'
 
 type BlueprintTypeParams = {
@@ -35,7 +34,7 @@ const BlueprintType = async ({ params }: BlueprintTypeParams) => {
     )
   }
 
-  const categoryID = groupCategory[product.groupID] ?? -1
+  const categoryID = product.categoryID ?? -1
   const rigTypeIDs = uniq(
     flatten(map((filterID) => rigsForFilter(filterID) ?? [], filtersUsed(product.groupID, categoryID)))
   ).map(Number)

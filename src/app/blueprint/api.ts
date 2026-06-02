@@ -33,13 +33,13 @@ export const searchBlueprints = async (query: string): Promise<[typeID: string, 
   return results.map((r) => [`${r.typeID}`, r.name])
 }
 
-export type TypeRecord = { name: string | null; groupID: number | null }
+export type TypeRecord = { name: string | null; groupID: number | null; categoryID: number | null }
 
 export const fetchType = async (typeID: number): Promise<TypeRecord | null> => {
   const res = await fetch(`${API}/type/${typeID}`)
   if (!res.ok) return null
-  const type = (await res.json()) as { name?: { en?: string } | string; groupID?: number }
-  return { name: nameEn(type.name), groupID: type.groupID ?? null }
+  const type = (await res.json()) as { name?: { en?: string } | string; groupID?: number; categoryID?: number }
+  return { name: nameEn(type.name), groupID: type.groupID ?? null, categoryID: type.categoryID ?? null }
 }
 
 // Resolve a blueprint's typeID-bearing record to the typeID of the item it
