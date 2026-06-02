@@ -101,18 +101,6 @@ body {
   box-sizing: border-box;
 }
 
-/* Page content sits in a centered "prompt" column. */
-body > header,
-body > hr,
-body > main,
-body > div,
-body > form,
-body > section {
-  max-width: 980px;
-  margin-left: auto;
-  margin-right: auto;
-}
-
 main {
   padding-top: 4px;
 }
