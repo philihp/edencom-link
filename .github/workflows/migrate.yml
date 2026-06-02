@@ -16,17 +16,20 @@ concurrency:
 jobs:
   migrate:
     runs-on: ubuntu-latest
-    env:
-      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
     steps:
       - uses: actions/checkout@v6
       - uses: supabase/setup-cli@v1
         with:
           version: 2.102.0
-      - name: Link project
-        run: supabase link --project-ref "$SUPABASE_PROJECT_REF"
-        env:
-          SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
       - name: Push migrations
-        run: supabase db push
+        # Push straight to the database with its connection string, so no Supabase
+        # access token / `supabase link` is needed — just the DB password we
+        # already store. The password is URL-encoded (it may contain reserved
+        # characters) and masked so it never lands in the logs.
+        run: |
+          ENCODED_PW=$(python3 -c "import os, urllib.parse; print(urllib.parse.quote(os.environ['SUPABASE_DB_PASSWORD'], safe=''))")
+          echo "::add-mask::$ENCODED_PW"
+          supabase db push --db-url "postgresql://postgres:${ENCODED_PW}@db.${SUPABASE_PROJECT_REF}.supabase.co:5432/postgres"
+        env:
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
