@@ -35,48 +35,33 @@ const AssetLocationPage = async ({ params }: { params: Promise<{ locationId: str
     redirect('/')
   }
 
-  // Page through every current asset (PostgREST caps a select at the API "Max
-  // rows" limit) so the parent→child map is complete: contents counts walk it.
-  const PAGE = 1000
-  const list: Asset[] = []
-  for (let from = 0; ; from += PAGE) {
-    const { data, error } = await supabase
-      .from('asset')
-      .select('item_id, character_id, type_id, location_id, location_flag, location_type, quantity, is_singleton')
-      .order('id', { ascending: true })
-      .range(from, from + PAGE - 1)
-    if (error || !data || data.length === 0) break
-    list.push(...(data as Asset[]))
-    if (data.length < PAGE) break
-  }
-
-  // Items grouped by the container/location they sit directly in.
-  const childrenByParent = new Map<string, Asset[]>()
-  for (const a of list) {
-    if (a.location_id == null) continue
-    const key = String(a.location_id)
-    const siblings = childrenByParent.get(key)
-    if (siblings) siblings.push(a)
-    else childrenByParent.set(key, [a])
-  }
-  const assetByItem = new Map(list.map((a) => [String(a.item_id), a]))
-
   // Root-level assets at this location: ships, containers and loose stacks that
   // sit directly in the station/structure/system (not nested in another item).
-  const rootItems = childrenByParent.get(locationId) ?? []
+  // Only this level is fetched — the whole asset table no longer pages into Node.
+  const { data: children } = await supabase
+    .from('asset')
+    .select('item_id, character_id, type_id, location_id, location_flag, location_type, quantity, is_singleton')
+    .eq('location_id', locationId)
+  const rootItems = (children ?? []) as Asset[]
 
-  // Total items held inside a ship/container, walking the whole subtree.
-  const contentsCount = (itemId: string, seen = new Set<string>()): number => {
-    if (seen.has(itemId)) return 0
-    seen.add(itemId)
-    const kids = childrenByParent.get(itemId) ?? []
-    return kids.reduce((n, k) => n + 1 + contentsCount(String(k.item_id), seen), 0)
-  }
+  // Total items held inside each ship/container at this location, counted across
+  // the whole subtree by asset_location_contents() in Postgres.
+  const { data: contentsRows } = await supabase.rpc('asset_location_contents', { parent: locationId })
+  const contentsByItem = new Map<string, number>(
+    ((contentsRows ?? []) as { item_id: number | string; contents: number | string }[]).map((r) => [
+      String(r.item_id),
+      Number(r.contents),
+    ]),
+  )
 
   // The id is either a place (station / structure / solar system) or one of our
   // own items — a ship or container the user drilled into. Resolve the heading
   // and the "back" target accordingly.
-  const self = assetByItem.get(locationId)
+  const { data: self } = await supabase
+    .from('asset')
+    .select('item_id, type_id, location_id')
+    .eq('item_id', locationId)
+    .maybeSingle<Pick<Asset, 'item_id' | 'type_id' | 'location_id'>>()
 
   let heading: string
   let backHref = '/assets'
@@ -142,7 +127,7 @@ const AssetLocationPage = async ({ params }: { params: Promise<{ locationId: str
       quantity: a.quantity,
       isSingleton: a.is_singleton,
       flag: a.location_flag,
-      contents: contentsCount(String(a.item_id)),
+      contents: contentsByItem.get(String(a.item_id)) ?? 0,
     }))
     .sort((a, b) => b.contents - a.contents || a.typeId - b.typeId)
 

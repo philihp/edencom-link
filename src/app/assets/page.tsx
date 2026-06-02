@@ -1,4 +1,5 @@
 import { redirect } from 'next/navigation'
+import { Suspense } from 'react'
 
 import { createClient } from '@/utils/supabase/server'
 import { DateTime } from '../DateTime'
@@ -9,11 +10,11 @@ import { AssetsTable, type Location } from './assetsTable'
 
 // Bigint ids arrive from PostgREST as strings, so every id is kept as a string
 // and only converted to a number at the API/system-lookup boundary.
-type Asset = {
-  item_id: number | string
-  character_id: string
-  location_id: number | string | null
+type SummaryRow = {
+  location_id: number | string
   location_type: string | null
+  character_id: string
+  stacks: number | string
 }
 
 type Structure = {
@@ -36,52 +37,46 @@ const AssetsPage = async () => {
     redirect('/')
   }
 
-  // PostgREST caps a single select (Supabase's default API "Max rows" is 1000), but a
-  // hangar can hold tens of thousands of items. The location buckets are built by walking
-  // each item up its location_id chain through the items we own, so a truncated set breaks
-  // the walk: it stops at an intermediate ship/container whose own row was past the cap and
-  // emits that item id as a phantom `Location #…`. Page through every current asset first.
-  const PAGE = 1000
-  const list: Asset[] = []
-  for (let from = 0; ; from += PAGE) {
-    const { data, error } = await supabase
-      .from('asset')
-      .select('item_id, character_id, location_id, location_type')
-      .order('id', { ascending: true })
-      .range(from, from + PAGE - 1)
-    if (error || !data || data.length === 0) break
-    list.push(...(data as Asset[]))
-    if (data.length < PAGE) break
-  }
-  const assetByItem = new Map(list.map((a) => [String(a.item_id), a]))
+  // The location buckets are expensive to build (every asset is paged in and walked
+  // up its location chain, then station/structure/system names are resolved), so the
+  // page shell streams immediately and the table streams in once Locations() resolves.
+  return (
+    <Suspense fallback={<AssetsLoading />}>
+      <Locations />
+    </Suspense>
+  )
+}
+export default AssetsPage
+
+const AssetsLoading = () => (
+  <section>
+    <div className={styles.header}>
+      <h1>Assets</h1>
+    </div>
+    <p>Loading locations…</p>
+  </section>
+)
+
+const Locations = async () => {
+  const supabase = await createClient()
+
+  // A hangar can hold tens of thousands of nested items; paging them all into
+  // Node and walking the location_id chains here timed the page out. The
+  // asset_location_summary() function does the walk in Postgres and returns one
+  // small row per location/character pair instead (RLS still scopes it to us).
+  const { data: summary } = await supabase.rpc('asset_location_summary')
 
   const { data: characters } = await supabase.from('registration').select('id, name')
   const sortedCharacters = [...(characters ?? [])].sort((a, b) => a.name.localeCompare(b.name))
 
-  const rootLocation = (a: Asset): Root | null => {
-    let cur: Asset | undefined = a
-    const seen = new Set<string>()
-    while (cur && cur.location_id != null) {
-      const key = String(cur.location_id)
-      const parent = assetByItem.get(key)
-      // Parent isn't one of our items (or we've looped) — cur sits directly in
-      // this location, so it's the root.
-      if (!parent || seen.has(key)) return { id: key, type: cur.location_type }
-      seen.add(key)
-      cur = parent
-    }
-    return null
-  }
-
-  // Tally how many item stacks resolve to each location, split by the character
-  // that owns each stack so the client can filter by character.
+  // Tally stacks per location, split by the character that owns each stack so
+  // the client can filter by character.
   const byLocation = new Map<string, { root: Root; counts: Map<string, number> }>()
-  for (const a of list) {
-    const root = rootLocation(a)
-    if (!root) continue
-    const entry = byLocation.get(root.id) ?? { root, counts: new Map<string, number>() }
-    entry.counts.set(a.character_id, (entry.counts.get(a.character_id) ?? 0) + 1)
-    byLocation.set(root.id, entry)
+  for (const row of (summary ?? []) as SummaryRow[]) {
+    const id = String(row.location_id)
+    const entry = byLocation.get(id) ?? { root: { id, type: row.location_type }, counts: new Map<string, number>() }
+    entry.counts.set(row.character_id, (entry.counts.get(row.character_id) ?? 0) + Number(row.stacks))
+    byLocation.set(id, entry)
   }
 
   // Structure names + systems come from two caches: our own corp's structures
@@ -173,4 +168,3 @@ const AssetsPage = async () => {
     </>
   )
 }
-export default AssetsPage
