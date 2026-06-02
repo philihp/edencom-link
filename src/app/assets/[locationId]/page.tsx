@@ -2,10 +2,10 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 
 import { createClient } from '@/utils/supabase/server'
-import { Name } from '../../names'
 import retro from '../../retro.module.css'
 import { fetchStationNames, fetchStationSystems } from '../../stationNames'
 import { fetchSystemNames } from '../../systemNames'
+import { TypeName } from '../../typeName'
 import { fetchTypeNames } from '../../typeNames'
 
 // Bigint ids arrive from PostgREST as strings; keep them as strings and only
@@ -102,12 +102,15 @@ const AssetLocationPage = async ({ params }: { params: Promise<{ locationId: str
     : (stationNames[numericId] ?? (locationType === 'solar_system' ? systemNames[numericId] : undefined))
   const systemName = systemId != null ? (systemNames[systemId] ?? `#${systemId}`) : undefined
 
-  const typeNames = await fetchTypeNames(rootItems.map((a) => Number(a.type_id)))
+  // Resolve type names without blocking render: fire the lookup and let each
+  // TypeName stream in (Suspense), falling back to #id. A big hangar can hold
+  // hundreds of distinct types, and awaiting them all here times the page out.
+  const typeNamesPromise = fetchTypeNames(rootItems.map((a) => Number(a.type_id)))
 
-  // Containers/ships (those holding items) first, then by name for stability.
+  // Containers/ships (those holding items) first, then a stable id order.
   const rows = rootItems
-    .map((a) => ({ asset: a, contents: contentsCount(String(a.item_id)), name: typeNames[Number(a.type_id)] }))
-    .sort((a, b) => b.contents - a.contents || (a.name ?? '').localeCompare(b.name ?? ''))
+    .map((a) => ({ asset: a, contents: contentsCount(String(a.item_id)) }))
+    .sort((a, b) => b.contents - a.contents || Number(a.asset.type_id) - Number(b.asset.type_id))
 
   return (
     <>
@@ -132,10 +135,10 @@ const AssetLocationPage = async ({ params }: { params: Promise<{ locationId: str
             </tr>
           </thead>
           <tbody>
-            {rows.map(({ asset, contents, name }) => (
+            {rows.map(({ asset, contents }) => (
               <tr key={`item-${asset.item_id}`}>
                 <td>
-                  <Name name={name} id={asset.type_id} />
+                  <TypeName id={Number(asset.type_id)} promise={typeNamesPromise} />
                 </td>
                 <td className={retro.num}>{asset.is_singleton ? '—' : (asset.quantity ?? 1)}</td>
                 <td>{asset.location_flag ?? '—'}</td>
