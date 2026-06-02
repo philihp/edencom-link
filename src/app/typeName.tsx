@@ -13,7 +13,10 @@ type TypeNameProps = {
 const Resolved = ({ id, promise, name }: TypeNameProps) => {
   const names = use(promise)
   const type = names[id] ?? `#${id}`
-  if (name && name !== type)
+  // ESI uses the literal string "None" for singletons with no player-assigned
+  // name (e.g. blueprints); don't show it as a prefix. Guards rows already
+  // stored before fetchNames filtered it out.
+  if (name && name !== 'None' && name !== type)
     return (
       <>
         {name} <span style={{ color: 'var(--ink-faint)' }}>({type})</span>
@@ -26,7 +29,7 @@ export const TypeName = ({ id, promise, name }: TypeNameProps) => (
   // A type/item name is always dynamic, item-specific text, so it owns the serif
   // face (see globals.css) rather than relying on each caller to add it.
   <span className="serif">
-    <Suspense fallback={name ?? `#${id}`}>
+    <Suspense fallback={name && name !== 'None' ? name : `#${id}`}>
       <Resolved id={id} promise={promise} name={name} />
     </Suspense>
   </span>

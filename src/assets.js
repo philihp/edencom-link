@@ -34,6 +34,9 @@ const signature = (a) =>
 // ESI only names singleton items (assembled ships, containers). Resolve them in
 // chunks (the names endpoint caps at 1000 ids) into a Map item_id → name. Best
 // effort: a failed chunk just leaves those items unnamed this run.
+//
+// ESI returns the literal string "None" for singletons with no player-assigned
+// name (e.g. blueprints), so treat that sentinel as "no name" rather than text.
 const fetchNames = async (access_token, characterID, fetched) => {
   const ids = fetched.filter((a) => a.is_singleton).map((a) => Number(a.item_id))
   const names = new Map()
@@ -41,7 +44,7 @@ const fetchNames = async (access_token, characterID, fetched) => {
     if (part.length === 0) continue
     try {
       const rows = await assetNames(access_token, characterID, part)
-      for (const r of rows ?? []) names.set(Number(r.item_id), r.name ?? null)
+      for (const r of rows ?? []) names.set(Number(r.item_id), r.name && r.name !== 'None' ? r.name : null)
     } catch (e) {
       console.error(`[assets] assetNames failed for ${characterID}: ${e?.message}`)
     }
