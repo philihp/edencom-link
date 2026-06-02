@@ -15,6 +15,7 @@ EVE Online hangar/wallet/industry tracker. Package name `edencom-link` (private)
 - **No test runner / no `test` script** — there are no automated tests. No `typecheck` script (rely on `next build` / editor).
 - Pre-commit: husky + lint-staged auto-format & `eslint --fix` staged files.
 - Cron scripts (run via GitHub Actions, see below): `npm run hourly` / `daily` / `assets` / `structures` / `heartbeat`. `connect`, `ping`, `refresh` are DB/token utilities.
+- DB migrations (Supabase CLI, configured by `supabase/config.toml`): `npm run db:new <name>` scaffolds a migration under `supabase/migrations/`; `npm run db:push` applies pending migrations to the linked project (`supabase link --project-ref <ref>` first).
 
 ## Layout
 
