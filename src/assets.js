@@ -86,14 +86,32 @@ const fetchAssets = async (access_token, characterID) => {
 const reconcile = async (character_id, fetched, hasName) => {
   const baseCols =
     'id, item_id, type_id, location_id, location_flag, location_type, quantity, is_singleton, is_blueprint_copy'
-  const { data: current, error } = await sudoSupabase
-    .from('asset_over_time')
-    .select(hasName ? `${baseCols}, name` : baseCols)
-    .eq('character_id', character_id)
-    .eq('is_current', true)
-  if (error) throw error
+  // Page through every open row: PostgREST caps a select at the API "Max rows"
+  // limit (1000), but a character can hold tens of thousands of items. Reading a
+  // truncated set makes the un-read items look new, so they'd be re-inserted and
+  // collide with their existing current row on asset_over_time_current_item_idx.
+  const PAGE = 1000
+  const current = []
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await sudoSupabase
+      .from('asset_over_time')
+      .select(hasName ? `${baseCols}, name` : baseCols)
+      .eq('character_id', character_id)
+      .eq('is_current', true)
+      .order('id', { ascending: true })
+      .range(from, from + PAGE - 1)
+    if (error) throw error
+    if (!data || data.length === 0) break
+    current.push(...data)
+    if (data.length < PAGE) break
+  }
 
-  const currentByItem = new Map((current ?? []).map((r) => [Number(r.item_id), r]))
+  const currentByItem = new Map(current.map((r) => [Number(r.item_id), r]))
+
+  // ESI can return the same item twice across pages if assets shift mid-fetch;
+  // collapse to one entry per item so we never queue two inserts for it.
+  const fetchedByItem = new Map(fetched.map((a) => [Number(a.item_id), a]))
+  fetched = [...fetchedByItem.values()]
 
   const now = new Date().toISOString()
   const touchIds = [] // unchanged: bump last_seen_at on the open row
