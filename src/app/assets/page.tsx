@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { redirect } from 'next/navigation'
 
 import { createClient } from '@/utils/supabase/server'
@@ -164,7 +165,11 @@ const AssetsPage = async () => {
               const name = labelFor(loc)
               return (
                 <tr key={`location-${loc.id}`}>
-                  <td className="serif">{name}</td>
+                  <td>
+                    <Link href={`/assets/${loc.id}`} className="serif">
+                      {name}
+                    </Link>
+                  </td>
                   <td className="serif">{system && system !== name ? system : '—'}</td>
                   <td className={retro.num}>{loc.count}</td>
                 </tr>
