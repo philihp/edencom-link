@@ -15,14 +15,14 @@ EVE Online hangar/wallet/industry tracker. Package name `edencom-link` (private)
 - **No test runner / no `test` script** — there are no automated tests. No `typecheck` script (rely on `next build` / editor).
 - Pre-commit: husky + lint-staged auto-format & `eslint --fix` staged files.
 - Cron scripts (run via GitHub Actions, see below): `npm run hourly` / `daily` / `assets` / `structures` / `heartbeat`. `connect`, `ping`, `refresh` are DB/token utilities.
-- DB migrations (Supabase CLI, configured by `supabase/config.toml`): `npm run db:new <name>` scaffolds a migration under `supabase/migrations/`; `npm run db:push` applies pending migrations to the linked project (`supabase link --project-ref <ref>` first).
+- DB migrations (Supabase CLI, configured by `supabase/config.toml`): `npm run db:new <name>` scaffolds a migration under `supabase/migrations/`; `npm run db:push` applies pending migrations to the linked project (`supabase link --project-ref <ref>` first). On push to `main` that touches `supabase/migrations/**`, the `Migrate` workflow runs `supabase db push` automatically (also manually dispatchable).
 
 ## Layout
 
 - `src/app/` — Next.js App Router. Page routes: `account/`, `assets/`, `character/`, `industry/`, `market/`, `structures/`, plus `theme/`, `layout/` (Header/Footer), `private/`. Shared helpers at top level: `typeNames.ts`/`typeName.tsx`, `systemNames.ts`, `stationNames.ts`, `isk.ts`, `DateTime.tsx`.
 - `src/` (Node cron/scripts): `esi.js` (ESI API wrapper), `supabase.js` (clients — anon + `sudoSupabase` service role that bypasses RLS), `hourly.js`, `daily.js`, `assets.js`, `structures.js`, `corpWalletJournal.js`, `resolveNames.js`, `structureNames.js`, `tokenRefresh.js`/`refresh.js`, `proxy.ts`, `utils/`.
 - `schema.sql` — the single source of truth for the Supabase schema (in the default `public` schema). It's a full reset: it DROPs the app's tables and recreates them, so re-running wipes data — never run it against a database with data you want to keep. To change the schema, edit this file (so a fresh reset stays correct) **and** add a non-destructive incremental migration under `supabase/migrations/` (Supabase CLI format, applied with `supabase db push`) so the change can be rolled out to existing databases without wiping data.
-- `.github/workflows/` — `hourly.yml`, `daily.yml`, `assets.yml`, `structures.yml`, `heartbeat.yml` (each a scheduled cron + manual dispatch).
+- `.github/workflows/` — `hourly.yml`, `daily.yml`, `assets.yml`, `structures.yml`, `heartbeat.yml` (each a scheduled cron + manual dispatch); `migrate.yml` (applies Supabase migrations on push to `main`).
 
 ## Database & ESI
 
