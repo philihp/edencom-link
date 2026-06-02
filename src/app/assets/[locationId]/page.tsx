@@ -18,6 +18,7 @@ type Asset = {
   location_type: string | null
   quantity: number | string | null
   is_singleton: boolean | null
+  name: string | null
 }
 
 type Structure = {
@@ -40,7 +41,7 @@ const AssetLocationPage = async ({ params }: { params: Promise<{ locationId: str
   // Only this level is fetched — the whole asset table no longer pages into Node.
   const { data: children } = await supabase
     .from('asset')
-    .select('item_id, character_id, type_id, location_id, location_flag, location_type, quantity, is_singleton')
+    .select('item_id, character_id, type_id, location_id, location_flag, location_type, quantity, is_singleton, name')
     .eq('location_id', locationId)
   const rootItems = (children ?? []) as Asset[]
 
@@ -59,9 +60,9 @@ const AssetLocationPage = async ({ params }: { params: Promise<{ locationId: str
   // and the "back" target accordingly.
   const { data: self } = await supabase
     .from('asset')
-    .select('item_id, type_id, location_id')
+    .select('item_id, type_id, location_id, name')
     .eq('item_id', locationId)
-    .maybeSingle<Pick<Asset, 'item_id' | 'type_id' | 'location_id'>>()
+    .maybeSingle<Pick<Asset, 'item_id' | 'type_id' | 'location_id' | 'name'>>()
 
   let heading: string
   let backHref = '/assets'
@@ -69,9 +70,11 @@ const AssetLocationPage = async ({ params }: { params: Promise<{ locationId: str
   let systemName: string | undefined
 
   if (self) {
-    // A ship/container: title it by its type, and step back to whatever holds it.
+    // A ship/container: title it by its custom name (if any) plus type, and step
+    // back to whatever holds it.
     const typeNames = await fetchTypeNames([Number(self.type_id)])
-    heading = typeNames[Number(self.type_id)] ?? `#${self.type_id}`
+    const typeName = typeNames[Number(self.type_id)] ?? `#${self.type_id}`
+    heading = self.name && self.name !== typeName ? `${self.name} (${typeName})` : typeName
     if (self.location_id != null) {
       backHref = `/assets/${self.location_id}`
       backLabel = 'Back'
@@ -124,6 +127,7 @@ const AssetLocationPage = async ({ params }: { params: Promise<{ locationId: str
       itemId: String(a.item_id),
       characterId: a.character_id,
       typeId: Number(a.type_id),
+      name: a.name,
       quantity: a.quantity,
       isSingleton: a.is_singleton,
       flag: a.location_flag,

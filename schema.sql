@@ -115,7 +115,10 @@ create table public.asset_over_time (
   is_blueprint_copy boolean,
   is_current boolean not null default true,
   first_seen_at timestamptz not null default now(),
-  last_seen_at timestamptz not null default now()
+  last_seen_at timestamptz not null default now(),
+  -- Player-assigned name (ship/container custom name) for singleton items; null
+  -- otherwise. Kept last to match the add-column migration's column order.
+  name text
 );
 create index asset_over_time_character_id_idx on public.asset_over_time (character_id);
 -- At most one live row per item; also the conflict target the extract relies on.
