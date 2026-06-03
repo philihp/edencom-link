@@ -60,6 +60,12 @@
   margin-right: 4pt;
 }
 
+.actions {
+  display: flex;
+  gap: 8pt;
+  flex-wrap: wrap;
+}
+
 .warning {
   margin: 12pt 0;
   padding: 10pt 12pt;

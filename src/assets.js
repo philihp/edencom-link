@@ -1,3 +1,5 @@
+import { fileURLToPath } from 'node:url'
+
 import { assets, assetNames, userAgent } from './esi.js'
 import SingleSignOn from 'eve-sso'
 import { sudoSupabase } from './supabase.js'
@@ -164,22 +166,26 @@ const reconcile = async (character_id, fetched, hasName) => {
   return { touched: touchIds.length, opened: inserts.length, closed: closeIds.length }
 }
 
-const execute = async () => {
+// Refresh assets for tokens carrying the assets scope. Pass `characterIds` to
+// scope the run to a specific set of registrations (e.g. a single player's
+// characters, triggered from the UI); omit it to refresh everyone, as the
+// scheduled workflow does. Throws on a fatal lookup failure so callers — the
+// CLI wrapper or a server action — can decide how to surface it.
+export const runAssets = async ({ characterIds } = {}) => {
   const { data: characters, error: charactersError } = await sudoSupabase.from('registration').select('id, name')
   if (charactersError) {
     console.error('[assets] character lookup failed:', charactersError)
-    process.exit(1)
+    throw charactersError
   }
   const characterName = new Map((characters ?? []).map((c) => [c.id, c.name]))
 
-  const { data: tokens, error } = await sudoSupabase
-    .from('token')
-    .select('id, character_id, refresh_token')
-    .contains('scope', [ASSETS_SCOPE])
+  let tokenQuery = sudoSupabase.from('token').select('id, character_id, refresh_token').contains('scope', [ASSETS_SCOPE])
+  if (characterIds) tokenQuery = tokenQuery.in('character_id', characterIds)
+  const { data: tokens, error } = await tokenQuery
 
   if (error) {
     console.error('[assets] token lookup failed:', error)
-    process.exit(1)
+    throw error
   }
 
   // Tolerate the name column not existing yet (migration not applied): probe it
@@ -219,4 +225,17 @@ const execute = async () => {
   }
 }
 
-execute()
+const execute = async () => {
+  try {
+    await runAssets()
+  } catch {
+    process.exit(1)
+  }
+}
+
+// Only run as a CLI (npm run assets / the scheduled workflow) when invoked
+// directly. When imported by the Next.js app to refresh one player's assets,
+// the side-effecting top-level run must not fire.
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  execute()
+}
