@@ -1,3 +1,5 @@
+import { fileURLToPath } from 'node:url'
+
 import { pullCorpWalletJournals } from './corpWalletJournal.js'
 import { character as fetchCharacter, corpAssets, corpStructures, universeNames } from './esi.js'
 import { pullIndustryIndexes } from './industryIndexes.js'
@@ -33,11 +35,11 @@ const resolveCorpName = async (corporation_id) => {
 }
 const corpLabelFor = (name, corporation_id) => (name ? `${name} (${corporation_id})` : `${corporation_id}`)
 
-const execute = async () => {
+export const runStructures = async () => {
   const { data: characters, error: charactersError } = await sudoSupabase.from('registration').select('id, name')
   if (charactersError) {
     console.error('[structures] character lookup failed:', charactersError)
-    process.exit(1)
+    throw charactersError
   }
   const characterName = new Map((characters ?? []).map((c) => [c.id, c.name]))
 
@@ -48,7 +50,7 @@ const execute = async () => {
 
   if (error) {
     console.error('[structures] token lookup failed:', error)
-    process.exit(1)
+    throw error
   }
 
   console.log(`[structures] found ${tokens?.length ?? 0} token(s) with ${STRUCTURES_SCOPE}`)
@@ -267,4 +269,14 @@ const execute = async () => {
   }
 }
 
-execute()
+const execute = async () => {
+  try {
+    await runStructures()
+  } catch {
+    process.exit(1)
+  }
+}
+
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  execute()
+}

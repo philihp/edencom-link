@@ -6,31 +6,11 @@ on:
     - cron: '41 11 * * *'
 
 jobs:
-  refresh:
+  dispatch:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 24.x
-          cache: npm
-          cache-dependency-path: package-lock.json
-      - run: npm install
-      - name: Heartbeat start
-        run: npm run heartbeat -- daily start
-        env:
-          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-      - run: npm run daily
-        env:
-          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-      - name: Heartbeat end
-        run: npm run heartbeat -- daily end
-        env:
-          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      - name: Dispatch daily job to Vercel
+        run: |
+          curl -sf --max-time 310 \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "${{ vars.VERCEL_APP_URL }}/api/cron/daily"

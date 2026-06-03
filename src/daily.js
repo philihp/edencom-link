@@ -1,3 +1,5 @@
+import { fileURLToPath } from 'node:url'
+
 import { characterAffiliations } from './esi.js'
 import { resolveBatch, resolveCorpJournalNames } from './resolveNames.js'
 import { sudoSupabase } from './supabase.js'
@@ -58,14 +60,20 @@ const resolveCharacterCorps = async () => {
   console.log(`[daily] upserted ${nameRows.length} corporation name(s)`)
 }
 
+export const runDaily = async () => {
+  await resolveCorpJournalNames()
+  await resolveCharacterCorps()
+}
+
 const execute = async () => {
   try {
-    await resolveCorpJournalNames()
-    await resolveCharacterCorps()
+    await runDaily()
   } catch (e) {
     console.error('[daily] FAILED', e)
     process.exit(1)
   }
 }
 
-execute()
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  execute()
+}

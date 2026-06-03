@@ -1,3 +1,5 @@
+import { fileURLToPath } from 'node:url'
+
 import { industryJobs, transactions, wallet } from './esi.js'
 import { sudoSupabase } from './supabase.js'
 import { refreshAccessToken } from './tokenRefresh.js'
@@ -5,11 +7,11 @@ import { refreshAccessToken } from './tokenRefresh.js'
 const WALLET_SCOPE = 'esi-wallet.read_character_wallet.v1'
 const INDUSTRY_SCOPE = 'esi-industry.read_character_jobs.v1'
 
-const execute = async () => {
+export const runHourly = async () => {
   const { data: characters, error: charactersError } = await sudoSupabase.from('registration').select('id, name')
   if (charactersError) {
     console.error(charactersError)
-    process.exit(1)
+    throw charactersError
   }
   const characterName = new Map((characters ?? []).map((c) => [c.id, c.name]))
 
@@ -20,7 +22,7 @@ const execute = async () => {
 
   if (error) {
     console.error(error)
-    process.exit(1)
+    throw error
   }
 
   for (const tokenRow of tokens ?? []) {
@@ -67,7 +69,7 @@ const execute = async () => {
 
   if (industryTokensError) {
     console.error(industryTokensError)
-    process.exit(1)
+    throw industryTokensError
   }
 
   for (const tokenRow of industryTokens ?? []) {
@@ -111,4 +113,14 @@ const execute = async () => {
   }
 }
 
-execute()
+const execute = async () => {
+  try {
+    await runHourly()
+  } catch {
+    process.exit(1)
+  }
+}
+
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  execute()
+}
