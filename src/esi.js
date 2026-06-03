@@ -89,6 +89,13 @@ export const assetNames = (access_token, characterID, ids) =>
     label: `assetNames ${characterID}`,
   })
 
+// Public (no token): per-solar-system industry cost indices for every system
+// with activity in it. Each entry is { solar_system_id, cost_indices: [{ activity, cost_index }] }.
+export const industrySystems = () =>
+  esiJson(`/industry/systems/`, {
+    label: `industrySystems`,
+  })
+
 export const universeNames = (ids) =>
   esiJson(`/universe/names/`, {
     method: 'POST',

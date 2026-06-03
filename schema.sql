@@ -19,6 +19,7 @@ drop table if exists public.asset_over_time      cascade;
 drop table if exists public.wallet               cascade;
 drop table if exists public.market_transaction   cascade;
 drop table if exists public.industry_job         cascade;
+drop table if exists public.industry_system_index cascade;
 drop table if exists public.corp_structure_rig   cascade;
 drop table if exists public.corp_structure       cascade;
 drop table if exists public.corp_wallet_journal  cascade;
@@ -413,6 +414,33 @@ create policy "Users read structure rigs for own corps"
 
 grant select on public.corp_structure_rig to authenticated;
 grant all    on public.corp_structure_rig to service_role;
+
+-- ── industry_system_index ─────────────────────────────────────────────────
+-- History of EVE's per-system industry cost indices, snapshotted each structures
+-- run for every solar system we have a structure anchored in. Public ESI data
+-- (/industry/systems/), so it's readable by everyone. Each row is one system /
+-- activity (manufacturing, reaction, copying, invention, ...) and the recorded
+-- cost index at recorded_at; the table is append-only so the indices' drift over
+-- time can be charted.
+create table public.industry_system_index (
+  id bigint generated always as identity primary key,
+  system_id bigint not null,
+  activity text not null,
+  cost_index real not null,
+  recorded_at timestamptz not null default now()
+);
+create index industry_system_index_system_activity_idx
+  on public.industry_system_index (system_id, activity, recorded_at desc);
+
+alter table public.industry_system_index enable row level security;
+create policy "Everyone reads industry indexes"
+  on public.industry_system_index
+  for select
+  to anon, authenticated
+  using (true);
+
+grant select on public.industry_system_index to anon, authenticated;
+grant all    on public.industry_system_index to service_role;
 
 -- ── corp_wallet_journal ───────────────────────────────────────────────────
 create table public.corp_wallet_journal (
