@@ -1,21 +1,40 @@
 import { createClient } from '@supabase/supabase-js'
 
-const supabaseUrl = process.env.SUPABASE_URL
-const supabaseKey = process.env.SUPABASE_KEY
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY
 const supabaseUsername = process.env.SUPABASE_USERNAME
 const supabasePassword = process.env.SUPABASE_PASSWORD
 
-export const supabase = createClient(supabaseUrl, supabaseKey)
+// Defer createClient() to first property access so that importing this module
+// during Next.js build (when SUPABASE_URL may be absent) doesn't throw.
+const lazy = (factory) => {
+  let instance
+  return new Proxy(
+    {},
+    {
+      get(_, prop) {
+        instance ??= factory()
+        const val = instance[prop]
+        return typeof val === 'function' ? val.bind(instance) : val
+      },
+    }
+  )
+}
 
-export const sudoSupabase = createClient(supabaseUrl, supabaseServiceKey, {
-  auth: {
-    autoRefreshToken: false,
-    persistSession: false,
-  },
-})
+export const supabase = lazy(() => createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY))
 
-export const sudoSupabaseAdmin = sudoSupabase.auth.admin
+export const sudoSupabase = lazy(() =>
+  createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  })
+)
+
+export const sudoSupabaseAdmin = lazy(() =>
+  createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  }).auth.admin
+)
 
 // The GitHub Actions run that invoked us (empty when run locally), plus a link
 // straight to it. Used to land a run's start/end heartbeats on one row.
