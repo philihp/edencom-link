@@ -4,7 +4,7 @@ import { runHourly } from '@/hourly.js'
 import { recordHeartbeat } from '@/supabase.js'
 import { verifyCronSecret } from '../auth'
 
-export const maxDuration = 300
+export const maxDuration = 60
 
 export async function GET(request: NextRequest) {
   const authError = verifyCronSecret(request)
