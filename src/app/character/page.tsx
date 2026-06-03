@@ -43,7 +43,7 @@ const CharacterPage = async () => {
           <p className={styles.warningBody}>
             You haven&apos;t enabled any ESI permissions, so characters you add will only be identified — no wallet,
             assets, industry, market, or structure data can be tracked. Choose what to share in{' '}
-            <Link href="/account/settings">settings</Link>.
+            <Link href="/settings/grants">settings</Link>.
           </p>
         </div>
       )}

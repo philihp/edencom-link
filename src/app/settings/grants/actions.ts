@@ -1,9 +1,12 @@
 'use server'
 
+import { redirect } from 'next/navigation'
+
 import { createClient } from '@/utils/supabase/server'
 import { optionalScopes, requiredScopes } from '@/app/character/scopes'
+import { sso } from '@/app/character/sso'
 
-export const saveScopePreferences = async (formData: FormData) => {
+export const saveGrants = async (formData: FormData) => {
   const supabase = await createClient()
 
   const {
@@ -25,4 +28,11 @@ export const saveScopePreferences = async (formData: FormData) => {
   if (upsertError) {
     return upsertError.message
   }
+
+  // Coming from the Add Character flow, send the player on to EVE SSO with exactly
+  // the scopes they just chose. Otherwise return them to the settings page.
+  if (formData.get('from') === 'characters') {
+    redirect(sso.getRedirectUrl('state', enabled_scopes))
+  }
+  redirect('/account/settings')
 }
