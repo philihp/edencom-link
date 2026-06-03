@@ -3,22 +3,22 @@
 import { useState } from 'react'
 
 import type { EsiScope } from '@/app/character/scopes'
+import Dot from '@/app/account/settings/dot'
 
-import Dot from './dot'
-import { saveScopePreferences } from './scopeActions'
-import styles from './scopeSettings.module.css'
+import { saveGrants } from './actions'
+import styles from './grants.module.css'
 
-type ScopeSettingsProps = {
+type GrantsProps = {
   scopes: EsiScope[]
   enabled: string[]
+  from: string
 }
 
-const ScopeSettings = ({ scopes, enabled }: ScopeSettingsProps) => {
+const Grants = ({ scopes, enabled, from }: GrantsProps) => {
   const [checked, setChecked] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(scopes.map((s) => [s.scope, Boolean(s.required) || enabled.includes(s.scope)]))
   )
   const [response, setResponse] = useState('')
-  const [color, setColor] = useState('#000000')
 
   const toggle = (scope: string) => setChecked((prev) => ({ ...prev, [scope]: !prev[scope] }))
 
@@ -27,26 +27,24 @@ const ScopeSettings = ({ scopes, enabled }: ScopeSettingsProps) => {
   // Required scopes stay checked since they are always granted.
   const unselectAll = () => setChecked(Object.fromEntries(scopes.map((s) => [s.scope, Boolean(s.required)])))
 
+  // A successful save redirects (back to settings, or on to EVE SSO), so we only
+  // surface a message when saving fails.
   const save = async (formData: FormData) => {
-    const error = await saveScopePreferences(formData)
+    const error = await saveGrants(formData)
     if (error) {
-      setColor('#FF0000')
       setResponse(error)
-      return
     }
-    setColor('#00AF00')
-    setResponse('Preferences saved')
   }
 
   return (
     <>
-      <h2>ESI Access</h2>
       <p className={styles.intro}>
-        When you add a character we ask EVE Online for permission to read the data below. Uncheck anything you would
-        rather not share &mdash; we just won&apos;t be able to provide the related features for that character. Changes
-        apply to characters you add from now on.
+        When you add a character we ask EVE Online for permission to read the data below. Check anything you would like
+        to share &mdash; we can only provide the related features for the data you grant. Changes apply to characters you
+        add from now on.
       </p>
       <form>
+        <input type="hidden" name="from" value={from} />
         <div className={styles.bulkActions}>
           <button type="button" onClick={selectAll}>
             Select all
@@ -74,11 +72,11 @@ const ScopeSettings = ({ scopes, enabled }: ScopeSettingsProps) => {
             </li>
           ))}
         </ul>
-        <button formAction={save}>Save ESI Access</button>
+        <button formAction={save}>{from === 'characters' ? 'Save and add character' : 'Save ESI Access'}</button>
       </form>
-      <p>{response && <Dot color={color} response={response} />}</p>
+      <p>{response && <Dot color="#FF0000" response={response} />}</p>
     </>
   )
 }
 
-export default ScopeSettings
+export default Grants
