@@ -1,7 +1,6 @@
 import { fileURLToPath } from 'node:url'
 
 import { pullCorpWalletJournals } from './corpWalletJournal.js'
-import { dispatchCronJob } from './cronDispatch.js'
 import { character as fetchCharacter, corpAssets, corpStructures, universeNames } from './esi.js'
 import { pullIndustryIndexes } from './industryIndexes.js'
 import { resolveCorpJournalNames } from './resolveNames.js'
@@ -272,9 +271,8 @@ export const runStructures = async () => {
 
 const execute = async () => {
   try {
-    await dispatchCronJob('structures')
-  } catch (e) {
-    console.error(e)
+    await runStructures()
+  } catch {
     process.exit(1)
   }
 }

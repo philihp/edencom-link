@@ -1,7 +1,6 @@
 import { fileURLToPath } from 'node:url'
 
 import { industryJobs, transactions, wallet } from './esi.js'
-import { dispatchCronJob } from './cronDispatch.js'
 import { sudoSupabase } from './supabase.js'
 import { refreshAccessToken } from './tokenRefresh.js'
 
@@ -116,9 +115,8 @@ export const runHourly = async () => {
 
 const execute = async () => {
   try {
-    await dispatchCronJob('hourly')
-  } catch (e) {
-    console.error(e)
+    await runHourly()
+  } catch {
     process.exit(1)
   }
 }
