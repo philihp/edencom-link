@@ -1,10 +1,7 @@
 const cache = new Map<number, Promise<string | null>>()
 
 const fetchOne = (typeID: number): Promise<string | null> =>
-  // Cap each lookup so one slow/hung request can't stall a caller that awaits the
-  // whole batch (e.g. the /api/assets endpoint); on timeout fetch rejects and we
-  // fall back to null (the caller shows the raw id).
-  fetch(`https://eve-build-calculator.philihp.com/api/type/${typeID}`, { signal: AbortSignal.timeout(5000) })
+  fetch(`https://eve-build-calculator.philihp.com/api/type/${typeID}`)
     .then((res) => (res.ok ? res.json() : null))
     .then((type: { name?: { en?: string } | string } | null) => {
       if (!type) return null

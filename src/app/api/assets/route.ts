@@ -1,18 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-import { fetchTypeNames } from '@/app/typeNames'
 import { createServiceClient } from '@/utils/supabase/service'
 
 // Public JSON endpoint for Google Sheets =ImportJSON(): the player's total asset
 // inventory, summed by item type, as of an optional timestamp. Authenticated by
 // the per-user api_token in the query string (Sheets carries no session cookie),
-// so it always recomputes — no caching.
+// so it always recomputes — no caching. Returns raw type ids; the sheet resolves
+// names itself, which keeps the response fast (no external lookups per type).
 export const dynamic = 'force-dynamic'
-// Headroom over Vercel's default function timeout; the work is one aggregation
-// query plus best-effort type-name lookups, but a large inventory needs room.
+// Headroom over Vercel's default function timeout for a large inventory.
 export const maxDuration = 60
 
-type Row = { typeId: number; typeName: string; quantity: number }
+type Row = { typeId: number; quantity: number }
 
 export const GET = async (request: NextRequest): Promise<NextResponse> => {
   const { searchParams } = new URL(request.url)
@@ -76,15 +75,8 @@ export const GET = async (request: NextRequest): Promise<NextResponse> => {
   }
   const inventory = (totals ?? []) as { type_id: number; quantity: number }[]
 
-  // Best-effort names: fetchTypeNames caps each lookup with a timeout and falls
-  // back to the raw id, so a slow/missing name never stalls the response.
-  const names = await fetchTypeNames(inventory.map((r) => Number(r.type_id)))
   const rows: Row[] = inventory
-    .map(({ type_id, quantity }) => ({
-      typeId: Number(type_id),
-      typeName: names[Number(type_id)] ?? String(type_id),
-      quantity: Number(quantity),
-    }))
+    .map(({ type_id, quantity }) => ({ typeId: Number(type_id), quantity: Number(quantity) }))
     .sort((a, b) => b.quantity - a.quantity)
 
   return NextResponse.json(rows)
