@@ -26,21 +26,29 @@ const ApiToken = ({ initialToken }: { initialToken: string | null }) => {
     setResponse(initialToken ? 'Token regenerated — update your sheet' : 'Token generated')
   }
 
-  const url = token ? `${origin}/api/assets?token=${token}&at=${new Date().toISOString()}` : null
+  const assetsUrl = token ? `${origin}/api/assets?token=${token}` : null
+  const industryUrl = token ? `${origin}/api/industry?token=${token}` : null
 
   return (
     <>
       <h2>API Access (Google Sheets)</h2>
       <p>
-        Pull your total asset inventory into a spreadsheet with <code>=ImportJSON(url)</code>. The optional{' '}
-        <code>at</code> timestamp (ISO 8601) reconstructs your inventory as it was at that moment; omit it for the
-        current inventory.
+        Pull your data into a spreadsheet with <code>=ImportJSON(url)</code>:
       </p>
-      {url && (
-        <p>
-          <code>=ImportJSON(&quot;{url}&quot;)</code>
-        </p>
+      {assetsUrl && industryUrl && (
+        <ul>
+          <li>
+            Assets (one row per item stack): <code>=ImportJSON(&quot;{assetsUrl}&quot;)</code>
+          </li>
+          <li>
+            Industry jobs: <code>=ImportJSON(&quot;{industryUrl}&quot;)</code>
+          </li>
+        </ul>
       )}
+      <p>
+        The assets URL accepts an optional <code>at</code> timestamp (e.g. <code>&amp;at=2026-05-30</code>) to
+        reconstruct your inventory as it was at that moment; omit it for the current inventory.
+      </p>
       <form>
         <button formAction={generate}>{token ? 'Regenerate API token' : 'Generate API token'}</button>
       </form>

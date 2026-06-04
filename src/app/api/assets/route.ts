@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-import { createServiceClient } from '@/utils/supabase/service'
+import { resolvePlayer } from '@/utils/apiToken'
 
 // Public JSON endpoint for Google Sheets =ImportJSON(): the player's raw asset
 // rows (one per item stack) with the owning character's name, as of an optional
@@ -25,11 +25,6 @@ const completePartialAt = (value: string): string => {
 export const GET = async (request: NextRequest): Promise<NextResponse> => {
   const { searchParams } = new URL(request.url)
 
-  const token = searchParams.get('token')?.trim()
-  if (!token) {
-    return NextResponse.json({ error: 'Missing api token' }, { status: 401 })
-  }
-
   // `at` is the moment to reconstruct the inventory at; default to now (the live
   // inventory). asset_over_time keeps full SCD-2 history, so any past time works.
   const atParam = searchParams.get('at')
@@ -42,41 +37,17 @@ export const GET = async (request: NextRequest): Promise<NextResponse> => {
   }
   const atIso = at.toISOString()
 
-  const supabase = createServiceClient()
-
-  // Resolve the token to its owner. Service role bypasses RLS, so we scope every
-  // subsequent query to this user_id ourselves.
-  const { data: settings, error: settingsError } = await supabase
-    .from('user_settings')
-    .select('user_id')
-    .eq('api_token', token)
-    .maybeSingle()
-  if (settingsError) {
-    return NextResponse.json({ error: 'Lookup failed' }, { status: 500 })
-  }
-  if (!settings) {
-    return NextResponse.json({ error: 'Invalid api token' }, { status: 401 })
+  const player = await resolvePlayer(searchParams.get('token')?.trim())
+  if (!player.ok) {
+    return NextResponse.json({ error: player.error }, { status: player.status })
   }
 
-  // The player's characters.
-  const { data: characters, error: charactersError } = await supabase
-    .from('registration')
-    .select('id')
-    .eq('user_id', settings.user_id)
-  if (charactersError) {
-    return NextResponse.json({ error: 'Lookup failed' }, { status: 500 })
-  }
-  const characterIds = (characters ?? []).map((c) => c.id)
-  if (characterIds.length === 0) {
-    return NextResponse.json([])
-  }
-
-  // The raw rows live at `at`, with character_name, built and returned as one
-  // jsonb array by Postgres (asset_snapshot_at) — keeping the rollup/paging out of
-  // this function is what kept the endpoint under Vercel's timeout, and a single
-  // jsonb scalar sidesteps PostgREST's max-rows cap.
-  const { data: rows, error: rowsError } = await supabase.rpc('asset_snapshot_at', {
-    character_ids: characterIds,
+  // The raw rows live at `at`, with character_name, built and returned as one json
+  // array by Postgres (asset_snapshot_at) — keeping the rollup/paging out of this
+  // function is what kept the endpoint under Vercel's timeout, and a single json
+  // scalar sidesteps PostgREST's max-rows cap.
+  const { data: rows, error: rowsError } = await player.supabase.rpc('asset_snapshot_at', {
+    character_ids: player.characterIds,
     as_of: atIso,
   })
   if (rowsError) {
