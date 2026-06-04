@@ -1,10 +1,12 @@
-import { pullCorpWalletJournals } from './corpWalletJournal.js'
-import { character as fetchCharacter, corpAssets, corpStructures, universeNames } from './esi.js'
-import { pullIndustryIndexes } from './industryIndexes.js'
-import { resolveCorpJournalNames } from './resolveNames.js'
-import { resolveStructureNames } from './structureNames.js'
-import { sudoSupabase } from './supabase.js'
-import { refreshAccessToken } from './tokenRefresh.js'
+import { fileURLToPath } from 'node:url'
+
+import { pullCorpWalletJournals } from '../corpWalletJournal.js'
+import { character as fetchCharacter, corpAssets, corpStructures, universeNames } from '../esi.js'
+import { pullIndustryIndexes } from '../industryIndexes.js'
+import { resolveCorpJournalNames } from '../resolveNames.js'
+import { resolveStructureNames } from '../structureNames.js'
+import { sudoSupabase } from '../supabase.js'
+import { refreshAccessToken } from '../tokenRefresh.js'
 
 const STRUCTURES_SCOPE = 'esi-corporations.read_structures.v1'
 const WALLET_SCOPE = 'esi-wallet.read_corporation_wallets.v1'
@@ -33,22 +35,31 @@ const resolveCorpName = async (corporation_id) => {
 }
 const corpLabelFor = (name, corporation_id) => (name ? `${name} (${corporation_id})` : `${corporation_id}`)
 
-const execute = async () => {
+// Pull corp structures (plus structure rigs and corp wallet journals where the
+// linked tokens allow) for tokens carrying the structures scope. Pass `characterIds`
+// to scope the run to specific registrations (e.g. a single character fanned out from
+// the Vercel queue); omit it to refresh everyone, as the scheduled workflow does. Two
+// characters in the same corp each re-process that corp — harmless, just redundant.
+// Throws on a fatal lookup failure so callers — the CLI wrapper or the queue consumer
+// — can decide how to surface it.
+export const runStructures = async ({ characterIds } = {}) => {
   const { data: characters, error: charactersError } = await sudoSupabase.from('registration').select('id, name')
   if (charactersError) {
     console.error('[structures] character lookup failed:', charactersError)
-    process.exit(1)
+    throw charactersError
   }
   const characterName = new Map((characters ?? []).map((c) => [c.id, c.name]))
 
-  const { data: tokens, error } = await sudoSupabase
+  let tokenQuery = sudoSupabase
     .from('token')
     .select('id, character_id, refresh_token')
     .contains('scope', [STRUCTURES_SCOPE])
+  if (characterIds) tokenQuery = tokenQuery.in('character_id', characterIds)
+  const { data: tokens, error } = await tokenQuery
 
   if (error) {
     console.error('[structures] token lookup failed:', error)
-    process.exit(1)
+    throw error
   }
 
   console.log(`[structures] found ${tokens?.length ?? 0} token(s) with ${STRUCTURES_SCOPE}`)
@@ -267,4 +278,17 @@ const execute = async () => {
   }
 }
 
-execute()
+const execute = async () => {
+  try {
+    await runStructures()
+  } catch (e) {
+    console.error('[structures] FAILED', e)
+    process.exit(1)
+  }
+}
+
+// Only run as a CLI (npm run structures / the scheduled workflow) when invoked
+// directly. When imported by the Next.js queue consumer, the top-level run must not fire.
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  execute()
+}

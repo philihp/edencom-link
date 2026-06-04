@@ -1,26 +1,32 @@
-import { industryJobs, transactions, wallet } from './esi.js'
-import { sudoSupabase } from './supabase.js'
-import { refreshAccessToken } from './tokenRefresh.js'
+import { fileURLToPath } from 'node:url'
+
+import { industryJobs, transactions, wallet } from '../esi.js'
+import { sudoSupabase } from '../supabase.js'
+import { refreshAccessToken } from '../tokenRefresh.js'
 
 const WALLET_SCOPE = 'esi-wallet.read_character_wallet.v1'
 const INDUSTRY_SCOPE = 'esi-industry.read_character_jobs.v1'
 
-const execute = async () => {
+// Pull wallet/transactions and industry jobs for tokens carrying the relevant
+// scopes. Pass `characterIds` to scope the run to specific registrations (e.g. a
+// single character fanned out from the Vercel queue); omit it to refresh everyone,
+// as the scheduled workflow does. Throws on a fatal lookup failure so callers — the
+// CLI wrapper or the queue consumer — can decide how to surface it.
+export const runHourly = async ({ characterIds } = {}) => {
   const { data: characters, error: charactersError } = await sudoSupabase.from('registration').select('id, name')
   if (charactersError) {
     console.error(charactersError)
-    process.exit(1)
+    throw charactersError
   }
   const characterName = new Map((characters ?? []).map((c) => [c.id, c.name]))
 
-  const { data: tokens, error } = await sudoSupabase
-    .from('token')
-    .select('id, character_id, refresh_token')
-    .contains('scope', [WALLET_SCOPE])
+  let walletQuery = sudoSupabase.from('token').select('id, character_id, refresh_token').contains('scope', [WALLET_SCOPE])
+  if (characterIds) walletQuery = walletQuery.in('character_id', characterIds)
+  const { data: tokens, error } = await walletQuery
 
   if (error) {
     console.error(error)
-    process.exit(1)
+    throw error
   }
 
   for (const tokenRow of tokens ?? []) {
@@ -60,14 +66,16 @@ const execute = async () => {
     }
   }
 
-  const { data: industryTokens, error: industryTokensError } = await sudoSupabase
+  let industryQuery = sudoSupabase
     .from('token')
     .select('id, character_id, refresh_token')
     .contains('scope', [INDUSTRY_SCOPE])
+  if (characterIds) industryQuery = industryQuery.in('character_id', characterIds)
+  const { data: industryTokens, error: industryTokensError } = await industryQuery
 
   if (industryTokensError) {
     console.error(industryTokensError)
-    process.exit(1)
+    throw industryTokensError
   }
 
   for (const tokenRow of industryTokens ?? []) {
@@ -111,4 +119,17 @@ const execute = async () => {
   }
 }
 
-execute()
+const execute = async () => {
+  try {
+    await runHourly()
+  } catch (e) {
+    console.error('[hourly] FAILED', e)
+    process.exit(1)
+  }
+}
+
+// Only run as a CLI (npm run hourly / the scheduled workflow) when invoked directly.
+// When imported by the Next.js queue consumer, the top-level run must not fire.
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  execute()
+}

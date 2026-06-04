@@ -20,7 +20,7 @@ EVE Online hangar/wallet/industry tracker. Package name `edencom-link` (private)
 ## Layout
 
 - `src/app/` — Next.js App Router. Page routes: `account/`, `assets/`, `character/`, `industry/`, `market/`, `structures/`, plus `theme/`, `layout/` (Header/Footer), `private/`. Shared helpers at top level: `typeNames.ts`/`typeName.tsx`, `systemNames.ts`, `stationNames.ts`, `isk.ts`, `DateTime.tsx`.
-- `src/` (Node cron/scripts): `esi.js` (ESI API wrapper), `supabase.js` (clients — anon + `sudoSupabase` service role that bypasses RLS), `hourly.js`, `daily.js`, `assets.js`, `structures.js`, `corpWalletJournal.js`, `resolveNames.js`, `structureNames.js`, `tokenRefresh.js`/`refresh.js`, `proxy.ts`, `utils/`.
+- `src/` (Node cron/scripts): `esi.js` (ESI API wrapper), `supabase.js` (clients — anon + `sudoSupabase` service role that bypasses RLS), `corpWalletJournal.js`, `resolveNames.js`, `structureNames.js`, `tokenRefresh.js`/`refresh.js`, `proxy.ts`, `utils/`. The scheduled job entry points live under `src/jobs/`: `hourly.js`, `daily.js`, `assets.js`, `structures.js` — each exports a `run*` function (callable from the Vercel queue consumer) and self-runs as a CLI when invoked directly (`node src/jobs/<job>.js`).
 - `schema.sql` — the single source of truth for the Supabase schema (in the default `public` schema). It's a full reset: it DROPs the app's tables and recreates them, so re-running wipes data — never run it against a database with data you want to keep. To change the schema, edit this file (so a fresh reset stays correct) **and** add a non-destructive incremental migration under `supabase/migrations/` (Supabase CLI format, applied with `supabase db push`) so the change can be rolled out to existing databases without wiping data.
 - `.github/workflows/` — `hourly.yml`, `daily.yml`, `assets.yml`, `structures.yml`, `heartbeat.yml` (each a scheduled cron + manual dispatch); `migrate.yml` (applies Supabase migrations on push to `main`).
 
@@ -41,5 +41,5 @@ EVE Online hangar/wallet/industry tracker. Package name `edencom-link` (private)
 
 # Architecture
 
-- Data from ESI flows into the database (typically via the hourly cron job in `src/hourly.js`). The UI then reads from the database. The UI/Next.js server components must never call ESI directly.
+- Data from ESI flows into the database (typically via the hourly cron job in `src/jobs/hourly.js`). The UI then reads from the database. The UI/Next.js server components must never call ESI directly.
 - Avoid using the `evesde` schema in the database for new work — it can be out of date. Instead, query [eve-build-calculator](https://eve-build-calculator.philihp.com) (e.g. the `https://eve-build-calculator.philihp.com/api/type/${typeID}` pattern in `src/app/typeNames.ts`). It downloads the full SDE but only saves/exposes a curated subset. If the data you need isn't exposed there yet, prefer adding it to eve-build-calculator rather than reaching into the `evesde` schema.

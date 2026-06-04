@@ -36,8 +36,16 @@ const githubRun = () => {
 // the same row (keyed on job + run id); run locally with no run id, each call is
 // a standalone insert. Returns true on success, false (after logging) on failure
 // so callers can decide whether a failed heartbeat should fail the whole step.
-export const recordHeartbeat = async (job, phase = 'end') => {
-  const { run_id, run_attempt, run_url } = githubRun()
+export const recordHeartbeat = async (job, phase = 'end', opts = {}) => {
+  // GitHub Actions path: derive run identity from the environment so the two steps
+  // of one workflow run land on a single row. Vercel queue path: the caller passes
+  // an explicit { runId } (and source: 'vercel'), so its start/end pair up the same
+  // way without a GITHUB_RUN_ID. run_id is bigint, so callers pass a bigint-safe id
+  // (not a UUID); a non-null sentinel run_attempt keeps the upsert key fully non-null.
+  const gh = githubRun()
+  const run_id = opts.runId != null ? Number(opts.runId) : gh.run_id
+  const run_attempt = opts.runId != null ? 1 : gh.run_attempt
+  const run_url = opts.runUrl ?? gh.run_url
   const now = new Date().toISOString()
   const row = {
     job,
@@ -92,6 +100,19 @@ export const selectCharacters = async (columns, owner) => {
   if (owner !== undefined) query = query.eq('owner', owner)
   const response = await query
   return response?.data?.map((r) => r.id)
+}
+
+// Distinct registration ids that hold a token with ANY of the given ESI scopes.
+// The Vercel cron producers use this to enumerate the characters to fan out one
+// queue message per character. Throws on a lookup failure.
+export const selectCharacterIdsWithScopes = async (scopes) => {
+  const ids = new Set()
+  for (const scope of scopes) {
+    const { data, error } = await sudoSupabase.from('token').select('character_id').contains('scope', [scope])
+    if (error) throw error
+    for (const r of data ?? []) ids.add(r.character_id)
+  }
+  return [...ids]
 }
 
 export const selectToken = async (character_id, scope = []) => {
