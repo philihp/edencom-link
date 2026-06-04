@@ -6,11 +6,34 @@ on:
     - cron: '26 * * * *'
 
 jobs:
-  dispatch:
+  refresh:
     runs-on: ubuntu-latest
     steps:
-      - name: Dispatch assets job to Vercel
-        run: |
-          curl -sf --max-time 310 \
-            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
-            "${{ vars.VERCEL_APP_URL }}/api/cron/assets"
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24.x
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm install
+      - name: Heartbeat start
+        run: npm run heartbeat -- assets start
+        env:
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      - run: npm run assets
+        env:
+          EVE_CLIENT_ID: ${{ vars.EVE_CLIENT_ID }}
+          EVE_SECRET_KEY: ${{ secrets.EVE_SECRET_KEY }}
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          VERCEL_APP_URL: ${{ vars.VERCEL_APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+      - name: Heartbeat end
+        run: npm run heartbeat -- assets end
+        env:
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}

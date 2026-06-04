@@ -1,6 +1,7 @@
 import { fileURLToPath } from 'node:url'
 
 import { characterAffiliations } from './esi.js'
+import { dispatchCronJob } from './cronDispatch.js'
 import { resolveBatch, resolveCorpJournalNames } from './resolveNames.js'
 import { sudoSupabase } from './supabase.js'
 
@@ -67,7 +68,8 @@ export const runDaily = async () => {
 
 const execute = async () => {
   try {
-    await runDaily()
+    const dispatched = await dispatchCronJob('daily')
+    if (!dispatched) await runDaily()
   } catch (e) {
     console.error('[daily] FAILED', e)
     process.exit(1)

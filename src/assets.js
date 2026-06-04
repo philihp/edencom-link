@@ -2,6 +2,7 @@ import { fileURLToPath } from 'node:url'
 
 import { assets, assetNames, userAgent } from './esi.js'
 import SingleSignOn from 'eve-sso'
+import { dispatchCronJob } from './cronDispatch.js'
 import { sudoSupabase } from './supabase.js'
 
 const EVE_CLIENT_ID = process.env.EVE_CLIENT_ID
@@ -227,8 +228,10 @@ export const runAssets = async ({ characterIds } = {}) => {
 
 const execute = async () => {
   try {
-    await runAssets()
-  } catch {
+    const dispatched = await dispatchCronJob('assets')
+    if (!dispatched) await runAssets()
+  } catch (e) {
+    console.error(e)
     process.exit(1)
   }
 }
