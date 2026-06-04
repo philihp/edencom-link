@@ -1,10 +1,9 @@
-// Returns true if the job was dispatched to Vercel (VERCEL_APP_URL + CRON_SECRET
-// are set), false if the caller should run the job locally instead.
-// Throws on a non-2xx response so the caller can surface the failure.
+// Dispatches a cron job to the Vercel API route. Requires VERCEL_APP_URL and
+// CRON_SECRET to be set; throws if either is missing or the request fails.
 export const dispatchCronJob = async (job) => {
   const vercelUrl = process.env.VERCEL_APP_URL
   const cronSecret = process.env.CRON_SECRET
-  if (!vercelUrl || !cronSecret) return false
+  if (!vercelUrl || !cronSecret) throw new Error(`VERCEL_APP_URL and CRON_SECRET must be set to dispatch "${job}"`)
 
   const res = await fetch(`${vercelUrl}/api/cron/${job}`, {
     headers: { Authorization: `Bearer ${cronSecret}` },
@@ -15,5 +14,4 @@ export const dispatchCronJob = async (job) => {
     throw new Error(`Vercel dispatch for "${job}" failed: HTTP ${res.status} ${body}`)
   }
   console.log(`[dispatch] ${job} completed via Vercel (${res.status})`)
-  return true
 }

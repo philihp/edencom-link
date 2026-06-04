@@ -68,8 +68,7 @@ export const runDaily = async () => {
 
 const execute = async () => {
   try {
-    const dispatched = await dispatchCronJob('daily')
-    if (!dispatched) await runDaily()
+    await dispatchCronJob('daily')
   } catch (e) {
     console.error('[daily] FAILED', e)
     process.exit(1)

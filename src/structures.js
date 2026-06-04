@@ -272,8 +272,7 @@ export const runStructures = async () => {
 
 const execute = async () => {
   try {
-    const dispatched = await dispatchCronJob('structures')
-    if (!dispatched) await runStructures()
+    await dispatchCronJob('structures')
   } catch (e) {
     console.error(e)
     process.exit(1)

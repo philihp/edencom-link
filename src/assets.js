@@ -228,8 +228,7 @@ export const runAssets = async ({ characterIds } = {}) => {
 
 const execute = async () => {
   try {
-    const dispatched = await dispatchCronJob('assets')
-    if (!dispatched) await runAssets()
+    await dispatchCronJob('assets')
   } catch (e) {
     console.error(e)
     process.exit(1)

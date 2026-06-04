@@ -116,8 +116,7 @@ export const runHourly = async () => {
 
 const execute = async () => {
   try {
-    const dispatched = await dispatchCronJob('hourly')
-    if (!dispatched) await runHourly()
+    await dispatchCronJob('hourly')
   } catch (e) {
     console.error(e)
     process.exit(1)
