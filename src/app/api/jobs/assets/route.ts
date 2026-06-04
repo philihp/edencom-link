@@ -3,7 +3,7 @@ import { randomInt } from 'node:crypto'
 import { send } from '@vercel/queue'
 import { NextRequest, NextResponse } from 'next/server'
 
-import { authorizeCron } from '../_auth'
+import { authorizeJobTrigger } from '../_auth'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -12,7 +12,7 @@ export const maxDuration = 60
 const SCOPES = ['esi-assets.read_assets.v1']
 
 export const GET = async (request: NextRequest) => {
-  if (!authorizeCron(request)) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  if (!authorizeJobTrigger(request)) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
 
   // Imported lazily so loading the route (and `next build`) never runs supabase.js's
   // top-level service-client setup, which needs env vars absent at build time.
