@@ -2,16 +2,13 @@ import { NextRequest, NextResponse } from 'next/server'
 
 import { createServiceClient } from '@/utils/supabase/service'
 
-// Public JSON endpoint for Google Sheets =ImportJSON(): the player's total asset
-// inventory, summed by item type, as of an optional timestamp. Authenticated by
-// the per-user api_token in the query string (Sheets carries no session cookie),
-// so it always recomputes — no caching. Returns raw type ids; the sheet resolves
-// names itself, which keeps the response fast (no external lookups per type).
+// Public JSON endpoint for Google Sheets =ImportJSON(): the player's raw asset
+// rows (one per item stack) with the owning character's name, as of an optional
+// timestamp. Authenticated by the per-user api_token in the query string (Sheets
+// carries no session cookie), so it always recomputes — no caching.
 export const dynamic = 'force-dynamic'
 // Headroom over Vercel's default function timeout for a large inventory.
 export const maxDuration = 60
-
-type Row = { typeId: number; quantity: number }
 
 export const GET = async (request: NextRequest): Promise<NextResponse> => {
   const { searchParams } = new URL(request.url)
@@ -62,22 +59,17 @@ export const GET = async (request: NextRequest): Promise<NextResponse> => {
     return NextResponse.json([])
   }
 
-  // Sum quantity per type across every version that was live at `at`. The rollup
-  // runs in Postgres (asset_inventory_at) rather than paging every raw row into
-  // this function — a full inventory is tens of thousands of rows, and shipping
-  // them here timed the request out. Returns one row per type id.
-  const { data: totals, error: totalsError } = await supabase.rpc('asset_inventory_at', {
+  // The raw rows live at `at`, with character_name, built and returned as one
+  // jsonb array by Postgres (asset_snapshot_at) — keeping the rollup/paging out of
+  // this function is what kept the endpoint under Vercel's timeout, and a single
+  // jsonb scalar sidesteps PostgREST's max-rows cap.
+  const { data: rows, error: rowsError } = await supabase.rpc('asset_snapshot_at', {
     character_ids: characterIds,
     as_of: atIso,
   })
-  if (totalsError) {
+  if (rowsError) {
     return NextResponse.json({ error: 'Query failed' }, { status: 500 })
   }
-  const inventory = (totals ?? []) as { type_id: number; quantity: number }[]
 
-  const rows: Row[] = inventory
-    .map(({ type_id, quantity }) => ({ typeId: Number(type_id), quantity: Number(quantity) }))
-    .sort((a, b) => b.quantity - a.quantity)
-
-  return NextResponse.json(rows)
+  return NextResponse.json(rows ?? [])
 }
