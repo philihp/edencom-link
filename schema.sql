@@ -14,6 +14,8 @@ drop schema if exists hangar cascade;
 
 drop function if exists public.asset_location_summary()        cascade;
 drop function if exists public.asset_location_contents(bigint) cascade;
+drop function if exists public.asset_inventory_at(uuid[], timestamptz) cascade;
+drop function if exists public.asset_snapshot_at(uuid[], timestamptz)  cascade;
 drop view  if exists public.asset                cascade;
 drop table if exists public.asset_over_time      cascade;
 drop table if exists public.wallet               cascade;
@@ -221,29 +223,46 @@ $$;
 grant execute on function public.asset_location_summary()        to authenticated;
 grant execute on function public.asset_location_contents(bigint) to authenticated;
 
--- /api/assets ImportJSON endpoint: the player's total inventory summed by item
--- type as of `at`, reconstructed from the SCD-2 history. A row counts when it had
--- started by `at` and was either still open then or is the current version (its
--- state extends forward past last_seen_at to now); a later version of an item
--- always starts after the prior one's last_seen_at, so at most one version per
--- item matches — no double counting. Aggregating in Postgres avoids paging tens
--- of thousands of raw rows into the serverless function (which timed it out). The
--- route calls this with the service role over the caller's own registration ids,
--- so it takes them as a parameter rather than leaning on RLS.
-create or replace function public.asset_inventory_at(character_ids uuid[], as_of timestamptz)
-returns table (type_id bigint, quantity bigint)
+-- /api/assets ImportJSON endpoint: the player's raw asset rows (one per item
+-- stack), with the owning character's name, as of `as_of`, reconstructed from the
+-- SCD-2 history. A row counts when it had started by `as_of` and was either still
+-- open then or is the current version (its state extends forward past
+-- last_seen_at to now); a later version of an item always starts after the prior
+-- one's last_seen_at, so at most one version per item matches. Returns the whole
+-- result as a single jsonb array so PostgREST's max-rows cap never truncates it
+-- and the function (not the serverless route) pages the table — what kept the
+-- endpoint under Vercel's timeout. Called with the service role over the caller's
+-- own registration ids, so it takes them as a parameter rather than leaning on RLS.
+create or replace function public.asset_snapshot_at(character_ids uuid[], as_of timestamptz)
+returns jsonb
 language sql
 stable
 as $$
-  select a.type_id, sum(coalesce(a.quantity, 1))::bigint as quantity
+  select coalesce(
+    jsonb_agg(
+      jsonb_build_object(
+        'is_blueprint_copy', a.is_blueprint_copy,
+        'is_singleton',      a.is_singleton,
+        'item_id',           a.item_id,
+        'location_flag',     a.location_flag,
+        'location_id',       a.location_id,
+        'location_type',     a.location_type,
+        'quantity',          a.quantity,
+        'type_id',           a.type_id,
+        'character_name',    r.name
+      )
+      order by a.item_id
+    ),
+    '[]'::jsonb
+  )
   from public.asset_over_time a
+  join public.registration r on r.id = a.character_id
   where a.character_id = any(character_ids)
     and a.first_seen_at <= as_of
-    and (a.last_seen_at >= as_of or a.is_current)
-  group by a.type_id;
+    and (a.last_seen_at >= as_of or a.is_current);
 $$;
 
-grant execute on function public.asset_inventory_at(uuid[], timestamptz) to service_role;
+grant execute on function public.asset_snapshot_at(uuid[], timestamptz) to service_role;
 
 -- ── heartbeat ─────────────────────────────────────────────────────────────
 -- One row per scheduled-job run. Workflows write a 'start' step (stamps
