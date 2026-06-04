@@ -3,9 +3,10 @@ import { randomInt } from 'node:crypto'
 import { handleCallback } from '@vercel/queue'
 
 export const runtime = 'nodejs'
-// Per-character work is short, but a single asset-heavy character can still take a
-// while; give it room. Confirm the project's plan allows this duration.
-export const maxDuration = 800
+// 60s is the max the current Vercel plan allows. Per-character fan-out keeps each
+// invocation small enough to fit; the daily whole-job message is a single batch and
+// GitHub Actions remains the safety net if it ever exceeds this on large datasets.
+export const maxDuration = 60
 
 type Msg = { job: 'hourly' | 'assets' | 'structures' | 'daily'; characterId?: number }
 
