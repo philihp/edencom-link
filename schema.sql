@@ -542,9 +542,14 @@ grant all    on public.structure to service_role;
 -- Per-user preferences. `enabled_scopes` is the set of ESI OAuth scopes the
 -- user has opted into requesting when they add a character; an absent row means
 -- "request everything" (see src/app/character/userScopes.ts).
+-- `api_token` is an opaque per-user secret the Google Sheets ImportJSON endpoint
+-- (/api/assets) authenticates with — that request carries no Supabase session,
+-- so the route looks the user up by this token (service role) and scopes the
+-- results to their characters. Null until the user generates one in settings.
 create table public.user_settings (
   user_id uuid primary key references auth.users(id) on delete cascade,
   enabled_scopes text[] not null default '{}',
+  api_token text unique,
   updated_at timestamptz not null default now()
 );
 

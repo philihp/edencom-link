@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 
 import { createClient } from '@/utils/supabase/server'
 
+import ApiToken from './apiToken'
 import ChangePassword from './changePassword'
 import { LogoffButton } from './logoffButton'
 
@@ -14,6 +15,8 @@ const SettingsPage = async () => {
     redirect('/account/login')
   }
 
+  const { data: settings } = await supabase.from('user_settings').select('api_token').maybeSingle()
+
   return (
     <>
       <h1>Settings</h1>
@@ -23,6 +26,8 @@ const SettingsPage = async () => {
       <h2>ESI Access</h2>
       <p>Choose which data we may read from EVE Online when you add a character.</p>
       <Link href="/settings/grants">Manage ESI access</Link>
+
+      <ApiToken initialToken={settings?.api_token ?? null} />
 
       <h2>Logoff</h2>
       <LogoffButton />

@@ -1,5 +1,7 @@
 'use server'
 
+import { randomBytes } from 'node:crypto'
+
 import { redirect } from 'next/navigation'
 
 import { createClient } from '@/utils/supabase/server'
@@ -30,4 +32,29 @@ export const changePassword = async (formData: FormData) => {
   if (error) {
     return error?.message
   }
+}
+
+// Mint (or rotate) the user's api_token — the secret the /api/assets ImportJSON
+// endpoint authenticates with. Upsert keeps any existing enabled_scopes intact.
+// Returns { token } on success or { error } on failure.
+export const generateApiToken = async (): Promise<{ token?: string; error?: string }> => {
+  const supabase = await createClient()
+
+  const { data, error: userError } = await supabase.auth.getUser()
+  if (userError || !data?.user) {
+    return { error: 'Not signed in' }
+  }
+
+  const token = randomBytes(24).toString('hex')
+  const { error } = await supabase
+    .from('user_settings')
+    .upsert(
+      { user_id: data.user.id, api_token: token, updated_at: new Date().toISOString() },
+      { onConflict: 'user_id' }
+    )
+  if (error) {
+    return { error: error.message }
+  }
+
+  return { token }
 }
