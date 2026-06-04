@@ -1,6 +1,8 @@
-import { characterAffiliations } from './esi.js'
-import { resolveBatch, resolveCorpJournalNames } from './resolveNames.js'
-import { sudoSupabase } from './supabase.js'
+import { fileURLToPath } from 'node:url'
+
+import { characterAffiliations } from '../esi.js'
+import { resolveBatch, resolveCorpJournalNames } from '../resolveNames.js'
+import { sudoSupabase } from '../supabase.js'
 
 const BATCH_SIZE = 1000
 
@@ -58,14 +60,25 @@ const resolveCharacterCorps = async () => {
   console.log(`[daily] upserted ${nameRows.length} corporation name(s)`)
 }
 
+// Daily is batch work (not a per-character loop), so it runs whole-job. Throws on
+// failure so callers — the CLI wrapper or the Vercel queue consumer — can decide
+// how to surface it.
+export const runDaily = async () => {
+  await resolveCorpJournalNames()
+  await resolveCharacterCorps()
+}
+
 const execute = async () => {
   try {
-    await resolveCorpJournalNames()
-    await resolveCharacterCorps()
+    await runDaily()
   } catch (e) {
     console.error('[daily] FAILED', e)
     process.exit(1)
   }
 }
 
-execute()
+// Only run as a CLI (npm run daily / the scheduled workflow) when invoked directly.
+// When imported by the Next.js queue consumer, the top-level run must not fire.
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  execute()
+}

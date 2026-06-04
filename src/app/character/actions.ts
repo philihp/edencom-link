@@ -35,7 +35,7 @@ export const register = async (formData: FormData) => {
 }
 
 // Refresh assets for just the signed-in player's characters, on demand. This
-// runs the same extract as the scheduled Assets workflow (src/assets.js) but
+// runs the same extract as the scheduled Assets workflow (src/jobs/assets.js) but
 // scoped to the characters this user owns. RLS scopes the registration read to
 // the caller; the extract itself writes with the service role, so we only hand
 // it the ids the user is actually allowed to refresh.
@@ -55,7 +55,7 @@ export const refreshAssets = async () => {
   if (characterIds.length > 0) {
     // Imported lazily so loading the page (and `next build`) never pulls in the
     // ESI/service-role module or runs its top-level client setup.
-    const { runAssets } = await import('@/assets.js')
+    const { runAssets } = await import('@/jobs/assets.js')
     await runAssets({ characterIds })
   }
 

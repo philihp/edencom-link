@@ -1,0 +1,22 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "crons": [
+    { "path": "/api/cron/hourly", "schedule": "14 * * * *" },
+    { "path": "/api/cron/assets", "schedule": "56 * * * *" },
+    { "path": "/api/cron/structures", "schedule": "47 * * * *" },
+    { "path": "/api/cron/daily", "schedule": "41 23 * * *" }
+  ],
+  "functions": {
+    "src/app/api/queue/jobs/route.ts": {
+      "maxDuration": 800,
+      "experimentalTriggers": [
+        {
+          "type": "queue/v2beta",
+          "topic": "jobs",
+          "retryAfterSeconds": 60,
+          "initialDelaySeconds": 0
+        }
+      ]
+    }
+  }
+}
