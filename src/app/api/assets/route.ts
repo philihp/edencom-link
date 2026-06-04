@@ -8,8 +8,9 @@ import { createServiceClient } from '@/utils/supabase/service'
 // the per-user api_token in the query string (Sheets carries no session cookie),
 // so it always recomputes — no caching.
 export const dynamic = 'force-dynamic'
-
-const PAGE = 1000
+// Headroom over Vercel's default function timeout; the work is one aggregation
+// query plus best-effort type-name lookups, but a large inventory needs room.
+export const maxDuration = 60
 
 type Row = { typeId: number; typeName: string; quantity: number }
 
@@ -62,38 +63,28 @@ export const GET = async (request: NextRequest): Promise<NextResponse> => {
     return NextResponse.json([])
   }
 
-  // Sum quantity per type across every version that was live at `at`: a row is
-  // valid when it had started by then and either was still open at then or is the
-  // current version (its state extends forward past its last_seen_at to now).
-  // A later version of an item always starts after the prior version's
-  // last_seen_at, so at most one version of any item matches — no double counting.
-  // Page in 1000-row chunks: a character can hold tens of thousands of rows and
-  // PostgREST caps a select at 1000 (same constraint src/assets.js pages around).
-  const totals = new Map<number, number>()
-  for (let from = 0; ; from += PAGE) {
-    const { data, error } = await supabase
-      .from('asset_over_time')
-      .select('type_id, quantity')
-      .in('character_id', characterIds)
-      .lte('first_seen_at', atIso)
-      .or(`last_seen_at.gte.${atIso},is_current.is.true`)
-      .order('id', { ascending: true })
-      .range(from, from + PAGE - 1)
-    if (error) {
-      return NextResponse.json({ error: 'Query failed' }, { status: 500 })
-    }
-    if (!data || data.length === 0) break
-    for (const a of data) {
-      const typeId = Number(a.type_id)
-      // Singleton items (ships, containers) store a null quantity = one item.
-      totals.set(typeId, (totals.get(typeId) ?? 0) + (a.quantity == null ? 1 : Number(a.quantity)))
-    }
-    if (data.length < PAGE) break
+  // Sum quantity per type across every version that was live at `at`. The rollup
+  // runs in Postgres (asset_inventory_at) rather than paging every raw row into
+  // this function — a full inventory is tens of thousands of rows, and shipping
+  // them here timed the request out. Returns one row per type id.
+  const { data: totals, error: totalsError } = await supabase.rpc('asset_inventory_at', {
+    character_ids: characterIds,
+    as_of: atIso,
+  })
+  if (totalsError) {
+    return NextResponse.json({ error: 'Query failed' }, { status: 500 })
   }
+  const inventory = (totals ?? []) as { type_id: number; quantity: number }[]
 
-  const names = await fetchTypeNames(totals.keys())
-  const rows: Row[] = [...totals.entries()]
-    .map(([typeId, quantity]) => ({ typeId, typeName: names[typeId] ?? String(typeId), quantity }))
+  // Best-effort names: fetchTypeNames caps each lookup with a timeout and falls
+  // back to the raw id, so a slow/missing name never stalls the response.
+  const names = await fetchTypeNames(inventory.map((r) => Number(r.type_id)))
+  const rows: Row[] = inventory
+    .map(({ type_id, quantity }) => ({
+      typeId: Number(type_id),
+      typeName: names[Number(type_id)] ?? String(type_id),
+      quantity: Number(quantity),
+    }))
     .sort((a, b) => b.quantity - a.quantity)
 
   return NextResponse.json(rows)
