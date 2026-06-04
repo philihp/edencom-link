@@ -10,6 +10,18 @@ export const dynamic = 'force-dynamic'
 // Headroom over Vercel's default function timeout for a large inventory.
 export const maxDuration = 60
 
+// Pad a partial ISO date/time out to a full UTC timestamp so callers can pass
+// just the precision they care about: 2026 → 2026-01-01T00:00:00Z, 2026-05 →
+// 2026-05-01T00:00:00Z, 2026-05-30T18 → 2026-05-30T18:00:00Z, etc. Inputs that
+// already carry fractional seconds or a timezone (e.g. a full toISOString) don't
+// match the bare-prefix pattern and are returned untouched for Date to parse.
+const completePartialAt = (value: string): string => {
+  const m = /^(\d{4})(?:-(\d{2}))?(?:-(\d{2}))?(?:[T ](\d{2}))?(?::(\d{2}))?(?::(\d{2}))?$/.exec(value)
+  if (!m) return value
+  const [, year, month = '01', day = '01', hour = '00', minute = '00', second = '00'] = m
+  return `${year}-${month}-${day}T${hour}:${minute}:${second}Z`
+}
+
 export const GET = async (request: NextRequest): Promise<NextResponse> => {
   const { searchParams } = new URL(request.url)
 
@@ -21,7 +33,7 @@ export const GET = async (request: NextRequest): Promise<NextResponse> => {
   // `at` is the moment to reconstruct the inventory at; default to now (the live
   // inventory). asset_over_time keeps full SCD-2 history, so any past time works.
   const atParam = searchParams.get('at')
-  const at = atParam ? new Date(atParam) : new Date()
+  const at = atParam ? new Date(completePartialAt(atParam.trim())) : new Date()
   if (Number.isNaN(at.getTime())) {
     return NextResponse.json(
       { error: 'Invalid `at` timestamp; use ISO 8601 (e.g. 2026-06-01T00:00:00Z)' },
