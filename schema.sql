@@ -229,18 +229,20 @@ grant execute on function public.asset_location_contents(bigint) to authenticate
 -- open then or is the current version (its state extends forward past
 -- last_seen_at to now); a later version of an item always starts after the prior
 -- one's last_seen_at, so at most one version per item matches. Returns the whole
--- result as a single jsonb array so PostgREST's max-rows cap never truncates it
+-- result as a single json array so PostgREST's max-rows cap never truncates it
 -- and the function (not the serverless route) pages the table — what kept the
--- endpoint under Vercel's timeout. Called with the service role over the caller's
--- own registration ids, so it takes them as a parameter rather than leaning on RLS.
+-- endpoint under Vercel's timeout. Uses json (not jsonb), which preserves the
+-- object key order below so the sheet's columns come out in that exact order.
+-- Called with the service role over the caller's own registration ids, so it
+-- takes them as a parameter rather than leaning on RLS.
 create or replace function public.asset_snapshot_at(character_ids uuid[], as_of timestamptz)
-returns jsonb
+returns json
 language sql
 stable
 as $$
   select coalesce(
-    jsonb_agg(
-      jsonb_build_object(
+    json_agg(
+      json_build_object(
         'is_blueprint_copy', a.is_blueprint_copy,
         'is_singleton',      a.is_singleton,
         'item_id',           a.item_id,
@@ -253,7 +255,7 @@ as $$
       )
       order by a.item_id
     ),
-    '[]'::jsonb
+    '[]'::json
   )
   from public.asset_over_time a
   join public.registration r on r.id = a.character_id
