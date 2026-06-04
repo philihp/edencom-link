@@ -35,10 +35,11 @@ export const register = async (formData: FormData) => {
 }
 
 // Refresh assets for just the signed-in player's characters, on demand. This
-// runs the same extract as the scheduled Assets workflow (src/jobs/assets.js) but
-// scoped to the characters this user owns. RLS scopes the registration read to
-// the caller; the extract itself writes with the service role, so we only hand
-// it the ids the user is actually allowed to refresh.
+// enqueues the same extract the scheduled Assets workflow runs (src/jobs/assets.js)
+// onto the Vercel queue — one message per character, so the consumer runs them in
+// the background and retries per character. RLS scopes the registration read to the
+// caller, so we only enqueue the ids the user is actually allowed to refresh; the
+// consumer's extract writes with the service role.
 export const refreshAssets = async () => {
   const supabase = await createClient()
 
@@ -53,10 +54,10 @@ export const refreshAssets = async () => {
   const characterIds = (characters ?? []).map((c) => c.id)
 
   if (characterIds.length > 0) {
-    // Imported lazily so loading the page (and `next build`) never pulls in the
-    // ESI/service-role module or runs its top-level client setup.
-    const { runAssets } = await import('@/jobs/assets.js')
-    await runAssets({ characterIds })
+    // Imported lazily so loading the page (and `next build`) never pulls the queue
+    // client into the page bundle or runs its top-level setup.
+    const { send } = await import('@vercel/queue')
+    await Promise.all(characterIds.map((characterId) => send('jobs', { job: 'assets', characterId })))
   }
 
   revalidatePath('/character')
