@@ -21,7 +21,7 @@ jobs:
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
     steps:
       - uses: actions/checkout@v6
-      - uses: supabase/setup-cli@v1
+      - uses: supabase/setup-cli@v2.1.1
         with:
           version: 2.102.0
       - name: Link project
