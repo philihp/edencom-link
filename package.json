@@ -15,8 +15,8 @@
     "eve-sso": "github:philihp/eve-sso#master",
     "next": "16.2.7",
     "ramda": "0.32.0",
-    "react": "19.2.6",
-    "react-dom": "19.2.6",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
     "temporal-polyfill": "^0.3.2"
   },
   "scripts": {
@@ -45,7 +45,7 @@
     "@philihp/prettier-config": "1.0.0",
     "@types/node": "25.9.2",
     "@types/ramda": "0.31.1",
-    "@types/react": "19.2.15",
+    "@types/react": "19.2.17",
     "@types/react-dom": "19.2.3",
     "eslint": "^10.0.0",
     "globals": "^17.0.0",
