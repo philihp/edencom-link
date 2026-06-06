@@ -54,6 +54,14 @@ export const wallet = (access_token, characterID) =>
     label: `wallet ${characterID}`,
   })
 
+// A character's open market orders (buy and sell). Not paginated — ESI returns
+// every open order in one response.
+export const orders = (access_token, characterID) =>
+  esiJson(`/characters/${characterID}/orders/`, {
+    access_token,
+    label: `orders ${characterID}`,
+  })
+
 export const character = (access_token, characterID) =>
   esiJson(`/characters/${characterID}/`, {
     access_token,
