@@ -34,7 +34,11 @@ const RegisterPage = () => {
       }}
     >
       <h1>Register</h1>
-      <p>Create an account to manage your hangars.</p>
+      <p>Create an account to manage your hangars. Registration is invite-only.</p>
+      <label htmlFor="invite">Invite code:</label>
+      <br />
+      <input id="invite" name="invite" type="text" required onChange={handleEmailChange} />
+      <br />
       <label htmlFor="email">Email:</label>
       <br />
       <input id="email" name="email" type="email" required onChange={handleEmailChange} />

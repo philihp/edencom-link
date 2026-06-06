@@ -27,6 +27,10 @@ const SettingsPage = async () => {
       <p>Choose which data we may read from EVE Online when you add a character.</p>
       <Link href="/settings/grants">Manage ESI access</Link>
 
+      <h2>Invite codes</h2>
+      <p>Edencom Link is invite-only. See the codes you can give out and when you earn more.</p>
+      <Link href="/account/invites">Manage invite codes</Link>
+
       <ApiToken initialToken={settings?.api_token ?? null} />
 
       <h2>Logoff</h2>
