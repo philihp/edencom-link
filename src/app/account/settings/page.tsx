@@ -29,7 +29,7 @@ const SettingsPage = async () => {
 
       <h2>Invite codes</h2>
       <p>Edencom Link is invite-only. See the codes you can give out and when you earn more.</p>
-      <Link href="/account/invites">Manage invite codes</Link>
+      <Link href="/account/invite">Manage invite codes</Link>
 
       <ApiToken initialToken={settings?.api_token ?? null} />
 

@@ -706,7 +706,7 @@ grant all                            on public.user_settings to service_role;
 -- Invite-only registration. A new account can only be created by redeeming an
 -- unused code, and users earn the ability to mint codes over time (the first a
 -- week after adding their first character via SSO, then after 2, 4, 8, … weeks
--- — the gap doubling each time; see src/app/account/invites).
+-- — the gap doubling each time; see src/app/account/invite).
 -- `created_by` is null for seed codes inserted by hand to bootstrap the system.
 -- `redeemed_by` is the account that signed up with the code; null while the code
 -- is still "to give out".

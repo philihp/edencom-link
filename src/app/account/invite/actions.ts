@@ -46,6 +46,6 @@ export const createInviteCode = async (): Promise<{ code?: string; error?: strin
   const { error } = await service.from('invite_code').insert({ code, created_by: user.id })
   if (error) return { error: error.message }
 
-  revalidatePath('/account/invites')
+  revalidatePath('/account/invite')
   return { code }
 }

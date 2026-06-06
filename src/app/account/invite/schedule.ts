@@ -1,4 +1,4 @@
-// The invite-code earning schedule, shared by the /account/invites page (to show
+// The invite-code earning schedule, shared by the /account/invite page (to show
 // the schedule) and the createInviteCode action (to enforce it).
 //
 // The clock starts the first time a user adds a character through EVE SSO. The

@@ -1,7 +1,7 @@
 -- Invite-only registration. A new account can only be created by redeeming an
 -- unused invite code, and users earn the ability to mint codes over time (the
 -- first one a week after they add their first character via SSO, then after 2,
--- 4, 8, … weeks — the gap doubling each time; see src/app/account/invites).
+-- 4, 8, … weeks — the gap doubling each time; see src/app/account/invite).
 --
 -- `created_by` is null for seed codes inserted by hand to bootstrap the system
 -- (there is no one to invite the very first user). `redeemed_by` is the account
