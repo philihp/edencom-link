@@ -9,7 +9,7 @@
     "@supabase/ssr": "0.10.3",
     "@supabase/supabase-js": "2.107.0",
     "@vercel/analytics": "2.0.1",
-    "@vercel/queue": "^0.2.0",
+    "@vercel/queue": "^0.3.0",
     "@vercel/speed-insights": "2.0.0",
     "eve-industry": "0.1.0",
     "eve-sso": "github:philihp/eve-sso#master",
