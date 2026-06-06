@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from 'next/server'
 
 import { createClient } from '@/utils/supabase/server'
 
+import { dispatchRefresh } from '../dispatchRefresh'
 import { sso } from '../sso'
 
 const upsertCharacter =
@@ -55,7 +56,7 @@ export const GET = async (request: NextRequest) => {
   await sso.getAccessToken(refresh_token, true)
 
   const character_id = await upsertCharacter(supabase)({ user_id, owner, name, character_id: eve_character_id })
-  const token_id = await upsertToken(supabase)({
+  await upsertToken(supabase)({
     user_id,
     character_id,
     access_token,
@@ -65,7 +66,12 @@ export const GET = async (request: NextRequest) => {
     scope: [scp].flat(),
   })
 
+  // Pull this character's ESI data right away so it's populated by the time the
+  // user looks, and drop them on the status page to watch it land.
+  const batchId = await dispatchRefresh(user_id, [{ id: character_id, name }])
+
   const redirectTo = request.nextUrl.clone()
-  redirectTo.pathname = '/character'
+  redirectTo.pathname = '/characters/refresh'
+  redirectTo.search = `?batch=${batchId}`
   return NextResponse.redirect(redirectTo)
 }
