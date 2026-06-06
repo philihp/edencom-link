@@ -5,7 +5,7 @@
   "type": "module",
   "dependencies": {
     "@hebcal/noaa": "^0.11.0",
-    "@next/third-parties": "16.2.6",
+    "@next/third-parties": "16.2.7",
     "@supabase/ssr": "0.10.3",
     "@supabase/supabase-js": "2.106.2",
     "@vercel/analytics": "2.0.1",
@@ -13,7 +13,7 @@
     "@vercel/speed-insights": "2.0.0",
     "eve-industry": "0.1.0",
     "eve-sso": "github:philihp/eve-sso#master",
-    "next": "16.2.6",
+    "next": "16.2.7",
     "ramda": "0.32.0",
     "react": "19.2.6",
     "react-dom": "19.2.6",
