@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 
 import { createClient } from '@/utils/supabase/server'
 
+import { DateTime } from '../../DateTime'
 import { RefreshPoller } from './poller'
 import styles from './refresh.module.css'
 
@@ -31,11 +32,25 @@ const STATUS_LABEL: Record<string, string> = {
   pending: '· pending',
 }
 
-const StatusCell = ({ task }: { task?: Task }) => {
-  const status = task?.status ?? 'pending'
+const StatusCell = ({ task, lastSuccessAt }: { task?: Task; lastSuccessAt?: string | null }) => {
+  // No task means this job wasn't queued in this refresh — fall back to when it
+  // last completed successfully for this character (across earlier refreshes).
+  if (!task) {
+    return (
+      <span className={styles.status} data-status="idle">
+        {lastSuccessAt ? (
+          <>
+            last ✓ <DateTime value={lastSuccessAt} />
+          </>
+        ) : (
+          'never run'
+        )}
+      </span>
+    )
+  }
   return (
-    <span className={styles.status} data-status={status} title={task?.error ?? undefined}>
-      {STATUS_LABEL[status] ?? status}
+    <span className={styles.status} data-status={task.status} title={task.error ?? undefined}>
+      {STATUS_LABEL[task.status] ?? task.status}
     </span>
   )
 }
@@ -98,6 +113,23 @@ const RefreshPage = async ({ searchParams }: { searchParams: Promise<{ batch?: s
     )
   }
 
+  // For matrix cells with no task in this batch, look up the last successful run
+  // of that job for the character (any earlier refresh). One query for all of the
+  // batch's characters, reduced to the most recent `done` per character+job.
+  const charIds = [...characters.keys()]
+  const lastSuccess = new Map<string, string>()
+  const { data: doneData } = await supabase
+    .from('refresh_task')
+    .select('character_id, job, ended_at')
+    .eq('status', 'done')
+    .in('character_id', charIds)
+    .not('ended_at', 'is', null)
+    .order('ended_at', { ascending: false })
+  for (const r of doneData ?? []) {
+    const key = `${r.character_id}:${r.job}`
+    if (!lastSuccess.has(key)) lastSuccess.set(key, r.ended_at) // first seen = most recent
+  }
+
   return (
     <>
       <h1>Refresh ESI</h1>
@@ -124,7 +156,7 @@ const RefreshPage = async ({ searchParams }: { searchParams: Promise<{ batch?: s
               <td>{name}</td>
               {JOBS.map((job) => (
                 <td key={job}>
-                  <StatusCell task={byCharJob.get(`${id}:${job}`)} />
+                  <StatusCell task={byCharJob.get(`${id}:${job}`)} lastSuccessAt={lastSuccess.get(`${id}:${job}`)} />
                 </td>
               ))}
             </tr>
