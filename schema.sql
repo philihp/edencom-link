@@ -30,6 +30,7 @@ drop table if exists public.corp_wallet_journal  cascade;
 drop table if exists public.eve_name             cascade;
 drop table if exists public.character_corp       cascade;
 drop table if exists public.structure            cascade;
+drop table if exists public.invite_code          cascade;
 drop table if exists public.user_settings        cascade;
 drop table if exists public.refresh_task         cascade;
 drop table if exists public.heartbeat            cascade;
@@ -700,6 +701,37 @@ create policy "Users manage own settings"
 
 grant select, insert, update, delete on public.user_settings to authenticated;
 grant all                            on public.user_settings to service_role;
+
+-- ── invite_code ───────────────────────────────────────────────────────────
+-- Invite-only registration. A new account can only be created by redeeming an
+-- unused code, and users earn the ability to mint codes over time (the first a
+-- week after adding their first character via SSO, then after 2, 4, 8, … weeks
+-- — the gap doubling each time; see src/app/account/invite).
+-- `created_by` is null for seed codes inserted by hand to bootstrap the system.
+-- `redeemed_by` is the account that signed up with the code; null while the code
+-- is still "to give out".
+create table public.invite_code (
+  id uuid primary key default gen_random_uuid(),
+  code text not null unique,
+  created_by uuid references auth.users(id) on delete cascade,
+  redeemed_by uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  redeemed_at timestamptz
+);
+create index invite_code_created_by_idx on public.invite_code (created_by);
+
+alter table public.invite_code enable row level security;
+-- Users may read the codes they own; minting and redeeming both run server-side
+-- with the service role, so authenticated users get no write policy and cannot
+-- fabricate codes that bypass the earning schedule.
+create policy "Users read own invite codes"
+  on public.invite_code
+  for select
+  to authenticated
+  using (created_by = (select auth.uid()));
+
+grant select on public.invite_code to authenticated;
+grant all    on public.invite_code to service_role;
 
 -- ── refresh_task ──────────────────────────────────────────────────────────
 -- Tracks an on-demand "Refresh ESI" run (the button on /character). One row per
