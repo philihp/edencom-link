@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 
 import { createClient } from '@/utils/supabase/server'
-import { register, refreshAssets } from './actions'
+import { register, refreshEsi } from './actions'
 import { requiredScopes } from './scopes'
 import { getEnabledScopes } from './userScopes'
 import styles from './character.module.css'
@@ -89,8 +89,8 @@ const CharacterPage = async () => {
       )}
       <form className={styles.actions}>
         <button formAction={register}>Add Character</button>
-        <button formAction={refreshAssets} disabled={!characters?.length}>
-          Refresh Assets
+        <button formAction={refreshEsi} disabled={!characters?.length}>
+          Refresh ESI
         </button>
       </form>
     </>
