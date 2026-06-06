@@ -1,7 +1,13 @@
 import { createClient } from '@supabase/supabase-js'
 
-const supabaseUrl = process.env.SUPABASE_URL
-const supabaseKey = process.env.SUPABASE_KEY
+// The cron/GitHub Actions environment sets SUPABASE_URL / SUPABASE_KEY, but the
+// Vercel runtime only exposes the NEXT_PUBLIC_* vars (same project). This module
+// is imported in both — by the GitHub Actions jobs and by the Vercel queue
+// consumer / the "Refresh ESI" server action via dispatchRefresh — so fall back
+// to the public vars to keep createClient from throwing "supabaseUrl is required"
+// on Vercel. The service key has no public equivalent and is set in both.
+const supabaseUrl = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL
+const supabaseKey = process.env.SUPABASE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY
 const supabaseUsername = process.env.SUPABASE_USERNAME
 const supabasePassword = process.env.SUPABASE_PASSWORD
