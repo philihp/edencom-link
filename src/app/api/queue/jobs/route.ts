@@ -8,7 +8,7 @@ export const runtime = 'nodejs'
 // GitHub Actions remains the safety net if it ever exceeds this on large datasets.
 export const maxDuration = 60
 
-type Msg = { job: 'hourly' | 'assets' | 'structures' | 'daily'; characterId?: number }
+type Msg = { job: 'hourly' | 'assets' | 'structures' | 'daily' | 'orders'; characterId?: number }
 
 // A thrown error fails the callback, so the Vercel queue retries the message
 // (per retryAfterSeconds in vercel.json).
@@ -33,6 +33,11 @@ export const POST = handleCallback(async (message: Msg) => {
     case 'structures': {
       const { runStructures } = await import('@/jobs/structures.js')
       await runStructures(ids)
+      return
+    }
+    case 'orders': {
+      const { runOrders } = await import('@/jobs/orders.js')
+      await runOrders(ids)
       return
     }
     case 'daily': {
