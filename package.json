@@ -42,7 +42,7 @@
     "@eslint/eslintrc": "3.3.5",
     "@eslint/js": "^10.0.0",
     "@philihp/prettier-config": "1.0.0",
-    "@types/node": "25.9.1",
+    "@types/node": "25.9.2",
     "@types/ramda": "0.31.1",
     "@types/react": "19.2.15",
     "@types/react-dom": "19.2.3",
