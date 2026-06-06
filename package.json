@@ -7,7 +7,7 @@
     "@hebcal/noaa": "^0.11.0",
     "@next/third-parties": "16.2.7",
     "@supabase/ssr": "0.10.3",
-    "@supabase/supabase-js": "2.106.2",
+    "@supabase/supabase-js": "2.107.0",
     "@vercel/analytics": "2.0.1",
     "@vercel/queue": "^0.2.0",
     "@vercel/speed-insights": "2.0.0",
