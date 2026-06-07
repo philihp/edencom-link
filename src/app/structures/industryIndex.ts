@@ -38,25 +38,22 @@ const ACTIVITY_ORDER: Activity[] = [
   'invention',
 ]
 
-// Which cost-index activities a single service module enables. Matched on
-// keywords (case-insensitive) so it holds whether ESI returns the full module
-// name ("Standup Manufacturing Plant I") or a shortened service label, and across
-// module tiers (e.g. the Hyasyoda Research Lab, capital/supercapital shipyards).
+// Keyword → activities rules, tried in order; the first whose keyword appears in
+// the service-module name wins. Matched case-insensitively on substrings so it
+// holds whether ESI returns the full module name ("Standup Manufacturing Plant
+// I") or a shortened service label, and across module tiers (Hyasyoda Research
+// Lab, capital/supercapital shipyards).
+const SERVICE_RULES: Array<{ match: string[]; activities: Activity[] }> = [
+  { match: ['reactor', 'reaction'], activities: ['reaction'] },
+  { match: ['invention'], activities: ['invention'] },
+  { match: ['research'], activities: ['researching_material_efficiency', 'researching_time_efficiency', 'copying'] },
+  { match: ['manufactur', 'shipyard'], activities: ['manufacturing'] },
+]
+
+// Which cost-index activities a single service module enables.
 const serviceActivities = (serviceName: string): Activity[] => {
   const n = serviceName.toLowerCase()
-  // Reactor modules (Composite/Hybrid/Biochemical) are the only thing that lets a
-  // refinery run reactions; the reaction rig is just a bonus, not a requirement.
-  if (n.includes('reactor') || n.includes('reaction')) return ['reaction']
-  // The Invention Lab is a distinct module from the Research Lab — check it first
-  // so it isn't swallowed by a broader research match.
-  if (n.includes('invention')) return ['invention']
-  // The Research Lab covers ME research, TE research and blueprint copying.
-  if (n.includes('research')) {
-    return ['researching_material_efficiency', 'researching_time_efficiency', 'copying']
-  }
-  // Manufacturing plants and capital/supercapital shipyards all manufacture.
-  if (n.includes('manufactur') || n.includes('shipyard')) return ['manufacturing']
-  return []
+  return SERVICE_RULES.find((r) => r.match.some((k) => n.includes(k)))?.activities ?? []
 }
 
 // The distinct industry activities relevant to a structure, given its fitted
