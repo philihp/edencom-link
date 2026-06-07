@@ -139,6 +139,33 @@
   overflow-wrap: anywhere;
 }
 
+/* Industry cost indices: a label / percentage grid, like the fields block. */
+.indexes {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  font-size: 12px;
+}
+
+/* Each row spreads its label and value across the parent grid's two columns. */
+.indexRow {
+  display: contents;
+}
+
+.indexLabel {
+  color: var(--ink-faint);
+  white-space: nowrap;
+}
+
+.indexValue {
+  text-align: right;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
 .footer {
   display: grid;
   grid-template-columns: auto auto;

@@ -7,6 +7,12 @@ import { ACTIVITY_NAMES } from '../../industry/jobFields'
 import { CharacterName, Name, SystemName } from '../../names'
 import { fetchSystemNames } from '../../systemNames'
 import { fetchTypeNames } from '../../typeNames'
+import {
+  fetchLatestSystemIndexes,
+  formatIndex,
+  INDEX_ACTIVITY_LABELS,
+  structureIndexActivities,
+} from '../industryIndex'
 import retro from '../../retro.module.css'
 
 type Structure = {
@@ -129,6 +135,12 @@ const StructurePage = async ({ params }: StructureParams) => {
   const typeName = typeNames[Number(s.type_id)]
   const systemName = systemNames[Number(s.system_id)]
 
+  // Industry cost indices relevant to this structure (those its fitted service
+  // modules enable), pulled from the latest snapshot for its system.
+  const indexActivities = structureIndexActivities(s.services)
+  const indexesBySystem = await fetchLatestSystemIndexes(supabase, [Number(s.system_id)])
+  const systemIndexes = indexesBySystem.get(Number(s.system_id))
+
   return (
     <>
       <h1 className="serif">{s.name ?? `Structure #${s.structure_id}`}</h1>
@@ -200,6 +212,19 @@ const StructurePage = async ({ params }: StructureParams) => {
             <th>Rigs</th>
             <td>
               {rigs.length > 0 ? rigs.map((r) => typeNames[Number(r.type_id)] ?? `#${r.type_id}`).join(', ') : '—'}
+            </td>
+          </tr>
+          <tr>
+            <th>Industry Indexes</th>
+            <td>
+              {indexActivities.length > 0
+                ? indexActivities
+                    .map((activity) => {
+                      const cost = systemIndexes?.get(activity)
+                      return `${INDEX_ACTIVITY_LABELS[activity]} ${cost != null ? formatIndex(cost) : '—'}`
+                    })
+                    .join(', ')
+                : '—'}
             </td>
           </tr>
           <tr>
