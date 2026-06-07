@@ -6,6 +6,7 @@ import { formatMisk } from '../isk'
 import { Name, SystemName } from '../names'
 import { fetchSystemNames } from '../systemNames'
 import { fetchTypeNames } from '../typeNames'
+import { fetchLatestSystemIndexes, formatIndex, INDEX_ACTIVITY_LABELS, structureIndexActivities } from './industryIndex'
 import { StructureSilhouette } from './silhouette'
 import styles from './structures.module.css'
 
@@ -100,6 +101,13 @@ const StructuresPage = async () => {
 
   const systemNames = await fetchSystemNames(list.map((s) => Number(s.system_id)))
   const structureTypeNames = await fetchTypeNames(list.map((s) => Number(s.type_id)))
+
+  // Latest industry cost indices for the systems we hold structures in. We only
+  // show, per structure, the activities its fitted service modules enable.
+  const indexesBySystem = await fetchLatestSystemIndexes(
+    supabase,
+    list.map((s) => Number(s.system_id))
+  )
 
   const { data: journal } = await supabase
     .from('corp_wallet_journal')
@@ -205,6 +213,8 @@ const StructuresPage = async () => {
             {list.map((s) => {
               const rigs = rigsByStructure.get(String(s.structure_id)) ?? []
               const services = s.services?.map((svc) => svc.name) ?? []
+              const indexActivities = structureIndexActivities(s.services)
+              const systemIndexes = indexesBySystem.get(Number(s.system_id))
               return (
                 <li key={`structure-${s.structure_id}`} className={styles.tile}>
                   <StructureSilhouette typeId={s.type_id} className={styles.silhouette} />
@@ -261,6 +271,25 @@ const StructuresPage = async () => {
                             {rig}
                           </li>
                         ))}
+                      </ul>
+                    ) : (
+                      <span className={styles.empty}>—</span>
+                    )}
+                  </div>
+
+                  <div className={styles.section}>
+                    <span className={styles.sectionLabel}>Industry Indexes</span>
+                    {indexActivities.length > 0 ? (
+                      <ul className={styles.indexes}>
+                        {indexActivities.map((activity) => {
+                          const cost = systemIndexes?.get(activity)
+                          return (
+                            <li key={`idx-${s.structure_id}-${activity}`} className={styles.indexRow}>
+                              <span className={styles.indexLabel}>{INDEX_ACTIVITY_LABELS[activity]}</span>
+                              <span className={styles.indexValue}>{cost != null ? formatIndex(cost) : '—'}</span>
+                            </li>
+                          )
+                        })}
                       </ul>
                     ) : (
                       <span className={styles.empty}>—</span>
