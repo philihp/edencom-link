@@ -4,7 +4,7 @@ type Resolved =
   | { ok: true; supabase: ReturnType<typeof createServiceClient>; characterIds: string[] }
   | { ok: false; status: number; error: string }
 
-// Resolve a per-user api_token (from the ImportJSON query string) to the owner's
+// Resolve a per-user api_token (from the IMPORTDATA query string) to the owner's
 // registration ids. The request carries no Supabase session, so this uses the
 // service role and scopes by the resolved user_id. Returns a discriminated result
 // the caller turns straight into a JSON response. Shared by the /api/* endpoints.

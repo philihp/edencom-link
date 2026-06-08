@@ -227,7 +227,7 @@ $$;
 grant execute on function public.asset_location_summary()        to authenticated;
 grant execute on function public.asset_location_contents(bigint) to authenticated;
 
--- /api/assets ImportJSON endpoint: the player's raw asset rows (one per item
+-- /api/assets IMPORTDATA endpoint: the player's raw asset rows (one per item
 -- stack), with the owning character's name, as of `as_of`, reconstructed from the
 -- SCD-2 history. A row counts when it had started by `as_of` and was either still
 -- open then or is the current version (its state extends forward past
@@ -438,7 +438,7 @@ create policy "Users read own industry jobs"
 grant select on public.industry_job to authenticated;
 grant all    on public.industry_job to service_role;
 
--- /api/industry ImportJSON endpoint: the player's industry jobs across all of
+-- /api/industry IMPORTDATA endpoint: the player's industry jobs across all of
 -- their characters, with the owning character's name. Returns the whole result
 -- as a single json array (json, not jsonb, so json_build_object's key order is
 -- preserved for the sheet's columns; one scalar also sidesteps PostgREST's
@@ -680,7 +680,7 @@ grant all    on public.structure to service_role;
 -- Per-user preferences. `enabled_scopes` is the set of ESI OAuth scopes the
 -- user has opted into requesting when they add a character; an absent row means
 -- "request everything" (see src/app/character/userScopes.ts).
--- `api_token` is an opaque per-user secret the Google Sheets ImportJSON endpoint
+-- `api_token` is an opaque per-user secret the Google Sheets IMPORTDATA endpoint
 -- (/api/assets) authenticates with — that request carries no Supabase session,
 -- so the route looks the user up by this token (service role) and scopes the
 -- results to their characters. Null until the user generates one in settings.
