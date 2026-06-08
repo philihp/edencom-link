@@ -28,6 +28,7 @@ const ApiToken = ({ initialToken }: { initialToken: string | null }) => {
 
   const assetsUrl = token ? `${origin}/api/assets?token=${token}` : null
   const industryUrl = token ? `${origin}/api/industry?token=${token}` : null
+  const ordersUrl = token ? `${origin}/api/orders?token=${token}` : null
 
   return (
     <>
@@ -36,13 +37,16 @@ const ApiToken = ({ initialToken }: { initialToken: string | null }) => {
         Pull your data into a spreadsheet with <code>=IMPORTDATA(url)</code> (the first row is the column
         headers):
       </p>
-      {assetsUrl && industryUrl && (
+      {assetsUrl && industryUrl && ordersUrl && (
         <ul>
           <li>
             Assets (one row per item stack): <code>=IMPORTDATA(&quot;{assetsUrl}&quot;)</code>
           </li>
           <li>
             Industry jobs: <code>=IMPORTDATA(&quot;{industryUrl}&quot;)</code>
+          </li>
+          <li>
+            Market orders (open): <code>=IMPORTDATA(&quot;{ordersUrl}&quot;)</code>
           </li>
         </ul>
       )}
