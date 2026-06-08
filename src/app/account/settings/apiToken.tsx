@@ -33,15 +33,16 @@ const ApiToken = ({ initialToken }: { initialToken: string | null }) => {
     <>
       <h2>API Access (Google Sheets)</h2>
       <p>
-        Pull your data into a spreadsheet with <code>=ImportJSON(url)</code>:
+        Pull your data into a spreadsheet with <code>=IMPORTDATA(url)</code> (the first row is the column
+        headers):
       </p>
       {assetsUrl && industryUrl && (
         <ul>
           <li>
-            Assets (one row per item stack): <code>=ImportJSON(&quot;{assetsUrl}&quot;)</code>
+            Assets (one row per item stack): <code>=IMPORTDATA(&quot;{assetsUrl}&quot;)</code>
           </li>
           <li>
-            Industry jobs: <code>=ImportJSON(&quot;{industryUrl}&quot;)</code>
+            Industry jobs: <code>=IMPORTDATA(&quot;{industryUrl}&quot;)</code>
           </li>
         </ul>
       )}

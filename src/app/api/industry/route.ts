@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 import { resolvePlayer } from '@/utils/apiToken'
+import { toCsv } from '@/utils/csv'
 
-// Public JSON endpoint for Google Sheets =ImportJSON(): the player's industry jobs
-// across all of their characters, with the owning character's name. Authenticated
-// by the per-user api_token in the query string (Sheets carries no session
-// cookie), so it always recomputes — no caching.
+// Public CSV endpoint for Google Sheets =IMPORTDATA(): the player's industry jobs
+// across all of their characters, with the owning character's name. The first row
+// is the column headers. Authenticated by the per-user api_token in the query
+// string (Sheets carries no session cookie), so it always recomputes — no caching.
 export const dynamic = 'force-dynamic'
 // Headroom over Vercel's default function timeout.
 export const maxDuration = 60
@@ -27,5 +28,7 @@ export const GET = async (request: NextRequest): Promise<NextResponse> => {
     return NextResponse.json({ error: 'Query failed' }, { status: 500 })
   }
 
-  return NextResponse.json(rows ?? [])
+  return new NextResponse(toCsv(rows ?? []), {
+    headers: { 'Content-Type': 'text/csv; charset=utf-8' },
+  })
 }
