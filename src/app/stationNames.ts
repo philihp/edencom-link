@@ -14,7 +14,7 @@ type StationResponse = {
 const cache = new Map<number, Promise<Station | null>>()
 
 const fetchOne = (stationID: number): Promise<Station | null> =>
-  fetch(`https://eve-build-calculator.philihp.com/api/station/${stationID}`)
+  fetch(`https://sde.edencom.link/api/station/${stationID}`)
     .then((res) => (res.ok ? res.json() : null))
     .then((station: StationResponse | null) => {
       if (!station) return null
