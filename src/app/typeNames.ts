@@ -1,7 +1,7 @@
 const cache = new Map<number, Promise<string | null>>()
 
 const fetchOne = (typeID: number): Promise<string | null> =>
-  fetch(`https://eve-build-calculator.philihp.com/api/type/${typeID}`)
+  fetch(`https://sde.edencom.link/api/type/${typeID}`)
     .then((res) => (res.ok ? res.json() : null))
     .then((type: { name?: { en?: string } | string } | null) => {
       if (!type) return null

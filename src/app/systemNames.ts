@@ -4,7 +4,7 @@
 const cache = new Map<number, Promise<string | null>>()
 
 const fetchOne = (systemID: number): Promise<string | null> =>
-  fetch(`https://eve-build-calculator.philihp.com/api/system/${systemID}`)
+  fetch(`https://sde.edencom.link/api/system/${systemID}`)
     .then((res) => (res.ok ? res.json() : null))
     .then((system: { name?: { en?: string } | string } | null) => {
       if (!system) return null

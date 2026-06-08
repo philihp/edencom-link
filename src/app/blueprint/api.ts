@@ -4,7 +4,7 @@
 //   GET /api/type/search?q=…   → [{ typeID, name, coverage }] ranked by relevance
 //   GET /api/type/{typeID}     → the raw SDE type record (name, groupID, …)
 
-const API = 'https://eve-build-calculator.philihp.com/api'
+const API = 'https://sde.edencom.link/api'
 
 type TypeSearchResult = { typeID: number; name: string; coverage: number }
 
