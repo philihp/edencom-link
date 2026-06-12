@@ -1,4 +1,4 @@
-import SingleSignOn from 'eve-sso'
+import SingleSignOn from '@philihp/eve-sso'
 
 import { userAgent } from './esi.js'
 import { sudoSupabase } from './supabase.js'

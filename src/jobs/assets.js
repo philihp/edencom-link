@@ -1,7 +1,7 @@
 import { fileURLToPath } from 'node:url'
 
 import { assets, assetNames, userAgent } from '../esi.js'
-import SingleSignOn from 'eve-sso'
+import SingleSignOn from '@philihp/eve-sso'
 import { sudoSupabase } from '../supabase.js'
 
 const EVE_CLIENT_ID = process.env.EVE_CLIENT_ID

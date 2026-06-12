@@ -1,6 +1,6 @@
 import { pipe, reduce, pluck, range, splitEvery } from 'ramda'
 import { userAgent, assets, assetNames } from './esi.js'
-import SingleSignOn from 'eve-sso'
+import SingleSignOn from '@philihp/eve-sso'
 import { authenticate, selectCharacters, selectToken, upsertToken, upsertAssets } from './supabase.js'
 
 const EVE_CLIENT_ID = process.env.EVE_CLIENT_ID
