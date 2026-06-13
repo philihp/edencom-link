@@ -67,3 +67,45 @@ export const resolveCorpJournalNames = async () => {
   const characterCount = rows.filter((r) => r.category === 'character').length
   console.log(`[names] upserted ${rows.length} name(s) (${characterCount} character)`)
 }
+
+// Cache (in eve_name) the name of every solar system we currently have a corp
+// structure in. Only resolves ids missing from eve_name, so steady-state runs do
+// nothing. The structures page reads eve_name to label each tile's system instead
+// of falling back to a raw system_id.
+export const resolveCorpStructureSystemNames = async () => {
+  const { data: structures, error: structuresErr } = await sudoSupabase.from('corp_structure').select('system_id')
+  if (structuresErr) throw structuresErr
+
+  const ids = new Set()
+  for (const r of structures ?? []) {
+    if (r.system_id != null) ids.add(Number(r.system_id))
+  }
+
+  const { data: known, error: knownErr } = await sudoSupabase
+    .from('eve_name')
+    .select('id')
+    .eq('category', 'solar_system')
+  if (knownErr) throw knownErr
+  for (const k of known ?? []) ids.delete(Number(k.id))
+
+  const toResolve = [...ids].filter((n) => Number.isFinite(n) && n > 0)
+  console.log(`[names] corp structure systems: ${toResolve.length} to resolve`)
+  if (toResolve.length === 0) return
+
+  const resolved = []
+  for (let i = 0; i < toResolve.length; i += BATCH_SIZE) {
+    const batch = toResolve.slice(i, i + BATCH_SIZE)
+    const names = await resolveBatch(batch)
+    resolved.push(...names)
+  }
+
+  if (resolved.length === 0) {
+    console.log('[names] no system names resolved')
+    return
+  }
+
+  const rows = resolved.map((n) => ({ id: n.id, name: n.name, category: n.category }))
+  const { error: upErr } = await sudoSupabase.from('eve_name').upsert(rows, { onConflict: 'id' })
+  if (upErr) throw upErr
+  console.log(`[names] upserted ${rows.length} system name(s)`)
+}
