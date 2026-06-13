@@ -208,6 +208,43 @@
   overflow: visible;
 }
 
+/* On narrow phones the tiles are half-screen wide, so the 3-column label /
+ * sparkline / value layout overflows. Instead, stack label+value on the first
+ * row and let the sparkline take the full width on the second row. */
+@media (max-width: 639px) {
+  .indexes {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .indexRow {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 0 8px;
+  }
+
+  /* Value jumps to row 1 col 2 (next to the label). */
+  .indexValue {
+    grid-row: 1;
+    grid-column: 2;
+  }
+
+  /* Sparkline wraps to row 2 and stretches to fill both columns. */
+  .sparklineCell {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    justify-self: stretch;
+    display: flex;
+  }
+
+  /* SVG grows to fill the flex container instead of the fixed 100px. */
+  .sparkline {
+    flex: 1;
+    width: auto;
+  }
+}
+
 .footer {
   display: grid;
   grid-template-columns: auto auto;
