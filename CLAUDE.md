@@ -43,3 +43,142 @@ EVE Online hangar/wallet/industry tracker. Package name `edencom-link` (private)
 
 - Data from ESI flows into the database (typically via the hourly cron job in `src/jobs/hourly.js`). The UI then reads from the database. The UI/Next.js server components must never call ESI directly.
 - Avoid using the `evesde` schema in the database for new work — it can be out of date. Instead, query the SDE service [sde.edencom.link](https://sde.edencom.link) (formerly `eve-build-calculator.philihp.com`) — e.g. the `https://sde.edencom.link/api/type/${typeID}` pattern in `src/app/typeNames.ts`. It downloads the full SDE but only saves/exposes a curated subset. If the data you need isn't exposed there yet, prefer adding it to that service rather than reaching into the `evesde` schema.
+
+# Codebase map
+
+Quick-reference for navigation. Covers key exports, route→file paths, DB tables, and design patterns.
+
+## Key source file exports
+
+### `src/esi.js` — ESI API wrapper
+All functions take `(characterId, accessToken)` unless noted. Returns raw ESI response JSON.
+- `assets(characterId, token)` — character assets list
+- `transactions(characterId, token)` — market transaction history
+- `wallet(characterId, token)` — wallet balance
+- `orders(characterId, token)` — open market orders
+- `industryJobs(characterId, token)` — industry job list
+- `character(characterId, token)` — character sheet
+- `corpStructures(corpId, token)` — corporation Upwell structures
+- `corpAssets(corpId, token)` — corporation assets
+- `corpWalletJournal(corpId, division, token)` — corp wallet journal by division
+- `assetNames(characterId, token, itemIds[])` — player-assigned names for specific item IDs
+- `industrySystems()` — public industry system cost indices (no auth)
+- `universeNames(ids[])` — bulk id→name resolution (no auth)
+- `universeStructure(structureId, token)` — structure info by ID
+- `characterAffiliations(characterIds[])` — bulk character→corp mapping (no auth)
+
+### `src/supabase.js` — Supabase clients and DB helpers
+- `supabase` — anon client (respects RLS)
+- `sudoSupabase` — service-role client (bypasses RLS; use in cron only)
+- `recordHeartbeat(job, runId, runAttempt, runUrl, phase)` — write heartbeat row
+- `authenticate(token)` — verify user session token
+- `upsertCharacter(characterId, name, ownerId, corporationId)` — insert/update registration row
+- `upsertToken(characterId, accessToken, refreshToken, issuedAt, expiresAt, scope[])` — store OAuth tokens
+- `upsertAssets(characterId, assets[])` — SCD Type 2 asset upsert
+- `selectCharacters(userId)` — registered characters for a user
+- `selectCharacterIdsWithScopes(scopes[])` — character IDs that have all listed ESI scopes
+- `selectToken(characterId)` — fetch stored token for a character
+
+### `src/tokenRefresh.js`
+- `refreshAccessToken(characterId)` — refresh via EVE SSO, update DB, return new token
+
+### `src/resolveNames.js`
+- `resolveBatch(ids[])` — bulk ESI `universeNames` with bisect-on-error fallback; upserts to `eve_name`
+- `resolveCorpJournalNames(entries[])` — extract and resolve first/second party IDs from journal rows
+- `resolveCorpStructureSystemNames(structures[])` — resolve system IDs for structures
+
+### `src/structureNames.js`
+- `resolveStructureNames(structureIds[])` — fetch structure info from ESI using a scoped token, upsert to `structure` table
+
+### `src/corpWalletJournal.js`
+- `pullCorpWalletJournals(corpId, token)` — fetch all 7 divisions, upsert to `corp_wallet_journal`
+
+### `src/industryIndexes.js`
+- `pullIndustryIndexes()` — fetch public industry cost indices from ESI, insert rows to `industry_system_index`
+
+### `src/utils/apiToken.ts`
+- `resolvePlayer(token: string)` — look up `user_settings.api_token`, return `{ supabase, characterIds }` for Sheets API endpoints
+
+### `src/utils/csv.ts`
+- `toCsv(rows: object[])` — serialize flat object array to RFC 4180 CSV string
+
+### `src/utils/supabase/client.ts` / `server.ts` / `service.ts`
+- Browser / server-cookie / service-role Supabase client factories
+
+## App routes → files
+
+| URL path | File |
+|---|---|
+| `/` | `src/app/page.tsx` |
+| `/account/login` | `src/app/account/login/page.tsx` |
+| `/account/register` | `src/app/account/register/page.tsx` |
+| `/account/settings` | `src/app/account/settings/page.tsx` |
+| `/account/invite` | `src/app/account/invite/page.tsx` |
+| `/assets` | `src/app/assets/page.tsx` |
+| `/assets/[locationId]` | `src/app/assets/[locationId]/page.tsx` |
+| `/character` | `src/app/character/page.tsx` |
+| `/character/callback` | `src/app/character/callback/page.tsx` |
+| `/characters/refresh` | `src/app/characters/refresh/page.tsx` |
+| `/market` | `src/app/market/page.tsx` |
+| `/industry` | `src/app/industry/page.tsx` |
+| `/structures` | `src/app/structures/page.tsx` |
+| `/structures/[structureId]` | `src/app/structures/[structureId]/page.tsx` |
+| `/settings/grants` | `src/app/settings/grants/page.tsx` |
+| `/api/assets` | `src/app/api/assets/route.ts` |
+| `/api/orders` | `src/app/api/orders/route.ts` |
+| `/api/industry` | `src/app/api/industry/route.ts` |
+| `/api/queue/jobs` | `src/app/api/queue/jobs/route.ts` |
+
+Shared UI helpers: `src/app/isk.ts` (ISK formatting), `src/app/DateTime.tsx`, `src/app/typeName.tsx` (renders a type name from ID), `src/app/typeNames.ts` (fetches type names from sde.edencom.link), `src/app/systemNames.ts`, `src/app/stationNames.ts`.
+
+## Cron jobs
+
+| npm script | Entry point | GitHub workflow | Schedule |
+|---|---|---|---|
+| `hourly` | `src/jobs/hourly.js` → `runHourly()` | `hourly.yml` | every hour `:44` |
+| `daily` | `src/jobs/daily.js` → `runDaily()` | `daily.yml` | 11:41 UTC |
+| `assets` | `src/jobs/assets.js` → `runAssets()` | `assets.yml` | every hour `:26` |
+| `structures` | `src/jobs/structures.js` → `runStructures()` | `structures.yml` | every hour `:17` |
+| `heartbeat` | `src/heartbeat.js` | `heartbeat.yml` | 10:55 UTC daily |
+
+Each job exports its `run*()` function (consumed by Vercel queue at `/api/queue/jobs`) and self-invokes as CLI when run directly.
+
+## Database tables (quick reference)
+
+| Table | Purpose | Notable columns |
+|---|---|---|
+| `registration` | Linked EVE characters | `character_id`, `user_id`, `name`, `corporation_id` |
+| `token` | OAuth tokens | `character_id` (unique FK), `access_token`, `refresh_token`, `expires_at`, `scope[]` |
+| `asset_over_time` | SCD Type 2 asset history | `item_id`, `character_id`, `type_id`, `location_id`, `location_flag`, `quantity`, `is_current`, `first_seen_at`, `last_seen_at`, `name` |
+| `asset` | View: `is_current` assets | same columns as above |
+| `wallet` | Wallet balance history | `character_id`, `balance`, `recorded_at` |
+| `market_transaction` | Trade history | `transaction_id`, `character_id`, `type_id`, `unit_price`, `quantity`, `is_buy`, `date` |
+| `market_order` | Live open orders | `order_id`, `character_id`, `type_id`, `price`, `volume_remain`, `is_buy`, `seen_at` |
+| `industry_job` | Manufacturing/research | `job_id`, `character_id`, `blueprint_id`, `product_type_id`, `activity_id`, `status`, `end_date` |
+| `corp_structure` | Corp Upwell structures | `structure_id`, `corporation_id`, `type_id`, `system_id`, `name`, `state`, `fuel_expires`, `services` (jsonb) |
+| `corp_structure_rig` | Rigs on structures | `structure_id`, `location_flag`, `type_id`, `corporation_id` |
+| `corp_wallet_journal` | Corp transaction log | `corporation_id`, `division`, `entry_id`, `ref_type`, `amount`, `date` |
+| `industry_system_index` | Cost index history (append-only) | `system_id`, `activity`, `cost_index`, `recorded_at` |
+| `eve_name` | Cached id→name | `id` (bigint PK), `name`, `category` |
+| `character_corp` | Character→Corp mapping | `character_id`, `corporation_id` |
+| `structure` | Player structure cache | `structure_id`, `name`, `system_id`, `type_id` |
+| `user_settings` | User preferences | `user_id`, `enabled_scopes[]`, `api_token` (unique) |
+| `invite_code` | Invite-only registration | `code` (unique), `created_by`, `redeemed_by`, `redeemed_at` |
+| `refresh_task` | On-demand job tracking | `batch_id`, `user_id`, `job`, `character_id`, `status` (pending/running/done/error) |
+| `heartbeat` | Cron job monitoring | `job`, `run_id`, `started_at`, `ended_at` |
+
+Key Postgres functions (callable via RPC or SQL):
+- `asset_location_summary()` — aggregate assets per location
+- `asset_location_contents(parent_id)` — count nested items in a location
+- `asset_snapshot_at(character_ids[], as_of)` — time-travel asset snapshot as JSON (used by `/api/assets`)
+- `industry_jobs(character_ids[])` — export for Sheets IMPORTDATA
+- `market_orders(character_ids[])` — export for Sheets IMPORTDATA
+
+## Design patterns
+
+- **SCD Type 2 assets:** `asset_over_time` tracks the full history of each item. `is_current=true` rows form the current snapshot. `last_seen_at` is bumped each run for unchanged items; a new row is inserted when anything changes, and the old row's `is_current` is set to `false`.
+- **Supabase RLS:** All tables use RLS scoped to `auth.uid()`. Cron scripts use the service-role key (`sudoSupabase` / `src/utils/supabase/service.ts`) which bypasses RLS.
+- **Google Sheets IMPORTDATA:** `/api/assets`, `/api/orders`, `/api/industry` authenticate via `user_settings.api_token`, call a Postgres function, and return CSV.
+- **Vercel queue:** The queue consumer at `/api/queue/jobs` dispatches to the same `run*()` functions the CLI jobs use. The UI enqueues work via `@vercel/queue`.
+- **Token lifecycle:** ESI OAuth tokens are stored in `token`. Before any ESI call, `refreshAccessToken()` checks expiry and refreshes via EVE SSO if needed.
+- **Name resolution:** `eve_name` table caches ESI `universeNames` lookups. `resolveBatch()` handles bisect-on-error for large batches. Type names (items/ships) come from `sde.edencom.link`, not the DB.
