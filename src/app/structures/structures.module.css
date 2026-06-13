@@ -167,13 +167,43 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Sparkline cell: tiny min/max range column to the left, line chart on the
+ * right. The whole cell aligns to the right edge of the column so the chart
+ * stays flush against the current % to its right. */
+.sparklineCell {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  justify-self: end;
+}
+
+.sparklineRange {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: center;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 8px;
+  line-height: 1;
+  color: var(--ink-faint);
+  height: 1lh;
+}
+
+.sparklineMax,
+.sparklineMin {
+  font-size: inherit;
+  line-height: 1;
+  vertical-align: baseline;
+  top: 0;
+  bottom: 0;
+}
+
 /* Sparkline sits between the label and percentage; sized to one line-height
  * tall so it slots into the existing row rhythm without changing it. */
 .sparkline {
   width: 100px;
   height: 1lh;
-  justify-self: end;
-  align-self: center;
   color: var(--ink-soft);
   overflow: visible;
 }
