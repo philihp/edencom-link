@@ -118,3 +118,46 @@ export const fetchLatestSystemIndexes = async (
   }
   return result
 }
+
+type HistoryRow = IndexRow & { recorded_at: string }
+
+// 7-day cost-index history per system per activity, in chronological order. Used
+// to draw sparklines next to each index. We pull the raw snapshots and bucket
+// them by recorded_at; a daily bucket would smooth them more but the structures
+// job runs a handful of times a day so the raw points already make a reasonable
+// shape.
+export const fetchSystemIndexHistory = async (
+  supabase: Supabase,
+  systemIds: Iterable<number>
+): Promise<Map<number, Map<Activity, number[]>>> => {
+  const result = new Map<number, Map<Activity, number[]>>()
+  const ids = [...new Set([...systemIds].filter((n) => Number.isFinite(n)))]
+  if (ids.length === 0) return result
+
+  const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
+  const { data: rows } = await supabase
+    .from('industry_system_index')
+    .select('system_id, activity, cost_index, recorded_at')
+    .gte('recorded_at', since)
+    .in('system_id', ids)
+    .order('recorded_at', { ascending: true })
+
+  for (const r of (rows ?? []) as HistoryRow[]) {
+    const cost = r.cost_index == null ? null : Number(r.cost_index)
+    if (cost == null || !Number.isFinite(cost)) continue
+    const system = Number(r.system_id)
+    let byActivity = result.get(system)
+    if (!byActivity) {
+      byActivity = new Map()
+      result.set(system, byActivity)
+    }
+    const activity = r.activity as Activity
+    let series = byActivity.get(activity)
+    if (!series) {
+      series = []
+      byActivity.set(activity, series)
+    }
+    series.push(cost)
+  }
+  return result
+}

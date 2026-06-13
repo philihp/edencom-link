@@ -6,8 +6,15 @@ import { formatMisk } from '../isk'
 import { Name, SystemName } from '../names'
 import { fetchSystemNames } from '../systemNames'
 import { fetchTypeNames } from '../typeNames'
-import { fetchLatestSystemIndexes, formatIndex, INDEX_ACTIVITY_LABELS, structureIndexActivities } from './industryIndex'
+import {
+  fetchLatestSystemIndexes,
+  fetchSystemIndexHistory,
+  formatIndex,
+  INDEX_ACTIVITY_LABELS,
+  structureIndexActivities,
+} from './industryIndex'
 import { StructureSilhouette } from './silhouette'
+import { Sparkline } from './sparkline'
 import styles from './structures.module.css'
 
 type Structure = {
@@ -105,6 +112,10 @@ const StructuresPage = async () => {
   // Latest industry cost indices for the systems we hold structures in. We only
   // show, per structure, the activities its fitted service modules enable.
   const indexesBySystem = await fetchLatestSystemIndexes(
+    supabase,
+    list.map((s) => Number(s.system_id))
+  )
+  const indexHistoryBySystem = await fetchSystemIndexHistory(
     supabase,
     list.map((s) => Number(s.system_id))
   )
@@ -215,6 +226,7 @@ const StructuresPage = async () => {
               const services = s.services?.map((svc) => svc.name) ?? []
               const indexActivities = structureIndexActivities(s.services)
               const systemIndexes = indexesBySystem.get(Number(s.system_id))
+              const systemHistory = indexHistoryBySystem.get(Number(s.system_id))
               return (
                 <li key={`structure-${s.structure_id}`} className={styles.tile}>
                   <StructureSilhouette typeId={s.type_id} className={styles.silhouette} />
@@ -283,9 +295,11 @@ const StructuresPage = async () => {
                       <ul className={styles.indexes}>
                         {indexActivities.map((activity) => {
                           const cost = systemIndexes?.get(activity)
+                          const history = systemHistory?.get(activity) ?? []
                           return (
                             <li key={`idx-${s.structure_id}-${activity}`} className={styles.indexRow}>
                               <span className={styles.indexLabel}>{INDEX_ACTIVITY_LABELS[activity]}</span>
+                              <Sparkline values={history} label={INDEX_ACTIVITY_LABELS[activity]} />
                               <span className={styles.indexValue}>{cost != null ? formatIndex(cost) : '—'}</span>
                             </li>
                           )

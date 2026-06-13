@@ -139,18 +139,19 @@
   overflow-wrap: anywhere;
 }
 
-/* Industry cost indices: a label / percentage grid, like the fields block. */
+/* Industry cost indices: label / sparkline / percentage. The sparkline column
+ * is sized to the SVG (100px) so the percentages still align across rows. */
 .indexes {
   display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 4px 12px;
+  grid-template-columns: auto 1fr auto;
+  gap: 4px 8px;
   list-style: none;
   padding: 0;
   margin: 0;
   font-size: 12px;
 }
 
-/* Each row spreads its label and value across the parent grid's two columns. */
+/* Each row spreads its three cells across the parent grid's columns. */
 .indexRow {
   display: contents;
 }
@@ -164,6 +165,17 @@
   text-align: right;
   font-family: var(--mono);
   font-variant-numeric: tabular-nums;
+}
+
+/* Sparkline sits between the label and percentage; sized to one line-height
+ * tall so it slots into the existing row rhythm without changing it. */
+.sparkline {
+  width: 100px;
+  height: 1lh;
+  justify-self: end;
+  align-self: center;
+  color: var(--ink-soft);
+  overflow: visible;
 }
 
 .footer {
