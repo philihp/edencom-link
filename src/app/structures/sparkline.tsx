@@ -4,17 +4,40 @@ import styles from './structures.module.css'
 type SparklineProps = {
   values: number[]
   label?: string
+  // ISO 8601 of the most recent data point — surfaced in the hover tooltip.
+  updatedAt?: string
 }
 
-// Tiny line chart for the 7-day cost-index history. The SVG is sized in CSS to
-// 100px wide and one line-height tall; the viewBox uses a fixed coordinate
+// Format an ISO timestamp for the title-attribute tooltip. Matches the
+// YYYY-MM-DD HH:MM, 24-hour format the DateTime component uses elsewhere so
+// timestamps read the same in chips and tooltips.
+const tooltipFormatter = new Intl.DateTimeFormat('sv-SE', {
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+})
+
+const formatUpdatedAt = (iso?: string): string | undefined => {
+  if (!iso) return undefined
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return undefined
+  return `Last updated ${tooltipFormatter.format(d)}`
+}
+
+// Tiny line chart for the 30-day cost-index history. The SVG is sized in CSS
+// to 100px wide and one line-height tall; the viewBox uses a fixed coordinate
 // space and the path scales (preserveAspectRatio="none") so the line stretches
 // to whatever line height the surrounding text resolves to. To the left of the
 // chart we stack the range it covers — max as a superscript on top, min as a
 // subscript on the bottom — so the reader can read the absolute scale without
 // having to look up at the current % to know roughly where the line sits.
-export const Sparkline = ({ values, label }: SparklineProps) => {
-  if (values.length < 2) return <span className={styles.sparklineCell} aria-hidden />
+export const Sparkline = ({ values, label, updatedAt }: SparklineProps) => {
+  const tooltip = formatUpdatedAt(updatedAt)
+
+  if (values.length < 2) return <span className={styles.sparklineCell} title={tooltip} aria-hidden />
 
   const w = 100
   const h = 20
@@ -33,7 +56,7 @@ export const Sparkline = ({ values, label }: SparklineProps) => {
   const trend = values[values.length - 1] >= values[0] ? 'rising' : 'falling'
 
   return (
-    <span className={styles.sparklineCell}>
+    <span className={styles.sparklineCell} title={tooltip}>
       <span className={styles.sparklineRange} aria-hidden>
         <sup className={styles.sparklineMax}>{formatIndex(max)}</sup>
         <sub className={styles.sparklineMin}>{formatIndex(min)}</sub>

@@ -295,11 +295,15 @@ const StructuresPage = async () => {
                       <ul className={styles.indexes}>
                         {indexActivities.map((activity) => {
                           const cost = systemIndexes?.get(activity)
-                          const history = systemHistory?.get(activity) ?? []
+                          const series = systemHistory?.get(activity)
                           return (
                             <li key={`idx-${s.structure_id}-${activity}`} className={styles.indexRow}>
                               <span className={styles.indexLabel}>{INDEX_ACTIVITY_LABELS[activity]}</span>
-                              <Sparkline values={history} label={INDEX_ACTIVITY_LABELS[activity]} />
+                              <Sparkline
+                                values={series?.values ?? []}
+                                updatedAt={series?.updatedAt}
+                                label={INDEX_ACTIVITY_LABELS[activity]}
+                              />
                               <span className={styles.indexValue}>{cost != null ? formatIndex(cost) : '—'}</span>
                             </li>
                           )
