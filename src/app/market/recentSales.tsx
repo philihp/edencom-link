@@ -23,10 +23,16 @@ type Character = {
 }
 
 type RecentSalesProps = {
+  // Server-anchored "now" (epoch ms) shared with the overview, so the table and
+  // the tiles cover exactly the same window.
+  now: number
   sales: Sale[]
   characters: Character[]
   typeNamesPromise: Promise<Record<number, string>>
+  windowDays: number
 }
+
+const DAY_MS = 24 * 60 * 60 * 1000
 
 const THRESHOLDS: Array<{ label: string; value: number }> = [
   { label: 'All', value: 0 },
@@ -40,8 +46,10 @@ const THRESHOLD_STORAGE_KEY = 'market.recentSales.threshold'
 const CHARACTER_STORAGE_KEY = 'market.recentSales.characterId'
 const ALL_CHARACTERS = ''
 
-export const RecentSales = ({ sales, characters, typeNamesPromise }: RecentSalesProps) => {
+export const RecentSales = ({ now, sales, characters, typeNamesPromise, windowDays }: RecentSalesProps) => {
   const characterName: Record<string, string> = Object.fromEntries(characters.map((c) => [c.id, c.name]))
+  const windowStart = now - windowDays * DAY_MS
+  const windowLabel = `${windowDays} day${windowDays === 1 ? '' : 's'}`
 
   const [threshold, setThreshold] = usePersist(THRESHOLD_STORAGE_KEY, 0, (raw) => {
     const parsed = Number(raw)
@@ -54,6 +62,7 @@ export const RecentSales = ({ sales, characters, typeNamesPromise }: RecentSales
 
   const filtered = sales.filter(
     (s) =>
+      Date.parse(s.date) >= windowStart &&
       Number(s.unit_price) * Number(s.quantity) >= threshold &&
       (characterId === ALL_CHARACTERS || s.character_id === characterId)
   )
@@ -61,7 +70,7 @@ export const RecentSales = ({ sales, characters, typeNamesPromise }: RecentSales
   return (
     <section>
       <div className={styles.salesHeader}>
-        <h2>Recent Sales (last 7 days)</h2>
+        <h2>Recent Sales (last {windowLabel})</h2>
         <div className={styles.salesFilters}>
           <label className={styles.salesFilter}>
             Character:&nbsp;
