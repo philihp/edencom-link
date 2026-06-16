@@ -15,7 +15,7 @@ const SettingsPage = async () => {
     redirect('/account/login')
   }
 
-  const { data: settings } = await supabase.from('user_settings').select('api_token').maybeSingle()
+  const { data: settings } = await supabase.from('user_settings').select('api_token, is_chancellor').maybeSingle()
 
   return (
     <>
@@ -32,6 +32,14 @@ const SettingsPage = async () => {
       <Link href="/account/invite">Manage invite codes</Link>
 
       <ApiToken initialToken={settings?.api_token ?? null} />
+
+      {settings?.is_chancellor && (
+        <>
+          <h2>Chancellor</h2>
+          <p>You have Chancellor powers. Manage who else is a Chancellor and mint invite codes anytime.</p>
+          <Link href="/account/chancellor">Manage chancellors</Link>
+        </>
+      )}
 
       <h2>Logoff</h2>
       <LogoffButton />

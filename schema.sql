@@ -765,11 +765,19 @@ grant all    on public.structure to service_role;
 -- (/api/assets) authenticates with — that request carries no Supabase session,
 -- so the route looks the user up by this token (service role) and scopes the
 -- results to their characters. Null until the user generates one in settings.
+-- `is_chancellor` flags an account with elevated ("Chancellor") powers: minting
+-- invite codes without waiting on the earning schedule, and granting/revoking
+-- Chancellor on other accounts (see src/app/account/chancellor). It is set ONLY
+-- by the service role — authenticated users are deliberately not granted
+-- insert/update on this column below, so a user cannot promote themselves even
+-- though the "manage own settings" policy lets them edit their own row.
 create table public.user_settings (
   user_id uuid primary key references auth.users(id) on delete cascade,
   enabled_scopes text[] not null default '{}',
   api_token text unique,
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+  -- Kept last to match the add-column migration's column order.
+  is_chancellor boolean not null default false
 );
 
 alter table public.user_settings enable row level security;
@@ -780,8 +788,15 @@ create policy "Users manage own settings"
   using (user_id = (select auth.uid()))
   with check (user_id = (select auth.uid()));
 
-grant select, insert, update, delete on public.user_settings to authenticated;
-grant all                            on public.user_settings to service_role;
+-- Authenticated users may read their whole row (so the UI can tell whether they
+-- are a Chancellor) and delete it, but may only WRITE the preference columns:
+-- insert/update are granted per-column, deliberately excluding is_chancellor so
+-- the flag can only be changed by the service role (the Chancellor grant action).
+grant select on public.user_settings to authenticated;
+grant delete on public.user_settings to authenticated;
+grant insert (user_id, enabled_scopes, api_token, updated_at) on public.user_settings to authenticated;
+grant update (enabled_scopes, api_token, updated_at)          on public.user_settings to authenticated;
+grant all on public.user_settings to service_role;
 
 -- ── invite_code ───────────────────────────────────────────────────────────
 -- Invite-only registration. A new account can only be created by redeeming an

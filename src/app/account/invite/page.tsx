@@ -30,6 +30,10 @@ const InvitesPage = async () => {
     .select('code, redeemed_by')
     .order('created_at', { ascending: true })
 
+  // RLS scopes this to the signed-in user's own (single) settings row.
+  const { data: settings } = await supabase.from('user_settings').select('is_chancellor').maybeSingle()
+  const isChancellor = settings?.is_chancellor === true
+
   const allCodes = codes ?? []
   const unused = allCodes.filter((c) => !c.redeemed_by)
   const earned = earnedCount(firstSsoAt)
@@ -66,7 +70,14 @@ const InvitesPage = async () => {
         <p>You have no unused invite codes right now.</p>
       )}
 
-      {available > 0 && <CreateButton available={available} />}
+      {isChancellor ? (
+        <>
+          <p>As a Chancellor, you can create invite codes anytime — you aren&rsquo;t limited by the schedule below.</p>
+          <CreateButton unlimited />
+        </>
+      ) : (
+        available > 0 && <CreateButton available={available} />
+      )}
 
       <h2>Schedule</h2>
       {firstSsoAt ? (
