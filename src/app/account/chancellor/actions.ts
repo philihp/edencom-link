@@ -19,11 +19,12 @@ const requireChancellor = async (): Promise<{ userId: string } | { error: string
   return { userId: user.id }
 }
 
-// Promote the account that owns a given EVE character to Chancellor. The target
-// is identified by character name (the identity players actually know each other
-// by), resolved through registration. The write goes through the service role —
-// the only role allowed to set is_chancellor — and upserts so an account with no
-// settings row yet is created.
+// Promote the account that owns a given EVE character to Chancellor by flagging
+// the invite_code that account redeemed (each registered account burned exactly
+// one code, so that row uniquely identifies it). The target is named by one of
+// its character names — the identity players know each other by — resolved
+// through registration. The write goes through the service role, the only role
+// allowed to set is_chancellor.
 export const grantChancellor = async (formData: FormData): Promise<{ ok?: string; error?: string }> => {
   const gate = await requireChancellor()
   if ('error' in gate) return { error: gate.error }
@@ -41,26 +42,32 @@ export const grantChancellor = async (formData: FormData): Promise<{ ok?: string
     return { error: `“${name}” matches more than one account — use a character only one of them owns.` }
   }
 
-  const { error } = await service
-    .from('user_settings')
-    .upsert({ user_id: userIds[0], is_chancellor: true, updated_at: new Date().toISOString() }, { onConflict: 'user_id' })
+  const { data: redeemed } = await service
+    .from('invite_code')
+    .select('id')
+    .eq('redeemed_by', userIds[0])
+    .limit(1)
+    .maybeSingle()
+  if (!redeemed) {
+    return { error: 'That account hasn’t redeemed an invite code, so it can’t be made a Chancellor.' }
+  }
+
+  const { error } = await service.from('invite_code').update({ is_chancellor: true }).eq('id', redeemed.id)
   if (error) return { error: error.message }
 
   revalidatePath('/account/chancellor')
   return { ok: `${regs?.[0]?.name ?? name}’s account is now a Chancellor.` }
 }
 
-// Strip Chancellor from an account (by user id). A Chancellor may step down by
-// revoking their own id; the page re-renders without them afterwards.
+// Strip Chancellor from an account (by user id) by clearing the flag on the code
+// it redeemed. A Chancellor may step down by revoking their own id; the page
+// re-renders without them afterwards.
 export const revokeChancellor = async (userId: string): Promise<{ ok?: string; error?: string }> => {
   const gate = await requireChancellor()
   if ('error' in gate) return { error: gate.error }
 
   const service = createServiceClient()
-  const { error } = await service
-    .from('user_settings')
-    .update({ is_chancellor: false, updated_at: new Date().toISOString() })
-    .eq('user_id', userId)
+  const { error } = await service.from('invite_code').update({ is_chancellor: false }).eq('redeemed_by', userId)
   if (error) return { error: error.message }
 
   revalidatePath('/account/chancellor')

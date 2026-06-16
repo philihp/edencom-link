@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import { createServiceClient } from '@/utils/supabase/service'
 import { createClient } from '@/utils/supabase/server'
 
+import { isChancellor } from './chancellor'
 import GrantForm from './grantForm'
 import RevokeButton from './revokeButton'
 
@@ -15,18 +16,21 @@ const ChancellorPage = async () => {
     redirect('/account/login')
   }
 
-  // Gate: only Chancellors may view this page. RLS scopes this to the caller's
-  // own settings row, so reading is_chancellor here is trustworthy.
-  const { data: me } = await supabase.from('user_settings').select('is_chancellor').maybeSingle()
-  if (me?.is_chancellor !== true) {
+  // Gate: only Chancellors may view this page.
+  if (!(await isChancellor(auth.user.id))) {
     redirect('/account/settings')
   }
 
-  // List every Chancellor. user_settings is only readable per-row under RLS, so
-  // the cross-account read uses the service role.
+  // List every Chancellor: the accounts that redeemed a chancellor-flagged code.
+  // invite_code is only readable per-row under RLS, so this cross-account read
+  // uses the service role.
   const service = createServiceClient()
-  const { data: rows } = await service.from('user_settings').select('user_id').eq('is_chancellor', true)
-  const ids = (rows ?? []).map((r) => r.user_id)
+  const { data: rows } = await service
+    .from('invite_code')
+    .select('redeemed_by')
+    .eq('is_chancellor', true)
+    .not('redeemed_by', 'is', null)
+  const ids = [...new Set((rows ?? []).map((r) => r.redeemed_by as string))]
 
   // Display each Chancellor by their character names; fall back to the account
   // email (then the raw id) for accounts that haven't linked a character yet.

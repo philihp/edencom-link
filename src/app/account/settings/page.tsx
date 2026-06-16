@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 
 import { createClient } from '@/utils/supabase/server'
 
+import { isChancellor } from '../chancellor/chancellor'
 import ApiToken from './apiToken'
 import ChangePassword from './changePassword'
 import { LogoffButton } from './logoffButton'
@@ -15,7 +16,8 @@ const SettingsPage = async () => {
     redirect('/account/login')
   }
 
-  const { data: settings } = await supabase.from('user_settings').select('api_token, is_chancellor').maybeSingle()
+  const { data: settings } = await supabase.from('user_settings').select('api_token').maybeSingle()
+  const chancellor = await isChancellor(data.user.id)
 
   return (
     <>
@@ -33,7 +35,7 @@ const SettingsPage = async () => {
 
       <ApiToken initialToken={settings?.api_token ?? null} />
 
-      {settings?.is_chancellor && (
+      {chancellor && (
         <>
           <h2>Chancellor</h2>
           <p>You have Chancellor powers. Manage who else is a Chancellor and mint invite codes anytime.</p>
