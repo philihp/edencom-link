@@ -114,7 +114,7 @@ export const MarketOverview = ({ now, sales, windowDays, typeNamesPromise }: Mar
       <TopItems
         wide
         title="Top sellers"
-        subtitle={`last ${opt.label}`}
+        subtitle={`per total sales volume (in mISK) over the last ${opt.label}`}
         items={current}
         typeNamesPromise={typeNamesPromise}
       />

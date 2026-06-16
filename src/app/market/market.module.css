@@ -93,7 +93,7 @@
 
 .topRow {
   display: grid;
-  grid-template-columns: auto 1fr auto auto;
+  grid-template-columns: auto auto 1fr auto;
   align-items: baseline;
   gap: 8pt;
   padding: 3pt 0;
