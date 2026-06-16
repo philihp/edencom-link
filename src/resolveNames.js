@@ -68,6 +68,33 @@ export const resolveCorpJournalNames = async () => {
   console.log(`[names] upserted ${rows.length} name(s) (${characterCount} character)`)
 }
 
+// Resolve and cache (in eve_name) the names of the given corporation ids that we
+// don't already have. The market page reads eve_name to label corp market sales
+// by corporation name instead of a raw id. Only resolves missing ids, so
+// steady-state runs do nothing.
+export const resolveCorpNames = async (corporationIds) => {
+  const ids = [...new Set((corporationIds ?? []).map(Number).filter((n) => Number.isFinite(n) && n > 0))]
+  if (ids.length === 0) return
+
+  const { data: known, error: knownErr } = await sudoSupabase.from('eve_name').select('id').in('id', ids)
+  if (knownErr) throw knownErr
+  const knownIds = new Set((known ?? []).map((k) => Number(k.id)))
+  const toResolve = ids.filter((id) => !knownIds.has(id))
+  if (toResolve.length === 0) return
+
+  const resolved = []
+  for (let i = 0; i < toResolve.length; i += BATCH_SIZE) {
+    const names = await resolveBatch(toResolve.slice(i, i + BATCH_SIZE))
+    resolved.push(...names)
+  }
+  if (resolved.length === 0) return
+
+  const rows = resolved.map((n) => ({ id: n.id, name: n.name, category: n.category }))
+  const { error: upErr } = await sudoSupabase.from('eve_name').upsert(rows, { onConflict: 'id' })
+  if (upErr) throw upErr
+  console.log(`[names] upserted ${rows.length} corp name(s)`)
+}
+
 // Cache (in eve_name) the name of every solar system we currently have a corp
 // structure in. Only resolves ids missing from eve_name, so steady-state runs do
 // nothing. The structures page reads eve_name to label each tile's system instead

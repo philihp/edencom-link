@@ -89,6 +89,16 @@ export const corpWalletJournal = (access_token, corporationID, division, page = 
     label: `corpWalletJournal ${corporationID} div=${division} page=${page}`,
   })
 
+// A corp wallet division's market transactions (buys and sells). Like the
+// character endpoint it is not page-numbered — ESI returns the most recent batch
+// in one response (older history is reachable via from_id, which we don't need
+// for an hourly sync). Requires the Accountant or Junior Accountant role in game.
+export const corpTransactions = (access_token, corporationID, division) =>
+  esiJson(`/corporations/${corporationID}/wallets/${division}/transactions/`, {
+    access_token,
+    label: `corpTransactions ${corporationID} div=${division}`,
+  })
+
 export const assetNames = (access_token, characterID, ids) =>
   esiJson(`/characters/${characterID}/assets/names/`, {
     access_token,

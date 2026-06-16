@@ -17,13 +17,15 @@ type MarketViewProps = {
   now: string
   sales: Sale[]
   characters: Character[]
+  // corporation_id → name, for labelling corp sales in the Recent Sales table.
+  corpNames: Record<number, string>
   typeNamesPromise: Promise<Record<number, string>>
 }
 
 // Owns the page-level time window. The dropdown floats to the right of the
 // "Market" title and re-scopes both the overview tiles and the Recent Sales
 // table below.
-export const MarketView = ({ now, sales, characters, typeNamesPromise }: MarketViewProps) => {
+export const MarketView = ({ now, sales, characters, corpNames, typeNamesPromise }: MarketViewProps) => {
   const nowMs = Date.parse(now)
 
   const [windowDays, setWindowDays] = usePersist<number>(WINDOW_STORAGE_KEY, DEFAULT_WINDOW_DAYS, (raw) => {
@@ -51,6 +53,7 @@ export const MarketView = ({ now, sales, characters, typeNamesPromise }: MarketV
         now={nowMs}
         sales={sales}
         characters={characters}
+        corpNames={corpNames}
         typeNamesPromise={typeNamesPromise}
         windowDays={windowDays}
       />
