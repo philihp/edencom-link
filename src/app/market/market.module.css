@@ -1,3 +1,168 @@
+/* Page title row: "Market" on the left, the window dropdown floated right. It
+ * governs both the overview tiles and the Recent Sales table below. */
+.pageHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12pt;
+}
+
+.pageHeader h1 {
+  margin: 0;
+}
+
+.windowSelect {
+  font-size: 10pt;
+  color: var(--ink-soft);
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Four equal columns: the "Top sellers" tile spans two (50%), the bar chart and
+ * the prior-period tile take one each (25%). Collapses to a single column on
+ * narrow screens. */
+.overview {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12pt;
+  margin: 16pt 0;
+}
+
+.tileWide {
+  grid-column: span 2;
+}
+
+@media (max-width: 720px) {
+  .overview {
+    grid-template-columns: 1fr;
+  }
+
+  .tileWide {
+    grid-column: auto;
+  }
+}
+
+.tile {
+  display: flex;
+  flex-direction: column;
+  gap: 8pt;
+  padding: 12pt;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--paper-raised);
+  min-width: 0;
+}
+
+.tileHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8pt;
+}
+
+.tileTitle {
+  margin: 0;
+  font-size: 13pt;
+}
+
+.tileSub {
+  font-size: 9pt;
+  color: var(--ink-faint);
+  white-space: nowrap;
+}
+
+/* Ranked "rank · name · value" rows. Names wrap rather than truncate so long
+ * EVE item names stay legible in the narrow 25% tiles. */
+.topList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.topRow {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: baseline;
+  gap: 8pt;
+  padding: 3pt 0;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 10pt;
+}
+
+.topRow:last-child {
+  border-bottom: none;
+}
+
+.topRank {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 9pt;
+  color: var(--ink-faint);
+  text-align: right;
+  min-width: 1.4em;
+}
+
+.topName {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.topValue {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  color: var(--ink-soft);
+}
+
+.empty {
+  margin: 0;
+  font-size: 10pt;
+  color: var(--ink-faint);
+}
+
+/* Total-sales bar chart. Bars fill the tile height (stretching to match the
+ * neighbouring list tiles) and grow up from a shared baseline. */
+.bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 1px;
+  flex: 1 1 auto;
+  min-height: 160px;
+  width: 100%;
+}
+
+.barCol {
+  display: flex;
+  align-items: flex-end;
+  flex: 1 1 0;
+  min-width: 0;
+  height: 100%;
+}
+
+.bar {
+  width: 100%;
+  min-height: 0;
+  background: var(--accent);
+  border-radius: 1px 1px 0 0;
+  transition: height 0.12s ease;
+}
+
+.barCol:hover .bar {
+  background: var(--accent-strong);
+}
+
 .salesHeader {
   display: flex;
   align-items: center;
