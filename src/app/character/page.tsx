@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 
 import { createClient } from '@/utils/supabase/server'
 import { register, refreshEsi, setMainCharacter } from './actions'
+import MainCharacterForm from './mainCharacterForm'
 import { requiredScopes } from './scopes'
 import { getEnabledScopes } from './userScopes'
 import styles from './character.module.css'
@@ -34,6 +35,8 @@ const CharacterPage = async () => {
   const enabledScopes = await getEnabledScopes(supabase, data.user.id)
   const hasNoOptionalScopes = enabledScopes.every((scope) => requiredScopes.includes(scope))
 
+  const mainId = characters?.find((c) => c.is_main)?.id ?? null
+
   return (
     <>
       <h1>Characters</h1>
@@ -47,7 +50,7 @@ const CharacterPage = async () => {
           </p>
         </div>
       )}
-      <form>
+      <MainCharacterForm mainId={mainId} hasCharacters={!!characters?.length} action={setMainCharacter}>
         <ul className={styles.grid}>
           {characters?.map((c) => (
             <li key={`character-${c.id}`} className={styles.tile}>
@@ -79,8 +82,7 @@ const CharacterPage = async () => {
             </li>
           ))}
         </ul>
-        {characters?.length ? <button formAction={setMainCharacter}>Set as Main</button> : null}
-      </form>
+      </MainCharacterForm>
       {error && (
         <>
           <strong>
