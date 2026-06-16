@@ -58,6 +58,11 @@ create table public.registration (
   corporation_id bigint,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
+  -- The user's chosen "main" character. At most one registration per user is the
+  -- main (the /character "Set as Main" control clears the others); used to label
+  -- an account by a single name (e.g. who invited you on /account/invite). Kept
+  -- last to match the add-column migration's column order.
+  is_main boolean not null default false,
   unique (user_id, owner)
 );
 create index character_user_id_idx on public.registration (user_id);

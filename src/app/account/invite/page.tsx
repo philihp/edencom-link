@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 
+import { createServiceClient } from '@/utils/supabase/service'
 import { createClient } from '@/utils/supabase/server'
 
 import { DateTime } from '../../DateTime'
@@ -33,6 +34,30 @@ const InvitesPage = async () => {
   // RLS scopes this to the signed-in user's own (single) settings row.
   const { data: settings } = await supabase.from('user_settings').select('is_chancellor').maybeSingle()
   const isChancellor = settings?.is_chancellor === true
+
+  // Who invited this account: the code they redeemed names its creator. The user
+  // can't read that row under RLS (it's the inviter's code), and the inviter's
+  // characters live behind their own RLS too, so both lookups use the service
+  // role. `created_by` is null for the founding/seed codes. The inviter is shown
+  // by their main character, falling back to their earliest one.
+  const service = createServiceClient()
+  const { data: redeemedCode } = await service
+    .from('invite_code')
+    .select('created_by')
+    .eq('redeemed_by', data.user.id)
+    .maybeSingle()
+  let inviterName: string | null = null
+  if (redeemedCode?.created_by) {
+    const { data: inviter } = await service
+      .from('registration')
+      .select('name')
+      .eq('user_id', redeemedCode.created_by)
+      .order('is_main', { ascending: false })
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .maybeSingle()
+    inviterName = inviter?.name ?? null
+  }
 
   const allCodes = codes ?? []
   const unused = allCodes.filter((c) => !c.redeemed_by)
@@ -112,6 +137,19 @@ const InvitesPage = async () => {
           })}
         </tbody>
       </table>
+
+      {redeemedCode && (
+        <>
+          <h2>Who invited you</h2>
+          {inviterName ? (
+            <p>You were invited by {inviterName}.</p>
+          ) : redeemedCode.created_by ? (
+            <p>You were invited by another capsuleer.</p>
+          ) : (
+            <p>You joined with a founding invite code.</p>
+          )}
+        </>
+      )}
     </>
   )
 }
