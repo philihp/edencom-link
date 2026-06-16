@@ -93,7 +93,7 @@
 
 .topRow {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto 1fr auto auto;
   align-items: baseline;
   gap: 8pt;
   padding: 3pt 0;
@@ -117,6 +117,16 @@
 .topName {
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+/* Units sold in the window — de-emphasised (like the rank) so the ISK value
+ * stays the row's focus. */
+.topQty {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 9pt;
+  text-align: right;
+  color: var(--ink-faint);
 }
 
 .topValue {

@@ -45,9 +45,12 @@ const TopItems = ({
       <ol className={styles.topList}>
         {items.map((it, i) => (
           <li key={it.typeId} className={styles.topRow}>
-            <span className={styles.topRank}>{i + 1}</span>
+            <span className={styles.topRank}>#{i + 1}</span>
             <span className={styles.topName}>
               <TypeName id={it.typeId} promise={typeNamesPromise} />
+            </span>
+            <span className={styles.topQty} title={`${it.quantity.toLocaleString('en-US')} sold`}>
+              ×{it.quantity.toLocaleString('en-US')}
             </span>
             <span className={styles.topValue} title={formatMisk(it.total)}>
               {formatMiskValue(it.total)}
