@@ -2,14 +2,17 @@
 
 import { DateTime } from '../DateTime'
 import { formatMiskValue } from '../isk'
-import { CharacterName } from '../names'
+import { Name } from '../names'
 import { TypeName } from '../typeName'
 import styles from './market.module.css'
 import { usePersist } from './usePersist'
 
 export type Sale = {
   transaction_id: string | number
-  character_id: string
+  // Personal sales carry the owning character; corp sales have no character and
+  // carry a corporation_id instead.
+  character_id: string | null
+  corporation_id?: number | string | null
   date: string
   type_id: number | string
   quantity: number | string
@@ -28,9 +31,13 @@ type RecentSalesProps = {
   now: number
   sales: Sale[]
   characters: Character[]
+  // corporation_id → name, for labelling corp sales (falls back to a raw id).
+  corpNames: Record<number, string>
   typeNamesPromise: Promise<Record<number, string>>
   windowDays: number
 }
+
+const CORP_PREFIX = 'corp:'
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
@@ -43,28 +50,48 @@ const THRESHOLDS: Array<{ label: string; value: number }> = [
 ]
 
 const THRESHOLD_STORAGE_KEY = 'market.recentSales.threshold'
-const CHARACTER_STORAGE_KEY = 'market.recentSales.characterId'
-const ALL_CHARACTERS = ''
+const SELLER_STORAGE_KEY = 'market.recentSales.characterId'
+const ALL_SELLERS = ''
 
-export const RecentSales = ({ now, sales, characters, typeNamesPromise, windowDays }: RecentSalesProps) => {
+export const RecentSales = ({ now, sales, characters, corpNames, typeNamesPromise, windowDays }: RecentSalesProps) => {
   const characterName: Record<string, string> = Object.fromEntries(characters.map((c) => [c.id, c.name]))
   const windowStart = now - windowDays * DAY_MS
   const windowLabel = `${windowDays} day${windowDays === 1 ? '' : 's'}`
+
+  // Corporations that actually appear in the sales, for the seller filter.
+  const corpName = (id: number) => corpNames[id] ?? `Corp #${id}`
+  const corpIds = [...new Set(sales.filter((s) => s.corporation_id != null).map((s) => Number(s.corporation_id)))].sort(
+    (a, b) => corpName(a).localeCompare(corpName(b))
+  )
+
+  const sellerLabel = (s: Sale): string | null => {
+    if (s.character_id) return characterName[s.character_id] ?? null
+    if (s.corporation_id != null) return corpName(Number(s.corporation_id))
+    return null
+  }
 
   const [threshold, setThreshold] = usePersist(THRESHOLD_STORAGE_KEY, 0, (raw) => {
     const parsed = Number(raw)
     return THRESHOLDS.some((t) => t.value === parsed) ? parsed : undefined
   })
 
-  const [characterId, setCharacterId] = usePersist<string>(CHARACTER_STORAGE_KEY, ALL_CHARACTERS, (raw) =>
-    raw === ALL_CHARACTERS || characters.some((c) => c.id === raw) ? raw : undefined
-  )
+  const [sellerId, setSellerId] = usePersist<string>(SELLER_STORAGE_KEY, ALL_SELLERS, (raw) => {
+    if (raw === ALL_SELLERS || characters.some((c) => c.id === raw)) return raw
+    if (raw.startsWith(CORP_PREFIX) && corpIds.includes(Number(raw.slice(CORP_PREFIX.length)))) return raw
+    return undefined
+  })
+
+  const matchesSeller = (s: Sale) => {
+    if (sellerId === ALL_SELLERS) return true
+    if (sellerId.startsWith(CORP_PREFIX)) return String(s.corporation_id ?? '') === sellerId.slice(CORP_PREFIX.length)
+    return s.character_id === sellerId
+  }
 
   const filtered = sales.filter(
     (s) =>
       Date.parse(s.date) >= windowStart &&
       Number(s.unit_price) * Number(s.quantity) >= threshold &&
-      (characterId === ALL_CHARACTERS || s.character_id === characterId)
+      matchesSeller(s)
   )
 
   return (
@@ -73,14 +100,25 @@ export const RecentSales = ({ now, sales, characters, typeNamesPromise, windowDa
         <h2>Recent Sales (last {windowLabel})</h2>
         <div className={styles.salesFilters}>
           <label className={styles.salesFilter}>
-            Character:&nbsp;
-            <select value={characterId} onChange={(e) => setCharacterId(e.target.value)}>
-              <option value={ALL_CHARACTERS}>All characters</option>
-              {characters.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
+            Seller:&nbsp;
+            <select value={sellerId} onChange={(e) => setSellerId(e.target.value)}>
+              <option value={ALL_SELLERS}>All sellers</option>
+              <optgroup label="Characters">
+                {characters.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </optgroup>
+              {corpIds.length > 0 && (
+                <optgroup label="Corporations">
+                  {corpIds.map((id) => (
+                    <option key={id} value={`${CORP_PREFIX}${id}`}>
+                      {corpName(id)}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
             </select>
           </label>
           <label className={styles.salesFilter}>
@@ -99,7 +137,7 @@ export const RecentSales = ({ now, sales, characters, typeNamesPromise, windowDa
         <table className={styles.sales}>
           <thead>
             <tr>
-              <th>Character</th>
+              <th>Seller</th>
               <th>Type</th>
               <th>Qty</th>
               <th>Unit (mISK)</th>
@@ -112,7 +150,7 @@ export const RecentSales = ({ now, sales, characters, typeNamesPromise, windowDa
             {filtered.map((s) => (
               <tr key={`sale-${s.transaction_id}`}>
                 <td>
-                  <CharacterName name={characterName[s.character_id]} />
+                  <Name name={sellerLabel(s)} />
                 </td>
                 <td>
                   <TypeName id={Number(s.type_id)} promise={typeNamesPromise} />

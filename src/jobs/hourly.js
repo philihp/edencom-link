@@ -1,10 +1,13 @@
 import { fileURLToPath } from 'node:url'
 
-import { industryJobs, transactions, wallet } from '../esi.js'
+import { pullCorpMarketTransactions } from '../corpMarketTransactions.js'
+import { character as fetchCharacter, industryJobs, transactions, wallet } from '../esi.js'
+import { resolveCorpNames } from '../resolveNames.js'
 import { sudoSupabase } from '../supabase.js'
 import { refreshAccessToken } from '../tokenRefresh.js'
 
 const WALLET_SCOPE = 'esi-wallet.read_character_wallet.v1'
+const CORP_WALLET_SCOPE = 'esi-wallet.read_corporation_wallets.v1'
 const INDUSTRY_SCOPE = 'esi-industry.read_character_jobs.v1'
 
 // Pull wallet/transactions and industry jobs for tokens carrying the relevant
@@ -64,6 +67,56 @@ export const runHourly = async ({ characterIds } = {}) => {
     } catch (e) {
       console.error(`refresh failed for ${name} ${tokenRow.character_id}:`, e)
     }
+  }
+
+  // Corp market transactions: union into the market page alongside the personal
+  // sales above. Driven off the corp-wallet scope (already used for journals), and
+  // deduped per corporation so two characters in the same corp don't both pull it.
+  let corpQuery = sudoSupabase
+    .from('token')
+    .select('id, character_id, refresh_token')
+    .contains('scope', [CORP_WALLET_SCOPE])
+  if (characterIds) corpQuery = corpQuery.in('character_id', characterIds)
+  const { data: corpTokens, error: corpTokensError } = await corpQuery
+
+  if (corpTokensError) {
+    console.error(corpTokensError)
+    throw corpTokensError
+  }
+
+  const seenCorps = new Set()
+  for (const tokenRow of corpTokens ?? []) {
+    const name = characterName.get(tokenRow.character_id) ?? '?'
+    const ctx = `${name} ${tokenRow.character_id}`
+    try {
+      const { access_token, characterID, scope } = await refreshAccessToken(tokenRow)
+      if (!scope.includes(CORP_WALLET_SCOPE)) continue
+      const info = await fetchCharacter(access_token, characterID)
+      const corporation_id = info?.corporation_id
+      if (!corporation_id) {
+        console.error(`[corp-market] ${ctx}: character payload missing corporation_id`)
+        continue
+      }
+      if (seenCorps.has(corporation_id)) continue
+      seenCorps.add(corporation_id)
+      await pullCorpMarketTransactions({
+        access_token,
+        corporation_id,
+        character_id: tokenRow.character_id,
+        ctx,
+        corpLabel: corporation_id,
+      })
+    } catch (e) {
+      console.error(`[corp-market] ${ctx}: FAILED message=${e?.message}`)
+    }
+  }
+
+  // Cache the names of the corps we pulled so the market page can label corp sales
+  // by name rather than a raw id. Only resolves ids missing from eve_name.
+  try {
+    await resolveCorpNames([...seenCorps])
+  } catch (e) {
+    console.error(`[corp-market] corp name resolution FAILED message=${e?.message}`)
   }
 
   let industryQuery = sudoSupabase

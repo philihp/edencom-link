@@ -20,7 +20,7 @@ EVE Online hangar/wallet/industry tracker. Package name `edencom-link` (private)
 ## Layout
 
 - `src/app/` — Next.js App Router. Page routes: `account/`, `assets/`, `character/`, `industry/`, `market/`, `structures/`, plus `theme/`, `layout/` (Header/Footer), `private/`. Shared helpers at top level: `typeNames.ts`/`typeName.tsx`, `systemNames.ts`, `stationNames.ts`, `isk.ts`, `DateTime.tsx`.
-- `src/` (Node cron/scripts): `esi.js` (ESI API wrapper), `supabase.js` (clients — anon + `sudoSupabase` service role that bypasses RLS), `corpWalletJournal.js`, `resolveNames.js`, `structureNames.js`, `tokenRefresh.js`/`refresh.js`, `proxy.ts`, `utils/`. The scheduled job entry points live under `src/jobs/`: `hourly.js`, `daily.js`, `assets.js`, `structures.js` — each exports a `run*` function (callable from the Vercel queue consumer) and self-runs as a CLI when invoked directly (`node src/jobs/<job>.js`).
+- `src/` (Node cron/scripts): `esi.js` (ESI API wrapper), `supabase.js` (clients — anon + `sudoSupabase` service role that bypasses RLS), `corpWalletJournal.js`, `corpMarketTransactions.js`, `resolveNames.js`, `structureNames.js`, `tokenRefresh.js`/`refresh.js`, `proxy.ts`, `utils/`. The scheduled job entry points live under `src/jobs/`: `hourly.js`, `daily.js`, `assets.js`, `structures.js` — each exports a `run*` function (callable from the Vercel queue consumer) and self-runs as a CLI when invoked directly (`node src/jobs/<job>.js`).
 - `schema.sql` — the single source of truth for the Supabase schema (in the default `public` schema). It's a full reset: it DROPs the app's tables and recreates them, so re-running wipes data — never run it against a database with data you want to keep. To change the schema, edit this file (so a fresh reset stays correct) **and** add a non-destructive incremental migration under `supabase/migrations/` (Supabase CLI format, applied with `supabase db push`) so the change can be rolled out to existing databases without wiping data.
 - `.github/workflows/` — `hourly.yml`, `daily.yml`, `assets.yml`, `structures.yml`, `heartbeat.yml` (each a scheduled cron + manual dispatch); `migrate.yml` (applies Supabase migrations on push to `main`).
 
@@ -61,6 +61,7 @@ All functions take `(characterId, accessToken)` unless noted. Returns raw ESI re
 - `corpStructures(corpId, token)` — corporation Upwell structures
 - `corpAssets(corpId, token)` — corporation assets
 - `corpWalletJournal(corpId, division, token)` — corp wallet journal by division
+- `corpTransactions(token, corpId, division)` — corp wallet market transactions for one division
 - `assetNames(characterId, token, itemIds[])` — player-assigned names for specific item IDs
 - `industrySystems()` — public industry system cost indices (no auth)
 - `universeNames(ids[])` — bulk id→name resolution (no auth)
@@ -85,7 +86,11 @@ All functions take `(characterId, accessToken)` unless noted. Returns raw ESI re
 ### `src/resolveNames.js`
 - `resolveBatch(ids[])` — bulk ESI `universeNames` with bisect-on-error fallback; upserts to `eve_name`
 - `resolveCorpJournalNames(entries[])` — extract and resolve first/second party IDs from journal rows
+- `resolveCorpNames(corporationIds[])` — resolve+cache corp names (for labelling corp market sales)
 - `resolveCorpStructureSystemNames(structures[])` — resolve system IDs for structures
+
+### `src/corpMarketTransactions.js`
+- `pullCorpMarketTransactions({ access_token, corporation_id, ... })` — fetch all 7 divisions' market transactions, upsert to `corp_market_transaction`
 
 ### `src/structureNames.js`
 - `resolveStructureNames(structureIds[])` — fetch structure info from ESI using a scoped token, upsert to `structure` table
@@ -158,6 +163,7 @@ Each job exports its `run*()` function (consumed by Vercel queue at `/api/queue/
 | `corp_structure` | Corp Upwell structures | `structure_id`, `corporation_id`, `type_id`, `system_id`, `name`, `state`, `fuel_expires`, `services` (jsonb) |
 | `corp_structure_rig` | Rigs on structures | `structure_id`, `location_flag`, `type_id`, `corporation_id` |
 | `corp_wallet_journal` | Corp transaction log | `corporation_id`, `division`, `entry_id`, `ref_type`, `amount`, `date` |
+| `corp_market_transaction` | Corp market buys/sells (unioned into market page) | `transaction_id`, `corporation_id`, `division`, `type_id`, `unit_price`, `quantity`, `is_buy`, `date` |
 | `industry_system_index` | Cost index history (append-only) | `system_id`, `activity`, `cost_index`, `recorded_at` |
 | `eve_name` | Cached id→name | `id` (bigint PK), `name`, `category` |
 | `character_corp` | Character→Corp mapping | `character_id`, `corporation_id` |
