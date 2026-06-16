@@ -1,9 +1,11 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 
+import { createServiceClient } from '@/utils/supabase/service'
 import { createClient } from '@/utils/supabase/server'
 
 import { DateTime } from '../../DateTime'
+import { isChancellor } from '../chancellor/chancellor'
 import CreateButton from './createButton'
 import { earnedCount, unlockDate, weeksToUnlock } from './schedule'
 
@@ -25,10 +27,38 @@ const InvitesPage = async () => {
     .maybeSingle()
   const firstSsoAt = firstChar?.created_at ? new Date(firstChar.created_at) : null
 
+  // The codes this user has created. RLS scopes invite_code reads to created_by =
+  // the signed-in user, so this is exactly their own codes.
   const { data: codes } = await supabase
     .from('invite_code')
-    .select('code, redeemed_by')
+    .select('code, redeemed_by, redeemed_at, created_at')
     .order('created_at', { ascending: true })
+
+  const chancellor = await isChancellor(data.user.id)
+
+  // Who invited this account: the code they redeemed names its creator. The user
+  // can't read that row under RLS (it's the inviter's code), and the inviter's
+  // characters live behind their own RLS too, so both lookups use the service
+  // role. `created_by` is null for the founding/seed codes. The inviter is shown
+  // by their main character, falling back to their earliest one.
+  const service = createServiceClient()
+  const { data: redeemedCode } = await service
+    .from('invite_code')
+    .select('created_by')
+    .eq('redeemed_by', data.user.id)
+    .maybeSingle()
+  let inviterName: string | null = null
+  if (redeemedCode?.created_by) {
+    const { data: inviter } = await service
+      .from('registration')
+      .select('name')
+      .eq('user_id', redeemedCode.created_by)
+      .order('is_main', { ascending: false })
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .maybeSingle()
+    inviterName = inviter?.name ?? null
+  }
 
   const allCodes = codes ?? []
   const unused = allCodes.filter((c) => !c.redeemed_by)
@@ -66,7 +96,14 @@ const InvitesPage = async () => {
         <p>You have no unused invite codes right now.</p>
       )}
 
-      {available > 0 && <CreateButton available={available} />}
+      {chancellor ? (
+        <>
+          <p>As a Chancellor, you can create invite codes anytime — you aren&rsquo;t limited by the schedule below.</p>
+          <CreateButton unlimited />
+        </>
+      ) : (
+        available > 0 && <CreateButton available={available} />
+      )}
 
       <h2>Schedule</h2>
       {firstSsoAt ? (
@@ -101,6 +138,57 @@ const InvitesPage = async () => {
           })}
         </tbody>
       </table>
+
+      {redeemedCode && (
+        <>
+          <h2>Who invited you</h2>
+          {inviterName ? (
+            <p>You were invited by {inviterName}.</p>
+          ) : redeemedCode.created_by ? (
+            <p>You were invited by another capsuleer.</p>
+          ) : (
+            <p>You joined with a founding invite code.</p>
+          )}
+        </>
+      )}
+
+      {allCodes.length > 0 && (
+        <>
+          <h2>Codes you&rsquo;ve created</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Code</th>
+                <th>Created</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {allCodes.map((c) => (
+                <tr key={c.code}>
+                  <td>
+                    <code>{c.code}</code>
+                  </td>
+                  <td>{c.created_at ? <DateTime value={new Date(c.created_at)} /> : '—'}</td>
+                  <td>
+                    {c.redeemed_by ? (
+                      c.redeemed_at ? (
+                        <>
+                          Claimed <DateTime value={new Date(c.redeemed_at)} />
+                        </>
+                      ) : (
+                        'Claimed'
+                      )
+                    ) : (
+                      'Unclaimed'
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
     </>
   )
 }

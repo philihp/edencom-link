@@ -58,6 +58,11 @@ create table public.registration (
   corporation_id bigint,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
+  -- The user's chosen "main" character. At most one registration per user is the
+  -- main (the /character "Set as Main" control clears the others); used to label
+  -- an account by a single name (e.g. who invited you on /account/invite). Kept
+  -- last to match the add-column migration's column order.
+  is_main boolean not null default false,
   unique (user_id, owner)
 );
 create index character_user_id_idx on public.registration (user_id);
@@ -790,14 +795,21 @@ grant all                            on public.user_settings to service_role;
 -- — the gap doubling each time; see src/app/account/invite).
 -- `created_by` is null for seed codes inserted by hand to bootstrap the system.
 -- `redeemed_by` is the account that signed up with the code; null while the code
--- is still "to give out".
+-- is still "to give out". `is_chancellor` marks a code that confers Chancellor
+-- powers: the account that redeems such a code is a Chancellor (see
+-- src/app/account/chancellor), which lets it mint invite codes without waiting on
+-- the earning schedule. Set only by the service role — authenticated users have a
+-- read-only policy on their own codes and no write privilege, so a user cannot
+-- flag a code (or themselves) as Chancellor.
 create table public.invite_code (
   id uuid primary key default gen_random_uuid(),
   code text not null unique,
   created_by uuid references auth.users(id) on delete cascade,
   redeemed_by uuid references auth.users(id) on delete set null,
   created_at timestamptz not null default now(),
-  redeemed_at timestamptz
+  redeemed_at timestamptz,
+  -- Kept last to match the add-column migration's column order.
+  is_chancellor boolean not null default false
 );
 create index invite_code_created_by_idx on public.invite_code (created_by);
 

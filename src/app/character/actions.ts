@@ -1,5 +1,6 @@
 'use server'
 
+import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 
 import { createClient } from '@/utils/supabase/server'
@@ -47,4 +48,26 @@ export const refreshEsi = async () => {
   const batchId = await dispatchRefresh(user.id, characters ?? [])
 
   redirect(`/characters/refresh?batch=${batchId}`)
+}
+
+// Mark the selected registration as the player's main character, clearing any
+// previous main. RLS scopes both writes to the caller's own registrations, so a
+// foreign id simply matches nothing.
+export const setMainCharacter = async (formData: FormData) => {
+  const supabase = await createClient()
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user?.id) {
+    redirect('/account/login')
+  }
+
+  const selected = `${formData.get('main') ?? ''}`
+  if (!selected) return
+
+  await supabase.from('registration').update({ is_main: false }).eq('user_id', user.id).eq('is_main', true)
+  await supabase.from('registration').update({ is_main: true }).eq('id', selected).eq('user_id', user.id)
+
+  revalidatePath('/character')
 }

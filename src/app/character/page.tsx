@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 
 import { createClient } from '@/utils/supabase/server'
-import { register, refreshEsi } from './actions'
+import { register, refreshEsi, setMainCharacter } from './actions'
 import { requiredScopes } from './scopes'
 import { getEnabledScopes } from './userScopes'
 import styles from './character.module.css'
@@ -47,34 +47,40 @@ const CharacterPage = async () => {
           </p>
         </div>
       )}
-      <ul className={styles.grid}>
-        {characters?.map((c) => (
-          <li key={`character-${c.id}`} className={styles.tile}>
-            {c.character_id ? (
-              <img
-                className={styles.avatar}
-                src={`https://images.evetech.net/characters/${c.character_id}/portrait?size=128`}
-                alt={c.name}
-              />
-            ) : (
-              <div className={styles.avatar} aria-hidden="true" />
-            )}
-            <div className={styles.body}>
-              <div className={styles.name}>{c.name}</div>
-              <div className={styles.meta}>
-                <span className={styles.metaLabel}>ISK:</span>
-                {latestBalance.has(c.id) ? `${formatIsk(latestBalance.get(c.id)!)} ISK` : '—'}
+      <form>
+        <ul className={styles.grid}>
+          {characters?.map((c) => (
+            <li key={`character-${c.id}`} className={styles.tile}>
+              {c.character_id ? (
+                <img
+                  className={styles.avatar}
+                  src={`https://images.evetech.net/characters/${c.character_id}/portrait?size=128`}
+                  alt={c.name}
+                />
+              ) : (
+                <div className={styles.avatar} aria-hidden="true" />
+              )}
+              <div className={styles.body}>
+                <div className={styles.name}>{c.name}</div>
+                <div className={styles.meta}>
+                  <span className={styles.metaLabel}>ISK:</span>
+                  {latestBalance.has(c.id) ? `${formatIsk(latestBalance.get(c.id)!)} ISK` : '—'}
+                </div>
+                <div className={styles.meta}>
+                  <span className={styles.metaLabel}>Location:</span>
+                </div>
+                <div className={styles.meta}>
+                  <span className={styles.metaLabel}>Ship:</span>
+                </div>
+                <label className={styles.meta}>
+                  <input type="radio" name="main" value={c.id} defaultChecked={c.is_main} /> Main Character
+                </label>
               </div>
-              <div className={styles.meta}>
-                <span className={styles.metaLabel}>Location:</span>
-              </div>
-              <div className={styles.meta}>
-                <span className={styles.metaLabel}>Ship:</span>
-              </div>
-            </div>
-          </li>
-        ))}
-      </ul>
+            </li>
+          ))}
+        </ul>
+        {characters?.length ? <button formAction={setMainCharacter}>Set as Main</button> : null}
+      </form>
       {error && (
         <>
           <strong>
