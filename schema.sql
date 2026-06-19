@@ -17,6 +17,7 @@ drop function if exists public.asset_location_contents(bigint) cascade;
 drop function if exists public.asset_inventory_at(uuid[], timestamptz) cascade;
 drop function if exists public.asset_snapshot_at(uuid[], timestamptz)  cascade;
 drop function if exists public.industry_jobs(uuid[])                   cascade;
+drop function if exists public.industry_jobs(uuid[], boolean)          cascade;
 drop view  if exists public.asset                cascade;
 drop table if exists public.asset_over_time      cascade;
 drop table if exists public.wallet               cascade;
@@ -271,7 +272,8 @@ as $$
   join public.registration r on r.id = a.character_id
   where a.character_id = any(character_ids)
     and a.first_seen_at <= as_of
-    and (a.last_seen_at >= as_of or a.is_current);
+    and (a.last_seen_at >= as_of or a.is_current)
+    and (not a.is_singleton or a.is_blueprint_copy);
 $$;
 
 grant execute on function public.asset_snapshot_at(uuid[], timestamptz) to service_role;
@@ -490,7 +492,7 @@ grant all    on public.industry_job to service_role;
 -- preserved for the sheet's columns; one scalar also sidesteps PostgREST's
 -- max-rows cap). Called with the service role over the caller's own registration
 -- ids, so it takes them as a parameter rather than leaning on RLS.
-create or replace function public.industry_jobs(character_ids uuid[])
+create or replace function public.industry_jobs(character_ids uuid[], include_delivered boolean default false)
 returns json
 language sql
 stable
@@ -528,10 +530,11 @@ as $$
   )
   from public.industry_job j
   join public.registration r on r.id = j.character_id
-  where j.character_id = any(character_ids);
+  where j.character_id = any(character_ids)
+    and (include_delivered or j.status not in ('delivered', 'cancelled', 'archived'));
 $$;
 
-grant execute on function public.industry_jobs(uuid[]) to service_role;
+grant execute on function public.industry_jobs(uuid[], boolean) to service_role;
 
 -- ── corp_structure ────────────────────────────────────────────────────────
 create table public.corp_structure (
