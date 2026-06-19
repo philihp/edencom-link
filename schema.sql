@@ -271,7 +271,8 @@ as $$
   join public.registration r on r.id = a.character_id
   where a.character_id = any(character_ids)
     and a.first_seen_at <= as_of
-    and (a.last_seen_at >= as_of or a.is_current);
+    and (a.last_seen_at >= as_of or a.is_current)
+    and (not a.is_singleton or a.is_blueprint_copy);
 $$;
 
 grant execute on function public.asset_snapshot_at(uuid[], timestamptz) to service_role;
