@@ -19,10 +19,16 @@ export const GET = async (request: NextRequest): Promise<NextResponse> => {
     return NextResponse.json({ error: player.error }, { status: player.status })
   }
 
+  // Hide terminal-status rows (delivered/cancelled/archived) by default; the
+  // sheet typically only cares about in-flight work. Callers that want the full
+  // history can opt in with ?include_delivered=true.
+  const includeDelivered = /^(1|true|yes)$/i.test(searchParams.get('include_delivered')?.trim() ?? '')
+
   // Built and returned as one json array by Postgres (industry_jobs), which keeps
   // the field order for the sheet's columns and sidesteps PostgREST's max-rows cap.
   const { data: rows, error: rowsError } = await player.supabase.rpc('industry_jobs', {
     character_ids: player.characterIds,
+    include_delivered: includeDelivered,
   })
   if (rowsError) {
     return NextResponse.json({ error: 'Query failed' }, { status: 500 })
