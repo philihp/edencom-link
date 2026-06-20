@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@hebcal/noaa": "^0.11.0",
+    "@hebcal/noaa": "^0.12.0",
     "@next/third-parties": "16.2.9",
     "@supabase/ssr": "0.12.0",
     "@supabase/supabase-js": "2.108.2",
