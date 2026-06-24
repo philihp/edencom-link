@@ -33,7 +33,7 @@ EVE Online hangar/wallet/industry tracker. Package name `edencom-link` (private)
 
 # Workflow
 
-- Before committing to a new feature branch, check what branch it branched from and rebase onto the latest upstream of that base (typically `origin/main`) first. This avoids opening PRs that include changes already merged on the base.
+- **Always** `git fetch origin && git rebase origin/main` on the feature branch immediately before pushing and opening a PR. Do this every time, no exceptions — it prevents merge conflicts and avoids PRs that include already-merged changes.
 
 # Data sources
 
