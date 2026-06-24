@@ -296,11 +296,20 @@ const StructuresPage = async () => {
                         {indexActivities.map((activity) => {
                           const cost = systemIndexes?.get(activity)
                           const series = systemHistory?.get(activity)
+                          const historyValues = series?.values ?? []
+                          // cost and series come from separate DB queries and can diverge (race
+                          // with a cron insert). Append cost when it differs from the last history
+                          // point so the sparkline's max/min always spans the displayed value.
+                          const sparklineValues =
+                            cost != null &&
+                            (historyValues.length === 0 || historyValues[historyValues.length - 1] !== cost)
+                              ? [...historyValues, cost]
+                              : historyValues
                           return (
                             <li key={`idx-${s.structure_id}-${activity}`} className={styles.indexRow}>
                               <span className={styles.indexLabel}>{INDEX_ACTIVITY_LABELS[activity]}</span>
                               <Sparkline
-                                values={series?.values ?? []}
+                                values={sparklineValues}
                                 updatedAt={series?.updatedAt}
                                 label={INDEX_ACTIVITY_LABELS[activity]}
                               />
