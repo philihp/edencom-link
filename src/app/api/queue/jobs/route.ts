@@ -1,6 +1,6 @@
 import { randomInt } from 'node:crypto'
 
-import { handleCallback } from '@vercel/queue'
+import { handleCallback } from '@/utils/queue'
 
 export const runtime = 'nodejs'
 // 60s is the max the current Vercel plan allows. Per-character fan-out keeps each
@@ -22,6 +22,7 @@ type Msg = {
 // (per retryAfterSeconds in vercel.json).
 export const POST = handleCallback(async (message: Msg) => {
   const { job, characterId, taskId } = message
+  console.log(`[queue/jobs] consume job=${job} characterId=${characterId ?? '-'} taskId=${taskId ?? '-'}`)
   const ids = characterId != null ? { characterIds: [characterId] } : undefined
 
   // Imported lazily so loading the route (and `next build`) never runs the job
