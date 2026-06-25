@@ -208,7 +208,7 @@ export const fetchSystemIndexHistory = async (
   const ids = uniq([...systemIds].filter((n) => Number.isFinite(n)))
   if (ids.length === 0) return new Map<number, Map<Activity, IndexSeries>>()
 
-  const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
+  const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
   const { data: rows } = await supabase
     .from('industry_system_index')
     .select('system_id, activity, cost_index, recorded_at')

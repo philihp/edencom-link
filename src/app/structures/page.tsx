@@ -119,6 +119,7 @@ const StructuresPage = async () => {
     supabase,
     list.map((s) => Number(s.system_id))
   )
+  console.log({ indexHistoryBySystem })
 
   const { data: journal } = await supabase
     .from('corp_wallet_journal')
