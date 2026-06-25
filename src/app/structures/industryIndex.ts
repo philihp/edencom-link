@@ -1,4 +1,4 @@
-import { chain, collectBy, last, pluck, sum, uniq } from 'ramda'
+import { chain, collectBy, last, map, pipe, pluck, sum, uniq } from 'ramda'
 import type { createClient } from '@/utils/supabase/server'
 
 // Per-structure industry cost indices. EVE's /industry/systems/ endpoint reports
@@ -223,14 +223,20 @@ export const fetchSystemIndexHistory = async (
   const readings = chain(toReadings, (rows ?? []) as HistoryRow[])
 
   return new Map(
-    collectBy((r: Reading) => r.system, readings).map((forSystem: Reading[]): [number, Map<Activity, IndexSeries>] => [
-      forSystem[0].system,
-      new Map(
-        collectBy((r: Reading) => r.activity, forSystem).map((forActivity: Reading[]): [Activity, IndexSeries] => [
-          forActivity[0].activity,
-          seriesFrom(nowHour, forActivity),
-        ])
-      ),
-    ])
+    pipe(
+      collectBy((r: Reading) => r.system),
+      map((forSystem: Reading[]): [number, Map<Activity, IndexSeries>] => [
+        forSystem[0].system,
+        new Map(
+          pipe(
+            collectBy((r: Reading) => r.activity),
+            map((forActivity: Reading[]): [Activity, IndexSeries] => [
+              forActivity[0].activity,
+              seriesFrom(nowHour, forActivity),
+            ])
+          )(forSystem)
+        ),
+      ])
+    )(readings)
   )
 }
