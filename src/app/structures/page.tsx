@@ -296,16 +296,23 @@ const StructuresPage = async () => {
                         {indexActivities.map((activity) => {
                           const cost = systemIndexes?.get(activity)
                           const series = systemHistory?.get(activity)
+                          const values = series?.values ?? []
+                          const histMin = values.length > 0 ? Math.min(...values) : null
+                          const histMax = values.length > 0 ? Math.max(...values) : null
                           return (
                             <li key={`idx-${s.structure_id}-${activity}`} className={styles.indexRow}>
                               <span className={styles.indexLabel}>{INDEX_ACTIVITY_LABELS[activity]}</span>
                               <Sparkline
-                                values={series?.values ?? []}
+                                values={values}
                                 liveCount={series?.liveCount}
                                 updatedAt={series?.updatedAt}
                                 label={INDEX_ACTIVITY_LABELS[activity]}
                               />
                               <span className={styles.indexValue}>{cost != null ? formatIndex(cost) : '—'}</span>
+                              <ul style={{gridColumn:'1/-1',fontSize:'0.7em',fontFamily:'monospace',margin:'2px 0 4px',padding:'0',listStyle:'none'}}>
+                                <li>values ({values.length}): [{values.map((v) => formatIndex(v)).join(', ')}]</li>
+                                <li>min: {histMin != null ? formatIndex(histMin) : '—'} | max: {histMax != null ? formatIndex(histMax) : '—'} | current: {cost != null ? formatIndex(cost) : '—'}</li>
+                              </ul>
                             </li>
                           )
                         })}

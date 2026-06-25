@@ -1,7 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "functions": {
-    "src/app/api/queue/jobs/route.ts": {
+    "app/api/queue/jobs/route.ts": {
       "maxDuration": 60,
       "experimentalTriggers": [
         {
