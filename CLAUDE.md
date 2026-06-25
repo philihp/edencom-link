@@ -14,7 +14,7 @@ EVE Online hangar/wallet/industry tracker. Package name `edencom-link` (private)
 - `npm run pretty` — `prettier --write src/` (config: `@philihp/prettier-config`).
 - **No test runner / no `test` script** — there are no automated tests. No `typecheck` script (rely on `next build` / editor).
 - Pre-commit: husky + lint-staged auto-format & `eslint --fix` staged files.
-- Cron scripts (run via GitHub Actions, see below): `npm run hourly` / `daily` / `assets` / `structures` / `heartbeat`. `connect`, `ping`, `refresh` are DB/token utilities.
+- Cron scripts (run via GitHub Actions, see below): `npm run hourly` / `daily` / `assets` / `structures` / `industry-index` / `heartbeat`. `connect`, `ping`, `refresh` are DB/token utilities.
 - DB migrations (Supabase CLI, configured by `supabase/config.toml`): `npm run db:new <name>` scaffolds a migration under `supabase/migrations/`; `npm run db:push` applies pending migrations to the linked project (`supabase link --project-ref <ref>` first). On push to `main` that touches `supabase/migrations/**`, the `Migrate` workflow runs `supabase db push` automatically (also manually dispatchable).
 
 ## Layout
@@ -22,7 +22,7 @@ EVE Online hangar/wallet/industry tracker. Package name `edencom-link` (private)
 - `src/app/` — Next.js App Router. Page routes: `account/`, `assets/`, `character/`, `industry/`, `market/`, `structures/`, plus `theme/`, `layout/` (Header/Footer), `private/`. Shared helpers at top level: `typeNames.ts`/`typeName.tsx`, `systemNames.ts`, `stationNames.ts`, `isk.ts`, `DateTime.tsx`.
 - `src/` (Node cron/scripts): `esi.js` (ESI API wrapper), `supabase.js` (clients — anon + `sudoSupabase` service role that bypasses RLS), `corpWalletJournal.js`, `corpMarketTransactions.js`, `resolveNames.js`, `structureNames.js`, `tokenRefresh.js`/`refresh.js`, `proxy.ts`, `utils/`. The scheduled job entry points live under `src/jobs/`: `hourly.js`, `daily.js`, `assets.js`, `structures.js` — each exports a `run*` function (callable from the Vercel queue consumer) and self-runs as a CLI when invoked directly (`node src/jobs/<job>.js`).
 - `schema.sql` — the single source of truth for the Supabase schema (in the default `public` schema). It's a full reset: it DROPs the app's tables and recreates them, so re-running wipes data — never run it against a database with data you want to keep. To change the schema, edit this file (so a fresh reset stays correct) **and** add a non-destructive incremental migration under `supabase/migrations/` (Supabase CLI format, applied with `supabase db push`) so the change can be rolled out to existing databases without wiping data.
-- `.github/workflows/` — `hourly.yml`, `daily.yml`, `assets.yml`, `structures.yml`, `heartbeat.yml` (each a scheduled cron + manual dispatch); `migrate.yml` (applies Supabase migrations on push to `main`).
+- `.github/workflows/` — `hourly.yml`, `daily.yml`, `assets.yml`, `structures.yml`, `industry_index.yml`, `heartbeat.yml` (each a scheduled cron + manual dispatch); `migrate.yml` (applies Supabase migrations on push to `main`).
 
 ## Database & ESI
 
@@ -99,7 +99,7 @@ All functions take `(characterId, accessToken)` unless noted. Returns raw ESI re
 - `pullCorpWalletJournals(corpId, token)` — fetch all 7 divisions, upsert to `corp_wallet_journal`
 
 ### `src/industryIndexes.js`
-- `pullIndustryIndexes()` — fetch public industry cost indices from ESI, insert rows to `industry_system_index`
+- `pullIndustryIndexes()` — fetch public industry cost indices from ESI, insert rows to `industry_system_index` (run by the `industry-index` cron job, `src/jobs/industryIndex.js`)
 
 ### `src/utils/apiToken.ts`
 - `resolvePlayer(token: string)` — look up `user_settings.api_token`, return `{ supabase, characterIds }` for Sheets API endpoints
@@ -143,10 +143,11 @@ Shared UI helpers: `src/app/isk.ts` (ISK formatting), `src/app/DateTime.tsx`, `s
 | `hourly` | `src/jobs/hourly.js` → `runHourly()` | `hourly.yml` | every hour `:44` |
 | `daily` | `src/jobs/daily.js` → `runDaily()` | `daily.yml` | 11:41 UTC |
 | `assets` | `src/jobs/assets.js` → `runAssets()` | `assets.yml` | every hour `:26` |
-| `structures` | `src/jobs/structures.js` → `runStructures()` | `structures.yml` | every hour `:17` |
+| `structures` | `src/jobs/structures.js` → `runStructures()` | `structures.yml` | 09:17 UTC daily |
+| `industry-index` | `src/jobs/industryIndex.js` → `runIndustryIndex()` | `industry_index.yml` | every hour `:10` |
 | `heartbeat` | `src/heartbeat.js` | `heartbeat.yml` | 10:55 UTC daily |
 
-Each job exports its `run*()` function (consumed by Vercel queue at `/api/queue/jobs`) and self-invokes as CLI when run directly.
+Each job exports its `run*()` function and self-invokes as CLI when run directly. The per-character jobs (`assets`, `hourly`, `orders`) plus the account-wide `daily` are also dispatched on demand via the Vercel queue at `/api/queue/jobs` (the "Refresh ESI" flow). `structures` and `industry-index` are cron-only — they do whole-corp/whole-universe work that isn't character-scoped, so they're not fanned out per character.
 
 ## Database tables (quick reference)
 

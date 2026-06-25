@@ -29,6 +29,7 @@
     "dev": "next dev",
     "heartbeat": "node src/heartbeat.js",
     "hourly": "node src/jobs/hourly.js",
+    "industry-index": "node src/jobs/industryIndex.js",
     "orders": "node src/jobs/orders.js",
     "structures": "node src/jobs/structures.js",
     "refresh": "node src/refresh.js",

@@ -28,7 +28,7 @@ export const pullIndustryIndexes = async () => {
     if (rows.length < SYSTEM_PAGE) break
   }
 
-  console.log(`[structures] industry indexes: ${systemIds.size} system(s) with structures`)
+  console.log(`[industry_index] ${systemIds.size} system(s) with structures`)
   if (systemIds.size === 0) return
 
   const systems = await industrySystems()
@@ -49,14 +49,14 @@ export const pullIndustryIndexes = async () => {
   }
 
   if (rows.length === 0) {
-    console.log('[structures] industry indexes: no matching systems returned by ESI, nothing to record')
+    console.log('[industry_index] no matching systems returned by ESI, nothing to record')
     return
   }
 
   const { error: insertErr } = await sudoSupabase.from('industry_system_index').insert(rows)
   if (insertErr) {
-    console.error(`[structures] industry index insert FAILED: ${insertErr.message}`)
+    console.error(`[industry_index] insert FAILED: ${insertErr.message}`)
     throw insertErr
   }
-  console.log(`[structures] recorded ${rows.length} industry index row(s)`)
+  console.log(`[industry_index] recorded ${rows.length} industry index row(s)`)
 }
