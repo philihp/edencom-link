@@ -39,10 +39,11 @@ export const dispatchRefresh = async (userId: string, characters: Character[]): 
     throw error
   }
 
-  const { send } = await import('@vercel/queue')
-  await Promise.all(
+  const { send } = await import('@/utils/queue')
+  const sent = await Promise.all(
     (inserted ?? []).map((t) => send('jobs', { job: t.job, characterId: t.character_id ?? undefined, taskId: t.id }))
   )
+  console.log(`[dispatchRefresh] enqueued ${sent.length} jobs to topic "jobs" region=${process.env.QUEUE_REGION ?? 'sfo1'}`)
 
   return batchId
 }
