@@ -1,3 +1,4 @@
+import { chain, collectBy, last, pluck, sum, uniq } from 'ramda'
 import type { createClient } from '@/utils/supabase/server'
 
 // Per-structure industry cost indices. EVE's /industry/systems/ endpoint reports
@@ -157,6 +158,40 @@ const densifyHourly = (buckets: Map<number, HourBucket>, nowHour: number): { val
   return { values, liveCount: lastReading - first + 1 }
 }
 
+// A DB row normalized for bucketing: cost parsed to a number and recorded_at
+// reduced to its epoch-hour.
+type Reading = {
+  system: number
+  activity: Activity
+  hour: number
+  cost: number
+  recordedAt: string
+}
+
+// One row → zero or one readings (rows with an unusable cost or timestamp are
+// dropped). Returning a list lets `chain` map-and-filter in a single pass.
+const toReadings = (r: HistoryRow): Reading[] => {
+  const cost = r.cost_index == null ? null : Number(r.cost_index)
+  if (cost == null || !Number.isFinite(cost)) return []
+  const hour = Math.floor(Date.parse(r.recorded_at) / 3_600_000)
+  if (!Number.isFinite(hour)) return []
+  return [{ system: Number(r.system_id), activity: r.activity as Activity, hour, cost, recordedAt: r.recorded_at }]
+}
+
+// Collapse one activity's readings into hourly buckets — averaging readings that
+// share an hour — then densify into an evenly-spaced series. Readings arrive in
+// ascending recorded_at, so the last one carries the exact `updatedAt`.
+const seriesFrom = (nowHour: number, readings: Reading[]): IndexSeries => {
+  const buckets = new Map<number, HourBucket>(
+    collectBy((r: Reading) => r.hour, readings).map((forHour: Reading[]): [number, HourBucket] => [
+      forHour[0].hour,
+      { sum: sum(pluck('cost', forHour)), count: forHour.length },
+    ])
+  )
+  const { values, liveCount } = densifyHourly(buckets, nowHour)
+  return { values, liveCount, updatedAt: last(readings)!.recordedAt }
+}
+
 // 30-day cost-index history per system per activity, in chronological order.
 // Used to draw sparklines next to each index. The pull job runs on GitHub
 // Actions and fires irregularly — sometimes several times an hour, sometimes
@@ -170,9 +205,8 @@ export const fetchSystemIndexHistory = async (
   supabase: Supabase,
   systemIds: Iterable<number>
 ): Promise<Map<number, Map<Activity, IndexSeries>>> => {
-  const result = new Map<number, Map<Activity, IndexSeries>>()
-  const ids = [...new Set([...systemIds].filter((n) => Number.isFinite(n)))]
-  if (ids.length === 0) return result
+  const ids = uniq([...systemIds].filter((n) => Number.isFinite(n)))
+  if (ids.length === 0) return new Map<number, Map<Activity, IndexSeries>>()
 
   const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
   const { data: rows } = await supabase
@@ -182,47 +216,21 @@ export const fetchSystemIndexHistory = async (
     .in('system_id', ids)
     .order('recorded_at', { ascending: true })
 
-  // Accumulate readings into per-hour buckets keyed by epoch-hour, tracking the
-  // raw recorded_at of the latest reading so `updatedAt` stays exact.
-  type Pending = { buckets: Map<number, HourBucket>; updatedAt: string }
-  const pending = new Map<number, Map<Activity, Pending>>()
-
-  for (const r of (rows ?? []) as HistoryRow[]) {
-    const cost = r.cost_index == null ? null : Number(r.cost_index)
-    if (cost == null || !Number.isFinite(cost)) continue
-    const hour = Math.floor(Date.parse(r.recorded_at) / 3_600_000)
-    if (!Number.isFinite(hour)) continue
-    const system = Number(r.system_id)
-    let byActivity = pending.get(system)
-    if (!byActivity) {
-      byActivity = new Map()
-      pending.set(system, byActivity)
-    }
-    const activity = r.activity as Activity
-    let entry = byActivity.get(activity)
-    if (!entry) {
-      entry = { buckets: new Map(), updatedAt: r.recorded_at }
-      byActivity.set(activity, entry)
-    }
-    const bucket = entry.buckets.get(hour)
-    if (bucket) {
-      bucket.sum += cost
-      bucket.count += 1
-    } else {
-      entry.buckets.set(hour, { sum: cost, count: 1 })
-    }
-    // Rows arrive in ascending recorded_at, so the last write wins as the latest.
-    entry.updatedAt = r.recorded_at
-  }
-
+  // Group the readings system → activity, then collapse each activity's readings
+  // into its hourly series. `collectBy` keeps the rows' ascending order within
+  // each group, so a group's first row identifies it and its last row is latest.
   const nowHour = Math.floor(Date.now() / 3_600_000)
-  for (const [system, byActivity] of pending) {
-    const out = new Map<Activity, IndexSeries>()
-    for (const [activity, entry] of byActivity) {
-      const { values, liveCount } = densifyHourly(entry.buckets, nowHour)
-      out.set(activity, { values, liveCount, updatedAt: entry.updatedAt })
-    }
-    result.set(system, out)
-  }
-  return result
+  const readings = chain(toReadings, (rows ?? []) as HistoryRow[])
+
+  return new Map(
+    collectBy((r: Reading) => r.system, readings).map((forSystem: Reading[]): [number, Map<Activity, IndexSeries>] => [
+      forSystem[0].system,
+      new Map(
+        collectBy((r: Reading) => r.activity, forSystem).map((forActivity: Reading[]): [Activity, IndexSeries] => [
+          forActivity[0].activity,
+          seriesFrom(nowHour, forActivity),
+        ])
+      ),
+    ])
+  )
 }

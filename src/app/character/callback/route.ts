@@ -51,10 +51,7 @@ export const GET = async (request: NextRequest) => {
   const issued_at = new Date(iat * 1000).toISOString()
   const expires_at = new Date(exp * 1000).toISOString()
   const eve_character_id = Number(sub.split(':')[2])
-
-  // why are we doing this, again? can this be deleted?
   await sso.getAccessToken(refresh_token, true)
-
   const character_id = await upsertCharacter(supabase)({ user_id, owner, name, character_id: eve_character_id })
   await upsertToken(supabase)({
     user_id,
