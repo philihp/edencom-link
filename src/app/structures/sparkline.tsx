@@ -3,6 +3,10 @@ import styles from './structures.module.css'
 
 type SparklineProps = {
   values: number[]
+  // Count of leading points backed by a real reading; points past this index
+  // are the forward-filled flat tail and get drawn at half opacity. Defaults to
+  // the full length (everything solid).
+  liveCount?: number
   label?: string
   // ISO 8601 of the most recent data point — surfaced in the hover tooltip.
   updatedAt?: string
@@ -34,7 +38,7 @@ const formatUpdatedAt = (iso?: string): string | undefined => {
 // chart we stack the range it covers — max as a superscript on top, min as a
 // subscript on the bottom — so the reader can read the absolute scale without
 // having to look up at the current % to know roughly where the line sits.
-export const Sparkline = ({ values, label, updatedAt }: SparklineProps) => {
+export const Sparkline = ({ values, liveCount = values.length, label, updatedAt }: SparklineProps) => {
   const tooltip = formatUpdatedAt(updatedAt)
 
   if (values.length < 2) return <span className={styles.sparklineCell} title={tooltip} aria-hidden />
@@ -46,13 +50,16 @@ export const Sparkline = ({ values, label, updatedAt }: SparklineProps) => {
   const max = Math.max(...values)
   const range = max - min || 1
   const step = (w - pad * 2) / (values.length - 1)
-  const points = values
-    .map((v, i) => {
-      const x = pad + i * step
-      const y = pad + (1 - (v - min) / range) * (h - pad * 2)
-      return `${x.toFixed(2)},${y.toFixed(2)}`
-    })
-    .join(' ')
+  const coords = values.map((v, i) => {
+    const x = pad + i * step
+    const y = pad + (1 - (v - min) / range) * (h - pad * 2)
+    return `${x.toFixed(2)},${y.toFixed(2)}`
+  })
+  // Split the line where real readings end: the leading segment is solid, the
+  // forward-filled tail (the system stopped reporting) is dimmed. The two share
+  // the boundary point so the line stays continuous across the seam.
+  const live = coords.slice(0, Math.max(liveCount, 1))
+  const stale = liveCount < values.length ? coords.slice(liveCount - 1) : []
   const trend = values[values.length - 1] >= values[0] ? 'rising' : 'falling'
 
   return (
@@ -68,7 +75,19 @@ export const Sparkline = ({ values, label, updatedAt }: SparklineProps) => {
         role="img"
         aria-label={label ? `${label}, ${trend}` : trend}
       >
-        <polyline points={points} fill="none" stroke="currentColor" strokeWidth={1.5} vectorEffect="non-scaling-stroke" />
+        {live.length >= 2 && (
+          <polyline points={live.join(' ')} fill="none" stroke="currentColor" strokeWidth={1.5} vectorEffect="non-scaling-stroke" />
+        )}
+        {stale.length >= 2 && (
+          <polyline
+            points={stale.join(' ')}
+            fill="none"
+            stroke="currentColor"
+            strokeOpacity={0.5}
+            strokeWidth={1.5}
+            vectorEffect="non-scaling-stroke"
+          />
+        )}
       </svg>
     </span>
   )

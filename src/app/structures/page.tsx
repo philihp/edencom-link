@@ -301,6 +301,7 @@ const StructuresPage = async () => {
                               <span className={styles.indexLabel}>{INDEX_ACTIVITY_LABELS[activity]}</span>
                               <Sparkline
                                 values={series?.values ?? []}
+                                liveCount={series?.liveCount}
                                 updatedAt={series?.updatedAt}
                                 label={INDEX_ACTIVITY_LABELS[activity]}
                               />

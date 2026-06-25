@@ -123,16 +123,49 @@ type HistoryRow = IndexRow & { recorded_at: string }
 
 export type IndexSeries = {
   values: number[]
+  // Count of leading points backed by a real reading (interior gaps included).
+  // Points at index >= liveCount are the forward-filled flat tail after the
+  // system stopped reporting, drawn dimmed so it's obviously extrapolated.
+  liveCount: number
   // recorded_at of the most recent point in `values`, ISO 8601.
   updatedAt: string
 }
 
+// One reading's worth of accumulator state for an hour bucket.
+type HourBucket = { sum: number; count: number }
+
+// Collapse hourly buckets into a dense, evenly-spaced series: one point per hour
+// from the first reading through `nowHour`. A bucket's value is the average of
+// every reading that fell in that hour; hours with no reading repeat the
+// previous hour's value (the pull job runs irregularly, so gaps are expected).
+// We carry the last reading forward to the current hour as well, so a system
+// that stopped reporting shows a flat tail — `liveCount` marks where that tail
+// begins so the sparkline can dim it.
+const densifyHourly = (buckets: Map<number, HourBucket>, nowHour: number): { values: number[]; liveCount: number } => {
+  const hours = [...buckets.keys()].sort((a, b) => a - b)
+  if (hours.length === 0) return { values: [], liveCount: 0 }
+  const first = hours[0]
+  const lastReading = hours[hours.length - 1]
+  const values: number[] = []
+  let prev = NaN
+  for (let hour = first; hour <= Math.max(lastReading, nowHour); hour++) {
+    const bucket = buckets.get(hour)
+    if (bucket) prev = bucket.sum / bucket.count
+    // The first hour always has a bucket, so `prev` is set before the first push.
+    values.push(prev)
+  }
+  return { values, liveCount: lastReading - first + 1 }
+}
+
 // 30-day cost-index history per system per activity, in chronological order.
-// Used to draw sparklines next to each index. We pull the raw snapshots and
-// keep them in `recorded_at` order; a daily bucket would smooth them more but
-// the structures job runs a handful of times a day so the raw points already
-// make a reasonable shape. Returning `updatedAt` alongside the values lets the
-// sparkline surface "last updated" in a tooltip without a second lookup.
+// Used to draw sparklines next to each index. The pull job runs on GitHub
+// Actions and fires irregularly — sometimes several times an hour, sometimes
+// with multi-hour gaps — so raw points would space unevenly across the
+// sparkline's time axis. We bucket readings into UTC hours (averaging any that
+// share an hour) and carry the previous hour's value across empty hours, giving
+// one evenly-spaced point per hour from the first reading to the last.
+// Returning `updatedAt` alongside the values lets the sparkline surface "last
+// updated" in a tooltip without a second lookup.
 export const fetchSystemIndexHistory = async (
   supabase: Supabase,
   systemIds: Iterable<number>
@@ -149,24 +182,47 @@ export const fetchSystemIndexHistory = async (
     .in('system_id', ids)
     .order('recorded_at', { ascending: true })
 
+  // Accumulate readings into per-hour buckets keyed by epoch-hour, tracking the
+  // raw recorded_at of the latest reading so `updatedAt` stays exact.
+  type Pending = { buckets: Map<number, HourBucket>; updatedAt: string }
+  const pending = new Map<number, Map<Activity, Pending>>()
+
   for (const r of (rows ?? []) as HistoryRow[]) {
     const cost = r.cost_index == null ? null : Number(r.cost_index)
     if (cost == null || !Number.isFinite(cost)) continue
+    const hour = Math.floor(Date.parse(r.recorded_at) / 3_600_000)
+    if (!Number.isFinite(hour)) continue
     const system = Number(r.system_id)
-    let byActivity = result.get(system)
+    let byActivity = pending.get(system)
     if (!byActivity) {
       byActivity = new Map()
-      result.set(system, byActivity)
+      pending.set(system, byActivity)
     }
     const activity = r.activity as Activity
-    let series = byActivity.get(activity)
-    if (!series) {
-      series = { values: [], updatedAt: r.recorded_at }
-      byActivity.set(activity, series)
+    let entry = byActivity.get(activity)
+    if (!entry) {
+      entry = { buckets: new Map(), updatedAt: r.recorded_at }
+      byActivity.set(activity, entry)
     }
-    series.values.push(cost)
+    const bucket = entry.buckets.get(hour)
+    if (bucket) {
+      bucket.sum += cost
+      bucket.count += 1
+    } else {
+      entry.buckets.set(hour, { sum: cost, count: 1 })
+    }
     // Rows arrive in ascending recorded_at, so the last write wins as the latest.
-    series.updatedAt = r.recorded_at
+    entry.updatedAt = r.recorded_at
+  }
+
+  const nowHour = Math.floor(Date.now() / 3_600_000)
+  for (const [system, byActivity] of pending) {
+    const out = new Map<Activity, IndexSeries>()
+    for (const [activity, entry] of byActivity) {
+      const { values, liveCount } = densifyHourly(entry.buckets, nowHour)
+      out.set(activity, { values, liveCount, updatedAt: entry.updatedAt })
+    }
+    result.set(system, out)
   }
   return result
 }
