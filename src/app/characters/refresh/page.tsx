@@ -8,7 +8,9 @@ import { RefreshPoller } from './poller'
 import styles from './refresh.module.css'
 
 // Matches the per-character jobs the Refresh ESI action fans out, in column order.
-const JOBS = ['assets', 'hourly', 'structures', 'orders'] as const
+// `structures` isn't fanned out per character (it runs on a daily cron), so it's
+// not a column here.
+const JOBS = ['assets', 'hourly', 'orders'] as const
 
 // Always read fresh — the poller re-requests this server component every couple of
 // seconds while a refresh is in flight.

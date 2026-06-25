@@ -2,7 +2,6 @@ import { fileURLToPath } from 'node:url'
 
 import { pullCorpWalletJournals } from '../corpWalletJournal.js'
 import { character as fetchCharacter, corpAssets, corpStructures, universeNames } from '../esi.js'
-import { pullIndustryIndexes } from '../industryIndexes.js'
 import { resolveCorpJournalNames, resolveCorpStructureSystemNames } from '../resolveNames.js'
 import { resolveStructureNames } from '../structureNames.js'
 import { sudoSupabase } from '../supabase.js'
@@ -274,15 +273,6 @@ export const runStructures = async ({ characterIds } = {}) => {
     await resolveCorpStructureSystemNames()
   } catch (e) {
     console.error(`[structures] system-name resolution FAILED name=${e?.name} message=${e?.message}`)
-  }
-
-  // Snapshot the industry cost indices for every system we have a structure in,
-  // building a history of how those indices move over time. Public ESI data, so
-  // it runs regardless of which scopes the linked tokens carry.
-  try {
-    await pullIndustryIndexes()
-  } catch (e) {
-    console.error(`[structures] industry index pull FAILED name=${e?.name} message=${e?.message}`)
   }
 }
 

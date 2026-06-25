@@ -3,7 +3,13 @@ import { randomUUID } from 'node:crypto'
 // The per-character ESI extracts a refresh fans out, one queue message per
 // character each. `daily` is account-wide (it resolves affiliations for every
 // registration at once), so it's dispatched once with no character.
-const PER_CHARACTER_JOBS = ['assets', 'hourly', 'structures', 'orders'] as const
+//
+// `structures` is deliberately NOT here: it does whole-corp/whole-universe work
+// (notably pulling the full EVE industry cost index) that isn't scoped per
+// character, so fanning it out made every message redo the same heavy pull and
+// blow past the 60s queue function limit. It runs on its own daily GitHub Actions
+// cron (structures.yml) instead.
+const PER_CHARACTER_JOBS = ['assets', 'hourly', 'orders'] as const
 
 type Character = { id: string; name: string | null }
 
