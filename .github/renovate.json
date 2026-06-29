@@ -1,12 +1,11 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": [
-    "@philihp",
-    ":dependencyDashboard",
-    ":semanticCommits",
-    "helpers:pinGitHubActionDigests",
-    "schedule:weekly"
-  ],
+  "extends": ["config:recommended", "helpers:pinGitHubActionDigests"],
+  "schedule": ["every weekend"],
+  "semanticCommits": "enabled",
+  "dependencyDashboard": true,
+  "dependencyDashboardTitle": "Independency Dashboard",
+  "transitiveRemediation": true,
   "labels": ["dependencies"],
   "prConcurrentLimit": 10,
   "lockFileMaintenance": {
@@ -14,9 +13,13 @@
   },
   "packageRules": [
     {
-      "description": "Automerge non-major devDependency updates",
+      "description": "Automerge minor, patch, pin, and digest updates",
+      "matchUpdateTypes": ["minor", "patch", "pin", "digest"],
+      "automerge": true
+    },
+    {
+      "description": "Automerge all devDependency updates",
       "matchDepTypes": ["devDependencies"],
-      "matchUpdateTypes": ["minor", "patch"],
       "automerge": true
     },
     {
