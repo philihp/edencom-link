@@ -1,0 +1,25 @@
+/*
+ * Quantity: shown grouped with thousands separators, copied raw.
+ *
+ * The visible, comma-grouped text comes from generated content (::after), which
+ * browsers leave out of the clipboard. The raw, separator-free digits live in a
+ * real — but visually hidden — text node, so a select-and-copy grabs the plain
+ * number (e.g. 123456789) instead of the grouped display (123,456,789).
+ */
+.quantity {
+  position: relative;
+}
+
+.quantity::after {
+  content: attr(data-grouped);
+}
+
+/* Visually hidden, yet still part of the DOM selection so it copies cleanly. */
+.raw {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}

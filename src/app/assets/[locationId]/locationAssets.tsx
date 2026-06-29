@@ -6,6 +6,7 @@ import retro from '../../retro.module.css'
 import { TypeName } from '../../typeName'
 import styles from '../assets.module.css'
 import { ALL_CHARACTERS, CharacterFilter, useCharacterFilter, type Character } from '../characterFilter'
+import { Quantity } from './quantity'
 
 export type ItemRow = {
   itemId: string
@@ -69,7 +70,7 @@ export const LocationAssets = ({ rows, characters, typeNamesPromise }: LocationA
                     <TypeName id={row.typeId} name={row.name} promise={typeNamesPromise} />
                   )}
                 </td>
-                <td className={retro.num}>{row.isSingleton ? '—' : (row.quantity ?? 1)}</td>
+                <td className={retro.num}>{row.isSingleton ? '—' : <Quantity value={row.quantity} />}</td>
                 <td>{row.flag ?? '—'}</td>
                 <td className={retro.num}>{row.contents > 0 ? row.contents : '—'}</td>
               </tr>
