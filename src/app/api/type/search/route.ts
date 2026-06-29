@@ -25,8 +25,10 @@ async function fetchType(typeID: number): Promise<{ name: string } | null> {
 // Format: typeID
 // These can be added progressively as types are discovered
 const KNOWN_BLUEPRINT_IDS: number[] = [
-  // Add FTL Interlinks blueprint type IDs here
-  // Example: 20400, // FTL Interlinks Blueprint (needs verification)
+  57511, // Radar-FTL Interlink Communicator Blueprint
+  57512, // Gravimetric-FTL Interlink Communicator Blueprint
+  57513, // Magnetometric-FTL Interlink Communicator Blueprint
+  57514, // Ladar-FTL Interlink Communicator Blueprint
 ]
 
 // Search known blueprints by name
