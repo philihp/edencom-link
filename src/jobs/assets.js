@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url'
 import { assets, assetNames, userAgent } from '../esi.js'
 import SingleSignOn from '@philihp/eve-sso'
 import { sudoSupabase } from '../supabase.js'
+import { resolveStructureNames } from '../structureNames.js'
 
 const EVE_CLIENT_ID = process.env.EVE_CLIENT_ID
 const EVE_SECRET_KEY = process.env.EVE_SECRET_KEY
@@ -222,6 +223,15 @@ export const runAssets = async ({ characterIds } = {}) => {
       const dt = Date.now() - t0
       console.error(`[assets] ${ctx}: FAILED after ${dt}ms name=${e?.name} message=${e?.message}\n${e?.stack ?? e}`)
     }
+  }
+
+  // Resolve player structure names so the assets page can label them.
+  // This runs every hour alongside asset fetches, so newly discovered
+  // structures get named quickly rather than waiting for the daily job.
+  try {
+    await resolveStructureNames()
+  } catch (e) {
+    console.error(`[assets] structure-name resolution FAILED name=${e?.name} message=${e?.message}`)
   }
 }
 
