@@ -4,7 +4,7 @@
 //   GET /api/type/search?q=…   → [{ typeID, name, coverage }] ranked by relevance
 //   GET /api/type/{typeID}     → the raw SDE type record (name, groupID, …)
 
-const API = 'https://sde.edencom.link/api'
+const API = '/api'
 
 type TypeSearchResult = { typeID: number; name: string; coverage: number }
 
