@@ -1,4 +1,34 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["@philihp"]
+  "extends": [
+    "@philihp",
+    ":dependencyDashboard",
+    ":semanticCommits",
+    "helpers:pinGitHubActionDigests",
+    "schedule:weekly"
+  ],
+  "labels": ["dependencies"],
+  "prConcurrentLimit": 10,
+  "lockFileMaintenance": {
+    "enabled": true
+  },
+  "packageRules": [
+    {
+      "description": "Automerge non-major devDependency updates",
+      "matchDepTypes": ["devDependencies"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "automerge": true
+    },
+    {
+      "description": "Group and automerge GitHub Actions updates",
+      "matchManagers": ["github-actions"],
+      "groupName": "github-actions",
+      "automerge": true
+    },
+    {
+      "description": "Group type definition packages together",
+      "matchPackageNames": ["/^@types//"],
+      "groupName": "type definitions"
+    }
+  ]
 }
