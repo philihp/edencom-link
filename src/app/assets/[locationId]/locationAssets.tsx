@@ -28,16 +28,27 @@ export const LocationAssets = ({ rows, characters, typeNamesPromise }: LocationA
   const [characterId, setCharacterId] = useCharacterFilter(characters)
 
   const filtered = rows.filter((r) => characterId === ALL_CHARACTERS || r.characterId === characterId)
+  const characterMap = new Map(characters.map((c) => [c.id, c.name]))
 
   return (
     <section>
-      <div className={styles.filters}>
-        <CharacterFilter characters={characters} value={characterId} onChange={setCharacterId} />
-      </div>
       {filtered.length > 0 ? (
         <table className={retro.retro}>
           <thead>
             <tr>
+              <th>
+                <label className={styles.filter}>
+                  Character:&nbsp;
+                  <select value={characterId} onChange={(e) => setCharacterId(e.target.value)}>
+                    <option value={ALL_CHARACTERS}>All characters</option>
+                    {characters.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </th>
               <th>Item</th>
               <th className={retro.num}>Quantity</th>
               <th>Hangar</th>
@@ -47,6 +58,7 @@ export const LocationAssets = ({ rows, characters, typeNamesPromise }: LocationA
           <tbody>
             {filtered.map((row) => (
               <tr key={`item-${row.itemId}`}>
+                <td>{characterMap.get(row.characterId) ?? row.characterId}</td>
                 <td>
                   {row.contents > 0 ? (
                     // Ships and containers hold items — drill into them.
