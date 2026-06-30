@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { createClient } from '@/utils/supabase/server'
+import { indexesFlag } from '@/flags'
 import styles from './header.module.css'
 
 const Header = async () => {
@@ -9,6 +10,7 @@ const Header = async () => {
     data: { user },
   } = await supabase.auth.getUser()
   const userId = user?.email ?? undefined
+  const showIndexes = await indexesFlag()
   return (
     <header>
       <div className={styles.bar}>
@@ -28,6 +30,12 @@ const Header = async () => {
             </>
           ) : (
             <>
+              {showIndexes && (
+                <>
+                  <Link href="/indexes">indexes</Link>
+                  <span className={styles.sep}>|</span>
+                </>
+              )}
               <Link href="/character/">characters</Link>
               <span className={styles.sep}>|</span>
               <Link href="/assets">assets</Link>

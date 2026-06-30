@@ -30,7 +30,7 @@ EVE Online hangar/wallet/industry tracker. Package name `edencom-link` (private)
 - DB lives in the default `public` Postgres schema in Supabase (so supabase-js calls need no `.schema()` qualifier). Key tables: `registration`, `token`, `asset_over_time` (SCD type-2: `is_current` + `last_seen_at`), `wallet`, `market_transaction`, `industry_job`, `corp_structure`(+`_rig`), `corp_wallet_journal`, `character_corp`, `eve_name`, `structure`, `user_settings`. RLS enforced; cron uses service-role key.
 - ESI base `https://esi.evetech.net/latest` via `src/esi.js`. Tokens (eve-sso OAuth) refreshed per character before fetching.
 - **Data flow:** ESI → DB (cron scripts) → Next.js server components read DB. Server components must NOT call ESI directly.
-- Env vars (`.env.example`): `EVE_CLIENT_ID`/`EVE_SECRET_KEY`/`EVE_CALLBACK_URL`, `SUPABASE_URL`/`SUPABASE_KEY`/`SUPABASE_SERVICE_KEY`/`SUPABASE_PROJECT_REF`, `NEXT_PUBLIC_SUPABASE_URL`/`NEXT_PUBLIC_SUPABASE_ANON_KEY`, Turnstile keys.
+- Env vars (`.env.example`): `EVE_CLIENT_ID`/`EVE_SECRET_KEY`/`EVE_CALLBACK_URL`, `SUPABASE_URL`/`SUPABASE_KEY`/`SUPABASE_SERVICE_KEY`/`SUPABASE_PROJECT_REF`, `NEXT_PUBLIC_SUPABASE_URL`/`NEXT_PUBLIC_SUPABASE_ANON_KEY`, Turnstile keys, `FLAGS_SECRET` (Vercel Flags SDK, see `src/flags.ts`).
 
 # Workflow
 
@@ -182,7 +182,7 @@ Each job exports its `run*()` function and self-invokes as CLI when run directly
 | `eve_name` | Cached id→name | `id` (bigint PK), `name`, `category` |
 | `character_corp` | Character→Corp mapping | `character_id`, `corporation_id` |
 | `structure` | Player structure cache | `structure_id`, `name`, `system_id`, `type_id` |
-| `user_settings` | User preferences | `user_id`, `enabled_scopes[]`, `api_token` (unique) |
+| `user_settings` | User preferences | `user_id`, `enabled_scopes[]`, `api_token` (unique), `flags[]` |
 | `invite_code` | Invite-only registration | `code` (unique), `created_by`, `redeemed_by`, `redeemed_at` |
 | `refresh_task` | On-demand job tracking | `batch_id`, `user_id`, `job`, `character_id`, `status` (pending/running/done/error) |
 | `heartbeat` | Cron job monitoring | `job`, `run_id`, `started_at`, `ended_at` |

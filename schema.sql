@@ -787,10 +787,13 @@ grant all    on public.structure to service_role;
 -- (/api/assets) authenticates with — that request carries no Supabase session,
 -- so the route looks the user up by this token (service role) and scopes the
 -- results to their characters. Null until the user generates one in settings.
+-- `flags` is the set of Vercel Flags (src/flags.ts) a user has enabled, e.g.
+-- 'indexes' gates the /indexes page and nav link per-user.
 create table public.user_settings (
   user_id uuid primary key references auth.users(id) on delete cascade,
   enabled_scopes text[] not null default '{}',
   api_token text unique,
+  flags text[] not null default '{}',
   updated_at timestamptz not null default now()
 );
 
