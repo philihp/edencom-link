@@ -45,10 +45,15 @@ export const resolveStructureNames = async () => {
   const itemIds = new Set()
   const locationIds = new Set()
   for (let from = 0; ; from += ASSET_PAGE) {
+    // Order by the primary key so range paging is stable: PostgREST gives no row
+    // order without an explicit sort, so an unordered .range() can skip or repeat
+    // rows across pages and silently drop a structure from the candidate set. The
+    // assets extract pages the same table and orders by id for exactly this reason.
     const { data: rows, error: assetsErr } = await sudoSupabase
       .from('asset_over_time')
       .select('item_id, location_id')
       .eq('is_current', true)
+      .order('id', { ascending: true })
       .range(from, from + ASSET_PAGE - 1)
     if (assetsErr) throw assetsErr
     if (!rows || rows.length === 0) break
