@@ -192,6 +192,10 @@ const seriesFrom = (nowHour: number, readings: Reading[]): IndexSeries => {
   return { values, liveCount, updatedAt: last(readings)!.recordedAt }
 }
 
+// PostgREST caps a single select; page through industry_system_index so a busy
+// week of readings doesn't get silently truncated.
+const HISTORY_PAGE = 1000
+
 // 30-day cost-index history per system per activity, in chronological order.
 // Used to draw sparklines next to each index. The pull job runs on GitHub
 // Actions and fires irregularly — sometimes several times an hour, sometimes
@@ -209,18 +213,25 @@ export const fetchSystemIndexHistory = async (
   if (ids.length === 0) return new Map<number, Map<Activity, IndexSeries>>()
 
   const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
-  const { data: rows } = await supabase
-    .from('industry_system_index')
-    .select('system_id, activity, cost_index, recorded_at')
-    .gte('recorded_at', since)
-    .in('system_id', ids)
-    .order('recorded_at', { ascending: true })
+  const rows: HistoryRow[] = []
+  for (let from = 0; ; from += HISTORY_PAGE) {
+    const { data: page } = await supabase
+      .from('industry_system_index')
+      .select('system_id, activity, cost_index, recorded_at')
+      .gte('recorded_at', since)
+      .in('system_id', ids)
+      .order('recorded_at', { ascending: true })
+      .range(from, from + HISTORY_PAGE - 1)
+    if (!page || page.length === 0) break
+    rows.push(...(page as HistoryRow[]))
+    if (page.length < HISTORY_PAGE) break
+  }
 
   // Group the readings system → activity, then collapse each activity's readings
   // into its hourly series. `collectBy` keeps the rows' ascending order within
   // each group, so a group's first row identifies it and its last row is latest.
   const nowHour = Math.floor(Date.now() / 3_600_000)
-  const readings = chain(toReadings, (rows ?? []) as HistoryRow[])
+  const readings = chain(toReadings, rows)
 
   return new Map(
     pipe(
