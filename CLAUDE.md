@@ -14,6 +14,7 @@ EVE Online hangar/wallet/industry tracker. Package name `edencom-link` (private)
 - `npm run pretty` — `prettier --write src/` (config: `@philihp/prettier-config`).
 - **No test runner / no `test` script** — there are no automated tests. No `typecheck` script (rely on `next build` / editor).
 - Pre-commit: husky + lint-staged auto-format & `eslint --fix` staged files.
+- `npm run sde:build` — downloads CCP's SDE type/group data and writes `src/generated/sdeTypes.json` (gitignored). Runs automatically as a `predev`/`prebuild` step; skips re-downloading if the file already exists (pass `--force` to refresh). See `src/buildSde.js`.
 - Cron scripts (run via GitHub Actions, see below): `npm run hourly` / `daily` / `assets` / `structures` / `industry-index` / `heartbeat`. `connect`, `ping`, `refresh` are DB/token utilities.
 - DB migrations (Supabase CLI, configured by `supabase/config.toml`): `npm run db:new <name>` scaffolds a migration under `supabase/migrations/`; `npm run db:push` applies pending migrations to the linked project (`supabase link --project-ref <ref>` first). On push to `main` that touches `supabase/migrations/**`, the `Migrate` workflow runs `supabase db push` automatically (also manually dispatchable).
 
@@ -37,18 +38,26 @@ EVE Online hangar/wallet/industry tracker. Package name `edencom-link` (private)
 
 # Data sources
 
-- NEVER query the `evesde` SDE schema in the database. That data is out of date and must not be used for any work. Resolve type/name lookups via the external API helper in `src/app/typeNames.ts` (`fetchTypeNames`) instead. If a needed lookup has no non-SDE source, show the raw ID rather than reading the SDE.
+- NEVER query the `evesde` SDE schema in the database. That data is out of date and must not be used for any work. Resolve type/name lookups via `fetchTypeNames` (`src/app/typeNames.ts`), which reads the locally generated SDE data (`src/sdeTypes.ts`), instead. If a needed lookup has no non-SDE source, show the raw ID rather than reading the SDE.
 
 # Architecture
 
 - Data from ESI flows into the database (typically via the hourly cron job in `src/jobs/hourly.js`). The UI then reads from the database. The UI/Next.js server components must never call ESI directly.
-- Avoid using the `evesde` schema in the database for new work — it can be out of date. Instead, query the SDE service [sde.edencom.link](https://sde.edencom.link) (formerly `eve-build-calculator.philihp.com`) — e.g. the `https://sde.edencom.link/api/type/${typeID}` pattern in `src/app/typeNames.ts`. It downloads the full SDE but only saves/exposes a curated subset. If the data you need isn't exposed there yet, prefer adding it to that service rather than reaching into the `evesde` schema.
+- Avoid using the `evesde` schema in the database for new work — it can be out of date. Instead, type/group/category lookups are resolved from `src/generated/sdeTypes.json`, generated at build time by `src/buildSde.js` (`npm run sde:build`, wired as `predev`/`prebuild`) from CCP's published Static Data Export (via Fuzzwork's flat CSV mirror, which tracks each game patch). `src/sdeTypes.ts` loads that file once per server process and exposes `getSdeType`/`getSdeTypeNames`/`searchSdeTypes`, used by `src/app/typeNames.ts`, `src/app/blueprint/api.ts`, and `src/app/api/type/search/route.ts`. If a needed field isn't in the generated dataset, extend `src/buildSde.js` to include it rather than reaching into the `evesde` schema.
 
 # Codebase map
 
 Quick-reference for navigation. Covers key exports, route→file paths, DB tables, and design patterns.
 
 ## Key source file exports
+
+### `src/buildSde.js` — SDE generator (run via `npm run sde:build`)
+- Downloads `invTypes.csv`/`invGroups.csv` (Fuzzwork's flat-CSV mirror of CCP's SDE), joins them, and writes published types as `[typeID, name, groupID, categoryID]` tuples to `src/generated/sdeTypes.json` (gitignored). Skips re-downloading if the output already exists; pass `--force` to refresh.
+
+### `src/sdeTypes.ts`
+- `getSdeType(typeID)` — `{ typeID, name, groupID, categoryID }` from the generated SDE data, or `null`
+- `getSdeTypeNames(typeIDs[])` — bulk id→name lookup
+- `searchSdeTypes(query, limit?)` — case-insensitive substring search over type names, ranked by match coverage
 
 ### `src/esi.js` — ESI API wrapper
 All functions take `(characterId, accessToken)` unless noted. Returns raw ESI response JSON.
@@ -130,12 +139,15 @@ All functions take `(characterId, accessToken)` unless noted. Returns raw ESI re
 | `/structures` | `src/app/structures/page.tsx` |
 | `/structures/[structureId]` | `src/app/structures/[structureId]/page.tsx` |
 | `/settings/grants` | `src/app/settings/grants/page.tsx` |
+| `/blueprint` | `src/app/blueprint/page.tsx` |
+| `/blueprint/[typeID]` | `src/app/blueprint/[typeID]/page.tsx` |
 | `/api/assets` | `src/app/api/assets/route.ts` |
 | `/api/orders` | `src/app/api/orders/route.ts` |
 | `/api/industry` | `src/app/api/industry/route.ts` |
 | `/api/queue/jobs` | `src/app/api/queue/jobs/route.ts` |
+| `/api/type/search` | `src/app/api/type/search/route.ts` |
 
-Shared UI helpers: `src/app/isk.ts` (ISK formatting), `src/app/DateTime.tsx`, `src/app/typeName.tsx` (renders a type name from ID), `src/app/typeNames.ts` (fetches type names from sde.edencom.link), `src/app/systemNames.ts`, `src/app/stationNames.ts`.
+Shared UI helpers: `src/app/isk.ts` (ISK formatting), `src/app/DateTime.tsx`, `src/app/typeName.tsx` (renders a type name from ID), `src/app/typeNames.ts` (resolves type names from the locally generated SDE data), `src/app/systemNames.ts`, `src/app/stationNames.ts`.
 
 ## Cron jobs
 
@@ -189,4 +201,4 @@ Key Postgres functions (callable via RPC or SQL):
 - **Google Sheets IMPORTDATA:** `/api/assets`, `/api/orders`, `/api/industry` authenticate via `user_settings.api_token`, call a Postgres function, and return CSV.
 - **Vercel queue:** The queue consumer at `/api/queue/jobs` dispatches to the same `run*()` functions the CLI jobs use. The UI enqueues work via `@vercel/queue`.
 - **Token lifecycle:** ESI OAuth tokens are stored in `token`. Before any ESI call, `refreshAccessToken()` checks expiry and refreshes via EVE SSO if needed.
-- **Name resolution:** `eve_name` table caches ESI `universeNames` lookups. `resolveBatch()` handles bisect-on-error for large batches. Type names (items/ships) come from `sde.edencom.link`, not the DB.
+- **Name resolution:** `eve_name` table caches ESI `universeNames` lookups. `resolveBatch()` handles bisect-on-error for large batches. Type names (items/ships) come from the locally generated SDE data (`src/sdeTypes.ts`), not the DB.

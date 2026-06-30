@@ -13,6 +13,9 @@
 /.next/
 /out/
 
+# generated SDE data (downloaded by `npm run sde:build`, see src/buildSde.js)
+/src/generated/
+
 # production
 /build
 

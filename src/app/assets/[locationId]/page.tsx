@@ -81,8 +81,8 @@ const AssetLocationPage = async ({ params }: { params: Promise<{ locationId: str
     }
   } else {
     // Resolve the location's own name/system the same way the index page does:
-    // own-corp + foreign player structures from the DB, NPC stations and systems
-    // from eve-build-calculator.
+    // own-corp + foreign player structures, NPC stations, and systems all come
+    // from the eve_name DB cache.
     const numericId = Number(locationId)
     const { data: corpStructures } = await supabase
       .from('corp_structure')

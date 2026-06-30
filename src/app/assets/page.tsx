@@ -95,9 +95,8 @@ const Locations = async () => {
   // Own-corp structures override the ESI-resolved cache.
   for (const s of (corpStructures ?? []) as Structure[]) structureById.set(String(s.structure_id), s)
 
-  // NPC station names come from eve-build-calculator (same curated source as the
-  // type/system lookups); player structures aren't there, so those still resolve
-  // via corp_structure above.
+  // NPC station names come from the eve_name DB cache; player structures aren't
+  // there, so those still resolve via corp_structure above.
   const stationIds = [...byLocation.values()]
     .filter(({ root }) => root.type === 'station')
     .map(({ root }) => Number(root.id))
