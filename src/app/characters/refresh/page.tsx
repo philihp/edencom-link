@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
+import { reduce } from 'ramda'
 
 import { createClient } from '@/utils/supabase/server'
 
@@ -88,17 +89,19 @@ const RefreshPage = async ({ searchParams }: { searchParams: Promise<{ batch?: s
 
   // Index the per-character tasks by character+job for the matrix; the daily task
   // is account-wide so it stands on its own.
-  const byCharJob = new Map<string, Task>()
-  const characters = new Map<string, string>()
-  let daily: Task | undefined
-  for (const t of tasks) {
-    if (t.character_id) {
-      byCharJob.set(`${t.character_id}:${t.job}`, t)
-      characters.set(t.character_id, t.character_name ?? t.character_id)
-    } else if (t.job === 'daily') {
-      daily = t
-    }
-  }
+  const { byCharJob, characters, daily } = reduce(
+    (acc, t) => {
+      if (t.character_id) {
+        acc.byCharJob.set(`${t.character_id}:${t.job}`, t)
+        acc.characters.set(t.character_id, t.character_name ?? t.character_id)
+      } else if (t.job === 'daily') {
+        acc.daily = t
+      }
+      return acc
+    },
+    { byCharJob: new Map<string, Task>(), characters: new Map<string, string>(), daily: undefined as Task | undefined },
+    tasks
+  )
 
   const isTerminal = (status: string) => status === 'done' || status === 'error'
   const allDone = tasks.length > 0 && tasks.every((t) => isTerminal(t.status))
@@ -119,7 +122,6 @@ const RefreshPage = async ({ searchParams }: { searchParams: Promise<{ batch?: s
   // of that job for the character (any earlier refresh). One query for all of the
   // batch's characters, reduced to the most recent `done` per character+job.
   const charIds = [...characters.keys()]
-  const lastSuccess = new Map<string, string>()
   const { data: doneData } = await supabase
     .from('refresh_task')
     .select('character_id, job, ended_at')
@@ -127,10 +129,12 @@ const RefreshPage = async ({ searchParams }: { searchParams: Promise<{ batch?: s
     .in('character_id', charIds)
     .not('ended_at', 'is', null)
     .order('ended_at', { ascending: false })
-  for (const r of doneData ?? []) {
-    const key = `${r.character_id}:${r.job}`
-    if (!lastSuccess.has(key)) lastSuccess.set(key, r.ended_at) // first seen = most recent
-  }
+  const lastSuccess = reduce(
+    // first seen for a key = most recent ended_at, since doneData is ordered descending
+    (acc, r) => (acc.has(`${r.character_id}:${r.job}`) ? acc : acc.set(`${r.character_id}:${r.job}`, r.ended_at)),
+    new Map<string, string>(),
+    doneData ?? []
+  )
 
   return (
     <>

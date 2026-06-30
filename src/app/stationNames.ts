@@ -4,18 +4,17 @@
 // systemNames.ts. Unresolved ids are simply omitted so callers can fall back to
 // showing the raw id (never read the evesde SDE). Player Upwell structures are
 // resolved separately from corp_structure/structure.
+import { filter, fromPairs, map, uniq } from 'ramda'
 import { createClient } from '@/utils/supabase/server'
 
+const idNamePairs = map((r: { id: number | string; name: string }): [number, string] => [Number(r.id), r.name])
+
 export const fetchStationNames = async (stationIDs: Iterable<number>): Promise<Record<number, string>> => {
-  const ids = Array.from(new Set([...stationIDs].filter((n) => Number.isFinite(n))))
+  const ids = uniq(filter(Number.isFinite, [...stationIDs]))
   if (ids.length === 0) return {}
   const supabase = await createClient()
   const { data } = await supabase.from('eve_name').select('id, name').eq('category', 'station').in('id', ids)
-  const result: Record<number, string> = {}
-  for (const r of (data ?? []) as Array<{ id: number | string; name: string }>) {
-    result[Number(r.id)] = r.name
-  }
-  return result
+  return fromPairs(idNamePairs((data ?? []) as Array<{ id: number | string; name: string }>))
 }
 
 // universe/names doesn't return a station's solar system, so we don't cache it.

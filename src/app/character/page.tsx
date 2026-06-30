@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
+import { reduce } from 'ramda'
 
 import { createClient } from '@/utils/supabase/server'
 import { register, refreshEsi, setMainCharacter } from './actions'
@@ -23,10 +24,11 @@ const CharacterPage = async () => {
     .select('character_id, balance, recorded_at')
     .order('recorded_at', { ascending: false })
 
-  const latestBalance = new Map<string, string>()
-  for (const w of wallets ?? []) {
-    if (!latestBalance.has(w.character_id)) latestBalance.set(w.character_id, w.balance)
-  }
+  const latestBalance = reduce(
+    (acc, w) => (acc.has(w.character_id) ? acc : acc.set(w.character_id, w.balance)),
+    new Map<string, string>(),
+    wallets ?? []
+  )
   const formatIsk = (raw: string | number) =>
     new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(raw))
 

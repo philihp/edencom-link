@@ -1,8 +1,19 @@
+import { filter, isNil, map, pick, pipe, prop, propEq, props, reduce, reject, splitEvery, unnest } from 'ramda'
+
 import { universeNames } from './esi.js'
 import { sudoSupabase } from './supabase.js'
 
 const LOOKBACK_MS = 30 * 24 * 60 * 60 * 1000
 const BATCH_SIZE = 1000
+
+// id → Number(id), point-free.
+const idToNumber = pipe(prop('id'), Number)
+
+// Ids known to eve_name already, as a Set for O(1) membership checks.
+const knownIdSet = pipe(map(idToNumber), (ids) => new Set(ids))
+
+// A resolved id/name/category row, trimmed down to the eve_name upsert shape.
+const toNameRow = pick(['id', 'name', 'category'])
 
 // ESI /universe/names/ rejects the whole batch if any id is invalid, so bisect on failure
 // until either the batch resolves or we narrow down to single bad ids we can drop.
@@ -21,6 +32,17 @@ export const resolveBatch = async (ids) => {
   }
 }
 
+// Resolve every id in BATCH_SIZE chunks (the names endpoint caps at 1000 ids per
+// call) and flatten the results, one chunk at a time so we never hold more than
+// one batch of in-flight requests. Shared by every resolve* function below and
+// by the daily job's corp-name resolution.
+export const resolveAllIds = (ids) =>
+  reduce(
+    (resolvedSoFar, batch) => resolvedSoFar.then(async (resolved) => [...resolved, ...(await resolveBatch(batch))]),
+    Promise.resolve([]),
+    splitEvery(BATCH_SIZE, ids)
+  )
+
 // Resolve and cache (in eve_name) the name of every party seen in the corp wallet journal over the
 // last 30 days that we don't already have a name for. The UI reads eve_name to show who paid each
 // unaccounted industry tax instead of a raw id. Cheap to run often: it only resolves ids missing
@@ -34,37 +56,29 @@ export const resolveCorpJournalNames = async () => {
     .gte('date', cutoff)
   if (journalErr) throw journalErr
 
-  const ids = new Set()
-  for (const r of journal ?? []) {
-    if (r.first_party_id != null) ids.add(Number(r.first_party_id))
-    if (r.second_party_id != null) ids.add(Number(r.second_party_id))
-  }
+  const journalPartyIds = pipe(map(props(['first_party_id', 'second_party_id'])), unnest, reject(isNil), map(Number))
+  const ids = new Set(journalPartyIds(journal ?? []))
 
   const { data: known, error: knownErr } = await sudoSupabase.from('eve_name').select('id')
   if (knownErr) throw knownErr
-  for (const k of known ?? []) ids.delete(Number(k.id))
+  const knownIds = knownIdSet(known ?? [])
 
-  const toResolve = [...ids].filter((n) => Number.isFinite(n) && n > 0)
+  const toResolve = filter((n) => Number.isFinite(n) && n > 0 && !knownIds.has(n), [...ids])
   console.log(`[names] corp journal: ${ids.size} unknown id(s) seen in last 30d, ${toResolve.length} to resolve`)
   if (toResolve.length === 0) return
 
-  const resolved = []
-  for (let i = 0; i < toResolve.length; i += BATCH_SIZE) {
-    const batch = toResolve.slice(i, i + BATCH_SIZE)
-    const names = await resolveBatch(batch)
-    resolved.push(...names)
-  }
+  const resolved = await resolveAllIds(toResolve)
 
   if (resolved.length === 0) {
     console.log('[names] no names resolved')
     return
   }
 
-  const rows = resolved.map((n) => ({ id: n.id, name: n.name, category: n.category }))
+  const rows = map(toNameRow, resolved)
   const { error: upErr } = await sudoSupabase.from('eve_name').upsert(rows, { onConflict: 'id' })
   if (upErr) throw upErr
 
-  const characterCount = rows.filter((r) => r.category === 'character').length
+  const characterCount = filter(propEq('character', 'category'), rows).length
   console.log(`[names] upserted ${rows.length} name(s) (${characterCount} character)`)
 }
 
@@ -73,23 +87,19 @@ export const resolveCorpJournalNames = async () => {
 // by corporation name instead of a raw id. Only resolves missing ids, so
 // steady-state runs do nothing.
 export const resolveCorpNames = async (corporationIds) => {
-  const ids = [...new Set((corporationIds ?? []).map(Number).filter((n) => Number.isFinite(n) && n > 0))]
+  const ids = [...new Set(filter((n) => Number.isFinite(n) && n > 0, map(Number, corporationIds ?? [])))]
   if (ids.length === 0) return
 
   const { data: known, error: knownErr } = await sudoSupabase.from('eve_name').select('id').in('id', ids)
   if (knownErr) throw knownErr
-  const knownIds = new Set((known ?? []).map((k) => Number(k.id)))
-  const toResolve = ids.filter((id) => !knownIds.has(id))
+  const knownIds = knownIdSet(known ?? [])
+  const toResolve = reject((id) => knownIds.has(id), ids)
   if (toResolve.length === 0) return
 
-  const resolved = []
-  for (let i = 0; i < toResolve.length; i += BATCH_SIZE) {
-    const names = await resolveBatch(toResolve.slice(i, i + BATCH_SIZE))
-    resolved.push(...names)
-  }
+  const resolved = await resolveAllIds(toResolve)
   if (resolved.length === 0) return
 
-  const rows = resolved.map((n) => ({ id: n.id, name: n.name, category: n.category }))
+  const rows = map(toNameRow, resolved)
   const { error: upErr } = await sudoSupabase.from('eve_name').upsert(rows, { onConflict: 'id' })
   if (upErr) throw upErr
   console.log(`[names] upserted ${rows.length} corp name(s)`)
@@ -122,24 +132,20 @@ export const resolveAssetStationNames = async () => {
 
   const { data: known, error: knownErr } = await sudoSupabase.from('eve_name').select('id').eq('category', 'station')
   if (knownErr) throw knownErr
-  for (const k of known ?? []) ids.delete(Number(k.id))
+  const knownIds = knownIdSet(known ?? [])
 
-  const toResolve = [...ids].filter((n) => Number.isFinite(n) && n > 0)
+  const toResolve = filter((n) => Number.isFinite(n) && n > 0 && !knownIds.has(n), [...ids])
   console.log(`[names] asset stations: ${toResolve.length} to resolve`)
   if (toResolve.length === 0) return
 
-  const resolved = []
-  for (let i = 0; i < toResolve.length; i += BATCH_SIZE) {
-    const names = await resolveBatch(toResolve.slice(i, i + BATCH_SIZE))
-    resolved.push(...names)
-  }
+  const resolved = await resolveAllIds(toResolve)
 
   if (resolved.length === 0) {
     console.log('[names] no station names resolved')
     return
   }
 
-  const rows = resolved.map((n) => ({ id: n.id, name: n.name, category: n.category }))
+  const rows = map(toNameRow, resolved)
   const { error: upErr } = await sudoSupabase.from('eve_name').upsert(rows, { onConflict: 'id' })
   if (upErr) throw upErr
   console.log(`[names] upserted ${rows.length} station name(s)`)
@@ -153,35 +159,28 @@ export const resolveCorpStructureSystemNames = async () => {
   const { data: structures, error: structuresErr } = await sudoSupabase.from('corp_structure').select('system_id')
   if (structuresErr) throw structuresErr
 
-  const ids = new Set()
-  for (const r of structures ?? []) {
-    if (r.system_id != null) ids.add(Number(r.system_id))
-  }
+  const systemId = pipe(prop('system_id'), Number)
+  const ids = new Set(map(systemId, reject(pipe(prop('system_id'), isNil), structures ?? [])))
 
   const { data: known, error: knownErr } = await sudoSupabase
     .from('eve_name')
     .select('id')
     .eq('category', 'solar_system')
   if (knownErr) throw knownErr
-  for (const k of known ?? []) ids.delete(Number(k.id))
+  const knownIds = knownIdSet(known ?? [])
 
-  const toResolve = [...ids].filter((n) => Number.isFinite(n) && n > 0)
+  const toResolve = filter((n) => Number.isFinite(n) && n > 0 && !knownIds.has(n), [...ids])
   console.log(`[names] corp structure systems: ${toResolve.length} to resolve`)
   if (toResolve.length === 0) return
 
-  const resolved = []
-  for (let i = 0; i < toResolve.length; i += BATCH_SIZE) {
-    const batch = toResolve.slice(i, i + BATCH_SIZE)
-    const names = await resolveBatch(batch)
-    resolved.push(...names)
-  }
+  const resolved = await resolveAllIds(toResolve)
 
   if (resolved.length === 0) {
     console.log('[names] no system names resolved')
     return
   }
 
-  const rows = resolved.map((n) => ({ id: n.id, name: n.name, category: n.category }))
+  const rows = map(toNameRow, resolved)
   const { error: upErr } = await sudoSupabase.from('eve_name').upsert(rows, { onConflict: 'id' })
   if (upErr) throw upErr
   console.log(`[names] upserted ${rows.length} system name(s)`)
