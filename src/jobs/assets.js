@@ -1,6 +1,6 @@
 import { fileURLToPath } from 'node:url'
 
-import { splitEvery } from 'ramda'
+import { filter, identity, juxt, map, pipe, prop, props, splitEvery } from 'ramda'
 
 import { assets, assetNames, userAgent } from '../esi.js'
 import SingleSignOn from '@philihp/eve-sso'
@@ -35,7 +35,7 @@ const signature = (a) =>
 // ESI returns the literal string "None" for singletons with no player-assigned
 // name (e.g. blueprints), so treat that sentinel as "no name" rather than text.
 const fetchNames = async (access_token, characterID, fetched) => {
-  const ids = fetched.filter((a) => a.is_singleton).map((a) => Number(a.item_id))
+  const ids = map(pipe(prop('item_id'), Number), filter(prop('is_singleton'), fetched))
   const names = new Map()
   for (const part of splitEvery(1000, ids)) {
     try {
@@ -105,11 +105,12 @@ const reconcile = async (character_id, fetched, hasName) => {
     if (data.length < PAGE) break
   }
 
-  const currentByItem = new Map(current.map((r) => [Number(r.item_id), r]))
+  const byItemId = map(juxt([pipe(prop('item_id'), Number), identity]))
+  const currentByItem = new Map(byItemId(current))
 
   // ESI can return the same item twice across pages if assets shift mid-fetch;
   // collapse to one entry per item so we never queue two inserts for it.
-  const fetchedByItem = new Map(fetched.map((a) => [Number(a.item_id), a]))
+  const fetchedByItem = new Map(byItemId(fetched))
   fetched = [...fetchedByItem.values()]
 
   const now = new Date().toISOString()
@@ -171,7 +172,7 @@ export const runAssets = async ({ characterIds } = {}) => {
     console.error('[assets] character lookup failed:', charactersError)
     throw charactersError
   }
-  const characterName = new Map((characters ?? []).map((c) => [c.id, c.name]))
+  const characterName = new Map(map(props(['id', 'name']), characters ?? []))
 
   let tokenQuery = sudoSupabase
     .from('token')
@@ -204,11 +205,9 @@ export const runAssets = async ({ characterIds } = {}) => {
         continue
       }
 
-      const { all, totalPages } = await fetchAssets(access_token, characterID)
-      if (hasName) {
-        const names = await fetchNames(access_token, characterID, all)
-        for (const a of all) a.name = names.get(Number(a.item_id)) ?? null
-      }
+      const { all: fetched, totalPages } = await fetchAssets(access_token, characterID)
+      const names = hasName ? await fetchNames(access_token, characterID, fetched) : null
+      const all = hasName ? map((a) => ({ ...a, name: names.get(Number(a.item_id)) ?? null }), fetched) : fetched
       const { touched, opened, closed } = await reconcile(tokenRow.character_id, all, hasName)
 
       const dt = Date.now() - t0

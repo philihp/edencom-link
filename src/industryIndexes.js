@@ -1,4 +1,4 @@
-import { chain } from 'ramda'
+import { chain, filter, map, prop } from 'ramda'
 
 import { industrySystems } from './esi.js'
 import { sudoSupabase } from './supabase.js'
@@ -38,9 +38,10 @@ export const pullIndustryIndexes = async () => {
   const rows = chain((s) => {
     const system_id = Number(s?.solar_system_id)
     if (!systemIds.has(system_id)) return []
-    return (s?.cost_indices ?? [])
-      .filter((ci) => ci?.activity)
-      .map((ci) => ({ system_id, activity: ci.activity, cost_index: ci.cost_index ?? null, recorded_at }))
+    return map(
+      (ci) => ({ system_id, activity: ci.activity, cost_index: ci.cost_index ?? null, recorded_at }),
+      filter(prop('activity'), s?.cost_indices ?? [])
+    )
   }, systems ?? [])
 
   if (rows.length === 0) {

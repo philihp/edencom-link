@@ -1,12 +1,15 @@
 import { fileURLToPath } from 'node:url'
 
-import { splitEvery } from 'ramda'
+import { filter, map, pick, pipe, prop, reduce, reject, splitEvery } from 'ramda'
 
 import { characterAffiliations } from '../esi.js'
 import { resolveAllIds, resolveCorpJournalNames } from '../resolveNames.js'
 import { sudoSupabase } from '../supabase.js'
 
 const BATCH_SIZE = 1000
+
+const isPositiveId = (n) => Number.isFinite(n) && n > 0
+const idToNumber = pipe(prop('id'), Number)
 
 // Map each known character to the corporation they currently belong to, so the UI can show who paid
 // industry tax and which corp they fly for. Affiliations are public (no token) and resolved in
@@ -15,44 +18,50 @@ const resolveCharacterCorps = async () => {
   const { data: chars, error: charsErr } = await sudoSupabase.from('eve_name').select('id').eq('category', 'character')
   if (charsErr) throw charsErr
 
-  const ids = (chars ?? []).map((c) => Number(c.id)).filter((n) => Number.isFinite(n) && n > 0)
+  const ids = filter(isPositiveId, map(idToNumber, chars ?? []))
   console.log(`[daily] character corps: resolving affiliations for ${ids.length} character(s)`)
   if (ids.length === 0) return
 
-  const affiliations = []
-  for (const batch of splitEvery(BATCH_SIZE, ids)) {
-    try {
-      affiliations.push(...(await characterAffiliations(batch)))
-    } catch (e) {
-      console.warn(`[daily] characters/affiliation batch failed: ${e?.message}`)
-    }
-  }
+  const affiliations = await reduce(
+    (affiliationsSoFar, batch) =>
+      affiliationsSoFar.then(async (affiliations) => {
+        try {
+          return [...affiliations, ...(await characterAffiliations(batch))]
+        } catch (e) {
+          console.warn(`[daily] characters/affiliation batch failed: ${e?.message}`)
+          return affiliations
+        }
+      }),
+    Promise.resolve([]),
+    splitEvery(BATCH_SIZE, ids)
+  )
   if (affiliations.length === 0) return
 
-  const rows = affiliations
-    .filter((a) => a.character_id != null && a.corporation_id != null)
-    .map((a) => ({
+  const rows = pipe(
+    filter((a) => a.character_id != null && a.corporation_id != null),
+    map((a) => ({
       character_id: a.character_id,
       corporation_id: a.corporation_id,
       resolved_at: new Date().toISOString(),
     }))
+  )(affiliations)
   const { error: upErr } = await sudoSupabase.from('character_corp').upsert(rows, { onConflict: 'character_id' })
   if (upErr) throw upErr
   console.log(`[daily] upserted ${rows.length} character corp affiliation(s)`)
 
   // Resolve names for any corporations we don't already have a name for.
-  const corpIds = new Set(rows.map((r) => Number(r.corporation_id)).filter((n) => Number.isFinite(n) && n > 0))
+  const corpIds = new Set(filter(isPositiveId, map(pipe(prop('corporation_id'), Number), rows)))
   const { data: known, error: knownErr } = await sudoSupabase.from('eve_name').select('id')
   if (knownErr) throw knownErr
-  const knownIds = new Set((known ?? []).map((k) => Number(k.id)))
+  const knownIds = new Set(map(idToNumber, known ?? []))
 
-  const toResolve = [...corpIds].filter((id) => !knownIds.has(id))
+  const toResolve = reject((id) => knownIds.has(id), [...corpIds])
   if (toResolve.length === 0) return
 
   const resolved = await resolveAllIds(toResolve)
   if (resolved.length === 0) return
 
-  const nameRows = resolved.map((n) => ({ id: n.id, name: n.name, category: n.category }))
+  const nameRows = map(pick(['id', 'name', 'category']), resolved)
   const { error: nameErr } = await sudoSupabase.from('eve_name').upsert(nameRows, { onConflict: 'id' })
   if (nameErr) throw nameErr
   console.log(`[daily] upserted ${nameRows.length} corporation name(s)`)

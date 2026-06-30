@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
+import { pluck, reduce, uniq } from 'ramda'
 
 import { createServiceClient } from '@/utils/supabase/service'
 import { createClient } from '@/utils/supabase/server'
@@ -30,7 +31,7 @@ const ChancellorPage = async () => {
     .select('redeemed_by')
     .eq('is_chancellor', true)
     .not('redeemed_by', 'is', null)
-  const ids = [...new Set((rows ?? []).map((r) => r.redeemed_by as string))]
+  const ids = uniq(pluck('redeemed_by', rows ?? []) as string[])
 
   // Display each Chancellor by their character names; fall back to the account
   // email (then the raw id) for accounts that haven't linked a character yet.
@@ -42,10 +43,11 @@ const ChancellorPage = async () => {
         .order('created_at', { ascending: true })
     : { data: [] }
 
-  const namesByUser = (regs ?? []).reduce((acc, r) => {
-    acc.set(r.user_id, [...(acc.get(r.user_id) ?? []), r.name])
-    return acc
-  }, new Map<string, string[]>())
+  const namesByUser = reduce(
+    (acc, r) => acc.set(r.user_id, [...(acc.get(r.user_id) ?? []), r.name]),
+    new Map<string, string[]>(),
+    regs ?? []
+  )
 
   const emailByUser = new Map<string, string>()
   for (const id of ids) {

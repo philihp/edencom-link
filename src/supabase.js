@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { map, pluck, unnest } from 'ramda'
 
 // The cron/GitHub Actions environment sets SUPABASE_URL / SUPABASE_KEY, but the
 // Vercel runtime only exposes the NEXT_PUBLIC_* vars (same project). This module
@@ -113,13 +114,13 @@ export const selectCharacters = async (columns, owner) => {
 // queue message per character. Throws on a lookup failure.
 export const selectCharacterIdsWithScopes = async (scopes) => {
   const perScope = await Promise.all(
-    scopes.map(async (scope) => {
+    map(async (scope) => {
       const { data, error } = await sudoSupabase.from('token').select('character_id').contains('scope', [scope])
       if (error) throw error
-      return (data ?? []).map((r) => r.character_id)
-    })
+      return pluck('character_id', data ?? [])
+    }, scopes)
   )
-  return [...new Set(perScope.flat())]
+  return [...new Set(unnest(perScope))]
 }
 
 export const selectToken = async (character_id, scope = []) => {

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { lensProp, not, over } from 'ramda'
+import { fromPairs, lensProp, map, not, over } from 'ramda'
 
 import type { EsiScope } from '@/app/character/scopes'
 import Dot from '@/app/account/settings/dot'
@@ -17,16 +17,16 @@ type GrantsProps = {
 
 const Grants = ({ scopes, enabled, from }: GrantsProps) => {
   const [checked, setChecked] = useState<Record<string, boolean>>(() =>
-    Object.fromEntries(scopes.map((s) => [s.scope, Boolean(s.required) || enabled.includes(s.scope)]))
+    fromPairs(map((s) => [s.scope, Boolean(s.required) || enabled.includes(s.scope)], scopes))
   )
   const [response, setResponse] = useState('')
 
   const toggle = (scope: string) => setChecked(over(lensProp(scope), not))
 
-  const selectAll = () => setChecked(Object.fromEntries(scopes.map((s) => [s.scope, true])))
+  const selectAll = () => setChecked(fromPairs(map((s) => [s.scope, true], scopes)))
 
   // Required scopes stay checked since they are always granted.
-  const unselectAll = () => setChecked(Object.fromEntries(scopes.map((s) => [s.scope, Boolean(s.required)])))
+  const unselectAll = () => setChecked(fromPairs(map((s) => [s.scope, Boolean(s.required)], scopes)))
 
   // A successful save redirects (back to settings, or on to EVE SSO), so we only
   // surface a message when saving fails.

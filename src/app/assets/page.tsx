@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
 import { Suspense } from 'react'
-import { chain } from 'ramda'
+import { chain, filter, map, pipe, reduce } from 'ramda'
 
 import { createClient } from '@/utils/supabase/server'
 import { DateTime } from '../DateTime'
@@ -72,19 +72,22 @@ const Locations = async () => {
 
   // Tally stacks per location, split by the character that owns each stack so
   // the client can filter by character.
-  const byLocation = ((summary ?? []) as SummaryRow[]).reduce((acc, row) => {
-    const id = String(row.location_id)
-    const entry = acc.get(id) ?? { root: { id, type: row.location_type }, counts: new Map<string, number>() }
-    entry.counts.set(row.character_id, (entry.counts.get(row.character_id) ?? 0) + Number(row.stacks))
-    acc.set(id, entry)
-    return acc
-  }, new Map<string, { root: Root; counts: Map<string, number> }>())
+  const byLocation = reduce(
+    (acc, row) => {
+      const id = String(row.location_id)
+      const entry = acc.get(id) ?? { root: { id, type: row.location_type }, counts: new Map<string, number>() }
+      entry.counts.set(row.character_id, (entry.counts.get(row.character_id) ?? 0) + Number(row.stacks))
+      return acc.set(id, entry)
+    },
+    new Map<string, { root: Root; counts: Map<string, number> }>(),
+    (summary ?? []) as SummaryRow[]
+  )
 
   // Structure names + systems come from two caches: our own corp's structures
   // (corp_structure) and foreign player structures characters hold assets in,
   // resolved from ESI by the structures job (public.structure). Own-corp entries
   // win on overlap. In-space `solar_system` locations are the system itself.
-  const locationIds = [...byLocation.keys()].map(Number).filter((n) => Number.isFinite(n))
+  const locationIds = filter(Number.isFinite, map(Number, [...byLocation.keys()]))
 
   const { data: corpStructures } = await supabase.from('corp_structure').select('structure_id, name, system_id')
   const { data: playerStructures } = locationIds.length
@@ -92,18 +95,18 @@ const Locations = async () => {
     : { data: [] }
 
   // Own-corp structures override the ESI-resolved cache (later entries win).
-  const structureById = new Map<string, Structure>(
-    [...((playerStructures ?? []) as Structure[]), ...((corpStructures ?? []) as Structure[])].map((s) => [
-      String(s.structure_id),
-      s,
-    ])
-  )
+  const byStructureId = (list: Structure[]): [string, Structure][] => map((s) => [String(s.structure_id), s], list)
+  const structureById = new Map<string, Structure>([
+    ...byStructureId((playerStructures ?? []) as Structure[]),
+    ...byStructureId((corpStructures ?? []) as Structure[]),
+  ])
 
   // NPC station names come from the eve_name DB cache; player structures aren't
   // there, so those still resolve via corp_structure above.
-  const stationIds = [...byLocation.values()]
-    .filter(({ root }) => root.type === 'station')
-    .map(({ root }) => Number(root.id))
+  const stationIds = pipe(
+    filter(({ root }: { root: Root }) => root.type === 'station'),
+    map(({ root }: { root: Root }) => Number(root.id))
+  )([...byLocation.values()])
   const [stationNames, stationSystems] = await Promise.all([
     fetchStationNames(stationIds),
     fetchStationSystems(stationIds),
@@ -145,12 +148,15 @@ const Locations = async () => {
     return undefined
   }
 
-  const locations: Location[] = [...byLocation.values()].map(({ root, counts }) => ({
-    id: root.id,
-    name: labelFor(root),
-    system: systemFor(root) ?? null,
-    counts: Object.fromEntries(counts),
-  }))
+  const locations: Location[] = map(
+    ({ root, counts }) => ({
+      id: root.id,
+      name: labelFor(root),
+      system: systemFor(root) ?? null,
+      counts: Object.fromEntries(counts),
+    }),
+    [...byLocation.values()]
+  )
 
   // When the Assets background job last finished. Each scheduled run writes a
   // public.heartbeat row stamped with ended_at and a link to the workflow run; we

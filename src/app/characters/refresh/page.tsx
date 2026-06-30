@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
+import { reduce } from 'ramda'
 
 import { createClient } from '@/utils/supabase/server'
 
@@ -88,7 +89,7 @@ const RefreshPage = async ({ searchParams }: { searchParams: Promise<{ batch?: s
 
   // Index the per-character tasks by character+job for the matrix; the daily task
   // is account-wide so it stands on its own.
-  const { byCharJob, characters, daily } = tasks.reduce(
+  const { byCharJob, characters, daily } = reduce(
     (acc, t) => {
       if (t.character_id) {
         acc.byCharJob.set(`${t.character_id}:${t.job}`, t)
@@ -98,7 +99,8 @@ const RefreshPage = async ({ searchParams }: { searchParams: Promise<{ batch?: s
       }
       return acc
     },
-    { byCharJob: new Map<string, Task>(), characters: new Map<string, string>(), daily: undefined as Task | undefined }
+    { byCharJob: new Map<string, Task>(), characters: new Map<string, string>(), daily: undefined as Task | undefined },
+    tasks
   )
 
   const isTerminal = (status: string) => status === 'done' || status === 'error'
@@ -127,11 +129,12 @@ const RefreshPage = async ({ searchParams }: { searchParams: Promise<{ batch?: s
     .in('character_id', charIds)
     .not('ended_at', 'is', null)
     .order('ended_at', { ascending: false })
-  const lastSuccess = (doneData ?? []).reduce((acc, r) => {
-    const key = `${r.character_id}:${r.job}`
-    if (!acc.has(key)) acc.set(key, r.ended_at) // first seen = most recent
-    return acc
-  }, new Map<string, string>())
+  const lastSuccess = reduce(
+    // first seen for a key = most recent ended_at, since doneData is ordered descending
+    (acc, r) => (acc.has(`${r.character_id}:${r.job}`) ? acc : acc.set(`${r.character_id}:${r.job}`, r.ended_at)),
+    new Map<string, string>(),
+    doneData ?? []
+  )
 
   return (
     <>

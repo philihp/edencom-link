@@ -1,3 +1,5 @@
+import { map, pipe, prop, reject } from 'ramda'
+
 import { universeStructure } from './esi.js'
 import { sudoSupabase } from './supabase.js'
 import { refreshAccessToken } from './tokenRefresh.js'
@@ -33,7 +35,7 @@ export const resolveStructureNames = async () => {
   // Ids we don't need to resolve: our own corp structures and anything already cached.
   const { data: corpStructs } = await sudoSupabase.from('corp_structure').select('structure_id')
   const { data: knownStructs } = await sudoSupabase.from('structure').select('structure_id')
-  const resolved = new Set([...(corpStructs ?? []), ...(knownStructs ?? [])].map((s) => Number(s.structure_id)))
+  const resolved = new Set(map(pipe(prop('structure_id'), Number), [...(corpStructs ?? []), ...(knownStructs ?? [])]))
 
   // Pool candidate structure ids from every character's live assets. itemIds is
   // the union of all owned item ids across characters: a location in the
@@ -62,7 +64,7 @@ export const resolveStructureNames = async () => {
     }
     if (rows.length < ASSET_PAGE) break
   }
-  const candidates = [...locationIds].filter((id) => !itemIds.has(id) && !resolved.has(id))
+  const candidates = reject((id) => itemIds.has(id) || resolved.has(id), [...locationIds])
   console.log(`[structures] ${candidates.length} candidate player structure(s) to resolve`)
   if (candidates.length === 0) return
 
