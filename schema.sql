@@ -178,7 +178,21 @@ returns table (location_id bigint, location_type text, character_id uuid, stacks
 language sql
 stable
 as $$
-  with recursive walk as (
+  with recursive parent_of as (
+    -- One best-known parent per item the caller can see: the live row if there is
+    -- one, otherwise the most recent historical sighting. The walk climbs through
+    -- this rather than the live-only asset view so it can bridge a container or
+    -- ship that has momentarily dropped out of the current snapshot — e.g. one
+    -- handed between the player's own characters, whose per-character extracts run
+    -- at different times — and still roll its contents up to the enclosing
+    -- structure instead of stranding them on the bare item id. RLS keeps
+    -- asset_over_time scoped to the caller's own characters, so a container owned
+    -- by someone else (a corpmate's) still can't be bridged.
+    select distinct on (item_id) item_id, location_id, location_type
+    from public.asset_over_time
+    order by item_id, is_current desc, last_seen_at desc
+  ),
+  walk as (
     select
       a.item_id       as start_item,
       a.character_id  as character_id,
@@ -194,7 +208,7 @@ as $$
       p.location_type,
       w.depth + 1
     from walk w
-    join public.asset p on p.item_id = w.location_id
+    join parent_of p on p.item_id = w.location_id
     where w.depth < 64
   )
   select
@@ -204,7 +218,7 @@ as $$
     count(*) as stacks
   from walk w
   where w.location_id is not null
-    and not exists (select 1 from public.asset o where o.item_id = w.location_id)
+    and not exists (select 1 from parent_of o where o.item_id = w.location_id)
   group by w.location_id, w.location_type, w.character_id;
 $$;
 
