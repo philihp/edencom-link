@@ -2,7 +2,7 @@ import { fileURLToPath } from 'node:url'
 
 import { pullCorpWalletJournals } from '../corpWalletJournal.js'
 import { character as fetchCharacter, corpAssets, corpStructures, universeNames } from '../esi.js'
-import { resolveCorpJournalNames, resolveCorpStructureSystemNames } from '../resolveNames.js'
+import { resolveAssetStationNames, resolveCorpJournalNames, resolveCorpStructureSystemNames } from '../resolveNames.js'
 import { resolveStructureNames } from '../structureNames.js'
 import { sudoSupabase } from '../supabase.js'
 import { refreshAccessToken } from '../tokenRefresh.js'
@@ -265,6 +265,14 @@ export const runStructures = async ({ characterIds } = {}) => {
     await resolveStructureNames()
   } catch (e) {
     console.error(`[structures] structure-name resolution FAILED name=${e?.name} message=${e?.message}`)
+  }
+
+  // Name the NPC stations characters hold assets in, so the assets page can label
+  // them instead of showing a raw station id (player structures are named above).
+  try {
+    await resolveAssetStationNames()
+  } catch (e) {
+    console.error(`[structures] station-name resolution FAILED name=${e?.name} message=${e?.message}`)
   }
 
   // Name the solar systems our corp structures sit in, so the structures page can

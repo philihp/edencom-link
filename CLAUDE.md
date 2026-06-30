@@ -88,6 +88,7 @@ All functions take `(characterId, accessToken)` unless noted. Returns raw ESI re
 - `resolveCorpJournalNames(entries[])` — extract and resolve first/second party IDs from journal rows
 - `resolveCorpNames(corporationIds[])` — resolve+cache corp names (for labelling corp market sales)
 - `resolveCorpStructureSystemNames(structures[])` — resolve system IDs for structures
+- `resolveAssetStationNames()` — resolve+cache NPC station names (location_type 'station' in assets) into `eve_name`
 
 ### `src/corpMarketTransactions.js`
 - `pullCorpMarketTransactions({ access_token, corporation_id, ... })` — fetch all 7 divisions' market transactions, upsert to `corp_market_transaction`
