@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { lensProp, not, over } from 'ramda'
 
 import type { EsiScope } from '@/app/character/scopes'
 import Dot from '@/app/account/settings/dot'
@@ -20,7 +21,7 @@ const Grants = ({ scopes, enabled, from }: GrantsProps) => {
   )
   const [response, setResponse] = useState('')
 
-  const toggle = (scope: string) => setChecked((prev) => ({ ...prev, [scope]: !prev[scope] }))
+  const toggle = (scope: string) => setChecked(over(lensProp(scope), not))
 
   const selectAll = () => setChecked(Object.fromEntries(scopes.map((s) => [s.scope, true])))
 
@@ -40,8 +41,8 @@ const Grants = ({ scopes, enabled, from }: GrantsProps) => {
     <>
       <p className={styles.intro}>
         When you add a character we ask EVE Online for permission to read the data below. Check anything you would like
-        to share &mdash; we can only provide the related features for the data you grant. Changes apply to characters you
-        add from now on.
+        to share &mdash; we can only provide the related features for the data you grant. Changes apply to characters
+        you add from now on.
       </p>
       <form>
         <input type="hidden" name="from" value={from} />

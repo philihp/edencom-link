@@ -1,5 +1,7 @@
 import { fileURLToPath } from 'node:url'
 
+import { splitEvery } from 'ramda'
+
 import { assets, assetNames, userAgent } from '../esi.js'
 import SingleSignOn from '@philihp/eve-sso'
 import { sudoSupabase } from '../supabase.js'
@@ -11,13 +13,6 @@ const EVE_CALLBACK_URL = process.env.EVE_CALLBACK_URL
 const ASSETS_SCOPE = 'esi-assets.read_assets.v1'
 
 const sso = new SingleSignOn(EVE_CLIENT_ID, EVE_SECRET_KEY, EVE_CALLBACK_URL, userAgent)
-
-// Keep id lists under PostgREST's URL length limit when filtering with .in().
-const chunk = (arr, n) => {
-  const out = []
-  for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n))
-  return out
-}
 
 // The tracked attributes that define a version of an item. Two sightings with
 // the same signature are the "same" row; any difference opens a new SCD row.
@@ -42,8 +37,7 @@ const signature = (a) =>
 const fetchNames = async (access_token, characterID, fetched) => {
   const ids = fetched.filter((a) => a.is_singleton).map((a) => Number(a.item_id))
   const names = new Map()
-  for (const part of chunk(ids, 1000)) {
-    if (part.length === 0) continue
+  for (const part of splitEvery(1000, ids)) {
     try {
       const rows = await assetNames(access_token, characterID, part)
       for (const r of rows ?? []) names.set(Number(r.item_id), r.name && r.name !== 'None' ? r.name : null)
@@ -149,16 +143,16 @@ const reconcile = async (character_id, fetched, hasName) => {
   // Anything still open but not seen this run has left the character's assets.
   for (const cur of currentByItem.values()) closeIds.push(cur.id)
 
-  for (const ids of chunk(touchIds, 200)) {
+  for (const ids of splitEvery(200, touchIds)) {
     const { error: touchErr } = await sudoSupabase.from('asset_over_time').update({ last_seen_at: now }).in('id', ids)
     if (touchErr) throw touchErr
   }
   // Close before inserting so the unique-current-per-item index never collides.
-  for (const ids of chunk(closeIds, 200)) {
+  for (const ids of splitEvery(200, closeIds)) {
     const { error: closeErr } = await sudoSupabase.from('asset_over_time').update({ is_current: false }).in('id', ids)
     if (closeErr) throw closeErr
   }
-  for (const rows of chunk(inserts, 1000)) {
+  for (const rows of splitEvery(1000, inserts)) {
     const { error: insertErr } = await sudoSupabase.from('asset_over_time').insert(rows)
     if (insertErr) throw insertErr
   }
@@ -179,7 +173,10 @@ export const runAssets = async ({ characterIds } = {}) => {
   }
   const characterName = new Map((characters ?? []).map((c) => [c.id, c.name]))
 
-  let tokenQuery = sudoSupabase.from('token').select('id, character_id, refresh_token').contains('scope', [ASSETS_SCOPE])
+  let tokenQuery = sudoSupabase
+    .from('token')
+    .select('id, character_id, refresh_token')
+    .contains('scope', [ASSETS_SCOPE])
   if (characterIds) tokenQuery = tokenQuery.in('character_id', characterIds)
   const { data: tokens, error } = await tokenQuery
 

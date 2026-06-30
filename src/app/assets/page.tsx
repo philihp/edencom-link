@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation'
 import { Suspense } from 'react'
+import { chain } from 'ramda'
 
 import { createClient } from '@/utils/supabase/server'
 import { DateTime } from '../DateTime'
@@ -71,13 +72,13 @@ const Locations = async () => {
 
   // Tally stacks per location, split by the character that owns each stack so
   // the client can filter by character.
-  const byLocation = new Map<string, { root: Root; counts: Map<string, number> }>()
-  for (const row of (summary ?? []) as SummaryRow[]) {
+  const byLocation = ((summary ?? []) as SummaryRow[]).reduce((acc, row) => {
     const id = String(row.location_id)
-    const entry = byLocation.get(id) ?? { root: { id, type: row.location_type }, counts: new Map<string, number>() }
+    const entry = acc.get(id) ?? { root: { id, type: row.location_type }, counts: new Map<string, number>() }
     entry.counts.set(row.character_id, (entry.counts.get(row.character_id) ?? 0) + Number(row.stacks))
-    byLocation.set(id, entry)
-  }
+    acc.set(id, entry)
+    return acc
+  }, new Map<string, { root: Root; counts: Map<string, number> }>())
 
   // Structure names + systems come from two caches: our own corp's structures
   // (corp_structure) and foreign player structures characters hold assets in,
@@ -90,27 +91,39 @@ const Locations = async () => {
     ? await supabase.from('structure').select('structure_id, name, system_id').in('structure_id', locationIds)
     : { data: [] }
 
-  const structureById = new Map<string, Structure>()
-  for (const s of (playerStructures ?? []) as Structure[]) structureById.set(String(s.structure_id), s)
-  // Own-corp structures override the ESI-resolved cache.
-  for (const s of (corpStructures ?? []) as Structure[]) structureById.set(String(s.structure_id), s)
+  // Own-corp structures override the ESI-resolved cache (later entries win).
+  const structureById = new Map<string, Structure>(
+    [...((playerStructures ?? []) as Structure[]), ...((corpStructures ?? []) as Structure[])].map((s) => [
+      String(s.structure_id),
+      s,
+    ])
+  )
 
   // NPC station names come from the eve_name DB cache; player structures aren't
   // there, so those still resolve via corp_structure above.
   const stationIds = [...byLocation.values()]
     .filter(({ root }) => root.type === 'station')
     .map(({ root }) => Number(root.id))
-  const [stationNames, stationSystems] = await Promise.all([fetchStationNames(stationIds), fetchStationSystems(stationIds)])
+  const [stationNames, stationSystems] = await Promise.all([
+    fetchStationNames(stationIds),
+    fetchStationSystems(stationIds),
+  ])
 
-  const systemIds = new Set<number>()
-  for (const { root } of byLocation.values()) {
-    if (root.type === 'solar_system') systemIds.add(Number(root.id))
-    const structure = structureById.get(root.id)
-    if (structure?.system_id != null) systemIds.add(Number(structure.system_id))
-    // NPC stations aren't in corp_structure/structure; their system comes from
-    // the calculator's station lookup above.
-    if (root.type === 'station' && stationSystems[Number(root.id)] != null) systemIds.add(stationSystems[Number(root.id)])
-  }
+  const systemIds = new Set<number>(
+    chain(
+      ({ root }) => {
+        const structure = structureById.get(root.id)
+        return [
+          root.type === 'solar_system' ? Number(root.id) : null,
+          structure?.system_id != null ? Number(structure.system_id) : null,
+          // NPC stations aren't in corp_structure/structure; their system comes from
+          // the calculator's station lookup above.
+          root.type === 'station' ? (stationSystems[Number(root.id)] ?? null) : null,
+        ].filter((id): id is number => id != null)
+      },
+      [...byLocation.values()]
+    )
+  )
   const systemNames = await fetchSystemNames(systemIds)
 
   const labelFor = (loc: Root): string => {

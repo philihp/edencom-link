@@ -23,10 +23,10 @@ const CharacterPage = async () => {
     .select('character_id, balance, recorded_at')
     .order('recorded_at', { ascending: false })
 
-  const latestBalance = new Map<string, string>()
-  for (const w of wallets ?? []) {
-    if (!latestBalance.has(w.character_id)) latestBalance.set(w.character_id, w.balance)
-  }
+  const latestBalance = (wallets ?? []).reduce((acc, w) => {
+    if (!acc.has(w.character_id)) acc.set(w.character_id, w.balance)
+    return acc
+  }, new Map<string, string>())
   const formatIsk = (raw: string | number) =>
     new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(raw))
 

@@ -112,13 +112,14 @@ export const selectCharacters = async (columns, owner) => {
 // The Vercel cron producers use this to enumerate the characters to fan out one
 // queue message per character. Throws on a lookup failure.
 export const selectCharacterIdsWithScopes = async (scopes) => {
-  const ids = new Set()
-  for (const scope of scopes) {
-    const { data, error } = await sudoSupabase.from('token').select('character_id').contains('scope', [scope])
-    if (error) throw error
-    for (const r of data ?? []) ids.add(r.character_id)
-  }
-  return [...ids]
+  const perScope = await Promise.all(
+    scopes.map(async (scope) => {
+      const { data, error } = await sudoSupabase.from('token').select('character_id').contains('scope', [scope])
+      if (error) throw error
+      return (data ?? []).map((r) => r.character_id)
+    })
+  )
+  return [...new Set(perScope.flat())]
 }
 
 export const selectToken = async (character_id, scope = []) => {

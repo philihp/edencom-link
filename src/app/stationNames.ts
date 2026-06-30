@@ -11,11 +11,9 @@ export const fetchStationNames = async (stationIDs: Iterable<number>): Promise<R
   if (ids.length === 0) return {}
   const supabase = await createClient()
   const { data } = await supabase.from('eve_name').select('id, name').eq('category', 'station').in('id', ids)
-  const result: Record<number, string> = {}
-  for (const r of (data ?? []) as Array<{ id: number | string; name: string }>) {
-    result[Number(r.id)] = r.name
-  }
-  return result
+  return Object.fromEntries(
+    ((data ?? []) as Array<{ id: number | string; name: string }>).map((r) => [Number(r.id), r.name])
+  )
 }
 
 // universe/names doesn't return a station's solar system, so we don't cache it.

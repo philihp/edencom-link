@@ -1,7 +1,9 @@
 import { fileURLToPath } from 'node:url'
 
+import { splitEvery } from 'ramda'
+
 import { characterAffiliations } from '../esi.js'
-import { resolveBatch, resolveCorpJournalNames } from '../resolveNames.js'
+import { resolveAllIds, resolveCorpJournalNames } from '../resolveNames.js'
 import { sudoSupabase } from '../supabase.js'
 
 const BATCH_SIZE = 1000
@@ -18,8 +20,7 @@ const resolveCharacterCorps = async () => {
   if (ids.length === 0) return
 
   const affiliations = []
-  for (let i = 0; i < ids.length; i += BATCH_SIZE) {
-    const batch = ids.slice(i, i + BATCH_SIZE)
+  for (const batch of splitEvery(BATCH_SIZE, ids)) {
     try {
       affiliations.push(...(await characterAffiliations(batch)))
     } catch (e) {
@@ -43,15 +44,12 @@ const resolveCharacterCorps = async () => {
   const corpIds = new Set(rows.map((r) => Number(r.corporation_id)).filter((n) => Number.isFinite(n) && n > 0))
   const { data: known, error: knownErr } = await sudoSupabase.from('eve_name').select('id')
   if (knownErr) throw knownErr
-  for (const k of known ?? []) corpIds.delete(Number(k.id))
+  const knownIds = new Set((known ?? []).map((k) => Number(k.id)))
 
-  const toResolve = [...corpIds]
+  const toResolve = [...corpIds].filter((id) => !knownIds.has(id))
   if (toResolve.length === 0) return
 
-  const resolved = []
-  for (let i = 0; i < toResolve.length; i += BATCH_SIZE) {
-    resolved.push(...(await resolveBatch(toResolve.slice(i, i + BATCH_SIZE))))
-  }
+  const resolved = await resolveAllIds(toResolve)
   if (resolved.length === 0) return
 
   const nameRows = resolved.map((n) => ({ id: n.id, name: n.name, category: n.category }))

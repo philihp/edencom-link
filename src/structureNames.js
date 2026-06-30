@@ -33,9 +33,7 @@ export const resolveStructureNames = async () => {
   // Ids we don't need to resolve: our own corp structures and anything already cached.
   const { data: corpStructs } = await sudoSupabase.from('corp_structure').select('structure_id')
   const { data: knownStructs } = await sudoSupabase.from('structure').select('structure_id')
-  const resolved = new Set()
-  for (const s of corpStructs ?? []) resolved.add(Number(s.structure_id))
-  for (const s of knownStructs ?? []) resolved.add(Number(s.structure_id))
+  const resolved = new Set([...(corpStructs ?? []), ...(knownStructs ?? [])].map((s) => Number(s.structure_id)))
 
   // Pool candidate structure ids from every character's live assets. itemIds is
   // the union of all owned item ids across characters: a location in the

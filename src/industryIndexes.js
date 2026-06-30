@@ -1,3 +1,5 @@
+import { chain } from 'ramda'
+
 import { industrySystems } from './esi.js'
 import { sudoSupabase } from './supabase.js'
 
@@ -33,20 +35,13 @@ export const pullIndustryIndexes = async () => {
 
   const systems = await industrySystems()
   const recorded_at = new Date().toISOString()
-  const rows = []
-  for (const s of systems ?? []) {
+  const rows = chain((s) => {
     const system_id = Number(s?.solar_system_id)
-    if (!systemIds.has(system_id)) continue
-    for (const ci of s?.cost_indices ?? []) {
-      if (!ci?.activity) continue
-      rows.push({
-        system_id,
-        activity: ci.activity,
-        cost_index: ci.cost_index ?? null,
-        recorded_at,
-      })
-    }
-  }
+    if (!systemIds.has(system_id)) return []
+    return (s?.cost_indices ?? [])
+      .filter((ci) => ci?.activity)
+      .map((ci) => ({ system_id, activity: ci.activity, cost_index: ci.cost_index ?? null, recorded_at }))
+  }, systems ?? [])
 
   if (rows.length === 0) {
     console.log('[industry_index] no matching systems returned by ESI, nothing to record')

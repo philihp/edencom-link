@@ -42,10 +42,10 @@ const ChancellorPage = async () => {
         .order('created_at', { ascending: true })
     : { data: [] }
 
-  const namesByUser = new Map<string, string[]>()
-  for (const r of regs ?? []) {
-    namesByUser.set(r.user_id, [...(namesByUser.get(r.user_id) ?? []), r.name])
-  }
+  const namesByUser = (regs ?? []).reduce((acc, r) => {
+    acc.set(r.user_id, [...(acc.get(r.user_id) ?? []), r.name])
+    return acc
+  }, new Map<string, string[]>())
 
   const emailByUser = new Map<string, string>()
   for (const id of ids) {

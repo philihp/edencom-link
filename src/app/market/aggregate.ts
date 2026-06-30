@@ -9,16 +9,17 @@ export type TypeTotal = { typeId: number; total: number; quantity: number }
 // Top-N type_ids by summed ISK value of sales whose date falls in [start, end).
 // Also carries the summed unit quantity sold in the same window.
 export const topTypesByValue = (sales: Sale[], start: number, end: number, limit: number): TypeTotal[] => {
-  const agg = new Map<number, { total: number; quantity: number }>()
-  for (const s of sales) {
-    const t = Date.parse(s.date)
-    if (t < start || t >= end) continue
-    const typeId = Number(s.type_id)
-    const cur = agg.get(typeId) ?? { total: 0, quantity: 0 }
-    cur.total += value(s)
-    cur.quantity += Number(s.quantity)
-    agg.set(typeId, cur)
-  }
+  const agg = sales
+    .filter((s) => {
+      const t = Date.parse(s.date)
+      return t >= start && t < end
+    })
+    .reduce((agg, s) => {
+      const typeId = Number(s.type_id)
+      const cur = agg.get(typeId) ?? { total: 0, quantity: 0 }
+      agg.set(typeId, { total: cur.total + value(s), quantity: cur.quantity + Number(s.quantity) })
+      return agg
+    }, new Map<number, { total: number; quantity: number }>())
   return [...agg.entries()]
     .map(([typeId, { total, quantity }]) => ({ typeId, total, quantity }))
     .sort((a, b) => b.total - a.total)
@@ -37,11 +38,11 @@ export const bucketSales = (sales: Sale[], start: number, end: number, bucketMs:
     end: start + (i + 1) * bucketMs,
     total: 0,
   }))
-  for (const s of sales) {
+  return sales.reduce((buckets, s) => {
     const t = Date.parse(s.date)
-    if (t < start || t >= end) continue
+    if (t < start || t >= end) return buckets
     const idx = Math.min(count - 1, Math.floor((t - start) / bucketMs))
     buckets[idx].total += value(s)
-  }
-  return buckets
+    return buckets
+  }, buckets)
 }

@@ -1,3 +1,5 @@
+import { splitEvery } from 'ramda'
+
 import { universeNames } from './esi.js'
 import { sudoSupabase } from './supabase.js'
 
@@ -21,6 +23,17 @@ export const resolveBatch = async (ids) => {
   }
 }
 
+// Resolve every id in BATCH_SIZE chunks (the names endpoint caps at 1000 ids per
+// call) and flatten the results. Shared by every resolve* function below and by
+// the daily job's corp-name resolution.
+export const resolveAllIds = async (ids) => {
+  const resolved = []
+  for (const batch of splitEvery(BATCH_SIZE, ids)) {
+    resolved.push(...(await resolveBatch(batch)))
+  }
+  return resolved
+}
+
 // Resolve and cache (in eve_name) the name of every party seen in the corp wallet journal over the
 // last 30 days that we don't already have a name for. The UI reads eve_name to show who paid each
 // unaccounted industry tax instead of a raw id. Cheap to run often: it only resolves ids missing
@@ -34,26 +47,19 @@ export const resolveCorpJournalNames = async () => {
     .gte('date', cutoff)
   if (journalErr) throw journalErr
 
-  const ids = new Set()
-  for (const r of journal ?? []) {
-    if (r.first_party_id != null) ids.add(Number(r.first_party_id))
-    if (r.second_party_id != null) ids.add(Number(r.second_party_id))
-  }
+  const ids = new Set(
+    (journal ?? []).flatMap((r) => [r.first_party_id, r.second_party_id].filter((v) => v != null).map(Number))
+  )
 
   const { data: known, error: knownErr } = await sudoSupabase.from('eve_name').select('id')
   if (knownErr) throw knownErr
-  for (const k of known ?? []) ids.delete(Number(k.id))
+  const knownIds = new Set((known ?? []).map((k) => Number(k.id)))
 
-  const toResolve = [...ids].filter((n) => Number.isFinite(n) && n > 0)
+  const toResolve = [...ids].filter((n) => Number.isFinite(n) && n > 0 && !knownIds.has(n))
   console.log(`[names] corp journal: ${ids.size} unknown id(s) seen in last 30d, ${toResolve.length} to resolve`)
   if (toResolve.length === 0) return
 
-  const resolved = []
-  for (let i = 0; i < toResolve.length; i += BATCH_SIZE) {
-    const batch = toResolve.slice(i, i + BATCH_SIZE)
-    const names = await resolveBatch(batch)
-    resolved.push(...names)
-  }
+  const resolved = await resolveAllIds(toResolve)
 
   if (resolved.length === 0) {
     console.log('[names] no names resolved')
@@ -82,11 +88,7 @@ export const resolveCorpNames = async (corporationIds) => {
   const toResolve = ids.filter((id) => !knownIds.has(id))
   if (toResolve.length === 0) return
 
-  const resolved = []
-  for (let i = 0; i < toResolve.length; i += BATCH_SIZE) {
-    const names = await resolveBatch(toResolve.slice(i, i + BATCH_SIZE))
-    resolved.push(...names)
-  }
+  const resolved = await resolveAllIds(toResolve)
   if (resolved.length === 0) return
 
   const rows = resolved.map((n) => ({ id: n.id, name: n.name, category: n.category }))
@@ -122,17 +124,13 @@ export const resolveAssetStationNames = async () => {
 
   const { data: known, error: knownErr } = await sudoSupabase.from('eve_name').select('id').eq('category', 'station')
   if (knownErr) throw knownErr
-  for (const k of known ?? []) ids.delete(Number(k.id))
+  const knownIds = new Set((known ?? []).map((k) => Number(k.id)))
 
-  const toResolve = [...ids].filter((n) => Number.isFinite(n) && n > 0)
+  const toResolve = [...ids].filter((n) => Number.isFinite(n) && n > 0 && !knownIds.has(n))
   console.log(`[names] asset stations: ${toResolve.length} to resolve`)
   if (toResolve.length === 0) return
 
-  const resolved = []
-  for (let i = 0; i < toResolve.length; i += BATCH_SIZE) {
-    const names = await resolveBatch(toResolve.slice(i, i + BATCH_SIZE))
-    resolved.push(...names)
-  }
+  const resolved = await resolveAllIds(toResolve)
 
   if (resolved.length === 0) {
     console.log('[names] no station names resolved')
@@ -153,28 +151,20 @@ export const resolveCorpStructureSystemNames = async () => {
   const { data: structures, error: structuresErr } = await sudoSupabase.from('corp_structure').select('system_id')
   if (structuresErr) throw structuresErr
 
-  const ids = new Set()
-  for (const r of structures ?? []) {
-    if (r.system_id != null) ids.add(Number(r.system_id))
-  }
+  const ids = new Set((structures ?? []).filter((r) => r.system_id != null).map((r) => Number(r.system_id)))
 
   const { data: known, error: knownErr } = await sudoSupabase
     .from('eve_name')
     .select('id')
     .eq('category', 'solar_system')
   if (knownErr) throw knownErr
-  for (const k of known ?? []) ids.delete(Number(k.id))
+  const knownIds = new Set((known ?? []).map((k) => Number(k.id)))
 
-  const toResolve = [...ids].filter((n) => Number.isFinite(n) && n > 0)
+  const toResolve = [...ids].filter((n) => Number.isFinite(n) && n > 0 && !knownIds.has(n))
   console.log(`[names] corp structure systems: ${toResolve.length} to resolve`)
   if (toResolve.length === 0) return
 
-  const resolved = []
-  for (let i = 0; i < toResolve.length; i += BATCH_SIZE) {
-    const batch = toResolve.slice(i, i + BATCH_SIZE)
-    const names = await resolveBatch(batch)
-    resolved.push(...names)
-  }
+  const resolved = await resolveAllIds(toResolve)
 
   if (resolved.length === 0) {
     console.log('[names] no system names resolved')
