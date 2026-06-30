@@ -28,6 +28,8 @@ const Header = async () => {
             </>
           ) : (
             <>
+              <Link href="/indexes">indexes</Link>
+              <span className={styles.sep}>|</span>
               <Link href="/character/">characters</Link>
               <span className={styles.sep}>|</span>
               <Link href="/assets">assets</Link>
