@@ -95,6 +95,56 @@ export const resolveCorpNames = async (corporationIds) => {
   console.log(`[names] upserted ${rows.length} corp name(s)`)
 }
 
+// Cache (in eve_name) the name of every NPC station that currently holds one of
+// our assets. ESI marks those asset rows with location_type 'station', and their
+// names resolve via universe/names (category 'station') — no docking token
+// needed, unlike player Upwell structures (handled by resolveStructureNames).
+// Only resolves ids missing from eve_name, so steady-state runs do nothing. The
+// assets page reads eve_name to label NPC station locations instead of a raw id.
+export const resolveAssetStationNames = async () => {
+  // Page through live asset rows located directly in an NPC station. Order by the
+  // primary key so range paging is stable (an unordered .range() can skip rows).
+  const PAGE = 1000
+  const ids = new Set()
+  for (let from = 0; ; from += PAGE) {
+    const { data: rows, error } = await sudoSupabase
+      .from('asset_over_time')
+      .select('location_id')
+      .eq('is_current', true)
+      .eq('location_type', 'station')
+      .order('id', { ascending: true })
+      .range(from, from + PAGE - 1)
+    if (error) throw error
+    if (!rows || rows.length === 0) break
+    for (const r of rows) if (r.location_id != null) ids.add(Number(r.location_id))
+    if (rows.length < PAGE) break
+  }
+
+  const { data: known, error: knownErr } = await sudoSupabase.from('eve_name').select('id').eq('category', 'station')
+  if (knownErr) throw knownErr
+  for (const k of known ?? []) ids.delete(Number(k.id))
+
+  const toResolve = [...ids].filter((n) => Number.isFinite(n) && n > 0)
+  console.log(`[names] asset stations: ${toResolve.length} to resolve`)
+  if (toResolve.length === 0) return
+
+  const resolved = []
+  for (let i = 0; i < toResolve.length; i += BATCH_SIZE) {
+    const names = await resolveBatch(toResolve.slice(i, i + BATCH_SIZE))
+    resolved.push(...names)
+  }
+
+  if (resolved.length === 0) {
+    console.log('[names] no station names resolved')
+    return
+  }
+
+  const rows = resolved.map((n) => ({ id: n.id, name: n.name, category: n.category }))
+  const { error: upErr } = await sudoSupabase.from('eve_name').upsert(rows, { onConflict: 'id' })
+  if (upErr) throw upErr
+  console.log(`[names] upserted ${rows.length} station name(s)`)
+}
+
 // Cache (in eve_name) the name of every solar system we currently have a corp
 // structure in. Only resolves ids missing from eve_name, so steady-state runs do
 // nothing. The structures page reads eve_name to label each tile's system instead
