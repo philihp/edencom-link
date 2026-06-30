@@ -182,7 +182,7 @@ Each job exports its `run*()` function and self-invokes as CLI when run directly
 | `eve_name` | Cached id→name | `id` (bigint PK), `name`, `category` |
 | `character_corp` | Character→Corp mapping | `character_id`, `corporation_id` |
 | `structure` | Player structure cache | `structure_id`, `name`, `system_id`, `type_id` |
-| `user_settings` | User preferences | `user_id`, `enabled_scopes[]`, `api_token` (unique) |
+| `user_settings` | User preferences | `user_id`, `enabled_scopes[]`, `api_token` (unique), `flags[]` |
 | `invite_code` | Invite-only registration | `code` (unique), `created_by`, `redeemed_by`, `redeemed_at` |
 | `refresh_task` | On-demand job tracking | `batch_id`, `user_id`, `job`, `character_id`, `status` (pending/running/done/error) |
 | `heartbeat` | Cron job monitoring | `job`, `run_id`, `started_at`, `ended_at` |
