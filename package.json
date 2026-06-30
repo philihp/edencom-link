@@ -21,6 +21,9 @@
   },
   "scripts": {
     "build": "next build",
+    "predev": "npm run sde:build",
+    "prebuild": "npm run sde:build",
+    "sde:build": "node src/buildSde.js",
     "assets": "node src/jobs/assets.js",
     "connect": "node src/connect.js",
     "daily": "node src/jobs/daily.js",
