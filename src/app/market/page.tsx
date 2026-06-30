@@ -51,12 +51,16 @@ const MarketPage = async () => {
   // the whole lookback span. Personal and corp sales live in separate tables (corp
   // transactions have no owning character); RLS scopes each to what the user may
   // see, and transaction_ids never collide across the two, so the union is a plain
-  // concatenation.
+  // concatenation. ESI's character wallet/transactions endpoint also reports trades
+  // the character made on behalf of their corp (is_personal: false) — those are
+  // already captured via corp_market_transaction, so exclude them here to avoid
+  // double-counting the same sale.
   const personal = await fetchAllRows<Sale>((from, to) =>
     supabase
       .from('market_transaction')
       .select('transaction_id, character_id, date, type_id, quantity, unit_price, seen_at')
       .eq('is_buy', false)
+      .eq('is_personal', true)
       .gte('date', since)
       .order('date', { ascending: false })
       .range(from, to)
