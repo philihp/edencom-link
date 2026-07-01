@@ -233,7 +233,7 @@ const StructuresPage = async () => {
                   <StructureSilhouette typeId={s.type_id} className={styles.silhouette} />
                   <div className={styles.head}>
                     <div>
-                      <a href={`/structures/${s.structure_id}`} className={styles.name}>
+                      <a href={`/structure/${s.structure_id}`} className={styles.name}>
                         {s.name ?? `Structure #${s.structure_id}`}
                       </a>
                       {/* Upwell structures share their structure_id with the station/facility id industry jobs run at. */}

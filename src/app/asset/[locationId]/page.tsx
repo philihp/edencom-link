@@ -65,7 +65,7 @@ const AssetLocationPage = async ({ params }: { params: Promise<{ locationId: str
     .maybeSingle<Pick<Asset, 'item_id' | 'type_id' | 'location_id' | 'name'>>()
 
   let heading: string
-  let backHref = '/assets'
+  let backHref = '/asset'
   let backLabel = 'Back to Assets'
   let systemName: string | undefined
 
@@ -76,7 +76,7 @@ const AssetLocationPage = async ({ params }: { params: Promise<{ locationId: str
     const typeName = typeNames[Number(self.type_id)] ?? `#${self.type_id}`
     heading = self.name && self.name !== typeName ? `${self.name} (${typeName})` : typeName
     if (self.location_id != null) {
-      backHref = `/assets/${self.location_id}`
+      backHref = `/asset/${self.location_id}`
       backLabel = 'Back'
     }
   } else {

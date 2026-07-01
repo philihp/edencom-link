@@ -90,7 +90,7 @@ const StructurePage = async ({ params }: StructureParams) => {
         <h1>Structure not found</h1>
         <p>
           No structure {structureId} is visible. It may not exist, or you may need to re-link a director character on
-          the <a href="/character">Characters</a> page. Back to <Link href="/structures">Structures</Link>.
+          the <a href="/character">Characters</a> page. Back to <Link href="/structure">Structures</Link>.
         </p>
       </>
     )
@@ -145,7 +145,7 @@ const StructurePage = async ({ params }: StructureParams) => {
     <>
       <h1 className="serif">{s.name ?? `Structure #${s.structure_id}`}</h1>
       <p>
-        <Link href="/structures">&laquo; Back to Structures</Link>
+        <Link href="/structure">&laquo; Back to Structures</Link>
       </p>
 
       <table className={retro.retro}>

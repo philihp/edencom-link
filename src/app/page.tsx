@@ -18,10 +18,10 @@ export default function Home() {
       
       <nav className={styles.hints}>
         <Link href="/character/">/characters</Link>
-        <Link href="/assets">/assets</Link>
+        <Link href="/asset">/asset</Link>
         <Link href="/market">/market</Link>
         <Link href="/industry">/industry</Link>
-        <Link href="/structures">/structures</Link>
+        <Link href="/structure">/structure</Link>
         <Link href="/account/settings">/settings</Link>
       </nav>
     </main>

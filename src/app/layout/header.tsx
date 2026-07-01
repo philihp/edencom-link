@@ -38,7 +38,7 @@ const Header = async () => {
               )}
               <Link href="/character/">characters</Link>
               <span className={styles.sep}>|</span>
-              <Link href="/assets">assets</Link>
+              <Link href="/asset">assets</Link>
               <span className={styles.sep}>|</span>
               <Link href="/market">market</Link>
               <span className={styles.sep}>|</span>
@@ -46,7 +46,7 @@ const Header = async () => {
               <span className={styles.sep}>|</span>
               <Link href="/blueprint">blueprint</Link>
               <span className={styles.sep}>|</span>
-              <Link href="/structures">structures</Link>
+              <Link href="/structure">structures</Link>
               <span className={styles.sep}>|</span>
               <Link href="/account/settings">settings</Link>
             </>
