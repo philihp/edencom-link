@@ -58,7 +58,7 @@ export const AssetsTable = ({ locations, characters }: AssetsTableProps) => {
             {rows.map(({ loc, count }) => (
               <tr key={`location-${loc.id}`}>
                 <td>
-                  <Link href={`/assets/${loc.id}`} className="serif">
+                  <Link href={`/asset/${loc.id}`} className="serif">
                     {loc.name}
                   </Link>
                 </td>

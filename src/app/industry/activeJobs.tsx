@@ -120,7 +120,7 @@ export const ActiveJobs = ({ jobs, characters, initialNow, typeNamesPromise, sta
                       const stationId = j.station_id ?? j.facility_id
                       if (stationId == null) return '—'
                       const name = stationNames[String(stationId)]
-                      return name ? <a href={`/structures/${stationId}`}>{name}</a> : String(stationId)
+                      return name ? <a href={`/structure/${stationId}`}>{name}</a> : String(stationId)
                     })()}
                   </td>
                   <td>

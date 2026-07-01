@@ -20,7 +20,7 @@ EVE Online hangar/wallet/industry tracker. Package name `edencom-link` (private)
 
 ## Layout
 
-- `src/app/` — Next.js App Router. Page routes: `account/`, `assets/`, `character/`, `industry/`, `market/`, `structures/`, plus `theme/`, `layout/` (Header/Footer), `private/`. Shared helpers at top level: `typeNames.ts`/`typeName.tsx`, `systemNames.ts`, `stationNames.ts`, `isk.ts`, `DateTime.tsx`.
+- `src/app/` — Next.js App Router. Page routes: `account/`, `asset/`, `character/`, `industry/`, `market/`, `structure/`, plus `theme/`, `layout/` (Header/Footer), `private/`. Shared helpers at top level: `typeNames.ts`/`typeName.tsx`, `systemNames.ts`, `stationNames.ts`, `isk.ts`, `DateTime.tsx`.
 - `src/` (Node cron/scripts): `esi.js` (ESI API wrapper), `supabase.js` (clients — anon + `sudoSupabase` service role that bypasses RLS), `corpWalletJournal.js`, `corpMarketTransactions.js`, `resolveNames.js`, `structureNames.js`, `tokenRefresh.js`/`refresh.js`, `proxy.ts`, `utils/`. The scheduled job entry points live under `src/jobs/`: `hourly.js`, `daily.js`, `assets.js`, `structures.js` — each exports a `run*` function (callable from the Vercel queue consumer) and self-runs as a CLI when invoked directly (`node src/jobs/<job>.js`).
 - `schema.sql` — the single source of truth for the Supabase schema (in the default `public` schema). It's a full reset: it DROPs the app's tables and recreates them, so re-running wipes data — never run it against a database with data you want to keep. To change the schema, edit this file (so a fresh reset stays correct) **and** add a non-destructive incremental migration under `supabase/migrations/` (Supabase CLI format, applied with `supabase db push`) so the change can be rolled out to existing databases without wiping data.
 - `.github/workflows/` — `hourly.yml`, `daily.yml`, `assets.yml`, `structures.yml`, `industry_index.yml`, `heartbeat.yml` (each a scheduled cron + manual dispatch); `migrate.yml` (applies Supabase migrations on push to `main`).
@@ -129,15 +129,15 @@ All functions take `(characterId, accessToken)` unless noted. Returns raw ESI re
 | `/account/register` | `src/app/account/register/page.tsx` |
 | `/account/settings` | `src/app/account/settings/page.tsx` |
 | `/account/invite` | `src/app/account/invite/page.tsx` |
-| `/assets` | `src/app/assets/page.tsx` |
-| `/assets/[locationId]` | `src/app/assets/[locationId]/page.tsx` |
+| `/asset` | `src/app/asset/page.tsx` |
+| `/asset/[locationId]` | `src/app/asset/[locationId]/page.tsx` |
 | `/character` | `src/app/character/page.tsx` |
 | `/character/callback` | `src/app/character/callback/page.tsx` |
 | `/characters/refresh` | `src/app/characters/refresh/page.tsx` |
 | `/market` | `src/app/market/page.tsx` |
 | `/industry` | `src/app/industry/page.tsx` |
-| `/structures` | `src/app/structures/page.tsx` |
-| `/structures/[structureId]` | `src/app/structures/[structureId]/page.tsx` |
+| `/structure` | `src/app/structure/page.tsx` |
+| `/structure/[structureId]` | `src/app/structure/[structureId]/page.tsx` |
 | `/settings/grants` | `src/app/settings/grants/page.tsx` |
 | `/blueprint` | `src/app/blueprint/page.tsx` |
 | `/blueprint/[typeID]` | `src/app/blueprint/[typeID]/page.tsx` |

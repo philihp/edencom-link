@@ -63,7 +63,7 @@ export const LocationAssets = ({ rows, characters, typeNamesPromise }: LocationA
                 <td>
                   {row.contents > 0 ? (
                     // Ships and containers hold items — drill into them.
-                    <Link href={`/assets/${row.itemId}`}>
+                    <Link href={`/asset/${row.itemId}`}>
                       <TypeName id={row.typeId} name={row.name} promise={typeNamesPromise} />
                     </Link>
                   ) : (
