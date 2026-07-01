@@ -104,6 +104,7 @@ const StructurePage = async ({ params }: StructureParams) => {
       'job_id, character_id, activity_id, blueprint_type_id, product_type_id, runs, status, start_date, end_date, station_id, facility_id'
     )
     .or(`station_id.eq.${structureId},facility_id.eq.${structureId}`)
+    .eq('status', 'active')
     .order('end_date', { ascending: true })
 
   const jobs = (jobsData ?? []) as Job[]
