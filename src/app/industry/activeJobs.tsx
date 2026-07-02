@@ -3,8 +3,8 @@
 import { useEffect, useState } from 'react'
 
 import { DateTime } from '../DateTime'
-import { usePersist } from '../market/usePersist'
-import { CharacterName } from '../names'
+import { Name } from '../names'
+import { ALL_OWNERS, OwnerSelect, ownerNames, useOwnerFilter, type Owners } from '../ownerFilter'
 import retro from '../retro.module.css'
 import { TypeName } from '../typeName'
 import styles from './industry.module.css'
@@ -12,7 +12,8 @@ import { ACTIVITY_NAMES } from './jobFields'
 
 export type Job = {
   job_id: number | string
-  character_id: string
+  // Character registration uuid, or corporation id for corp jobs.
+  owner_id: string
   activity_id: number
   blueprint_type_id: number | string
   product_type_id: number | string | null
@@ -24,21 +25,15 @@ export type Job = {
   facility_id: number | string | null
 }
 
-type Character = {
-  id: string
-  name: string
-}
-
 type ActiveJobsProps = {
   jobs: Job[]
-  characters: Character[]
+  owners: Owners
   initialNow: number
   typeNamesPromise: Promise<Record<number, string>>
   stationNames: Record<string, string>
 }
 
-const CHARACTER_STORAGE_KEY = 'industry.activeJobs.characterId'
-const ALL_CHARACTERS = ''
+const OWNER_STORAGE_KEY = 'industry.activeJobs.ownerId'
 
 const formatRemaining = (endIso: string, now: number) => {
   const ms = new Date(endIso).getTime() - now
@@ -52,14 +47,12 @@ const formatRemaining = (endIso: string, now: number) => {
   return `${minutes}m`
 }
 
-export const ActiveJobs = ({ jobs, characters, initialNow, typeNamesPromise, stationNames }: ActiveJobsProps) => {
-  const characterName: Record<string, string> = Object.fromEntries(characters.map((c) => [c.id, c.name]))
+export const ActiveJobs = ({ jobs, owners, initialNow, typeNamesPromise, stationNames }: ActiveJobsProps) => {
+  const ownerName = ownerNames(owners)
 
-  const [characterId, setCharacterId] = usePersist<string>(CHARACTER_STORAGE_KEY, ALL_CHARACTERS, (raw) =>
-    raw === ALL_CHARACTERS || characters.some((c) => c.id === raw) ? raw : undefined
-  )
+  const [ownerId, setOwnerId] = useOwnerFilter(OWNER_STORAGE_KEY, owners)
 
-  const filtered = jobs.filter((j) => characterId === ALL_CHARACTERS || j.character_id === characterId)
+  const filtered = jobs.filter((j) => ownerId === ALL_OWNERS || j.owner_id === ownerId)
 
   const [now, setNow] = useState<number>(initialNow)
   useEffect(() => {
@@ -71,70 +64,67 @@ export const ActiveJobs = ({ jobs, characters, initialNow, typeNamesPromise, sta
     <section>
       <div className={styles.jobsHeader}>
         <h2>Active Jobs</h2>
-        <div className={styles.jobsFilters}>
-          <label className={styles.jobsFilter}>
-            Character:&nbsp;
-            <select value={characterId} onChange={(e) => setCharacterId(e.target.value)}>
-              <option value={ALL_CHARACTERS}>All characters</option>
-              {characters.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
       </div>
-      {filtered.length > 0 ? (
-        <>
-          <table className={retro.retro}>
-            <thead>
-              <tr>
-                <th>Character</th>
-                <th>Activity</th>
-                <th>Product</th>
-                <th className={retro.num}>Runs</th>
-                <th>Station</th>
-                <th>Start</th>
-                <th>End</th>
-                <th>Remaining</th>
+      {jobs.length > 0 ? (
+        <table className={retro.retro}>
+          <thead>
+            <tr>
+              <th>
+                <label className={styles.jobsFilter}>
+                  Owner:&nbsp;
+                  <OwnerSelect owners={owners} value={ownerId} onChange={setOwnerId} />
+                </label>
+              </th>
+              <th>Activity</th>
+              <th>Product</th>
+              <th className={retro.num}>Runs</th>
+              <th>Station</th>
+              <th>Start</th>
+              <th>End</th>
+              <th>Remaining</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map((j) => (
+              <tr key={`job-${j.job_id}`}>
+                <td>
+                  <Name name={ownerName.get(j.owner_id)} />
+                </td>
+                <td className="serif">{ACTIVITY_NAMES[j.activity_id] ?? `#${j.activity_id}`}</td>
+                <td>
+                  {j.product_type_id != null ? (
+                    <TypeName id={Number(j.product_type_id)} promise={typeNamesPromise} />
+                  ) : (
+                    '—'
+                  )}
+                </td>
+                <td className={retro.num}>{j.runs}</td>
+                <td className="serif">
+                  {(() => {
+                    const stationId = j.station_id ?? j.facility_id
+                    if (stationId == null) return '—'
+                    const name = stationNames[String(stationId)]
+                    return name ? <a href={`/structure/${stationId}`}>{name}</a> : String(stationId)
+                  })()}
+                </td>
+                <td>
+                  <DateTime value={j.start_date} />
+                </td>
+                <td>
+                  <DateTime value={j.end_date} />
+                </td>
+                <td className="serif">{formatRemaining(j.end_date, now)}</td>
               </tr>
-            </thead>
-            <tbody>
-              {filtered.map((j) => (
-                <tr key={`job-${j.job_id}`}>
-                  <td>
-                    <CharacterName name={characterName[j.character_id]} />
-                  </td>
-                  <td className="serif">{ACTIVITY_NAMES[j.activity_id] ?? `#${j.activity_id}`}</td>
-                  <td>
-                    {j.product_type_id != null ? (
-                      <TypeName id={Number(j.product_type_id)} promise={typeNamesPromise} />
-                    ) : (
-                      '—'
-                    )}
-                  </td>
-                  <td className={retro.num}>{j.runs}</td>
-                  <td className="serif">
-                    {(() => {
-                      const stationId = j.station_id ?? j.facility_id
-                      if (stationId == null) return '—'
-                      const name = stationNames[String(stationId)]
-                      return name ? <a href={`/structure/${stationId}`}>{name}</a> : String(stationId)
-                    })()}
-                  </td>
-                  <td>
-                    <DateTime value={j.start_date} />
-                  </td>
-                  <td>
-                    <DateTime value={j.end_date} />
-                  </td>
-                  <td className="serif">{formatRemaining(j.end_date, now)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </>
+            ))}
+            {filtered.length === 0 && (
+              // Keep the table (and the owner dropdown in its header) rendered
+              // so the filter can be changed back when an owner has no jobs.
+              <tr>
+                <td colSpan={8}>No active jobs for this owner.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
       ) : (
         <p>No active industry jobs.</p>
       )}

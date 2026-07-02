@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 
 import { createClient } from '@/utils/supabase/server'
+import { fetchOwners } from '../../owners'
 import { fetchStationNames, fetchStationSystems } from '../../stationNames'
 import { fetchSystemNames } from '../../systemNames'
 import { fetchTypeNames } from '../../typeNames'
@@ -9,7 +10,7 @@ import { LocationAssets, type ItemRow } from './locationAssets'
 
 // Bigint ids arrive from PostgREST as strings; keep them as strings and only
 // convert at the API/system-lookup boundary (mirrors the assets index page).
-type Asset = {
+type CharacterAsset = {
   item_id: number | string
   character_id: string
   type_id: number | string
@@ -20,6 +21,13 @@ type Asset = {
   is_singleton: boolean | null
   name: string | null
 }
+
+// Corp assets carry no player-assigned name column; owner is the corporation.
+type CorpAsset = Omit<CharacterAsset, 'character_id' | 'name'> & { corporation_id: number | string }
+
+// Either source's row, normalized to whoever owns it: a character
+// (registration uuid) or a corporation (EVE corporation id).
+type Asset = Omit<CharacterAsset, 'character_id'> & { owner_id: string }
 
 type Structure = {
   structure_id: number | string
@@ -37,32 +45,63 @@ const AssetLocationPage = async ({ params }: { params: Promise<{ locationId: str
   }
 
   // Root-level assets at this location: ships, containers and loose stacks that
-  // sit directly in the station/structure/system (not nested in another item).
-  // Only this level is fetched — the whole asset table no longer pages into Node.
-  const { data: children } = await supabase
-    .from('character_asset')
-    .select('item_id, character_id, type_id, location_id, location_flag, location_type, quantity, is_singleton, name')
-    .eq('location_id', locationId)
-  const rootItems = (children ?? []) as Asset[]
+  // sit directly in the station/structure/system (not nested in another item),
+  // from both the character and corp hangars. Only this level is fetched — the
+  // whole asset table no longer pages into Node.
+  const [{ data: characterChildren }, { data: corpChildren }] = await Promise.all([
+    supabase
+      .from('character_asset')
+      .select('item_id, character_id, type_id, location_id, location_flag, location_type, quantity, is_singleton, name')
+      .eq('location_id', locationId),
+    supabase
+      .from('corp_asset')
+      .select('item_id, corporation_id, type_id, location_id, location_flag, location_type, quantity, is_singleton')
+      .eq('location_id', locationId),
+  ])
+  const rootItems: Asset[] = [
+    ...((characterChildren ?? []) as CharacterAsset[]).map(({ character_id, ...a }) => ({
+      ...a,
+      owner_id: character_id,
+    })),
+    ...((corpChildren ?? []) as CorpAsset[]).map(({ corporation_id, ...a }) => ({
+      ...a,
+      owner_id: String(corporation_id),
+      name: null,
+    })),
+  ]
 
   // Total items held inside each ship/container at this location, counted across
-  // the whole subtree by character_asset_location_contents() in Postgres.
-  const { data: contentsRows } = await supabase.rpc('character_asset_location_contents', { parent: locationId })
+  // the whole subtree by the *_asset_location_contents() functions in Postgres.
+  // An item lives in exactly one of the two tables, so the maps can't collide.
+  const [{ data: characterContents }, { data: corpContents }] = await Promise.all([
+    supabase.rpc('character_asset_location_contents', { parent: locationId }),
+    supabase.rpc('corp_asset_location_contents', { parent: locationId }),
+  ])
   const contentsByItem = new Map<string, number>(
-    ((contentsRows ?? []) as { item_id: number | string; contents: number | string }[]).map((r) => [
-      String(r.item_id),
-      Number(r.contents),
-    ])
+    (
+      [...(characterContents ?? []), ...(corpContents ?? [])] as {
+        item_id: number | string
+        contents: number | string
+      }[]
+    ).map((r) => [String(r.item_id), Number(r.contents)])
   )
 
   // The id is either a place (station / structure / solar system) or one of our
-  // own items — a ship or container the user drilled into. Resolve the heading
-  // and the "back" target accordingly.
-  const { data: self } = await supabase
+  // own items — a ship or container the user drilled into, character- or
+  // corp-owned. Resolve the heading and the "back" target accordingly.
+  const { data: characterSelf } = await supabase
     .from('character_asset')
     .select('item_id, type_id, location_id, name')
     .eq('item_id', locationId)
-    .maybeSingle<Pick<Asset, 'item_id' | 'type_id' | 'location_id' | 'name'>>()
+    .maybeSingle<Pick<CharacterAsset, 'item_id' | 'type_id' | 'location_id' | 'name'>>()
+  const { data: corpSelf } = characterSelf
+    ? { data: null }
+    : await supabase
+        .from('corp_asset')
+        .select('item_id, type_id, location_id')
+        .eq('item_id', locationId)
+        .maybeSingle<Pick<CorpAsset, 'item_id' | 'type_id' | 'location_id'>>()
+  const self = characterSelf ?? (corpSelf ? { ...corpSelf, name: null } : null)
 
   let heading: string
   let backHref = '/asset'
@@ -113,8 +152,7 @@ const AssetLocationPage = async ({ params }: { params: Promise<{ locationId: str
     systemName = systemId != null ? (systemNames[systemId] ?? `#${systemId}`) : undefined
   }
 
-  const { data: characters } = await supabase.from('registration').select('id, name')
-  const sortedCharacters = [...(characters ?? [])].sort((a, b) => a.name.localeCompare(b.name))
+  const owners = await fetchOwners()
 
   // Resolve type names without blocking render: fire the lookup and let each
   // TypeName stream in (Suspense), falling back to #id. A big hangar can hold
@@ -125,7 +163,7 @@ const AssetLocationPage = async ({ params }: { params: Promise<{ locationId: str
   const rows: ItemRow[] = rootItems
     .map((a) => ({
       itemId: String(a.item_id),
-      characterId: a.character_id,
+      ownerId: a.owner_id,
       typeId: Number(a.type_id),
       name: a.name,
       quantity: a.quantity,
@@ -147,7 +185,7 @@ const AssetLocationPage = async ({ params }: { params: Promise<{ locationId: str
         <Link href={backHref}>&laquo; {backLabel}</Link>
       </p>
 
-      <LocationAssets rows={rows} characters={sortedCharacters} typeNamesPromise={typeNamesPromise} />
+      <LocationAssets rows={rows} owners={owners} typeNamesPromise={typeNamesPromise} />
     </>
   )
 }
