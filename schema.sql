@@ -58,6 +58,7 @@ drop table if exists public.corp_wallet_transaction cascade;
 drop table if exists public.universe_name        cascade;
 drop table if exists public.universe_structure   cascade;
 drop table if exists public.invite_code          cascade;
+drop table if exists public.watched_system       cascade;
 drop table if exists public.user_settings        cascade;
 drop table if exists public.refresh_task         cascade;
 drop table if exists public.heartbeat            cascade;
@@ -1113,6 +1114,32 @@ create policy "Users manage own settings"
 
 grant select, insert, update, delete on public.user_settings to authenticated;
 grant all                            on public.user_settings to service_role;
+
+-- ── watched_system ────────────────────────────────────────────────────────
+-- Per-user list of solar systems to watch industry cost indices for. The
+-- industry-systems extract pulls the union of every user's watched systems
+-- (plus the systems we hold structures in) each run, and the /indexes page
+-- renders one sparkline row per watched system. System ids come from the
+-- locally generated SDE data (src/sdeSystems.ts), so no ESI lookup is needed
+-- to add one.
+create table public.watched_system (
+  user_id uuid not null references auth.users(id) on delete cascade,
+  system_id bigint not null,
+  created_at timestamptz not null default now(),
+  primary key (user_id, system_id)
+);
+create index watched_system_user_id_idx on public.watched_system (user_id);
+
+alter table public.watched_system enable row level security;
+create policy "Users manage own watched systems"
+  on public.watched_system
+  for all
+  to authenticated
+  using (user_id = (select auth.uid()))
+  with check (user_id = (select auth.uid()));
+
+grant select, insert, update, delete on public.watched_system to authenticated;
+grant all                            on public.watched_system to service_role;
 
 -- ── invite_code ───────────────────────────────────────────────────────────
 -- Invite-only registration. A new account can only be created by redeeming an

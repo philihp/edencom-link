@@ -6,35 +6,45 @@ import { cli } from './lib.js'
 
 const TAG = 'industry-systems'
 
-// PostgREST caps a single select; page through corp_structure so a large number
-// of structures doesn't silently truncate the set of systems we care about.
+// PostgREST caps a single select; page through the source tables so a large
+// number of structures or watchers doesn't silently truncate the set of systems
+// we care about.
 const SYSTEM_PAGE = 1000
 
-// GET /industry/systems/ → industry_system_index. Records a snapshot of the
-// industry cost indices for every solar system we have a structure anchored in.
-// The endpoint is public (no token) and returns the indices for *all* systems in
-// one shot, so we fetch it once and keep only the systems that appear in
-// corp_structure. Each run appends a fresh set of rows, building a history of
-// how the indices drift. Account-wide work, so it takes no character scope.
-export const runIndustrySystems = async () => {
-  // Distinct systems we hold structures in. Read corp_structure (the base table
-  // service_role can reach) paged so a large fleet isn't truncated.
-  const systemIds = new Set()
+// Distinct system ids from one column of one table, paged past the row cap.
+const collectSystemIds = async (into, table, column) => {
   for (let from = 0; ; from += SYSTEM_PAGE) {
     const { data: rows, error } = await sudoSupabase
-      .from('corp_structure')
-      .select('system_id')
+      .from(table)
+      .select(column)
       .range(from, from + SYSTEM_PAGE - 1)
     if (error) throw error
     if (!rows || rows.length === 0) break
     for (const r of rows) {
-      const id = Number(r.system_id)
-      if (Number.isFinite(id)) systemIds.add(id)
+      const id = Number(r[column])
+      if (Number.isFinite(id)) into.add(id)
     }
     if (rows.length < SYSTEM_PAGE) break
   }
+}
 
-  console.log(`[${TAG}] ${systemIds.size} system(s) with structures`)
+// GET /industry/systems/ → industry_system_index. Records a snapshot of the
+// industry cost indices for every solar system we care about: the union of the
+// systems we have a structure anchored in (corp_structure) and every system any
+// user has put on their watch list (watched_system, the /indexes page). The
+// endpoint is public (no token) and returns the indices for *all* systems in
+// one shot, so we fetch it once and keep only the tracked systems. Each run
+// appends a fresh set of rows, building a history of how the indices drift.
+// Account-wide work, so it takes no character scope.
+export const runIndustrySystems = async () => {
+  const systemIds = new Set()
+  await collectSystemIds(systemIds, 'corp_structure', 'system_id')
+  const structureCount = systemIds.size
+  await collectSystemIds(systemIds, 'watched_system', 'system_id')
+
+  console.log(
+    `[${TAG}] tracking ${systemIds.size} system(s) (${structureCount} with structures, ${systemIds.size - structureCount} watched only)`
+  )
   if (systemIds.size === 0) return
 
   const systems = await industrySystems()

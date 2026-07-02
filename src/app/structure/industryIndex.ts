@@ -132,63 +132,63 @@ export type IndexSeries = {
   updatedAt: string
 }
 
-// One reading's worth of accumulator state for an hour bucket.
-type HourBucket = { sum: number; count: number }
+// One reading's worth of accumulator state for a time bucket.
+type Bucket = { sum: number; count: number }
 
-// Collapse hourly buckets into a dense, evenly-spaced series: one point per hour
-// from the first reading through `nowHour`. A bucket's value is the average of
-// every reading that fell in that hour; hours with no reading repeat the
-// previous hour's value (the pull job runs irregularly, so gaps are expected).
-// We carry the last reading forward to the current hour as well, so a system
-// that stopped reporting shows a flat tail — `liveCount` marks where that tail
+// Collapse time buckets into a dense, evenly-spaced series: one point per bucket
+// from the first reading through `nowBucket`. A bucket's value is the average of
+// every reading that fell in it; buckets with no reading repeat the previous
+// bucket's value (the pull job runs irregularly, so gaps are expected). We carry
+// the last reading forward to the current bucket as well, so a system that
+// stopped reporting shows a flat tail — `liveCount` marks where that tail
 // begins so the sparkline can dim it.
-const densifyHourly = (buckets: Map<number, HourBucket>, nowHour: number): { values: number[]; liveCount: number } => {
-  const hours = [...buckets.keys()].sort((a, b) => a - b)
-  if (hours.length === 0) return { values: [], liveCount: 0 }
-  const first = hours[0]
-  const lastReading = hours[hours.length - 1]
+const densify = (buckets: Map<number, Bucket>, nowBucket: number): { values: number[]; liveCount: number } => {
+  const keys = [...buckets.keys()].sort((a, b) => a - b)
+  if (keys.length === 0) return { values: [], liveCount: 0 }
+  const first = keys[0]
+  const lastReading = keys[keys.length - 1]
   const values: number[] = []
   let prev = NaN
-  for (let hour = first; hour <= Math.max(lastReading, nowHour); hour++) {
-    const bucket = buckets.get(hour)
+  for (let key = first; key <= Math.max(lastReading, nowBucket); key++) {
+    const bucket = buckets.get(key)
     if (bucket) prev = bucket.sum / bucket.count
-    // The first hour always has a bucket, so `prev` is set before the first push.
+    // The first bucket always has a value, so `prev` is set before the first push.
     values.push(prev)
   }
   return { values, liveCount: lastReading - first + 1 }
 }
 
 // A DB row normalized for bucketing: cost parsed to a number and recorded_at
-// reduced to its epoch-hour.
+// reduced to its epoch bucket index.
 type Reading = {
   system: number
   activity: Activity
-  hour: number
+  bucket: number
   cost: number
   recordedAt: string
 }
 
 // One row → zero or one readings (rows with an unusable cost or timestamp are
 // dropped). Returning a list lets `chain` map-and-filter in a single pass.
-const toReadings = (r: HistoryRow): Reading[] => {
+const toReadings = (r: HistoryRow, bucketMs: number): Reading[] => {
   const cost = r.cost_index == null ? null : Number(r.cost_index)
   if (cost == null || !Number.isFinite(cost)) return []
-  const hour = Math.floor(Date.parse(r.recorded_at) / 3_600_000)
-  if (!Number.isFinite(hour)) return []
-  return [{ system: Number(r.system_id), activity: r.activity as Activity, hour, cost, recordedAt: r.recorded_at }]
+  const bucket = Math.floor(Date.parse(r.recorded_at) / bucketMs)
+  if (!Number.isFinite(bucket)) return []
+  return [{ system: Number(r.system_id), activity: r.activity as Activity, bucket, cost, recordedAt: r.recorded_at }]
 }
 
-// Collapse one activity's readings into hourly buckets — averaging readings that
-// share an hour — then densify into an evenly-spaced series. Readings arrive in
+// Collapse one activity's readings into time buckets — averaging readings that
+// share a bucket — then densify into an evenly-spaced series. Readings arrive in
 // ascending recorded_at, so the last one carries the exact `updatedAt`.
-const seriesFrom = (nowHour: number, readings: Reading[]): IndexSeries => {
-  const buckets = new Map<number, HourBucket>(
-    collectBy((r: Reading) => r.hour, readings).map((forHour: Reading[]): [number, HourBucket] => [
-      forHour[0].hour,
-      { sum: sum(pluck('cost', forHour)), count: forHour.length },
+const seriesFrom = (nowBucket: number, readings: Reading[]): IndexSeries => {
+  const buckets = new Map<number, Bucket>(
+    collectBy((r: Reading) => r.bucket, readings).map((forBucket: Reading[]): [number, Bucket] => [
+      forBucket[0].bucket,
+      { sum: sum(pluck('cost', forBucket)), count: forBucket.length },
     ])
   )
-  const { values, liveCount } = densifyHourly(buckets, nowHour)
+  const { values, liveCount } = densify(buckets, nowBucket)
   return { values, liveCount, updatedAt: last(readings)!.recordedAt }
 }
 
@@ -196,23 +196,33 @@ const seriesFrom = (nowHour: number, readings: Reading[]): IndexSeries => {
 // week of readings doesn't get silently truncated.
 const HISTORY_PAGE = 1000
 
-// 30-day cost-index history per system per activity, in chronological order.
-// Used to draw sparklines next to each index. The pull job runs on GitHub
-// Actions and fires irregularly — sometimes several times an hour, sometimes
-// with multi-hour gaps — so raw points would space unevenly across the
-// sparkline's time axis. We bucket readings into UTC hours (averaging any that
-// share an hour) and carry the previous hour's value across empty hours, giving
-// one evenly-spaced point per hour from the first reading to the last.
-// Returning `updatedAt` alongside the values lets the sparkline surface "last
-// updated" in a tooltip without a second lookup.
+export type HistoryOptions = {
+  // How far back to read, in days.
+  days?: number
+  // Width of each averaged bucket, in hours — 1 gives an hourly series (the
+  // pull job runs hourly); wider buckets keep long windows to a sane number of
+  // sparkline points.
+  bucketHours?: number
+}
+
+// Cost-index history per system per activity, in chronological order. Used to
+// draw sparklines next to each index. The pull job runs on GitHub Actions and
+// fires irregularly — sometimes several times an hour, sometimes with
+// multi-hour gaps — so raw points would space unevenly across the sparkline's
+// time axis. We bucket readings into fixed UTC intervals (averaging any that
+// share a bucket) and carry the previous bucket's value across empty ones,
+// giving one evenly-spaced point per bucket from the first reading to the
+// last. Returning `updatedAt` alongside the values lets the sparkline surface
+// "last updated" in a tooltip without a second lookup.
 export const fetchSystemIndexHistory = async (
   supabase: Supabase,
-  systemIds: Iterable<number>
+  systemIds: Iterable<number>,
+  { days = 7, bucketHours = 1 }: HistoryOptions = {}
 ): Promise<Map<number, Map<Activity, IndexSeries>>> => {
   const ids = uniq([...systemIds].filter((n) => Number.isFinite(n)))
   if (ids.length === 0) return new Map<number, Map<Activity, IndexSeries>>()
 
-  const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
+  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString()
   const rows: HistoryRow[] = []
   for (let from = 0; ; from += HISTORY_PAGE) {
     const { data: page } = await supabase
@@ -228,10 +238,11 @@ export const fetchSystemIndexHistory = async (
   }
 
   // Group the readings system → activity, then collapse each activity's readings
-  // into its hourly series. `collectBy` keeps the rows' ascending order within
+  // into its bucketed series. `collectBy` keeps the rows' ascending order within
   // each group, so a group's first row identifies it and its last row is latest.
-  const nowHour = Math.floor(Date.now() / 3_600_000)
-  const readings = chain(toReadings, rows)
+  const bucketMs = bucketHours * 3_600_000
+  const nowBucket = Math.floor(Date.now() / bucketMs)
+  const readings = chain((r: HistoryRow) => toReadings(r, bucketMs), rows)
 
   return new Map(
     pipe(
@@ -243,7 +254,7 @@ export const fetchSystemIndexHistory = async (
             collectBy((r: Reading) => r.activity),
             map((forActivity: Reading[]): [Activity, IndexSeries] => [
               forActivity[0].activity,
-              seriesFrom(nowHour, forActivity),
+              seriesFrom(nowBucket, forActivity),
             ])
           )(forSystem)
         ),

@@ -14,7 +14,7 @@ EVE Online hangar/wallet/industry tracker. Package name `edencom-link` (private)
 - `pnpm run pretty` — `prettier --write src/` (config: `@philihp/prettier-config`).
 - **No test runner / no `test` script** — there are no automated tests. No `typecheck` script (rely on `next build` / editor).
 - Pre-commit: husky + lint-staged auto-format & `eslint --fix` staged files.
-- `pnpm run sde:build` — downloads CCP's SDE type/group data and writes `src/generated/sdeTypes.json` (gitignored). Runs automatically as a `predev`/`prebuild` step; skips re-downloading if the file already exists (pass `--force` to refresh). See `src/buildSde.js`.
+- `pnpm run sde:build` — downloads CCP's SDE type/group and solar-system data and writes `src/generated/sdeTypes.json` + `src/generated/sdeSystems.json` (gitignored). Runs automatically as a `predev`/`prebuild` step; skips re-downloading any file that already exists (pass `--force` to refresh). See `src/buildSde.js`.
 - Extract job scripts (one per ESI endpoint, run via GitHub Actions, see below): `pnpm run character-assets` / `character-orders` / `character-wallet` / `character-wallet-transactions` / `character-industry-jobs` / `character-affiliations` / `corp-structures` / `corp-assets` / `corp-wallet-journal` / `corp-wallet-transactions` / `corp-industry-jobs` / `industry-systems` / `universe-names` / `universe-structures`, plus `heartbeat`. `connect`, `ping`, `refresh` are DB/token utilities.
 - DB migrations (Supabase CLI, configured by `supabase/config.toml`): `pnpm run db:new <name>` scaffolds a migration under `supabase/migrations/`; `pnpm run db:push` applies pending migrations to the linked project (`supabase link --project-ref <ref>` first). On push to `main` that touches `supabase/migrations/**`, the `Migrate` workflow runs `supabase db push` automatically (also manually dispatchable).
 
@@ -52,12 +52,18 @@ Quick-reference for navigation. Covers key exports, route→file paths, DB table
 ## Key source file exports
 
 ### `src/buildSde.js` — SDE generator (run via `pnpm run sde:build`)
-- Downloads `invTypes.csv`/`invGroups.csv` (Fuzzwork's flat-CSV mirror of CCP's SDE), joins them, and writes published types as `[typeID, name, groupID, categoryID]` tuples to `src/generated/sdeTypes.json` (gitignored). Skips re-downloading if the output already exists; pass `--force` to refresh.
+- Downloads `invTypes.csv`/`invGroups.csv` (Fuzzwork's flat-CSV mirror of CCP's SDE), joins them, and writes published types as `[typeID, name, groupID, categoryID]` tuples to `src/generated/sdeTypes.json` (gitignored). Also downloads `mapSolarSystems.csv` and writes known-space systems as `[systemID, name, security]` tuples to `src/generated/sdeSystems.json`. Skips re-downloading any output that already exists; pass `--force` to refresh.
 
 ### `src/sdeTypes.ts`
 - `getSdeType(typeID)` — `{ typeID, name, groupID, categoryID }` from the generated SDE data, or `null`
 - `getSdeTypeNames(typeIDs[])` — bulk id→name lookup
 - `searchSdeTypes(query, limit?)` — case-insensitive substring search over type names, ranked by match coverage
+
+### `src/sdeSystems.ts`
+- `getSdeSystem(systemID)` — `{ systemID, name, security }` from the generated SDE data, or `null`
+- `getSdeSystemNames(systemIDs[])` — bulk id→name lookup
+- `searchSdeSystems(query, limit?)` — case-insensitive substring search over system names (backs the /indexes watch-a-system autocomplete)
+- `formatSecurity(security)` — one-decimal display rounding
 
 ### `src/esi.js` — ESI API wrapper
 All functions take `(accessToken, id, ...)` unless noted. Returns raw ESI response JSON (paged wrappers return `[json, xPagesHeader]`).
@@ -131,6 +137,7 @@ All functions take `(accessToken, id, ...)` unless noted. Returns raw ESI respon
 | `/character/refresh` | `src/app/character/refresh/page.tsx` |
 | `/market` | `src/app/market/page.tsx` |
 | `/industry` | `src/app/industry/page.tsx` |
+| `/indexes` | `src/app/indexes/page.tsx` |
 | `/structure` | `src/app/structure/page.tsx` |
 | `/structure/[structureId]` | `src/app/structure/[structureId]/page.tsx` |
 | `/settings/grants` | `src/app/settings/grants/page.tsx` |
@@ -165,7 +172,7 @@ One job per ESI endpoint. The npm script, queue job name, heartbeat job label, a
 | `corp-wallet-journal` | `/corporations/{id}/wallets/{division}/journal/` | `corp_wallet_journal` | 09:37 daily |
 | `corp-wallet-transactions` | `/corporations/{id}/wallets/{division}/transactions/` | `corp_wallet_transaction` | hourly `:50` |
 | `corp-industry-jobs` | `/corporations/{id}/industry/jobs/` | `corp_industry_job` | 09:47 daily |
-| `industry-systems` | `/industry/systems/` | `industry_system_index` | hourly `:10` |
+| `industry-systems` | `/industry/systems/` | `industry_system_index` (systems with structures ∪ user-watched systems) | hourly `:10` |
 | `universe-names` | `/universe/names/` | `universe_name` | hourly `:58` |
 | `universe-structures` | `/universe/structures/{id}` | `universe_structure` | 09:57 daily |
 
@@ -196,6 +203,7 @@ The per-character jobs (`character-*` except `character-affiliations`, plus `cor
 | `industry_system_index` | Cost index history (append-only) | `system_id`, `activity`, `cost_index`, `recorded_at` |
 | `universe_name` | Cached id→name | `id` (bigint PK), `name`, `category` |
 | `universe_structure` | Player structure cache | `structure_id`, `name`, `system_id`, `type_id` |
+| `watched_system` | Per-user systems to track indexes for (drives `industry-systems` + `/indexes`) | `user_id`, `system_id` |
 | `user_settings` | User preferences | `user_id`, `enabled_scopes[]`, `api_token` (unique), `flags[]` |
 | `invite_code` | Invite-only registration | `code` (unique), `created_by`, `redeemed_by`, `redeemed_at` |
 | `refresh_task` | On-demand job tracking | `batch_id`, `user_id`, `job`, `character_id`, `status` (pending/running/done/error) |

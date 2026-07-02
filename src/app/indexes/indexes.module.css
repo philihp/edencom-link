@@ -1,0 +1,112 @@
+/* Page header: title left, window dropdown right — same arrangement as the
+ * Market page's header. */
+.pageHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12pt;
+}
+
+.pageHeader h1 {
+  margin: 0;
+}
+
+.windowSelect {
+  font-size: 10pt;
+  color: var(--ink-soft);
+}
+
+.windowSelect[data-pending] {
+  opacity: 0.6;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.table {
+  border-collapse: collapse;
+  margin-top: 8pt;
+}
+
+.table th {
+  text-align: left;
+  font-size: 9pt;
+  color: var(--ink-soft);
+  padding: 2pt 8pt;
+}
+
+.table td {
+  padding: 2pt 8pt;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.table tbody tr:hover {
+  background: color-mix(in srgb, currentColor 6%, transparent);
+}
+
+.system {
+  font-weight: 600;
+}
+
+.security {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 9pt;
+  color: var(--ink-faint);
+}
+
+/* One index cell: sparkline (with its min/max range column) then the current
+ * value, matching the structures tiles' index rows. */
+.cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6pt;
+}
+
+.current {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  min-width: 5ch;
+  text-align: right;
+}
+
+.empty {
+  color: var(--ink-faint);
+}
+
+/* The ✕ that drops a system from the watch list — quiet until hovered. */
+.unwatch {
+  border: none;
+  background: none;
+  padding: 0 4pt;
+  cursor: pointer;
+  color: var(--ink-faint);
+}
+
+.unwatch:hover {
+  color: var(--ink);
+}
+
+.search {
+  margin-top: 12pt;
+}
+
+.searchResults {
+  list-style: none;
+  padding: 0;
+  margin: 6pt 0;
+}
+
+.searchResults li {
+  margin: 2pt 0;
+}
