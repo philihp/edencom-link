@@ -1,7 +1,9 @@
 import { fileURLToPath } from 'node:url'
 
+import { splitEvery } from 'ramda'
+
 import { pullCorpWalletJournals } from '../corpWalletJournal.js'
-import { character as fetchCharacter, corpAssets, corpStructures, universeNames } from '../esi.js'
+import { character as fetchCharacter, corpAssets, corpIndustryJobs, corpStructures, universeNames } from '../esi.js'
 import { resolveAssetStationNames, resolveCorpJournalNames, resolveCorpStructureSystemNames } from '../resolveNames.js'
 import { resolveStructureNames } from '../structureNames.js'
 import { sudoSupabase } from '../supabase.js'
@@ -10,6 +12,7 @@ import { refreshAccessToken } from '../tokenRefresh.js'
 const STRUCTURES_SCOPE = 'esi-corporations.read_structures.v1'
 const WALLET_SCOPE = 'esi-wallet.read_corporation_wallets.v1'
 const ASSETS_SCOPE = 'esi-assets.read_corporation_assets.v1'
+const JOBS_SCOPE = 'esi-industry.read_corporation_jobs.v1'
 
 // Items fitted to an Upwell structure show up in corp assets with location_id
 // equal to the structure_id and a RigSlotN location_flag.
@@ -33,6 +36,97 @@ const resolveCorpName = async (corporation_id) => {
   return name
 }
 const corpLabelFor = (name, corporation_id) => (name ? `${name} (${corporation_id})` : `${corporation_id}`)
+
+// The tracked attributes that define a version of a corp asset row. Two
+// sightings with the same signature are the "same" row; any difference opens
+// a new SCD row. Mirrors assets.js's per-character signature (minus `name`,
+// which ESI doesn't expose for corp assets).
+const corpAssetSignature = (a) =>
+  JSON.stringify([
+    Number(a.type_id),
+    a.location_id == null ? null : Number(a.location_id),
+    a.location_flag ?? null,
+    a.location_type ?? null,
+    a.quantity == null ? null : Number(a.quantity),
+    a.is_singleton ?? null,
+    !!a.is_blueprint_copy,
+  ])
+
+// Reconcile freshly fetched corp assets against the corp's current (open) rows
+// in corp_asset_over_time, the same SCD-2 approach assets.js uses for
+// per-character assets: unchanged items get last_seen_at extended, changed
+// items close their old row and open a new one, and vanished items are closed.
+const reconcileCorpAssets = async (corporation_id, fetched) => {
+  const baseCols =
+    'id, item_id, type_id, location_id, location_flag, location_type, quantity, is_singleton, is_blueprint_copy'
+  // Page through every open row: PostgREST caps a select at the API "Max rows"
+  // limit (1000), but a corp can hold tens of thousands of items.
+  const PAGE = 1000
+  const current = []
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await sudoSupabase
+      .from('corp_asset_over_time')
+      .select(baseCols)
+      .eq('corporation_id', corporation_id)
+      .eq('is_current', true)
+      .order('id', { ascending: true })
+      .range(from, from + PAGE - 1)
+    if (error) throw error
+    if (!data || data.length === 0) break
+    current.push(...data)
+    if (data.length < PAGE) break
+  }
+
+  const currentByItem = new Map(current.map((c) => [Number(c.item_id), c]))
+  // ESI can return the same item twice across pages if assets shift mid-fetch;
+  // collapse to one entry per item so we never queue two inserts for it.
+  const fetchedByItem = new Map(fetched.map((a) => [Number(a.item_id), a]))
+
+  const now = new Date().toISOString()
+  const touchIds = [] // unchanged: bump last_seen_at on the open row
+  const closeIds = [] // changed or gone: close the open row
+  const inserts = [] // changed or new: open a fresh version
+
+  for (const a of fetchedByItem.values()) {
+    const cur = currentByItem.get(Number(a.item_id))
+    if (cur && corpAssetSignature(cur) === corpAssetSignature(a)) {
+      touchIds.push(cur.id)
+    } else {
+      if (cur) closeIds.push(cur.id)
+      inserts.push({
+        item_id: a.item_id,
+        corporation_id,
+        type_id: a.type_id,
+        location_id: a.location_id ?? null,
+        location_flag: a.location_flag ?? null,
+        location_type: a.location_type ?? null,
+        quantity: a.quantity ?? null,
+        is_singleton: a.is_singleton ?? null,
+        is_blueprint_copy: !!a.is_blueprint_copy,
+        last_seen_at: now,
+      })
+    }
+    currentByItem.delete(Number(a.item_id))
+  }
+  // Anything still open but not seen this run has left the corp's assets.
+  for (const cur of currentByItem.values()) closeIds.push(cur.id)
+
+  for (const ids of splitEvery(200, touchIds)) {
+    const { error } = await sudoSupabase.from('corp_asset_over_time').update({ last_seen_at: now }).in('id', ids)
+    if (error) throw error
+  }
+  // Close before inserting so the unique-current-per-item index never collides.
+  for (const ids of splitEvery(200, closeIds)) {
+    const { error } = await sudoSupabase.from('corp_asset_over_time').update({ is_current: false }).in('id', ids)
+    if (error) throw error
+  }
+  for (const rows of splitEvery(1000, inserts)) {
+    const { error } = await sudoSupabase.from('corp_asset_over_time').insert(rows)
+    if (error) throw error
+  }
+
+  return { touched: touchIds.length, opened: inserts.length, closed: closeIds.length }
+}
 
 // Pull corp structures (plus structure rigs and corp wallet journals where the
 // linked tokens allow) for tokens carrying the structures scope. Pass `characterIds`
@@ -72,6 +166,7 @@ export const runStructures = async ({ characterIds } = {}) => {
   const seenStructureCorps = new Set()
   const seenWalletCorps = new Set()
   const seenAssetCorps = new Set()
+  const seenJobsCorps = new Set()
   for (const tokenRow of tokens ?? []) {
     const t0 = Date.now()
     const name = characterName.get(tokenRow.character_id) ?? '?'
@@ -203,6 +298,11 @@ export const runStructures = async ({ characterIds } = {}) => {
             `[structures] ${ctx}: corp ${corpLabel} returned ${assets.length} asset(s) across ${assetPages} page(s)`
           )
 
+          const { touched, opened, closed } = await reconcileCorpAssets(corporation_id, assets)
+          console.log(
+            `[structures] ${ctx}: corp ${corpLabel} assets ${touched} unchanged, ${opened} opened, ${closed} closed`
+          )
+
           const now = new Date().toISOString()
           const rigRows = assets
             .filter((a) => isRigSlot(a.location_flag) && structureIds.has(Number(a.location_id)))
@@ -243,6 +343,70 @@ export const runStructures = async ({ characterIds } = {}) => {
       } else {
         seenWalletCorps.add(corporation_id)
         await pullCorpWalletJournals({ access_token, corporation_id, ctx, corpLabel })
+      }
+
+      if (!scope.includes(JOBS_SCOPE)) {
+        console.log(`[structures] ${ctx}: corp ${corpLabel} token lacks ${JOBS_SCOPE}, skipping industry jobs`)
+      } else if (seenJobsCorps.has(corporation_id)) {
+        console.log(`[structures] ${ctx}: corp ${corpLabel} industry jobs already pulled this run, skipping`)
+      } else {
+        seenJobsCorps.add(corporation_id)
+        try {
+          const tj = Date.now()
+          const jobs = []
+          console.log(`[structures] ${ctx}: fetching corp ${corpLabel} industry jobs page 1`)
+          const [firstJobPage, jobPagesHeader] = await corpIndustryJobs(access_token, corporation_id, 1)
+          jobs.push(...firstJobPage)
+          const jobPages = Math.max(1, Number.parseInt(jobPagesHeader, 10) || 1)
+          for (let page = 2; page <= jobPages; page++) {
+            const [more] = await corpIndustryJobs(access_token, corporation_id, page)
+            jobs.push(...more)
+          }
+          console.log(
+            `[structures] ${ctx}: corp ${corpLabel} returned ${jobs.length} industry job(s) across ${jobPages} page(s)`
+          )
+
+          const now = new Date().toISOString()
+          const jobRows = jobs.map((j) => ({
+            job_id: j.job_id,
+            corporation_id,
+            installer_id: j.installer_id,
+            facility_id: j.facility_id,
+            station_id: j.station_id ?? null,
+            activity_id: j.activity_id,
+            blueprint_id: j.blueprint_id,
+            blueprint_type_id: j.blueprint_type_id,
+            blueprint_location_id: j.blueprint_location_id,
+            output_location_id: j.output_location_id,
+            product_type_id: j.product_type_id ?? null,
+            runs: j.runs,
+            cost: j.cost ?? null,
+            licensed_runs: j.licensed_runs ?? null,
+            probability: j.probability ?? null,
+            status: j.status,
+            duration: j.duration,
+            start_date: j.start_date,
+            end_date: j.end_date,
+            pause_date: j.pause_date ?? null,
+            completed_date: j.completed_date ?? null,
+            completed_character_id: j.completed_character_id ?? null,
+            successful_runs: j.successful_runs ?? null,
+            seen_at: now,
+          }))
+          if (jobRows.length > 0) {
+            const { error: jobErr } = await sudoSupabase
+              .from('corp_industry_job')
+              .upsert(jobRows, { onConflict: 'job_id' })
+            if (jobErr) throw jobErr
+          }
+          console.log(
+            `[structures] ${ctx}: corp ${corpLabel} stored ${jobRows.length} industry job(s) in ${Date.now() - tj}ms`
+          )
+        } catch (e) {
+          console.error(
+            `[structures] ${ctx}: corp ${corpLabel} industry jobs pull FAILED name=${e?.name} message=${e?.message}`
+          )
+        }
       }
     } catch (e) {
       const dt = Date.now() - t0

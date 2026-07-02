@@ -69,6 +69,7 @@ All functions take `(characterId, accessToken)` unless noted. Returns raw ESI re
 - `character(characterId, token)` — character sheet
 - `corpStructures(corpId, token)` — corporation Upwell structures
 - `corpAssets(corpId, token)` — corporation assets
+- `corpIndustryJobs(corpId, token)` — corporation industry jobs
 - `corpWalletJournal(corpId, division, token)` — corp wallet journal by division
 - `corpTransactions(token, corpId, division)` — corp wallet market transactions for one division
 - `assetNames(characterId, token, itemIds[])` — player-assigned names for specific item IDs
@@ -144,6 +145,8 @@ All functions take `(characterId, accessToken)` unless noted. Returns raw ESI re
 | `/api/assets` | `src/app/api/assets/route.ts` |
 | `/api/orders` | `src/app/api/orders/route.ts` |
 | `/api/industry` | `src/app/api/industry/route.ts` |
+| `/api/corp/assets` | `src/app/api/corp/assets/route.ts` |
+| `/api/corp/jobs` | `src/app/api/corp/jobs/route.ts` |
 | `/api/queue/jobs` | `src/app/api/queue/jobs/route.ts` |
 | `/api/type/search` | `src/app/api/type/search/route.ts` |
 
@@ -178,6 +181,9 @@ Each job exports its `run*()` function and self-invokes as CLI when run directly
 | `corp_structure_rig` | Rigs on structures | `structure_id`, `location_flag`, `type_id`, `corporation_id` |
 | `corp_wallet_journal` | Corp transaction log | `corporation_id`, `division`, `entry_id`, `ref_type`, `amount`, `date` |
 | `corp_market_transaction` | Corp market buys/sells (unioned into market page) | `transaction_id`, `corporation_id`, `division`, `type_id`, `unit_price`, `quantity`, `is_buy`, `date` |
+| `corp_asset_over_time` | SCD Type 2 corp asset history | `item_id`, `corporation_id`, `type_id`, `location_id`, `location_flag`, `quantity`, `is_current`, `first_seen_at`, `last_seen_at` |
+| `corp_asset` | View: `is_current` corp assets | same columns as above |
+| `corp_industry_job` | Corp manufacturing/research jobs | `job_id`, `corporation_id`, `installer_id`, `blueprint_id`, `product_type_id`, `activity_id`, `status`, `end_date` |
 | `industry_system_index` | Cost index history (append-only) | `system_id`, `activity`, `cost_index`, `recorded_at` |
 | `eve_name` | Cached id→name | `id` (bigint PK), `name`, `category` |
 | `character_corp` | Character→Corp mapping | `character_id`, `corporation_id` |
@@ -193,12 +199,14 @@ Key Postgres functions (callable via RPC or SQL):
 - `asset_snapshot_at(character_ids[], as_of)` — time-travel asset snapshot as JSON (used by `/api/assets`)
 - `industry_jobs(character_ids[])` — export for Sheets IMPORTDATA
 - `market_orders(character_ids[])` — export for Sheets IMPORTDATA
+- `corp_assets(character_ids[])` — corp asset snapshot for the caller's corp(s), export for Sheets IMPORTDATA (used by `/api/corp/assets`)
+- `corp_industry_jobs(character_ids[], include_delivered)` — corp industry jobs for the caller's corp(s), export for Sheets IMPORTDATA (used by `/api/corp/jobs`)
 
 ## Design patterns
 
-- **SCD Type 2 assets:** `asset_over_time` tracks the full history of each item. `is_current=true` rows form the current snapshot. `last_seen_at` is bumped each run for unchanged items; a new row is inserted when anything changes, and the old row's `is_current` is set to `false`.
+- **SCD Type 2 assets:** `asset_over_time` tracks the full history of each item. `is_current=true` rows form the current snapshot. `last_seen_at` is bumped each run for unchanged items; a new row is inserted when anything changes, and the old row's `is_current` is set to `false`. `corp_asset_over_time` (+ `corp_asset` view) mirrors this exact pattern for corp assets, reconciled in `src/jobs/structures.js`.
 - **Supabase RLS:** All tables use RLS scoped to `auth.uid()`. Cron scripts use the service-role key (`sudoSupabase` / `src/utils/supabase/service.ts`) which bypasses RLS.
-- **Google Sheets IMPORTDATA:** `/api/assets`, `/api/orders`, `/api/industry` authenticate via `user_settings.api_token`, call a Postgres function, and return CSV.
+- **Google Sheets IMPORTDATA:** `/api/assets`, `/api/orders`, `/api/industry`, `/api/corp/assets`, `/api/corp/jobs` authenticate via `user_settings.api_token`, call a Postgres function, and return CSV.
 - **Vercel queue:** The queue consumer at `/api/queue/jobs` dispatches to the same `run*()` functions the CLI jobs use. The UI enqueues work via `@vercel/queue`.
 - **Token lifecycle:** ESI OAuth tokens are stored in `token`. Before any ESI call, `refreshAccessToken()` checks expiry and refreshes via EVE SSO if needed.
 - **Name resolution:** `eve_name` table caches ESI `universeNames` lookups. `resolveBatch()` handles bisect-on-error for large batches. Type names (items/ships) come from the locally generated SDE data (`src/sdeTypes.ts`), not the DB.
