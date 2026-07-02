@@ -3,20 +3,20 @@
 EVE Online hangar/wallet/industry tracker. Package name `edencom-link` (private). Deployed on Vercel.
 
 - **Stack:** Next.js 16 (App Router) + React 19 + TypeScript 6, ESM (`"type": "module"`). Supabase (Postgres) for storage. `ramda` for utilities.
-- **Node:** 24.16.0 (`.node-version`). **Package manager:** npm (`package-lock.json`).
+- **Node:** 24.16.0 (`.node-version`). **Package manager:** pnpm (`pnpm-lock.yaml`; version pinned by the `packageManager` field in `package.json`, set up in CI via `pnpm/action-setup`).
 - **Path alias:** `@/*` → `./src/*`.
 
 ## Commands
 
-- `npm run dev` — Next dev server (default port 3000).
-- `npm run build` / `npm start` — production build / serve.
-- `npm run lint` — `eslint .` (flat config `eslint.config.mjs`; `no-explicit-any` is off, unused vars allowed with `^_` prefix).
-- `npm run pretty` — `prettier --write src/` (config: `@philihp/prettier-config`).
+- `pnpm run dev` — Next dev server (default port 3000).
+- `pnpm run build` / `pnpm start` — production build / serve.
+- `pnpm run lint` — `eslint .` (flat config `eslint.config.mjs`; `no-explicit-any` is off, unused vars allowed with `^_` prefix).
+- `pnpm run pretty` — `prettier --write src/` (config: `@philihp/prettier-config`).
 - **No test runner / no `test` script** — there are no automated tests. No `typecheck` script (rely on `next build` / editor).
 - Pre-commit: husky + lint-staged auto-format & `eslint --fix` staged files.
-- `npm run sde:build` — downloads CCP's SDE type/group data and writes `src/generated/sdeTypes.json` (gitignored). Runs automatically as a `predev`/`prebuild` step; skips re-downloading if the file already exists (pass `--force` to refresh). See `src/buildSde.js`.
-- Extract job scripts (one per ESI endpoint, run via GitHub Actions, see below): `npm run character-assets` / `character-orders` / `character-wallet` / `character-wallet-transactions` / `character-industry-jobs` / `character-affiliations` / `corp-structures` / `corp-assets` / `corp-wallet-journal` / `corp-wallet-transactions` / `corp-industry-jobs` / `industry-systems` / `universe-names` / `universe-structures`, plus `heartbeat`. `connect`, `ping`, `refresh` are DB/token utilities.
-- DB migrations (Supabase CLI, configured by `supabase/config.toml`): `npm run db:new <name>` scaffolds a migration under `supabase/migrations/`; `npm run db:push` applies pending migrations to the linked project (`supabase link --project-ref <ref>` first). On push to `main` that touches `supabase/migrations/**`, the `Migrate` workflow runs `supabase db push` automatically (also manually dispatchable).
+- `pnpm run sde:build` — downloads CCP's SDE type/group data and writes `src/generated/sdeTypes.json` (gitignored). Runs automatically as a `predev`/`prebuild` step; skips re-downloading if the file already exists (pass `--force` to refresh). See `src/buildSde.js`.
+- Extract job scripts (one per ESI endpoint, run via GitHub Actions, see below): `pnpm run character-assets` / `character-orders` / `character-wallet` / `character-wallet-transactions` / `character-industry-jobs` / `character-affiliations` / `corp-structures` / `corp-assets` / `corp-wallet-journal` / `corp-wallet-transactions` / `corp-industry-jobs` / `industry-systems` / `universe-names` / `universe-structures`, plus `heartbeat`. `connect`, `ping`, `refresh` are DB/token utilities.
+- DB migrations (Supabase CLI, configured by `supabase/config.toml`): `pnpm run db:new <name>` scaffolds a migration under `supabase/migrations/`; `pnpm run db:push` applies pending migrations to the linked project (`supabase link --project-ref <ref>` first). On push to `main` that touches `supabase/migrations/**`, the `Migrate` workflow runs `supabase db push` automatically (also manually dispatchable).
 
 ## Layout
 
@@ -43,7 +43,7 @@ EVE Online hangar/wallet/industry tracker. Package name `edencom-link` (private)
 # Architecture
 
 - Data from ESI flows into the database via the per-endpoint extract jobs in `src/jobs/`. The UI then reads from the database. The UI/Next.js server components must never call ESI directly.
-- Avoid using the `evesde` schema in the database for new work — it can be out of date. Instead, type/group/category lookups are resolved from `src/generated/sdeTypes.json`, generated at build time by `src/buildSde.js` (`npm run sde:build`, wired as `predev`/`prebuild`) from CCP's published Static Data Export (via Fuzzwork's flat CSV mirror, which tracks each game patch). `src/sdeTypes.ts` loads that file once per server process and exposes `getSdeType`/`getSdeTypeNames`/`searchSdeTypes`, used by `src/app/typeNames.ts`, `src/app/blueprint/api.ts`, and `src/app/api/type/search/route.ts`. If a needed field isn't in the generated dataset, extend `src/buildSde.js` to include it rather than reaching into the `evesde` schema.
+- Avoid using the `evesde` schema in the database for new work — it can be out of date. Instead, type/group/category lookups are resolved from `src/generated/sdeTypes.json`, generated at build time by `src/buildSde.js` (`pnpm run sde:build`, wired as `predev`/`prebuild`) from CCP's published Static Data Export (via Fuzzwork's flat CSV mirror, which tracks each game patch). `src/sdeTypes.ts` loads that file once per server process and exposes `getSdeType`/`getSdeTypeNames`/`searchSdeTypes`, used by `src/app/typeNames.ts`, `src/app/blueprint/api.ts`, and `src/app/api/type/search/route.ts`. If a needed field isn't in the generated dataset, extend `src/buildSde.js` to include it rather than reaching into the `evesde` schema.
 
 # Codebase map
 
@@ -51,7 +51,7 @@ Quick-reference for navigation. Covers key exports, route→file paths, DB table
 
 ## Key source file exports
 
-### `src/buildSde.js` — SDE generator (run via `npm run sde:build`)
+### `src/buildSde.js` — SDE generator (run via `pnpm run sde:build`)
 - Downloads `invTypes.csv`/`invGroups.csv` (Fuzzwork's flat-CSV mirror of CCP's SDE), joins them, and writes published types as `[typeID, name, groupID, categoryID]` tuples to `src/generated/sdeTypes.json` (gitignored). Skips re-downloading if the output already exists; pass `--force` to refresh.
 
 ### `src/sdeTypes.ts`

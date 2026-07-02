@@ -10,25 +10,26 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v6
         with:
           node-version: 24.x
-          cache: npm
-          cache-dependency-path: package-lock.json
-      - run: npm install
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
       - name: Heartbeat start
-        run: npm run heartbeat -- character-affiliations start
+        run: pnpm run heartbeat character-affiliations start
         env:
           SUPABASE_URL: ${{ vars.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-      - run: npm run character-affiliations
+      - run: pnpm run character-affiliations
         env:
           SUPABASE_URL: ${{ vars.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
       - name: Heartbeat end
-        run: npm run heartbeat -- character-affiliations end
+        run: pnpm run heartbeat character-affiliations end
         env:
           SUPABASE_URL: ${{ vars.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
