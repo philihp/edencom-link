@@ -1,18 +1,22 @@
 import { chain, filter, map, prop } from 'ramda'
 
-import { industrySystems } from './esi.js'
-import { sudoSupabase } from './supabase.js'
+import { industrySystems } from '../esi.js'
+import { sudoSupabase } from '../supabase.js'
+import { cli } from './lib.js'
+
+const TAG = 'industry-systems'
 
 // PostgREST caps a single select; page through corp_structure so a large number
 // of structures doesn't silently truncate the set of systems we care about.
 const SYSTEM_PAGE = 1000
 
-// Record a snapshot of the industry cost indices for every solar system we have a
-// structure anchored in. The /industry/systems/ endpoint is public and returns
-// the indices for *all* systems in one shot, so we fetch it once and keep only
-// the systems that appear in corp_structure. Each run appends a fresh set of
-// rows to industry_system_index, building a history of how the indices drift.
-export const pullIndustryIndexes = async () => {
+// GET /industry/systems/ → industry_system_index. Records a snapshot of the
+// industry cost indices for every solar system we have a structure anchored in.
+// The endpoint is public (no token) and returns the indices for *all* systems in
+// one shot, so we fetch it once and keep only the systems that appear in
+// corp_structure. Each run appends a fresh set of rows, building a history of
+// how the indices drift. Account-wide work, so it takes no character scope.
+export const runIndustrySystems = async () => {
   // Distinct systems we hold structures in. Read corp_structure (the base table
   // service_role can reach) paged so a large fleet isn't truncated.
   const systemIds = new Set()
@@ -30,7 +34,7 @@ export const pullIndustryIndexes = async () => {
     if (rows.length < SYSTEM_PAGE) break
   }
 
-  console.log(`[industry_index] ${systemIds.size} system(s) with structures`)
+  console.log(`[${TAG}] ${systemIds.size} system(s) with structures`)
   if (systemIds.size === 0) return
 
   const systems = await industrySystems()
@@ -45,14 +49,16 @@ export const pullIndustryIndexes = async () => {
   }, systems ?? [])
 
   if (rows.length === 0) {
-    console.log('[industry_index] no matching systems returned by ESI, nothing to record')
+    console.log(`[${TAG}] no matching systems returned by ESI, nothing to record`)
     return
   }
 
   const { error: insertErr } = await sudoSupabase.from('industry_system_index').insert(rows)
   if (insertErr) {
-    console.error(`[industry_index] insert FAILED: ${insertErr.message}`)
+    console.error(`[${TAG}] insert FAILED: ${insertErr.message}`)
     throw insertErr
   }
-  console.log(`[industry_index] recorded ${rows.length} industry index row(s)`)
+  console.log(`[${TAG}] recorded ${rows.length} industry index row(s)`)
 }
+
+cli(import.meta.url, TAG, runIndustrySystems)

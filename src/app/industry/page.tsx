@@ -15,7 +15,7 @@ const IndustryPage = async () => {
   const { data: characters } = await supabase.from('registration').select('id, name')
 
   const { data: jobs } = await supabase
-    .from('industry_job')
+    .from('character_industry_job')
     .select(
       'job_id, character_id, activity_id, blueprint_type_id, product_type_id, runs, status, start_date, end_date, station_id, facility_id'
     )

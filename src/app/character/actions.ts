@@ -31,8 +31,8 @@ export const register = async (formData: FormData) => {
   redirect(sso.getRedirectUrl('state', scopes))
 }
 
-// Run every scheduled ESI extract on demand for just the signed-in player's
-// characters, then send them to /characters/refresh to watch it.
+// Run every on-demand ESI extract for just the signed-in player's
+// characters, then send them to /character/refresh to watch it.
 export const refreshEsi = async () => {
   const supabase = await createClient()
 
@@ -47,7 +47,7 @@ export const refreshEsi = async () => {
   const { data: characters } = await supabase.from('registration').select('id, name')
   const batchId = await dispatchRefresh(user.id, characters ?? [])
 
-  redirect(`/characters/refresh?batch=${batchId}`)
+  redirect(`/character/refresh?batch=${batchId}`)
 }
 
 // Mark the selected registration as the player's main character, clearing any

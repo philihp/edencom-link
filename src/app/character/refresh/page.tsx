@@ -8,10 +8,19 @@ import { DateTime } from '../../DateTime'
 import { RefreshPoller } from './poller'
 import styles from './refresh.module.css'
 
-// Matches the per-character jobs the Refresh ESI action fans out, in column order.
-// `structures` isn't fanned out per character (it runs on a daily cron), so it's
-// not a column here.
-const JOBS = ['assets', 'hourly', 'orders'] as const
+// Matches the per-character jobs the Refresh ESI action fans out, in column
+// order, with a short column label for each (the full job names are named after
+// their ESI endpoints and too wide for a table header). The daily corp jobs
+// (corp-structures etc.) aren't fanned out per character, so they're not
+// columns here.
+const JOBS = [
+  ['character-assets', 'assets'],
+  ['character-orders', 'orders'],
+  ['character-wallet', 'wallet'],
+  ['character-wallet-transactions', 'transactions'],
+  ['character-industry-jobs', 'industry'],
+  ['corp-wallet-transactions', 'corp txns'],
+] as const
 
 // Always read fresh — the poller re-requests this server component every couple of
 // seconds while a refresh is in flight.
@@ -87,19 +96,19 @@ const RefreshPage = async ({ searchParams }: { searchParams: Promise<{ batch?: s
     .order('created_at', { ascending: true })
   const tasks = (tasksData ?? []) as Task[]
 
-  // Index the per-character tasks by character+job for the matrix; the daily task
-  // is account-wide so it stands on its own.
-  const { byCharJob, characters, daily } = reduce(
+  // Index the per-character tasks by character+job for the matrix; the
+  // account-wide jobs (no character) each stand on their own.
+  const { byCharJob, characters, accountWide } = reduce(
     (acc, t) => {
       if (t.character_id) {
         acc.byCharJob.set(`${t.character_id}:${t.job}`, t)
         acc.characters.set(t.character_id, t.character_name ?? t.character_id)
-      } else if (t.job === 'daily') {
-        acc.daily = t
+      } else {
+        acc.accountWide.push(t)
       }
       return acc
     },
-    { byCharJob: new Map<string, Task>(), characters: new Map<string, string>(), daily: undefined as Task | undefined },
+    { byCharJob: new Map<string, Task>(), characters: new Map<string, string>(), accountWide: [] as Task[] },
     tasks
   )
 
@@ -141,18 +150,18 @@ const RefreshPage = async ({ searchParams }: { searchParams: Promise<{ batch?: s
       <h1>Refresh ESI</h1>
       <p>{allDone ? 'All jobs finished.' : 'Refreshing… this page updates automatically.'}</p>
 
-      {daily && (
-        <p>
-          Account-wide <strong>daily</strong>: <StatusCell task={daily} />
+      {accountWide.map((task) => (
+        <p key={task.id}>
+          Account-wide <strong>{task.job}</strong>: <StatusCell task={task} />
         </p>
-      )}
+      ))}
 
       <table className={styles.table}>
         <thead>
           <tr>
             <th>Character</th>
-            {JOBS.map((job) => (
-              <th key={job}>{job}</th>
+            {JOBS.map(([job, label]) => (
+              <th key={job}>{label}</th>
             ))}
           </tr>
         </thead>
@@ -160,7 +169,7 @@ const RefreshPage = async ({ searchParams }: { searchParams: Promise<{ batch?: s
           {[...characters.entries()].map(([id, name]) => (
             <tr key={id}>
               <td>{name}</td>
-              {JOBS.map((job) => (
+              {JOBS.map(([job]) => (
                 <td key={job}>
                   <StatusCell task={byCharJob.get(`${id}:${job}`)} lastSuccessAt={lastSuccess.get(`${id}:${job}`)} />
                 </td>

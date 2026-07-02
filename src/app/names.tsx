@@ -14,9 +14,7 @@ type NameProps = {
   id?: string | number | null
 }
 
-export const Name = ({ name, id }: NameProps) => (
-  <span className="serif">{name ?? (id != null ? `#${id}` : '—')}</span>
-)
+export const Name = ({ name, id }: NameProps) => <span className="serif">{name ?? (id != null ? `#${id}` : '—')}</span>
 
 // Characters fall back to `—`: their id is an opaque uuid, not worth showing.
 export const CharacterName = ({ name }: { name?: string | null }) => <Name name={name} />

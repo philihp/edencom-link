@@ -11,8 +11,7 @@ const formatValue = (value: unknown): string => {
 
 // Quote a field per RFC 4180 when it contains a comma, quote, or newline,
 // doubling any embedded quotes.
-const escapeField = (value: string): string =>
-  /[",\r\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value
+const escapeField = (value: string): string => (/[",\r\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value)
 
 export const toCsv = (rows: Record<string, unknown>[]): string => {
   if (rows.length === 0) return ''

@@ -26,9 +26,9 @@ const ApiToken = ({ initialToken }: { initialToken: string | null }) => {
     setResponse(initialToken ? 'Token regenerated — update your sheet' : 'Token generated')
   }
 
-  const assetsUrl = token ? `${origin}/api/assets?token=${token}` : null
-  const industryUrl = token ? `${origin}/api/industry?token=${token}` : null
-  const ordersUrl = token ? `${origin}/api/orders?token=${token}` : null
+  const assetsUrl = token ? `${origin}/api/character/assets?token=${token}` : null
+  const industryUrl = token ? `${origin}/api/character/jobs?token=${token}` : null
+  const ordersUrl = token ? `${origin}/api/character/orders?token=${token}` : null
   const corpAssetsUrl = token ? `${origin}/api/corp/assets?token=${token}` : null
   const corpJobsUrl = token ? `${origin}/api/corp/jobs?token=${token}` : null
 
@@ -36,8 +36,7 @@ const ApiToken = ({ initialToken }: { initialToken: string | null }) => {
     <>
       <h2>API Access (Google Sheets)</h2>
       <p>
-        Pull your data into a spreadsheet with <code>=IMPORTDATA(url)</code> (the first row is the column
-        headers):
+        Pull your data into a spreadsheet with <code>=IMPORTDATA(url)</code> (the first row is the column headers):
       </p>
       {assetsUrl && industryUrl && ordersUrl && corpAssetsUrl && corpJobsUrl && (
         <ul>

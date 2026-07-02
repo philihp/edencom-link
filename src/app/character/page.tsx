@@ -20,7 +20,7 @@ const CharacterPage = async () => {
   const { data: characters, status, statusText, error } = await supabase.from('registration').select()
 
   const { data: wallets } = await supabase
-    .from('wallet')
+    .from('character_wallet')
     .select('character_id, balance, recorded_at')
     .order('recorded_at', { ascending: false })
 

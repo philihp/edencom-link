@@ -99,7 +99,7 @@ const StructurePage = async ({ params }: StructureParams) => {
   const s = structure as Structure
 
   const { data: jobsData } = await supabase
-    .from('industry_job')
+    .from('character_industry_job')
     .select(
       'job_id, character_id, activity_id, blueprint_type_id, product_type_id, runs, status, start_date, end_date, station_id, facility_id'
     )
@@ -112,7 +112,7 @@ const StructurePage = async ({ params }: StructureParams) => {
   const { data: characters } = await supabase.from('registration').select('id, name')
   const characterName: Record<string, string> = Object.fromEntries((characters ?? []).map((c) => [c.id, c.name]))
 
-  // Rigs fitted to this structure (pulled from corp assets by the structures job).
+  // Rigs fitted to this structure (pulled from corp assets by the corp-assets job).
   const { data: rigData } = await supabase
     .from('corp_structure_rig')
     .select('structure_id, location_flag, type_id')

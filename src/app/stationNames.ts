@@ -1,9 +1,10 @@
-// Resolve NPC station names from the local eve_name cache, which the structures
-// job keeps populated (via ESI universe/names, category 'station') for every NPC
-// station we currently hold assets in. Mirrors the solar-system lookup in
-// systemNames.ts. Unresolved ids are simply omitted so callers can fall back to
-// showing the raw id (never read the evesde SDE). Player Upwell structures are
-// resolved separately from corp_structure/structure.
+// Resolve NPC station names from the local universe_name cache, which the
+// universe-names job keeps populated (via ESI universe/names, category
+// 'station') for every NPC station we currently hold assets in. Mirrors the
+// solar-system lookup in systemNames.ts. Unresolved ids are simply omitted so
+// callers can fall back to showing the raw id (never read the evesde SDE).
+// Player Upwell structures are resolved separately from
+// corp_structure/universe_structure.
 import { filter, fromPairs, map, uniq } from 'ramda'
 import { createClient } from '@/utils/supabase/server'
 
@@ -13,7 +14,7 @@ export const fetchStationNames = async (stationIDs: Iterable<number>): Promise<R
   const ids = uniq(filter(Number.isFinite, [...stationIDs]))
   if (ids.length === 0) return {}
   const supabase = await createClient()
-  const { data } = await supabase.from('eve_name').select('id, name').eq('category', 'station').in('id', ids)
+  const { data } = await supabase.from('universe_name').select('id, name').eq('category', 'station').in('id', ids)
   return fromPairs(idNamePairs((data ?? []) as Array<{ id: number | string; name: string }>))
 }
 

@@ -1,9 +1,9 @@
-name: Industry Index
+name: Universe Names
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: '10 * * * *'
+    - cron: '58 * * * *'
 
 jobs:
   refresh:
@@ -17,18 +17,18 @@ jobs:
           cache-dependency-path: package-lock.json
       - run: npm install
       - name: Heartbeat start
-        run: npm run heartbeat -- industry_index start
+        run: npm run heartbeat -- universe-names start
         env:
           SUPABASE_URL: ${{ vars.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-      - run: npm run industry-index
+      - run: npm run universe-names
         env:
           SUPABASE_URL: ${{ vars.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
       - name: Heartbeat end
-        run: npm run heartbeat -- industry_index end
+        run: npm run heartbeat -- universe-names end
         env:
           SUPABASE_URL: ${{ vars.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}

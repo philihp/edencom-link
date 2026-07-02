@@ -76,7 +76,13 @@ export const Sparkline = ({ values, liveCount = values.length, label, updatedAt 
         aria-label={label ? `${label}, ${trend}` : trend}
       >
         {live.length >= 2 && (
-          <polyline points={live.join(' ')} fill="none" stroke="currentColor" strokeWidth={1.5} vectorEffect="non-scaling-stroke" />
+          <polyline
+            points={live.join(' ')}
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={1.5}
+            vectorEffect="non-scaling-stroke"
+          />
         )}
         {stale.length >= 2 && (
           <polyline

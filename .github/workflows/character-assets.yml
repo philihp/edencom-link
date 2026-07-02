@@ -1,9 +1,9 @@
-name: Orders
+name: Character Assets
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: '24 * * * *'
+    - cron: '26 * * * *'
 
 jobs:
   refresh:
@@ -17,12 +17,12 @@ jobs:
           cache-dependency-path: package-lock.json
       - run: npm install
       - name: Heartbeat start
-        run: npm run heartbeat -- orders start
+        run: npm run heartbeat -- character-assets start
         env:
           SUPABASE_URL: ${{ vars.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-      - run: npm run orders
+      - run: npm run character-assets
         env:
           EVE_CLIENT_ID: ${{ vars.EVE_CLIENT_ID }}
           EVE_SECRET_KEY: ${{ secrets.EVE_SECRET_KEY }}
@@ -30,7 +30,7 @@ jobs:
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
       - name: Heartbeat end
-        run: npm run heartbeat -- orders end
+        run: npm run heartbeat -- character-assets end
         env:
           SUPABASE_URL: ${{ vars.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}

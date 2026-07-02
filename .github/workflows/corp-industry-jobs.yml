@@ -1,9 +1,9 @@
-name: Hourly
+name: Corp Industry Jobs
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: '44 * * * *'
+    - cron: '47 9 * * *'
 
 jobs:
   refresh:
@@ -17,12 +17,12 @@ jobs:
           cache-dependency-path: package-lock.json
       - run: npm install
       - name: Heartbeat start
-        run: npm run heartbeat -- hourly start
+        run: npm run heartbeat -- corp-industry-jobs start
         env:
           SUPABASE_URL: ${{ vars.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-      - run: npm run hourly
+      - run: npm run corp-industry-jobs
         env:
           EVE_CLIENT_ID: ${{ vars.EVE_CLIENT_ID }}
           EVE_SECRET_KEY: ${{ secrets.EVE_SECRET_KEY }}
@@ -30,7 +30,7 @@ jobs:
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
       - name: Heartbeat end
-        run: npm run heartbeat -- hourly end
+        run: npm run heartbeat -- corp-industry-jobs end
         env:
           SUPABASE_URL: ${{ vars.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}

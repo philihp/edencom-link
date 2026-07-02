@@ -89,9 +89,7 @@ export const RecentSales = ({ now, sales, characters, corpNames, typeNamesPromis
 
   const filtered = sales.filter(
     (s) =>
-      Date.parse(s.date) >= windowStart &&
-      Number(s.unit_price) * Number(s.quantity) >= threshold &&
-      matchesSeller(s)
+      Date.parse(s.date) >= windowStart && Number(s.unit_price) * Number(s.quantity) >= threshold && matchesSeller(s)
   )
 
   return (

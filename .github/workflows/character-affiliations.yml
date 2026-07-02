@@ -1,9 +1,9 @@
-name: Structures
+name: Character Affiliations
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: '17 9 * * *'
+    - cron: '41 11 * * *'
 
 jobs:
   refresh:
@@ -17,20 +17,18 @@ jobs:
           cache-dependency-path: package-lock.json
       - run: npm install
       - name: Heartbeat start
-        run: npm run heartbeat -- structures start
+        run: npm run heartbeat -- character-affiliations start
         env:
           SUPABASE_URL: ${{ vars.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-      - run: npm run structures
+      - run: npm run character-affiliations
         env:
-          EVE_CLIENT_ID: ${{ vars.EVE_CLIENT_ID }}
-          EVE_SECRET_KEY: ${{ secrets.EVE_SECRET_KEY }}
           SUPABASE_URL: ${{ vars.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
       - name: Heartbeat end
-        run: npm run heartbeat -- structures end
+        run: npm run heartbeat -- character-affiliations end
         env:
           SUPABASE_URL: ${{ vars.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}

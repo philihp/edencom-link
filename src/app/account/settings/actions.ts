@@ -34,7 +34,7 @@ export const changePassword = async (formData: FormData) => {
   }
 }
 
-// Mint (or rotate) the user's api_token — the secret the /api/assets IMPORTDATA
+// Mint (or rotate) the user's api_token — the secret the /api/character/assets IMPORTDATA
 // endpoint authenticates with. Upsert keeps any existing enabled_scopes intact.
 // Returns { token } on success or { error } on failure.
 export const generateApiToken = async (): Promise<{ token?: string; error?: string }> => {

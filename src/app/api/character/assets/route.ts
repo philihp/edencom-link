@@ -28,7 +28,8 @@ export const GET = async (request: NextRequest): Promise<NextResponse> => {
   const { searchParams } = new URL(request.url)
 
   // `at` is the moment to reconstruct the inventory at; default to now (the live
-  // inventory). asset_over_time keeps full SCD-2 history, so any past time works.
+  // inventory). character_asset_over_time keeps full SCD-2 history, so any past
+  // time works.
   const atParam = searchParams.get('at')
   const at = atParam ? new Date(completePartialAt(atParam.trim())) : new Date()
   if (Number.isNaN(at.getTime())) {
@@ -45,10 +46,10 @@ export const GET = async (request: NextRequest): Promise<NextResponse> => {
   }
 
   // The raw rows live at `at`, with character_name, built and returned as one json
-  // array by Postgres (asset_snapshot_at) — keeping the rollup/paging out of this
-  // function is what kept the endpoint under Vercel's timeout, and a single json
-  // scalar sidesteps PostgREST's max-rows cap.
-  const { data: rows, error: rowsError } = await player.supabase.rpc('asset_snapshot_at', {
+  // array by Postgres (character_asset_snapshot_at) — keeping the rollup/paging out
+  // of this function is what kept the endpoint under Vercel's timeout, and a single
+  // json scalar sidesteps PostgREST's max-rows cap.
+  const { data: rows, error: rowsError } = await player.supabase.rpc('character_asset_snapshot_at', {
     character_ids: player.characterIds,
     as_of: atIso,
   })

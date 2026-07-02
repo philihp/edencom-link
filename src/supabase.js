@@ -96,7 +96,7 @@ export const upsertToken = async (columns) => {
 
 export const upsertAssets = async (assets) => {
   const response = await supabase
-    .from('asset')
+    .from('character_asset')
     .upsert(assets, { onConflict: ['item_id'] })
     .select()
   return response

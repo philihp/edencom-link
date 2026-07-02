@@ -12,7 +12,7 @@ const STORAGE_KEY = 'assets.characterId'
 
 export const useCharacterFilter = (characters: Character[]) =>
   usePersist<string>(STORAGE_KEY, ALL_CHARACTERS, (raw) =>
-    raw === ALL_CHARACTERS || characters.some((c) => c.id === raw) ? raw : undefined,
+    raw === ALL_CHARACTERS || characters.some((c) => c.id === raw) ? raw : undefined
   )
 
 type CharacterFilterProps = {
