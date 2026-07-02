@@ -9,7 +9,7 @@ import { LOOKBACK_DAYS } from './windows'
 const PAGE_SIZE = 1000
 
 // Page through a select past PostgREST's max_rows (1000) cap until a short page
-// signals the end (cf. src/jobs/assets.js).
+// signals the end (cf. src/jobs/characterAssets.js).
 const fetchAllRows = async <T,>(
   build: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: unknown }>
 ): Promise<T[]> => {
@@ -53,11 +53,11 @@ const MarketPage = async () => {
   // see, and transaction_ids never collide across the two, so the union is a plain
   // concatenation. ESI's character wallet/transactions endpoint also reports trades
   // the character made on behalf of their corp (is_personal: false) — those are
-  // already captured via corp_market_transaction, so exclude them here to avoid
+  // already captured via corp_wallet_transaction, so exclude them here to avoid
   // double-counting the same sale.
   const personal = await fetchAllRows<Sale>((from, to) =>
     supabase
-      .from('market_transaction')
+      .from('character_wallet_transaction')
       .select('transaction_id, character_id, date, type_id, quantity, unit_price, seen_at')
       .eq('is_buy', false)
       .eq('is_personal', true)
@@ -68,7 +68,7 @@ const MarketPage = async () => {
 
   const corpRows = await fetchAllRows<CorpRow>((from, to) =>
     supabase
-      .from('corp_market_transaction')
+      .from('corp_wallet_transaction')
       .select('transaction_id, corporation_id, date, type_id, quantity, unit_price, seen_at')
       .eq('is_buy', false)
       .gte('date', since)
@@ -89,12 +89,12 @@ const MarketPage = async () => {
 
   const sales: Sale[] = [...personal, ...corpSales]
 
-  // Resolve corp names from eve_name (kept populated by the hourly job) to label
-  // corp sales; unresolved ids fall back to a raw id in the table.
+  // Resolve corp names from universe_name (kept populated by the universe-names
+  // job) to label corp sales; unresolved ids fall back to a raw id in the table.
   const corpIds = [...new Set(corpSales.map((s) => Number(s.corporation_id)))]
   let corpNames: Record<number, string> = {}
   if (corpIds.length > 0) {
-    const { data: nameRows } = await supabase.from('eve_name').select('id, name').in('id', corpIds)
+    const { data: nameRows } = await supabase.from('universe_name').select('id, name').in('id', corpIds)
     corpNames = Object.fromEntries((nameRows ?? []).map((r) => [Number(r.id), r.name as string]))
   }
 

@@ -6,10 +6,17 @@
 -- these tables. Apply with `psql ... -f schema.sql` or paste into the Supabase
 -- SQL editor. There is no separate migrations system — to change the schema,
 -- edit this file and re-run it.
+--
+-- Naming: each extract table is named after the ESI endpoint that feeds it,
+-- prefixed by owner scope — character_* (/characters/...), corp_*
+-- (/corporations/...), universe_* (/universe/...) — and each is written by the
+-- scheduled job of the same name (src/jobs/).
 
 -- ── Reset ──────────────────────────────────────────────────────────────────
 -- Nuke any leftover from the previous `hangar` schema, then drop the app's
--- objects in `public`. CASCADE clears dependent foreign keys and the asset view.
+-- objects in `public`. CASCADE clears dependent foreign keys and the asset
+-- views. The pre-endpoint-naming object names are dropped too, so this reset
+-- also works against a database that never took the rename migration.
 drop schema if exists hangar cascade;
 
 drop function if exists public.asset_location_summary()        cascade;
@@ -18,20 +25,36 @@ drop function if exists public.asset_inventory_at(uuid[], timestamptz) cascade;
 drop function if exists public.asset_snapshot_at(uuid[], timestamptz)  cascade;
 drop function if exists public.industry_jobs(uuid[])                   cascade;
 drop function if exists public.industry_jobs(uuid[], boolean)          cascade;
+drop function if exists public.market_orders(uuid[])                   cascade;
+drop function if exists public.character_asset_location_summary()        cascade;
+drop function if exists public.character_asset_location_contents(bigint) cascade;
+drop function if exists public.character_asset_snapshot_at(uuid[], timestamptz) cascade;
+drop function if exists public.character_industry_jobs(uuid[], boolean)  cascade;
+drop function if exists public.character_orders(uuid[])                  cascade;
 drop view  if exists public.asset                cascade;
 drop table if exists public.asset_over_time      cascade;
 drop table if exists public.wallet               cascade;
 drop table if exists public.market_transaction   cascade;
 drop table if exists public.market_order         cascade;
 drop table if exists public.industry_job         cascade;
-drop table if exists public.industry_system_index cascade;
-drop table if exists public.corp_structure_rig   cascade;
-drop table if exists public.corp_structure       cascade;
-drop table if exists public.corp_wallet_journal  cascade;
 drop table if exists public.corp_market_transaction cascade;
 drop table if exists public.eve_name             cascade;
 drop table if exists public.character_corp       cascade;
 drop table if exists public.structure            cascade;
+drop view  if exists public.character_asset               cascade;
+drop table if exists public.character_asset_over_time     cascade;
+drop table if exists public.character_wallet              cascade;
+drop table if exists public.character_wallet_transaction  cascade;
+drop table if exists public.character_order               cascade;
+drop table if exists public.character_industry_job        cascade;
+drop table if exists public.character_affiliation         cascade;
+drop table if exists public.industry_system_index cascade;
+drop table if exists public.corp_structure_rig   cascade;
+drop table if exists public.corp_structure       cascade;
+drop table if exists public.corp_wallet_journal  cascade;
+drop table if exists public.corp_wallet_transaction cascade;
+drop table if exists public.universe_name        cascade;
+drop table if exists public.universe_structure   cascade;
 drop table if exists public.invite_code          cascade;
 drop table if exists public.user_settings        cascade;
 drop table if exists public.refresh_task         cascade;
@@ -109,14 +132,15 @@ create policy "Users manage own tokens"
 grant select, insert, update, delete on public.token to authenticated;
 grant all                            on public.token to service_role;
 
--- ── asset_over_time ───────────────────────────────────────────────────────
--- Assets as a slowly changing dimension (SCD type 2): each row is a versioned
--- snapshot of one item's state. When the hourly extract sees an item whose
--- tracked attributes (location, quantity, ...) differ from its current row,
--- that row is closed (is_current = false) and a new row inserted, so full
--- history is retained. last_seen_at on the open row is extended every run the
--- item is seen unchanged. The `asset` view below exposes just the live rows.
-create table public.asset_over_time (
+-- ── character_asset_over_time ─────────────────────────────────────────────
+-- ESI /characters/{id}/assets/, written by the character-assets job. Assets as
+-- a slowly changing dimension (SCD type 2): each row is a versioned snapshot of
+-- one item's state. When the extract sees an item whose tracked attributes
+-- (location, quantity, ...) differ from its current row, that row is closed
+-- (is_current = false) and a new row inserted, so full history is retained.
+-- last_seen_at on the open row is extended every run the item is seen
+-- unchanged. The `character_asset` view below exposes just the live rows.
+create table public.character_asset_over_time (
   id bigint generated always as identity primary key,
   item_id bigint not null,
   character_id uuid not null references public.registration(id) on delete cascade,
@@ -134,15 +158,15 @@ create table public.asset_over_time (
   -- otherwise. Kept last to match the add-column migration's column order.
   name text
 );
-create index asset_over_time_character_id_idx on public.asset_over_time (character_id);
+create index character_asset_over_time_character_id_idx on public.character_asset_over_time (character_id);
 -- At most one live row per item; also the conflict target the extract relies on.
-create unique index asset_over_time_current_item_idx on public.asset_over_time (item_id) where is_current;
+create unique index character_asset_over_time_current_item_idx on public.character_asset_over_time (item_id) where is_current;
 -- Time-travel lookups walking an item's version history.
-create index asset_over_time_item_id_idx on public.asset_over_time (item_id, last_seen_at desc);
+create index character_asset_over_time_item_id_idx on public.character_asset_over_time (item_id, last_seen_at desc);
 
-alter table public.asset_over_time enable row level security;
+alter table public.character_asset_over_time enable row level security;
 create policy "Users read own assets"
-  on public.asset_over_time
+  on public.character_asset_over_time
   for select
   to authenticated
   using (
@@ -153,27 +177,28 @@ create policy "Users read own assets"
 
 -- Live snapshot of assets. security_invoker keeps the underlying RLS in force
 -- for the querying (authenticated) role rather than running as the view owner.
-create view public.asset with (security_invoker = on) as
-  select * from public.asset_over_time where is_current;
+create view public.character_asset with (security_invoker = on) as
+  select * from public.character_asset_over_time where is_current;
 
-grant select on public.asset_over_time to authenticated;
-grant select on public.asset           to authenticated;
-grant all    on public.asset_over_time to service_role;
+grant select on public.character_asset_over_time to authenticated;
+grant select on public.character_asset           to authenticated;
+grant all    on public.character_asset_over_time to service_role;
 
--- ── asset aggregation functions ───────────────────────────────────────────
+-- ── character asset aggregation functions ─────────────────────────────────
 -- Items nest (a module in a ship in a station), so the UI used to page every
 -- live asset into Node and walk the location_id chains there — tens of
 -- thousands of rows per request, which timed the pages out. These do the walk
 -- in Postgres instead and return only the aggregate each page needs. Both are
--- SECURITY INVOKER (the default), so the asset view's RLS still scopes every
--- read to the caller's own characters. The depth caps guard against cycles.
+-- SECURITY INVOKER (the default), so the character_asset view's RLS still
+-- scopes every read to the caller's own characters. The depth caps guard
+-- against cycles.
 
--- assets index (/assets): for every root location (a station, structure or
+-- assets index (/asset): for every root location (a station, structure or
 -- solar system that isn't itself one of our items), the number of item stacks
 -- there, split by the character that owns each stack. Each asset is climbed up
 -- its location_id chain through items we also own until the parent isn't ours;
 -- that parent is the root.
-create or replace function public.asset_location_summary()
+create or replace function public.character_asset_location_summary()
 returns table (location_id bigint, location_type text, character_id uuid, stacks bigint)
 language sql
 stable
@@ -181,15 +206,15 @@ as $$
   with recursive parent_of as (
     -- One best-known parent per item the caller can see: the live row if there is
     -- one, otherwise the most recent historical sighting. The walk climbs through
-    -- this rather than the live-only asset view so it can bridge a container or
-    -- ship that has momentarily dropped out of the current snapshot — e.g. one
-    -- handed between the player's own characters, whose per-character extracts run
-    -- at different times — and still roll its contents up to the enclosing
-    -- structure instead of stranding them on the bare item id. RLS keeps
-    -- asset_over_time scoped to the caller's own characters, so a container owned
-    -- by someone else (a corpmate's) still can't be bridged.
+    -- this rather than the live-only character_asset view so it can bridge a
+    -- container or ship that has momentarily dropped out of the current snapshot
+    -- — e.g. one handed between the player's own characters, whose per-character
+    -- extracts run at different times — and still roll its contents up to the
+    -- enclosing structure instead of stranding them on the bare item id. RLS
+    -- keeps character_asset_over_time scoped to the caller's own characters, so
+    -- a container owned by someone else (a corpmate's) still can't be bridged.
     select distinct on (item_id) item_id, location_id, location_type
-    from public.asset_over_time
+    from public.character_asset_over_time
     order by item_id, is_current desc, last_seen_at desc
   ),
   walk as (
@@ -199,7 +224,7 @@ as $$
       a.location_id   as location_id,
       a.location_type as location_type,
       1               as depth
-    from public.asset a
+    from public.character_asset a
     union all
     select
       w.start_item,
@@ -222,22 +247,22 @@ as $$
   group by w.location_id, w.location_type, w.character_id;
 $$;
 
--- per-location page (/assets/[locationId]): for each item sitting directly in
+-- per-location page (/asset/[locationId]): for each item sitting directly in
 -- `parent`, the number of items nested inside it (the whole subtree, excluding
 -- the item itself).
-create or replace function public.asset_location_contents(parent bigint)
+create or replace function public.character_asset_location_contents(parent bigint)
 returns table (item_id bigint, contents bigint)
 language sql
 stable
 as $$
   with recursive descend as (
     select a.item_id as root_child, a.item_id as node, 1 as depth
-    from public.asset a
+    from public.character_asset a
     where a.location_id = parent
     union all
     select d.root_child, c.item_id, d.depth + 1
     from descend d
-    join public.asset c on c.location_id = d.node
+    join public.character_asset c on c.location_id = d.node
     where d.depth < 64
   )
   select root_child as item_id, count(*) - 1 as contents
@@ -245,22 +270,23 @@ as $$
   group by root_child;
 $$;
 
-grant execute on function public.asset_location_summary()        to authenticated;
-grant execute on function public.asset_location_contents(bigint) to authenticated;
+grant execute on function public.character_asset_location_summary()        to authenticated;
+grant execute on function public.character_asset_location_contents(bigint) to authenticated;
 
--- /api/assets IMPORTDATA endpoint: the player's raw asset rows (one per item
--- stack), with the owning character's name, as of `as_of`, reconstructed from the
--- SCD-2 history. A row counts when it had started by `as_of` and was either still
--- open then or is the current version (its state extends forward past
--- last_seen_at to now); a later version of an item always starts after the prior
--- one's last_seen_at, so at most one version per item matches. Returns the whole
--- result as a single json array so PostgREST's max-rows cap never truncates it
--- and the function (not the serverless route) pages the table — what kept the
--- endpoint under Vercel's timeout. Uses json (not jsonb), which preserves the
--- object key order below so the sheet's columns come out in that exact order.
--- Called with the service role over the caller's own registration ids, so it
--- takes them as a parameter rather than leaning on RLS.
-create or replace function public.asset_snapshot_at(character_ids uuid[], as_of timestamptz)
+-- /api/character/assets IMPORTDATA endpoint: the player's raw asset rows (one
+-- per item stack), with the owning character's name, as of `as_of`,
+-- reconstructed from the SCD-2 history. A row counts when it had started by
+-- `as_of` and was either still open then or is the current version (its state
+-- extends forward past last_seen_at to now); a later version of an item always
+-- starts after the prior one's last_seen_at, so at most one version per item
+-- matches. Returns the whole result as a single json array so PostgREST's
+-- max-rows cap never truncates it and the function (not the serverless route)
+-- pages the table — what kept the endpoint under Vercel's timeout. Uses json
+-- (not jsonb), which preserves the object key order below so the sheet's
+-- columns come out in that exact order. Called with the service role over the
+-- caller's own registration ids, so it takes them as a parameter rather than
+-- leaning on RLS.
+create or replace function public.character_asset_snapshot_at(character_ids uuid[], as_of timestamptz)
 returns json
 language sql
 stable
@@ -282,7 +308,7 @@ as $$
     ),
     '[]'::json
   )
-  from public.asset_over_time a
+  from public.character_asset_over_time a
   join public.registration r on r.id = a.character_id
   where a.character_id = any(character_ids)
     and a.first_seen_at <= as_of
@@ -290,7 +316,7 @@ as $$
     and (not a.is_singleton or a.is_blueprint_copy);
 $$;
 
-grant execute on function public.asset_snapshot_at(uuid[], timestamptz) to service_role;
+grant execute on function public.character_asset_snapshot_at(uuid[], timestamptz) to service_role;
 
 -- ── heartbeat ─────────────────────────────────────────────────────────────
 -- One row per scheduled-job run. Workflows write a 'start' step (stamps
@@ -323,18 +349,20 @@ create policy "Authenticated read heartbeat"
 grant select on public.heartbeat to authenticated;
 grant all    on public.heartbeat to service_role;
 
--- ── wallet ────────────────────────────────────────────────────────────────
-create table public.wallet (
+-- ── character_wallet ──────────────────────────────────────────────────────
+-- ESI /characters/{id}/wallet/, written by the character-wallet job. One
+-- balance row appended per character per run.
+create table public.character_wallet (
   id uuid primary key default gen_random_uuid(),
   character_id uuid not null references public.registration(id) on delete cascade,
   balance numeric(20, 2) not null,
   recorded_at timestamptz not null default now()
 );
-create index wallet_character_id_recorded_at_idx on public.wallet (character_id, recorded_at desc);
+create index character_wallet_character_id_recorded_at_idx on public.character_wallet (character_id, recorded_at desc);
 
-alter table public.wallet enable row level security;
+alter table public.character_wallet enable row level security;
 create policy "Users read own wallets"
-  on public.wallet
+  on public.character_wallet
   for select
   to authenticated
   using (
@@ -343,11 +371,13 @@ create policy "Users read own wallets"
     )
   );
 
-grant select on public.wallet to authenticated;
-grant all    on public.wallet to service_role;
+grant select on public.character_wallet to authenticated;
+grant all    on public.character_wallet to service_role;
 
--- ── market_transaction ────────────────────────────────────────────────────
-create table public.market_transaction (
+-- ── character_wallet_transaction ──────────────────────────────────────────
+-- ESI /characters/{id}/wallet/transactions/, written by the
+-- character-wallet-transactions job.
+create table public.character_wallet_transaction (
   transaction_id bigint primary key,
   character_id uuid not null references public.registration(id) on delete cascade,
   date timestamptz not null,
@@ -361,11 +391,11 @@ create table public.market_transaction (
   journal_ref_id bigint not null,
   seen_at timestamptz not null default now()
 );
-create index market_transaction_character_id_date_idx on public.market_transaction (character_id, date desc);
+create index character_wallet_transaction_character_id_date_idx on public.character_wallet_transaction (character_id, date desc);
 
-alter table public.market_transaction enable row level security;
+alter table public.character_wallet_transaction enable row level security;
 create policy "Users read own transactions"
-  on public.market_transaction
+  on public.character_wallet_transaction
   for select
   to authenticated
   using (
@@ -374,16 +404,17 @@ create policy "Users read own transactions"
     )
   );
 
-grant select on public.market_transaction to authenticated;
-grant all    on public.market_transaction to service_role;
+grant select on public.character_wallet_transaction to authenticated;
+grant all    on public.character_wallet_transaction to service_role;
 
--- ── market_order ──────────────────────────────────────────────────────────
--- A character's currently open market orders (ESI /characters/{id}/orders/).
--- The orders job keeps this a live snapshot: each run upserts every open order
--- and sweeps away that character's rows it didn't see, which have since filled,
--- expired or been cancelled. is_buy is false for sell orders (ESI omits
--- is_buy_order on those); escrow/min_volume are buy-order-only, hence nullable.
-create table public.market_order (
+-- ── character_order ───────────────────────────────────────────────────────
+-- ESI /characters/{id}/orders/, written by the character-orders job: the
+-- character's currently open market orders. The job keeps this a live
+-- snapshot: each run upserts every open order and sweeps away that character's
+-- rows it didn't see, which have since filled, expired or been cancelled.
+-- is_buy is false for sell orders (ESI omits is_buy_order on those);
+-- escrow/min_volume are buy-order-only, hence nullable.
+create table public.character_order (
   order_id bigint primary key,
   character_id uuid not null references public.registration(id) on delete cascade,
   type_id bigint not null,
@@ -401,11 +432,11 @@ create table public.market_order (
   issued timestamptz not null,
   seen_at timestamptz not null default now()
 );
-create index market_order_character_id_issued_idx on public.market_order (character_id, issued desc);
+create index character_order_character_id_issued_idx on public.character_order (character_id, issued desc);
 
-alter table public.market_order enable row level security;
+alter table public.character_order enable row level security;
 create policy "Users read own orders"
-  on public.market_order
+  on public.character_order
   for select
   to authenticated
   using (
@@ -414,15 +445,16 @@ create policy "Users read own orders"
     )
   );
 
-grant select on public.market_order to authenticated;
-grant all    on public.market_order to service_role;
+grant select on public.character_order to authenticated;
+grant all    on public.character_order to service_role;
 
--- /api/orders IMPORTDATA endpoint: the player's open market orders across all of
--- their characters, with the owning character's name. Returns the whole result as
--- a single json array (json, not jsonb, so json_build_object's key order is
--- preserved for the sheet's columns) and sidesteps PostgREST's max-rows cap. The
--- stored `is_buy` flag is exposed as `is_buy_order` to match ESI's field name.
-create or replace function public.market_orders(character_ids uuid[])
+-- /api/character/orders IMPORTDATA endpoint: the player's open market orders
+-- across all of their characters, with the owning character's name. Returns the
+-- whole result as a single json array (json, not jsonb, so json_build_object's
+-- key order is preserved for the sheet's columns) and sidesteps PostgREST's
+-- max-rows cap. The stored `is_buy` flag is exposed as `is_buy_order` to match
+-- ESI's field name.
+create or replace function public.character_orders(character_ids uuid[])
 returns json
 language sql
 stable
@@ -450,15 +482,16 @@ as $$
     ),
     '[]'::json
   )
-  from public.market_order o
+  from public.character_order o
   join public.registration r on r.id = o.character_id
   where o.character_id = any(character_ids);
 $$;
 
-grant execute on function public.market_orders(uuid[]) to service_role;
+grant execute on function public.character_orders(uuid[]) to service_role;
 
--- ── industry_job ──────────────────────────────────────────────────────────
-create table public.industry_job (
+-- ── character_industry_job ────────────────────────────────────────────────
+-- ESI /characters/{id}/industry/jobs/, written by the character-industry-jobs job.
+create table public.character_industry_job (
   job_id bigint primary key,
   character_id uuid not null references public.registration(id) on delete cascade,
   installer_id bigint not null,
@@ -484,11 +517,11 @@ create table public.industry_job (
   successful_runs integer,
   seen_at timestamptz not null default now()
 );
-create index industry_job_character_id_end_date_idx on public.industry_job (character_id, end_date desc);
+create index character_industry_job_character_id_end_date_idx on public.character_industry_job (character_id, end_date desc);
 
-alter table public.industry_job enable row level security;
+alter table public.character_industry_job enable row level security;
 create policy "Users read own industry jobs"
-  on public.industry_job
+  on public.character_industry_job
   for select
   to authenticated
   using (
@@ -497,16 +530,16 @@ create policy "Users read own industry jobs"
     )
   );
 
-grant select on public.industry_job to authenticated;
-grant all    on public.industry_job to service_role;
+grant select on public.character_industry_job to authenticated;
+grant all    on public.character_industry_job to service_role;
 
--- /api/industry IMPORTDATA endpoint: the player's industry jobs across all of
--- their characters, with the owning character's name. Returns the whole result
--- as a single json array (json, not jsonb, so json_build_object's key order is
--- preserved for the sheet's columns; one scalar also sidesteps PostgREST's
--- max-rows cap). Called with the service role over the caller's own registration
--- ids, so it takes them as a parameter rather than leaning on RLS.
-create or replace function public.industry_jobs(character_ids uuid[], include_delivered boolean default false)
+-- /api/character/jobs IMPORTDATA endpoint: the player's industry jobs across
+-- all of their characters, with the owning character's name. Returns the whole
+-- result as a single json array (json, not jsonb, so json_build_object's key
+-- order is preserved for the sheet's columns; one scalar also sidesteps
+-- PostgREST's max-rows cap). Called with the service role over the caller's own
+-- registration ids, so it takes them as a parameter rather than leaning on RLS.
+create or replace function public.character_industry_jobs(character_ids uuid[], include_delivered boolean default false)
 returns json
 language sql
 stable
@@ -542,15 +575,16 @@ as $$
     ),
     '[]'::json
   )
-  from public.industry_job j
+  from public.character_industry_job j
   join public.registration r on r.id = j.character_id
   where j.character_id = any(character_ids)
     and (include_delivered or j.status not in ('delivered', 'cancelled', 'archived'));
 $$;
 
-grant execute on function public.industry_jobs(uuid[], boolean) to service_role;
+grant execute on function public.character_industry_jobs(uuid[], boolean) to service_role;
 
 -- ── corp_structure ────────────────────────────────────────────────────────
+-- ESI /corporations/{id}/structures/, written by the corp-structures job.
 create table public.corp_structure (
   structure_id bigint primary key,
   corporation_id bigint not null,
@@ -589,8 +623,8 @@ grant all    on public.corp_structure to service_role;
 -- ── corp_structure_rig ────────────────────────────────────────────────────
 -- Rigs (and other fitted modules) in Upwell structures. ESI has no dedicated
 -- structure-fitting endpoint; these come from the corporation assets endpoint
--- as items whose location_id is the structure_id and location_flag is a
--- RigSlot (RigSlot0..RigSlot7).
+-- (the corp-assets job) as items whose location_id is the structure_id and
+-- location_flag is a RigSlot (RigSlot0..RigSlot7).
 create table public.corp_structure_rig (
   structure_id bigint not null,
   location_flag text not null,
@@ -617,12 +651,12 @@ grant select on public.corp_structure_rig to authenticated;
 grant all    on public.corp_structure_rig to service_role;
 
 -- ── industry_system_index ─────────────────────────────────────────────────
--- History of EVE's per-system industry cost indices, snapshotted each structures
--- run for every solar system we have a structure anchored in. Public ESI data
--- (/industry/systems/), so it's readable by everyone. Each row is one system /
--- activity (manufacturing, reaction, copying, invention, ...) and the recorded
--- cost index at recorded_at; the table is append-only so the indices' drift over
--- time can be charted.
+-- ESI /industry/systems/, written by the industry-systems job: history of
+-- EVE's per-system industry cost indices, snapshotted each run for every solar
+-- system we have a structure anchored in. Public ESI data, so it's readable by
+-- everyone. Each row is one system / activity (manufacturing, reaction,
+-- copying, invention, ...) and the recorded cost index at recorded_at; the
+-- table is append-only so the indices' drift over time can be charted.
 create table public.industry_system_index (
   id bigint generated always as identity primary key,
   system_id bigint not null,
@@ -644,6 +678,8 @@ grant select on public.industry_system_index to anon, authenticated;
 grant all    on public.industry_system_index to service_role;
 
 -- ── corp_wallet_journal ───────────────────────────────────────────────────
+-- ESI /corporations/{id}/wallets/{division}/journal/, written by the
+-- corp-wallet-journal job.
 create table public.corp_wallet_journal (
   corporation_id bigint not null,
   division smallint not null,
@@ -680,16 +716,18 @@ create policy "Users read journal for own corps"
 grant select on public.corp_wallet_journal to authenticated;
 grant all    on public.corp_wallet_journal to service_role;
 
--- ── corp_market_transaction ───────────────────────────────────────────────
--- Market transactions (buys and sells) pulled from corporation wallet divisions
+-- ── corp_wallet_transaction ───────────────────────────────────────────────
+-- ESI /corporations/{id}/wallets/{division}/transactions/, written by the
+-- corp-wallet-transactions job. Market transactions (buys and sells) pulled
+-- from every corporation wallet division
 -- (esi-wallet.read_corporation_wallets.v1), unioned into the market page beside
--- the per-character market_transaction rows. `character_id` is the registration
--- whose token scanned the row; RLS scopes reads to that character's owner, so a
--- corp transaction is only visible to the player who pulled it (like personal
--- transactions). transaction_id is globally unique in EVE, so it keys the table
--- and dedupes across divisions and re-scans (first scanner wins attribution).
--- Corp transactions have no is_personal flag.
-create table public.corp_market_transaction (
+-- the per-character character_wallet_transaction rows. `character_id` is the
+-- registration whose token scanned the row; RLS scopes reads to that
+-- character's owner, so a corp transaction is only visible to the player who
+-- pulled it (like personal transactions). transaction_id is globally unique in
+-- EVE, so it keys the table and dedupes across divisions and re-scans (first
+-- scanner wins attribution). Corp transactions have no is_personal flag.
+create table public.corp_wallet_transaction (
   transaction_id bigint primary key,
   character_id uuid not null references public.registration(id) on delete cascade,
   corporation_id bigint not null,
@@ -704,11 +742,11 @@ create table public.corp_market_transaction (
   journal_ref_id bigint not null,
   seen_at timestamptz not null default now()
 );
-create index corp_market_transaction_character_id_date_idx on public.corp_market_transaction (character_id, date desc);
+create index corp_wallet_transaction_character_id_date_idx on public.corp_wallet_transaction (character_id, date desc);
 
-alter table public.corp_market_transaction enable row level security;
+alter table public.corp_wallet_transaction enable row level security;
 create policy "Users read own corp transactions"
-  on public.corp_market_transaction
+  on public.corp_wallet_transaction
   for select
   to authenticated
   using (
@@ -717,15 +755,16 @@ create policy "Users read own corp transactions"
     )
   );
 
-grant select on public.corp_market_transaction to authenticated;
-grant all    on public.corp_market_transaction to service_role;
+grant select on public.corp_wallet_transaction to authenticated;
+grant all    on public.corp_wallet_transaction to service_role;
 
 -- ── corp_asset_over_time ──────────────────────────────────────────────────
--- SCD Type 2 history of a corporation's assets (esi-assets.read_corporation_assets.v1),
--- mirroring asset_over_time for per-character assets: is_current=true rows form
--- the current snapshot, last_seen_at is bumped each run for unchanged items, and
--- a new row is inserted when anything changes (old row's is_current set false).
--- Sourced from the same ESI pull that feeds corp_structure_rig.
+-- ESI /corporations/{id}/assets/ (esi-assets.read_corporation_assets.v1),
+-- written by the corp-assets job. SCD Type 2 history of a corporation's assets,
+-- mirroring character_asset_over_time for per-character assets: is_current=true
+-- rows form the current snapshot, last_seen_at is bumped each run for unchanged
+-- items, and a new row is inserted when anything changes (old row's is_current
+-- set false). Sourced from the same ESI pull that feeds corp_structure_rig.
 create table public.corp_asset_over_time (
   id bigint generated always as identity primary key,
   item_id bigint not null,
@@ -769,8 +808,8 @@ grant select on public.corp_asset           to authenticated;
 grant all    on public.corp_asset_over_time to service_role;
 
 -- /api/corp/assets IMPORTDATA endpoint: the caller's corporation(s) current
--- asset rows (one per item stack), mirroring asset_snapshot_at()'s shape for
--- the per-character assets endpoint. Returns json (not jsonb) so
+-- asset rows (one per item stack), mirroring character_asset_snapshot_at()'s
+-- shape for the per-character assets endpoint. Returns json (not jsonb) so
 -- json_build_object's key order is preserved for the sheet's columns, and a
 -- single scalar sidesteps PostgREST's max-rows cap.
 create or replace function public.corp_assets(character_ids uuid[])
@@ -805,9 +844,9 @@ $$;
 grant execute on function public.corp_assets(uuid[]) to service_role;
 
 -- ── corp_industry_job ─────────────────────────────────────────────────────
--- Corporation industry jobs (esi-industry.read_corporation_jobs.v1), pulled
--- once per corp per structures run (like corp_structure/corp_wallet_journal).
--- Same shape as the per-character industry_job table plus corporation_id;
+-- ESI /corporations/{id}/industry/jobs/ (esi-industry.read_corporation_jobs.v1),
+-- written by the corp-industry-jobs job, once per corp per run. Same shape as
+-- the per-character character_industry_job table plus corporation_id;
 -- installer_id is the character who started the job.
 create table public.corp_industry_job (
   job_id bigint primary key,
@@ -852,10 +891,11 @@ create policy "Users read industry jobs for own corps"
 grant select on public.corp_industry_job to authenticated;
 grant all    on public.corp_industry_job to service_role;
 
--- /api/corp/jobs IMPORTDATA endpoint: the caller's corporation(s) industry jobs,
--- mirroring industry_jobs()'s shape for the per-character endpoint. Returns json
--- (not jsonb) so json_build_object's key order is preserved for the sheet's
--- columns, and a single scalar sidesteps PostgREST's max-rows cap.
+-- /api/corp/jobs IMPORTDATA endpoint: the caller's corporation(s) industry
+-- jobs, mirroring character_industry_jobs()'s shape for the per-character
+-- endpoint. Returns json (not jsonb) so json_build_object's key order is
+-- preserved for the sheet's columns, and a single scalar sidesteps PostgREST's
+-- max-rows cap.
 create or replace function public.corp_industry_jobs(character_ids uuid[], include_delivered boolean default false)
 returns json
 language sql
@@ -902,48 +942,51 @@ $$;
 
 grant execute on function public.corp_industry_jobs(uuid[], boolean) to service_role;
 
--- ── eve_name ──────────────────────────────────────────────────────────────
--- Cache of resolved EVE id -> name/category lookups.
-create table public.eve_name (
+-- ── universe_name ─────────────────────────────────────────────────────────
+-- ESI /universe/names/, written by the universe-names job: cache of resolved
+-- EVE id -> name/category lookups.
+create table public.universe_name (
   id bigint primary key,
   name text not null,
   category text not null,
   resolved_at timestamptz not null default now()
 );
 
-alter table public.eve_name enable row level security;
-create policy "Authenticated read eve_name"
-  on public.eve_name
+alter table public.universe_name enable row level security;
+create policy "Authenticated read universe_name"
+  on public.universe_name
   for select
   to authenticated
   using (true);
 
-grant select on public.eve_name to authenticated;
-grant all    on public.eve_name to service_role;
+grant select on public.universe_name to authenticated;
+grant all    on public.universe_name to service_role;
 
--- ── character_corp ────────────────────────────────────────────────────────
-create table public.character_corp (
+-- ── character_affiliation ─────────────────────────────────────────────────
+-- ESI /characters/affiliation/, written by the character-affiliations job:
+-- which corporation each known character currently belongs to.
+create table public.character_affiliation (
   character_id bigint primary key,
   corporation_id bigint not null,
   resolved_at timestamptz not null default now()
 );
 
-alter table public.character_corp enable row level security;
-create policy "Authenticated read character_corp"
-  on public.character_corp
+alter table public.character_affiliation enable row level security;
+create policy "Authenticated read character_affiliation"
+  on public.character_affiliation
   for select
   to authenticated
   using (true);
 
-grant select on public.character_corp to authenticated;
-grant all    on public.character_corp to service_role;
+grant select on public.character_affiliation to authenticated;
+grant all    on public.character_affiliation to service_role;
 
--- ── structure ─────────────────────────────────────────────────────────────
--- Cache of player Upwell structure details (name, system) resolved from ESI's
--- authenticated /universe/structures endpoint by the structures job. Lets the
--- assets UI show a name/system for structures that aren't our own corp's
--- (those live in corp_structure).
-create table public.structure (
+-- ── universe_structure ────────────────────────────────────────────────────
+-- ESI /universe/structures/{id}, written by the universe-structures job: cache
+-- of player Upwell structure details (name, system) resolved from the
+-- authenticated endpoint. Lets the assets UI show a name/system for structures
+-- that aren't our own corp's (those live in corp_structure).
+create table public.universe_structure (
   structure_id bigint primary key,
   name text,
   system_id bigint,
@@ -951,24 +994,25 @@ create table public.structure (
   resolved_at timestamptz not null default now()
 );
 
-alter table public.structure enable row level security;
-create policy "Authenticated read structure"
-  on public.structure
+alter table public.universe_structure enable row level security;
+create policy "Authenticated read universe_structure"
+  on public.universe_structure
   for select
   to authenticated
   using (true);
 
-grant select on public.structure to authenticated;
-grant all    on public.structure to service_role;
+grant select on public.universe_structure to authenticated;
+grant all    on public.universe_structure to service_role;
 
 -- ── user_settings ─────────────────────────────────────────────────────────
 -- Per-user preferences. `enabled_scopes` is the set of ESI OAuth scopes the
 -- user has opted into requesting when they add a character; an absent row means
 -- "request everything" (see src/app/character/userScopes.ts).
--- `api_token` is an opaque per-user secret the Google Sheets IMPORTDATA endpoint
--- (/api/assets) authenticates with — that request carries no Supabase session,
--- so the route looks the user up by this token (service role) and scopes the
--- results to their characters. Null until the user generates one in settings.
+-- `api_token` is an opaque per-user secret the Google Sheets IMPORTDATA endpoints
+-- (/api/character/assets etc.) authenticate with — those requests carry no
+-- Supabase session, so the routes look the user up by this token (service role)
+-- and scope the results to their characters. Null until the user generates one
+-- in settings.
 -- `flags` is the set of Vercel Flags (src/flags.ts) a user has enabled, e.g.
 -- 'indexes' gates the /indexes page and nav link per-user.
 create table public.user_settings (
@@ -1030,11 +1074,14 @@ grant all    on public.invite_code to service_role;
 
 -- ── refresh_task ──────────────────────────────────────────────────────────
 -- Tracks an on-demand "Refresh ESI" run (the button on /character). One row per
--- dispatched unit of work: per character for the per-character jobs (assets,
--- hourly, structures, orders) and one account-wide row for daily. The server
--- action inserts these (status 'pending') and enqueues a matching queue message;
--- the queue consumer flips each to 'running' then 'done'/'error'. The
--- /characters/refresh page reads them (scoped to the owner) to show live status.
+-- dispatched unit of work: per character for the per-character extract jobs
+-- (character-assets, character-orders, character-wallet,
+-- character-wallet-transactions, character-industry-jobs,
+-- corp-wallet-transactions) and one account-wide row each for
+-- character-affiliations and universe-names. The server action inserts these
+-- (status 'pending') and enqueues a matching queue message; the queue consumer
+-- flips each to 'running' then 'done'/'error'. The /character/refresh page
+-- reads them (scoped to the owner) to show live status.
 create table public.refresh_task (
   id uuid primary key default gen_random_uuid(),
   batch_id uuid not null,

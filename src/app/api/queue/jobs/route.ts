@@ -4,16 +4,85 @@ import { handleCallback } from '@/utils/queue'
 
 export const runtime = 'nodejs'
 // 60s is the max the current Vercel plan allows. Per-character fan-out keeps each
-// invocation small enough to fit; the daily whole-job message is a single batch and
-// GitHub Actions remains the safety net if it ever exceeds this on large datasets.
+// invocation small enough to fit; the account-wide jobs are a single batch each and
+// GitHub Actions remains the safety net if one ever exceeds this on large datasets.
 export const maxDuration = 60
+
+// One extract job per ESI endpoint, named after that endpoint. The per-character
+// jobs accept { characterIds }; the account-wide ones (characterIds: false) do
+// batch work over everything at once. Each entry imports lazily so loading the
+// route (and `next build`) never runs the job modules' top-level supabase
+// service-client setup, which needs env vars absent at build time.
+const JOBS = {
+  'character-assets': {
+    characterIds: true,
+    load: async () => (await import('@/jobs/characterAssets.js')).runCharacterAssets,
+  },
+  'character-orders': {
+    characterIds: true,
+    load: async () => (await import('@/jobs/characterOrders.js')).runCharacterOrders,
+  },
+  'character-wallet': {
+    characterIds: true,
+    load: async () => (await import('@/jobs/characterWallet.js')).runCharacterWallet,
+  },
+  'character-wallet-transactions': {
+    characterIds: true,
+    load: async () => (await import('@/jobs/characterWalletTransactions.js')).runCharacterWalletTransactions,
+  },
+  'character-industry-jobs': {
+    characterIds: true,
+    load: async () => (await import('@/jobs/characterIndustryJobs.js')).runCharacterIndustryJobs,
+  },
+  'corp-structures': {
+    characterIds: true,
+    load: async () => (await import('@/jobs/corpStructures.js')).runCorpStructures,
+  },
+  'corp-assets': {
+    characterIds: true,
+    load: async () => (await import('@/jobs/corpAssets.js')).runCorpAssets,
+  },
+  'corp-wallet-journal': {
+    characterIds: true,
+    load: async () => (await import('@/jobs/corpWalletJournal.js')).runCorpWalletJournal,
+  },
+  'corp-wallet-transactions': {
+    characterIds: true,
+    load: async () => (await import('@/jobs/corpWalletTransactions.js')).runCorpWalletTransactions,
+  },
+  'corp-industry-jobs': {
+    characterIds: true,
+    load: async () => (await import('@/jobs/corpIndustryJobs.js')).runCorpIndustryJobs,
+  },
+  'character-affiliations': {
+    characterIds: false,
+    load: async () => (await import('@/jobs/characterAffiliations.js')).runCharacterAffiliations,
+  },
+  'universe-names': {
+    characterIds: false,
+    load: async () => (await import('@/jobs/universeNames.js')).runUniverseNames,
+  },
+  'universe-structures': {
+    characterIds: false,
+    load: async () => (await import('@/jobs/universeStructures.js')).runUniverseStructures,
+  },
+  'industry-systems': {
+    characterIds: false,
+    load: async () => (await import('@/jobs/industrySystems.js')).runIndustrySystems,
+  },
+} satisfies Record<
+  string,
+  { characterIds: boolean; load: () => Promise<(opts?: { characterIds?: string[] }) => Promise<unknown>> }
+>
+
+type JobName = keyof typeof JOBS
 
 // characterId is a registration uuid (per-character fan-out); absent runs the job
 // for everyone. taskId, when present, is a refresh_task row the "Refresh ESI" flow
-// tracks — the consumer flips it running -> done/error so /characters/refresh can
+// tracks — the consumer flips it running -> done/error so /character/refresh can
 // show live status.
 type Msg = {
-  job: 'hourly' | 'assets' | 'structures' | 'daily' | 'orders'
+  job: JobName
   characterId?: string
   taskId?: string
 }
@@ -23,49 +92,25 @@ type Msg = {
 export const POST = handleCallback(async (message: Msg) => {
   const { job, characterId, taskId } = message
   console.log(`[queue/jobs] consume job=${job} characterId=${characterId ?? '-'} taskId=${taskId ?? '-'}`)
-  const ids = characterId != null ? { characterIds: [characterId] } : undefined
 
-  // Imported lazily so loading the route (and `next build`) never runs the job
-  // modules' top-level supabase service-client setup, which needs env vars absent
-  // at build time.
+  const entry = JOBS[job]
+  if (!entry) throw new Error(`unknown job: ${String(job)}`)
+
   const runJob = async () => {
-    switch (job) {
-      case 'hourly': {
-        const { runHourly } = await import('@/jobs/hourly.js')
-        await runHourly(ids)
-        return
-      }
-      case 'assets': {
-        const { runAssets } = await import('@/jobs/assets.js')
-        await runAssets(ids)
-        return
-      }
-      case 'structures': {
-        const { runStructures } = await import('@/jobs/structures.js')
-        await runStructures(ids)
-        return
-      }
-      case 'orders': {
-        const { runOrders } = await import('@/jobs/orders.js')
-        await runOrders(ids)
-        return
-      }
-      case 'daily': {
-        // Daily is a single whole-job message, so the consumer records its heartbeat
-        // (the per-character producers record their own at enqueue time).
-        const { runDaily } = await import('@/jobs/daily.js')
-        const { recordHeartbeat } = await import('@/supabase.js')
-        const runId = randomInt(1, 2 ** 48)
-        await recordHeartbeat('daily', 'start', { runId, source: 'vercel' })
-        try {
-          await runDaily()
-        } finally {
-          await recordHeartbeat('daily', 'end', { runId, source: 'vercel' })
-        }
-        return
-      }
-      default:
-        throw new Error(`unknown job: ${String(job)}`)
+    const run = await entry.load()
+    if (entry.characterIds) {
+      await run(characterId != null ? { characterIds: [characterId] } : undefined)
+      return
+    }
+    // Account-wide jobs consume a single whole-job message, so the consumer records
+    // their heartbeat (the per-character producers record their own at enqueue time).
+    const { recordHeartbeat } = await import('@/supabase.js')
+    const runId = randomInt(1, 2 ** 48)
+    await recordHeartbeat(job, 'start', { runId, source: 'vercel' })
+    try {
+      await run()
+    } finally {
+      await recordHeartbeat(job, 'end', { runId, source: 'vercel' })
     }
   }
 

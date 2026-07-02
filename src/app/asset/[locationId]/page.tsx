@@ -40,26 +40,26 @@ const AssetLocationPage = async ({ params }: { params: Promise<{ locationId: str
   // sit directly in the station/structure/system (not nested in another item).
   // Only this level is fetched — the whole asset table no longer pages into Node.
   const { data: children } = await supabase
-    .from('asset')
+    .from('character_asset')
     .select('item_id, character_id, type_id, location_id, location_flag, location_type, quantity, is_singleton, name')
     .eq('location_id', locationId)
   const rootItems = (children ?? []) as Asset[]
 
   // Total items held inside each ship/container at this location, counted across
-  // the whole subtree by asset_location_contents() in Postgres.
-  const { data: contentsRows } = await supabase.rpc('asset_location_contents', { parent: locationId })
+  // the whole subtree by character_asset_location_contents() in Postgres.
+  const { data: contentsRows } = await supabase.rpc('character_asset_location_contents', { parent: locationId })
   const contentsByItem = new Map<string, number>(
     ((contentsRows ?? []) as { item_id: number | string; contents: number | string }[]).map((r) => [
       String(r.item_id),
       Number(r.contents),
-    ]),
+    ])
   )
 
   // The id is either a place (station / structure / solar system) or one of our
   // own items — a ship or container the user drilled into. Resolve the heading
   // and the "back" target accordingly.
   const { data: self } = await supabase
-    .from('asset')
+    .from('character_asset')
     .select('item_id, type_id, location_id, name')
     .eq('item_id', locationId)
     .maybeSingle<Pick<Asset, 'item_id' | 'type_id' | 'location_id' | 'name'>>()
@@ -82,17 +82,17 @@ const AssetLocationPage = async ({ params }: { params: Promise<{ locationId: str
   } else {
     // Resolve the location's own name/system the same way the index page does:
     // own-corp + foreign player structures, NPC stations, and systems all come
-    // from the eve_name DB cache.
+    // from the universe_name DB cache.
     const numericId = Number(locationId)
     const { data: corpStructures } = await supabase
       .from('corp_structure')
       .select('structure_id, name, system_id')
       .eq('structure_id', numericId)
     const { data: playerStructures } = await supabase
-      .from('structure')
+      .from('universe_structure')
       .select('structure_id, name, system_id')
       .eq('structure_id', numericId)
-    const structure = ((corpStructures?.[0] ?? playerStructures?.[0]) ?? null) as Structure | null
+    const structure = (corpStructures?.[0] ?? playerStructures?.[0] ?? null) as Structure | null
 
     const locationType = rootItems[0]?.location_type ?? null
     const [stationNames, stationSystems] = await Promise.all([
@@ -102,7 +102,7 @@ const AssetLocationPage = async ({ params }: { params: Promise<{ locationId: str
 
     const systemId = structure?.system_id != null ? Number(structure.system_id) : stationSystems[numericId]
     const systemNames = await fetchSystemNames(
-      [systemId, locationType === 'solar_system' ? numericId : undefined].filter((n): n is number => n != null),
+      [systemId, locationType === 'solar_system' ? numericId : undefined].filter((n): n is number => n != null)
     )
 
     heading =

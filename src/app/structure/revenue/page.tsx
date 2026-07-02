@@ -110,7 +110,7 @@ const RevenuePage = async ({ searchParams }: RevenueParams) => {
   }
   const { data: jobRows } = jobIds.size
     ? await supabase
-        .from('industry_job')
+        .from('character_industry_job')
         .select('job_id, station_id, facility_id, runs, product_type_id')
         .in('job_id', [...jobIds])
     : { data: [] }
@@ -138,7 +138,10 @@ const RevenuePage = async ({ searchParams }: RevenueParams) => {
     if (structureId != null) structureIds.add(Number(structureId))
   }
   const { data: structureRows } = structureIds.size
-    ? await supabase.from('corp_structure').select('structure_id, name').in('structure_id', [...structureIds])
+    ? await supabase
+        .from('corp_structure')
+        .select('structure_id, name')
+        .in('structure_id', [...structureIds])
     : { data: [] }
   const structureNames = new Map<string, string | null>()
   for (const s of (structureRows ?? []) as Array<{ structure_id: number | string; name: string | null }>) {
@@ -146,18 +149,19 @@ const RevenuePage = async ({ searchParams }: RevenueParams) => {
   }
 
   // Resolve each payer (a character) to their name and the corp they fly for,
-  // from eve_name and character_corp (both populated by the daily job).
+  // from universe_name (the universe-names job) and character_affiliation (the
+  // character-affiliations job).
   const partyIds = [...new Set(entries.map((e) => e.first_party_id).filter((p) => p != null))].map(Number)
   const payerNames = new Map<string, string>()
   const payerCorps = new Map<string, string>()
   if (partyIds.length > 0) {
-    const { data: charNames } = await supabase.from('eve_name').select('id, name').in('id', partyIds)
+    const { data: charNames } = await supabase.from('universe_name').select('id, name').in('id', partyIds)
     for (const r of (charNames ?? []) as Array<{ id: number | string; name: string }>) {
       payerNames.set(String(r.id), r.name)
     }
 
     const { data: affiliations } = await supabase
-      .from('character_corp')
+      .from('character_affiliation')
       .select('character_id, corporation_id')
       .in('character_id', partyIds)
     const corpByParty = new Map<string, string>()
@@ -168,7 +172,7 @@ const RevenuePage = async ({ searchParams }: RevenueParams) => {
     }
     if (corpIds.size > 0) {
       const { data: corpNames } = await supabase
-        .from('eve_name')
+        .from('universe_name')
         .select('id, name')
         .in('id', [...corpIds])
       const corpNameById = new Map<string, string>()

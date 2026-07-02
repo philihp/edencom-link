@@ -25,8 +25,7 @@ const GrantForm = () => {
     <>
       <form>
         <label htmlFor="name">Character name: </label>
-        <input id="name" name="name" type="text" required />{' '}
-        <button formAction={submit}>Make Chancellor</button>
+        <input id="name" name="name" type="text" required /> <button formAction={submit}>Make Chancellor</button>
       </form>
       <p>{response && <Dot color={color} response={response} />}</p>
     </>

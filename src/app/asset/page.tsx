@@ -63,9 +63,9 @@ const Locations = async () => {
 
   // A hangar can hold tens of thousands of nested items; paging them all into
   // Node and walking the location_id chains here timed the page out. The
-  // asset_location_summary() function does the walk in Postgres and returns one
-  // small row per location/character pair instead (RLS still scopes it to us).
-  const { data: summary } = await supabase.rpc('asset_location_summary')
+  // character_asset_location_summary() function does the walk in Postgres and returns
+  // one small row per location/character pair instead (RLS still scopes it to us).
+  const { data: summary } = await supabase.rpc('character_asset_location_summary')
 
   const { data: characters } = await supabase.from('registration').select('id, name')
   const sortedCharacters = [...(characters ?? [])].sort((a, b) => a.name.localeCompare(b.name))
@@ -85,13 +85,14 @@ const Locations = async () => {
 
   // Structure names + systems come from two caches: our own corp's structures
   // (corp_structure) and foreign player structures characters hold assets in,
-  // resolved from ESI by the structures job (public.structure). Own-corp entries
-  // win on overlap. In-space `solar_system` locations are the system itself.
+  // resolved from ESI by the universe-structures job (universe_structure).
+  // Own-corp entries win on overlap. In-space `solar_system` locations are the
+  // system itself.
   const locationIds = filter(Number.isFinite, map(Number, [...byLocation.keys()]))
 
   const { data: corpStructures } = await supabase.from('corp_structure').select('structure_id, name, system_id')
   const { data: playerStructures } = locationIds.length
-    ? await supabase.from('structure').select('structure_id, name, system_id').in('structure_id', locationIds)
+    ? await supabase.from('universe_structure').select('structure_id, name, system_id').in('structure_id', locationIds)
     : { data: [] }
 
   // Own-corp structures override the ESI-resolved cache (later entries win).
@@ -101,8 +102,8 @@ const Locations = async () => {
     ...byStructureId((corpStructures ?? []) as Structure[]),
   ])
 
-  // NPC station names come from the eve_name DB cache; player structures aren't
-  // there, so those still resolve via corp_structure above.
+  // NPC station names come from the universe_name DB cache; player structures
+  // aren't there, so those still resolve via corp_structure above.
   const stationIds = pipe(
     filter(({ root }: { root: Root }) => root.type === 'station'),
     map(({ root }: { root: Root }) => Number(root.id))
@@ -119,8 +120,8 @@ const Locations = async () => {
         return [
           root.type === 'solar_system' ? Number(root.id) : null,
           structure?.system_id != null ? Number(structure.system_id) : null,
-          // NPC stations aren't in corp_structure/structure; their system comes from
-          // the calculator's station lookup above.
+          // NPC stations aren't in corp_structure/universe_structure; their system
+          // comes from the calculator's station lookup above.
           root.type === 'station' ? (stationSystems[Number(root.id)] ?? null) : null,
         ].filter((id): id is number => id != null)
       },
@@ -164,7 +165,7 @@ const Locations = async () => {
   const { data: lastRun } = await supabase
     .from('heartbeat')
     .select('ended_at, run_url')
-    .eq('job', 'assets')
+    .eq('job', 'character-assets')
     .not('ended_at', 'is', null)
     .order('ended_at', { ascending: false })
     .limit(1)

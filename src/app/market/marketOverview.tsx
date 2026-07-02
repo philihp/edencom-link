@@ -70,10 +70,7 @@ const granularityLabel = (bucketHours: number) =>
 const bucketTip = (b: Bucket, bucketHours: number) => {
   const start = new Date(b.start)
   // Sub-day buckets need the hour to disambiguate; daily buckets just the date.
-  const when =
-    bucketHours < 24
-      ? start.toISOString().slice(0, 16).replace('T', ' ')
-      : start.toISOString().slice(0, 10)
+  const when = bucketHours < 24 ? start.toISOString().slice(0, 16).replace('T', ' ') : start.toISOString().slice(0, 10)
   return `${when} — ${formatMisk(b.total)}`
 }
 

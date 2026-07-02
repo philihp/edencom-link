@@ -68,7 +68,7 @@ export const GET = async (request: NextRequest) => {
   const batchId = await dispatchRefresh(user_id, [{ id: character_id, name }])
 
   const redirectTo = request.nextUrl.clone()
-  redirectTo.pathname = '/characters/refresh'
+  redirectTo.pathname = '/character/refresh'
   redirectTo.search = `?batch=${batchId}`
   return NextResponse.redirect(redirectTo)
 }

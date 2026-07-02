@@ -68,14 +68,14 @@ const StructuresPage = async () => {
   const list = (structures ?? []) as Structure[]
 
   // Tax revenue each structure generates. Each industry-tax journal entry references its job via
-  // context_id (context_id_type = industry_job_id); outer-join those job ids to the industry_job
-  // table to find the structure (station_id, falling back to facility_id) the job is installed in,
-  // then sum the journal amounts. Bigint ids can come back from PostgREST as strings, so key every
-  // map by string.
+  // context_id (context_id_type = industry_job_id); outer-join those job ids to the
+  // character_industry_job table to find the structure (station_id, falling back to facility_id)
+  // the job is installed in, then sum the journal amounts. Bigint ids can come back from PostgREST
+  // as strings, so key every map by string.
   const structureIds = list.map((s) => Number(s.structure_id))
   const { data: jobs } = structureIds.length
     ? await supabase
-        .from('industry_job')
+        .from('character_industry_job')
         .select('job_id, station_id, facility_id')
         .or(`station_id.in.(${structureIds.join(',')}),facility_id.in.(${structureIds.join(',')})`)
     : { data: [] }
@@ -86,7 +86,7 @@ const StructuresPage = async () => {
     if (structureId != null) structureByJob.set(String(j.job_id), String(structureId))
   }
 
-  // Rigs fitted to each structure (pulled from corp assets by the structures job).
+  // Rigs fitted to each structure (pulled from corp assets by the corp-assets job).
   const { data: rigRows } = structureIds.length
     ? await supabase
         .from('corp_structure_rig')
@@ -155,20 +155,21 @@ const StructuresPage = async () => {
   const unaccountedParties = [...unaccountedByParty.entries()].sort((a, b) => b[1] - a[1])
 
   // Resolve each payer (a character) to their name and the corp they fly for. Names come from the
-  // eve_name table and corp affiliations from character_corp, both populated by the daily job; ids
-  // not yet resolved fall back to showing the raw id.
+  // universe_name table (populated by the universe-names job) and corp affiliations from
+  // character_affiliation (populated by the character-affiliations job); ids not yet resolved fall
+  // back to showing the raw id.
   const partyIds = unaccountedParties.map(([party]) => party).filter((p) => p !== 'unknown')
   const payerNames = new Map<string, string>()
   const payerCorps = new Map<string, string>()
   if (partyIds.length > 0) {
     const partyIdNums = partyIds.map(Number)
-    const { data: charNames } = await supabase.from('eve_name').select('id, name').in('id', partyIdNums)
+    const { data: charNames } = await supabase.from('universe_name').select('id, name').in('id', partyIdNums)
     for (const r of (charNames ?? []) as Array<{ id: number | string; name: string }>) {
       payerNames.set(String(r.id), r.name)
     }
 
     const { data: affiliations } = await supabase
-      .from('character_corp')
+      .from('character_affiliation')
       .select('character_id, corporation_id')
       .in('character_id', partyIdNums)
     const corpByParty = new Map<string, string>()
@@ -179,7 +180,7 @@ const StructuresPage = async () => {
     }
     if (corpIds.size > 0) {
       const { data: corpNames } = await supabase
-        .from('eve_name')
+        .from('universe_name')
         .select('id, name')
         .in('id', [...corpIds])
       const corpNameById = new Map<string, string>()
@@ -210,7 +211,7 @@ const StructuresPage = async () => {
   const { data: lastRun } = await supabase
     .from('heartbeat')
     .select('ended_at, run_url')
-    .eq('job', 'structures')
+    .eq('job', 'corp-structures')
     .not('ended_at', 'is', null)
     .order('ended_at', { ascending: false })
     .limit(1)

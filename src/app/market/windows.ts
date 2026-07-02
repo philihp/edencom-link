@@ -30,5 +30,4 @@ export const LOOKBACK_DAYS = MAX_WINDOW_DAYS * 2
 
 const fallback = WINDOW_OPTIONS.find((o) => o.days === DEFAULT_WINDOW_DAYS) ?? WINDOW_OPTIONS[0]
 
-export const windowOption = (days: number): WindowOption =>
-  WINDOW_OPTIONS.find((o) => o.days === days) ?? fallback
+export const windowOption = (days: number): WindowOption => WINDOW_OPTIONS.find((o) => o.days === days) ?? fallback
