@@ -202,8 +202,10 @@ The per-character jobs (`character-*` except `character-affiliations`, plus `cor
 | `heartbeat` | Cron job monitoring | `job`, `run_id`, `started_at`, `ended_at` |
 
 Key Postgres functions (callable via RPC or SQL):
-- `character_asset_location_summary()` — aggregate assets per location
-- `character_asset_location_contents(parent_id)` — count nested items in a location
+- `character_asset_location_summary()` — aggregate character assets per location
+- `character_asset_location_contents(parent_id)` — count nested character items in a location
+- `corp_asset_location_summary()` — aggregate corp assets per location (mirrors the character version; RLS scopes to corps the caller has a registered character in)
+- `corp_asset_location_contents(parent_id)` — count nested corp items in a location
 - `character_asset_snapshot_at(character_ids[], as_of)` — time-travel asset snapshot as JSON (used by `/api/character/assets`)
 - `character_industry_jobs(character_ids[], include_delivered)` — export for Sheets IMPORTDATA (used by `/api/character/jobs`)
 - `character_orders(character_ids[])` — export for Sheets IMPORTDATA (used by `/api/character/orders`)

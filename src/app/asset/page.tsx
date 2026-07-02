@@ -4,6 +4,7 @@ import { chain, filter, map, pipe, reduce } from 'ramda'
 
 import { createClient } from '@/utils/supabase/server'
 import { DateTime } from '../DateTime'
+import { fetchOwners } from '../owners'
 import { fetchStationNames, fetchStationSystems } from '../stationNames'
 import { fetchSystemNames } from '../systemNames'
 import styles from './assets.module.css'
@@ -11,10 +12,26 @@ import { AssetsTable, type Location } from './assetsTable'
 
 // Bigint ids arrive from PostgREST as strings, so every id is kept as a string
 // and only converted to a number at the API/system-lookup boundary.
-type SummaryRow = {
+type CharacterSummaryRow = {
   location_id: number | string
   location_type: string | null
   character_id: string
+  stacks: number | string
+}
+
+type CorpSummaryRow = {
+  location_id: number | string
+  location_type: string | null
+  corporation_id: number | string
+  stacks: number | string
+}
+
+// A summary row from either source, keyed by whoever owns the stacks: a
+// character (registration uuid) or a corporation (EVE corporation id).
+type SummaryRow = {
+  location_id: number | string
+  location_type: string | null
+  owner_id: string
   stacks: number | string
 }
 
@@ -63,24 +80,37 @@ const Locations = async () => {
 
   // A hangar can hold tens of thousands of nested items; paging them all into
   // Node and walking the location_id chains here timed the page out. The
-  // character_asset_location_summary() function does the walk in Postgres and returns
-  // one small row per location/character pair instead (RLS still scopes it to us).
-  const { data: summary } = await supabase.rpc('character_asset_location_summary')
+  // *_asset_location_summary() functions do the walk in Postgres and return one
+  // small row per location/owner pair instead (RLS still scopes character rows
+  // to us and corp rows to corps we have a registered character in).
+  const [{ data: characterSummary }, { data: corpSummary }, owners] = await Promise.all([
+    supabase.rpc('character_asset_location_summary'),
+    supabase.rpc('corp_asset_location_summary'),
+    fetchOwners(),
+  ])
 
-  const { data: characters } = await supabase.from('registration').select('id, name')
-  const sortedCharacters = [...(characters ?? [])].sort((a, b) => a.name.localeCompare(b.name))
+  const summary: SummaryRow[] = [
+    ...map(
+      (row: CharacterSummaryRow): SummaryRow => ({ ...row, owner_id: row.character_id }),
+      (characterSummary ?? []) as CharacterSummaryRow[]
+    ),
+    ...map(
+      (row: CorpSummaryRow): SummaryRow => ({ ...row, owner_id: String(row.corporation_id) }),
+      (corpSummary ?? []) as CorpSummaryRow[]
+    ),
+  ]
 
-  // Tally stacks per location, split by the character that owns each stack so
-  // the client can filter by character.
+  // Tally stacks per location, split by the owner (character or corporation)
+  // of each stack so the client can filter by owner.
   const byLocation = reduce(
     (acc, row) => {
       const id = String(row.location_id)
       const entry = acc.get(id) ?? { root: { id, type: row.location_type }, counts: new Map<string, number>() }
-      entry.counts.set(row.character_id, (entry.counts.get(row.character_id) ?? 0) + Number(row.stacks))
+      entry.counts.set(row.owner_id, (entry.counts.get(row.owner_id) ?? 0) + Number(row.stacks))
       return acc.set(id, entry)
     },
     new Map<string, { root: Root; counts: Map<string, number> }>(),
-    (summary ?? []) as SummaryRow[]
+    summary
   )
 
   // Structure names + systems come from two caches: our own corp's structures
@@ -173,7 +203,7 @@ const Locations = async () => {
 
   return (
     <>
-      <AssetsTable locations={locations} characters={sortedCharacters} />
+      <AssetsTable locations={locations} owners={owners} />
       <p className={styles.lastRun}>
         Assets last refreshed:{' '}
         {lastRun?.run_url ? (

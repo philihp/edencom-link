@@ -1,8 +1,25 @@
 import { redirect } from 'next/navigation'
 
 import { createClient } from '@/utils/supabase/server'
+import { fetchOwners } from '../owners'
 import { fetchTypeNames } from '../typeNames'
 import { ActiveJobs, type Job } from './activeJobs'
+
+type JobColumns = {
+  job_id: number | string
+  activity_id: number
+  blueprint_type_id: number | string
+  product_type_id: number | string | null
+  runs: number
+  status: string
+  start_date: string
+  end_date: string
+  station_id: number | string | null
+  facility_id: number | string | null
+}
+
+const JOB_COLUMNS =
+  'job_id, activity_id, blueprint_type_id, product_type_id, runs, status, start_date, end_date, station_id, facility_id'
 
 const IndustryPage = async () => {
   const supabase = await createClient()
@@ -12,17 +29,33 @@ const IndustryPage = async () => {
     redirect('/')
   }
 
-  const { data: characters } = await supabase.from('registration').select('id, name')
+  const [{ data: characterJobs }, { data: corpJobs }, owners] = await Promise.all([
+    supabase
+      .from('character_industry_job')
+      .select(`${JOB_COLUMNS}, character_id`)
+      .eq('status', 'active')
+      .order('end_date', { ascending: true }),
+    supabase
+      .from('corp_industry_job')
+      .select(`${JOB_COLUMNS}, corporation_id`)
+      .eq('status', 'active')
+      .order('end_date', { ascending: true }),
+    fetchOwners(),
+  ])
 
-  const { data: jobs } = await supabase
-    .from('character_industry_job')
-    .select(
-      'job_id, character_id, activity_id, blueprint_type_id, product_type_id, runs, status, start_date, end_date, station_id, facility_id'
-    )
-    .eq('status', 'active')
-    .order('end_date', { ascending: true })
-
-  const sortedCharacters = [...(characters ?? [])].sort((a, b) => a.name.localeCompare(b.name))
+  // Union both sources under a single owner id per job. A corp job installed by
+  // one of our own characters shows up in both extracts under the same job_id;
+  // the corp row wins so the Owner column names who the job actually belongs to.
+  const corpRows: Job[] = ((corpJobs ?? []) as (JobColumns & { corporation_id: number | string })[]).map(
+    ({ corporation_id, ...j }) => ({ ...j, owner_id: String(corporation_id) })
+  )
+  const corpJobIds = new Set(corpRows.map((j) => String(j.job_id)))
+  const characterRows: Job[] = ((characterJobs ?? []) as (JobColumns & { character_id: string })[])
+    .filter((j) => !corpJobIds.has(String(j.job_id)))
+    .map(({ character_id, ...j }) => ({ ...j, owner_id: character_id }))
+  const jobRows: Job[] = [...characterRows, ...corpRows].sort(
+    (a, b) => new Date(a.end_date).getTime() - new Date(b.end_date).getTime()
+  )
 
   // Map structure (station) ids to their names so the jobs table can link to them.
   const { data: structures } = await supabase.from('corp_structure').select('structure_id, name')
@@ -32,7 +65,6 @@ const IndustryPage = async () => {
       .map((s) => [String(s.structure_id), s.name as string])
   )
 
-  const jobRows = (jobs ?? []) as Job[]
   const typeNamesPromise = fetchTypeNames(
     jobRows.flatMap((j) => (j.product_type_id != null ? [Number(j.product_type_id)] : []))
   )
@@ -44,7 +76,7 @@ const IndustryPage = async () => {
       <h1>Industry</h1>
       <ActiveJobs
         jobs={jobRows}
-        characters={sortedCharacters}
+        owners={owners}
         initialNow={initialNow}
         typeNamesPromise={typeNamesPromise}
         stationNames={stationNames}

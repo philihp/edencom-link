@@ -2,33 +2,32 @@
 
 import Link from 'next/link'
 
+import { ALL_OWNERS, OwnerSelect, useOwnerFilter, type Owners } from '../ownerFilter'
 import retro from '../retro.module.css'
 import styles from './assets.module.css'
-import { ALL_CHARACTERS, CharacterFilter, useCharacterFilter, type Character } from './characterFilter'
+import { OWNER_STORAGE_KEY } from './filterKey'
 
 export type Location = {
   id: string
   name: string
   system: string | null
-  // character_id → number of item stacks that character has at this location.
+  // owner id (character registration uuid or corporation id) → number of item
+  // stacks that owner has at this location.
   counts: Record<string, number>
 }
 
 type AssetsTableProps = {
   locations: Location[]
-  characters: Character[]
+  owners: Owners
 }
 
-export const AssetsTable = ({ locations, characters }: AssetsTableProps) => {
-  const [characterId, setCharacterId] = useCharacterFilter(characters)
+export const AssetsTable = ({ locations, owners }: AssetsTableProps) => {
+  const [ownerId, setOwnerId] = useOwnerFilter(OWNER_STORAGE_KEY, owners)
 
   const rows = locations
     .map((loc) => ({
       loc,
-      count:
-        characterId === ALL_CHARACTERS
-          ? Object.values(loc.counts).reduce((a, b) => a + b, 0)
-          : (loc.counts[characterId] ?? 0),
+      count: ownerId === ALL_OWNERS ? Object.values(loc.counts).reduce((a, b) => a + b, 0) : (loc.counts[ownerId] ?? 0),
     }))
     .filter((row) => row.count > 0)
     // Busiest locations first, then by name for a stable order.
@@ -38,7 +37,10 @@ export const AssetsTable = ({ locations, characters }: AssetsTableProps) => {
     <section>
       <div className={styles.header}>
         <h1>Assets</h1>
-        <CharacterFilter characters={characters} value={characterId} onChange={setCharacterId} />
+        <label className={styles.filter}>
+          Owner:&nbsp;
+          <OwnerSelect owners={owners} value={ownerId} onChange={setOwnerId} />
+        </label>
       </div>
       {locations.length === 0 ? (
         <p>
@@ -69,7 +71,7 @@ export const AssetsTable = ({ locations, characters }: AssetsTableProps) => {
           </tbody>
         </table>
       ) : (
-        <p>No assets for this character.</p>
+        <p>No assets for this owner.</p>
       )}
     </section>
   )

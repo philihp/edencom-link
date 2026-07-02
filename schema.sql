@@ -28,6 +28,8 @@ drop function if exists public.industry_jobs(uuid[], boolean)          cascade;
 drop function if exists public.market_orders(uuid[])                   cascade;
 drop function if exists public.character_asset_location_summary()        cascade;
 drop function if exists public.character_asset_location_contents(bigint) cascade;
+drop function if exists public.corp_asset_location_summary()             cascade;
+drop function if exists public.corp_asset_location_contents(bigint)      cascade;
 drop function if exists public.character_asset_snapshot_at(uuid[], timestamptz) cascade;
 drop function if exists public.character_industry_jobs(uuid[], boolean)  cascade;
 drop function if exists public.character_orders(uuid[])                  cascade;
@@ -806,6 +808,84 @@ create view public.corp_asset with (security_invoker = on) as
 grant select on public.corp_asset_over_time to authenticated;
 grant select on public.corp_asset           to authenticated;
 grant all    on public.corp_asset_over_time to service_role;
+
+-- ── corp asset aggregation functions ──────────────────────────────────────
+-- Mirrors the character asset aggregation functions above over the corp asset
+-- history, so the assets pages can show corp hangars beside character hangars
+-- without paging every corp asset into Node. Corp assets nest through office
+-- folders and containers the same way character assets nest through ships.
+-- Both are SECURITY INVOKER, so corp_asset(_over_time) RLS keeps reads scoped
+-- to corporations the caller has a registered character in.
+
+-- assets index (/asset): stacks per root location, split by owning corp.
+create or replace function public.corp_asset_location_summary()
+returns table (location_id bigint, location_type text, corporation_id bigint, stacks bigint)
+language sql
+stable
+as $$
+  with recursive parent_of as (
+    -- One best-known parent per item the caller can see: the live row if there
+    -- is one, otherwise the most recent historical sighting, so the walk can
+    -- bridge a container that momentarily dropped out of the current snapshot.
+    select distinct on (item_id) item_id, location_id, location_type
+    from public.corp_asset_over_time
+    order by item_id, is_current desc, last_seen_at desc
+  ),
+  walk as (
+    select
+      a.item_id        as start_item,
+      a.corporation_id as corporation_id,
+      a.location_id    as location_id,
+      a.location_type  as location_type,
+      1                as depth
+    from public.corp_asset a
+    union all
+    select
+      w.start_item,
+      w.corporation_id,
+      p.location_id,
+      p.location_type,
+      w.depth + 1
+    from walk w
+    join parent_of p on p.item_id = w.location_id
+    where w.depth < 64
+  )
+  select
+    w.location_id,
+    w.location_type,
+    w.corporation_id,
+    count(*) as stacks
+  from walk w
+  where w.location_id is not null
+    and not exists (select 1 from parent_of o where o.item_id = w.location_id)
+  group by w.location_id, w.location_type, w.corporation_id;
+$$;
+
+-- per-location page (/asset/[locationId]): for each corp item sitting directly
+-- in `parent`, the number of items nested inside it (the whole subtree,
+-- excluding the item itself).
+create or replace function public.corp_asset_location_contents(parent bigint)
+returns table (item_id bigint, contents bigint)
+language sql
+stable
+as $$
+  with recursive descend as (
+    select a.item_id as root_child, a.item_id as node, 1 as depth
+    from public.corp_asset a
+    where a.location_id = parent
+    union all
+    select d.root_child, c.item_id, d.depth + 1
+    from descend d
+    join public.corp_asset c on c.location_id = d.node
+    where d.depth < 64
+  )
+  select root_child as item_id, count(*) - 1 as contents
+  from descend
+  group by root_child;
+$$;
+
+grant execute on function public.corp_asset_location_summary()        to authenticated;
+grant execute on function public.corp_asset_location_contents(bigint) to authenticated;
 
 -- /api/corp/assets IMPORTDATA endpoint: the caller's corporation(s) current
 -- asset rows (one per item stack), mirroring character_asset_snapshot_at()'s
