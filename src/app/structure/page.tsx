@@ -360,6 +360,9 @@ const StructuresPage = async () => {
           hourly job can fetch them.
         </p>
       )}
+      <p className={styles.revenueLink}>
+        <a href="/structure/revenue">Tax revenue events &raquo;</a>
+      </p>
       <p className={styles.lastRun}>
         Structures last refreshed:{' '}
         {lastRun?.run_url ? (
