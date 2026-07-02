@@ -1,7 +1,7 @@
 import { fileURLToPath } from 'node:url'
 
 import { pullCorpWalletJournals } from '../corpWalletJournal.js'
-import { character as fetchCharacter, corpAssets, corpStructures, universeNames } from '../esi.js'
+import { character as fetchCharacter, corpAssets, corpIndustryJobs, corpStructures, universeNames } from '../esi.js'
 import { resolveAssetStationNames, resolveCorpJournalNames, resolveCorpStructureSystemNames } from '../resolveNames.js'
 import { resolveStructureNames } from '../structureNames.js'
 import { sudoSupabase } from '../supabase.js'
@@ -10,6 +10,7 @@ import { refreshAccessToken } from '../tokenRefresh.js'
 const STRUCTURES_SCOPE = 'esi-corporations.read_structures.v1'
 const WALLET_SCOPE = 'esi-wallet.read_corporation_wallets.v1'
 const ASSETS_SCOPE = 'esi-assets.read_corporation_assets.v1'
+const JOBS_SCOPE = 'esi-industry.read_corporation_jobs.v1'
 
 // Items fitted to an Upwell structure show up in corp assets with location_id
 // equal to the structure_id and a RigSlotN location_flag.
@@ -72,6 +73,7 @@ export const runStructures = async ({ characterIds } = {}) => {
   const seenStructureCorps = new Set()
   const seenWalletCorps = new Set()
   const seenAssetCorps = new Set()
+  const seenJobsCorps = new Set()
   for (const tokenRow of tokens ?? []) {
     const t0 = Date.now()
     const name = characterName.get(tokenRow.character_id) ?? '?'
@@ -204,6 +206,32 @@ export const runStructures = async ({ characterIds } = {}) => {
           )
 
           const now = new Date().toISOString()
+
+          // Replace this corp's asset snapshot wholesale (not SCD-2 like character
+          // assets — corp inventories are large and IMPORTDATA only needs current state).
+          const assetRows = assets.map((a) => ({
+            item_id: a.item_id,
+            corporation_id,
+            type_id: a.type_id,
+            location_id: a.location_id ?? null,
+            location_flag: a.location_flag ?? null,
+            location_type: a.location_type ?? null,
+            quantity: a.quantity ?? null,
+            is_singleton: a.is_singleton ?? null,
+            is_blueprint_copy: a.is_blueprint_copy ?? null,
+            updated_at: now,
+          }))
+          const { error: assetDelErr } = await sudoSupabase
+            .from('corp_asset')
+            .delete()
+            .eq('corporation_id', corporation_id)
+          if (assetDelErr) throw assetDelErr
+          if (assetRows.length > 0) {
+            const { error: assetErr } = await sudoSupabase.from('corp_asset').insert(assetRows)
+            if (assetErr) throw assetErr
+          }
+          console.log(`[structures] ${ctx}: corp ${corpLabel} stored ${assetRows.length} corp_asset row(s)`)
+
           const rigRows = assets
             .filter((a) => isRigSlot(a.location_flag) && structureIds.has(Number(a.location_id)))
             .map((a) => ({
@@ -243,6 +271,70 @@ export const runStructures = async ({ characterIds } = {}) => {
       } else {
         seenWalletCorps.add(corporation_id)
         await pullCorpWalletJournals({ access_token, corporation_id, ctx, corpLabel })
+      }
+
+      if (!scope.includes(JOBS_SCOPE)) {
+        console.log(`[structures] ${ctx}: corp ${corpLabel} token lacks ${JOBS_SCOPE}, skipping industry jobs`)
+      } else if (seenJobsCorps.has(corporation_id)) {
+        console.log(`[structures] ${ctx}: corp ${corpLabel} industry jobs already pulled this run, skipping`)
+      } else {
+        seenJobsCorps.add(corporation_id)
+        try {
+          const tj = Date.now()
+          const jobs = []
+          console.log(`[structures] ${ctx}: fetching corp ${corpLabel} industry jobs page 1`)
+          const [firstJobPage, jobPagesHeader] = await corpIndustryJobs(access_token, corporation_id, 1)
+          jobs.push(...firstJobPage)
+          const jobPages = Math.max(1, Number.parseInt(jobPagesHeader, 10) || 1)
+          for (let page = 2; page <= jobPages; page++) {
+            const [more] = await corpIndustryJobs(access_token, corporation_id, page)
+            jobs.push(...more)
+          }
+          console.log(
+            `[structures] ${ctx}: corp ${corpLabel} returned ${jobs.length} industry job(s) across ${jobPages} page(s)`
+          )
+
+          const now = new Date().toISOString()
+          const jobRows = jobs.map((j) => ({
+            job_id: j.job_id,
+            corporation_id,
+            installer_id: j.installer_id,
+            facility_id: j.facility_id,
+            station_id: j.station_id ?? null,
+            activity_id: j.activity_id,
+            blueprint_id: j.blueprint_id,
+            blueprint_type_id: j.blueprint_type_id,
+            blueprint_location_id: j.blueprint_location_id,
+            output_location_id: j.output_location_id,
+            product_type_id: j.product_type_id ?? null,
+            runs: j.runs,
+            cost: j.cost ?? null,
+            licensed_runs: j.licensed_runs ?? null,
+            probability: j.probability ?? null,
+            status: j.status,
+            duration: j.duration,
+            start_date: j.start_date,
+            end_date: j.end_date,
+            pause_date: j.pause_date ?? null,
+            completed_date: j.completed_date ?? null,
+            completed_character_id: j.completed_character_id ?? null,
+            successful_runs: j.successful_runs ?? null,
+            seen_at: now,
+          }))
+          if (jobRows.length > 0) {
+            const { error: jobErr } = await sudoSupabase
+              .from('corp_industry_job')
+              .upsert(jobRows, { onConflict: 'job_id' })
+            if (jobErr) throw jobErr
+          }
+          console.log(
+            `[structures] ${ctx}: corp ${corpLabel} stored ${jobRows.length} industry job(s) in ${Date.now() - tj}ms`
+          )
+        } catch (e) {
+          console.error(
+            `[structures] ${ctx}: corp ${corpLabel} industry jobs pull FAILED name=${e?.name} message=${e?.message}`
+          )
+        }
       }
     } catch (e) {
       const dt = Date.now() - t0

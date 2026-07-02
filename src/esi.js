@@ -82,6 +82,13 @@ export const corpAssets = (access_token, corporationID, page = 1) =>
     label: `corpAssets ${corporationID} page=${page}`,
   })
 
+export const corpIndustryJobs = (access_token, corporationID, page = 1) =>
+  esiPaged(`/corporations/${corporationID}/industry/jobs/`, {
+    access_token,
+    params: { page, include_completed: 'true' },
+    label: `corpIndustryJobs ${corporationID} page=${page}`,
+  })
+
 export const corpWalletJournal = (access_token, corporationID, division, page = 1) =>
   esiPaged(`/corporations/${corporationID}/wallets/${division}/journal/`, {
     access_token,
