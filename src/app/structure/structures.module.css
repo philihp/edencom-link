@@ -267,6 +267,11 @@
   font-size: 12px;
 }
 
+.revenueLink {
+  margin: 16px 0 0;
+  font-size: 13px;
+}
+
 .lastRun {
   margin: 24px 0 0;
   color: var(--ink-faint);

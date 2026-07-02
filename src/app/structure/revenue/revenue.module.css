@@ -1,0 +1,12 @@
+/* Day pager: older day ← selected day → newer day. */
+.pager {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  margin: 16px 0;
+  font-size: 13px;
+}
+
+.pagerCurrent {
+  font-weight: 600;
+}
