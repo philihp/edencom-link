@@ -1,18 +1,21 @@
-// Generates src/generated/sdeTypes.json from CCP's Static Data Export so the
-// app can resolve type names/groups/categories locally instead of depending on
-// the remote sde.edencom.link service. Runs as a `predev`/`prebuild` step (see
-// package.json) — re-run `npm run sde:build -- --force` to refresh the data.
+// Generates src/generated/sdeTypes.json and src/generated/sdeSystems.json from
+// CCP's Static Data Export so the app can resolve type names/groups/categories
+// and solar-system names locally instead of depending on a remote service.
+// Runs as a `predev`/`prebuild` step (see package.json) — re-run
+// `pnpm run sde:build -- --force` to refresh the data.
 import { access, mkdir, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
-const OUTPUT_PATH = join(__dirname, 'generated', 'sdeTypes.json')
+const TYPES_OUTPUT_PATH = join(__dirname, 'generated', 'sdeTypes.json')
+const SYSTEMS_OUTPUT_PATH = join(__dirname, 'generated', 'sdeSystems.json')
 
 // Fuzzwork republishes CCP's SDE as flat CSVs, refreshed shortly after each
 // game patch — much smaller and faster to fetch than CCP's own multi-file zip.
 const TYPES_URL = 'https://www.fuzzwork.co.uk/dump/latest/csv/invTypes.csv'
 const GROUPS_URL = 'https://www.fuzzwork.co.uk/dump/latest/csv/invGroups.csv'
+const SYSTEMS_URL = 'https://www.fuzzwork.co.uk/dump/latest/csv/mapSolarSystems.csv'
 
 // Minimal RFC 4180 CSV parser: invTypes' description column embeds raw commas
 // and newlines inside quoted fields, so a naive line/comma split corrupts rows.
@@ -64,19 +67,7 @@ const fetchRecords = async (url) => {
   return body.filter((r) => r.length === header.length).map((r) => Object.fromEntries(header.map((h, i) => [h, r[i]])))
 }
 
-const run = async () => {
-  const force = process.argv.includes('--force')
-  if (!force) {
-    const exists = await access(OUTPUT_PATH).then(
-      () => true,
-      () => false
-    )
-    if (exists) {
-      console.log(`sde: ${OUTPUT_PATH} already exists, skipping (pass --force to regenerate)`)
-      return
-    }
-  }
-
+const buildTypes = async () => {
   console.log('sde: downloading invTypes/invGroups from the SDE…')
   const [types, groups] = await Promise.all([fetchRecords(TYPES_URL), fetchRecords(GROUPS_URL)])
   const categoryIDByGroup = new Map(groups.map((g) => [g.groupID, Number(g.categoryID)]))
@@ -88,9 +79,52 @@ const run = async () => {
     .map((t) => [Number(t.typeID), t.typeName, Number(t.groupID), categoryIDByGroup.get(t.groupID) ?? null])
     .sort((a, b) => a[0] - b[0])
 
-  await mkdir(dirname(OUTPUT_PATH), { recursive: true })
-  await writeFile(OUTPUT_PATH, JSON.stringify(out))
-  console.log(`sde: wrote ${out.length} types to ${OUTPUT_PATH}`)
+  await writeFile(TYPES_OUTPUT_PATH, JSON.stringify(out))
+  console.log(`sde: wrote ${out.length} types to ${TYPES_OUTPUT_PATH}`)
+}
+
+// Standard known-space systems live in the 30M id range; wormhole (31M) and
+// abyssal (32M+) systems never appear in the industry cost-index feed, so they
+// are left out of the watchable set.
+const KSPACE_MIN = 30_000_000
+const KSPACE_MAX = 31_000_000
+
+const buildSystems = async () => {
+  console.log('sde: downloading mapSolarSystems from the SDE…')
+  const systems = await fetchRecords(SYSTEMS_URL)
+
+  // [solarSystemID, name, security] tuples. Security is the raw SDE float,
+  // rounded for display by the consumer.
+  const out = systems
+    .map((s) => [Number(s.solarSystemID), s.solarSystemName, Number(s.security)])
+    .filter(([id, name]) => id >= KSPACE_MIN && id < KSPACE_MAX && name.trim() !== '')
+    .sort((a, b) => a[0] - b[0])
+
+  await writeFile(SYSTEMS_OUTPUT_PATH, JSON.stringify(out))
+  console.log(`sde: wrote ${out.length} solar systems to ${SYSTEMS_OUTPUT_PATH}`)
+}
+
+const run = async () => {
+  const force = process.argv.includes('--force')
+  const artifacts = [
+    [TYPES_OUTPUT_PATH, buildTypes],
+    [SYSTEMS_OUTPUT_PATH, buildSystems],
+  ]
+
+  await mkdir(dirname(TYPES_OUTPUT_PATH), { recursive: true })
+  for (const [path, build] of artifacts) {
+    if (!force) {
+      const exists = await access(path).then(
+        () => true,
+        () => false
+      )
+      if (exists) {
+        console.log(`sde: ${path} already exists, skipping (pass --force to regenerate)`)
+        continue
+      }
+    }
+    await build()
+  }
 }
 
 run().catch((err) => {
