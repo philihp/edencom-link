@@ -720,14 +720,15 @@ create policy "Users read own corp transactions"
 grant select on public.corp_market_transaction to authenticated;
 grant all    on public.corp_market_transaction to service_role;
 
--- ── corp_asset ────────────────────────────────────────────────────────────
--- Live snapshot of a corporation's assets (esi-assets.read_corporation_assets.v1).
--- Replaced wholesale per corp on each structures run rather than kept as SCD-2
--- history like asset_over_time — corp inventories are large and the IMPORTDATA
--- use case only needs current state. Sourced from the same ESI pull that feeds
--- corp_structure_rig.
-create table public.corp_asset (
-  item_id bigint primary key,
+-- ── corp_asset_over_time ──────────────────────────────────────────────────
+-- SCD Type 2 history of a corporation's assets (esi-assets.read_corporation_assets.v1),
+-- mirroring asset_over_time for per-character assets: is_current=true rows form
+-- the current snapshot, last_seen_at is bumped each run for unchanged items, and
+-- a new row is inserted when anything changes (old row's is_current set false).
+-- Sourced from the same ESI pull that feeds corp_structure_rig.
+create table public.corp_asset_over_time (
+  id bigint generated always as identity primary key,
+  item_id bigint not null,
   corporation_id bigint not null,
   type_id bigint not null,
   location_id bigint,
@@ -736,13 +737,19 @@ create table public.corp_asset (
   quantity bigint,
   is_singleton boolean,
   is_blueprint_copy boolean,
-  updated_at timestamptz not null default now()
+  is_current boolean not null default true,
+  first_seen_at timestamptz not null default now(),
+  last_seen_at timestamptz not null default now()
 );
-create index corp_asset_corporation_id_idx on public.corp_asset (corporation_id);
+create index corp_asset_over_time_corporation_id_idx on public.corp_asset_over_time (corporation_id);
+-- At most one live row per item; also the conflict target the reconcile relies on.
+create unique index corp_asset_over_time_current_item_idx on public.corp_asset_over_time (item_id) where is_current;
+-- Time-travel lookups walking an item's version history.
+create index corp_asset_over_time_item_id_idx on public.corp_asset_over_time (item_id, last_seen_at desc);
 
-alter table public.corp_asset enable row level security;
+alter table public.corp_asset_over_time enable row level security;
 create policy "Users read assets for own corps"
-  on public.corp_asset
+  on public.corp_asset_over_time
   for select
   to authenticated
   using (
@@ -752,14 +759,20 @@ create policy "Users read assets for own corps"
     )
   );
 
-grant select on public.corp_asset to authenticated;
-grant all    on public.corp_asset to service_role;
+-- Live snapshot of corp assets. security_invoker keeps the underlying RLS in
+-- force for the querying (authenticated) role rather than running as the view owner.
+create view public.corp_asset with (security_invoker = on) as
+  select * from public.corp_asset_over_time where is_current;
 
--- /api/corp/assets IMPORTDATA endpoint: the caller's corporation(s) raw asset
--- rows (one per item stack), mirroring asset_snapshot_at()'s shape for the
--- per-character assets endpoint. Returns json (not jsonb) so json_build_object's
--- key order is preserved for the sheet's columns, and a single scalar sidesteps
--- PostgREST's max-rows cap.
+grant select on public.corp_asset_over_time to authenticated;
+grant select on public.corp_asset           to authenticated;
+grant all    on public.corp_asset_over_time to service_role;
+
+-- /api/corp/assets IMPORTDATA endpoint: the caller's corporation(s) current
+-- asset rows (one per item stack), mirroring asset_snapshot_at()'s shape for
+-- the per-character assets endpoint. Returns json (not jsonb) so
+-- json_build_object's key order is preserved for the sheet's columns, and a
+-- single scalar sidesteps PostgREST's max-rows cap.
 create or replace function public.corp_assets(character_ids uuid[])
 returns json
 language sql

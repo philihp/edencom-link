@@ -3,9 +3,11 @@
 -- them via IMPORTDATA-style RPCs (/api/corp/assets, /api/corp/jobs), like
 -- asset_snapshot_at()/industry_jobs() do for the per-character endpoints.
 
--- ── corp_asset ────────────────────────────────────────────────────────────
-create table if not exists public.corp_asset (
-  item_id bigint primary key,
+-- ── corp_asset_over_time ──────────────────────────────────────────────────
+-- SCD Type 2 history, mirroring asset_over_time for per-character assets.
+create table if not exists public.corp_asset_over_time (
+  id bigint generated always as identity primary key,
+  item_id bigint not null,
   corporation_id bigint not null,
   type_id bigint not null,
   location_id bigint,
@@ -14,15 +16,21 @@ create table if not exists public.corp_asset (
   quantity bigint,
   is_singleton boolean,
   is_blueprint_copy boolean,
-  updated_at timestamptz not null default now()
+  is_current boolean not null default true,
+  first_seen_at timestamptz not null default now(),
+  last_seen_at timestamptz not null default now()
 );
-create index if not exists corp_asset_corporation_id_idx on public.corp_asset (corporation_id);
+create index if not exists corp_asset_over_time_corporation_id_idx on public.corp_asset_over_time (corporation_id);
+create unique index if not exists corp_asset_over_time_current_item_idx
+  on public.corp_asset_over_time (item_id) where is_current;
+create index if not exists corp_asset_over_time_item_id_idx
+  on public.corp_asset_over_time (item_id, last_seen_at desc);
 
-alter table public.corp_asset enable row level security;
+alter table public.corp_asset_over_time enable row level security;
 
-drop policy if exists "Users read assets for own corps" on public.corp_asset;
+drop policy if exists "Users read assets for own corps" on public.corp_asset_over_time;
 create policy "Users read assets for own corps"
-  on public.corp_asset
+  on public.corp_asset_over_time
   for select
   to authenticated
   using (
@@ -32,8 +40,13 @@ create policy "Users read assets for own corps"
     )
   );
 
-grant select on public.corp_asset to authenticated;
-grant all    on public.corp_asset to service_role;
+drop view if exists public.corp_asset;
+create view public.corp_asset with (security_invoker = on) as
+  select * from public.corp_asset_over_time where is_current;
+
+grant select on public.corp_asset_over_time to authenticated;
+grant select on public.corp_asset           to authenticated;
+grant all    on public.corp_asset_over_time to service_role;
 
 create or replace function public.corp_assets(character_ids uuid[])
 returns json

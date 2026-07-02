@@ -1,5 +1,7 @@
 import { fileURLToPath } from 'node:url'
 
+import { splitEvery } from 'ramda'
+
 import { pullCorpWalletJournals } from '../corpWalletJournal.js'
 import { character as fetchCharacter, corpAssets, corpIndustryJobs, corpStructures, universeNames } from '../esi.js'
 import { resolveAssetStationNames, resolveCorpJournalNames, resolveCorpStructureSystemNames } from '../resolveNames.js'
@@ -34,6 +36,97 @@ const resolveCorpName = async (corporation_id) => {
   return name
 }
 const corpLabelFor = (name, corporation_id) => (name ? `${name} (${corporation_id})` : `${corporation_id}`)
+
+// The tracked attributes that define a version of a corp asset row. Two
+// sightings with the same signature are the "same" row; any difference opens
+// a new SCD row. Mirrors assets.js's per-character signature (minus `name`,
+// which ESI doesn't expose for corp assets).
+const corpAssetSignature = (a) =>
+  JSON.stringify([
+    Number(a.type_id),
+    a.location_id == null ? null : Number(a.location_id),
+    a.location_flag ?? null,
+    a.location_type ?? null,
+    a.quantity == null ? null : Number(a.quantity),
+    a.is_singleton ?? null,
+    !!a.is_blueprint_copy,
+  ])
+
+// Reconcile freshly fetched corp assets against the corp's current (open) rows
+// in corp_asset_over_time, the same SCD-2 approach assets.js uses for
+// per-character assets: unchanged items get last_seen_at extended, changed
+// items close their old row and open a new one, and vanished items are closed.
+const reconcileCorpAssets = async (corporation_id, fetched) => {
+  const baseCols =
+    'id, item_id, type_id, location_id, location_flag, location_type, quantity, is_singleton, is_blueprint_copy'
+  // Page through every open row: PostgREST caps a select at the API "Max rows"
+  // limit (1000), but a corp can hold tens of thousands of items.
+  const PAGE = 1000
+  const current = []
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await sudoSupabase
+      .from('corp_asset_over_time')
+      .select(baseCols)
+      .eq('corporation_id', corporation_id)
+      .eq('is_current', true)
+      .order('id', { ascending: true })
+      .range(from, from + PAGE - 1)
+    if (error) throw error
+    if (!data || data.length === 0) break
+    current.push(...data)
+    if (data.length < PAGE) break
+  }
+
+  const currentByItem = new Map(current.map((c) => [Number(c.item_id), c]))
+  // ESI can return the same item twice across pages if assets shift mid-fetch;
+  // collapse to one entry per item so we never queue two inserts for it.
+  const fetchedByItem = new Map(fetched.map((a) => [Number(a.item_id), a]))
+
+  const now = new Date().toISOString()
+  const touchIds = [] // unchanged: bump last_seen_at on the open row
+  const closeIds = [] // changed or gone: close the open row
+  const inserts = [] // changed or new: open a fresh version
+
+  for (const a of fetchedByItem.values()) {
+    const cur = currentByItem.get(Number(a.item_id))
+    if (cur && corpAssetSignature(cur) === corpAssetSignature(a)) {
+      touchIds.push(cur.id)
+    } else {
+      if (cur) closeIds.push(cur.id)
+      inserts.push({
+        item_id: a.item_id,
+        corporation_id,
+        type_id: a.type_id,
+        location_id: a.location_id ?? null,
+        location_flag: a.location_flag ?? null,
+        location_type: a.location_type ?? null,
+        quantity: a.quantity ?? null,
+        is_singleton: a.is_singleton ?? null,
+        is_blueprint_copy: !!a.is_blueprint_copy,
+        last_seen_at: now,
+      })
+    }
+    currentByItem.delete(Number(a.item_id))
+  }
+  // Anything still open but not seen this run has left the corp's assets.
+  for (const cur of currentByItem.values()) closeIds.push(cur.id)
+
+  for (const ids of splitEvery(200, touchIds)) {
+    const { error } = await sudoSupabase.from('corp_asset_over_time').update({ last_seen_at: now }).in('id', ids)
+    if (error) throw error
+  }
+  // Close before inserting so the unique-current-per-item index never collides.
+  for (const ids of splitEvery(200, closeIds)) {
+    const { error } = await sudoSupabase.from('corp_asset_over_time').update({ is_current: false }).in('id', ids)
+    if (error) throw error
+  }
+  for (const rows of splitEvery(1000, inserts)) {
+    const { error } = await sudoSupabase.from('corp_asset_over_time').insert(rows)
+    if (error) throw error
+  }
+
+  return { touched: touchIds.length, opened: inserts.length, closed: closeIds.length }
+}
 
 // Pull corp structures (plus structure rigs and corp wallet journals where the
 // linked tokens allow) for tokens carrying the structures scope. Pass `characterIds`
@@ -205,33 +298,12 @@ export const runStructures = async ({ characterIds } = {}) => {
             `[structures] ${ctx}: corp ${corpLabel} returned ${assets.length} asset(s) across ${assetPages} page(s)`
           )
 
+          const { touched, opened, closed } = await reconcileCorpAssets(corporation_id, assets)
+          console.log(
+            `[structures] ${ctx}: corp ${corpLabel} assets ${touched} unchanged, ${opened} opened, ${closed} closed`
+          )
+
           const now = new Date().toISOString()
-
-          // Replace this corp's asset snapshot wholesale (not SCD-2 like character
-          // assets — corp inventories are large and IMPORTDATA only needs current state).
-          const assetRows = assets.map((a) => ({
-            item_id: a.item_id,
-            corporation_id,
-            type_id: a.type_id,
-            location_id: a.location_id ?? null,
-            location_flag: a.location_flag ?? null,
-            location_type: a.location_type ?? null,
-            quantity: a.quantity ?? null,
-            is_singleton: a.is_singleton ?? null,
-            is_blueprint_copy: a.is_blueprint_copy ?? null,
-            updated_at: now,
-          }))
-          const { error: assetDelErr } = await sudoSupabase
-            .from('corp_asset')
-            .delete()
-            .eq('corporation_id', corporation_id)
-          if (assetDelErr) throw assetDelErr
-          if (assetRows.length > 0) {
-            const { error: assetErr } = await sudoSupabase.from('corp_asset').insert(assetRows)
-            if (assetErr) throw assetErr
-          }
-          console.log(`[structures] ${ctx}: corp ${corpLabel} stored ${assetRows.length} corp_asset row(s)`)
-
           const rigRows = assets
             .filter((a) => isRigSlot(a.location_flag) && structureIds.has(Number(a.location_id)))
             .map((a) => ({
