@@ -15,6 +15,7 @@ import styles from './refresh.module.css'
 // columns here.
 const JOBS = [
   ['character-assets', 'assets'],
+  ['character-blueprints', 'blueprints'],
   ['character-orders', 'orders'],
   ['character-wallet', 'wallet'],
   ['character-wallet-transactions', 'transactions'],
