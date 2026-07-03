@@ -36,9 +36,13 @@ export const getSdeTypeNames = (typeIDs: Iterable<number>): Record<number, strin
 
 export type SdeSearchResult = { typeID: number; name: string; coverage: number }
 
-// Case-insensitive substring search, ranked by how much of the name the query
-// covers (a tighter match ranks above a longer name containing the same term).
-export const searchSdeTypes = (query: string, limit = 25): SdeSearchResult[] => {
+// Case-insensitive substring search over every published type, ranked by how
+// much of the name the query covers (a tighter match ranks above a longer
+// name containing the same term). Unbounded — callers that only want a
+// preview list should slice the result themselves (see searchSdeTypes below);
+// callers that need the true match count (e.g. "too many results") can use
+// `.length` on the full array instead of guessing from a capped page.
+export const searchSdeTypesAll = (query: string): SdeSearchResult[] => {
   const needle = query.trim().toLowerCase()
   if (needle === '') return []
   const results: SdeSearchResult[] = []
@@ -48,5 +52,8 @@ export const searchSdeTypes = (query: string, limit = 25): SdeSearchResult[] => 
     results.push({ typeID: t.typeID, name: t.name, coverage: needle.length / t.name.length })
   }
   results.sort((a, b) => b.coverage - a.coverage || a.name.length - b.name.length)
-  return results.slice(0, limit)
+  return results
 }
+
+// Same search, capped to `limit` results — what the autocomplete UIs want.
+export const searchSdeTypes = (query: string, limit = 25): SdeSearchResult[] => searchSdeTypesAll(query).slice(0, limit)

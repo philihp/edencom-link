@@ -57,7 +57,8 @@ Quick-reference for navigation. Covers key exports, route→file paths, DB table
 ### `src/sdeTypes.ts`
 - `getSdeType(typeID)` — `{ typeID, name, groupID, categoryID }` from the generated SDE data, or `null`
 - `getSdeTypeNames(typeIDs[])` — bulk id→name lookup
-- `searchSdeTypes(query, limit?)` — case-insensitive substring search over type names, ranked by match coverage
+- `searchSdeTypesAll(query)` — case-insensitive substring search over every published type name, ranked by match coverage, unbounded (used where the true match count matters, e.g. `/asset/search`'s "too many types" check)
+- `searchSdeTypes(query, limit?)` — same search capped to `limit` results, for autocomplete UIs
 
 ### `src/sdeSystems.ts`
 - `getSdeSystem(systemID)` — `{ systemID, name, security }` from the generated SDE data, or `null`
@@ -135,6 +136,7 @@ All functions take `(accessToken, id, ...)` unless noted. Returns raw ESI respon
 | `/account/invite` | `src/app/account/invite/page.tsx` |
 | `/asset` | `src/app/asset/page.tsx` |
 | `/asset/[locationId]` | `src/app/asset/[locationId]/page.tsx` |
+| `/asset/search` | `src/app/asset/search/page.tsx` |
 | `/character` | `src/app/character/page.tsx` |
 | `/character/callback` | `src/app/character/callback/route.ts` |
 | `/character/refresh` | `src/app/character/refresh/page.tsx` |
@@ -158,7 +160,7 @@ All functions take `(accessToken, id, ...)` unless noted. Returns raw ESI respon
 
 The old CSV endpoint paths (`/api/assets`, `/api/orders`, `/api/industry`) and `/characters/refresh` permanently redirect to their new homes (see `next.config.mjs`) so existing Google Sheets keep working.
 
-Shared UI helpers: `src/app/isk.ts` (ISK formatting), `src/app/DateTime.tsx`, `src/app/typeName.tsx` (renders a type name from ID), `src/app/typeNames.ts` (resolves type names from the locally generated SDE data), `src/app/systemNames.ts`, `src/app/stationNames.ts`.
+Shared UI helpers: `src/app/isk.ts` (ISK formatting), `src/app/DateTime.tsx`, `src/app/typeName.tsx` (renders a type name from ID), `src/app/typeNames.ts` (resolves type names from the locally generated SDE data), `src/app/systemNames.ts`, `src/app/stationNames.ts`, `src/app/owners.ts` / `src/app/ownerFilter.tsx` (the character/corp "owner" picker shared by the assets and industry pages), `src/app/resolveLocations.ts` (resolves a set of root locations — station, player structure, or bare solar system — to display names + systems; shared by `/asset` and `/asset/search`).
 
 ## Extract jobs
 
@@ -223,8 +225,10 @@ The per-character jobs (`character-*` except `character-affiliations`, plus `cor
 Key Postgres functions (callable via RPC or SQL):
 - `character_asset_location_summary()` — aggregate character assets per location
 - `character_asset_location_contents(parent_id)` — count nested character items in a location
+- `character_asset_search(type_ids[])` — every current character item matching one of the given type ids, with its root location and nested-item count (used by `/asset/search`)
 - `corp_asset_location_summary()` — aggregate corp assets per location (mirrors the character version; RLS scopes to corps the caller has a registered character in)
 - `corp_asset_location_contents(parent_id)` — count nested corp items in a location
+- `corp_asset_search(type_ids[])` — mirrors `character_asset_search()` over corp assets (used by `/asset/search`)
 - `character_asset_snapshot_at(character_ids[], as_of)` — time-travel asset snapshot as JSON (used by `/api/character/assets`)
 - `character_industry_jobs(character_ids[], include_delivered)` — export for Sheets IMPORTDATA (used by `/api/character/jobs`)
 - `character_orders(character_ids[])` — export for Sheets IMPORTDATA (used by `/api/character/orders`)
@@ -238,6 +242,7 @@ Key Postgres functions (callable via RPC or SQL):
 - **One extract job per ESI endpoint:** each job in `src/jobs/` pulls exactly one endpoint into its like-named table, sharing the token loops in `src/jobs/lib.js`. Job names double as npm script, queue message `job`, heartbeat label, and workflow file name.
 - **Prefer ramda over `for`/`while` loops:** synchronous iteration uses ramda (`map`/`filter`/`reduce`/`pipe`/`chain`/`reject`/`forEach`, …) instead of imperative loops — `src/jobs/*.js` is the canonical example. Sequential *async* iteration (`for (const x of xs) { await ... }`) uses `forEachSequential(items, fn)` from `src/jobs/lib.js`, which chains promises through ramda's `reduce` so each item awaits before the next starts and a rejection propagates like a thrown error would out of a loop; an unbounded pagination loop (`for (let page = 1; ; page++)`) becomes a small function that recurses on the next page instead. One accepted exception: when a `reduce` builds up a large array (an extract job can reconcile tens of thousands of rows), the accumulator is a plain object/array mutated via `.push()` rather than rebuilt with `[...acc, x]` on every item — spreading a new array per iteration turns an O(n) pass into O(n²). The loop itself still isn't a `for`/`while`; only the accumulator's internals are pragmatically mutable.
 - **SCD Type 2 assets:** `character_asset_over_time` tracks the full history of each item. `is_current=true` rows form the current snapshot. `last_seen_at` is bumped each run for unchanged items; a new row is inserted when anything changes, and the old row's `is_current` is set to `false`. `corp_asset_over_time` (+ `corp_asset` view) mirrors this exact pattern for corp assets, reconciled in `src/jobs/corpAssets.js`. `character_blueprint_over_time` / `corp_blueprint_over_time` (+ their `_blueprint` views) apply the identical SCD-2 pattern to blueprints (location, quantity, ME/TE, runs), reconciled in `src/jobs/characterBlueprints.js` / `src/jobs/corpBlueprints.js`.
+- **Asset location-walk functions come in two shapes:** the `*_location_summary()`/`*_location_contents()` functions seed their recursive climb/descend from *every* asset (they're computing an aggregate over the whole hangar). `character_asset_search()`/`corp_asset_search()` instead seed from just the rows matching a filter (a set of type ids), so a search stays cheap regardless of hangar size — reuse this seeded-recursion shape for any future "look up a few items, walk their location tree" function rather than the walk-everything shape.
 - **Supabase RLS:** All tables use RLS scoped to `auth.uid()`. Cron scripts use the service-role key (`sudoSupabase` / `src/utils/supabase/service.ts`) which bypasses RLS.
 - **Google Sheets IMPORTDATA:** `/api/character/assets`, `/api/character/blueprints`, `/api/character/orders`, `/api/character/jobs`, `/api/corp/assets`, `/api/corp/blueprints`, `/api/corp/jobs` authenticate via `user_settings.api_token`, call a Postgres function, and return CSV. The pre-rename paths permanently redirect to the new ones.
 - **Vercel queue:** The queue consumer at `/api/queue/jobs` dispatches to the same `run*()` functions the CLI jobs use. The UI enqueues work via `@vercel/queue`.
