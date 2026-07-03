@@ -1,4 +1,5 @@
 import { fileURLToPath } from 'node:url'
+import { range, reduce } from 'ramda'
 
 import { character as fetchCharacter } from '../esi.js'
 import { sudoSupabase } from '../supabase.js'
@@ -12,6 +13,18 @@ import { refreshAccessToken } from '../tokenRefresh.js'
 // skipped so one bad token never aborts the rest of the run; a fatal lookup
 // failure throws so callers — the CLI wrapper or the queue consumer — can decide
 // how to surface it.
+
+// The jobs' preferred stand-in for `for (const item of items) { await ... }`:
+// runs `fn` once per item, strictly in order, awaiting each before starting the
+// next (a later item's failure never races an earlier one's write). Built on
+// ramda's `reduce` chaining promises rather than resolving them — the reducer
+// only runs once the accumulator settles, so this is sequential, not
+// `Promise.all` fanned out. A rejection from `fn` propagates out of the whole
+// chain immediately (subsequent items don't run), exactly like a thrown error
+// escaping a `for` loop; wrap `fn` in try/catch to isolate one item's failure
+// from the rest, as most callers below do.
+export const forEachSequential = (items, fn) =>
+  reduce((settled, item) => settled.then(() => fn(item)), Promise.resolve(), items)
 
 // Iterate the tokens that carry `scope`, calling handler once per token with
 // { access_token, characterID, character_id, name, ctx }. `characterID` is the
@@ -34,7 +47,7 @@ export const forEachCharacter = async (tag, { scope, characterIds }, handler) =>
 
   console.log(`[${tag}] found ${tokens?.length ?? 0} token(s) with ${scope}`)
 
-  for (const tokenRow of tokens ?? []) {
+  await forEachSequential(tokens ?? [], async (tokenRow) => {
     const name = characterName.get(tokenRow.character_id) ?? '?'
     const ctx = `character=${name} (${tokenRow.character_id}) token=${tokenRow.id}`
     const t0 = Date.now()
@@ -42,14 +55,14 @@ export const forEachCharacter = async (tag, { scope, characterIds }, handler) =>
       const { access_token, characterID, scope: freshScope } = await refreshAccessToken(tokenRow)
       if (!freshScope.includes(scope)) {
         console.error(`[${tag}] ${ctx}: refreshed token no longer has ${scope}, skipping`)
-        continue
+        return
       }
       await handler({ access_token, characterID, character_id: tokenRow.character_id, name, ctx })
     } catch (e) {
       const dt = Date.now() - t0
       console.error(`[${tag}] ${ctx}: FAILED after ${dt}ms name=${e?.name} message=${e?.message}\n${e?.stack ?? e}`)
     }
-  }
+  })
 }
 
 // Iterate the corporations reachable through tokens carrying `scope`, calling
@@ -84,17 +97,18 @@ export const forEachCorporation = async (tag, { scope, characterIds }, handler) 
 }
 
 // Drain an x-pages-paginated ESI endpoint. `fetchPage(page)` returns the
-// [json, pagesHeader] tuple src/esi.js's paged wrappers produce.
+// [json, pagesHeader] tuple src/esi.js's paged wrappers produce. Pages 2..N are
+// fetched strictly in order (ESI has no batch-by-page-numbers call), so this
+// stays a sequential await chain over ramda's `range` rather than a `Promise.all`.
 export const fetchAllPages = async (fetchPage) => {
-  const all = []
   const [firstPage, pagesHeader] = await fetchPage(1)
-  all.push(...(firstPage ?? []))
   const totalPages = Math.max(1, Number.parseInt(pagesHeader, 10) || 1)
-  for (let page = 2; page <= totalPages; page++) {
+  const rest = []
+  await forEachSequential(range(2, totalPages + 1), async (page) => {
     const [more] = await fetchPage(page)
-    all.push(...(more ?? []))
-  }
-  return all
+    rest.push(...(more ?? []))
+  })
+  return [...(firstPage ?? []), ...rest]
 }
 
 // Self-run a job when its module is invoked directly as a CLI

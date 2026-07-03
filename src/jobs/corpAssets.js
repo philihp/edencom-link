@@ -1,8 +1,8 @@
-import { splitEvery } from 'ramda'
+import { filter, map, pipe, prop, reduce, splitEvery } from 'ramda'
 
 import { corpAssets } from '../esi.js'
 import { sudoSupabase } from '../supabase.js'
-import { cli, fetchAllPages, forEachCorporation } from './lib.js'
+import { cli, fetchAllPages, forEachCorporation, forEachSequential } from './lib.js'
 
 const TAG = 'corp-assets'
 const SCOPE = 'esi-assets.read_corporation_assets.v1'
@@ -31,6 +31,24 @@ const signature = (a) =>
     !!a.is_blueprint_copy,
   ])
 
+// PostgREST caps a single select; page through every open row so a large corp
+// hangar doesn't silently truncate the "current" set.
+const PAGE = 1000
+
+const fetchCurrentRows = async (corporation_id, cols, from = 0) => {
+  const { data, error } = await sudoSupabase
+    .from('corp_asset_over_time')
+    .select(cols)
+    .eq('corporation_id', corporation_id)
+    .eq('is_current', true)
+    .order('id', { ascending: true })
+    .range(from, from + PAGE - 1)
+  if (error) throw error
+  const page = data ?? []
+  if (page.length < PAGE) return page
+  return [...page, ...(await fetchCurrentRows(corporation_id, cols, from + PAGE))]
+}
+
 // Reconcile freshly fetched corp assets against the corp's current (open) rows
 // in corp_asset_over_time, the same SCD-2 approach the character-assets job uses
 // for per-character assets: unchanged items get last_seen_at extended, changed
@@ -38,23 +56,7 @@ const signature = (a) =>
 const reconcile = async (corporation_id, fetched) => {
   const cols =
     'id, item_id, type_id, location_id, location_flag, location_type, quantity, is_singleton, is_blueprint_copy'
-  // Page through every open row: PostgREST caps a select at the API "Max rows"
-  // limit (1000), but a corp can hold tens of thousands of items.
-  const PAGE = 1000
-  const current = []
-  for (let from = 0; ; from += PAGE) {
-    const { data, error } = await sudoSupabase
-      .from('corp_asset_over_time')
-      .select(cols)
-      .eq('corporation_id', corporation_id)
-      .eq('is_current', true)
-      .order('id', { ascending: true })
-      .range(from, from + PAGE - 1)
-    if (error) throw error
-    if (!data || data.length === 0) break
-    current.push(...data)
-    if (data.length < PAGE) break
-  }
+  const current = await fetchCurrentRows(corporation_id, cols)
 
   const currentByItem = new Map(current.map((c) => [Number(c.item_id), c]))
   // ESI can return the same item twice across pages if assets shift mid-fetch;
@@ -62,49 +64,61 @@ const reconcile = async (corporation_id, fetched) => {
   const fetchedByItem = new Map(fetched.map((a) => [Number(a.item_id), a]))
 
   const now = new Date().toISOString()
-  const touchIds = [] // unchanged: bump last_seen_at on the open row
-  const closeIds = [] // changed or gone: close the open row
-  const inserts = [] // changed or new: open a fresh version
 
-  for (const a of fetchedByItem.values()) {
-    const cur = currentByItem.get(Number(a.item_id))
-    if (cur && signature(cur) === signature(a)) {
-      touchIds.push(cur.id)
-    } else {
-      if (cur) closeIds.push(cur.id)
-      inserts.push({
-        item_id: a.item_id,
-        corporation_id,
-        type_id: a.type_id,
-        location_id: a.location_id ?? null,
-        location_flag: a.location_flag ?? null,
-        location_type: a.location_type ?? null,
-        quantity: a.quantity ?? null,
-        is_singleton: a.is_singleton ?? null,
-        is_blueprint_copy: !!a.is_blueprint_copy,
-        last_seen_at: now,
-      })
-    }
-    currentByItem.delete(Number(a.item_id))
-  }
+  // Classify each fetched item against its current row: unchanged (touch),
+  // changed (close + insert), or new (insert only). Built with a plain local
+  // accumulator mutated via push — a corp can hold tens of thousands of items,
+  // and rebuilding immutable arrays on every iteration here would turn an
+  // O(n) pass into O(n²).
+  const { touchIds, closeIds, inserts } = reduce(
+    (acc, a) => {
+      const cur = currentByItem.get(Number(a.item_id))
+      if (cur && signature(cur) === signature(a)) {
+        acc.touchIds.push(cur.id)
+      } else {
+        if (cur) acc.closeIds.push(cur.id)
+        acc.inserts.push({
+          item_id: a.item_id,
+          corporation_id,
+          type_id: a.type_id,
+          location_id: a.location_id ?? null,
+          location_flag: a.location_flag ?? null,
+          location_type: a.location_type ?? null,
+          quantity: a.quantity ?? null,
+          is_singleton: a.is_singleton ?? null,
+          is_blueprint_copy: !!a.is_blueprint_copy,
+          last_seen_at: now,
+        })
+      }
+      return acc
+    },
+    { touchIds: [], closeIds: [], inserts: [] },
+    [...fetchedByItem.values()]
+  )
+
   // Anything still open but not seen this run has left the corp's assets.
-  for (const cur of currentByItem.values()) closeIds.push(cur.id)
+  const fetchedIds = new Set(fetchedByItem.keys())
+  const vanishedIds = pipe(
+    filter((cur) => !fetchedIds.has(Number(cur.item_id))),
+    map(prop('id'))
+  )([...currentByItem.values()])
+  const allCloseIds = [...closeIds, ...vanishedIds]
 
-  for (const ids of splitEvery(200, touchIds)) {
+  await forEachSequential(splitEvery(200, touchIds), async (ids) => {
     const { error } = await sudoSupabase.from('corp_asset_over_time').update({ last_seen_at: now }).in('id', ids)
     if (error) throw error
-  }
+  })
   // Close before inserting so the unique-current-per-item index never collides.
-  for (const ids of splitEvery(200, closeIds)) {
+  await forEachSequential(splitEvery(200, allCloseIds), async (ids) => {
     const { error } = await sudoSupabase.from('corp_asset_over_time').update({ is_current: false }).in('id', ids)
     if (error) throw error
-  }
-  for (const rows of splitEvery(1000, inserts)) {
+  })
+  await forEachSequential(splitEvery(1000, inserts), async (rows) => {
     const { error } = await sudoSupabase.from('corp_asset_over_time').insert(rows)
     if (error) throw error
-  }
+  })
 
-  return { touched: touchIds.length, opened: inserts.length, closed: closeIds.length }
+  return { touched: touchIds.length, opened: inserts.length, closed: allCloseIds.length }
 }
 
 export const runCorpAssets = ({ characterIds } = {}) =>
