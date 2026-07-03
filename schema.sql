@@ -45,6 +45,8 @@ drop table if exists public.character_corp       cascade;
 drop table if exists public.structure            cascade;
 drop view  if exists public.character_asset               cascade;
 drop table if exists public.character_asset_over_time     cascade;
+drop view  if exists public.character_blueprint            cascade;
+drop table if exists public.character_blueprint_over_time  cascade;
 drop table if exists public.character_wallet              cascade;
 drop table if exists public.character_wallet_transaction  cascade;
 drop table if exists public.character_order               cascade;
@@ -55,6 +57,14 @@ drop table if exists public.corp_structure_rig   cascade;
 drop table if exists public.corp_structure       cascade;
 drop table if exists public.corp_wallet_journal  cascade;
 drop table if exists public.corp_wallet_transaction cascade;
+-- Pre-existing gap: corp_asset_over_time/corp_asset and corp_industry_job
+-- never had drop statements, so re-running this file against an
+-- already-reset database failed on them.
+drop view  if exists public.corp_asset                cascade;
+drop table if exists public.corp_asset_over_time      cascade;
+drop table if exists public.corp_industry_job         cascade;
+drop view  if exists public.corp_blueprint            cascade;
+drop table if exists public.corp_blueprint_over_time  cascade;
 drop table if exists public.universe_name        cascade;
 drop table if exists public.universe_structure   cascade;
 drop table if exists public.invite_code          cascade;
@@ -320,6 +330,93 @@ as $$
 $$;
 
 grant execute on function public.character_asset_snapshot_at(uuid[], timestamptz) to service_role;
+
+-- ── character_blueprint_over_time ─────────────────────────────────────────
+-- ESI /characters/{id}/blueprints/, written by the character-blueprints job.
+-- SCD Type 2 history of a character's blueprints, mirroring
+-- character_asset_over_time: is_current=true rows form the current snapshot,
+-- last_seen_at is bumped each run for unchanged blueprints, and a new row is
+-- inserted when anything tracked changes (old row's is_current set false).
+-- quantity is -1 for an original (BPO), -2 for a copy (BPC), or the stack size
+-- for multiple BPOs stacked together; runs is -1 for a BPO (unlimited) or the
+-- runs remaining on a BPC. ESI's blueprint payload has no location_type
+-- (unlike assets), so that column isn't tracked here.
+create table public.character_blueprint_over_time (
+  id bigint generated always as identity primary key,
+  item_id bigint not null,
+  character_id uuid not null references public.registration(id) on delete cascade,
+  type_id bigint not null,
+  location_id bigint,
+  location_flag text,
+  quantity bigint,
+  material_efficiency smallint,
+  time_efficiency smallint,
+  runs integer,
+  is_current boolean not null default true,
+  first_seen_at timestamptz not null default now(),
+  last_seen_at timestamptz not null default now()
+);
+create index character_blueprint_over_time_character_id_idx on public.character_blueprint_over_time (character_id);
+-- At most one live row per item; also the conflict target the extract relies on.
+create unique index character_blueprint_over_time_current_item_idx on public.character_blueprint_over_time (item_id) where is_current;
+-- Time-travel lookups walking an item's version history.
+create index character_blueprint_over_time_item_id_idx on public.character_blueprint_over_time (item_id, last_seen_at desc);
+
+alter table public.character_blueprint_over_time enable row level security;
+create policy "Users read own blueprints"
+  on public.character_blueprint_over_time
+  for select
+  to authenticated
+  using (
+    character_id in (
+      select id from public.registration where user_id = (select auth.uid())
+    )
+  );
+
+-- Live snapshot of blueprints. security_invoker keeps the underlying RLS in
+-- force for the querying (authenticated) role rather than running as the view owner.
+create view public.character_blueprint with (security_invoker = on) as
+  select * from public.character_blueprint_over_time where is_current;
+
+grant select on public.character_blueprint_over_time to authenticated;
+grant select on public.character_blueprint           to authenticated;
+grant all    on public.character_blueprint_over_time to service_role;
+
+-- /api/character/blueprints IMPORTDATA endpoint: the player's current
+-- blueprint rows across all of their characters, with the owning character's
+-- name. Returns json (not jsonb) so json_build_object's key order is
+-- preserved for the sheet's columns, and a single scalar sidesteps
+-- PostgREST's max-rows cap. Live snapshot only (no time-travel `as_of`, unlike
+-- character_asset_snapshot_at) — a blueprint's current research level and
+-- location is what the sheet needs.
+create or replace function public.character_blueprints(character_ids uuid[])
+returns json
+language sql
+stable
+as $$
+  select coalesce(
+    json_agg(
+      json_build_object(
+        'item_id',             b.item_id,
+        'location_flag',       b.location_flag,
+        'location_id',         b.location_id,
+        'material_efficiency', b.material_efficiency,
+        'quantity',            b.quantity,
+        'runs',                b.runs,
+        'time_efficiency',     b.time_efficiency,
+        'type_id',             b.type_id,
+        'character_name',      r.name
+      )
+      order by b.item_id
+    ),
+    '[]'::json
+  )
+  from public.character_blueprint b
+  join public.registration r on r.id = b.character_id
+  where b.character_id = any(character_ids);
+$$;
+
+grant execute on function public.character_blueprints(uuid[]) to service_role;
 
 -- ── heartbeat ─────────────────────────────────────────────────────────────
 -- One row per scheduled-job run. Workflows write a 'start' step (stamps
@@ -923,6 +1020,89 @@ as $$
 $$;
 
 grant execute on function public.corp_assets(uuid[]) to service_role;
+
+-- ── corp_blueprint_over_time ──────────────────────────────────────────────
+-- ESI /corporations/{id}/blueprints/, written by the corp-blueprints job. SCD
+-- Type 2 history of a corporation's blueprints, mirroring
+-- character_blueprint_over_time for per-character blueprints: is_current=true
+-- rows form the current snapshot, last_seen_at is bumped each run for
+-- unchanged blueprints, and a new row is inserted when anything tracked
+-- changes (old row's is_current set false).
+create table public.corp_blueprint_over_time (
+  id bigint generated always as identity primary key,
+  item_id bigint not null,
+  corporation_id bigint not null,
+  type_id bigint not null,
+  location_id bigint,
+  location_flag text,
+  quantity bigint,
+  material_efficiency smallint,
+  time_efficiency smallint,
+  runs integer,
+  is_current boolean not null default true,
+  first_seen_at timestamptz not null default now(),
+  last_seen_at timestamptz not null default now()
+);
+create index corp_blueprint_over_time_corporation_id_idx on public.corp_blueprint_over_time (corporation_id);
+-- At most one live row per item; also the conflict target the extract relies on.
+create unique index corp_blueprint_over_time_current_item_idx on public.corp_blueprint_over_time (item_id) where is_current;
+-- Time-travel lookups walking an item's version history.
+create index corp_blueprint_over_time_item_id_idx on public.corp_blueprint_over_time (item_id, last_seen_at desc);
+
+alter table public.corp_blueprint_over_time enable row level security;
+create policy "Users read blueprints for own corps"
+  on public.corp_blueprint_over_time
+  for select
+  to authenticated
+  using (
+    corporation_id in (
+      select corporation_id from public.registration
+      where user_id = (select auth.uid()) and corporation_id is not null
+    )
+  );
+
+-- Live snapshot of corp blueprints. security_invoker keeps the underlying RLS
+-- in force for the querying (authenticated) role rather than running as the view owner.
+create view public.corp_blueprint with (security_invoker = on) as
+  select * from public.corp_blueprint_over_time where is_current;
+
+grant select on public.corp_blueprint_over_time to authenticated;
+grant select on public.corp_blueprint           to authenticated;
+grant all    on public.corp_blueprint_over_time to service_role;
+
+-- /api/corp/blueprints IMPORTDATA endpoint: the caller's corporation(s)
+-- current blueprint rows, mirroring corp_assets()'s shape for the
+-- per-corporation assets endpoint.
+create or replace function public.corp_blueprints(character_ids uuid[])
+returns json
+language sql
+stable
+as $$
+  select coalesce(
+    json_agg(
+      json_build_object(
+        'item_id',             b.item_id,
+        'corporation_id',      b.corporation_id,
+        'location_flag',       b.location_flag,
+        'location_id',         b.location_id,
+        'material_efficiency', b.material_efficiency,
+        'quantity',            b.quantity,
+        'runs',                b.runs,
+        'time_efficiency',     b.time_efficiency,
+        'type_id',             b.type_id
+      )
+      order by b.item_id
+    ),
+    '[]'::json
+  )
+  from public.corp_blueprint b
+  where b.corporation_id in (
+    select corporation_id from public.registration
+    where id = any(character_ids) and corporation_id is not null
+  );
+$$;
+
+grant execute on function public.corp_blueprints(uuid[]) to service_role;
 
 -- ── corp_industry_job ─────────────────────────────────────────────────────
 -- ESI /corporations/{id}/industry/jobs/ (esi-industry.read_corporation_jobs.v1),

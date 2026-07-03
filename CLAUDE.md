@@ -15,7 +15,7 @@ EVE Online hangar/wallet/industry tracker. Package name `edencom-link` (private)
 - **No test runner / no `test` script** — there are no automated tests. No `typecheck` script (rely on `next build` / editor).
 - Pre-commit: husky + lint-staged auto-format & `eslint --fix` staged files.
 - `pnpm run sde:build` — downloads CCP's SDE type/group and solar-system data and writes `src/generated/sdeTypes.json` + `src/generated/sdeSystems.json` (gitignored). Runs automatically as a `predev`/`prebuild` step; skips re-downloading any file that already exists (pass `--force` to refresh). See `src/buildSde.js`.
-- Extract job scripts (one per ESI endpoint, run via GitHub Actions, see below): `pnpm run character-assets` / `character-orders` / `character-wallet` / `character-wallet-transactions` / `character-industry-jobs` / `character-affiliations` / `corp-structures` / `corp-assets` / `corp-wallet-journal` / `corp-wallet-transactions` / `corp-industry-jobs` / `industry-systems` / `universe-names` / `universe-structures`, plus `heartbeat`. `connect`, `ping`, `refresh` are DB/token utilities.
+- Extract job scripts (one per ESI endpoint, run via GitHub Actions, see below): `pnpm run character-assets` / `character-blueprints` / `character-orders` / `character-wallet` / `character-wallet-transactions` / `character-industry-jobs` / `character-affiliations` / `corp-structures` / `corp-assets` / `corp-blueprints` / `corp-wallet-journal` / `corp-wallet-transactions` / `corp-industry-jobs` / `industry-systems` / `universe-names` / `universe-structures`, plus `heartbeat`. `connect`, `ping`, `refresh` are DB/token utilities.
 - DB migrations (Supabase CLI, configured by `supabase/config.toml`): `pnpm run db:new <name>` scaffolds a migration under `supabase/migrations/`; `pnpm run db:push` applies pending migrations to the linked project (`supabase link --project-ref <ref>` first). On push to `main` that touches `supabase/migrations/**`, the `Migrate` workflow runs `supabase db push` automatically (also manually dispatchable).
 
 ## Layout
@@ -68,6 +68,7 @@ Quick-reference for navigation. Covers key exports, route→file paths, DB table
 ### `src/esi.js` — ESI API wrapper
 All functions take `(accessToken, id, ...)` unless noted. Returns raw ESI response JSON (paged wrappers return `[json, xPagesHeader]`).
 - `assets(token, characterId, page)` — character assets list (paged)
+- `blueprints(token, characterId, page)` — character blueprints list (paged)
 - `transactions(token, characterId)` — market transaction history
 - `wallet(token, characterId)` — wallet balance
 - `orders(token, characterId)` — open market orders
@@ -75,6 +76,7 @@ All functions take `(accessToken, id, ...)` unless noted. Returns raw ESI respon
 - `character(token, characterId)` — character sheet
 - `corpStructures(token, corpId, page)` — corporation Upwell structures (paged)
 - `corpAssets(token, corpId, page)` — corporation assets (paged)
+- `corpBlueprints(token, corpId, page)` — corporation blueprints list (paged)
 - `corpIndustryJobs(token, corpId, page)` — corporation industry jobs (paged)
 - `corpWalletJournal(token, corpId, division, page)` — corp wallet journal by division (paged)
 - `corpTransactions(token, corpId, division)` — corp wallet market transactions for one division
@@ -144,9 +146,11 @@ All functions take `(accessToken, id, ...)` unless noted. Returns raw ESI respon
 | `/blueprint` | `src/app/blueprint/page.tsx` |
 | `/blueprint/[typeID]` | `src/app/blueprint/[typeID]/page.tsx` |
 | `/api/character/assets` | `src/app/api/character/assets/route.ts` |
+| `/api/character/blueprints` | `src/app/api/character/blueprints/route.ts` |
 | `/api/character/orders` | `src/app/api/character/orders/route.ts` |
 | `/api/character/jobs` | `src/app/api/character/jobs/route.ts` |
 | `/api/corp/assets` | `src/app/api/corp/assets/route.ts` |
+| `/api/corp/blueprints` | `src/app/api/corp/blueprints/route.ts` |
 | `/api/corp/jobs` | `src/app/api/corp/jobs/route.ts` |
 | `/api/queue/jobs` | `src/app/api/queue/jobs/route.ts` |
 | `/api/type/search` | `src/app/api/type/search/route.ts` |
@@ -162,6 +166,7 @@ One job per ESI endpoint. The npm script, queue job name, heartbeat job label, a
 | Job | ESI endpoint | Writes to | Schedule (UTC) |
 |---|---|---|---|
 | `character-assets` | `/characters/{id}/assets/` (+`/assets/names/`) | `character_asset_over_time` | hourly `:26` |
+| `character-blueprints` | `/characters/{id}/blueprints/` | `character_blueprint_over_time` | hourly `:28` |
 | `character-orders` | `/characters/{id}/orders/` | `character_order` | hourly `:24` |
 | `character-wallet` | `/characters/{id}/wallet/` | `character_wallet` | hourly `:44` |
 | `character-wallet-transactions` | `/characters/{id}/wallet/transactions/` | `character_wallet_transaction` | hourly `:46` |
@@ -169,6 +174,7 @@ One job per ESI endpoint. The npm script, queue job name, heartbeat job label, a
 | `character-affiliations` | `/characters/affiliation/` | `character_affiliation` | 11:41 daily |
 | `corp-structures` | `/corporations/{id}/structures/` | `corp_structure` | 09:17 daily |
 | `corp-assets` | `/corporations/{id}/assets/` | `corp_asset_over_time`, `corp_structure_rig` | 09:27 daily |
+| `corp-blueprints` | `/corporations/{id}/blueprints/` | `corp_blueprint_over_time` | 09:07 daily |
 | `corp-wallet-journal` | `/corporations/{id}/wallets/{division}/journal/` | `corp_wallet_journal` | 09:37 daily |
 | `corp-wallet-transactions` | `/corporations/{id}/wallets/{division}/transactions/` | `corp_wallet_transaction` | hourly `:50` |
 | `corp-industry-jobs` | `/corporations/{id}/industry/jobs/` | `corp_industry_job` | 09:47 daily |
@@ -178,7 +184,7 @@ One job per ESI endpoint. The npm script, queue job name, heartbeat job label, a
 
 `src/heartbeat.js` (`heartbeat.yml`, 10:55 daily) is a canary that just proves heartbeat recording works.
 
-The per-character jobs (`character-*` except `character-affiliations`, plus `corp-wallet-transactions`) are also dispatched on demand via the Vercel queue at `/api/queue/jobs` (the "Refresh ESI" flow), fanned out one message per character; `character-affiliations` and `universe-names` are dispatched once account-wide. The daily corp jobs and `industry-systems` are cron-only — they do whole-corp/whole-universe work that isn't character-scoped.
+The per-character jobs (`character-*` except `character-affiliations`, plus `corp-wallet-transactions`) are also dispatched on demand via the Vercel queue at `/api/queue/jobs` (the "Refresh ESI" flow), fanned out one message per character; `character-affiliations` and `universe-names` are dispatched once account-wide. The daily corp jobs (including `corp-blueprints`) and `industry-systems` are cron-only — they do whole-corp/whole-universe work that isn't character-scoped.
 
 ## Database tables (quick reference)
 
@@ -188,6 +194,8 @@ The per-character jobs (`character-*` except `character-affiliations`, plus `cor
 | `token` | OAuth tokens | `character_id` (unique FK), `access_token`, `refresh_token`, `expires_at`, `scope[]` |
 | `character_asset_over_time` | SCD Type 2 asset history | `item_id`, `character_id`, `type_id`, `location_id`, `location_flag`, `quantity`, `is_current`, `first_seen_at`, `last_seen_at`, `name` |
 | `character_asset` | View: `is_current` assets | same columns as above |
+| `character_blueprint_over_time` | SCD Type 2 blueprint history | `item_id`, `character_id`, `type_id`, `location_id`, `location_flag`, `quantity`, `material_efficiency`, `time_efficiency`, `runs`, `is_current`, `first_seen_at`, `last_seen_at` |
+| `character_blueprint` | View: `is_current` blueprints | same columns as above |
 | `character_wallet` | Wallet balance history | `character_id`, `balance`, `recorded_at` |
 | `character_wallet_transaction` | Trade history | `transaction_id`, `character_id`, `type_id`, `unit_price`, `quantity`, `is_buy`, `date` |
 | `character_order` | Live open orders | `order_id`, `character_id`, `type_id`, `price`, `volume_remain`, `is_buy`, `seen_at` |
@@ -199,6 +207,8 @@ The per-character jobs (`character-*` except `character-affiliations`, plus `cor
 | `corp_wallet_transaction` | Corp market buys/sells (unioned into market page) | `transaction_id`, `corporation_id`, `division`, `type_id`, `unit_price`, `quantity`, `is_buy`, `date` |
 | `corp_asset_over_time` | SCD Type 2 corp asset history | `item_id`, `corporation_id`, `type_id`, `location_id`, `location_flag`, `quantity`, `is_current`, `first_seen_at`, `last_seen_at` |
 | `corp_asset` | View: `is_current` corp assets | same columns as above |
+| `corp_blueprint_over_time` | SCD Type 2 corp blueprint history | `item_id`, `corporation_id`, `type_id`, `location_id`, `location_flag`, `quantity`, `material_efficiency`, `time_efficiency`, `runs`, `is_current`, `first_seen_at`, `last_seen_at` |
+| `corp_blueprint` | View: `is_current` corp blueprints | same columns as above |
 | `corp_industry_job` | Corp manufacturing/research jobs | `job_id`, `corporation_id`, `installer_id`, `blueprint_id`, `product_type_id`, `activity_id`, `status`, `end_date` |
 | `industry_system_index` | Cost index history (append-only) | `system_id`, `activity`, `cost_index`, `recorded_at` |
 | `universe_name` | Cached id→name | `id` (bigint PK), `name`, `category` |
@@ -217,15 +227,17 @@ Key Postgres functions (callable via RPC or SQL):
 - `character_asset_snapshot_at(character_ids[], as_of)` — time-travel asset snapshot as JSON (used by `/api/character/assets`)
 - `character_industry_jobs(character_ids[], include_delivered)` — export for Sheets IMPORTDATA (used by `/api/character/jobs`)
 - `character_orders(character_ids[])` — export for Sheets IMPORTDATA (used by `/api/character/orders`)
+- `character_blueprints(character_ids[])` — current blueprint snapshot as JSON, export for Sheets IMPORTDATA (used by `/api/character/blueprints`)
 - `corp_assets(character_ids[])` — corp asset snapshot for the caller's corp(s), export for Sheets IMPORTDATA (used by `/api/corp/assets`)
 - `corp_industry_jobs(character_ids[], include_delivered)` — corp industry jobs for the caller's corp(s), export for Sheets IMPORTDATA (used by `/api/corp/jobs`)
+- `corp_blueprints(character_ids[])` — corp blueprint snapshot for the caller's corp(s), export for Sheets IMPORTDATA (used by `/api/corp/blueprints`)
 
 ## Design patterns
 
 - **One extract job per ESI endpoint:** each job in `src/jobs/` pulls exactly one endpoint into its like-named table, sharing the token loops in `src/jobs/lib.js`. Job names double as npm script, queue message `job`, heartbeat label, and workflow file name.
-- **SCD Type 2 assets:** `character_asset_over_time` tracks the full history of each item. `is_current=true` rows form the current snapshot. `last_seen_at` is bumped each run for unchanged items; a new row is inserted when anything changes, and the old row's `is_current` is set to `false`. `corp_asset_over_time` (+ `corp_asset` view) mirrors this exact pattern for corp assets, reconciled in `src/jobs/corpAssets.js`.
+- **SCD Type 2 assets:** `character_asset_over_time` tracks the full history of each item. `is_current=true` rows form the current snapshot. `last_seen_at` is bumped each run for unchanged items; a new row is inserted when anything changes, and the old row's `is_current` is set to `false`. `corp_asset_over_time` (+ `corp_asset` view) mirrors this exact pattern for corp assets, reconciled in `src/jobs/corpAssets.js`. `character_blueprint_over_time` / `corp_blueprint_over_time` (+ their `_blueprint` views) apply the identical SCD-2 pattern to blueprints (location, quantity, ME/TE, runs), reconciled in `src/jobs/characterBlueprints.js` / `src/jobs/corpBlueprints.js`.
 - **Supabase RLS:** All tables use RLS scoped to `auth.uid()`. Cron scripts use the service-role key (`sudoSupabase` / `src/utils/supabase/service.ts`) which bypasses RLS.
-- **Google Sheets IMPORTDATA:** `/api/character/assets`, `/api/character/orders`, `/api/character/jobs`, `/api/corp/assets`, `/api/corp/jobs` authenticate via `user_settings.api_token`, call a Postgres function, and return CSV. The pre-rename paths permanently redirect to the new ones.
+- **Google Sheets IMPORTDATA:** `/api/character/assets`, `/api/character/blueprints`, `/api/character/orders`, `/api/character/jobs`, `/api/corp/assets`, `/api/corp/blueprints`, `/api/corp/jobs` authenticate via `user_settings.api_token`, call a Postgres function, and return CSV. The pre-rename paths permanently redirect to the new ones.
 - **Vercel queue:** The queue consumer at `/api/queue/jobs` dispatches to the same `run*()` functions the CLI jobs use. The UI enqueues work via `@vercel/queue`.
 - **Token lifecycle:** ESI OAuth tokens are stored in `token`. Before any ESI call, `refreshAccessToken()` checks expiry and refreshes via EVE SSO if needed.
 - **Name resolution:** `universe_name` table caches ESI `universeNames` lookups (kept fresh by the `universe-names` job). `resolveBatch()` handles bisect-on-error for large batches. Type names (items/ships) come from the locally generated SDE data (`src/sdeTypes.ts`), not the DB.

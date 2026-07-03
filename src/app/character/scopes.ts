@@ -38,6 +38,12 @@ export const esiScopes: EsiScope[] = [
     without: 'this character’s assets, and the locations where they are stored, will not appear on the assets page.',
   },
   {
+    scope: 'esi-characters.read_blueprints.v1',
+    name: 'Character blueprints',
+    why: 'Lists this character’s blueprints — original or copy, and their research level (ME/TE) and remaining runs.',
+    without: 'this character’s blueprints will not be tracked.',
+  },
+  {
     scope: 'esi-industry.read_character_jobs.v1',
     name: 'Industry jobs',
     why: 'Tracks this character’s manufacturing, research, invention and reaction jobs, and when they finish.',
@@ -66,6 +72,12 @@ export const esiScopes: EsiScope[] = [
     name: 'Corporation assets',
     why: 'Lists corporation assets, which also reveals the rigs fitted to your structures. Requires the Director role in game.',
     without: 'corporation assets and structure fittings will not be tracked from this character.',
+  },
+  {
+    scope: 'esi-corporations.read_blueprints.v1',
+    name: 'Corporation blueprints',
+    why: 'Lists your corporation’s blueprints — original or copy, and their research level (ME/TE) and remaining runs. Requires the Director role in game.',
+    without: 'corporation blueprints will not be tracked from this character.',
   },
   {
     scope: 'esi-universe.read_structures.v1',

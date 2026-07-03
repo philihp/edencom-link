@@ -18,6 +18,10 @@ const JOBS = {
     characterIds: true,
     load: async () => (await import('@/jobs/characterAssets.js')).runCharacterAssets,
   },
+  'character-blueprints': {
+    characterIds: true,
+    load: async () => (await import('@/jobs/characterBlueprints.js')).runCharacterBlueprints,
+  },
   'character-orders': {
     characterIds: true,
     load: async () => (await import('@/jobs/characterOrders.js')).runCharacterOrders,
@@ -41,6 +45,10 @@ const JOBS = {
   'corp-assets': {
     characterIds: true,
     load: async () => (await import('@/jobs/corpAssets.js')).runCorpAssets,
+  },
+  'corp-blueprints': {
+    characterIds: true,
+    load: async () => (await import('@/jobs/corpBlueprints.js')).runCorpBlueprints,
   },
   'corp-wallet-journal': {
     characterIds: true,

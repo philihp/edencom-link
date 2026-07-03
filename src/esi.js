@@ -35,6 +35,13 @@ export const assets = (access_token, characterID, page = 1) =>
     label: `assets ${characterID} page=${page}`,
   })
 
+export const blueprints = (access_token, characterID, page = 1) =>
+  esiPaged(`/characters/${characterID}/blueprints/`, {
+    access_token,
+    params: { page },
+    label: `blueprints ${characterID} page=${page}`,
+  })
+
 export const transactions = (access_token, characterID) =>
   esiJson(`/characters/${characterID}/wallet/transactions/`, {
     access_token,
@@ -80,6 +87,13 @@ export const corpAssets = (access_token, corporationID, page = 1) =>
     access_token,
     params: { page },
     label: `corpAssets ${corporationID} page=${page}`,
+  })
+
+export const corpBlueprints = (access_token, corporationID, page = 1) =>
+  esiPaged(`/corporations/${corporationID}/blueprints/`, {
+    access_token,
+    params: { page },
+    label: `corpBlueprints ${corporationID} page=${page}`,
   })
 
 export const corpIndustryJobs = (access_token, corporationID, page = 1) =>
