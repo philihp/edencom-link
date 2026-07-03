@@ -54,6 +54,11 @@
   background: color-mix(in srgb, currentColor 6%, transparent);
 }
 
+/* Highlights the row a dragged system would land on if dropped now. */
+.dragOver {
+  background: color-mix(in srgb, currentColor 10%, transparent);
+}
+
 .system {
   font-weight: 600;
 }
@@ -84,6 +89,13 @@
   color: var(--ink-faint);
 }
 
+/* Delete (✕) and drag-grip controls, right-aligned in the row's last cell. */
+.actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4pt;
+}
+
 /* The ✕ that drops a system from the watch list — quiet until hovered. */
 .unwatch {
   border: none;
@@ -95,6 +107,23 @@
 
 .unwatch:hover {
   color: var(--ink);
+}
+
+/* Drag handle for reordering a row — the only part of the row that starts a
+ * drag, so the rest stays ordinary click/hover surface. */
+.grip {
+  cursor: grab;
+  padding: 0 4pt;
+  color: var(--ink-faint);
+  user-select: none;
+}
+
+.grip:hover {
+  color: var(--ink);
+}
+
+.grip:active {
+  cursor: grabbing;
 }
 
 .search {

@@ -1126,7 +1126,12 @@ create table public.watched_system (
   user_id uuid not null references auth.users(id) on delete cascade,
   system_id bigint not null,
   created_at timestamptz not null default now(),
-  primary key (user_id, system_id)
+  primary key (user_id, system_id),
+  -- Drag order on the /indexes page (lower sorts first). watchSystem() assigns
+  -- new rows the next position; reorderWatchedSystems() rewrites the whole
+  -- list in one request when the user drags a row. Kept last to match the
+  -- add-column migration's column order.
+  position integer not null default 0
 );
 create index watched_system_user_id_idx on public.watched_system (user_id);
 
