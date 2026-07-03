@@ -46,8 +46,20 @@ export const Sparkline = ({ values, liveCount = values.length, label, updatedAt 
   const w = 100
   const h = 20
   const pad = 1
-  const min = Math.min(...values)
-  const max = Math.max(...values)
+  // Cost indices are fractions (0.001 = 0.1%). When the real spread is tighter
+  // than that, the line would look perfectly flat and hide the (tiny) trend —
+  // so we widen the displayed range to a fixed 0.1% centered on the actual
+  // midpoint, rather than the actual min/max, and use that widened range for
+  // both the plotted line and the min/max labels beside it.
+  const MIN_DISPLAY_RANGE = 0.001
+  const actualMin = Math.min(...values)
+  const actualMax = Math.max(...values)
+  const actualRange = actualMax - actualMin
+  const mid = (actualMin + actualMax) / 2
+  const [min, max] =
+    actualRange < MIN_DISPLAY_RANGE
+      ? [mid - MIN_DISPLAY_RANGE / 2, mid + MIN_DISPLAY_RANGE / 2]
+      : [actualMin, actualMax]
   const range = max - min || 1
   const step = (w - pad * 2) / (values.length - 1)
   const coords = values.map((v, i) => {
