@@ -27,9 +27,11 @@ const ApiToken = ({ initialToken }: { initialToken: string | null }) => {
   }
 
   const assetsUrl = token ? `${origin}/api/character/assets?token=${token}` : null
+  const blueprintsUrl = token ? `${origin}/api/character/blueprints?token=${token}` : null
   const industryUrl = token ? `${origin}/api/character/jobs?token=${token}` : null
   const ordersUrl = token ? `${origin}/api/character/orders?token=${token}` : null
   const corpAssetsUrl = token ? `${origin}/api/corp/assets?token=${token}` : null
+  const corpBlueprintsUrl = token ? `${origin}/api/corp/blueprints?token=${token}` : null
   const corpJobsUrl = token ? `${origin}/api/corp/jobs?token=${token}` : null
 
   return (
@@ -38,10 +40,13 @@ const ApiToken = ({ initialToken }: { initialToken: string | null }) => {
       <p>
         Pull your data into a spreadsheet with <code>=IMPORTDATA(url)</code> (the first row is the column headers):
       </p>
-      {assetsUrl && industryUrl && ordersUrl && corpAssetsUrl && corpJobsUrl && (
+      {assetsUrl && blueprintsUrl && industryUrl && ordersUrl && corpAssetsUrl && corpBlueprintsUrl && corpJobsUrl && (
         <ul>
           <li>
             Assets (one row per item stack): <code>=IMPORTDATA(&quot;{assetsUrl}&quot;)</code>
+          </li>
+          <li>
+            Blueprints (one row per blueprint stack): <code>=IMPORTDATA(&quot;{blueprintsUrl}&quot;)</code>
           </li>
           <li>
             Industry jobs: <code>=IMPORTDATA(&quot;{industryUrl}&quot;)</code>
@@ -51,6 +56,9 @@ const ApiToken = ({ initialToken }: { initialToken: string | null }) => {
           </li>
           <li>
             Corp assets (one row per item stack): <code>=IMPORTDATA(&quot;{corpAssetsUrl}&quot;)</code>
+          </li>
+          <li>
+            Corp blueprints (one row per blueprint stack): <code>=IMPORTDATA(&quot;{corpBlueprintsUrl}&quot;)</code>
           </li>
           <li>
             Corp industry jobs: <code>=IMPORTDATA(&quot;{corpJobsUrl}&quot;)</code>
