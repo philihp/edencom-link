@@ -1,4 +1,4 @@
-import { chain, filter, map, prop } from 'ramda'
+import { chain, filter, map, pipe, prop, uniq } from 'ramda'
 
 import { industrySystems } from '../esi.js'
 import { sudoSupabase } from '../supabase.js'
@@ -11,22 +11,22 @@ const TAG = 'industry-systems'
 // we care about.
 const SYSTEM_PAGE = 1000
 
-// Distinct system ids from one column of one table, paged past the row cap.
-const collectSystemIds = async (into, table, column) => {
-  for (let from = 0; ; from += SYSTEM_PAGE) {
-    const { data: rows, error } = await sudoSupabase
-      .from(table)
-      .select(column)
-      .range(from, from + SYSTEM_PAGE - 1)
-    if (error) throw error
-    if (!rows || rows.length === 0) break
-    for (const r of rows) {
-      const id = Number(r[column])
-      if (Number.isFinite(id)) into.add(id)
-    }
-    if (rows.length < SYSTEM_PAGE) break
-  }
+// One table's system_id rows, drained past the PostgREST row cap by recursing
+// on the next page until a short page signals the end.
+const fetchSystemIdRows = async (table, from = 0) => {
+  const { data: rows, error } = await sudoSupabase
+    .from(table)
+    .select('system_id')
+    .range(from, from + SYSTEM_PAGE - 1)
+  if (error) throw error
+  const page = rows ?? []
+  if (page.length < SYSTEM_PAGE) return page
+  return [...page, ...(await fetchSystemIdRows(table, from + SYSTEM_PAGE))]
 }
+
+// Distinct, finite system ids from one table's system_id column.
+const collectSystemIds = async (table) =>
+  pipe(map(prop('system_id')), map(Number), filter(Number.isFinite), uniq)(await fetchSystemIdRows(table))
 
 // GET /industry/systems/ → industry_system_index. Records a snapshot of the
 // industry cost indices for every solar system we care about: the union of the
@@ -37,13 +37,12 @@ const collectSystemIds = async (into, table, column) => {
 // appends a fresh set of rows, building a history of how the indices drift.
 // Account-wide work, so it takes no character scope.
 export const runIndustrySystems = async () => {
-  const systemIds = new Set()
-  await collectSystemIds(systemIds, 'corp_structure', 'system_id')
-  const structureCount = systemIds.size
-  await collectSystemIds(systemIds, 'watched_system', 'system_id')
+  const structureSystemIds = await collectSystemIds('corp_structure')
+  const watchedSystemIds = await collectSystemIds('watched_system')
+  const systemIds = new Set([...structureSystemIds, ...watchedSystemIds])
 
   console.log(
-    `[${TAG}] tracking ${systemIds.size} system(s) (${structureCount} with structures, ${systemIds.size - structureCount} watched only)`
+    `[${TAG}] tracking ${systemIds.size} system(s) (${structureSystemIds.length} with structures, ${systemIds.size - structureSystemIds.length} watched only)`
   )
   if (systemIds.size === 0) return
 
