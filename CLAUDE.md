@@ -203,7 +203,7 @@ The per-character jobs (`character-*` except `character-affiliations`, plus `cor
 | `industry_system_index` | Cost index history (append-only) | `system_id`, `activity`, `cost_index`, `recorded_at` |
 | `universe_name` | Cached id→name | `id` (bigint PK), `name`, `category` |
 | `universe_structure` | Player structure cache | `structure_id`, `name`, `system_id`, `type_id` |
-| `watched_system` | Per-user systems to track indexes for (drives `industry-systems` + `/indexes`) | `user_id`, `system_id` |
+| `watched_system` | Per-user systems to track indexes for (drives `industry-systems` + `/indexes`) | `user_id`, `system_id`, `position` (drag order) |
 | `user_settings` | User preferences | `user_id`, `enabled_scopes[]`, `api_token` (unique), `flags[]` |
 | `invite_code` | Invite-only registration | `code` (unique), `created_by`, `redeemed_by`, `redeemed_at` |
 | `refresh_task` | On-demand job tracking | `batch_id`, `user_id`, `job`, `character_id`, `status` (pending/running/done/error) |
