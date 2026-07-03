@@ -1,9 +1,9 @@
-import { map, pipe, prop, reject } from 'ramda'
+import { forEach, map, pipe, prop, reject } from 'ramda'
 
 import { universeStructure } from '../esi.js'
 import { sudoSupabase } from '../supabase.js'
 import { refreshAccessToken } from '../tokenRefresh.js'
-import { cli } from './lib.js'
+import { cli, forEachSequential } from './lib.js'
 
 const TAG = 'universe-structures'
 const SCOPE = 'esi-universe.read_structures.v1'
@@ -16,6 +16,23 @@ const STRUCTURE_ID_FLOOR = 100_000_000_000
 // PostgREST caps a single select; page through character_asset_over_time so a
 // large hangar doesn't silently truncate the candidate/own-item sets.
 const ASSET_PAGE = 1000
+
+// Order by the primary key so range paging is stable: PostgREST gives no row
+// order without an explicit sort, so an unordered .range() can skip or repeat
+// rows across pages and silently drop a structure from the candidate set. The
+// assets extract pages the same table and orders by id for exactly this reason.
+const fetchAssetLocationRows = async (from = 0) => {
+  const { data: rows, error: assetsErr } = await sudoSupabase
+    .from('character_asset_over_time')
+    .select('item_id, location_id')
+    .eq('is_current', true)
+    .order('id', { ascending: true })
+    .range(from, from + ASSET_PAGE - 1)
+  if (assetsErr) throw assetsErr
+  const page = rows ?? []
+  if (page.length < ASSET_PAGE) return page
+  return [...page, ...(await fetchAssetLocationRows(from + ASSET_PAGE))]
+}
 
 // GET /universe/structures/{id} → universe_structure. Resolves and caches the
 // names/systems of the player structures characters hold assets in. Candidates
@@ -48,26 +65,15 @@ export const runUniverseStructures = async () => {
   // to authenticated).
   const itemIds = new Set()
   const locationIds = new Set()
-  for (let from = 0; ; from += ASSET_PAGE) {
-    // Order by the primary key so range paging is stable: PostgREST gives no row
-    // order without an explicit sort, so an unordered .range() can skip or repeat
-    // rows across pages and silently drop a structure from the candidate set. The
-    // assets extract pages the same table and orders by id for exactly this reason.
-    const { data: rows, error: assetsErr } = await sudoSupabase
-      .from('character_asset_over_time')
-      .select('item_id, location_id')
-      .eq('is_current', true)
-      .order('id', { ascending: true })
-      .range(from, from + ASSET_PAGE - 1)
-    if (assetsErr) throw assetsErr
-    if (!rows || rows.length === 0) break
-    for (const r of rows) {
+  forEach(
+    (r) => {
       itemIds.add(Number(r.item_id))
       const id = Number(r.location_id)
       if (Number.isFinite(id) && id >= STRUCTURE_ID_FLOOR) locationIds.add(id)
-    }
-    if (rows.length < ASSET_PAGE) break
-  }
+    },
+    await fetchAssetLocationRows()
+  )
+
   const candidates = reject((id) => itemIds.has(id) || resolved.has(id), [...locationIds])
   console.log(`[${TAG}] ${candidates.length} candidate player structure(s) to resolve`)
   if (candidates.length === 0) return
@@ -89,29 +95,34 @@ export const runUniverseStructures = async () => {
     return access
   }
 
-  let upserted = 0
-  for (const structureID of candidates) {
-    let info = null
-    let lastError
-    for (const tokenRow of tokens) {
-      const access = await getAccess(tokenRow)
-      if (!access) continue
-      try {
-        info = await universeStructure(access, structureID)
-        break
-      } catch (e) {
-        // Usually 403 = this character can't dock here; another linked character
-        // might, so try the next token before giving up on this structure.
-        lastError = e
-      }
+  // Try resolving `structureID` against tokens in order, stopping at the first
+  // one that succeeds. `lastError` carries the most recent failure forward so a
+  // structure nobody can resolve still reports why.
+  const resolveAgainstTokens = async (structureID, remainingTokens, lastError) => {
+    if (remainingTokens.length === 0) return { info: null, lastError }
+    const [tokenRow, ...rest] = remainingTokens
+    const access = await getAccess(tokenRow)
+    if (!access) return resolveAgainstTokens(structureID, rest, lastError)
+    try {
+      const info = await universeStructure(access, structureID)
+      return { info, lastError }
+    } catch (e) {
+      // Usually 403 = this character can't dock here; another linked character
+      // might, so try the next token before giving up on this structure.
+      return resolveAgainstTokens(structureID, rest, e)
     }
+  }
+
+  let upserted = 0
+  await forEachSequential(candidates, async (structureID) => {
+    const { info, lastError } = await resolveAgainstTokens(structureID, tokens, undefined)
     if (!info) {
       // No linked character can resolve it (e.g. nobody has docking access). Don't
       // cache — a later pass may succeed if access is granted.
       console.warn(
         `[${TAG}] structure ${structureID} unresolved by any token: ${lastError?.message ?? 'no scoped token'}`
       )
-      continue
+      return
     }
     const { error: upErr } = await sudoSupabase.from('universe_structure').upsert(
       {
@@ -125,11 +136,11 @@ export const runUniverseStructures = async () => {
     )
     if (upErr) {
       console.warn(`[${TAG}] structure ${structureID} upsert failed: ${upErr.message}`)
-      continue
+      return
     }
     resolved.add(structureID)
     upserted += 1
-  }
+  })
   console.log(`[${TAG}] resolved ${upserted} player structure name(s)`)
 }
 

@@ -1,8 +1,8 @@
-import { filter, identity, juxt, map, pipe, prop, splitEvery } from 'ramda'
+import { filter, forEach, identity, juxt, map, pipe, prop, reduce, splitEvery } from 'ramda'
 
 import { assets, assetNames } from '../esi.js'
 import { sudoSupabase } from '../supabase.js'
-import { cli, fetchAllPages, forEachCharacter } from './lib.js'
+import { cli, fetchAllPages, forEachCharacter, forEachSequential } from './lib.js'
 
 const TAG = 'character-assets'
 const SCOPE = 'esi-assets.read_assets.v1'
@@ -34,15 +34,35 @@ const signature = (a) =>
 const fetchNames = async (access_token, characterID, fetched) => {
   const ids = map(pipe(prop('item_id'), Number), filter(prop('is_singleton'), fetched))
   const names = new Map()
-  for (const part of splitEvery(1000, ids)) {
+  await forEachSequential(splitEvery(1000, ids), async (part) => {
     try {
       const rows = await assetNames(access_token, characterID, part)
-      for (const r of rows ?? []) names.set(Number(r.item_id), r.name && r.name !== 'None' ? r.name : null)
+      forEach((r) => names.set(Number(r.item_id), r.name && r.name !== 'None' ? r.name : null), rows ?? [])
     } catch (e) {
       console.error(`[${TAG}] assetNames failed for ${characterID}: ${e?.message}`)
     }
-  }
+  })
   return names
+}
+
+// PostgREST caps a single select; page through every open row so a large
+// hangar doesn't silently truncate the "current" set. Reading a truncated set
+// makes the un-read items look new, so they'd be re-inserted and collide with
+// their existing current row on character_asset_over_time_current_item_idx.
+const PAGE = 1000
+
+const fetchCurrentRows = async (character_id, cols, from = 0) => {
+  const { data, error } = await sudoSupabase
+    .from('character_asset_over_time')
+    .select(cols)
+    .eq('character_id', character_id)
+    .eq('is_current', true)
+    .order('id', { ascending: true })
+    .range(from, from + PAGE - 1)
+  if (error) throw error
+  const page = data ?? []
+  if (page.length < PAGE) return page
+  return [...page, ...(await fetchCurrentRows(character_id, cols, from + PAGE))]
 }
 
 // Reconcile the freshly fetched assets against the character's current (open)
@@ -51,25 +71,7 @@ const fetchNames = async (access_token, characterID, fetched) => {
 const reconcile = async (character_id, fetched) => {
   const cols =
     'id, item_id, type_id, location_id, location_flag, location_type, quantity, is_singleton, is_blueprint_copy, name'
-  // Page through every open row: PostgREST caps a select at the API "Max rows"
-  // limit (1000), but a character can hold tens of thousands of items. Reading a
-  // truncated set makes the un-read items look new, so they'd be re-inserted and
-  // collide with their existing current row on character_asset_over_time_current_item_idx.
-  const PAGE = 1000
-  const current = []
-  for (let from = 0; ; from += PAGE) {
-    const { data, error } = await sudoSupabase
-      .from('character_asset_over_time')
-      .select(cols)
-      .eq('character_id', character_id)
-      .eq('is_current', true)
-      .order('id', { ascending: true })
-      .range(from, from + PAGE - 1)
-    if (error) throw error
-    if (!data || data.length === 0) break
-    current.push(...data)
-    if (data.length < PAGE) break
-  }
+  const current = await fetchCurrentRows(character_id, cols)
 
   const byItemId = map(juxt([pipe(prop('item_id'), Number), identity]))
   const currentByItem = new Map(byItemId(current))
@@ -77,60 +79,71 @@ const reconcile = async (character_id, fetched) => {
   // ESI can return the same item twice across pages if assets shift mid-fetch;
   // collapse to one entry per item so we never queue two inserts for it.
   const fetchedByItem = new Map(byItemId(fetched))
-  fetched = [...fetchedByItem.values()]
 
   const now = new Date().toISOString()
-  const touchIds = [] // unchanged: bump last_seen_at on the open row
-  const closeIds = [] // changed or gone: close the old open row
-  const inserts = [] // changed or new: open a fresh version
 
-  for (const a of fetched) {
-    const cur = currentByItem.get(Number(a.item_id))
-    if (cur && signature(cur) === signature(a)) {
-      touchIds.push(cur.id)
-    } else {
-      if (cur) closeIds.push(cur.id)
-      // first_seen_at is left to its `default now()` so it marks this version's debut.
-      inserts.push({
-        item_id: a.item_id,
-        character_id,
-        type_id: a.type_id,
-        location_id: a.location_id ?? null,
-        location_flag: a.location_flag ?? null,
-        location_type: a.location_type ?? null,
-        quantity: a.quantity ?? null,
-        is_singleton: a.is_singleton ?? null,
-        is_blueprint_copy: !!a.is_blueprint_copy,
-        last_seen_at: now,
-        name: a.name ?? null,
-      })
-    }
-    currentByItem.delete(Number(a.item_id))
-  }
+  // Classify each fetched item against its current row: unchanged (touch),
+  // changed (close + insert), or new (insert only). Built with a plain local
+  // accumulator mutated via push — a character can hold tens of thousands of
+  // items, and rebuilding immutable arrays on every iteration here would turn
+  // an O(n) pass into O(n²).
+  const { touchIds, closeIds, inserts } = reduce(
+    (acc, a) => {
+      const cur = currentByItem.get(Number(a.item_id))
+      if (cur && signature(cur) === signature(a)) {
+        acc.touchIds.push(cur.id)
+      } else {
+        if (cur) acc.closeIds.push(cur.id)
+        // first_seen_at is left to its `default now()` so it marks this version's debut.
+        acc.inserts.push({
+          item_id: a.item_id,
+          character_id,
+          type_id: a.type_id,
+          location_id: a.location_id ?? null,
+          location_flag: a.location_flag ?? null,
+          location_type: a.location_type ?? null,
+          quantity: a.quantity ?? null,
+          is_singleton: a.is_singleton ?? null,
+          is_blueprint_copy: !!a.is_blueprint_copy,
+          last_seen_at: now,
+          name: a.name ?? null,
+        })
+      }
+      return acc
+    },
+    { touchIds: [], closeIds: [], inserts: [] },
+    [...fetchedByItem.values()]
+  )
+
   // Anything still open but not seen this run has left the character's assets.
-  for (const cur of currentByItem.values()) closeIds.push(cur.id)
+  const fetchedIds = new Set(fetchedByItem.keys())
+  const vanishedIds = pipe(
+    filter((cur) => !fetchedIds.has(Number(cur.item_id))),
+    map(prop('id'))
+  )([...currentByItem.values()])
+  const allCloseIds = [...closeIds, ...vanishedIds]
 
-  for (const ids of splitEvery(200, touchIds)) {
+  await forEachSequential(splitEvery(200, touchIds), async (ids) => {
     const { error: touchErr } = await sudoSupabase
       .from('character_asset_over_time')
       .update({ last_seen_at: now })
       .in('id', ids)
     if (touchErr) throw touchErr
-  }
+  })
   // Close before inserting so the unique-current-per-item index never collides.
-  for (const ids of splitEvery(200, closeIds)) {
+  await forEachSequential(splitEvery(200, allCloseIds), async (ids) => {
     const { error: closeErr } = await sudoSupabase
       .from('character_asset_over_time')
       .update({ is_current: false })
       .in('id', ids)
     if (closeErr) throw closeErr
-  }
-  for (const rows of splitEvery(1000, inserts)) {
+  })
+  await forEachSequential(splitEvery(1000, inserts), async (rows) => {
     const { error: insertErr } = await sudoSupabase.from('character_asset_over_time').insert(rows)
     if (insertErr) throw insertErr
-  }
+  })
 
-  return { touched: touchIds.length, opened: inserts.length, closed: closeIds.length }
+  return { touched: touchIds.length, opened: inserts.length, closed: allCloseIds.length }
 }
 
 export const runCharacterAssets = ({ characterIds } = {}) =>

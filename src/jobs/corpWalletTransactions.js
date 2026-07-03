@@ -1,6 +1,6 @@
 import { corpTransactions } from '../esi.js'
 import { sudoSupabase } from '../supabase.js'
-import { cli, forEachCorporation } from './lib.js'
+import { cli, forEachCorporation, forEachSequential } from './lib.js'
 
 const TAG = 'corp-wallet-transactions'
 const SCOPE = 'esi-wallet.read_corporation_wallets.v1'
@@ -20,12 +20,12 @@ export const runCorpWalletTransactions = ({ characterIds } = {}) =>
     TAG,
     { scope: SCOPE, characterIds },
     async ({ access_token, corporation_id, character_id, ctx }) => {
-      for (const division of WALLET_DIVISIONS) {
+      await forEachSequential(WALLET_DIVISIONS, async (division) => {
         try {
           const txns = await corpTransactions(access_token, corporation_id, division)
           if (!Array.isArray(txns) || txns.length === 0) {
             console.log(`[${TAG}] ${ctx}: corp ${corporation_id} div ${division} 0 transactions`)
-            continue
+            return
           }
           const rows = txns.map((t) => ({
             transaction_id: t.transaction_id,
@@ -49,7 +49,7 @@ export const runCorpWalletTransactions = ({ characterIds } = {}) =>
         } catch (e) {
           console.error(`[${TAG}] ${ctx}: corp ${corporation_id} div ${division} FAILED message=${e?.message}`)
         }
-      }
+      })
     }
   )
 

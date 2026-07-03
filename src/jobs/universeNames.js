@@ -4,7 +4,7 @@ import {
   resolveCorpStructureSystemNames,
   resolveKnownCorpNames,
 } from '../resolveNames.js'
-import { cli } from './lib.js'
+import { cli, forEachSequential } from './lib.js'
 
 const TAG = 'universe-names'
 
@@ -22,14 +22,14 @@ export const runUniverseNames = async () => {
     ['corp structure systems', resolveCorpStructureSystemNames],
   ]
   let failed = 0
-  for (const [what, resolve] of resolvers) {
+  await forEachSequential(resolvers, async ([what, resolve]) => {
     try {
       await resolve()
     } catch (e) {
       failed += 1
       console.error(`[${TAG}] ${what} resolution FAILED message=${e?.message}`)
     }
-  }
+  })
   if (failed === resolvers.length) throw new Error(`[${TAG}] every resolver failed`)
 }
 
