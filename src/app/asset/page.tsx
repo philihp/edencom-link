@@ -82,11 +82,21 @@ const Locations = async () => {
   // Node and walking the location_id chains here timed the page out. The
   // *_asset_location_summary() functions do the walk in Postgres and return one
   // small row per location/owner pair instead (RLS still scopes character rows
-  // to us and corp rows to corps we have a registered character in).
-  const [{ data: characterSummary }, { data: corpSummary }, owners] = await Promise.all([
+  // to us and corp rows to corps we have a registered character in). The
+  // "last refreshed" heartbeat doesn't depend on any of this, so it's fetched
+  // in the same batch instead of after everything else resolves.
+  const [{ data: characterSummary }, { data: corpSummary }, owners, { data: lastRun }] = await Promise.all([
     supabase.rpc('character_asset_location_summary'),
     supabase.rpc('corp_asset_location_summary'),
     fetchOwners(),
+    supabase
+      .from('heartbeat')
+      .select('ended_at, run_url')
+      .eq('job', 'character-assets')
+      .not('ended_at', 'is', null)
+      .order('ended_at', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
   ])
 
   const summary: SummaryRow[] = [
@@ -120,10 +130,12 @@ const Locations = async () => {
   // system itself.
   const locationIds = filter(Number.isFinite, map(Number, [...byLocation.keys()]))
 
-  const { data: corpStructures } = await supabase.from('corp_structure').select('structure_id, name, system_id')
-  const { data: playerStructures } = locationIds.length
-    ? await supabase.from('universe_structure').select('structure_id, name, system_id').in('structure_id', locationIds)
-    : { data: [] }
+  const [{ data: corpStructures }, { data: playerStructures }] = await Promise.all([
+    supabase.from('corp_structure').select('structure_id, name, system_id'),
+    locationIds.length
+      ? supabase.from('universe_structure').select('structure_id, name, system_id').in('structure_id', locationIds)
+      : Promise.resolve({ data: [] }),
+  ])
 
   // Own-corp structures override the ESI-resolved cache (later entries win).
   const byStructureId = (list: Structure[]): [string, Structure][] => map((s) => [String(s.structure_id), s], list)
@@ -188,18 +200,6 @@ const Locations = async () => {
     }),
     [...byLocation.values()]
   )
-
-  // When the Assets background job last finished. Each scheduled run writes a
-  // public.heartbeat row stamped with ended_at and a link to the workflow run; we
-  // read back the most recent completed one.
-  const { data: lastRun } = await supabase
-    .from('heartbeat')
-    .select('ended_at, run_url')
-    .eq('job', 'character-assets')
-    .not('ended_at', 'is', null)
-    .order('ended_at', { ascending: false })
-    .limit(1)
-    .maybeSingle()
 
   return (
     <>
