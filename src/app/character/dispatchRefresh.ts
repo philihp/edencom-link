@@ -3,13 +3,14 @@ import { randomUUID } from 'node:crypto'
 // The per-character ESI extracts a refresh fans out, one queue message per
 // character each. Each job is named after the ESI endpoint it extracts.
 //
-// The daily corp jobs (corp-structures, corp-assets, corp-wallet-journal,
-// corp-industry-jobs) are deliberately NOT here: they do whole-corp work that a
-// per-character fan-out would just redo once per character, and the heavier ones
-// blow past the 60s queue function limit. They run on their own GitHub Actions
-// crons instead.
+// The daily corp jobs (corp-structures, corp-assets, corp-blueprints,
+// corp-wallet-journal, corp-industry-jobs) are deliberately NOT here: they do
+// whole-corp work that a per-character fan-out would just redo once per
+// character, and the heavier ones blow past the 60s queue function limit.
+// They run on their own GitHub Actions crons instead.
 const PER_CHARACTER_JOBS = [
   'character-assets',
+  'character-blueprints',
   'character-orders',
   'character-wallet',
   'character-wallet-transactions',
