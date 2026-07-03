@@ -1,7 +1,9 @@
 import { redirect } from 'next/navigation'
+import { filter } from 'ramda'
 
 import { createClient } from '@/utils/supabase/server'
 import { fetchOwners } from '../owners'
+import { fetchStationNames } from '../stationNames'
 import { fetchTypeNames } from '../typeNames'
 import { ActiveJobs, type Job } from './activeJobs'
 
@@ -57,13 +59,31 @@ const IndustryPage = async () => {
     (a, b) => new Date(a.end_date).getTime() - new Date(b.end_date).getTime()
   )
 
-  // Map structure (station) ids to their names so the jobs table can link to them.
-  const { data: structures } = await supabase.from('corp_structure').select('structure_id, name')
-  const stationNames: Record<string, string> = Object.fromEntries(
-    ((structures ?? []) as Array<{ structure_id: number | string; name: string | null }>)
+  // Map job station/facility ids to their names so the jobs table can link to
+  // them. Structures come from two caches — our own corp's (corp_structure,
+  // which wins on overlap) and foreign player structures resolved by ESI
+  // (universe_structure) — while NPC stations resolve via the universe_name
+  // cache. Mirrors the location-name resolution on the assets page.
+  const jobLocationIds = filter(
+    Number.isFinite,
+    jobRows.map((j) => Number(j.station_id ?? j.facility_id))
+  )
+  const [{ data: corpStructures }, { data: playerStructures }, npcStationNames] = await Promise.all([
+    supabase.from('corp_structure').select('structure_id, name'),
+    jobLocationIds.length
+      ? supabase.from('universe_structure').select('structure_id, name').in('structure_id', jobLocationIds)
+      : Promise.resolve({ data: [] }),
+    fetchStationNames(jobLocationIds),
+  ])
+  const structureNames: Record<string, string> = Object.fromEntries(
+    [
+      ...((playerStructures ?? []) as Array<{ structure_id: number | string; name: string | null }>),
+      ...((corpStructures ?? []) as Array<{ structure_id: number | string; name: string | null }>),
+    ]
       .filter((s) => s.name != null)
       .map((s) => [String(s.structure_id), s.name as string])
   )
+  const stationNames: Record<string, string> = { ...npcStationNames, ...structureNames }
 
   const typeNamesPromise = fetchTypeNames(
     jobRows.flatMap((j) => (j.product_type_id != null ? [Number(j.product_type_id)] : []))
