@@ -115,6 +115,7 @@ All functions take `(accessToken, id, ...)` unless noted. Returns raw ESI respon
 - `resolveKnownCorpNames()` — resolve+cache corp names seen in `corp_wallet_transaction`/`character_affiliation`/`corp_structure`
 - `resolveCorpStructureSystemNames()` — resolve system IDs for corp structures
 - `resolveAssetStationNames()` — resolve+cache NPC station names (location_type 'station' in assets) into `universe_name`
+- `resolveAssetSystemNames()` — resolve+cache solar system names for assets floating directly in space (location_type 'solar_system') into `universe_name`
 
 ### `src/utils/apiToken.ts`
 - `resolvePlayer(token: string)` — look up `user_settings.api_token`, return `{ supabase, characterIds }` for Sheets API endpoints
