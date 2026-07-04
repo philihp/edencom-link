@@ -125,6 +125,7 @@ const Locations = async () => {
 
   return (
     <>
+      <AssetSearchForm />
       <AssetsTable locations={locations} owners={owners} />
       <p className={styles.lastRun}>
         Assets last refreshed:{' '}
@@ -136,7 +137,6 @@ const Locations = async () => {
           <DateTime value={lastRun?.ended_at} fallback="never" />
         )}
       </p>
-      <AssetSearchForm />
     </>
   )
 }

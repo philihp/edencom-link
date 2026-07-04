@@ -171,6 +171,64 @@ export const resolveAssetStationNames = async () => {
   console.log(`[names] upserted ${rows.length} station name(s)`)
 }
 
+// Page through live asset rows in `table` located directly in a solar system
+// (location_type 'solar_system' — the item is floating in space, not docked
+// anywhere), collecting distinct location_id values. Shared by
+// resolveAssetSystemNames for the character/corp asset tables, which are
+// otherwise identical here. Order by the primary key so range paging is
+// stable (an unordered .range() can skip rows).
+const collectFloatingSystemIds = async (table, ids) => {
+  const PAGE = 1000
+  for (let from = 0; ; from += PAGE) {
+    const { data: rows, error } = await sudoSupabase
+      .from(table)
+      .select('location_id')
+      .eq('is_current', true)
+      .eq('location_type', 'solar_system')
+      .order('id', { ascending: true })
+      .range(from, from + PAGE - 1)
+    if (error) throw error
+    if (!rows || rows.length === 0) break
+    for (const r of rows) if (r.location_id != null) ids.add(Number(r.location_id))
+    if (rows.length < PAGE) break
+  }
+}
+
+// Cache (in universe_name) the name of every solar system a character or corp
+// asset is currently floating in directly (location_type 'solar_system' — no
+// station/structure to resolve a name from otherwise). Only resolves ids
+// missing from universe_name, so steady-state runs do nothing. The assets
+// pages read universe_name to label these roots instead of falling back to a
+// raw system_id.
+export const resolveAssetSystemNames = async () => {
+  const ids = new Set()
+  await collectFloatingSystemIds('character_asset_over_time', ids)
+  await collectFloatingSystemIds('corp_asset_over_time', ids)
+
+  const { data: known, error: knownErr } = await sudoSupabase
+    .from('universe_name')
+    .select('id')
+    .eq('category', 'solar_system')
+  if (knownErr) throw knownErr
+  const knownIds = knownIdSet(known ?? [])
+
+  const toResolve = filter((n) => Number.isFinite(n) && n > 0 && !knownIds.has(n), [...ids])
+  console.log(`[names] asset systems: ${toResolve.length} to resolve`)
+  if (toResolve.length === 0) return
+
+  const resolved = await resolveAllIds(toResolve)
+
+  if (resolved.length === 0) {
+    console.log('[names] no asset system names resolved')
+    return
+  }
+
+  const rows = map(toNameRow, resolved)
+  const { error: upErr } = await sudoSupabase.from('universe_name').upsert(rows, { onConflict: 'id' })
+  if (upErr) throw upErr
+  console.log(`[names] upserted ${rows.length} asset system name(s)`)
+}
+
 // Cache (in universe_name) the name of every solar system we currently have a
 // corp structure in. Only resolves ids missing from universe_name, so
 // steady-state runs do nothing. The structures page reads universe_name to label
