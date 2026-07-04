@@ -9,7 +9,22 @@ const Header = async () => {
   const {
     data: { user },
   } = await supabase.auth.getUser()
-  const userId = user?.email ?? undefined
+
+  // Label the signed-in user by their main character, falling back to their
+  // earliest one, and to their email if they haven't registered a character yet.
+  // Mirrors the inviter lookup on /account/invite.
+  let displayName: string | undefined
+  if (user) {
+    const { data: mainCharacter } = await supabase
+      .from('registration')
+      .select('name')
+      .order('is_main', { ascending: false })
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .maybeSingle()
+    displayName = mainCharacter?.name ?? user.email ?? undefined
+  }
+
   const showIndexes = await indexesFlag()
   return (
     <header>
@@ -18,11 +33,11 @@ const Header = async () => {
           <Link href="/" className={styles.brand}>
             Edencom Link
           </Link>
-          {userId && <span className={styles.user}>{userId}</span>}
+          {displayName && <span className={styles.user}>{displayName}</span>}
         </div>
         <nav className={styles.nav}>
           <span className={styles.bracket}>[</span>
-          {!userId ? (
+          {!user ? (
             <>
               <Link href="/account/login">login</Link>
               <span className={styles.sep}>|</span>
