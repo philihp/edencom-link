@@ -80,6 +80,12 @@ export const esiScopes: EsiScope[] = [
     without: 'corporation blueprints will not be tracked from this character.',
   },
   {
+    scope: 'esi-industry.read_corporation_jobs.v1',
+    name: 'Corporation industry jobs',
+    why: 'Tracks your corporation’s manufacturing, research, invention and reaction jobs, and when they finish. Requires the Factory Manager role in game.',
+    without: 'industry jobs run against corporation blueprints or facilities will not be tracked.',
+  },
+  {
     scope: 'esi-universe.read_structures.v1',
     name: 'Structure names',
     why: 'Resolves the names of player-owned Upwell structures where this character keeps assets, so they show a name instead of a raw ID.',
