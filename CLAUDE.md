@@ -179,7 +179,7 @@ One job per ESI endpoint. The npm script, queue job name, and heartbeat job labe
 | `corp-structures` | `/corporations/{id}/structures/` | `corp_structure` | 09:17 daily |
 | `corp-assets` | `/corporations/{id}/assets/` | `corp_asset_over_time`, `corp_structure_rig` | 09:27 daily |
 | `corp-blueprints` | `/corporations/{id}/blueprints/` | `corp_blueprint_over_time` | 09:07 daily |
-| `corp-wallet-journal` | `/corporations/{id}/wallets/{division}/journal/` | `corp_wallet_journal` | 09:37 daily |
+| `corp-wallet-journal` | `/corporations/{id}/wallets/{division}/journal/` | `corp_wallet_journal` | hourly `:37` |
 | `corp-wallet-transactions` | `/corporations/{id}/wallets/{division}/transactions/` | `corp_wallet_transaction` | hourly `:50` |
 | `corp-industry-jobs` | `/corporations/{id}/industry/jobs/` | `corp_industry_job` | 09:47 daily |
 | `industry-systems` | `/industry/systems/` | `industry_system_index` (systems with structures ∪ user-watched systems) | hourly `:10` |

@@ -3,7 +3,7 @@ name: Corp Wallet Journal
 on:
   workflow_dispatch:
   schedule:
-    - cron: '37 9 * * *'
+    - cron: '37 * * * *'
 
 jobs:
   refresh:
