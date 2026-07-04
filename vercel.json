@@ -2,8 +2,68 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "crons": [
     {
+      "path": "/api/cron/character-orders",
+      "schedule": "24 * * * *"
+    },
+    {
+      "path": "/api/cron/character-assets",
+      "schedule": "26 * * * *"
+    },
+    {
+      "path": "/api/cron/character-blueprints",
+      "schedule": "28 * * * *"
+    },
+    {
+      "path": "/api/cron/corp-wallet-journal",
+      "schedule": "37 * * * *"
+    },
+    {
+      "path": "/api/cron/character-wallet",
+      "schedule": "44 * * * *"
+    },
+    {
+      "path": "/api/cron/character-wallet-transactions",
+      "schedule": "46 * * * *"
+    },
+    {
+      "path": "/api/cron/corp-industry-jobs",
+      "schedule": "47 * * * *"
+    },
+    {
+      "path": "/api/cron/character-industry-jobs",
+      "schedule": "48 * * * *"
+    },
+    {
+      "path": "/api/cron/corp-wallet-transactions",
+      "schedule": "50 * * * *"
+    },
+    {
+      "path": "/api/cron/universe-names",
+      "schedule": "58 * * * *"
+    },
+    {
       "path": "/api/cron/industry-systems",
       "schedule": "10 * * * *"
+    },
+    {
+      "path": "/api/cron/corp-blueprints",
+      "schedule": "7 9 * * *"
+    },
+    {
+      "path": "/api/cron/corp-structures",
+      "schedule": "17 9 * * *"
+    },
+    {
+      "path": "/api/cron/corp-assets",
+      "schedule": "27 9 * * *"
+    },
+    {
+      "path": "/api/cron/universe-structures",
+      "schedule": "57 9 * * *"
+    },
+    {
+      "path": "/api/cron/character-affiliations",
+      "schedule": "41 11 * * *"
     }
   ],
   "functions": {

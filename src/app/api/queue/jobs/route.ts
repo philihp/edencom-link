@@ -4,9 +4,11 @@ import { handleCallback } from '@/utils/queue'
 
 export const runtime = 'nodejs'
 // 60s is the max the current Vercel plan allows. Per-character fan-out keeps each
-// invocation small enough to fit; the account-wide jobs are a single batch each and
-// GitHub Actions remains the safety net if one ever exceeds this on large datasets.
-export const maxDuration = 60
+// invocation small enough to fit; the account-wide jobs are a single batch each. The
+// whole-corp/whole-universe jobs (corp-structures, corp-blueprints, corp-wallet-journal,
+// universe-structures) aren't fanned out at all — their /api/cron/* routes run them
+// inline instead of going through this consumer, so a large account growing past this
+// limit on one of those is a real risk to watch for via their heartbeat durations.
 
 // One extract job per ESI endpoint, named after that endpoint. The per-character
 // jobs accept { characterIds }; the account-wide ones (characterIds: false) do
