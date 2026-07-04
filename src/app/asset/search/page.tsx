@@ -1,3 +1,4 @@
+import { createShuffle } from 'fast-shuffle'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { prop, uniqBy } from 'ramda'
@@ -15,6 +16,12 @@ import { Quantity } from '../[locationId]/quantity'
 // Above this, the substring is too broad to be a useful item filter (and the
 // search functions below would end up walking a large chunk of the hangar).
 const MAX_TYPES = 100
+
+// Fixed seed so the "too many types" preview shuffle is reproducible across
+// requests rather than changing every page load. createShuffle's returned
+// shuffler carries internal state across calls, so a fresh one is created per
+// request rather than reused from module scope.
+const SHUFFLE_SEED = 20260704
 
 type CharacterSearchRow = {
   item_id: number | string
@@ -69,6 +76,9 @@ const AssetSearchPage = async ({ searchParams }: { searchParams: Promise<{ q?: s
   const matches = searchSdeTypesAll(query)
 
   if (matches.length > MAX_TYPES) {
+    const sample = createShuffle(SHUFFLE_SEED)(matches)
+      .slice(0, 10)
+      .sort((a, b) => a.name.localeCompare(b.name))
     return (
       <>
         <h1>Search Assets</h1>
@@ -76,6 +86,12 @@ const AssetSearchPage = async ({ searchParams }: { searchParams: Promise<{ q?: s
           &quot;{query}&quot; matched {matches.length} item types — that&apos;s too many to search at once. Try a more
           specific term.
         </p>
+        <p>A sample of what matched:</p>
+        <ul>
+          {sample.map((m) => (
+            <li key={m.typeID}>{m.name}</li>
+          ))}
+        </ul>
         <AssetSearchForm initialQuery={query} />
       </>
     )
