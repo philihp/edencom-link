@@ -2,7 +2,7 @@
 
 import { useMemo } from 'react'
 
-import { formatMisk, formatMiskValue } from '../isk'
+import { formatKisk, formatKiskValue } from '../isk'
 import { TypeName } from '../typeName'
 import { bucketSales, topTypesByValue, type Bucket, type TypeTotal } from './aggregate'
 import type { Sale } from './recentSales'
@@ -52,8 +52,8 @@ const TopItems = ({
             <span className={styles.topQty} title={`${it.quantity.toLocaleString('en-US')} sold`}>
               ×{it.quantity.toLocaleString('en-US')}
             </span>
-            <span className={styles.topValue} title={formatMisk(it.total)}>
-              {formatMiskValue(it.total)}
+            <span className={styles.topValue} title={formatKisk(it.total)}>
+              {formatKiskValue(it.total)}
             </span>
           </li>
         ))}
@@ -71,7 +71,7 @@ const bucketTip = (b: Bucket, bucketHours: number) => {
   const start = new Date(b.start)
   // Sub-day buckets need the hour to disambiguate; daily buckets just the date.
   const when = bucketHours < 24 ? start.toISOString().slice(0, 16).replace('T', ' ') : start.toISOString().slice(0, 10)
-  return `${when} — ${formatMisk(b.total)}`
+  return `${when} — ${formatKisk(b.total)}`
 }
 
 const SalesBars = ({ buckets, bucketHours }: { buckets: Bucket[]; bucketHours: number }) => {
@@ -111,7 +111,7 @@ export const MarketOverview = ({ now, sales, windowDays, typeNamesPromise }: Mar
       <TopItems
         wide
         title="Top sellers"
-        subtitle={`per total sales volume (in mISK) over the last ${opt.label}`}
+        subtitle={`per total sales volume (in kISK) over the last ${opt.label}`}
         items={current}
         typeNamesPromise={typeNamesPromise}
       />
