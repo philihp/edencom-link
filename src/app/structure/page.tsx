@@ -2,7 +2,7 @@ import { redirect } from 'next/navigation'
 
 import { createClient } from '@/utils/supabase/server'
 import { DateTime } from '../DateTime'
-import { formatMisk } from '../isk'
+import { formatIsk, formatKisk } from '../isk'
 import { Name, SystemName } from '../names'
 import { fetchSystemNames } from '../systemNames'
 import { fetchTypeNames } from '../typeNames'
@@ -245,7 +245,7 @@ const StructuresPage = async () => {
                   <div className={styles.fields}>
                     <span className={styles.label}>Revenue</span>
                     <span className={`${styles.value} ${styles.num}`}>
-                      {formatMisk(totalByStructure.get(String(s.structure_id)) ?? 0)}
+                      {formatIsk(totalByStructure.get(String(s.structure_id)) ?? 0)}
                     </span>
                     <span className={styles.label}>Type</span>
                     <span className={styles.value}>
@@ -324,9 +324,9 @@ const StructuresPage = async () => {
 
           <div className={styles.footer}>
             <span>Unaccounted tax revenue:</span>
-            <span className={styles.footerValue}>{formatMisk(unaccounted)}</span>
+            <span className={styles.footerValue}>{formatIsk(unaccounted)}</span>
             <span>Clone revenue:</span>
-            <span className={styles.footerValue}>{formatMisk(cloneRevenue)}</span>
+            <span className={styles.footerValue}>{formatKisk(cloneRevenue)}</span>
           </div>
           <p className={styles.unaccountedNote}>
             <em>
@@ -347,7 +347,7 @@ const StructuresPage = async () => {
                         <span>{name}</span>
                         {corp && <span className={styles.payerCorp}>{corp}</span>}
                       </span>
-                      <span className={styles.footerValue}>{formatMisk(amount)}</span>
+                      <span className={styles.footerValue}>{formatIsk(amount)}</span>
                     </span>
                   )
                 })}

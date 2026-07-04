@@ -1,14 +1,25 @@
-// Money in millions of ISK as a bare number, e.g. "1,234". Non-zero amounts that
-// would round down to zero millions are shown as "<1". Use when the "mISK" unit
-// lives elsewhere (e.g. a column header).
-export const formatMiskValue = (raw: string | number | null) => {
-  if (raw === null) return ''
-  const isk = Number(raw)
-  return isk.toLocaleString('en-US', { maximumFractionDigits: 0 })
+// Money in thousands of ISK as a bare number, e.g. "1,234". Use when the "kISK"
+// unit lives elsewhere (e.g. a column header).
+export const formatKiskValue = (raw: string | number | null) => {
+  if (raw === null) return '—'
+  return (Number(raw) / 1_000).toLocaleString('en-US', { maximumFractionDigits: 0 })
 }
 
-// Money shown in millions of ISK with the unit, e.g. "1,234 mISK".
-export const formatMisk = (raw: string | number | null) => {
-  const value = formatMiskValue(raw)
-  return value === '—' ? value : `${value} mISK`
+// Money shown in thousands of ISK with the unit, e.g. "1,234 kISK".
+export const formatKisk = (raw: string | number | null) => {
+  const value = formatKiskValue(raw)
+  return value === '—' ? value : `${value} kISK`
+}
+
+// Money in raw ISK as a bare number, e.g. "1,234". Reserved for structure
+// taxable events (industry job tax), which are kept in ISK rather than kISK.
+export const formatIskValue = (raw: string | number | null) => {
+  if (raw === null) return '—'
+  return Number(raw).toLocaleString('en-US', { maximumFractionDigits: 0 })
+}
+
+// Money shown in raw ISK with the unit, e.g. "1,234 ISK".
+export const formatIsk = (raw: string | number | null) => {
+  const value = formatIskValue(raw)
+  return value === '—' ? value : `${value} ISK`
 }

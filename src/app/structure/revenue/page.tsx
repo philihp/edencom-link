@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation'
 
 import { createClient } from '@/utils/supabase/server'
 import { DateTime } from '../../DateTime'
-import { formatMiskValue } from '../../isk'
+import { formatIskValue } from '../../isk'
 import { Name } from '../../names'
 import { fetchTypeNames } from '../../typeNames'
 import retro from '../../retro.module.css'
@@ -216,7 +216,7 @@ const RevenuePage = async ({ searchParams }: RevenueParams) => {
                 <tr>
                   <th>Timestamp</th>
                   <th>Payer</th>
-                  <th className={retro.num}>Amount (mISK)</th>
+                  <th className={retro.num}>Amount (ISK)</th>
                   <th>Structure</th>
                   <th>Output</th>
                 </tr>
@@ -239,7 +239,7 @@ const RevenuePage = async ({ searchParams }: RevenueParams) => {
                           {payerCorp && <span className={structureStyles.payerCorp}>{payerCorp}</span>}
                         </span>
                       </td>
-                      <td className={retro.num}>{formatMiskValue(entry.amount)}</td>
+                      <td className={retro.num}>{formatIskValue(entry.amount)}</td>
                       <td>
                         {structureId != null ? (
                           <Link href={`/structure/${structureId}`}>
@@ -267,7 +267,7 @@ const RevenuePage = async ({ searchParams }: RevenueParams) => {
                 <tr>
                   <th>Total</th>
                   <th />
-                  <th className={retro.num}>{formatMiskValue(dayTotal)}</th>
+                  <th className={retro.num}>{formatIskValue(dayTotal)}</th>
                   <th />
                   <th />
                 </tr>

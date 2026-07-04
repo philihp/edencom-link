@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import { reduce } from 'ramda'
 
 import { createClient } from '@/utils/supabase/server'
+import { formatKisk } from '../isk'
 import { register, refreshEsi, setMainCharacter } from './actions'
 import MainCharacterForm from './mainCharacterForm'
 import { requiredScopes } from './scopes'
@@ -29,9 +30,6 @@ const CharacterPage = async () => {
     new Map<string, string>(),
     wallets ?? []
   )
-  const formatIsk = (raw: string | number) =>
-    new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(raw))
-
   // If the player has turned off every optional ESI scope, characters they add
   // grant nothing beyond identification, so almost no features will work.
   const enabledScopes = await getEnabledScopes(supabase, data.user.id)
@@ -69,7 +67,7 @@ const CharacterPage = async () => {
                 <div className={styles.name}>{c.name}</div>
                 <div className={styles.meta}>
                   <span className={styles.metaLabel}>ISK:</span>
-                  {latestBalance.has(c.id) ? `${formatIsk(latestBalance.get(c.id)!)} ISK` : '—'}
+                  {latestBalance.has(c.id) ? formatKisk(latestBalance.get(c.id)!) : '—'}
                 </div>
                 <div className={styles.meta}>
                   <span className={styles.metaLabel}>Location:</span>
