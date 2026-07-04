@@ -88,8 +88,8 @@ All functions take `(accessToken, id, ...)` unless noted. Returns raw ESI respon
 - `characterAffiliations(characterIds[])` — bulk character→corp mapping (no auth)
 
 ### `src/jobs/lib.js` — shared extract-job plumbing
-- `forEachCharacter(tag, { scope, characterIds }, handler)` — iterate tokens carrying an ESI scope, refresh each, call handler with `{ access_token, characterID, character_id, name, ctx }`
-- `forEachCorporation(tag, { scope, characterIds }, handler)` — same, deduped to one handler call per corporation; also keeps `registration.corporation_id` fresh (corp-table RLS keys off it)
+- `forEachCharacter(tag, { scope, characterIds, heartbeat = true }, handler)` — iterate tokens carrying an ESI scope, refresh each, call handler with `{ access_token, characterID, character_id, userId, name, ctx }`. Wraps each call in a start/end `heartbeat` row attributed to that character (`character_id`/`user_id`) unless `heartbeat: false` (forEachCorporation passes this to avoid a redundant row)
+- `forEachCorporation(tag, { scope, characterIds }, handler)` — same, deduped to one handler call per corporation; also keeps `registration.corporation_id` fresh (corp-table RLS keys off it). Wraps each call in its own start/end `heartbeat` row attributed to the corp and the character whose token authorized the pull (`corporation_id`/`character_id`/`user_id`)
 - `fetchAllPages(fetchPage)` — drain an x-pages-paginated ESI endpoint
 - `forEachSequential(items, fn)` — the jobs' ramda-based stand-in for `for (const x of items) { await fn(x) }`; runs `fn` once per item in order, awaiting each before the next
 - `cli(import.meta.url, tag, run)` — self-run a job module when invoked directly as a CLI
@@ -97,7 +97,7 @@ All functions take `(accessToken, id, ...)` unless noted. Returns raw ESI respon
 ### `src/supabase.js` — Supabase clients and DB helpers
 - `supabase` — anon client (respects RLS)
 - `sudoSupabase` — service-role client (bypasses RLS; use in cron only)
-- `recordHeartbeat(job, phase, opts)` — write heartbeat row
+- `recordHeartbeat(job, phase, opts)` — write a heartbeat row; `opts.characterId`/`corporationId`/`userId` attribute it to the entity a per-character/per-corp job ran for (omit for whole-job/account-wide runs). The start/end pair upserts onto one row keyed on `job, run_id, run_attempt, owner_key` — `owner_key` is a generated column folding `character_id`/`corporation_id` into a single non-null discriminator so per-entity rows within the same run pair correctly instead of collapsing onto each other
 - `authenticate(token)` — verify user session token
 - `upsertCharacter(characterId, name, ownerId, corporationId)` — insert/update registration row
 - `upsertToken(characterId, accessToken, refreshToken, issuedAt, expiresAt, scope[])` — store OAuth tokens
@@ -223,7 +223,7 @@ The per-character jobs (`character-*` except `character-affiliations`, plus `cor
 | `user_settings` | User preferences | `user_id`, `enabled_scopes[]`, `api_token` (unique), `flags[]` |
 | `invite_code` | Invite-only registration | `code` (unique), `created_by`, `redeemed_by`, `redeemed_at` |
 | `refresh_task` | On-demand job tracking | `batch_id`, `user_id`, `job`, `character_id`, `status` (pending/running/done/error) |
-| `heartbeat` | Cron job monitoring | `job`, `run_id`, `started_at`, `ended_at` |
+| `heartbeat` | Cron job monitoring | `job`, `run_id`, `started_at`, `ended_at`, `duration` (generated), `character_id`, `corporation_id`, `user_id`, `owner_key` (generated) |
 
 Key Postgres functions (callable via RPC or SQL):
 - `character_asset_location_summary()` — aggregate character assets per location

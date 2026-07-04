@@ -40,15 +40,23 @@ const githubRun = () => {
 // two separate steps — once with phase "start" before the job and once with
 // "end" after — so each run is a single row stamped with started_at, ended_at,
 // and a link to the workflow run. The two steps of one GitHub run upsert onto
-// the same row (keyed on job + run id); run locally with no run id, each call is
-// a standalone insert. Returns true on success, false (after logging) on failure
-// so callers can decide whether a failed heartbeat should fail the whole step.
+// the same row (keyed on job + run id + owner_key); run locally with no run id,
+// each call is a standalone insert. Returns true on success, false (after
+// logging) on failure so callers can decide whether a failed heartbeat should
+// fail the whole step.
+//
+// opts.characterId/corporationId/userId attribute the row to the entity a
+// per-character or per-corp job ran for (see forEachCharacter/forEachCorporation
+// in src/jobs/lib.js, which pass these so a run's duration can later be broken
+// down per job/character-or-corp/user rather than just per whole job invocation).
+// Leave them unset for whole-job/account-wide jobs.
 export const recordHeartbeat = async (job, phase = 'end', opts = {}) => {
   // GitHub Actions path: derive run identity from the environment so the two steps
-  // of one workflow run land on a single row. Vercel queue path: the caller passes
-  // an explicit { runId } (and source: 'vercel'), so its start/end pair up the same
-  // way without a GITHUB_RUN_ID. run_id is bigint, so callers pass a bigint-safe id
-  // (not a UUID); a non-null sentinel run_attempt keeps the upsert key fully non-null.
+  // of one workflow run land on a single row. Vercel queue path (and the
+  // per-character/per-corp loops): the caller passes an explicit { runId } (and
+  // source: 'vercel'), so its start/end pair up the same way without a
+  // GITHUB_RUN_ID. run_id is bigint, so callers pass a bigint-safe id (not a
+  // UUID); a non-null sentinel run_attempt keeps the upsert key fully non-null.
   const gh = githubRun()
   const run_id = opts.runId != null ? Number(opts.runId) : gh.run_id
   const run_attempt = opts.runId != null ? 1 : gh.run_attempt
@@ -59,11 +67,16 @@ export const recordHeartbeat = async (job, phase = 'end', opts = {}) => {
     run_id,
     run_attempt,
     run_url,
+    character_id: opts.characterId ?? null,
+    corporation_id: opts.corporationId ?? null,
+    user_id: opts.userId ?? null,
     ...(phase === 'start' ? { started_at: now } : { ended_at: now }),
   }
   const table = sudoSupabase.from('heartbeat')
   const { error } =
-    run_id != null ? await table.upsert(row, { onConflict: 'job,run_id,run_attempt' }) : await table.insert(row)
+    run_id != null
+      ? await table.upsert(row, { onConflict: 'job,run_id,run_attempt,owner_key' })
+      : await table.insert(row)
   if (error) {
     console.error(`[heartbeat] failed to record "${job}" ${phase}:`, error)
     return false

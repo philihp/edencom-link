@@ -111,7 +111,10 @@ export const POST = handleCallback(async (message: Msg) => {
       return
     }
     // Account-wide jobs consume a single whole-job message, so the consumer records
-    // their heartbeat (the per-character producers record their own at enqueue time).
+    // their heartbeat here. Per-character/per-corp jobs record their own instead,
+    // one row per character/corp attributed via character_id/corporation_id/user_id
+    // (see withHeartbeat in src/jobs/lib.js), regardless of whether this queue or a
+    // GitHub Actions cron invoked them.
     const { recordHeartbeat } = await import('@/supabase.js')
     const runId = randomInt(1, 2 ** 48)
     await recordHeartbeat(job, 'start', { runId, source: 'vercel' })
