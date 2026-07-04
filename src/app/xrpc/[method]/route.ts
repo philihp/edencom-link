@@ -11,7 +11,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 const MESSAGE =
-  'This host is not an AT Protocol PDS. edencom.link (including pds.edencom.link) previously ran a PDS, which has been permanently decommissioned; please remove it from your crawl/relay list.'
+  'This host, edencom.link (including pds.edencom.link) previously ran an ATProto PDS. It might again in the future, but is currently decommissioned; please remove it from your crawl/relay list.'
 
 const swallow = async (request: NextRequest, params: Promise<{ method: string }>) => {
   const { method } = await params
