@@ -87,6 +87,18 @@ export const Sparkline = ({ values, liveCount = values.length, label, updatedAt 
         role="img"
         aria-label={label ? `${label}, ${trend}` : trend}
       >
+        {/* Midpoint reference line, drawn behind the data so a perfectly flat
+            line (e.g. an index that never moves) sits right on top of it and
+            hides it rather than overlapping in a visible way. */}
+        <line
+          x1={pad}
+          y1={h / 2}
+          x2={w - pad}
+          y2={h / 2}
+          stroke="var(--line)"
+          strokeWidth={1}
+          vectorEffect="non-scaling-stroke"
+        />
         {live.length >= 2 && (
           <polyline
             points={live.join(' ')}
