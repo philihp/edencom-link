@@ -35,6 +35,9 @@ importers:
       eve-industry:
         specifier: 0.1.0
         version: 0.1.0
+      fast-shuffle:
+        specifier: ^6.2.0
+        version: 6.2.0
       flags:
         specifier: ^4.2.0
         version: 4.2.0(next@16.2.9(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
@@ -815,6 +818,10 @@ packages:
   fast-levenshtein@2.0.6:
     resolution: {integrity: sha512-DCXu6Ifhqcks7TZKY3Hxp3y6qphY5SJZmrWMDrKcERSOXWQdMhU9Ig/PYrzyw/ul9jOIyh0N4M0tbC5hodg8dw==}
 
+  fast-shuffle@6.2.0:
+    resolution: {integrity: sha512-Y7MexltTgkdI2UzeRx7zVIWiHSuQ41dD+2PPwukkIZW2b1wCSaciISyKNSKFVW6ImkH+QQivlDsmY552EO22Ig==}
+    engines: {node: '>=14'}
+
   fdir@6.5.0:
     resolution: {integrity: sha512-tIbYtZbucOs0BRGqPJkshJUYdL+SDH7dVM8gjy+ERp3WAUjLEFJE+02kanyHtwjWOnwrKYBiwAmM0p4kLJAnXg==}
     engines: {node: '>=12.0.0'}
@@ -1117,6 +1124,10 @@ packages:
   path-key@3.1.1:
     resolution: {integrity: sha512-ojmeN0qd+y0jszEtoY48r0Peq5dwMEkIlCOu6Q5f41lfkswXuKtYrhgoTpLnyIcHm24Uhqx+5Tqm2InSwLhE6Q==}
     engines: {node: '>=8'}
+
+  pcg@3.0.0:
+    resolution: {integrity: sha512-lHETDr3c//q4xs0iZk9+LRFgmvjLtaUDIE3ztE2KN4IhwyHLcJ3H5VBv93SGop1XHZalC1UFSwoJepoZSMSVLQ==}
+    engines: {node: '>=18'}
 
   picocolors@1.1.1:
     resolution: {integrity: sha512-xceH2snhtb5M9liqDsmEw56le376mTZkEX/jEb/RxNFyegNul7eNslCXP9FDj/Lcu0X8KEyMceP2ntpaHrDEVA==}
@@ -1957,6 +1968,10 @@ snapshots:
 
   fast-levenshtein@2.0.6: {}
 
+  fast-shuffle@6.2.0:
+    dependencies:
+      pcg: 3.0.0
+
   fdir@6.5.0(picomatch@4.0.4):
     optionalDependencies:
       picomatch: 4.0.4
@@ -2230,6 +2245,8 @@ snapshots:
   path-exists@4.0.0: {}
 
   path-key@3.1.1: {}
+
+  pcg@3.0.0: {}
 
   picocolors@1.1.1: {}
 
