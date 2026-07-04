@@ -1,5 +1,11 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "crons": [
+    {
+      "path": "/api/cron/industry-systems",
+      "schedule": "10 * * * *"
+    }
+  ],
   "functions": {
     "src/app/api/queue/jobs/route.ts": {
       "maxDuration": 60,
