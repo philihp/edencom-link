@@ -23,7 +23,7 @@ EVE Online hangar/wallet/industry tracker. Package name `edencom-link` (private)
 - `src/app/` — Next.js App Router. Page routes: `account/`, `asset/`, `character/`, `industry/`, `market/`, `structure/`, plus `theme/`, `layout/` (Header/Footer), `private/`. Shared helpers at top level: `typeNames.ts`/`typeName.tsx`, `systemNames.ts`, `stationNames.ts`, `isk.ts`, `DateTime.tsx`.
 - `src/` (Node cron/scripts): `esi.js` (ESI API wrapper), `supabase.js` (clients — anon + `sudoSupabase` service role that bypasses RLS), `resolveNames.js`, `tokenRefresh.js`/`refresh.js`, `proxy.ts`, `utils/`. The extract jobs live under `src/jobs/` — one file per ESI endpoint (`characterAssets.js`, `corpStructures.js`, …) plus the shared plumbing in `src/jobs/lib.js` (`forEachCharacter`/`forEachCorporation` token loops, `fetchAllPages`, `forEachSequential`, `cli`). Each job exports a `run*` function (callable from the Vercel queue consumer) and self-runs as a CLI when invoked directly (`node src/jobs/<job>.js`).
 - `schema.sql` — the single source of truth for the Supabase schema (in the default `public` schema). It's a full reset: it DROPs the app's tables and recreates them, so re-running wipes data — never run it against a database with data you want to keep. To change the schema, edit this file (so a fresh reset stays correct) **and** add a non-destructive incremental migration under `supabase/migrations/` (Supabase CLI format, applied with `supabase db push`) so the change can be rolled out to existing databases without wiping data.
-- `.github/workflows/` — one workflow per extract job, named after it (`character-assets.yml`, `corp-structures.yml`, …; each a scheduled cron + manual dispatch with heartbeat start/end steps); `heartbeat.yml` (daily canary); `migrate.yml` (applies Supabase migrations on push to `main`).
+- `.github/workflows/` — one workflow per extract job, named after it (`character-assets.yml`, `corp-structures.yml`, …; each a scheduled cron + manual dispatch with heartbeat start/end steps); `heartbeat.yml` (daily canary); `migrate.yml` (applies Supabase migrations on push to `main`). Exception: `industry-systems` has no workflow — it's scheduled via Vercel Cron instead (`vercel.json`'s `crons` + `src/app/api/cron/industry-systems/route.ts`), since the GitHub Actions schedule for it wasn't firing reliably.
 
 ## Database & ESI
 
@@ -165,7 +165,7 @@ Shared UI helpers: `src/app/isk.ts` (ISK formatting), `src/app/DateTime.tsx`, `s
 
 ## Extract jobs
 
-One job per ESI endpoint. The npm script, queue job name, heartbeat job label, and workflow file all share the job's name; the entry point is the camelCased file under `src/jobs/` exporting `run<PascalCase>()` (e.g. `character-assets` → `src/jobs/characterAssets.js` → `runCharacterAssets()`).
+One job per ESI endpoint. The npm script, queue job name, and heartbeat job label all share the job's name; the entry point is the camelCased file under `src/jobs/` exporting `run<PascalCase>()` (e.g. `character-assets` → `src/jobs/characterAssets.js` → `runCharacterAssets()`). Every job but `industry-systems` is scheduled by a like-named GitHub Actions workflow; `industry-systems` is scheduled by Vercel Cron instead (see below) since the GitHub Actions schedule wasn't firing reliably every hour.
 
 | Job | ESI endpoint | Writes to | Schedule (UTC) |
 |---|---|---|---|
@@ -189,6 +189,8 @@ One job per ESI endpoint. The npm script, queue job name, heartbeat job label, a
 `src/heartbeat.js` (`heartbeat.yml`, 10:55 daily) is a canary that just proves heartbeat recording works.
 
 The per-character jobs (`character-*` except `character-affiliations`, plus `corp-wallet-transactions`) are also dispatched on demand via the Vercel queue at `/api/queue/jobs` (the "Refresh ESI" flow), fanned out one message per character; `character-affiliations` and `universe-names` are dispatched once account-wide. The daily corp jobs (including `corp-blueprints`) and `industry-systems` are cron-only — they do whole-corp/whole-universe work that isn't character-scoped.
+
+`industry-systems` runs on Vercel Cron rather than GitHub Actions: `vercel.json`'s `crons` entry hits `src/app/api/cron/industry-systems/route.ts` hourly at `:10`, which checks the `Authorization: Bearer $CRON_SECRET` header Vercel signs cron requests with, then calls `runIndustrySystems()` and records its own start/end heartbeat (`source: 'vercel-cron'`) — mirroring how the queue consumer heartbeats account-wide jobs. Requires a `CRON_SECRET` env var set in Vercel (see `.env.example`).
 
 ## Database tables (quick reference)
 
