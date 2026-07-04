@@ -88,8 +88,8 @@ All functions take `(accessToken, id, ...)` unless noted. Returns raw ESI respon
 - `characterAffiliations(characterIds[])` — bulk character→corp mapping (no auth)
 
 ### `src/jobs/lib.js` — shared extract-job plumbing
-- `forEachCharacter(tag, { scope, characterIds }, handler)` — iterate tokens carrying an ESI scope, refresh each, call handler with `{ access_token, characterID, character_id, name, ctx }`
-- `forEachCorporation(tag, { scope, characterIds }, handler)` — same, deduped to one handler call per corporation; also keeps `registration.corporation_id` fresh (corp-table RLS keys off it)
+- `forEachCharacter(tag, { scope, characterIds, heartbeat = true }, handler)` — iterate tokens carrying an ESI scope, refresh each, call handler with `{ access_token, characterID, character_id, userId, name, ctx }`. Wraps each call in a start/end `heartbeat` row attributed to that character (`character_id`/`user_id`) unless `heartbeat: false` (forEachCorporation passes this to avoid a redundant row)
+- `forEachCorporation(tag, { scope, characterIds }, handler)` — same, deduped to one handler call per corporation; also keeps `registration.corporation_id` fresh (corp-table RLS keys off it). Wraps each call in its own start/end `heartbeat` row attributed to the corp and the character whose token authorized the pull (`corporation_id`/`character_id`/`user_id`)
 - `fetchAllPages(fetchPage)` — drain an x-pages-paginated ESI endpoint
 - `forEachSequential(items, fn)` — the jobs' ramda-based stand-in for `for (const x of items) { await fn(x) }`; runs `fn` once per item in order, awaiting each before the next
 - `cli(import.meta.url, tag, run)` — self-run a job module when invoked directly as a CLI
@@ -97,7 +97,7 @@ All functions take `(accessToken, id, ...)` unless noted. Returns raw ESI respon
 ### `src/supabase.js` — Supabase clients and DB helpers
 - `supabase` — anon client (respects RLS)
 - `sudoSupabase` — service-role client (bypasses RLS; use in cron only)
-- `recordHeartbeat(job, phase, opts)` — write heartbeat row
+- `recordHeartbeat(job, phase, opts)` — write a heartbeat row; `opts.characterId`/`corporationId`/`userId` attribute it to the entity a per-character/per-corp job ran for (omit for whole-job/account-wide runs). The start/end pair upserts onto one row keyed on `job, run_id, run_attempt, owner_key` — `owner_key` is a generated column folding `character_id`/`corporation_id` into a single non-null discriminator so per-entity rows within the same run pair correctly instead of collapsing onto each other
 - `authenticate(token)` — verify user session token
 - `upsertCharacter(characterId, name, ownerId, corporationId)` — insert/update registration row
 - `upsertToken(characterId, accessToken, refreshToken, issuedAt, expiresAt, scope[])` — store OAuth tokens
@@ -181,14 +181,14 @@ One job per ESI endpoint. The npm script, queue job name, and heartbeat job labe
 | `corp-blueprints` | `/corporations/{id}/blueprints/` | `corp_blueprint_over_time` | 09:07 daily |
 | `corp-wallet-journal` | `/corporations/{id}/wallets/{division}/journal/` | `corp_wallet_journal` | hourly `:37` |
 | `corp-wallet-transactions` | `/corporations/{id}/wallets/{division}/transactions/` | `corp_wallet_transaction` | hourly `:50` |
-| `corp-industry-jobs` | `/corporations/{id}/industry/jobs/` | `corp_industry_job` | 09:47 daily |
+| `corp-industry-jobs` | `/corporations/{id}/industry/jobs/` | `corp_industry_job` | hourly `:47` |
 | `industry-systems` | `/industry/systems/` | `industry_system_index` (systems with structures ∪ user-watched systems) | hourly `:10` |
 | `universe-names` | `/universe/names/` | `universe_name` | hourly `:58` |
 | `universe-structures` | `/universe/structures/{id}` | `universe_structure` | 09:57 daily |
 
 `src/heartbeat.js` (`heartbeat.yml`, 10:55 daily) is a canary that just proves heartbeat recording works.
 
-The per-character jobs (`character-*` except `character-affiliations`, plus `corp-wallet-transactions`) are also dispatched on demand via the Vercel queue at `/api/queue/jobs` (the "Refresh ESI" flow), fanned out one message per character; `character-affiliations` and `universe-names` are dispatched once account-wide. The daily corp jobs (including `corp-blueprints`) and `industry-systems` are cron-only — they do whole-corp/whole-universe work that isn't character-scoped.
+The per-character jobs (`character-*` except `character-affiliations`, plus `corp-wallet-transactions`, `corp-assets`, `corp-industry-jobs`) are also dispatched on demand via the Vercel queue at `/api/queue/jobs` (the "Refresh ESI" flow), fanned out one message per character; `character-affiliations` and `universe-names` are dispatched once account-wide. The remaining daily corp jobs (`corp-structures`, `corp-blueprints`, `corp-wallet-journal`) and `industry-systems` are cron-only — they do whole-corp/whole-universe work that isn't character-scoped.
 
 `industry-systems` runs on Vercel Cron rather than GitHub Actions: `vercel.json`'s `crons` entry hits `src/app/api/cron/industry-systems/route.ts` hourly at `:10`, which checks the `Authorization: Bearer $CRON_SECRET` header Vercel signs cron requests with, then calls `runIndustrySystems()` and records its own start/end heartbeat (`source: 'vercel-cron'`) — mirroring how the queue consumer heartbeats account-wide jobs. Requires a `CRON_SECRET` env var set in Vercel (see `.env.example`).
 
@@ -223,7 +223,7 @@ The per-character jobs (`character-*` except `character-affiliations`, plus `cor
 | `user_settings` | User preferences | `user_id`, `enabled_scopes[]`, `api_token` (unique), `flags[]` |
 | `invite_code` | Invite-only registration | `code` (unique), `created_by`, `redeemed_by`, `redeemed_at` |
 | `refresh_task` | On-demand job tracking | `batch_id`, `user_id`, `job`, `character_id`, `status` (pending/running/done/error) |
-| `heartbeat` | Cron job monitoring | `job`, `run_id`, `started_at`, `ended_at` |
+| `heartbeat` | Cron job monitoring | `job`, `run_id`, `started_at`, `ended_at`, `duration` (generated), `character_id`, `corporation_id`, `user_id`, `owner_key` (generated) |
 
 Key Postgres functions (callable via RPC or SQL):
 - `character_asset_location_summary()` — aggregate character assets per location

@@ -499,29 +499,53 @@ grant execute on function public.character_blueprints(uuid[]) to service_role;
 -- One row per scheduled-job run. Workflows write a 'start' step (stamps
 -- started_at) and an 'end' step (stamps ended_at), both keyed on the GitHub
 -- Actions run so they land on the same row. run_url links back to that run.
+-- character_id/corporation_id/user_id attribute a run to the entity a
+-- per-character or per-corp job processed it for (null for whole-job/
+-- account-wide runs, e.g. universe-names); owner_key folds those two
+-- nullable columns into a single non-null discriminator so the start/end
+-- upsert still pairs correctly per entity (see recordHeartbeat).
 create table public.heartbeat (
   id uuid primary key default gen_random_uuid(),
   job text not null,
   run_id bigint,
   run_attempt integer,
   run_url text,
+  character_id uuid references public.registration(id) on delete cascade,
+  corporation_id bigint,
+  user_id uuid references auth.users(id) on delete cascade,
+  owner_key text generated always as (coalesce(character_id::text, '') || '|' || coalesce(corporation_id::text, '')) stored,
   started_at timestamptz,
   ended_at timestamptz,
+  -- How long the run took for that job/entity; null until ended_at lands.
+  duration interval generated always as (ended_at - started_at) stored,
   ran_at timestamptz not null default now()
 );
 -- Pairs the start/end steps of a single run onto one row. Local runs (no run
 -- id) fall back to plain inserts, and Postgres keeps null keys distinct.
-create unique index heartbeat_run_idx on public.heartbeat (job, run_id, run_attempt);
+create unique index heartbeat_run_idx on public.heartbeat (job, run_id, run_attempt, owner_key);
 create index heartbeat_ran_at_idx on public.heartbeat (ran_at desc);
 -- Lets the UI find a job's most recent completion with an index scan.
 create index heartbeat_job_ended_at_idx on public.heartbeat (job, ended_at desc);
+create index heartbeat_character_id_idx on public.heartbeat (character_id);
+create index heartbeat_corporation_id_idx on public.heartbeat (corporation_id);
 
 alter table public.heartbeat enable row level security;
+-- Whole-job/account-wide rows (user_id null) are visible to everyone signed
+-- in, same as before this table carried any owner info. A per-character row
+-- is visible to the owning user; a per-corp row to anyone with a character
+-- in that corp — mirroring the corp_structure/corp_asset RLS convention.
 create policy "Authenticated read heartbeat"
   on public.heartbeat
   for select
   to authenticated
-  using (true);
+  using (
+    user_id is null
+    or user_id = (select auth.uid())
+    or corporation_id in (
+      select corporation_id from public.registration
+      where user_id = (select auth.uid()) and corporation_id is not null
+    )
+  );
 
 grant select on public.heartbeat to authenticated;
 grant all    on public.heartbeat to service_role;

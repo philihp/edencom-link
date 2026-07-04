@@ -3,7 +3,7 @@ name: Corp Industry Jobs
 on:
   workflow_dispatch:
   schedule:
-    - cron: '47 9 * * *'
+    - cron: '47 * * * *'
 
 jobs:
   refresh:
