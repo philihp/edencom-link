@@ -17,6 +17,34 @@ const upsertCharacter =
     return response.data[0].id
   }
 
+// If the user has no registration marked main yet, mark their oldest one. Runs
+// after upsertCharacter, so a brand new player's first (and only) registration
+// qualifies as "oldest" and becomes main immediately.
+const ensureMainCharacter =
+  (supabase: SupabaseClient) =>
+  async (user_id: string) => {
+    const { count, error: countError } = await supabase
+      .from('registration')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', user_id)
+      .eq('is_main', true)
+    if (countError) throw new Error(`main character lookup failed: ${JSON.stringify(countError)}`)
+    if (count) return
+
+    const { data: oldest, error: oldestError } = await supabase
+      .from('registration')
+      .select('id')
+      .eq('user_id', user_id)
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .maybeSingle()
+    if (oldestError) throw new Error(`oldest registration lookup failed: ${JSON.stringify(oldestError)}`)
+    if (!oldest?.id) return
+
+    const { error: updateError } = await supabase.from('registration').update({ is_main: true }).eq('id', oldest.id)
+    if (updateError) throw new Error(`mark main character failed: ${JSON.stringify(updateError)}`)
+  }
+
 const upsertToken =
   (supabase: SupabaseClient) =>
   async (columns: {
@@ -53,6 +81,7 @@ export const GET = async (request: NextRequest) => {
   const eve_character_id = Number(sub.split(':')[2])
   await sso.getAccessToken(refresh_token, true)
   const character_id = await upsertCharacter(supabase)({ user_id, owner, name, character_id: eve_character_id })
+  await ensureMainCharacter(supabase)(user_id)
   await upsertToken(supabase)({
     user_id,
     character_id,
