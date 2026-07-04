@@ -6,7 +6,7 @@
   "packageManager": "pnpm@10.33.0",
   "dependencies": {
     "@hebcal/noaa": "^0.12.0",
-    "@next/third-parties": "16.2.9",
+    "@next/third-parties": "16.2.10",
     "@philihp/eve-sso": "2.1.0",
     "@supabase/ssr": "0.12.0",
     "@supabase/supabase-js": "2.108.2",
@@ -16,7 +16,7 @@
     "eve-industry": "0.1.0",
     "fast-shuffle": "^6.2.0",
     "flags": "^4.2.0",
-    "next": "16.2.9",
+    "next": "16.2.10",
     "ramda": "^0.32.0",
     "react": "19.2.7",
     "react-dom": "19.2.7",
