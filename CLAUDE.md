@@ -181,14 +181,14 @@ One job per ESI endpoint. The npm script, queue job name, and heartbeat job labe
 | `corp-blueprints` | `/corporations/{id}/blueprints/` | `corp_blueprint_over_time` | 09:07 daily |
 | `corp-wallet-journal` | `/corporations/{id}/wallets/{division}/journal/` | `corp_wallet_journal` | hourly `:37` |
 | `corp-wallet-transactions` | `/corporations/{id}/wallets/{division}/transactions/` | `corp_wallet_transaction` | hourly `:50` |
-| `corp-industry-jobs` | `/corporations/{id}/industry/jobs/` | `corp_industry_job` | 09:47 daily |
+| `corp-industry-jobs` | `/corporations/{id}/industry/jobs/` | `corp_industry_job` | hourly `:47` |
 | `industry-systems` | `/industry/systems/` | `industry_system_index` (systems with structures ∪ user-watched systems) | hourly `:10` |
 | `universe-names` | `/universe/names/` | `universe_name` | hourly `:58` |
 | `universe-structures` | `/universe/structures/{id}` | `universe_structure` | 09:57 daily |
 
 `src/heartbeat.js` (`heartbeat.yml`, 10:55 daily) is a canary that just proves heartbeat recording works.
 
-The per-character jobs (`character-*` except `character-affiliations`, plus `corp-wallet-transactions`) are also dispatched on demand via the Vercel queue at `/api/queue/jobs` (the "Refresh ESI" flow), fanned out one message per character; `character-affiliations` and `universe-names` are dispatched once account-wide. The daily corp jobs (including `corp-blueprints`) and `industry-systems` are cron-only — they do whole-corp/whole-universe work that isn't character-scoped.
+The per-character jobs (`character-*` except `character-affiliations`, plus `corp-wallet-transactions`, `corp-assets`, `corp-industry-jobs`) are also dispatched on demand via the Vercel queue at `/api/queue/jobs` (the "Refresh ESI" flow), fanned out one message per character; `character-affiliations` and `universe-names` are dispatched once account-wide. The remaining daily corp jobs (`corp-structures`, `corp-blueprints`, `corp-wallet-journal`) and `industry-systems` are cron-only — they do whole-corp/whole-universe work that isn't character-scoped.
 
 `industry-systems` runs on Vercel Cron rather than GitHub Actions: `vercel.json`'s `crons` entry hits `src/app/api/cron/industry-systems/route.ts` hourly at `:10`, which checks the `Authorization: Bearer $CRON_SECRET` header Vercel signs cron requests with, then calls `runIndustrySystems()` and records its own start/end heartbeat (`source: 'vercel-cron'`) — mirroring how the queue consumer heartbeats account-wide jobs. Requires a `CRON_SECRET` env var set in Vercel (see `.env.example`).
 
