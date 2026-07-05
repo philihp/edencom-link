@@ -13,13 +13,16 @@
 // as cheaply as possible.
 export const runtime = 'edge'
 
+// 404 rather than a 5xx: Vercel's function logs flag 5xx responses as errors,
+// which would fill the logs with "errors" for what is actually expected,
+// working-as-intended bot traffic.
 const BODY = JSON.stringify({
-  error: 'MethodNotImplemented',
+  error: 'NotFound',
   message:
     'This host, edencom.link (including pds.edencom.link) previously ran an ATProto PDS. It might again in the future, but is currently decommissioned; please remove it from your crawl/relay list.',
 })
 
-const swallow = () => new Response(BODY, { status: 501, headers: { 'content-type': 'application/json' } })
+const swallow = () => new Response(BODY, { status: 404, headers: { 'content-type': 'application/json' } })
 
 export const GET = swallow
 export const POST = swallow
