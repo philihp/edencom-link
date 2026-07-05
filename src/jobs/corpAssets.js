@@ -5,7 +5,7 @@ import { sudoSupabase } from '../supabase.js'
 import { cli, fetchAllPages, forEachCorporation, forEachSequential } from './lib.js'
 
 const TAG = 'corp-assets'
-const SCOPE = 'esi-assets.read_corporation_assets.v1'
+export const SCOPE = 'esi-assets.read_corporation_assets.v1'
 
 // GET /corporations/{id}/assets/ → corp_asset_over_time (SCD type 2) and
 // corp_structure_rig. ESI has no dedicated structure-fitting endpoint; rigs come
