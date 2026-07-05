@@ -3,7 +3,7 @@ import { sudoSupabase } from '../supabase.js'
 import { cli, forEachCorporation, forEachSequential } from './lib.js'
 
 const TAG = 'corp-wallet-transactions'
-const SCOPE = 'esi-wallet.read_corporation_wallets.v1'
+export const SCOPE = 'esi-wallet.read_corporation_wallets.v1'
 
 const WALLET_DIVISIONS = [1, 2, 3, 4, 5, 6, 7]
 

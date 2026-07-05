@@ -85,8 +85,7 @@ export const forEachCharacter = async (tag, { scope, characterIds, heartbeat = t
         console.error(`[${tag}] ${ctx}: refreshed token no longer has ${scope}, skipping`)
         return
       }
-      const run = () =>
-        handler({ access_token, characterID, character_id: tokenRow.character_id, userId, name, ctx })
+      const run = () => handler({ access_token, characterID, character_id: tokenRow.character_id, userId, name, ctx })
       if (heartbeat) {
         await withHeartbeat(tag, { characterId: tokenRow.character_id, userId }, run)
       } else {
@@ -101,13 +100,17 @@ export const forEachCharacter = async (tag, { scope, characterIds, heartbeat = t
 
 // Iterate the corporations reachable through tokens carrying `scope`, calling
 // handler once per corporation with { access_token, corporation_id, character_id,
-// ctx }. Two characters in the same corp resolve to one handler call per run.
+// ctx }. Two characters in the same corp resolve to one handler call per run —
+// unless the first one's call fails (most commonly a character that carries the
+// OAuth scope but lacks the in-game role — director, accountant, etc — the corp
+// endpoint itself requires), in which case the corp is left open for a later
+// character to try, rather than being silently skipped for the rest of the run.
 // Also keeps registration.corporation_id fresh — the corp tables' RLS policies
-// key off it. Returns the set of corporation ids handled. The handler call is
-// wrapped in a start/end heartbeat attributed to the corp (and the character
-// whose token authorized the pull, so "which user" is derivable too); the
-// inner forEachCharacter's own per-character heartbeat is disabled to avoid a
-// redundant second row for the same unit of work.
+// key off it. Returns the set of corporation ids successfully handled. The
+// handler call is wrapped in a start/end heartbeat attributed to the corp (and
+// the character whose token authorized the pull, so "which user" is derivable
+// too); the inner forEachCharacter's own per-character heartbeat is disabled to
+// avoid a redundant second row for the same unit of work.
 export const forEachCorporation = async (tag, { scope, characterIds }, handler) => {
   const seenCorps = new Set()
   await forEachCharacter(
@@ -131,10 +134,11 @@ export const forEachCorporation = async (tag, { scope, characterIds }, handler) 
         console.log(`[${tag}] ${ctx}: corp ${corporation_id} already pulled this run, skipping`)
         return
       }
-      seenCorps.add(corporation_id)
       await withHeartbeat(tag, { characterId: character_id, corporationId: corporation_id, userId }, () =>
         handler({ access_token, corporation_id, character_id, ctx })
       )
+      // Only mark the corp as handled once the pull actually succeeds.
+      seenCorps.add(corporation_id)
     }
   )
   return seenCorps

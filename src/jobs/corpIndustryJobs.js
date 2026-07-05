@@ -3,7 +3,7 @@ import { sudoSupabase } from '../supabase.js'
 import { cli, fetchAllPages, forEachCorporation } from './lib.js'
 
 const TAG = 'corp-industry-jobs'
-const SCOPE = 'esi-industry.read_corporation_jobs.v1'
+export const SCOPE = 'esi-industry.read_corporation_jobs.v1'
 
 // GET /corporations/{id}/industry/jobs/ → corp_industry_job. Fetched with
 // include_completed, so finished jobs get their terminal status recorded too.

@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-import { map, pluck, unnest } from 'ramda'
+import { forEach, map, pluck, unnest } from 'ramda'
 
 // The cron/GitHub Actions environment sets SUPABASE_URL / SUPABASE_KEY, but the
 // Vercel runtime only exposes the NEXT_PUBLIC_* vars (same project). This module
@@ -134,6 +134,42 @@ export const selectCharacterIdsWithScopes = async (scopes) => {
     }, scopes)
   )
   return [...new Set(unnest(perScope))]
+}
+
+// Every character carrying any of `scopes`, grouped by corporation — `byCorp`
+// maps corporation_id to the character ids known to belong to it; `unresolved`
+// lists characters whose corporation hasn't been resolved yet (brand-new
+// registrations). Used by the corp-scoped extract jobs (corp-assets,
+// corp-industry-jobs, corp-wallet-transactions) to fan out exactly one queue
+// message per corporation covering every character that might be able to
+// authorize the pull — some carry the OAuth scope without the in-game role
+// the ESI endpoint separately requires, and forEachCorporation (src/jobs/lib.js)
+// needs the full group to fall back through if the first one it tries can't.
+// Sending two *separate* messages for the same corp instead would race two
+// concurrent reconciles against each other and corrupt the SCD-2 tables.
+export const groupCharacterIdsByCorporation = async (scopes) => {
+  const characterIds = await selectCharacterIdsWithScopes(scopes)
+  if (characterIds.length === 0) return { byCorp: new Map(), unresolved: [] }
+
+  const { data: registrations, error } = await sudoSupabase
+    .from('registration')
+    .select('id, corporation_id')
+    .in('id', characterIds)
+  if (error) throw error
+
+  const byCorp = new Map()
+  const unresolved = []
+  forEach((r) => {
+    if (r.corporation_id == null) {
+      unresolved.push(r.id)
+      return
+    }
+    const group = byCorp.get(r.corporation_id)
+    if (group) group.push(r.id)
+    else byCorp.set(r.corporation_id, [r.id])
+  }, registrations ?? [])
+
+  return { byCorp, unresolved }
 }
 
 export const selectToken = async (character_id, scope = []) => {

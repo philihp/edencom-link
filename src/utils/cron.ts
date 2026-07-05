@@ -1,7 +1,6 @@
 import { randomInt } from 'node:crypto'
 
 import { NextRequest, NextResponse } from 'next/server'
-import { forEach } from 'ramda'
 
 // Shared plumbing for the /api/cron/* routes that replaced the old per-job
 // GitHub Actions schedules. Vercel signs cron requests with a
@@ -47,39 +46,33 @@ export const fanOutPerCharacterCronJob = async (job: string, scope: string) => {
 }
 
 // For the corp-scoped extract jobs (corp-assets, corp-industry-jobs,
-// corp-wallet-transactions): fanning out per character, like
-// fanOutPerCharacterCronJob, can enqueue two concurrent messages for the same
+// corp-wallet-transactions): fanning out one message per character, like
+// fanOutPerCharacterCronJob, can enqueue two *concurrent* messages for the same
 // corp when more than one of its characters carries the scope. Each message
-// independently reconciles that corp's whole asset/job/transaction set, and
-// the two invocations racing corrupts the data — one's INSERT collides with
-// the other's already-committed row (`duplicate key value violates unique
+// independently reconciles that corp's whole asset/job/transaction set, and the
+// two invocations racing corrupts the data — one's INSERT collides with the
+// other's already-committed row (`duplicate key value violates unique
 // constraint ..._current_item_idx`), aborting the losing invocation partway
 // through with some rows already closed (is_current: false) but never
 // reopened, so real items vanish from the *_asset/*_blueprint views until a
-// later, non-racing run reinserts them. Dedupe to one character — and so one
-// queue message — per corporation to make that race impossible.
+// later, non-racing run reinserts them.
+//
+// Group every scoped character by corporation instead, and send one message
+// per corp carrying *all* of its scoped characters. That's still exactly one
+// invocation per corp (no race), but forEachCorporation (src/jobs/lib.js) can
+// now try them in order and fall back to the next one if an earlier character
+// turns out to carry the OAuth scope without the in-game role — director,
+// accountant, etc — the corp endpoint separately requires; picking just one
+// character up front had no way to know which of them ESI would actually let
+// through.
 export const fanOutPerCorporationCronJob = async (job: string, scope: string) => {
-  const { selectCharacterIdsWithScopes, sudoSupabase } = await import('@/supabase.js')
+  const { groupCharacterIdsByCorporation } = await import('@/supabase.js')
   const { send } = await import('@/utils/queue')
-  const characterIds = await selectCharacterIdsWithScopes([scope])
-  if (characterIds.length === 0) return 0
+  const { byCorp, unresolved } = await groupCharacterIdsByCorporation([scope])
 
-  const { data: registrations, error } = await sudoSupabase
-    .from('registration')
-    .select('id, corporation_id')
-    .in('id', characterIds)
-  if (error) throw error
-
-  const seenCorps = new Set<number>()
-  const picked: string[] = []
-  forEach((r: { id: string; corporation_id: number | null }) => {
-    if (r.corporation_id == null || seenCorps.has(r.corporation_id)) return
-    seenCorps.add(r.corporation_id)
-    picked.push(r.id)
-  }, registrations ?? [])
-
-  await Promise.all(picked.map((characterId) => send('jobs', { job, characterId })))
-  return picked.length
+  const groups = [...byCorp.values(), ...unresolved.map((id: string) => [id])]
+  await Promise.all(groups.map((characterIds) => send('jobs', { job, characterIds })))
+  return groups.length
 }
 
 // For the account-wide extract jobs that already process every registration

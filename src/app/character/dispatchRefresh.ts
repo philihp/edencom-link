@@ -19,10 +19,15 @@ const PER_CHARACTER_JOBS = [
 // losing invocation's INSERT collides with the winner's already-committed row
 // (`duplicate key value violates unique constraint ..._current_item_idx`),
 // which can abort partway through with rows closed but never reopened, so real
-// items vanish until a later, non-racing run reinserts them (see
-// fanOutPerCorporationCronJob in src/utils/cron.ts, which has the same fix for
-// the cron-triggered path). Dedupe to the user's first scoped character per
-// corporation before dispatching.
+// items vanish until a later, non-racing run reinserts them. So, like the
+// cron-triggered fan-out (fanOutPerCorporationCronJob in src/utils/cron.ts),
+// each of these queues exactly one message per corporation — see
+// dispatchRefresh below, which looks up every character (account-wide, not
+// just this batch) known to carry the job's scope for that corp and sends the
+// whole group, so forEachCorporation (src/jobs/lib.js) can fall back through
+// them if the one representative character chosen for the refresh_task/UI row
+// turns out to lack the in-game role — director, accountant, etc — the
+// endpoint separately requires.
 //
 // corp-assets and corp-industry-jobs are included so a newly added character's
 // corp data shows up immediately rather than waiting for the next cron. The
@@ -32,7 +37,11 @@ const PER_CHARACTER_JOBS = [
 // them on every character add isn't worth the extra load. They run on their
 // own Vercel Cron schedule instead (see src/app/api/cron/corp-structures,
 // corp-blueprints, corp-wallet-journal).
-const PER_CORPORATION_JOBS = ['corp-wallet-transactions', 'corp-assets', 'corp-industry-jobs'] as const
+const PER_CORPORATION_JOBS = [
+  { job: 'corp-wallet-transactions', loadScope: async () => (await import('@/jobs/corpWalletTransactions.js')).SCOPE },
+  { job: 'corp-assets', loadScope: async () => (await import('@/jobs/corpAssets.js')).SCOPE },
+  { job: 'corp-industry-jobs', loadScope: async () => (await import('@/jobs/corpIndustryJobs.js')).SCOPE },
+] as const
 
 // Account-wide batch jobs (they process every registration at once), dispatched
 // once per refresh with no character.
@@ -44,7 +53,10 @@ type Character = { id: string; name: string | null }
 // character in the list. A character with no known corporation yet (a
 // brand-new registration whose corp hasn't been resolved) is always kept —
 // there's nothing to dedupe it against, and it's exactly the case
-// corp-assets/corp-industry-jobs need to run for right away.
+// corp-assets/corp-industry-jobs need to run for right away. This only picks
+// the representative character for the refresh_task/UI row — the actual queue
+// message sent for that task carries every scoped character for the corp, not
+// just this one (see dispatchRefresh below).
 const oneCharacterPerCorporation = (characters: Character[], corporationById: Map<string, number | null>) => {
   const seenCorps = new Set<number>()
   return reduce(
@@ -88,6 +100,19 @@ export const dispatchRefresh = async (userId: string, characters: Character[]): 
   }
   const corpScopedCharacters = oneCharacterPerCorporation(characters, corporationById)
 
+  // For each corp-scoped job, group every account-wide character carrying its
+  // scope by corporation, so the message sent for a corp's task isn't limited
+  // to just the one representative character chosen above.
+  const { groupCharacterIdsByCorporation } = await import('@/supabase.js')
+  const corpGroupsByJob = new Map<string, Map<number, string[]>>()
+  await Promise.all(
+    PER_CORPORATION_JOBS.map(async ({ job, loadScope }) => {
+      const scope = await loadScope()
+      const { byCorp } = await groupCharacterIdsByCorporation([scope])
+      corpGroupsByJob.set(job, byCorp)
+    })
+  )
+
   const tasks = [
     ...PER_CHARACTER_JOBS.flatMap((job) =>
       characters.map((c) => ({
@@ -98,7 +123,7 @@ export const dispatchRefresh = async (userId: string, characters: Character[]): 
         character_name: c.name,
       }))
     ),
-    ...PER_CORPORATION_JOBS.flatMap((job) =>
+    ...PER_CORPORATION_JOBS.flatMap(({ job }) =>
       corpScopedCharacters.map((c) => ({
         batch_id: batchId,
         user_id: userId,
@@ -124,9 +149,21 @@ export const dispatchRefresh = async (userId: string, characters: Character[]): 
     throw error
   }
 
+  // A corp-scoped task's message carries every scoped character for its
+  // corporation (see corpGroupsByJob above); every other task's message
+  // carries just its own single character (or none, for the account-wide jobs).
+  const characterIdsForTask = (t: { job: string; character_id: string | null }): string[] | undefined => {
+    if (t.character_id == null) return undefined
+    const byCorp = corpGroupsByJob.get(t.job)
+    if (!byCorp) return [t.character_id]
+    const corporationId = corporationById.get(t.character_id)
+    if (corporationId == null) return [t.character_id]
+    return byCorp.get(corporationId) ?? [t.character_id]
+  }
+
   const { send } = await import('@/utils/queue')
   const sent = await Promise.all(
-    (inserted ?? []).map((t) => send('jobs', { job: t.job, characterId: t.character_id ?? undefined, taskId: t.id }))
+    (inserted ?? []).map((t) => send('jobs', { job: t.job, characterIds: characterIdsForTask(t), taskId: t.id }))
   )
   console.log(
     `[dispatchRefresh] enqueued ${sent.length} jobs to topic "jobs" region=${process.env.QUEUE_REGION ?? 'sfo1'}`

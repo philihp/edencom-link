@@ -88,20 +88,25 @@ const JOBS = {
 type JobName = keyof typeof JOBS
 
 // characterId is a registration uuid (per-character fan-out); absent runs the job
-// for everyone. taskId, when present, is a refresh_task row the "Refresh ESI" flow
-// tracks — the consumer flips it running -> done/error so /character/refresh can
-// show live status.
+// for everyone. characterIds carries more than one — used for the corp-scoped jobs,
+// where a single queue message covers every character known to carry the corp's
+// scope, so forEachCorporation (src/jobs/lib.js) can fall back to the next one if an
+// earlier character turns out to lack the in-game role the corp endpoint requires.
+// taskId, when present, is a refresh_task row the "Refresh ESI" flow tracks — the
+// consumer flips it running -> done/error so /character/refresh can show live status.
 type Msg = {
   job: JobName
   characterId?: string
+  characterIds?: string[]
   taskId?: string
 }
 
 // A thrown error fails the callback, so the Vercel queue retries the message
 // (per retryAfterSeconds in vercel.json).
 export const POST = handleCallback(async (message: Msg) => {
-  const { job, characterId, taskId } = message
-  console.log(`[queue/jobs] consume job=${job} characterId=${characterId ?? '-'} taskId=${taskId ?? '-'}`)
+  const { job, characterId, characterIds, taskId } = message
+  const ids = characterIds ?? (characterId != null ? [characterId] : undefined)
+  console.log(`[queue/jobs] consume job=${job} characterIds=${ids?.join(',') ?? '-'} taskId=${taskId ?? '-'}`)
 
   const entry = JOBS[job]
   if (!entry) throw new Error(`unknown job: ${String(job)}`)
@@ -109,7 +114,7 @@ export const POST = handleCallback(async (message: Msg) => {
   const runJob = async () => {
     const run = await entry.load()
     if (entry.characterIds) {
-      await run(characterId != null ? { characterIds: [characterId] } : undefined)
+      await run(ids ? { characterIds: ids } : undefined)
       return
     }
     // Account-wide jobs consume a single whole-job message, so the consumer records
