@@ -8,18 +8,21 @@
 // This route answers every /xrpc/<method> request directly, with the
 // AT Protocol XRPC error shape a well-behaved client/relay recognizes for an
 // unimplemented method, so crawlers can tell this host is no longer a PDS.
-import { NextRequest, NextResponse } from 'next/server'
+// Kept deliberately minimal (edge runtime, no request parsing, no logging,
+// a precomputed body) since it exists purely to reject high-volume bot noise
+// as cheaply as possible.
+export const runtime = 'edge'
 
-const MESSAGE =
-  'This host, edencom.link (including pds.edencom.link) previously ran an ATProto PDS. It might again in the future, but is currently decommissioned; please remove it from your crawl/relay list.'
+// 404 rather than a 5xx: Vercel's function logs flag 5xx responses as errors,
+// which would fill the logs with "errors" for what is actually expected,
+// working-as-intended bot traffic.
+const BODY = JSON.stringify({
+  error: 'NotFound',
+  message:
+    'This host, edencom.link (including pds.edencom.link) previously ran an ATProto PDS. It might again in the future, but is currently decommissioned; please remove it from your crawl/relay list.',
+})
 
-const swallow = async (request: NextRequest, params: Promise<{ method: string }>) => {
-  const { method } = await params
-  console.log(`xrpc: rejecting decommissioned-pds request host=${request.headers.get('host')} method=${method}`)
-  return NextResponse.json({ error: 'MethodNotImplemented', message: MESSAGE }, { status: 501 })
-}
+const swallow = () => new Response(BODY, { status: 404, headers: { 'content-type': 'application/json' } })
 
-type Context = { params: Promise<{ method: string }> }
-
-export const GET = (request: NextRequest, { params }: Context) => swallow(request, params)
-export const POST = (request: NextRequest, { params }: Context) => swallow(request, params)
+export const GET = swallow
+export const POST = swallow
