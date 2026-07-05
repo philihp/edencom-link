@@ -9,7 +9,8 @@ import { randomUUID } from 'node:crypto'
 // corp-wallet-journal) are deliberately NOT here: they do whole-corp work that
 // a per-character fan-out would just redo once per character, and running
 // them on every character add isn't worth the extra load. They run on their
-// own GitHub Actions crons instead.
+// own Vercel Cron schedule instead (see src/app/api/cron/corp-structures,
+// corp-blueprints, corp-wallet-journal).
 const PER_CHARACTER_JOBS = [
   'character-assets',
   'character-blueprints',
