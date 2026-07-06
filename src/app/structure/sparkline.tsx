@@ -48,9 +48,9 @@ export const Sparkline = ({ values, liveCount = values.length, label, updatedAt 
   const pad = 1
   // Cost indices are fractions (0.01 = 1%). When the real spread is tighter
   // than that, the line would look perfectly flat and hide the (tiny) trend —
-  // so we widen the displayed range to a fixed 1% centered on the actual
-  // midpoint, rather than the actual min/max, and use that widened range for
-  // both the plotted line and the min/max labels beside it.
+  // so the plotted axis is widened to a minimum 1% scale centered on the
+  // actual midpoint. The min/max labels beside the chart always reflect the
+  // actual data values, not the (possibly wider) plotted axis.
   const MIN_DISPLAY_RANGE = 0.01
   const actualMin = Math.min(...values)
   const actualMax = Math.max(...values)
@@ -77,8 +77,8 @@ export const Sparkline = ({ values, liveCount = values.length, label, updatedAt 
   return (
     <span className={styles.sparklineCell} title={tooltip}>
       <span className={styles.sparklineRange} aria-hidden>
-        <sup className={styles.sparklineMax}>{formatIndex(max)}</sup>
-        <sub className={styles.sparklineMin}>{formatIndex(min)}</sub>
+        <sup className={styles.sparklineMax}>{formatIndex(actualMax)}</sup>
+        <sub className={styles.sparklineMin}>{formatIndex(actualMin)}</sub>
       </span>
       <svg
         className={styles.sparkline}
