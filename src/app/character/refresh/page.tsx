@@ -4,6 +4,7 @@ import { reduce } from 'ramda'
 
 import { createClient } from '@/utils/supabase/server'
 
+import { isChancellor } from '../../account/chancellor/chancellor'
 import { Freshness } from '../../Freshness'
 import { freshnessLevel } from '../../freshness'
 import { CharacterName, Name } from '../../names'
@@ -37,6 +38,13 @@ const ACCOUNT_JOBS = [
   ['character-affiliations', 'affiliations'],
   ['universe-names', 'universe names'],
 ] as const
+
+// Account-wide jobs whose on-demand refresh is reserved for Chancellors (see
+// refreshCell in ./actions.ts). industry-systems pulls the whole game's
+// industry cost indices in one shot — a heavier, no-auth ESI call with no
+// per-character reason to kick it, so its row (and refresh button) only shows
+// up for Chancellor accounts.
+const CHANCELLOR_JOBS = [['industry-systems', 'industry indexes']] as const
 
 // Always read fresh — the poller re-requests this server component every couple
 // of seconds while any kicked-off job is still in flight.
@@ -106,6 +114,8 @@ const RefreshPage = async () => {
   if (!user?.id) {
     redirect('/account/login')
   }
+
+  const chancellor = await isChancellor(user.id)
 
   // RLS scopes all of these to the caller: their registrations, their own
   // characters' heartbeats plus their corps' and the shared account-wide ones,
@@ -315,6 +325,15 @@ const RefreshPage = async () => {
                   </td>
                 </tr>
               ))}
+              {chancellor &&
+                CHANCELLOR_JOBS.map(([job, label]) => (
+                  <tr key={job}>
+                    <td>{label}</td>
+                    <td>
+                      <Cell job={job} characterId={null} at={accountBeats.get(job)} task={taskByCell.get(`${job}:`)} />
+                    </td>
+                  </tr>
+                ))}
             </tbody>
           </table>
         </>
