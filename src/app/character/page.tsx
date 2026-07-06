@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation'
 import { reduce } from 'ramda'
 
 import { createClient } from '@/utils/supabase/server'
-import { formatKisk } from '../isk'
+import { formatBisk } from '../isk'
 import { register, refreshEsi, setMainCharacter } from './actions'
 import MainCharacterForm from './mainCharacterForm'
 import { requiredScopes } from './scopes'
@@ -67,7 +67,7 @@ const CharacterPage = async () => {
                 <div className={styles.name}>{c.name}</div>
                 <div className={styles.meta}>
                   <span className={styles.metaLabel}>ISK:</span>
-                  {latestBalance.has(c.id) ? formatKisk(latestBalance.get(c.id)!) : '—'}
+                  {latestBalance.has(c.id) ? formatBisk(latestBalance.get(c.id)!) : '—'}
                 </div>
                 <div className={styles.meta}>
                   <span className={styles.metaLabel}>Location:</span>
