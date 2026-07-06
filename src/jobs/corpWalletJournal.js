@@ -58,6 +58,7 @@ const fetchDivision = (access_token, corporation_id, division, cutoff) =>
 export const runCorpWalletJournal = ({ characterIds } = {}) =>
   forEachCorporation(TAG, { scope: SCOPE, characterIds }, async ({ access_token, corporation_id, ctx }) => {
     const cutoff = Date.now() - JOURNAL_LOOKBACK_MS
+    let failures = 0
     await forEachSequential(WALLET_DIVISIONS, async (division) => {
       try {
         const rows = await fetchDivision(access_token, corporation_id, division, cutoff)
@@ -69,9 +70,19 @@ export const runCorpWalletJournal = ({ characterIds } = {}) =>
         }
         console.log(`[${TAG}] ${ctx}: corp ${corporation_id} div ${division} ${rows.length} entries`)
       } catch (e) {
+        failures += 1
         console.error(`[${TAG}] ${ctx}: corp ${corporation_id} div ${division} FAILED message=${e?.message}`)
       }
     })
+    // Every division failing means this character can't read the corp's wallet at
+    // all — usually it carries the OAuth scope without the in-game role (director,
+    // accountant, etc) the endpoint separately requires — rather than one
+    // division's isolated problem. Throw so forEachCorporation (src/jobs/lib.js)
+    // leaves the corp open for a later, better-privileged character to try instead
+    // of marking it "handled" having pulled nothing.
+    if (failures === WALLET_DIVISIONS.length) {
+      throw new Error(`corp ${corporation_id}: all ${WALLET_DIVISIONS.length} wallet divisions failed`)
+    }
   })
 
 cli(import.meta.url, TAG, runCorpWalletJournal)
