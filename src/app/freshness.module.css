@@ -1,0 +1,24 @@
+.freshness {
+  white-space: nowrap;
+}
+
+/* Sized in em so the dot scales with wherever it's inlined (header vs table cell). */
+.dot {
+  display: inline-block;
+  width: 0.55em;
+  height: 0.55em;
+  border-radius: 50%;
+  background: #888;
+}
+
+.freshness[data-level='fresh'] .dot {
+  background: #00af00;
+}
+
+.freshness[data-level='aging'] .dot {
+  background: #d8a800;
+}
+
+.freshness[data-level='stale'] .dot {
+  background: #ff4040;
+}

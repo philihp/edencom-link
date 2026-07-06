@@ -20,30 +20,28 @@ const upsertCharacter =
 // If the user has no registration marked main yet, mark their oldest one. Runs
 // after upsertCharacter, so a brand new player's first (and only) registration
 // qualifies as "oldest" and becomes main immediately.
-const ensureMainCharacter =
-  (supabase: SupabaseClient) =>
-  async (user_id: string) => {
-    const { count, error: countError } = await supabase
-      .from('registration')
-      .select('id', { count: 'exact', head: true })
-      .eq('user_id', user_id)
-      .eq('is_main', true)
-    if (countError) throw new Error(`main character lookup failed: ${JSON.stringify(countError)}`)
-    if (count) return
+const ensureMainCharacter = (supabase: SupabaseClient) => async (user_id: string) => {
+  const { count, error: countError } = await supabase
+    .from('registration')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', user_id)
+    .eq('is_main', true)
+  if (countError) throw new Error(`main character lookup failed: ${JSON.stringify(countError)}`)
+  if (count) return
 
-    const { data: oldest, error: oldestError } = await supabase
-      .from('registration')
-      .select('id')
-      .eq('user_id', user_id)
-      .order('created_at', { ascending: true })
-      .limit(1)
-      .maybeSingle()
-    if (oldestError) throw new Error(`oldest registration lookup failed: ${JSON.stringify(oldestError)}`)
-    if (!oldest?.id) return
+  const { data: oldest, error: oldestError } = await supabase
+    .from('registration')
+    .select('id')
+    .eq('user_id', user_id)
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle()
+  if (oldestError) throw new Error(`oldest registration lookup failed: ${JSON.stringify(oldestError)}`)
+  if (!oldest?.id) return
 
-    const { error: updateError } = await supabase.from('registration').update({ is_main: true }).eq('id', oldest.id)
-    if (updateError) throw new Error(`mark main character failed: ${JSON.stringify(updateError)}`)
-  }
+  const { error: updateError } = await supabase.from('registration').update({ is_main: true }).eq('id', oldest.id)
+  if (updateError) throw new Error(`mark main character failed: ${JSON.stringify(updateError)}`)
+}
 
 const upsertToken =
   (supabase: SupabaseClient) =>
@@ -93,11 +91,12 @@ export const GET = async (request: NextRequest) => {
   })
 
   // Pull this character's ESI data right away so it's populated by the time the
-  // user looks, and drop them on the status page to watch it land.
-  const batchId = await dispatchRefresh(user_id, [{ id: character_id, name }])
+  // user looks, and drop them on the refresh page to watch it land (it shows
+  // the just-dispatched tasks without needing the batch id).
+  await dispatchRefresh(user_id, [{ id: character_id, name }])
 
   const redirectTo = request.nextUrl.clone()
   redirectTo.pathname = '/character/refresh'
-  redirectTo.search = `?batch=${batchId}`
+  redirectTo.search = ''
   return NextResponse.redirect(redirectTo)
 }

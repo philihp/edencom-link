@@ -5,7 +5,6 @@ import { redirect } from 'next/navigation'
 
 import { createClient } from '@/utils/supabase/server'
 
-import { dispatchRefresh } from './dispatchRefresh'
 import { sso } from './sso'
 import { getEnabledScopes } from './userScopes'
 
@@ -29,25 +28,6 @@ export const register = async (formData: FormData) => {
 
   const scopes = await getEnabledScopes(supabase, user.id)
   redirect(sso.getRedirectUrl('state', scopes))
-}
-
-// Run every on-demand ESI extract for just the signed-in player's
-// characters, then send them to /character/refresh to watch it.
-export const refreshEsi = async () => {
-  const supabase = await createClient()
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-  if (!user?.id) {
-    redirect('/account/login')
-  }
-
-  // RLS scopes the registration read to the caller, so we only refresh ids the user owns.
-  const { data: characters } = await supabase.from('registration').select('id, name')
-  const batchId = await dispatchRefresh(user.id, characters ?? [])
-
-  redirect(`/character/refresh?batch=${batchId}`)
 }
 
 // Mark the selected registration as the player's main character, clearing any

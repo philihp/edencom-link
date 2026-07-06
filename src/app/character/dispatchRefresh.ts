@@ -4,7 +4,7 @@ import { forEach, reduce } from 'ramda'
 
 // The per-character ESI extracts a refresh fans out, one queue message per
 // character each. Each job is named after the ESI endpoint it extracts.
-const PER_CHARACTER_JOBS = [
+export const PER_CHARACTER_JOBS = [
   'character-assets',
   'character-blueprints',
   'character-orders',
@@ -43,9 +43,11 @@ const PER_CORPORATION_JOBS = [
   { job: 'corp-industry-jobs', loadScope: async () => (await import('@/jobs/corpIndustryJobs.js')).SCOPE },
 ] as const
 
+export const PER_CORPORATION_JOB_NAMES = PER_CORPORATION_JOBS.map(({ job }) => job)
+
 // Account-wide batch jobs (they process every registration at once), dispatched
 // once per refresh with no character.
-const ACCOUNT_JOBS = ['character-affiliations', 'universe-names'] as const
+export const ACCOUNT_JOBS = ['character-affiliations', 'universe-names'] as const
 
 type Character = { id: string; name: string | null }
 
@@ -76,8 +78,9 @@ const oneCharacterPerCorporation = (characters: Character[], corporationById: Ma
 // Run every on-demand ESI extract for the given characters: insert a
 // refresh_task row per unit of work (a per-character job for one character, or an
 // account-wide job) and enqueue a matching Vercel queue message tagged with that
-// row's id, which the consumer flips running -> done/error. Returns the batch id
-// so callers can link to /character/refresh?batch=<id>. Uses the service role,
+// row's id, which the consumer flips running -> done/error, live on
+// /character/refresh. Used when a character is added; the per-cell refresh
+// buttons go through dispatchSingleJob below instead. Uses the service role,
 // so callers must pass a userId they've already authorized.
 export const dispatchRefresh = async (userId: string, characters: Character[]): Promise<string> => {
   const batchId = randomUUID()
@@ -170,4 +173,50 @@ export const dispatchRefresh = async (userId: string, characters: Character[]): 
   )
 
   return batchId
+}
+
+// One cell of the /character/refresh matrix: insert a single refresh_task row
+// and enqueue its one queue message. `character` is null for the account-wide
+// jobs. For a corp-scoped job the message carries every scoped character in the
+// representative character's corporation — the same grouping dispatchRefresh
+// sends — so forEachCorporation can fall back through them if the
+// representative lacks the in-game role the corp endpoint requires.
+export const dispatchSingleJob = async (userId: string, job: string, character: Character | null): Promise<void> => {
+  // Imported lazily for the same build-time reason as dispatchRefresh above.
+  const { sudoSupabase, groupCharacterIdsByCorporation } = await import('@/supabase.js')
+
+  const characterIdsForMessage = async (): Promise<string[] | undefined> => {
+    if (!character) return undefined
+    const corpJob = PER_CORPORATION_JOBS.find((j) => j.job === job)
+    if (!corpJob) return [character.id]
+    const { data: registration, error } = await sudoSupabase
+      .from('registration')
+      .select('corporation_id')
+      .eq('id', character.id)
+      .maybeSingle()
+    if (error) throw error
+    const corporationId = registration?.corporation_id
+    if (corporationId == null) return [character.id]
+    const scope = await corpJob.loadScope()
+    const { byCorp } = await groupCharacterIdsByCorporation([scope])
+    return byCorp.get(corporationId) ?? [character.id]
+  }
+  const characterIds = await characterIdsForMessage()
+
+  const { data: inserted, error } = await sudoSupabase
+    .from('refresh_task')
+    .insert({
+      batch_id: randomUUID(),
+      user_id: userId,
+      job,
+      character_id: character?.id ?? null,
+      character_name: character?.name ?? null,
+    })
+    .select('id')
+    .single()
+  if (error) throw error
+
+  const { send } = await import('@/utils/queue')
+  await send('jobs', { job, characterIds, taskId: inserted.id })
+  console.log(`[dispatchSingleJob] enqueued ${job} for ${character?.name ?? 'account'} taskId=${inserted.id}`)
 }

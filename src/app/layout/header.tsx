@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { createClient } from '@/utils/supabase/server'
 import { indexesFlag } from '@/flags'
+import { Freshness } from '../Freshness'
 import styles from './header.module.css'
 
 const Header = async () => {
@@ -14,6 +15,7 @@ const Header = async () => {
   // earliest one, and to their email if they haven't registered a character yet.
   // Mirrors the inviter lookup on /account/invite.
   let displayName: string | undefined
+  let lastRefreshedAt: string | null = null
   if (user) {
     const { data: mainCharacter } = await supabase
       .from('registration')
@@ -23,6 +25,19 @@ const Header = async () => {
       .limit(1)
       .maybeSingle()
     displayName = mainCharacter?.name ?? user.email ?? undefined
+
+    // When this user's ESI data last landed: the most recent completed extract
+    // heartbeat attributed to them, whether a scheduled cron pull or an
+    // on-demand refresh (both record per-character/per-corp heartbeats).
+    const { data: latestBeat } = await supabase
+      .from('heartbeat')
+      .select('ended_at')
+      .eq('user_id', user.id)
+      .not('ended_at', 'is', null)
+      .order('ended_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    lastRefreshedAt = latestBeat?.ended_at ?? null
   }
 
   const showIndexes = await indexesFlag()
@@ -34,6 +49,14 @@ const Header = async () => {
             Edencom Link
           </Link>
           {displayName && <span className={styles.user}>{displayName}</span>}
+          {user && (
+            <span className={styles.refresh}>
+              <Freshness at={lastRefreshedAt} prefix="Refreshed" never="never refreshed" />
+              <span className={styles.bracket}>[</span>
+              <Link href="/character/refresh">refresh</Link>
+              <span className={styles.bracket}>]</span>
+            </span>
+          )}
         </div>
         <nav className={styles.nav}>
           <span className={styles.bracket}>[</span>
