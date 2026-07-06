@@ -102,21 +102,33 @@ const RevenuePage = async ({ searchParams }: RevenueParams) => {
   // Each tax entry references its industry job via context_id
   // (context_id_type = industry_job_id); older entries may only carry the job
   // id inside the description text, so collect those numeric tokens too and
-  // let the lookup decide which token is really a job id (cf. /structure).
+  // let the lookup decide which token is really a job id (cf. /structure). The
+  // job's installer pays the tax, and they aren't necessarily one of this app's
+  // linked characters (character_industry_job only covers those) — anyone in the
+  // corp can run a job here, so corp_industry_job (pulled by a director,
+  // covering every corp member) is checked too.
   const jobIds = new Set<string>()
   for (const entry of entries) {
     if (entry.context_id != null) jobIds.add(String(entry.context_id))
     for (const token of entry.description?.match(/\d+/g) ?? []) jobIds.add(token)
   }
-  const { data: jobRows } = jobIds.size
-    ? await supabase
-        .from('character_industry_job')
-        .select('job_id, station_id, facility_id, runs, product_type_id')
-        .in('job_id', [...jobIds])
-    : { data: [] }
+  const [{ data: characterJobRows }, { data: corpJobRows }] = jobIds.size
+    ? await Promise.all([
+        supabase
+          .from('character_industry_job')
+          .select('job_id, station_id, facility_id, runs, product_type_id')
+          .in('job_id', [...jobIds]),
+        supabase
+          .from('corp_industry_job')
+          .select('job_id, station_id, facility_id, runs, product_type_id')
+          .in('job_id', [...jobIds]),
+      ])
+    : [{ data: [] }, { data: [] }]
 
   const jobById = new Map<string, JobRow>()
-  for (const j of (jobRows ?? []) as JobRow[]) jobById.set(String(j.job_id), j)
+  for (const j of [...((characterJobRows ?? []) as JobRow[]), ...((corpJobRows ?? []) as JobRow[])]) {
+    jobById.set(String(j.job_id), j)
+  }
 
   const jobForEntry = (entry: JournalRow): JobRow | undefined => {
     if (entry.context_id != null) {
