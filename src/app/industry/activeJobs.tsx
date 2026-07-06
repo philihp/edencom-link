@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 
 import { DateTime } from '../DateTime'
 import { Name } from '../names'
-import { ALL_OWNERS, OwnerSelect, ownerNames, useOwnerFilter, type Owners } from '../ownerFilter'
+import { ALL_OWNERS, OwnerSelect, ownerNames, useExcludedCorps, useOwnerFilter, type Owners } from '../ownerFilter'
 import retro from '../retro.module.css'
 import { TypeName } from '../typeName'
 import styles from './industry.module.css'
@@ -34,6 +34,7 @@ type ActiveJobsProps = {
 }
 
 const OWNER_STORAGE_KEY = 'industry.activeJobs.ownerId'
+const EXCLUDED_CORPS_STORAGE_KEY = 'industry.activeJobs.excludedCorpIds'
 
 const formatRemaining = (endIso: string, now: number) => {
   const ms = new Date(endIso).getTime() - now
@@ -51,8 +52,16 @@ export const ActiveJobs = ({ jobs, owners, initialNow, typeNamesPromise, station
   const ownerName = ownerNames(owners)
 
   const [ownerId, setOwnerId] = useOwnerFilter(OWNER_STORAGE_KEY, owners)
+  const [excludedCorpIds, setExcludedCorpIds] = useExcludedCorps(EXCLUDED_CORPS_STORAGE_KEY, owners)
+  const toggleCorp = (id: string) =>
+    setExcludedCorpIds(
+      excludedCorpIds.includes(id) ? excludedCorpIds.filter((x) => x !== id) : [...excludedCorpIds, id]
+    )
 
-  const filtered = jobs.filter((j) => ownerId === ALL_OWNERS || j.owner_id === ownerId)
+  const filtered = jobs.filter((j) => {
+    if (ownerId !== ALL_OWNERS) return j.owner_id === ownerId
+    return !excludedCorpIds.includes(j.owner_id)
+  })
 
   const [now, setNow] = useState<number>(initialNow)
   useEffect(() => {
@@ -65,16 +74,28 @@ export const ActiveJobs = ({ jobs, owners, initialNow, typeNamesPromise, station
       <div className={styles.jobsHeader}>
         <h2>Active Jobs</h2>
       </div>
+      <div className={styles.jobsFilters}>
+        <label className={styles.jobsFilter}>
+          Owner:&nbsp;
+          <OwnerSelect owners={owners} value={ownerId} onChange={setOwnerId} />
+        </label>
+        {ownerId === ALL_OWNERS && owners.corporations.length > 0 && (
+          <span className={styles.corpToggles}>
+            Corporations:&nbsp;
+            {owners.corporations.map((c) => (
+              <label key={c.id} className={styles.corpToggle}>
+                <input type="checkbox" checked={!excludedCorpIds.includes(c.id)} onChange={() => toggleCorp(c.id)} />
+                {c.name}
+              </label>
+            ))}
+          </span>
+        )}
+      </div>
       {jobs.length > 0 ? (
         <table className={retro.retro}>
           <thead>
             <tr>
-              <th>
-                <label className={styles.jobsFilter}>
-                  Owner:&nbsp;
-                  <OwnerSelect owners={owners} value={ownerId} onChange={setOwnerId} />
-                </label>
-              </th>
+              <th>Owner</th>
               <th>Activity</th>
               <th>Product</th>
               <th className={retro.num}>Runs</th>
@@ -117,10 +138,11 @@ export const ActiveJobs = ({ jobs, owners, initialNow, typeNamesPromise, station
               </tr>
             ))}
             {filtered.length === 0 && (
-              // Keep the table (and the owner dropdown in its header) rendered
-              // so the filter can be changed back when an owner has no jobs.
+              // Keep the table (and the filter toolbar above it) rendered so
+              // the owner/corp filters can be changed back when they leave
+              // nothing to show.
               <tr>
-                <td colSpan={8}>No active jobs for this owner.</td>
+                <td colSpan={8}>No active jobs match the current filters.</td>
               </tr>
             )}
           </tbody>

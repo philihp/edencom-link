@@ -13,12 +13,31 @@
 .jobsFilters {
   display: flex;
   align-items: center;
-  gap: 12pt;
+  flex-wrap: wrap;
+  gap: 6pt 16pt;
+  margin: 8pt 0;
 }
 
 .jobsFilter {
   font-size: 10pt;
   color: var(--ink-soft);
+}
+
+.corpToggles {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2pt 10pt;
+  font-size: 10pt;
+  color: var(--ink-soft);
+}
+
+.corpToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4pt;
+  font-weight: normal;
+  white-space: nowrap;
 }
 
 .jobs {
