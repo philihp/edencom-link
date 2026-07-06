@@ -23,3 +23,11 @@ export const formatIsk = (raw: string | number | null) => {
   const value = formatIskValue(raw)
   return value === '—' ? value : `${value} ISK`
 }
+
+// Money shown in billions of ISK with the unit, e.g. "123.456 bISK" or
+// "0.004 bISK". Capped at 3 decimal places, never more.
+export const formatBisk = (raw: string | number | null) => {
+  if (raw === null) return '—'
+  const value = (Number(raw) / 1_000_000_000).toLocaleString('en-US', { maximumFractionDigits: 3 })
+  return `${value} bISK`
+}
