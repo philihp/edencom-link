@@ -4,7 +4,7 @@ import { reduce } from 'ramda'
 
 import { createClient } from '@/utils/supabase/server'
 import { formatBisk } from '../isk'
-import { register, refreshEsi, setMainCharacter } from './actions'
+import { register, setMainCharacter } from './actions'
 import MainCharacterForm from './mainCharacterForm'
 import { requiredScopes } from './scopes'
 import { getEnabledScopes } from './userScopes'
@@ -97,9 +97,6 @@ const CharacterPage = async () => {
       )}
       <form className={styles.actions}>
         <button formAction={register}>Add Character</button>
-        <button formAction={refreshEsi} disabled={!characters?.length}>
-          Refresh ESI
-        </button>
       </form>
     </>
   )

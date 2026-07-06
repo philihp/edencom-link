@@ -28,6 +28,16 @@
   color: var(--ink-faint);
 }
 
+/* ESI freshness indicator + [refresh] link, floated to the right end of the
+ * top row (wraps under the name on narrow screens). */
+.refresh {
+  margin-left: auto;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  color: var(--ink-faint);
+}
+
 .nav {
   display: flex;
   flex-wrap: wrap;

@@ -4,73 +4,101 @@ import { reduce } from 'ramda'
 
 import { createClient } from '@/utils/supabase/server'
 
-import { DateTime } from '../../DateTime'
+import { Freshness } from '../../Freshness'
+import { freshnessLevel } from '../../freshness'
+import { CharacterName, Name } from '../../names'
+import { RefreshButton } from './refreshButton'
 import { RefreshPoller } from './poller'
 import styles from './refresh.module.css'
 
-// Matches the per-character jobs the Refresh ESI action fans out, in column
-// order, with a short column label for each (the full job names are named after
-// their ESI endpoints and too wide for a table header). The daily corp jobs
-// (corp-structures etc.) aren't fanned out per character, so they're not
-// columns here.
-const JOBS = [
+// The per-character extract jobs, in column order, with a short column label
+// for each (the full job names are named after their ESI endpoints and too
+// wide for a table header).
+const CHARACTER_JOBS = [
   ['character-assets', 'assets'],
   ['character-blueprints', 'blueprints'],
   ['character-orders', 'orders'],
   ['character-wallet', 'wallet'],
   ['character-wallet-transactions', 'transactions'],
   ['character-industry-jobs', 'industry'],
-  ['corp-wallet-transactions', 'corp txns'],
 ] as const
 
-// Always read fresh — the poller re-requests this server component every couple of
-// seconds while a refresh is in flight.
+// The corp-scoped extracts that can be kicked on demand. Each runs once per
+// corporation, under whichever character's token carries both the OAuth scope
+// and the in-game role the endpoint requires.
+const CORP_JOBS = [
+  ['corp-assets', 'assets'],
+  ['corp-industry-jobs', 'industry'],
+  ['corp-wallet-transactions', 'transactions'],
+] as const
+
+// Account-wide batch jobs — one run covers every registration at once.
+const ACCOUNT_JOBS = [
+  ['character-affiliations', 'affiliations'],
+  ['universe-names', 'universe names'],
+] as const
+
+// Always read fresh — the poller re-requests this server component every couple
+// of seconds while any kicked-off job is still in flight.
 export const dynamic = 'force-dynamic'
 
 type Task = {
   id: string
   job: string
   character_id: string | null
-  character_name: string | null
   status: string
-  started_at: string | null
-  ended_at: string | null
   error: string | null
 }
 
+type Beat = {
+  job: string
+  character_id: string | null
+  corporation_id: number | null
+  ended_at: string
+}
+
 const STATUS_LABEL: Record<string, string> = {
-  done: '✓ done',
   running: '● running',
-  error: '✗ error',
   pending: '· pending',
 }
 
-const StatusCell = ({ task, lastSuccessAt }: { task?: Task; lastSuccessAt?: string | null }) => {
-  // No task means this job wasn't queued in this refresh — fall back to when it
-  // last completed successfully for this character (across earlier refreshes).
-  if (!task) {
+// One matrix cell: a just-kicked task shows its live status; otherwise the
+// freshness dot for the job's last completed run, with a refresh button once
+// it's yellow or red (or errored, or has never run at all).
+const Cell = ({
+  job,
+  characterId,
+  at,
+  task,
+}: {
+  job: string
+  characterId: string | null
+  at?: string
+  task?: Task
+}) => {
+  if (task && (task.status === 'pending' || task.status === 'running')) {
     return (
-      <span className={styles.status} data-status="idle">
-        {lastSuccessAt ? (
-          <>
-            last ✓ <DateTime value={lastSuccessAt} />
-          </>
-        ) : (
-          'never run'
-        )}
+      <span className={styles.status} data-status={task.status}>
+        {STATUS_LABEL[task.status]}
       </span>
     )
   }
+  const errored = task?.status === 'error'
   return (
-    <span className={styles.status} data-status={task.status} title={task.error ?? undefined}>
-      {STATUS_LABEL[task.status] ?? task.status}
+    <span className={styles.cell}>
+      {errored ? (
+        <span className={styles.status} data-status="error" title={task?.error ?? undefined}>
+          ✗ error
+        </span>
+      ) : (
+        <Freshness at={at} />
+      )}
+      {(errored || freshnessLevel(at) !== 'fresh') && <RefreshButton job={job} characterId={characterId} />}
     </span>
   )
 }
 
-const RefreshPage = async ({ searchParams }: { searchParams: Promise<{ batch?: string }> }) => {
-  const { batch } = await searchParams
-
+const RefreshPage = async () => {
   const supabase = await createClient()
   const {
     data: { user },
@@ -79,112 +107,220 @@ const RefreshPage = async ({ searchParams }: { searchParams: Promise<{ batch?: s
     redirect('/account/login')
   }
 
-  if (!batch) {
-    return (
-      <>
-        <h1>Refresh ESI</h1>
-        <p>
-          No refresh in progress. Start one from the <Link href="/character">Characters</Link> page.
-        </p>
-      </>
-    )
-  }
+  // RLS scopes all of these to the caller: their registrations, their own
+  // characters' heartbeats plus their corps' and the shared account-wide ones,
+  // and their own refresh tasks.
+  const { data: registrationsData } = await supabase
+    .from('registration')
+    .select('id, name, corporation_id')
+    .order('created_at', { ascending: true })
+  const registrations = registrationsData ?? []
 
+  const { data: beatsData } = await supabase.rpc('latest_heartbeats')
+  const beats = (beatsData ?? []) as Beat[]
+
+  // Overlay recently dispatched refresh_task rows on the matrix so a kicked
+  // cell shows pending/running/error. Floored to the last few minutes so a
+  // message that was lost before ever flipping its row terminal doesn't pin a
+  // cell (and the poller) on "pending" forever.
+  const taskFloor = new Date(Date.now() - 10 * 60_000).toISOString()
   const { data: tasksData } = await supabase
     .from('refresh_task')
-    .select('id, job, character_id, character_name, status, started_at, ended_at, error')
-    .eq('batch_id', batch)
+    .select('id, job, character_id, status, error')
+    .gte('created_at', taskFloor)
     .order('created_at', { ascending: true })
   const tasks = (tasksData ?? []) as Task[]
 
-  // Index the per-character tasks by character+job for the matrix; the
-  // account-wide jobs (no character) each stand on their own.
-  const { byCharJob, characters, accountWide } = reduce(
-    (acc, t) => {
-      if (t.character_id) {
-        acc.byCharJob.set(`${t.character_id}:${t.job}`, t)
-        acc.characters.set(t.character_id, t.character_name ?? t.character_id)
+  const corporationOf = new Map(registrations.map((r) => [r.id, r.corporation_id]))
+
+  // latest_heartbeats returns one row per job per owner. Character- and
+  // account-scoped rows are already unique per cell; corp rows can appear once
+  // per character that has ever run the corp's pull, so keep the newest — its
+  // character_id is whose token the extract actually ran under last time.
+  const { charBeats, corpBeats, accountBeats, corpRunsAs } = reduce(
+    (acc, b: Beat) => {
+      if (b.corporation_id != null) {
+        const key = `${b.job}:${b.corporation_id}`
+        const prev = acc.corpBeats.get(key)
+        if (!prev || prev.ended_at < b.ended_at) acc.corpBeats.set(key, b)
+        const prevRun = acc.corpRunsAs.get(b.corporation_id)
+        if (!prevRun || prevRun.ended_at < b.ended_at) acc.corpRunsAs.set(b.corporation_id, b)
+      } else if (b.character_id != null) {
+        acc.charBeats.set(`${b.job}:${b.character_id}`, b.ended_at)
       } else {
-        acc.accountWide.push(t)
+        acc.accountBeats.set(b.job, b.ended_at)
       }
       return acc
     },
-    { byCharJob: new Map<string, Task>(), characters: new Map<string, string>(), accountWide: [] as Task[] },
+    {
+      charBeats: new Map<string, string>(),
+      corpBeats: new Map<string, Beat>(),
+      accountBeats: new Map<string, string>(),
+      corpRunsAs: new Map<number, Beat>(),
+    },
+    beats
+  )
+
+  // Index the recent tasks by cell, later rows winning. A corp job's task row
+  // carries its representative character, so key those by the corp instead.
+  const corpJobNames = new Set<string>(CORP_JOBS.map(([job]) => job))
+  const taskByCell = reduce(
+    (acc, t) => {
+      const corpId = corpJobNames.has(t.job) && t.character_id != null ? corporationOf.get(t.character_id) : null
+      return acc.set(`${t.job}:${corpId ?? t.character_id ?? ''}`, t)
+    },
+    new Map<string, Task>(),
     tasks
   )
+  const anyActive = tasks.some((t) => t.status === 'pending' || t.status === 'running')
 
-  const isTerminal = (status: string) => status === 'done' || status === 'error'
-  const allDone = tasks.length > 0 && tasks.every((t) => isTerminal(t.status))
-
-  if (tasks.length === 0) {
-    return (
-      <>
-        <h1>Refresh ESI</h1>
-        <p>No tasks found for this refresh.</p>
-        <p>
-          <Link href="/character">← Back to Characters</Link>
-        </p>
-      </>
-    )
-  }
-
-  // For matrix cells with no task in this batch, look up the last successful run
-  // of that job for the character (any earlier refresh). One query for all of the
-  // batch's characters, reduced to the most recent `done` per character+job.
-  const charIds = [...characters.keys()]
-  const { data: doneData } = await supabase
-    .from('refresh_task')
-    .select('character_id, job, ended_at')
-    .eq('status', 'done')
-    .in('character_id', charIds)
-    .not('ended_at', 'is', null)
-    .order('ended_at', { ascending: false })
-  const lastSuccess = reduce(
-    // first seen for a key = most recent ended_at, since doneData is ordered descending
-    (acc, r) => (acc.has(`${r.character_id}:${r.job}`) ? acc : acc.set(`${r.character_id}:${r.job}`, r.ended_at)),
-    new Map<string, string>(),
-    doneData ?? []
+  // The user's corporations, each with the registered characters in it (in
+  // registration order — the representative dispatchRefresh would pick first).
+  const corporations = reduce(
+    (acc, r) => {
+      if (r.corporation_id == null) return acc
+      const group = acc.get(r.corporation_id)
+      if (group) group.push(r)
+      else acc.set(r.corporation_id, [r])
+      return acc
+    },
+    new Map<number, typeof registrations>(),
+    registrations
   )
+
+  const corporationIds = [...corporations.keys()]
+  const { data: corpNamesData } = corporationIds.length
+    ? await supabase.from('universe_name').select('id, name').in('id', corporationIds)
+    : { data: [] }
+  const corpName = new Map((corpNamesData ?? []).map((n) => [Number(n.id), n.name as string]))
 
   return (
     <>
       <h1>Refresh ESI</h1>
-      <p>{allDone ? 'All jobs finished.' : 'Refreshing… this page updates automatically.'}</p>
-
-      {accountWide.map((task) => (
-        <p key={task.id}>
-          Account-wide <strong>{task.job}</strong>: <StatusCell task={task} />
-        </p>
-      ))}
-
-      <table className={styles.table}>
-        <thead>
-          <tr>
-            <th>Character</th>
-            {JOBS.map(([job, label]) => (
-              <th key={job}>{label}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {[...characters.entries()].map(([id, name]) => (
-            <tr key={id}>
-              <td>{name}</td>
-              {JOBS.map(([job]) => (
-                <td key={job}>
-                  <StatusCell task={byCharJob.get(`${id}:${job}`)} lastSuccessAt={lastSuccess.get(`${id}:${job}`)} />
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-
       <p>
-        <Link href="/character">← Back to Characters</Link>
+        Extracts run on their own schedule (hourly for most, daily for corp assets and affiliations); nothing starts
+        just by opening this page. A cell shows when its job last ran — green within 15 minutes, yellow within 75, red
+        beyond that — and stale cells can be refreshed one at a time.
       </p>
 
-      <RefreshPoller done={allDone} />
+      {registrations.length === 0 ? (
+        <p>
+          No characters registered yet. Add one on the <Link href="/character">Characters</Link> page.
+        </p>
+      ) : (
+        <>
+          <h2>Characters</h2>
+          <table className={styles.table}>
+            <thead>
+              <tr>
+                <th>Character</th>
+                {CHARACTER_JOBS.map(([job, label]) => (
+                  <th key={job}>{label}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {registrations.map((r) => (
+                <tr key={r.id}>
+                  <td>
+                    <CharacterName name={r.name} />
+                  </td>
+                  {CHARACTER_JOBS.map(([job]) => (
+                    <td key={job}>
+                      <Cell
+                        job={job}
+                        characterId={r.id}
+                        at={charBeats.get(`${job}:${r.id}`)}
+                        task={taskByCell.get(`${job}:${r.id}`)}
+                      />
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          {corporations.size > 0 && (
+            <>
+              <h2>Corporations</h2>
+              <p>
+                Corp extracts run once per corporation, under the token of the character with the in-game role —
+                director or the like — the endpoint requires. The token column shows whose token the last pull ran
+                under.
+              </p>
+              <table className={styles.table}>
+                <thead>
+                  <tr>
+                    <th>Corporation</th>
+                    <th>Token</th>
+                    {CORP_JOBS.map(([job, label]) => (
+                      <th key={job}>{label}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {[...corporations.entries()].map(([corporationId, members]) => {
+                    const runsAs = corpRunsAs.get(corporationId)
+                    const owned = members.find((m) => m.id === runsAs?.character_id)
+                    // Kick new pulls as the character the last one succeeded
+                    // under when it's ours; the queue message carries the whole
+                    // corp group either way, so this only picks the row's
+                    // representative.
+                    const representative = owned ?? members[0]
+                    return (
+                      <tr key={corporationId}>
+                        <td>
+                          <Name name={corpName.get(corporationId)} id={corporationId} />
+                        </td>
+                        <td>
+                          {runsAs ? (
+                            owned ? (
+                              <CharacterName name={owned.name} />
+                            ) : (
+                              // The last pull ran under a corpmate's token on
+                              // another account — visible via the corp-scoped
+                              // heartbeat, but not a registration we can name.
+                              <span className={styles.tokenNote}>a corpmate&apos;s</span>
+                            )
+                          ) : (
+                            <CharacterName name={representative.name} />
+                          )}
+                        </td>
+                        {CORP_JOBS.map(([job]) => (
+                          <td key={job}>
+                            <Cell
+                              job={job}
+                              characterId={representative.id}
+                              at={corpBeats.get(`${job}:${corporationId}`)?.ended_at}
+                              task={taskByCell.get(`${job}:${corporationId}`)}
+                            />
+                          </td>
+                        ))}
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </>
+          )}
+
+          <h2>Account-wide</h2>
+          <table className={styles.table}>
+            <tbody>
+              {ACCOUNT_JOBS.map(([job, label]) => (
+                <tr key={job}>
+                  <td>{label}</td>
+                  <td>
+                    <Cell job={job} characterId={null} at={accountBeats.get(job)} task={taskByCell.get(`${job}:`)} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
+
+      <RefreshPoller done={!anyActive} />
     </>
   )
 }
