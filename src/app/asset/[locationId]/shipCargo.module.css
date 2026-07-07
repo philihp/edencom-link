@@ -1,0 +1,87 @@
+/*
+ * Ship cargo/fitting view: bay sections of item-icon tiles, echoing the EVE
+ * client's fitting-and-cargo layout while staying in this app's flat/paper
+ * visual language (see structures.module.css for the sibling tile-grid).
+ */
+
+.bay {
+  margin: 20px 0;
+}
+
+.bayLabel {
+  margin: 0 0 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+  gap: 8px;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--paper-raised);
+  text-align: center;
+  min-width: 0;
+}
+
+.tileLink {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  color: inherit !important;
+  text-decoration: none !important;
+}
+
+.tile:has(.tileLink):hover {
+  border-color: var(--accent);
+}
+
+.icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 4px;
+}
+
+.qty {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  padding: 1px 4px;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+
+.name {
+  font-size: 11px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.owner {
+  font-size: 10px;
+  color: var(--ink-faint);
+}

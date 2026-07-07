@@ -1,12 +1,17 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 
+import { getSdeType } from '@/sdeTypes'
 import { createClient } from '@/utils/supabase/server'
 import { fetchOwners } from '../../owners'
 import { fetchStationNames, fetchStationSystems } from '../../stationNames'
 import { fetchSystemNames } from '../../systemNames'
 import { fetchTypeNames } from '../../typeNames'
 import { LocationAssets, type ItemRow } from './locationAssets'
+import { ShipCargo } from './shipCargo'
+
+// invGroups.categoryID for the Ship category in CCP's SDE.
+const SHIP_CATEGORY_ID = 6
 
 // Bigint ids arrive from PostgREST as strings; keep them as strings and only
 // convert at the API/system-lookup boundary (mirrors the assets index page).
@@ -185,7 +190,11 @@ const AssetLocationPage = async ({ params }: { params: Promise<{ locationId: str
         <Link href={backHref}>&laquo; {backLabel}</Link>
       </p>
 
-      <LocationAssets rows={rows} owners={owners} typeNamesPromise={typeNamesPromise} />
+      {self && getSdeType(Number(self.type_id))?.categoryID === SHIP_CATEGORY_ID ? (
+        <ShipCargo rows={rows} owners={owners} typeNamesPromise={typeNamesPromise} />
+      ) : (
+        <LocationAssets rows={rows} owners={owners} typeNamesPromise={typeNamesPromise} />
+      )}
     </>
   )
 }
