@@ -5,12 +5,46 @@ import { sudoSupabase } from './supabase.js'
 
 const LOOKBACK_MS = 30 * 24 * 60 * 60 * 1000
 const BATCH_SIZE = 1000
+const PAGE_SIZE = 1000
 
 // id → Number(id), point-free.
 const idToNumber = pipe(prop('id'), Number)
 
 // Ids known to universe_name already, as a Set for O(1) membership checks.
 const knownIdSet = pipe(map(idToNumber), (ids) => new Set(ids))
+
+// Page an unfiltered (or coarsely filtered) select past PostgREST's max_rows
+// (1000) cap until a short page signals the end (same pattern as
+// src/app/market/page.tsx / src/app/structure/revenue/page.tsx). Every table
+// read below grows past 1000 rows over time (corp_wallet_journal,
+// corp_wallet_transaction, universe_name itself, …); an unpaged .select()
+// silently truncates to an arbitrary first page, which can drop the very ids
+// a resolver is looking for and leave their names unresolved forever.
+const selectAllRows = async (build) => {
+  const rows = []
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await build(from, from + PAGE_SIZE - 1)
+    if (error) throw error
+    if (!data || data.length === 0) break
+    rows.push(...data)
+    if (data.length < PAGE_SIZE) break
+  }
+  return rows
+}
+
+// The `known` universe_name lookup for a given set of candidate ids: chunk the
+// ids themselves (BATCH_SIZE per .in() call, same cap as resolveAllIds) rather
+// than range-paging the response, since each chunk's result can never exceed
+// the chunk size.
+const knownIdsAmong = async (ids) => {
+  const known = []
+  for (const batch of splitEvery(BATCH_SIZE, [...ids])) {
+    const { data, error } = await sudoSupabase.from('universe_name').select('id').in('id', batch)
+    if (error) throw error
+    known.push(...(data ?? []))
+  }
+  return knownIdSet(known)
+}
 
 // A resolved id/name/category row, trimmed down to the universe_name upsert shape.
 const toNameRow = pick(['id', 'name', 'category'])
@@ -49,18 +83,21 @@ export const resolveAllIds = (ids) =>
 export const resolveCorpJournalNames = async () => {
   const cutoff = new Date(Date.now() - LOOKBACK_MS).toISOString()
 
-  const { data: journal, error: journalErr } = await sudoSupabase
-    .from('corp_wallet_journal')
-    .select('first_party_id, second_party_id')
-    .gte('date', cutoff)
-  if (journalErr) throw journalErr
+  const journal = await selectAllRows((from, to) =>
+    sudoSupabase
+      .from('corp_wallet_journal')
+      .select('first_party_id, second_party_id')
+      .gte('date', cutoff)
+      .order('corporation_id', { ascending: true })
+      .order('division', { ascending: true })
+      .order('entry_id', { ascending: true })
+      .range(from, to)
+  )
 
   const journalPartyIds = pipe(map(props(['first_party_id', 'second_party_id'])), unnest, reject(isNil), map(Number))
-  const ids = new Set(journalPartyIds(journal ?? []))
+  const ids = new Set(journalPartyIds(journal))
 
-  const { data: known, error: knownErr } = await sudoSupabase.from('universe_name').select('id')
-  if (knownErr) throw knownErr
-  const knownIds = knownIdSet(known ?? [])
+  const knownIds = await knownIdsAmong(ids)
 
   const toResolve = filter((n) => Number.isFinite(n) && n > 0 && !knownIds.has(n), [...ids])
   console.log(`[names] corp journal: ${ids.size} unknown id(s) seen in last 30d, ${toResolve.length} to resolve`)
@@ -87,27 +124,23 @@ export const resolveCorpJournalNames = async () => {
 // owner. Only resolves missing ids, so steady-state runs do nothing.
 export const resolveKnownCorpNames = async () => {
   const sources = [
-    ['corp_wallet_transaction', 'corporation_id'],
-    ['character_affiliation', 'corporation_id'],
-    ['corp_structure', 'corporation_id'],
+    ['corp_wallet_transaction', 'corporation_id', 'transaction_id'],
+    ['character_affiliation', 'corporation_id', 'character_id'],
+    ['corp_structure', 'corporation_id', 'structure_id'],
   ]
   const ids = new Set()
-  for (const [table, column] of sources) {
-    const { data, error } = await sudoSupabase.from(table).select(column)
-    if (error) throw error
-    for (const row of data ?? []) {
+  for (const [table, column, pk] of sources) {
+    const rows = await selectAllRows((from, to) =>
+      sudoSupabase.from(table).select(column).order(pk, { ascending: true }).range(from, to)
+    )
+    for (const row of rows) {
       const id = Number(row[column])
       if (Number.isFinite(id) && id > 0) ids.add(id)
     }
   }
   if (ids.size === 0) return
 
-  const { data: known, error: knownErr } = await sudoSupabase
-    .from('universe_name')
-    .select('id')
-    .in('id', [...ids])
-  if (knownErr) throw knownErr
-  const knownIds = knownIdSet(known ?? [])
+  const knownIds = await knownIdsAmong(ids)
   const toResolve = reject((id) => knownIds.has(id), [...ids])
   console.log(`[names] corporations: ${toResolve.length} to resolve`)
   if (toResolve.length === 0) return
@@ -147,12 +180,15 @@ export const resolveAssetStationNames = async () => {
     if (rows.length < PAGE) break
   }
 
-  const { data: known, error: knownErr } = await sudoSupabase
-    .from('universe_name')
-    .select('id')
-    .eq('category', 'station')
-  if (knownErr) throw knownErr
-  const knownIds = knownIdSet(known ?? [])
+  const known = await selectAllRows((from, to) =>
+    sudoSupabase
+      .from('universe_name')
+      .select('id')
+      .eq('category', 'station')
+      .order('id', { ascending: true })
+      .range(from, to)
+  )
+  const knownIds = knownIdSet(known)
 
   const toResolve = filter((n) => Number.isFinite(n) && n > 0 && !knownIds.has(n), [...ids])
   console.log(`[names] asset stations: ${toResolve.length} to resolve`)
@@ -205,12 +241,15 @@ export const resolveAssetSystemNames = async () => {
   await collectFloatingSystemIds('character_asset_over_time', ids)
   await collectFloatingSystemIds('corp_asset_over_time', ids)
 
-  const { data: known, error: knownErr } = await sudoSupabase
-    .from('universe_name')
-    .select('id')
-    .eq('category', 'solar_system')
-  if (knownErr) throw knownErr
-  const knownIds = knownIdSet(known ?? [])
+  const known = await selectAllRows((from, to) =>
+    sudoSupabase
+      .from('universe_name')
+      .select('id')
+      .eq('category', 'solar_system')
+      .order('id', { ascending: true })
+      .range(from, to)
+  )
+  const knownIds = knownIdSet(known)
 
   const toResolve = filter((n) => Number.isFinite(n) && n > 0 && !knownIds.has(n), [...ids])
   console.log(`[names] asset systems: ${toResolve.length} to resolve`)
@@ -234,18 +273,22 @@ export const resolveAssetSystemNames = async () => {
 // steady-state runs do nothing. The structures page reads universe_name to label
 // each tile's system instead of falling back to a raw system_id.
 export const resolveCorpStructureSystemNames = async () => {
-  const { data: structures, error: structuresErr } = await sudoSupabase.from('corp_structure').select('system_id')
-  if (structuresErr) throw structuresErr
+  const structures = await selectAllRows((from, to) =>
+    sudoSupabase.from('corp_structure').select('system_id').order('structure_id', { ascending: true }).range(from, to)
+  )
 
   const systemId = pipe(prop('system_id'), Number)
-  const ids = new Set(map(systemId, reject(pipe(prop('system_id'), isNil), structures ?? [])))
+  const ids = new Set(map(systemId, reject(pipe(prop('system_id'), isNil), structures)))
 
-  const { data: known, error: knownErr } = await sudoSupabase
-    .from('universe_name')
-    .select('id')
-    .eq('category', 'solar_system')
-  if (knownErr) throw knownErr
-  const knownIds = knownIdSet(known ?? [])
+  const known = await selectAllRows((from, to) =>
+    sudoSupabase
+      .from('universe_name')
+      .select('id')
+      .eq('category', 'solar_system')
+      .order('id', { ascending: true })
+      .range(from, to)
+  )
+  const knownIds = knownIdSet(known)
 
   const toResolve = filter((n) => Number.isFinite(n) && n > 0 && !knownIds.has(n), [...ids])
   console.log(`[names] corp structure systems: ${toResolve.length} to resolve`)
