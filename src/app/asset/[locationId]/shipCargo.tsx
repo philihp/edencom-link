@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { ascend, groupBy, sortBy, sortWith } from 'ramda'
 
 import { ALL_OWNERS, OwnerSelect, ownerNames, useOwnerFilter, type Owners } from '../../ownerFilter'
 import { TypeName } from '../../typeName'
@@ -49,16 +50,13 @@ const bayFor = (flag: string | null): Omit<Bay, 'items'> => {
 }
 
 const groupIntoBays = (rows: ItemRow[]): Bay[] => {
-  const bays = new Map<string, Bay>()
-  for (const row of rows) {
-    const meta = bayFor(row.flag)
-    const bay = bays.get(meta.key) ?? { ...meta, items: [] }
-    bay.items.push(row)
-    bays.set(meta.key, bay)
-  }
-  return [...bays.values()]
-    .map((bay) => ({ ...bay, items: bay.items.sort((a, b) => a.typeId - b.typeId) }))
-    .sort((a, b) => a.order - b.order || a.slotIndex - b.slotIndex || a.label.localeCompare(b.label))
+  const byBayKey = groupBy((row: ItemRow) => bayFor(row.flag).key, rows)
+  const bays = Object.entries(byBayKey).map(([key, items = []]) => ({
+    ...bayFor(items[0].flag),
+    key,
+    items: sortBy((item: ItemRow) => item.typeId, items),
+  }))
+  return sortWith([ascend((bay) => bay.order), ascend((bay) => bay.slotIndex), ascend((bay) => bay.label)], bays)
 }
 
 type ShipCargoProps = {
