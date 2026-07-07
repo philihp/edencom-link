@@ -6,6 +6,11 @@
 .pnp.js
 .yarn/install-state.gz
 
+# pnpm-generated build-script approvals (`pnpm approve-builds`) — committing
+# this breaks Vercel's build (missing "packages" field, pnpm/pnpm#9361); the
+# approval only needs to exist locally, not in the repo
+/pnpm-workspace.yaml
+
 # testing
 /coverage
 
