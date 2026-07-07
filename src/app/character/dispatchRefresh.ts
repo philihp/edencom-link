@@ -11,6 +11,9 @@ export const PER_CHARACTER_JOBS = [
   'character-wallet',
   'character-wallet-transactions',
   'character-industry-jobs',
+  'character-location',
+  'character-clones',
+  'character-implants',
 ] as const
 
 // Corp-scoped jobs pull one corp's whole asset/job/transaction set. Fanning one

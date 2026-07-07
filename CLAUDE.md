@@ -15,7 +15,7 @@ EVE Online hangar/wallet/industry tracker. Package name `edencom-link` (private)
 - **No test runner / no `test` script** — there are no automated tests. No `typecheck` script (rely on `next build` / editor).
 - Pre-commit: husky + lint-staged auto-format & `eslint --fix` staged files.
 - `pnpm run sde:build` — downloads CCP's SDE type/group and solar-system data and writes `src/generated/sdeTypes.json` + `src/generated/sdeSystems.json` (gitignored). Runs automatically as a `predev`/`prebuild` step; skips re-downloading any file that already exists (pass `--force` to refresh). See `src/buildSde.js`.
-- Extract job scripts (one per ESI endpoint, scheduled via Vercel Cron, see below): `pnpm run character-assets` / `character-blueprints` / `character-orders` / `character-wallet` / `character-wallet-transactions` / `character-industry-jobs` / `character-affiliations` / `corp-structures` / `corp-assets` / `corp-blueprints` / `corp-wallet-journal` / `corp-wallet-transactions` / `corp-industry-jobs` / `industry-systems` / `universe-names` / `universe-structures`, plus `heartbeat`. `connect`, `ping`, `refresh` are DB/token utilities.
+- Extract job scripts (one per ESI endpoint, scheduled via Vercel Cron, see below): `pnpm run character-assets` / `character-blueprints` / `character-orders` / `character-wallet` / `character-wallet-transactions` / `character-industry-jobs` / `character-location` / `character-clones` / `character-implants` / `character-affiliations` / `corp-structures` / `corp-assets` / `corp-blueprints` / `corp-wallet-journal` / `corp-wallet-transactions` / `corp-industry-jobs` / `industry-systems` / `universe-names` / `universe-structures`, plus `heartbeat`. `connect`, `ping`, `refresh` are DB/token utilities.
 - DB migrations (Supabase CLI, configured by `supabase/config.toml`): `pnpm run db:new <name>` scaffolds a migration under `supabase/migrations/`; `pnpm run db:push` applies pending migrations to the linked project (`supabase link --project-ref <ref>` first). On push to `main` that touches `supabase/migrations/**`, the `Migrate` workflow runs `supabase db push` automatically (also manually dispatchable).
 
 ## Layout
@@ -75,6 +75,9 @@ All functions take `(accessToken, id, ...)` unless noted. Returns raw ESI respon
 - `orders(token, characterId)` — open market orders
 - `industryJobs(token, characterId)` — industry job list
 - `character(token, characterId)` — character sheet
+- `characterLocation(token, characterId)` — current solar system (and station/structure, if docked)
+- `characterClones(token, characterId)` — home clone + jump clones, each with location and (for jump clones) implants
+- `characterImplants(token, characterId)` — implants currently plugged into whichever clone body the character occupies
 - `corpStructures(token, corpId, page)` — corporation Upwell structures (paged)
 - `corpAssets(token, corpId, page)` — corporation assets (paged)
 - `corpBlueprints(token, corpId, page)` — corporation blueprints list (paged)
@@ -175,6 +178,9 @@ One job per ESI endpoint. The npm script, queue job name, and heartbeat job labe
 | `character-wallet` | `/characters/{id}/wallet/` | `character_wallet` | hourly `:44` |
 | `character-wallet-transactions` | `/characters/{id}/wallet/transactions/` | `character_wallet_transaction` | hourly `:46` |
 | `character-industry-jobs` | `/characters/{id}/industry/jobs/` | `character_industry_job` | hourly `:48` |
+| `character-location` | `/characters/{id}/location/` | `character_location` | hourly `:14` |
+| `character-implants` | `/characters/{id}/implants/` | `character_implant` | hourly `:16` |
+| `character-clones` | `/characters/{id}/clones/` | `character_clone_over_time` | hourly `:18` |
 | `character-affiliations` | `/characters/affiliation/` | `character_affiliation` | 11:41 daily |
 | `corp-structures` | `/corporations/{id}/structures/` | `corp_structure` | 09:17 daily |
 | `corp-assets` | `/corporations/{id}/assets/` | `corp_asset_over_time`, `corp_structure_rig` | 09:27 daily |
@@ -211,6 +217,10 @@ Requires a `CRON_SECRET` env var set in Vercel (see `.env.example`).
 | `character_wallet_transaction` | Trade history | `transaction_id`, `character_id`, `type_id`, `unit_price`, `quantity`, `is_buy`, `date` |
 | `character_order` | Live open orders | `order_id`, `character_id`, `type_id`, `price`, `volume_remain`, `is_buy`, `seen_at` |
 | `character_industry_job` | Manufacturing/research | `job_id`, `character_id`, `blueprint_id`, `product_type_id`, `activity_id`, `status`, `end_date` |
+| `character_location` | Live current solar system/station/structure | `character_id` (PK), `solar_system_id`, `station_id`, `structure_id`, `recorded_at` |
+| `character_clone_over_time` | SCD Type 2 clone history (home + jump clones, with implants) | `character_id`, `jump_clone_id`, `is_home`, `location_id`, `location_type`, `name`, `implants` (jsonb type-id array), `is_current`, `first_seen_at`, `last_seen_at` |
+| `character_clone` | View: `is_current` clones | same columns as above |
+| `character_implant` | Live current implants plugged into the character's active clone | `character_id` (PK), `type_ids` (bigint array), `recorded_at` |
 | `character_affiliation` | Character→Corp mapping | `character_id`, `corporation_id` |
 | `corp_structure` | Corp Upwell structures | `structure_id`, `corporation_id`, `type_id`, `system_id`, `name`, `state`, `fuel_expires`, `services` (jsonb) |
 | `corp_structure_rig` | Rigs on structures | `structure_id`, `location_flag`, `type_id`, `corporation_id` |

@@ -150,6 +150,29 @@ export const universeStructure = (access_token, structureID) =>
     label: `universeStructure ${structureID}`,
   })
 
+// A character's current solar system (and station/structure, if docked).
+export const characterLocation = (access_token, characterID) =>
+  esiJson(`/characters/${characterID}/location/`, {
+    access_token,
+    label: `location ${characterID}`,
+  })
+
+// A character's home clone plus every jump clone, each with its location and
+// (for jump clones) the implants installed in it.
+export const characterClones = (access_token, characterID) =>
+  esiJson(`/characters/${characterID}/clones/`, {
+    access_token,
+    label: `clones ${characterID}`,
+  })
+
+// The implants currently plugged into whichever clone body the character
+// presently occupies.
+export const characterImplants = (access_token, characterID) =>
+  esiJson(`/characters/${characterID}/implants/`, {
+    access_token,
+    label: `implants ${characterID}`,
+  })
+
 export const characterAffiliations = (ids) =>
   esiJson(`/characters/affiliation/`, {
     method: 'POST',

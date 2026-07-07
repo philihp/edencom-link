@@ -86,6 +86,24 @@ export const esiScopes: EsiScope[] = [
     without: 'industry jobs run against corporation blueprints or facilities will not be tracked.',
   },
   {
+    scope: 'esi-location.read_location.v1',
+    name: 'Character location',
+    why: 'Shows the solar system this character is currently in.',
+    without: 'this character’s current location will not be shown.',
+  },
+  {
+    scope: 'esi-clones.read_clones.v1',
+    name: 'Character clones',
+    why: 'Lists this character’s home clone and jump clones, the systems they sit in, and the implants installed in each.',
+    without: 'this character’s clones and the implants in them will not be tracked.',
+  },
+  {
+    scope: 'esi-clones.read_implants.v1',
+    name: 'Character implants',
+    why: 'Lists the implants currently plugged into this character.',
+    without: 'this character’s currently active implants will not be shown.',
+  },
+  {
     scope: 'esi-universe.read_structures.v1',
     name: 'Structure names',
     why: 'Resolves the names of player-owned Upwell structures where this character keeps assets, so they show a name instead of a raw ID.',

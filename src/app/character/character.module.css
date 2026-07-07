@@ -60,6 +60,16 @@
   margin-right: 4pt;
 }
 
+.metaBlock {
+  font-size: 9pt;
+  color: var(--ink-soft);
+}
+
+.bulletList {
+  margin: 2pt 0 0;
+  padding-left: 16pt;
+}
+
 .actions {
   display: flex;
   gap: 8pt;
