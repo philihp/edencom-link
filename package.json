@@ -56,6 +56,11 @@
     "start": "next start"
   },
   "prettier": "@philihp/prettier-config",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "sharp"
+    ]
+  },
   "devDependencies": {
     "@eslint/eslintrc": "3.3.5",
     "@eslint/js": "^10.0.0",
