@@ -22,6 +22,9 @@ const CHARACTER_JOBS = [
   ['character-wallet', 'wallet'],
   ['character-wallet-transactions', 'transactions'],
   ['character-industry-jobs', 'industry'],
+  ['character-location', 'location'],
+  ['character-clones', 'clones'],
+  ['character-implants', 'implants'],
 ] as const
 
 // The corp-scoped extracts that can be kicked on demand. Each runs once per

@@ -34,6 +34,18 @@
       "schedule": "48 * * * *"
     },
     {
+      "path": "/api/cron/character-location",
+      "schedule": "14 * * * *"
+    },
+    {
+      "path": "/api/cron/character-implants",
+      "schedule": "16 * * * *"
+    },
+    {
+      "path": "/api/cron/character-clones",
+      "schedule": "18 * * * *"
+    },
+    {
       "path": "/api/cron/corp-wallet-transactions",
       "schedule": "50 * * * *"
     },

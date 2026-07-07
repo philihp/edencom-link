@@ -1,9 +1,12 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
-import { reduce } from 'ramda'
+import { reduce, uniq } from 'ramda'
 
 import { createClient } from '@/utils/supabase/server'
 import { formatBisk } from '../isk'
+import { resolveLocations } from '../resolveLocations'
+import { fetchSystemNames } from '../systemNames'
+import { fetchTypeNames } from '../typeNames'
 import { register, setMainCharacter } from './actions'
 import MainCharacterForm from './mainCharacterForm'
 import { requiredScopes } from './scopes'
@@ -30,6 +33,40 @@ const CharacterPage = async () => {
     new Map<string, string>(),
     wallets ?? []
   )
+
+  const { data: locations } = await supabase.from('character_location').select('character_id, solar_system_id')
+  const systemNames = await fetchSystemNames((locations ?? []).map((l) => Number(l.solar_system_id)))
+  const locationSystem = new Map(
+    (locations ?? []).map((l) => [
+      l.character_id as string,
+      systemNames[Number(l.solar_system_id)] ?? `System #${l.solar_system_id}`,
+    ])
+  )
+
+  const { data: clones } = await supabase.from('character_clone').select('character_id, location_id, location_type')
+  const { systemFor } = await resolveLocations(
+    (clones ?? []).map((c) => ({ id: String(c.location_id), type: c.location_type }))
+  )
+  const cloneSystems = reduce(
+    (acc, c) => {
+      const system = systemFor({ id: String(c.location_id), type: c.location_type }) ?? `#${c.location_id}`
+      const existing = acc.get(c.character_id as string) ?? []
+      acc.set(c.character_id as string, uniq([...existing, system]))
+      return acc
+    },
+    new Map<string, string[]>(),
+    clones ?? []
+  )
+
+  const { data: implantRows } = await supabase.from('character_implant').select('character_id, type_ids')
+  const implantTypeNames = await fetchTypeNames((implantRows ?? []).flatMap((r) => (r.type_ids ?? []).map(Number)))
+  const implantsByCharacter = new Map(
+    (implantRows ?? []).map((r) => [
+      r.character_id as string,
+      (r.type_ids ?? []).map((id: number) => implantTypeNames[id] ?? `Type #${id}`),
+    ])
+  )
+
   // If the player has turned off every optional ESI scope, characters they add
   // grant nothing beyond identification, so almost no features will work.
   const enabledScopes = await getEnabledScopes(supabase, data.user.id)
@@ -71,10 +108,31 @@ const CharacterPage = async () => {
                 </div>
                 <div className={styles.meta}>
                   <span className={styles.metaLabel}>Location:</span>
+                  {locationSystem.get(c.id) ?? '—'}
                 </div>
                 <div className={styles.meta}>
                   <span className={styles.metaLabel}>Ship:</span>
                 </div>
+                {(cloneSystems.get(c.id)?.length ?? 0) > 0 && (
+                  <div className={styles.metaBlock}>
+                    <span className={styles.metaLabel}>Clone systems:</span>
+                    <ul className={styles.bulletList}>
+                      {cloneSystems.get(c.id)!.map((system) => (
+                        <li key={system}>{system}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {(implantsByCharacter.get(c.id)?.length ?? 0) > 0 && (
+                  <div className={styles.metaBlock}>
+                    <span className={styles.metaLabel}>Implants:</span>
+                    <ul className={styles.bulletList}>
+                      {implantsByCharacter.get(c.id)!.map((name: string, i: number) => (
+                        <li key={i}>{name}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
                 <label className={styles.meta}>
                   <input type="radio" name="main" value={c.id} defaultChecked={c.is_main} /> Main Character
                 </label>

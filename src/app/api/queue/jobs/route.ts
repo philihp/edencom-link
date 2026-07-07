@@ -40,6 +40,18 @@ const JOBS = {
     characterIds: true,
     load: async () => (await import('@/jobs/characterIndustryJobs.js')).runCharacterIndustryJobs,
   },
+  'character-location': {
+    characterIds: true,
+    load: async () => (await import('@/jobs/characterLocation.js')).runCharacterLocation,
+  },
+  'character-clones': {
+    characterIds: true,
+    load: async () => (await import('@/jobs/characterClones.js')).runCharacterClones,
+  },
+  'character-implants': {
+    characterIds: true,
+    load: async () => (await import('@/jobs/characterImplants.js')).runCharacterImplants,
+  },
   'corp-structures': {
     characterIds: true,
     load: async () => (await import('@/jobs/corpStructures.js')).runCorpStructures,
