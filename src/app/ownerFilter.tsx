@@ -19,6 +19,20 @@ export const useOwnerFilter = (storageKey: string, owners: Owners) =>
     raw === ALL_OWNERS || [...owners.characters, ...owners.corporations].some((o) => o.id === raw) ? raw : undefined
   )
 
+// A set of corporation ids to hide from an "all owners" view — e.g. a huge
+// corp whose jobs aren't personally yours, on top of a smaller alt corp you
+// still want to see. Persisted as a comma-joined list (usePersist stringifies
+// via String(), which comma-joins an array; corp ids are plain numeric
+// strings so they never contain a comma themselves). Orthogonal to
+// useOwnerFilter: excluding a corp here only changes what "all owners" shows,
+// it doesn't stop you from explicitly picking that corp in the owner select.
+export const useExcludedCorps = (storageKey: string, owners: Owners) => {
+  const validIds = new Set(owners.corporations.map((c) => c.id))
+  return usePersist<string[]>(storageKey, [], (raw) =>
+    raw === '' ? [] : raw.split(',').filter((id) => validIds.has(id))
+  )
+}
+
 type OwnerSelectProps = {
   owners: Owners
   value: string
