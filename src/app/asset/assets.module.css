@@ -54,11 +54,12 @@
 .searchForm {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8pt;
   margin: 24px 0;
 }
 
-.searchForm input {
+.searchForm input[type='text'] {
   flex: 1;
   max-width: 320px;
   font: inherit;
@@ -69,4 +70,13 @@
   font: inherit;
   cursor: pointer;
   padding: 6pt 12pt;
+}
+
+.searchOption {
+  display: inline-flex;
+  align-items: center;
+  gap: 4pt;
+  font-size: 10pt;
+  color: var(--ink-soft);
+  white-space: nowrap;
 }
