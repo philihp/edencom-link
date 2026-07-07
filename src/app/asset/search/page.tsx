@@ -3,7 +3,7 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { prop, uniqBy } from 'ramda'
 
-import { searchSdeTypesAll } from '@/sdeTypes'
+import { getSdeType, searchSdeTypesAll } from '@/sdeTypes'
 import { createClient } from '@/utils/supabase/server'
 
 import { fetchOwners } from '../../owners'
@@ -22,6 +22,13 @@ const MAX_TYPES = 100
 // shuffler carries internal state across calls, so a fresh one is created per
 // request rather than reused from module scope.
 const SHUFFLE_SEED = 20260704
+
+// EVE's SDE Blueprint category (covers BPOs/BPCs and reaction formulas alike —
+// anything named "<Product> Blueprint"/"<Product> Reaction Formula"). Assets
+// search excludes these by default since a blueprint search usually means the
+// player wants the manufacturable item, not its recipe; the "include
+// blueprints" checkbox opts back in.
+const BLUEPRINT_CATEGORY_ID = 9
 
 type CharacterSearchRow = {
   item_id: number | string
@@ -51,9 +58,10 @@ type SearchRow = {
   contents: number
 }
 
-const AssetSearchPage = async ({ searchParams }: { searchParams: Promise<{ q?: string }> }) => {
-  const { q } = await searchParams
+const AssetSearchPage = async ({ searchParams }: { searchParams: Promise<{ q?: string; blueprints?: string }> }) => {
+  const { q, blueprints } = await searchParams
   const query = (q ?? '').trim()
+  const includeBlueprints = blueprints === '1'
 
   const supabase = await createClient()
   const { data: auth, error: authError } = await supabase.auth.getUser()
@@ -66,14 +74,19 @@ const AssetSearchPage = async ({ searchParams }: { searchParams: Promise<{ q?: s
       <>
         <h1>Search Assets</h1>
         <p>Enter part of an item name to find every stack of it across your hangars.</p>
-        <AssetSearchForm />
+        <AssetSearchForm initialIncludeBlueprints={includeBlueprints} />
       </>
     )
   }
 
   // Case-insensitive substring match against every published type name, resolved
   // from the locally generated SDE data (never the stale evesde DB schema).
-  const matches = searchSdeTypesAll(query)
+  // Blueprints (and reaction formulas, the same SDE category) are excluded
+  // unless the checkbox opts back in.
+  const allMatches = searchSdeTypesAll(query)
+  const matches = includeBlueprints
+    ? allMatches
+    : allMatches.filter((m) => getSdeType(m.typeID)?.categoryID !== BLUEPRINT_CATEGORY_ID)
 
   if (matches.length > MAX_TYPES) {
     const sample = createShuffle(SHUFFLE_SEED)(matches)
@@ -92,17 +105,25 @@ const AssetSearchPage = async ({ searchParams }: { searchParams: Promise<{ q?: s
             <li key={m.typeID}>{m.name}</li>
           ))}
         </ul>
-        <AssetSearchForm initialQuery={query} />
+        <AssetSearchForm initialQuery={query} initialIncludeBlueprints={includeBlueprints} />
       </>
     )
   }
 
   if (matches.length === 0) {
+    // Everything that matched was a blueprint filtered out by the default —
+    // point the player at the checkbox instead of just saying "no matches".
+    const blueprintsOnlyMatched = !includeBlueprints && allMatches.length > 0
     return (
       <>
         <h1>Search Assets</h1>
-        <p>No item types matched &quot;{query}&quot;.</p>
-        <AssetSearchForm initialQuery={query} />
+        <p>
+          No item types matched &quot;{query}&quot;
+          {blueprintsOnlyMatched
+            ? ' (only blueprints did — check "Include blueprints" below to search those too).'
+            : '.'}
+        </p>
+        <AssetSearchForm initialQuery={query} initialIncludeBlueprints={includeBlueprints} />
       </>
     )
   }
@@ -223,7 +244,7 @@ const AssetSearchPage = async ({ searchParams }: { searchParams: Promise<{ q?: s
       ) : (
         <p>No assets found for those item types.</p>
       )}
-      <AssetSearchForm initialQuery={query} />
+      <AssetSearchForm initialQuery={query} initialIncludeBlueprints={includeBlueprints} />
     </>
   )
 }
