@@ -8,9 +8,6 @@ importers:
 
   .:
     dependencies:
-      '@hebcal/noaa':
-        specifier: ^0.12.0
-        version: 0.12.1
       '@next/third-parties':
         specifier: 16.2.10
         version: 16.2.10(next@16.2.10(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(react@19.2.7)
@@ -53,9 +50,6 @@ importers:
       react-dom:
         specifier: 19.2.7
         version: 19.2.7(react@19.2.7)
-      temporal-polyfill:
-        specifier: ^1.0.0
-        version: 1.0.1
     devDependencies:
       '@eslint/eslintrc':
         specifier: 3.3.5
@@ -160,10 +154,6 @@ packages:
   '@eslint/plugin-kit@0.7.2':
     resolution: {integrity: sha512-+CNAzxglkrpNf/kKywqQfk74QjtceuOE7Qm+AF8miRvPF/wmmK5+OJOgVh3AVTT3RP2mH3+FOaxlE5v72owk0A==}
     engines: {node: ^20.19.0 || ^22.13.0 || >=24}
-
-  '@hebcal/noaa@0.12.1':
-    resolution: {integrity: sha512-pHx4gTYQzOkwSyPx3IrSZQfD+CCscDcLGA/Uae/49bE4uWA+KsI0x1A7hcpEzu9MJE0SX7SbLnj9g70Qb6zx5A==}
-    engines: {node: '>=18'}
 
   '@humanfs/core@0.19.2':
     resolution: {integrity: sha512-UhXNm+CFMWcbChXywFwkmhqjs3PRCmcSa/hfBgLIb7oQ5HNb1wS0icWsGtSAUNgefHeI+eBrA8I1fxmbHsGdvA==}
@@ -1281,15 +1271,6 @@ packages:
     resolution: {integrity: sha512-ECT61HUnVMXCAX/1O4Dmj0ifUPCM4AonSYcd/degMGbJdAmgwdquht43cKDp9k1cE15uJKfILjZEQTOSw7Np/w==}
     hasBin: true
 
-  temporal-polyfill@1.0.1:
-    resolution: {integrity: sha512-N2SoI9olnW7BUsU8RosDphZQl9s+WJ8O7PoJMFCr/e5/1rFkVI4GNOWaSeySG+UoP04foPYsnLWbJmbXOiShZg==}
-
-  temporal-spec@1.0.0:
-    resolution: {integrity: sha512-00Ahj1e1ifaERTMOIIGpOCdOo9IEk2m6GGSMedsn9a2SIsGLdOTbmME1Htv6IM82b6VHrzSUTIVc7YHy6hdhFQ==}
-
-  temporal-utils@1.0.1:
-    resolution: {integrity: sha512-HAixuesxFQIUaQk3ptX2jhfO/FsOkgVkDDMawvp6n/fkB1q6BKfs3lURw9I+pK/2e2e/q/vrLrxmeqauBoyGMQ==}
-
   third-party-capital@1.0.20:
     resolution: {integrity: sha512-oB7yIimd8SuGptespDAZnNkzIz+NWaJCu2RMsbs4Wmp9zSDUM8Nhi3s2OOcqYuv3mN4hitXc8DVx+LyUmbUDiA==}
 
@@ -1438,10 +1419,6 @@ snapshots:
     dependencies:
       '@eslint/core': 1.2.1
       levn: 0.4.1
-
-  '@hebcal/noaa@0.12.1':
-    dependencies:
-      temporal-polyfill: 1.0.1
 
   '@humanfs/core@0.19.2':
     dependencies:
@@ -2423,15 +2400,6 @@ snapshots:
       '@supabase/cli-linux-x64-musl': 2.109.0
       '@supabase/cli-windows-arm64': 2.109.0
       '@supabase/cli-windows-x64': 2.109.0
-
-  temporal-polyfill@1.0.1:
-    dependencies:
-      temporal-spec: 1.0.0
-      temporal-utils: 1.0.1
-
-  temporal-spec@1.0.0: {}
-
-  temporal-utils@1.0.1: {}
 
   third-party-capital@1.0.20: {}
 
