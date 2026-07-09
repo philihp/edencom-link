@@ -23,14 +23,32 @@ const BASE_URL = `https://data.eveship.fit/v${ESF_DATA_VERSION}/sde/`
 // (protobuf) file each — see its bundled EveDataProvider implementation.
 const FILES = ['types', 'groups', 'marketGroups', 'typeDogma', 'dogmaEffects', 'dogmaAttributes']
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
+// data.eveship.fit is a community-run mirror, not a CDN with an uptime SLA —
+// unlike Fuzzwork (buildSde.js's source), a blip here fails the whole build
+// (predev/prebuild chains this with `&&`), so a fetch failure gets a couple
+// of retries before giving up for real.
+const RETRIES = 3
+
 const downloadFile = async (name) => {
   const url = `${BASE_URL}${name}.pb2`
-  console.log(`esf: downloading ${name}.pb2…`)
-  const res = await fetch(url)
-  if (!res.ok) throw new Error(`GET ${url} → ${res.status}`)
-  const bytes = Buffer.from(await res.arrayBuffer())
-  await writeFile(join(OUTPUT_DIR, `${name}.pb2`), bytes)
-  console.log(`esf: wrote ${name}.pb2 (${bytes.length} bytes)`)
+  for (let attempt = 1; attempt <= RETRIES; attempt += 1) {
+    try {
+      console.log(`esf: downloading ${name}.pb2… (attempt ${attempt}/${RETRIES})`)
+      const res = await fetch(url)
+      if (!res.ok) throw new Error(`GET ${url} → ${res.status}`)
+      const bytes = Buffer.from(await res.arrayBuffer())
+      await writeFile(join(OUTPUT_DIR, `${name}.pb2`), bytes)
+      console.log(`esf: wrote ${name}.pb2 (${bytes.length} bytes)`)
+      return
+    } catch (err) {
+      if (attempt === RETRIES) throw err
+      const delayMs = 500 * 2 ** (attempt - 1)
+      console.log(`esf: ${name}.pb2 failed (${err.message}), retrying in ${delayMs}ms…`)
+      await sleep(delayMs)
+    }
+  }
 }
 
 const run = async () => {
