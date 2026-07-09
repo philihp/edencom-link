@@ -1,5 +1,14 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // @eveshipfit/dogma-engine ships a Rust-compiled WASM module (a bundler-style
+  // `import * as wasm from "*.wasm"`) for fit statistics. Turbopack (default
+  // since Next 16) handles this natively; an explicit empty config just opts
+  // in without changing any behavior, per Next's own guidance for this case.
+  // (Tried falling back to webpack's asyncWebAssembly path instead — that
+  // broke /api/queue/jobs's @vercel/queue route typing, an unrelated
+  // pre-existing incompatibility between that route and the webpack build
+  // path, so Turbopack is the only viable option here regardless.)
+  turbopack: {},
   env: {
     // Captured at build time (i.e. when the deployment is built).
     BUILD_TIME: new Date().toISOString(),

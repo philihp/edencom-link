@@ -8,6 +8,15 @@ importers:
 
   .:
     dependencies:
+      '@eveshipfit/data':
+        specifier: ^10.4.20260609
+        version: 10.4.20260609
+      '@eveshipfit/dogma-engine':
+        specifier: ^7.1.0
+        version: 7.1.0
+      '@eveshipfit/react':
+        specifier: ^4.7.2
+        version: 4.7.2(@eveshipfit/data@10.4.20260609)(@eveshipfit/dogma-engine@7.1.0)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       '@next/third-parties':
         specifier: 16.2.10
         version: 16.2.10(next@16.2.10(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(react@19.2.7)
@@ -154,6 +163,20 @@ packages:
   '@eslint/plugin-kit@0.7.2':
     resolution: {integrity: sha512-+CNAzxglkrpNf/kKywqQfk74QjtceuOE7Qm+AF8miRvPF/wmmK5+OJOgVh3AVTT3RP2mH3+FOaxlE5v72owk0A==}
     engines: {node: ^20.19.0 || ^22.13.0 || >=24}
+
+  '@eveshipfit/data@10.4.20260609':
+    resolution: {integrity: sha512-y9m6tpkR0E3VwhmUilRAeMxpQT2GeLGOCvu62pST5TFPbfRoXFZMrBAhY5hF85EWc5+MZsZ/6IOOvcaBfzWiAw==, tarball: https://npm.pkg.github.com/download/@eveshipfit/data/10.4.20260609/594cc0fdebec5c6439879419817a0c84f749bfa5}
+
+  '@eveshipfit/dogma-engine@7.1.0':
+    resolution: {integrity: sha512-/tykXG0TUKPHz8ppNkx2A78veqK/0spFDNY2uVn3NaKgl4yOJbPfry5ZeoXmihYqyks4WeWssC/zydWOlR8Jow==, tarball: https://npm.pkg.github.com/download/@EVEShipFit/dogma-engine/7.1.0/3638c125b71659ae7c7b668325d96e121d52bdf8}
+
+  '@eveshipfit/react@4.7.2':
+    resolution: {integrity: sha512-cEKDoMA1IKsm5pQS0jPX1HTjHpKEE9pRzCXCPXCWfRNepUP/WvGFt9wCZtSeTgyEKl2iNyFP1KS1Qh6PjoSdEw==, tarball: https://npm.pkg.github.com/download/@eveshipfit/react/4.7.2/84dcd9e9c605639678cdd938ad99bd201e07c12b}
+    peerDependencies:
+      '@eveshipfit/data': ^10
+      '@eveshipfit/dogma-engine': ^7
+      react: ^18
+      react-dom: ^18
 
   '@humanfs/core@0.19.2':
     resolution: {integrity: sha512-UhXNm+CFMWcbChXywFwkmhqjs3PRCmcSa/hfBgLIb7oQ5HNb1wS0icWsGtSAUNgefHeI+eBrA8I1fxmbHsGdvA==}
@@ -713,6 +736,10 @@ packages:
   client-only@0.0.1:
     resolution: {integrity: sha512-IV3Ou0jSMzZrd3pZ48nLkT9DA7Ag1pnPzaiQhpW7c3RbcqqzvzzVu+L8gfqMp/8IM2MQtSiqaCxrrcfu8I8rMA==}
 
+  clsx@2.1.1:
+    resolution: {integrity: sha512-eYm0QWBtUrBWZWG0d386OGAw16Z995PiOVo2B7bjWSbHedGl5e0ZWaq65kOGgUSNesEIDkB9ISbTg/JK9dhCZA==}
+    engines: {node: '>=6'}
+
   concat-map@0.0.1:
     resolution: {integrity: sha512-/Srv4dswyQNBfohGpz9o6Yb3Gz3SrUDqBH5rTuhGR7ahtlbYKnVxw2bCFMRljaA7EXHaXZ8wsHdodFvbkhKmqg==}
 
@@ -984,6 +1011,10 @@ packages:
 
   jws@4.0.1:
     resolution: {integrity: sha512-EKI/M/yqPncGUUh44xz0PxSidXFr/+r0pA70+gIYhjv+et7yxM+s29Y+VGDkovRofQem0fs7Uvf4+YmAdyRduA==}
+
+  jwt-decode@4.0.0:
+    resolution: {integrity: sha512-+KJGIyHgkGuIq3IEBNftfhW/LfWhXUIY6OmyVWjliu5KH1y0fw7VQ8YndE2O4qZdMSd9SqbnC8GOcZEy0Om7sA==}
+    engines: {node: '>=18'}
 
   keyv@4.5.4:
     resolution: {integrity: sha512-oxVHkHR/EJf2CNXnWxRLW6mg7JyCCUcG0DtEGmL2ctUo1PNTin1PUil+r/+4r5MpVgC/fn1kjsx7mjSujKqIpw==}
@@ -1420,6 +1451,19 @@ snapshots:
       '@eslint/core': 1.2.1
       levn: 0.4.1
 
+  '@eveshipfit/data@10.4.20260609': {}
+
+  '@eveshipfit/dogma-engine@7.1.0': {}
+
+  '@eveshipfit/react@4.7.2(@eveshipfit/data@10.4.20260609)(@eveshipfit/dogma-engine@7.1.0)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)':
+    dependencies:
+      '@eveshipfit/data': 10.4.20260609
+      '@eveshipfit/dogma-engine': 7.1.0
+      clsx: 2.1.1
+      jwt-decode: 4.0.0
+      react: 19.2.7
+      react-dom: 19.2.7(react@19.2.7)
+
   '@humanfs/core@0.19.2':
     dependencies:
       '@humanfs/types': 0.15.0
@@ -1855,6 +1899,8 @@ snapshots:
 
   client-only@0.0.1: {}
 
+  clsx@2.1.1: {}
+
   concat-map@0.0.1: {}
 
   cookie@1.1.1: {}
@@ -2114,6 +2160,8 @@ snapshots:
     dependencies:
       jwa: 2.0.1
       safe-buffer: 5.2.1
+
+  jwt-decode@4.0.0: {}
 
   keyv@4.5.4:
     dependencies:
