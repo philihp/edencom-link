@@ -5,6 +5,9 @@
   "type": "module",
   "packageManager": "pnpm@11.10.0",
   "dependencies": {
+    "@eveshipfit/data": "^10.4.20260609",
+    "@eveshipfit/dogma-engine": "^7.1.0",
+    "@eveshipfit/react": "^4.7.2",
     "@next/third-parties": "16.2.10",
     "@philihp/eve-sso": "2.1.0",
     "@supabase/ssr": "0.12.0",
@@ -22,9 +25,10 @@
   },
   "scripts": {
     "build": "next build",
-    "predev": "pnpm run sde:build",
-    "prebuild": "pnpm run sde:build",
+    "predev": "pnpm run sde:build && pnpm run esf:build",
+    "prebuild": "pnpm run sde:build && pnpm run esf:build",
     "sde:build": "node src/buildSde.js",
+    "esf:build": "node src/buildEsfData.js",
     "character-assets": "node src/jobs/characterAssets.js",
     "character-blueprints": "node src/jobs/characterBlueprints.js",
     "character-orders": "node src/jobs/characterOrders.js",

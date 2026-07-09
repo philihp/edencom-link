@@ -7,8 +7,10 @@ import { fetchOwners } from '../../owners'
 import { fetchStationNames, fetchStationSystems } from '../../stationNames'
 import { fetchSystemNames } from '../../systemNames'
 import { fetchTypeNames } from '../../typeNames'
+import { toEsiFit } from './esfFit'
 import { LocationAssets, type ItemRow } from './locationAssets'
 import { ShipCargo } from './shipCargo'
+import { ShipFitViewDynamic } from './shipFitViewDynamic'
 
 // invGroups.categoryID for the Ship category in CCP's SDE.
 const SHIP_CATEGORY_ID = 6
@@ -191,7 +193,10 @@ const AssetLocationPage = async ({ params }: { params: Promise<{ locationId: str
       </p>
 
       {self && getSdeType(Number(self.type_id))?.categoryID === SHIP_CATEGORY_ID ? (
-        <ShipCargo rows={rows} owners={owners} typeNamesPromise={typeNamesPromise} />
+        <>
+          <ShipFitViewDynamic esiFit={toEsiFit(Number(self.type_id), self.name, rows)} />
+          <ShipCargo rows={rows} owners={owners} typeNamesPromise={typeNamesPromise} />
+        </>
       ) : (
         <LocationAssets rows={rows} owners={owners} typeNamesPromise={typeNamesPromise} />
       )}
