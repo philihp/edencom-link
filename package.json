@@ -19,14 +19,15 @@
     "fast-shuffle": "^6.2.0",
     "flags": "^4.2.0",
     "next": "16.2.10",
+    "protobufjs": "^8.7.0",
     "ramda": "^0.32.0",
     "react": "19.2.7",
     "react-dom": "19.2.7"
   },
   "scripts": {
     "build": "next build",
-    "predev": "pnpm run sde:build",
-    "prebuild": "pnpm run sde:build",
+    "predev": "pnpm run sde:build && pnpm run esf:build",
+    "prebuild": "pnpm run sde:build && pnpm run esf:build",
     "sde:build": "node src/buildSde.js",
     "esf:build": "node src/buildEsfData.js",
     "character-assets": "node src/jobs/characterAssets.js",

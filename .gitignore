@@ -21,6 +21,10 @@
 # generated SDE data (downloaded by `npm run sde:build`, see src/buildSde.js)
 /src/generated/
 
+# generated eveship.fit protobuf data (built by `npm run esf:build`, see
+# src/buildEsfData.js)
+/public/esf-data/
+
 # production
 /build
 
