@@ -25,8 +25,8 @@
   },
   "scripts": {
     "build": "next build",
-    "predev": "pnpm run sde:build && pnpm run esf:build",
-    "prebuild": "pnpm run sde:build && pnpm run esf:build",
+    "predev": "pnpm run sde:build",
+    "prebuild": "pnpm run sde:build",
     "sde:build": "node src/buildSde.js",
     "esf:build": "node src/buildEsfData.js",
     "character-assets": "node src/jobs/characterAssets.js",
