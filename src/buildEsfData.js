@@ -72,6 +72,11 @@ const run = async () => {
 }
 
 run().catch((err) => {
-  console.error(err)
-  process.exit(1)
+  // This mirrors a third-party, best-effort community host — unlike buildSde.js's
+  // Fuzzwork mirror, it has no uptime guarantee, and its data only feeds one
+  // optional, client-only feature (the ship fit viewer). A failure here must
+  // not take the whole production build down with it: exit 0 so predev/prebuild's
+  // `&&` chain lets `next build` continue. The fit viewer simply renders nothing
+  // useful until a later deploy's prebuild succeeds in fetching this data.
+  console.error('esf: failed to fetch eveship.fit data, continuing without it —', err)
 })
