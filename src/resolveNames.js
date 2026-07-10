@@ -268,6 +268,34 @@ export const resolveAssetSystemNames = async () => {
   console.log(`[names] upserted ${rows.length} asset system name(s)`)
 }
 
+// Cache (in universe_name) the name of every character who has installed a
+// corp industry job. installer_id there is whichever corp member ran the
+// job — not necessarily one of this app's linked characters — unlike
+// character_industry_job, where installer is always the owning character and
+// so needs no separate resolution. Only resolves ids missing from
+// universe_name, so steady-state runs do nothing.
+export const resolveCorpIndustryJobInstallerNames = async () => {
+  const rows = await selectAllRows((from, to) =>
+    sudoSupabase.from('corp_industry_job').select('installer_id').order('job_id', { ascending: true }).range(from, to)
+  )
+
+  const installerId = pipe(prop('installer_id'), Number)
+  const ids = new Set(map(installerId, reject(pipe(prop('installer_id'), isNil), rows)))
+
+  const knownIds = await knownIdsAmong(ids)
+  const toResolve = filter((n) => Number.isFinite(n) && n > 0 && !knownIds.has(n), [...ids])
+  console.log(`[names] corp industry job installers: ${toResolve.length} to resolve`)
+  if (toResolve.length === 0) return
+
+  const resolved = await resolveAllIds(toResolve)
+  if (resolved.length === 0) return
+
+  const nameRows = map(toNameRow, resolved)
+  const { error: upErr } = await sudoSupabase.from('universe_name').upsert(nameRows, { onConflict: 'id' })
+  if (upErr) throw upErr
+  console.log(`[names] upserted ${nameRows.length} installer name(s)`)
+}
+
 // Cache (in universe_name) the name of every solar system we currently have a
 // corp structure in. Only resolves ids missing from universe_name, so
 // steady-state runs do nothing. The structures page reads universe_name to label
