@@ -132,8 +132,8 @@ All functions take `(accessToken, id, ...)` unless noted. Returns raw ESI respon
 ### `src/utils/csv.ts`
 - `toCsv(rows: object[])` — serialize flat object array to RFC 4180 CSV string
 
-### `src/utils/supabase/client.ts` / `server.ts` / `service.ts`
-- Browser / server-cookie / service-role Supabase client factories
+### `src/utils/supabase/client.ts` / `server.ts` / `service.ts` / `bearer.ts`
+- Browser / server-cookie / service-role / OAuth-bearer-token Supabase client factories (`bearer.ts` builds an RLS-scoped client from an MCP caller's access token)
 
 ## App routes → files
 
@@ -158,6 +158,9 @@ All functions take `(accessToken, id, ...)` unless noted. Returns raw ESI respon
 | `/settings/grants` | `src/app/settings/grants/page.tsx` |
 | `/blueprint` | `src/app/blueprint/page.tsx` |
 | `/blueprint/[typeID]` | `src/app/blueprint/[typeID]/page.tsx` |
+| `/oauth/consent` | `src/app/oauth/consent/page.tsx` |
+| `/api/mcp/[transport]` | `src/app/api/mcp/[transport]/route.ts` |
+| `/.well-known/oauth-protected-resource` | `src/app/.well-known/oauth-protected-resource/[[...resource]]/route.ts` |
 | `/api/character/assets` | `src/app/api/character/assets/route.ts` |
 | `/api/character/blueprints` | `src/app/api/character/blueprints/route.ts` |
 | `/api/character/orders` | `src/app/api/character/orders/route.ts` |
@@ -170,7 +173,7 @@ All functions take `(accessToken, id, ...)` unless noted. Returns raw ESI respon
 
 The old CSV endpoint paths (`/api/assets`, `/api/orders`, `/api/industry`) and `/characters/refresh` permanently redirect to their new homes (see `next.config.mjs`) so existing Google Sheets keep working.
 
-Shared UI helpers: `src/app/isk.ts` (ISK formatting), `src/app/DateTime.tsx`, `src/app/typeName.tsx` (renders a type name from ID), `src/app/typeNames.ts` (resolves type names from the locally generated SDE data), `src/app/systemNames.ts`, `src/app/stationNames.ts`, `src/app/owners.ts` / `src/app/ownerFilter.tsx` (the character/corp "owner" picker shared by the assets and industry pages), `src/app/resolveLocations.ts` (resolves a set of root locations — station, player structure, or bare solar system — to display names + systems; shared by `/asset` and `/asset/search`), `src/app/freshness.ts` / `src/app/Freshness.tsx` (data-freshness grading — green under 15 minutes, yellow under 75, red beyond — and the live dot + "N minutes ago" client component; used by the header's "Refreshed …" indicator and the `/character/refresh` matrix).
+Shared UI helpers: `src/app/isk.ts` (ISK formatting), `src/app/DateTime.tsx`, `src/app/typeName.tsx` (renders a type name from ID), `src/app/typeNames.ts` (resolves type names from the locally generated SDE data), `src/app/systemNames.ts`, `src/app/stationNames.ts`, `src/app/owners.ts` / `src/app/ownerFilter.tsx` (the character/corp "owner" picker shared by the assets and industry pages), `src/app/resolveLocations.ts` (resolves a set of root locations — station, player structure, or bare solar system — to display names + systems; shared by `/asset` and `/asset/search`; it and `owners.ts`/`systemNames.ts`/`stationNames.ts` accept an optional Supabase client so the MCP tools can reuse them with a bearer-token client instead of the cookie session), `src/app/freshness.ts` / `src/app/Freshness.tsx` (data-freshness grading — green under 15 minutes, yellow under 75, red beyond — and the live dot + "N minutes ago" client component; used by the header's "Refreshed …" indicator and the `/character/refresh` matrix).
 
 ## Extract jobs
 
@@ -272,5 +275,6 @@ Key Postgres functions (callable via RPC or SQL):
 - **Supabase RLS:** All tables use RLS scoped to `auth.uid()`. Cron scripts use the service-role key (`sudoSupabase` / `src/utils/supabase/service.ts`) which bypasses RLS.
 - **Google Sheets IMPORTDATA:** `/api/character/assets`, `/api/character/blueprints`, `/api/character/orders`, `/api/character/jobs`, `/api/corp/assets`, `/api/corp/blueprints`, `/api/corp/jobs` authenticate via `user_settings.api_token`, call a Postgres function, and return CSV. The pre-rename paths permanently redirect to the new ones.
 - **Vercel queue:** The queue consumer at `/api/queue/jobs` dispatches to the same `run*()` functions the CLI jobs use. The UI enqueues work via `@vercel/queue`.
+- **MCP server:** `/api/mcp/mcp` (Streamable HTTP, via `mcp-handler`; route at `src/app/api/mcp/[transport]/route.ts`) exposes read-only tools over the extracted data — `search_assets`, `list_clones`, `list_blueprints`, `list_industry_jobs`, `list_market_orders`, `search_transactions` (`src/app/api/mcp/tools.ts`, shared plumbing in `lib.ts`). Tools accept fuzzy names (items/systems/owners resolved via the SDE search helpers) and return resolved names plus a `data_refreshed` freshness stamp from `latest_heartbeats()`. Auth is OAuth 2.1 with Supabase Auth as the authorization server: clients discover it via `/.well-known/oauth-protected-resource` (RFC 9728), the consent page lives at `/oauth/consent` (`supabase.auth.oauth.getAuthorizationDetails`/`approveAuthorization`/`denyAuthorization`), and `withMcpAuth` verifies bearer tokens with `auth.getClaims` (`src/app/api/mcp/auth.ts`). Every query runs on a client carrying the caller's token (`src/utils/supabase/bearer.ts`), so RLS scopes results exactly like the cookie session — tools never widen access and never call ESI. Requires the OAuth 2.1 server enabled in the Supabase dashboard (Authentication → OAuth Server) with the Authorization Path set to `/oauth/consent`, plus dynamic client registration for self-registering MCP clients like Claude.
 - **Token lifecycle:** ESI OAuth tokens are stored in `token`. Before any ESI call, `refreshAccessToken()` checks expiry and refreshes via EVE SSO if needed.
 - **Name resolution:** `universe_name` table caches ESI `universeNames` lookups (kept fresh by the `universe-names` job). `resolveBatch()` handles bisect-on-error for large batches. Type names (items/ships) come from the locally generated SDE data (`src/sdeTypes.ts`), not the DB.
