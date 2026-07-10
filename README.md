@@ -76,7 +76,6 @@ cp .env.example .env
 - `FLAGS_SECRET` — any base64-encoded 32-byte secret, e.g. `openssl rand -base64 32`.
 - `CRON_SECRET` — only used by deployed Vercel Cron; any placeholder value works
   locally since nothing checks it outside of `/api/cron/*` routes.
-- `NEXT_PUBLIC_GOOGLE_ANALYTICS_ID` — optional; leave as-is or blank for local dev.
 
 ## 5. Run the app
 
