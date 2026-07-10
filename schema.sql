@@ -66,6 +66,11 @@ drop table if exists public.corp_asset_over_time      cascade;
 drop table if exists public.corp_industry_job         cascade;
 drop view  if exists public.corp_blueprint            cascade;
 drop table if exists public.corp_blueprint_over_time  cascade;
+drop table if exists public.character_location        cascade;
+drop view  if exists public.character_clone            cascade;
+drop table if exists public.character_clone_over_time  cascade;
+drop table if exists public.character_clone_state      cascade;
+drop table if exists public.character_implant          cascade;
 drop table if exists public.universe_name        cascade;
 drop table if exists public.universe_structure   cascade;
 drop table if exists public.invite_code          cascade;
@@ -855,7 +860,11 @@ create table public.character_clone_over_time (
   implants jsonb not null default '[]'::jsonb,
   is_current boolean not null default true,
   first_seen_at timestamptz not null default now(),
-  last_seen_at timestamptz not null default now()
+  last_seen_at timestamptz not null default now(),
+  -- Solar system the clone's station/structure sits in, resolved at extract
+  -- time (null until resolvable). Kept last so a fresh reset matches the
+  -- column order of migrated databases (the character_clone view is select *).
+  system_id bigint
 );
 create index character_clone_over_time_character_id_idx on public.character_clone_over_time (character_id);
 create unique index character_clone_over_time_current_jump_idx
@@ -905,6 +914,34 @@ create policy "Users read own implants"
 
 grant select on public.character_implant to authenticated;
 grant all    on public.character_implant to service_role;
+
+-- ── character_clone_state ──────────────────────────────────────────────────
+-- Character-level fields from ESI /characters/{id}/clones/, written by the
+-- character-clones job alongside the per-clone SCD rows: when the last clone
+-- jump happened and when the home station was last changed. Live current-state
+-- data, like character_location. "Next jump available" is derived as
+-- last_clone_jump_date + 24h (conservative; Infomorph Synchronizing shortens
+-- it, but reading the skill would need the esi-skills.read_skills.v1 scope).
+create table public.character_clone_state (
+  character_id uuid primary key references public.registration(id) on delete cascade,
+  last_clone_jump_date timestamptz,
+  last_station_change_date timestamptz,
+  recorded_at timestamptz not null default now()
+);
+
+alter table public.character_clone_state enable row level security;
+create policy "Users read own clone state"
+  on public.character_clone_state
+  for select
+  to authenticated
+  using (
+    character_id in (
+      select id from public.registration where user_id = (select auth.uid())
+    )
+  );
+
+grant select on public.character_clone_state to authenticated;
+grant all    on public.character_clone_state to service_role;
 
 -- ── corp_structure ────────────────────────────────────────────────────────
 -- ESI /corporations/{id}/structures/, written by the corp-structures job.

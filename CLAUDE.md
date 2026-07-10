@@ -76,7 +76,7 @@ All functions take `(accessToken, id, ...)` unless noted. Returns raw ESI respon
 - `industryJobs(token, characterId)` — industry job list
 - `character(token, characterId)` — character sheet
 - `characterLocation(token, characterId)` — current solar system (and station/structure, if docked)
-- `characterClones(token, characterId)` — home clone + jump clones, each with location and (for jump clones) implants
+- `characterClones(token, characterId)` — home clone + jump clones, each with location and (for jump clones) implants, plus `last_clone_jump_date`/`last_station_change_date`
 - `characterImplants(token, characterId)` — implants currently plugged into whichever clone body the character occupies
 - `corpStructures(token, corpId, page)` — corporation Upwell structures (paged)
 - `corpAssets(token, corpId, page)` — corporation assets (paged)
@@ -88,6 +88,7 @@ All functions take `(accessToken, id, ...)` unless noted. Returns raw ESI respon
 - `industrySystems()` — public industry system cost indices (no auth)
 - `universeNames(ids[])` — bulk id→name resolution (no auth)
 - `universeStructure(token, structureId)` — structure info by ID
+- `universeStation(stationId)` — NPC station info by ID (no auth; used to place clones in a solar system)
 - `characterAffiliations(characterIds[])` — bulk character→corp mapping (no auth)
 
 ### `src/jobs/lib.js` — shared extract-job plumbing
@@ -180,7 +181,7 @@ One job per ESI endpoint. The npm script, queue job name, and heartbeat job labe
 | `character-industry-jobs` | `/characters/{id}/industry/jobs/` | `character_industry_job` | hourly `:48` |
 | `character-location` | `/characters/{id}/location/` | `character_location` | hourly `:14` |
 | `character-implants` | `/characters/{id}/implants/` | `character_implant` | hourly `:16` |
-| `character-clones` | `/characters/{id}/clones/` | `character_clone_over_time` | hourly `:18` |
+| `character-clones` | `/characters/{id}/clones/` | `character_clone_over_time`, `character_clone_state` | hourly `:18` |
 | `character-affiliations` | `/characters/affiliation/` | `character_affiliation` | 11:41 daily |
 | `corp-structures` | `/corporations/{id}/structures/` | `corp_structure` | 09:17 daily |
 | `corp-assets` | `/corporations/{id}/assets/` | `corp_asset_over_time`, `corp_structure_rig` | 09:27 daily |
@@ -218,8 +219,9 @@ Requires a `CRON_SECRET` env var set in Vercel (see `.env.example`).
 | `character_order` | Live open orders | `order_id`, `character_id`, `type_id`, `price`, `volume_remain`, `is_buy`, `seen_at` |
 | `character_industry_job` | Manufacturing/research | `job_id`, `character_id`, `blueprint_id`, `product_type_id`, `activity_id`, `status`, `end_date` |
 | `character_location` | Live current solar system/station/structure | `character_id` (PK), `solar_system_id`, `station_id`, `structure_id`, `recorded_at` |
-| `character_clone_over_time` | SCD Type 2 clone history (home + jump clones, with implants) | `character_id`, `jump_clone_id`, `is_home`, `location_id`, `location_type`, `name`, `implants` (jsonb type-id array), `is_current`, `first_seen_at`, `last_seen_at` |
+| `character_clone_over_time` | SCD Type 2 clone history (home + jump clones, with implants) | `character_id`, `jump_clone_id`, `is_home`, `location_id`, `location_type`, `name`, `implants` (jsonb type-id array), `is_current`, `first_seen_at`, `last_seen_at`, `system_id` (resolved solar system, null until resolvable) |
 | `character_clone` | View: `is_current` clones | same columns as above |
+| `character_clone_state` | Live per-character clone-jump timers (next jump ≈ `last_clone_jump_date` + 24h) | `character_id` (PK), `last_clone_jump_date`, `last_station_change_date`, `recorded_at` |
 | `character_implant` | Live current implants plugged into the character's active clone | `character_id` (PK), `type_ids` (bigint array), `recorded_at` |
 | `character_affiliation` | Character→Corp mapping | `character_id`, `corporation_id` |
 | `corp_structure` | Corp Upwell structures | `structure_id`, `corporation_id`, `type_id`, `system_id`, `name`, `state`, `fuel_expires`, `services` (jsonb) |
