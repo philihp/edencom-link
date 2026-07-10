@@ -211,9 +211,9 @@ const RefreshPage = async () => {
     <>
       <h1>Refresh ESI</h1>
       <p>
-        Extracts run on their own schedule (hourly for most, daily for corp assets and affiliations); nothing starts
-        just by opening this page. A cell shows when its job last ran — green within 15 minutes, yellow within 75, red
-        beyond that — and stale cells can be refreshed one at a time.
+        Extracts run on their own schedule (every 6 hours for most, daily for corp assets and affiliations); nothing
+        starts just by opening this page. A cell shows when its job last ran — green within 15 minutes, yellow within
+        6 hours, red beyond that — and stale cells can be refreshed one at a time.
       </p>
 
       {registrations.length === 0 ? (

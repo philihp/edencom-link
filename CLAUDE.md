@@ -173,24 +173,24 @@ One job per ESI endpoint. The npm script, queue job name, and heartbeat job labe
 
 | Job | ESI endpoint | Writes to | Schedule (UTC) |
 |---|---|---|---|
-| `character-assets` | `/characters/{id}/assets/` (+`/assets/names/`) | `character_asset_over_time` | hourly `:26` |
-| `character-blueprints` | `/characters/{id}/blueprints/` | `character_blueprint_over_time` | hourly `:28` |
-| `character-orders` | `/characters/{id}/orders/` | `character_order` | hourly `:24` |
-| `character-wallet` | `/characters/{id}/wallet/` | `character_wallet` | hourly `:44` |
-| `character-wallet-transactions` | `/characters/{id}/wallet/transactions/` | `character_wallet_transaction` | hourly `:46` |
-| `character-industry-jobs` | `/characters/{id}/industry/jobs/` | `character_industry_job` | hourly `:48` |
-| `character-location` | `/characters/{id}/location/` | `character_location` | hourly `:14` |
-| `character-implants` | `/characters/{id}/implants/` | `character_implant` | hourly `:16` |
-| `character-clones` | `/characters/{id}/clones/` | `character_clone_over_time`, `character_clone_state` | hourly `:18` |
+| `character-assets` | `/characters/{id}/assets/` (+`/assets/names/`) | `character_asset_over_time` | every 6h `:26` |
+| `character-blueprints` | `/characters/{id}/blueprints/` | `character_blueprint_over_time` | every 6h `:28` |
+| `character-orders` | `/characters/{id}/orders/` | `character_order` | every 6h `:24` |
+| `character-wallet` | `/characters/{id}/wallet/` | `character_wallet` | every 6h `:44` |
+| `character-wallet-transactions` | `/characters/{id}/wallet/transactions/` | `character_wallet_transaction` | every 6h `:46` |
+| `character-industry-jobs` | `/characters/{id}/industry/jobs/` | `character_industry_job` | every 6h `:48` |
+| `character-location` | `/characters/{id}/location/` | `character_location` | every 6h `:14` |
+| `character-implants` | `/characters/{id}/implants/` | `character_implant` | every 6h `:16` |
+| `character-clones` | `/characters/{id}/clones/` | `character_clone_over_time`, `character_clone_state` | every 6h `:18` |
 | `character-affiliations` | `/characters/affiliation/` | `character_affiliation` | 11:41 daily |
 | `corp-structures` | `/corporations/{id}/structures/` | `corp_structure` | 09:17 daily |
 | `corp-assets` | `/corporations/{id}/assets/` | `corp_asset_over_time`, `corp_structure_rig` | 09:27 daily |
 | `corp-blueprints` | `/corporations/{id}/blueprints/` | `corp_blueprint_over_time` | 09:07 daily |
-| `corp-wallet-journal` | `/corporations/{id}/wallets/{division}/journal/` | `corp_wallet_journal` | hourly `:37` |
-| `corp-wallet-transactions` | `/corporations/{id}/wallets/{division}/transactions/` | `corp_wallet_transaction` | hourly `:50` |
-| `corp-industry-jobs` | `/corporations/{id}/industry/jobs/` | `corp_industry_job` | hourly `:47` |
-| `industry-systems` | `/industry/systems/` | `industry_system_index` (systems with structures ∪ user-watched systems) | hourly `:10` |
-| `universe-names` | `/universe/names/` | `universe_name` | hourly `:58` |
+| `corp-wallet-journal` | `/corporations/{id}/wallets/{division}/journal/` | `corp_wallet_journal` | every 6h `:37` |
+| `corp-wallet-transactions` | `/corporations/{id}/wallets/{division}/transactions/` | `corp_wallet_transaction` | every 6h `:50` |
+| `corp-industry-jobs` | `/corporations/{id}/industry/jobs/` | `corp_industry_job` | every 6h `:47` |
+| `industry-systems` | `/industry/systems/` | `industry_system_index` (systems with structures ∪ user-watched systems) | every 6h `:10` |
+| `universe-names` | `/universe/names/` | `universe_name` | every 6h `:58` |
 | `universe-structures` | `/universe/structures/{id}` | `universe_structure` | 09:57 daily |
 
 `src/heartbeat.js` (`heartbeat.yml`, 10:55 daily) is a canary that just proves heartbeat recording works; it remains on GitHub Actions since it isn't an ESI extract job.

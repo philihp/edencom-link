@@ -1,10 +1,10 @@
 // Freshness thresholds shared by the header indicator and the /character/refresh
-// matrix: green under 15 minutes, yellow up to 75 minutes, red beyond that — a
-// hair over the hourly extract cadence, so red means a scheduled pull was missed
-// (or the job only runs daily). Kept separate from the Freshness component so
-// server components can grade a timestamp without importing client code.
+// matrix: green under 15 minutes, yellow up to 6 hours, red beyond that — matching
+// the extract cadence, so red means a scheduled pull was missed (or the job only
+// runs daily). Kept separate from the Freshness component so server components
+// can grade a timestamp without importing client code.
 export const FRESH_MINUTES = 15
-export const STALE_MINUTES = 75
+export const STALE_MINUTES = 360
 
 export type FreshnessLevel = 'fresh' | 'aging' | 'stale' | 'none'
 
