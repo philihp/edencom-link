@@ -4,7 +4,6 @@ import { reduce, uniq } from 'ramda'
 
 import { createClient } from '@/utils/supabase/server'
 import { formatBisk } from '../isk'
-import { resolveLocations } from '../resolveLocations'
 import { fetchSystemNames } from '../systemNames'
 import { fetchTypeNames } from '../typeNames'
 import { register, setMainCharacter } from './actions'
@@ -43,13 +42,12 @@ const CharacterPage = async () => {
     ])
   )
 
-  const { data: clones } = await supabase.from('character_clone').select('character_id, location_id, location_type')
-  const { systemFor } = await resolveLocations(
-    (clones ?? []).map((c) => ({ id: String(c.location_id), type: c.location_type }))
-  )
+  const { data: clones } = await supabase.from('character_clone').select('character_id, system_id')
+  const cloneSystemNames = await fetchSystemNames((clones ?? []).map((c) => Number(c.system_id)))
   const cloneSystems = reduce(
     (acc, c) => {
-      const system = systemFor({ id: String(c.location_id), type: c.location_type }) ?? `#${c.location_id}`
+      const system =
+        c.system_id != null ? (cloneSystemNames[Number(c.system_id)] ?? `System #${c.system_id}`) : 'Unknown'
       const existing = acc.get(c.character_id as string) ?? []
       acc.set(c.character_id as string, uniq([...existing, system]))
       return acc

@@ -5,6 +5,7 @@
 // Mirrors src/sdeTypes.ts for type data.
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { fromPairs, reduce } from 'ramda'
 
 export type SdeSystem = { systemID: number; name: string; security: number }
 type SdeTuple = [systemID: number, name: string, security: number]
@@ -26,14 +27,18 @@ export const getSdeSystem = (systemID: number): SdeSystem | null => {
   return byID?.get(systemID) ?? null
 }
 
-export const getSdeSystemNames = (systemIDs: Iterable<number>): Record<number, string> => {
-  const result: Record<number, string> = {}
-  for (const id of systemIDs) {
-    const system = getSdeSystem(id)
-    if (system) result[id] = system.name
-  }
-  return result
-}
+export const getSdeSystemNames = (systemIDs: Iterable<number>): Record<number, string> =>
+  fromPairs(
+    reduce(
+      (acc: [number, string][], id: number) => {
+        const system = getSdeSystem(id)
+        if (system) acc.push([id, system.name])
+        return acc
+      },
+      [],
+      [...systemIDs]
+    )
+  )
 
 // EVE shows a system's security status rounded to one decimal.
 export const formatSecurity = (security: number): string => security.toFixed(1)
