@@ -77,6 +77,7 @@ drop table if exists public.invite_code          cascade;
 drop table if exists public.watched_system       cascade;
 drop table if exists public.user_settings        cascade;
 drop table if exists public.refresh_task         cascade;
+drop table if exists public.shared_asset_token   cascade;
 drop table if exists public.heartbeat            cascade;
 drop table if exists public.token                cascade;
 drop table if exists public.registration         cascade;
@@ -1734,3 +1735,35 @@ create policy "Users read own refresh tasks"
 
 grant select on public.refresh_task to authenticated;
 grant all    on public.refresh_task to service_role;
+
+-- ── shared_asset_token ─────────────────────────────────────────────────────
+-- Public share links for a user's own assets: /ship/[itemId]?token=… (and
+-- /asset/[locationId]?token=… for hangars — no UI creates those yet). The
+-- token is 16 random bytes hex, generated server-side (see
+-- src/app/ship/[itemId]/actions.ts). Anonymous viewers never query this
+-- table: the server resolves the token with the service-role client and then
+-- explicitly scopes every asset query to the sharing user's characters/corps
+-- — there is deliberately no anon/public policy here. item_id is whatever id
+-- the shared URL carries: an asset item_id for ships, a location id for
+-- hangars. A share dies with the account (cascade) or when the item stops
+-- being visible as the sharer's (checked at view time), and can be revoked
+-- by deleting the row.
+create table public.shared_asset_token (
+  token text primary key,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  item_id bigint not null,
+  created_at timestamptz not null default now(),
+  unique (user_id, item_id)
+);
+create index shared_asset_token_user_id_idx on public.shared_asset_token (user_id);
+
+alter table public.shared_asset_token enable row level security;
+create policy "Users manage own share tokens"
+  on public.shared_asset_token
+  for all
+  to authenticated
+  using (user_id = (select auth.uid()))
+  with check (user_id = (select auth.uid()));
+
+grant select, insert, update, delete on public.shared_asset_token to authenticated;
+grant all    on public.shared_asset_token to service_role;

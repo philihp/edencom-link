@@ -1,16 +1,16 @@
 import Link from 'next/link'
-import { redirect } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 
 import { getSdeType } from '@/sdeTypes'
 import { createClient } from '@/utils/supabase/server'
+import { createServiceClient } from '@/utils/supabase/service'
 import { fetchOwners } from '../../owners'
+import { resolveShareToken } from '../../ship/access'
 import { fetchStationNames, fetchStationSystems } from '../../stationNames'
 import { fetchSystemNames } from '../../systemNames'
 import { fetchTypeNames } from '../../typeNames'
-import { toEsiFit } from './esfFit'
+import type { Owners } from '../../ownerFilter'
 import { LocationAssets, type ItemRow } from './locationAssets'
-import { ShipCargo } from './shipCargo'
-import { ShipFitViewDynamic } from './shipFitViewDynamic'
 
 // invGroups.categoryID for the Ship category in CCP's SDE.
 const SHIP_CATEGORY_ID = 6
@@ -42,29 +42,56 @@ type Structure = {
   system_id: number | string | null
 }
 
-const AssetLocationPage = async ({ params }: { params: Promise<{ locationId: string }> }) => {
-  const { locationId } = await params
-  const supabase = await createClient()
+const isShip = (typeId: number | string) => getSdeType(Number(typeId))?.categoryID === SHIP_CATEGORY_ID
 
-  const { data: auth, error: authError } = await supabase.auth.getUser()
-  if (authError || !auth?.user) {
-    redirect('/')
+// Directory browsing for a location's contents. Ships are their own thing —
+// navigating to a ship's id redirects to /ship/[itemId]. Reachable
+// authenticated (RLS scopes everything), or anonymously with a hangar share
+// token (?token=…, no UI mints these yet): that path uses the service-role
+// client, so every query is explicitly filtered to the sharing user's
+// characters/corps — a shared station view must never reveal other users'
+// items parked in the same station.
+const AssetLocationPage = async ({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ locationId: string }>
+  searchParams: Promise<{ token?: string }>
+}) => {
+  const { locationId } = await params
+  const { token } = await searchParams
+
+  const scope = token ? await resolveShareToken(token, locationId) : null
+  if (token && !scope) notFound()
+
+  const supabase = scope ? createServiceClient() : await createClient()
+  if (!scope) {
+    const { data: auth, error: authError } = await supabase.auth.getUser()
+    if (authError || !auth?.user) {
+      redirect('/')
+    }
   }
+
+  // In the token path every query must stay inside the sharer's scope; an
+  // empty corp list still needs a filter that matches nothing.
+  const characterScope = scope?.characterIds ?? null
+  const corpScope = scope ? (scope.corporationIds.length > 0 ? scope.corporationIds : [-1]) : null
 
   // Root-level assets at this location: ships, containers and loose stacks that
   // sit directly in the station/structure/system (not nested in another item),
   // from both the character and corp hangars. Only this level is fetched — the
   // whole asset table no longer pages into Node.
-  const [{ data: characterChildren }, { data: corpChildren }] = await Promise.all([
-    supabase
-      .from('character_asset')
-      .select('item_id, character_id, type_id, location_id, location_flag, location_type, quantity, is_singleton, name')
-      .eq('location_id', locationId),
-    supabase
-      .from('corp_asset')
-      .select('item_id, corporation_id, type_id, location_id, location_flag, location_type, quantity, is_singleton')
-      .eq('location_id', locationId),
-  ])
+  let characterQuery = supabase
+    .from('character_asset')
+    .select('item_id, character_id, type_id, location_id, location_flag, location_type, quantity, is_singleton, name')
+    .eq('location_id', locationId)
+  if (characterScope) characterQuery = characterQuery.in('character_id', characterScope)
+  let corpQuery = supabase
+    .from('corp_asset')
+    .select('item_id, corporation_id, type_id, location_id, location_flag, location_type, quantity, is_singleton')
+    .eq('location_id', locationId)
+  if (corpScope) corpQuery = corpQuery.in('corporation_id', corpScope)
+  const [{ data: characterChildren }, { data: corpChildren }] = await Promise.all([characterQuery, corpQuery])
   const rootItems: Asset[] = [
     ...((characterChildren ?? []) as CharacterAsset[]).map(({ character_id, ...a }) => ({
       ...a,
@@ -80,35 +107,47 @@ const AssetLocationPage = async ({ params }: { params: Promise<{ locationId: str
   // Total items held inside each ship/container at this location, counted across
   // the whole subtree by the *_asset_location_contents() functions in Postgres.
   // An item lives in exactly one of the two tables, so the maps can't collide.
-  const [{ data: characterContents }, { data: corpContents }] = await Promise.all([
-    supabase.rpc('character_asset_location_contents', { parent: locationId }),
-    supabase.rpc('corp_asset_location_contents', { parent: locationId }),
-  ])
-  const contentsByItem = new Map<string, number>(
-    (
-      [...(characterContents ?? []), ...(corpContents ?? [])] as {
-        item_id: number | string
-        contents: number | string
-      }[]
-    ).map((r) => [String(r.item_id), Number(r.contents)])
-  )
+  // Skipped in the token path: those functions walk every asset unscoped when
+  // run as service_role, and a shared hangar doesn't offer drill-down anyway.
+  const contentsByItem = new Map<string, number>()
+  if (!scope) {
+    const [{ data: characterContents }, { data: corpContents }] = await Promise.all([
+      supabase.rpc('character_asset_location_contents', { parent: locationId }),
+      supabase.rpc('corp_asset_location_contents', { parent: locationId }),
+    ])
+    for (const r of [...(characterContents ?? []), ...(corpContents ?? [])] as {
+      item_id: number | string
+      contents: number | string
+    }[]) {
+      contentsByItem.set(String(r.item_id), Number(r.contents))
+    }
+  }
 
   // The id is either a place (station / structure / solar system) or one of our
   // own items — a ship or container the user drilled into, character- or
   // corp-owned. Resolve the heading and the "back" target accordingly.
-  const { data: characterSelf } = await supabase
+  let selfQuery = supabase
     .from('character_asset')
-    .select('item_id, type_id, location_id, name')
+    .select('item_id, character_id, type_id, location_id, name')
     .eq('item_id', locationId)
-    .maybeSingle<Pick<CharacterAsset, 'item_id' | 'type_id' | 'location_id' | 'name'>>()
+  if (characterScope) selfQuery = selfQuery.in('character_id', characterScope)
+  const { data: characterSelf } =
+    await selfQuery.maybeSingle<Pick<CharacterAsset, 'item_id' | 'character_id' | 'type_id' | 'location_id' | 'name'>>()
+  let corpSelfQuery = supabase
+    .from('corp_asset')
+    .select('item_id, corporation_id, type_id, location_id')
+    .eq('item_id', locationId)
+  if (corpScope) corpSelfQuery = corpSelfQuery.in('corporation_id', corpScope)
   const { data: corpSelf } = characterSelf
     ? { data: null }
-    : await supabase
-        .from('corp_asset')
-        .select('item_id, type_id, location_id')
-        .eq('item_id', locationId)
-        .maybeSingle<Pick<CorpAsset, 'item_id' | 'type_id' | 'location_id'>>()
+    : await corpSelfQuery.maybeSingle<Pick<CorpAsset, 'item_id' | 'corporation_id' | 'type_id' | 'location_id'>>()
   const self = characterSelf ?? (corpSelf ? { ...corpSelf, name: null } : null)
+
+  // A ship is its own page, not a directory level (a ship share token stays
+  // valid through the redirect — it's bound to the same id).
+  if (self && isShip(self.type_id)) {
+    redirect(`/ship/${locationId}${token ? `?token=${token}` : ''}`)
+  }
 
   let heading: string
   let backHref = '/asset'
@@ -116,7 +155,7 @@ const AssetLocationPage = async ({ params }: { params: Promise<{ locationId: str
   let systemName: string | undefined
 
   if (self) {
-    // A ship/container: title it by its custom name (if any) plus type, and step
+    // A container: title it by its custom name (if any) plus type, and step
     // back to whatever holds it.
     const typeNames = await fetchTypeNames([Number(self.type_id)])
     const typeName = typeNames[Number(self.type_id)] ?? `#${self.type_id}`
@@ -130,10 +169,12 @@ const AssetLocationPage = async ({ params }: { params: Promise<{ locationId: str
     // own-corp + foreign player structures, NPC stations, and systems all come
     // from the universe_name DB cache.
     const numericId = Number(locationId)
-    const { data: corpStructures } = await supabase
+    let corpStructureQuery = supabase
       .from('corp_structure')
       .select('structure_id, name, system_id')
       .eq('structure_id', numericId)
+    if (corpScope) corpStructureQuery = corpStructureQuery.in('corporation_id', corpScope)
+    const { data: corpStructures } = await corpStructureQuery
     const { data: playerStructures } = await supabase
       .from('universe_structure')
       .select('structure_id, name, system_id')
@@ -159,7 +200,28 @@ const AssetLocationPage = async ({ params }: { params: Promise<{ locationId: str
     systemName = systemId != null ? (systemNames[systemId] ?? `#${systemId}`) : undefined
   }
 
-  const owners = await fetchOwners()
+  // Owner names for the filter dropdown: the caller's own owners, or — in the
+  // token path — the sharer's characters/corps, resolved through the service
+  // client (the anonymous viewer has no session to read them with).
+  let owners: Owners
+  if (scope) {
+    const characters = [...scope.characterNames]
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name))
+    let corpNames: Record<number, string> = {}
+    if (scope.corporationIds.length > 0) {
+      const { data } = await supabase.from('universe_name').select('id, name').in('id', scope.corporationIds)
+      corpNames = Object.fromEntries(
+        ((data ?? []) as Array<{ id: number | string; name: string }>).map((r) => [Number(r.id), r.name])
+      )
+    }
+    const corporations = scope.corporationIds
+      .map((id) => ({ id: String(id), name: corpNames[id] ?? `Corporation #${id}` }))
+      .sort((a, b) => a.name.localeCompare(b.name))
+    owners = { characters, corporations }
+  } else {
+    owners = await fetchOwners()
+  }
 
   // Resolve type names without blocking render: fire the lookup and let each
   // TypeName stream in (Suspense), falling back to #id. A big hangar can hold
@@ -167,17 +229,23 @@ const AssetLocationPage = async ({ params }: { params: Promise<{ locationId: str
   const typeNamesPromise = fetchTypeNames(rootItems.map((a) => Number(a.type_id)))
 
   // Containers/ships (those holding items) first, then a stable id order.
+  // Anonymous hangar viewers get no drill-down links: nested levels would
+  // need their own tokens.
   const rows: ItemRow[] = rootItems
-    .map((a) => ({
-      itemId: String(a.item_id),
-      ownerId: a.owner_id,
-      typeId: Number(a.type_id),
-      name: a.name,
-      quantity: a.quantity,
-      isSingleton: a.is_singleton,
-      flag: a.location_flag,
-      contents: contentsByItem.get(String(a.item_id)) ?? 0,
-    }))
+    .map((a) => {
+      const contents = contentsByItem.get(String(a.item_id)) ?? 0
+      return {
+        itemId: String(a.item_id),
+        ownerId: a.owner_id,
+        typeId: Number(a.type_id),
+        name: a.name,
+        quantity: a.quantity,
+        isSingleton: a.is_singleton,
+        flag: a.location_flag,
+        contents,
+        href: scope ? null : isShip(a.type_id) ? `/ship/${a.item_id}` : contents > 0 ? `/asset/${a.item_id}` : null,
+      }
+    })
     .sort((a, b) => b.contents - a.contents || a.typeId - b.typeId)
 
   return (
@@ -188,18 +256,13 @@ const AssetLocationPage = async ({ params }: { params: Promise<{ locationId: str
           System: <span className="serif">{systemName}</span>
         </p>
       ) : null}
-      <p>
-        <Link href={backHref}>&laquo; {backLabel}</Link>
-      </p>
+      {!scope ? (
+        <p>
+          <Link href={backHref}>&laquo; {backLabel}</Link>
+        </p>
+      ) : null}
 
-      {self && getSdeType(Number(self.type_id))?.categoryID === SHIP_CATEGORY_ID ? (
-        <>
-          <ShipFitViewDynamic esiFit={toEsiFit(Number(self.type_id), self.name, rows)} />
-          <ShipCargo rows={rows} owners={owners} typeNamesPromise={typeNamesPromise} />
-        </>
-      ) : (
-        <LocationAssets rows={rows} owners={owners} typeNamesPromise={typeNamesPromise} />
-      )}
+      <LocationAssets rows={rows} owners={owners} typeNamesPromise={typeNamesPromise} />
     </>
   )
 }

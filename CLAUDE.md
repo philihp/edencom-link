@@ -20,7 +20,7 @@ EVE Online hangar/wallet/industry tracker. Package name `edencom-link` (private)
 
 ## Layout
 
-- `src/app/` — Next.js App Router. Page routes: `account/`, `asset/`, `character/`, `industry/`, `market/`, `structure/`, plus `layout/` (Header/Footer), `private/`. Shared helpers at top level: `typeNames.ts`/`typeName.tsx`, `systemNames.ts`, `stationNames.ts`, `isk.ts`, `DateTime.tsx`.
+- `src/app/` — Next.js App Router. Page routes: `account/`, `asset/`, `character/`, `industry/`, `market/`, `ship/` (a ship's own page: eveship.fit wheel + stats, owner/location, share links; `/asset/[id]` redirects ships here), `structure/`, plus `layout/` (Header/Footer), `private/`. Shared helpers at top level: `typeNames.ts`/`typeName.tsx`, `systemNames.ts`, `stationNames.ts`, `isk.ts`, `DateTime.tsx`.
 - `src/` (Node cron/scripts): `esi.js` (ESI API wrapper), `supabase.js` (clients — anon + `sudoSupabase` service role that bypasses RLS), `resolveNames.js`, `tokenRefresh.js`/`refresh.js`, `proxy.ts`, `utils/`. The extract jobs live under `src/jobs/` — one file per ESI endpoint (`characterAssets.js`, `corpStructures.js`, …) plus the shared plumbing in `src/jobs/lib.js` (`forEachCharacter`/`forEachCorporation` token loops, `fetchAllPages`, `forEachSequential`, `cli`). Each job exports a `run*` function (callable from the Vercel queue consumer) and self-runs as a CLI when invoked directly (`node src/jobs/<job>.js`).
 - `schema.sql` — the single source of truth for the Supabase schema (in the default `public` schema). It's a full reset: it DROPs the app's tables and recreates them, so re-running wipes data — never run it against a database with data you want to keep. To change the schema, edit this file (so a fresh reset stays correct) **and** add a non-destructive incremental migration under `supabase/migrations/` (Supabase CLI format, applied with `supabase db push`) so the change can be rolled out to existing databases without wiping data.
 - `.github/workflows/` — `heartbeat.yml` (daily canary; still GitHub Actions since it's specifically a canary for scheduled-trigger health, not an ESI extract); `migrate.yml` (applies Supabase migrations on push to `main`). All ESI extract jobs used to have a like-named workflow here but have moved to Vercel Cron (see `src/app/api/cron/`) since the GitHub Actions schedule wasn't firing reliably.
@@ -147,6 +147,7 @@ All functions take `(accessToken, id, ...)` unless noted. Returns raw ESI respon
 | `/asset` | `src/app/asset/page.tsx` |
 | `/asset/[locationId]` | `src/app/asset/[locationId]/page.tsx` |
 | `/asset/search` | `src/app/asset/search/page.tsx` |
+| `/ship/[itemId]` | `src/app/ship/[itemId]/page.tsx` |
 | `/character` | `src/app/character/page.tsx` |
 | `/character/callback` | `src/app/character/callback/route.ts` |
 | `/character/refresh` | `src/app/character/refresh/page.tsx` |
@@ -242,6 +243,7 @@ Requires a `CRON_SECRET` env var set in Vercel (see `.env.example`).
 | `universe_name` | Cached id→name | `id` (bigint PK), `name`, `category` |
 | `universe_structure` | Player structure cache | `structure_id`, `name`, `system_id`, `type_id` |
 | `watched_system` | Per-user systems to track indexes for (drives `industry-systems` + `/indexes`) | `user_id`, `system_id`, `position` (drag order) |
+| `shared_asset_token` | Public share links for own assets (`/ship/[itemId]?token=…`; hangar shares have no UI yet). Resolved server-side via the service client, which then scopes every query to the sharer's characters/corps — no anon RLS policy | `token` (PK, 16 random bytes hex), `user_id`, `item_id`, unique `(user_id, item_id)` |
 | `user_settings` | User preferences | `user_id`, `enabled_scopes[]`, `api_token` (unique), `flags[]` |
 | `invite_code` | Invite-only registration | `code` (unique), `created_by`, `redeemed_by`, `redeemed_at` |
 | `refresh_task` | On-demand job tracking | `batch_id`, `user_id`, `job`, `character_id`, `status` (pending/running/done/error) |
