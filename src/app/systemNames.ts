@@ -5,13 +5,17 @@
 // universe_name DB cache only for ids the SDE dump doesn't recognize; still
 // omits anything neither source has, so callers fall back to showing the raw
 // id (never read the evesde SDE schema).
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { difference, filter, fromPairs, keys, map, mergeRight, uniq } from 'ramda'
 import { createClient } from '@/utils/supabase/server'
 import { getSdeSystemNames } from '@/sdeSystems'
 
 const idNamePairs = map((r: { id: number | string; name: string }): [number, string] => [Number(r.id), r.name])
 
-export const fetchSystemNames = async (systemIDs: Iterable<number>): Promise<Record<number, string>> => {
+export const fetchSystemNames = async (
+  systemIDs: Iterable<number>,
+  client?: SupabaseClient
+): Promise<Record<number, string>> => {
   const ids = uniq(filter(Number.isFinite, [...systemIDs]))
   if (ids.length === 0) return {}
 
@@ -19,7 +23,7 @@ export const fetchSystemNames = async (systemIDs: Iterable<number>): Promise<Rec
   const unresolvedIds = difference(ids, map(Number, keys(sdeNames)))
   if (unresolvedIds.length === 0) return sdeNames
 
-  const supabase = await createClient()
+  const supabase = client ?? (await createClient())
   const { data } = await supabase
     .from('universe_name')
     .select('id, name')

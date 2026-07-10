@@ -1,50 +1,13 @@
-'use client'
+import { LoginForm } from './loginForm'
 
-import { useState } from 'react'
-import { redirect } from 'next/navigation'
+// Only same-site absolute paths are honored (no scheme-relative `//host` or
+// absolute URLs), so `next` can't become an open redirect.
+const sanitizeNext = (next: string | undefined): string | undefined =>
+  next?.startsWith('/') && !next.startsWith('//') ? next : undefined
 
-import { login } from './actions'
-
-const Login = () => {
-  const [response, setResponse] = useState<string>('')
-
-  const loginAndReturn = async (formData: FormData) => {
-    const error = await login(formData)
-    if (error) {
-      setResponse(error)
-      return
-    }
-    redirect('/')
-  }
-
-  return (
-    <>
-      <h1>Login</h1>
-      <p>Login to access your hangar.</p>
-      <form onSubmit={() => setResponse('')}>
-        <label htmlFor="email">Email:</label>
-        <br />
-        <input id="email" name="email" type="email" required />
-        <br />
-        <label htmlFor="password">Password:</label>
-        <br />
-        <input id="password" name="password" type="password" required />
-        <br />
-        <button formAction={loginAndReturn}>Log in</button>
-        {response && (
-          <>
-            <svg height="10" width="20">
-              <circle cx="10" cy="5" r="5" fill="#FF0000" />
-            </svg>
-            {response}
-          </>
-        )}
-        <div>
-          <a href="reset">Forgot Password</a>
-        </div>
-      </form>
-    </>
-  )
+const Login = async ({ searchParams }: { searchParams: Promise<{ next?: string }> }) => {
+  const { next } = await searchParams
+  return <LoginForm next={sanitizeNext(next)} />
 }
 
 export default Login

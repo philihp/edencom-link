@@ -4,11 +4,12 @@
 // exactly the corps whose assets/jobs the user can read. Corp names come from
 // the universe_name cache (kept populated by the universe-names job);
 // unresolved ids fall back to a labelled raw id.
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { createClient } from '@/utils/supabase/server'
 import type { Owner, Owners } from './ownerFilter'
 
-export const fetchOwners = async (): Promise<Owners> => {
-  const supabase = await createClient()
+export const fetchOwners = async (client?: SupabaseClient): Promise<Owners> => {
+  const supabase = client ?? (await createClient())
   const { data: registrations } = await supabase.from('registration').select('id, name, corporation_id')
   const rows = (registrations ?? []) as Array<{ id: string; name: string; corporation_id: number | string | null }>
 

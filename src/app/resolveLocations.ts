@@ -3,6 +3,7 @@
 // pages share: our own corp's structures (corp_structure) win over the
 // ESI-resolved cache (universe_structure) for player structures; NPC station
 // names and solar system names come from the universe_name cache.
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { chain, filter, map, pipe } from 'ramda'
 import { createClient } from '@/utils/supabase/server'
 import { fetchStationNames, fetchStationSystems } from './stationNames'
@@ -17,8 +18,11 @@ export type ResolvedLocations = {
   systemFor: (loc: LocationRef) => string | undefined
 }
 
-export const resolveLocations = async (locations: LocationRef[]): Promise<ResolvedLocations> => {
-  const supabase = await createClient()
+export const resolveLocations = async (
+  locations: LocationRef[],
+  client?: SupabaseClient
+): Promise<ResolvedLocations> => {
+  const supabase = client ?? (await createClient())
   const locationIds = filter(
     Number.isFinite,
     map((l: LocationRef) => Number(l.id), locations)
@@ -45,7 +49,7 @@ export const resolveLocations = async (locations: LocationRef[]): Promise<Resolv
     map((l: LocationRef) => Number(l.id))
   )(locations)
   const [stationNames, stationSystems] = await Promise.all([
-    fetchStationNames(stationIds),
+    fetchStationNames(stationIds, supabase),
     fetchStationSystems(stationIds),
   ])
 
@@ -61,7 +65,7 @@ export const resolveLocations = async (locations: LocationRef[]): Promise<Resolv
       ].filter((id): id is number => id != null)
     }, locations)
   )
-  const systemNames = await fetchSystemNames(systemIds)
+  const systemNames = await fetchSystemNames(systemIds, supabase)
 
   const nameFor = (loc: LocationRef): string => {
     const structure = structureById.get(loc.id)
