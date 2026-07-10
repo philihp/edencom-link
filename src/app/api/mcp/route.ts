@@ -22,7 +22,17 @@ const handler = createMcpHandler(
   { basePath: '/api', disableSse: true, maxDuration: 60 }
 )
 
-const authHandler = withMcpAuth(handler, verifySupabaseToken, { required: true })
+// Point the 401 WWW-Authenticate challenge at the path-suffixed protected-
+// resource metadata (served by the [[...resource]] catch-all under
+// .well-known), whose `resource` is the full server URL https://<host>/api/mcp.
+// The default ('/.well-known/oauth-protected-resource') resolves to a document
+// declaring just the origin, which fails the RFC 8707/9728 canonical-resource
+// match that spec-compliant MCP clients (e.g. Claude) enforce — surfacing as
+// "Authorization with the MCP server failed" only after discovery succeeds.
+const authHandler = withMcpAuth(handler, verifySupabaseToken, {
+  required: true,
+  resourceMetadataPath: '/.well-known/oauth-protected-resource/api/mcp',
+})
 
 export { authHandler as GET, authHandler as POST, authHandler as DELETE }
 export const maxDuration = 60
