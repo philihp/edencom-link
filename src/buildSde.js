@@ -1,6 +1,7 @@
-// Generates src/generated/sdeTypes.json and src/generated/sdeSystems.json from
-// CCP's Static Data Export so the app can resolve type names/groups/categories
-// and solar-system names locally instead of depending on a remote service.
+// Generates src/generated/sdeTypes.json, src/generated/sdeSystems.json, and
+// src/generated/sdeStations.json from CCP's Static Data Export so the app can
+// resolve type names/groups/categories, solar-system names, and NPC station
+// names locally instead of depending on a remote service or DB round trip.
 // Runs as a `predev`/`prebuild` step (see package.json) — re-run
 // `pnpm run sde:build -- --force` to refresh the data.
 import { access, mkdir, writeFile } from 'node:fs/promises'
@@ -10,12 +11,14 @@ import { fileURLToPath } from 'node:url'
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const TYPES_OUTPUT_PATH = join(__dirname, 'generated', 'sdeTypes.json')
 const SYSTEMS_OUTPUT_PATH = join(__dirname, 'generated', 'sdeSystems.json')
+const STATIONS_OUTPUT_PATH = join(__dirname, 'generated', 'sdeStations.json')
 
 // Fuzzwork republishes CCP's SDE as flat CSVs, refreshed shortly after each
 // game patch — much smaller and faster to fetch than CCP's own multi-file zip.
 const TYPES_URL = 'https://www.fuzzwork.co.uk/dump/latest/csv/invTypes.csv'
 const GROUPS_URL = 'https://www.fuzzwork.co.uk/dump/latest/csv/invGroups.csv'
 const SYSTEMS_URL = 'https://www.fuzzwork.co.uk/dump/latest/csv/mapSolarSystems.csv'
+const STATIONS_URL = 'https://www.fuzzwork.co.uk/dump/latest/csv/staStations.csv'
 
 // Minimal RFC 4180 CSV parser: invTypes' description column embeds raw commas
 // and newlines inside quoted fields, so a naive line/comma split corrupts rows.
@@ -104,11 +107,29 @@ const buildSystems = async () => {
   console.log(`sde: wrote ${out.length} solar systems to ${SYSTEMS_OUTPUT_PATH}`)
 }
 
+// NPC stations only — conquerable outposts (player-held stations) were
+// removed from the game years ago, so every station id ESI can return is
+// static SDE data and never needs an ESI/DB fallback.
+const buildStations = async () => {
+  console.log('sde: downloading staStations from the SDE…')
+  const stations = await fetchRecords(STATIONS_URL)
+
+  // [stationID, name, solarSystemID] tuples.
+  const out = stations
+    .map((s) => [Number(s.stationID), s.stationName, Number(s.solarSystemID)])
+    .filter(([id, name, systemId]) => Number.isFinite(id) && Number.isFinite(systemId) && name.trim() !== '')
+    .sort((a, b) => a[0] - b[0])
+
+  await writeFile(STATIONS_OUTPUT_PATH, JSON.stringify(out))
+  console.log(`sde: wrote ${out.length} stations to ${STATIONS_OUTPUT_PATH}`)
+}
+
 const run = async () => {
   const force = process.argv.includes('--force')
   const artifacts = [
     [TYPES_OUTPUT_PATH, buildTypes],
     [SYSTEMS_OUTPUT_PATH, buildSystems],
+    [STATIONS_OUTPUT_PATH, buildStations],
   ]
 
   await mkdir(dirname(TYPES_OUTPUT_PATH), { recursive: true })

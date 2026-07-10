@@ -14,7 +14,7 @@ EVE Online hangar/wallet/industry tracker. Package name `edencom-link` (private)
 - `pnpm run pretty` — `prettier --write src/` (config: `@philihp/prettier-config`).
 - **No test runner / no `test` script** — there are no automated tests. No `typecheck` script (rely on `next build` / editor).
 - Pre-commit: husky + lint-staged auto-format & `eslint --fix` staged files.
-- `pnpm run sde:build` — downloads CCP's SDE type/group and solar-system data and writes `src/generated/sdeTypes.json` + `src/generated/sdeSystems.json` (gitignored). Runs automatically as a `predev`/`prebuild` step; skips re-downloading any file that already exists (pass `--force` to refresh). See `src/buildSde.js`.
+- `pnpm run sde:build` — downloads CCP's SDE type/group, solar-system, and NPC-station data and writes `src/generated/sdeTypes.json` + `src/generated/sdeSystems.json` + `src/generated/sdeStations.json` (gitignored). Runs automatically as a `predev`/`prebuild` step; skips re-downloading any file that already exists (pass `--force` to refresh). See `src/buildSde.js`.
 - Extract job scripts (one per ESI endpoint, scheduled via Vercel Cron, see below): `pnpm run character-assets` / `character-blueprints` / `character-orders` / `character-wallet` / `character-wallet-transactions` / `character-industry-jobs` / `character-location` / `character-clones` / `character-implants` / `character-affiliations` / `corp-structures` / `corp-assets` / `corp-blueprints` / `corp-wallet-journal` / `corp-wallet-transactions` / `corp-industry-jobs` / `industry-systems` / `universe-names` / `universe-structures`, plus `heartbeat`. `connect`, `ping`, `refresh` are DB/token utilities.
 - DB migrations (Supabase CLI, configured by `supabase/config.toml`): `pnpm run db:new <name>` scaffolds a migration under `supabase/migrations/`; `pnpm run db:push` applies pending migrations to the linked project (`supabase link --project-ref <ref>` first). On push to `main` that touches `supabase/migrations/**`, the `Migrate` workflow runs `supabase db push` automatically (also manually dispatchable).
 
@@ -52,7 +52,7 @@ Quick-reference for navigation. Covers key exports, route→file paths, DB table
 ## Key source file exports
 
 ### `src/buildSde.js` — SDE generator (run via `pnpm run sde:build`)
-- Downloads `invTypes.csv`/`invGroups.csv` (Fuzzwork's flat-CSV mirror of CCP's SDE), joins them, and writes published types as `[typeID, name, groupID, categoryID]` tuples to `src/generated/sdeTypes.json` (gitignored). Also downloads `mapSolarSystems.csv` and writes known-space systems as `[systemID, name, security]` tuples to `src/generated/sdeSystems.json`. Skips re-downloading any output that already exists; pass `--force` to refresh.
+- Downloads `invTypes.csv`/`invGroups.csv` (Fuzzwork's flat-CSV mirror of CCP's SDE), joins them, and writes published types as `[typeID, name, groupID, categoryID]` tuples to `src/generated/sdeTypes.json` (gitignored). Also downloads `mapSolarSystems.csv` and writes known-space systems as `[systemID, name, security]` tuples to `src/generated/sdeSystems.json`, and downloads `staStations.csv` and writes NPC stations as `[stationID, name, systemID]` tuples to `src/generated/sdeStations.json`. Skips re-downloading any output that already exists; pass `--force` to refresh.
 
 ### `src/sdeTypes.ts`
 - `getSdeType(typeID)` — `{ typeID, name, groupID, categoryID }` from the generated SDE data, or `null`
@@ -65,6 +65,11 @@ Quick-reference for navigation. Covers key exports, route→file paths, DB table
 - `getSdeSystemNames(systemIDs[])` — bulk id→name lookup
 - `searchSdeSystems(query, limit?)` — case-insensitive substring search over system names (backs the /indexes watch-a-system autocomplete)
 - `formatSecurity(security)` — one-decimal display rounding
+
+### `src/sdeStations.ts`
+- `getSdeStation(stationID)` — `{ stationID, name, systemID }` from the generated SDE data, or `null`
+- `getSdeStationNames(stationIDs[])` — bulk id→name lookup
+- `getSdeStationSystems(stationIDs[])` — bulk id→solar-system-id lookup (the SDE carries this directly; ESI's `universe/names` never did)
 
 ### `src/esi.js` — ESI API wrapper
 All functions take `(accessToken, id, ...)` unless noted. Returns raw ESI response JSON (paged wrappers return `[json, xPagesHeader]`).
