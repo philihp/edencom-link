@@ -3,7 +3,9 @@
 import type { ReactNode } from 'react'
 
 import {
+  CurrentCharacterProvider,
   CurrentFitProvider,
+  DefaultCharactersProvider,
   DogmaEngineProvider,
   EveDataProvider,
   ShipFit,
@@ -38,16 +40,26 @@ type ShipFitViewProps = {
 // and positions its ring elements absolutely within it. Without a sized
 // square wrapper it inflates to the whole viewport (the wheel is circular, so
 // the container must be square for the rings to line up).
+// The character providers are load-bearing even though we never show a
+// character picker: StatisticsProvider computes nothing (returns null, so no
+// slots and no modules render) unless a current character with skills exists.
+// DefaultCharactersProvider provisions synthetic all-skills-L0/L5 characters
+// and CurrentCharacterProvider defaults to all-skills-L5 — the standard
+// "assume max skills" baseline fitting tools use.
 export const ShipFitView = ({ esiFit }: ShipFitViewProps) => (
   <EveDataProvider dataUrl="/esf-data/">
     <DogmaEngineProvider>
-      <FitFromEsi esiFit={esiFit}>
-        <StatisticsProvider>
-          <div style={{ width: 'min(90vw, 42rem)', aspectRatio: '1' }}>
-            <ShipFit withStats readOnly />
-          </div>
-        </StatisticsProvider>
-      </FitFromEsi>
+      <DefaultCharactersProvider>
+        <CurrentCharacterProvider>
+          <FitFromEsi esiFit={esiFit}>
+            <StatisticsProvider>
+              <div style={{ width: 'min(90vw, 42rem)', aspectRatio: '1' }}>
+                <ShipFit withStats readOnly />
+              </div>
+            </StatisticsProvider>
+          </FitFromEsi>
+        </CurrentCharacterProvider>
+      </DefaultCharactersProvider>
     </DogmaEngineProvider>
   </EveDataProvider>
 )

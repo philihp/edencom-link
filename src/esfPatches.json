@@ -1,0 +1,3353 @@
+[
+  {
+    "file": "alignTime.yaml",
+    "attributes": [
+      {
+        "new": {
+          "name": "alignTime"
+        },
+        "published": true,
+        "defaultValue": 1.3862943611198906,
+        "highIsGood": false,
+        "stackable": true
+      }
+    ],
+    "effects": [
+      {
+        "new": {
+          "name": "alignTime"
+        },
+        "effectCategory": "passive",
+        "electronicChance": false,
+        "isAssistance": false,
+        "isOffensive": false,
+        "isWarpSafe": true,
+        "propulsionChance": false,
+        "rangeChance": false,
+        "modifierInfo": [
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "alignTime",
+            "modifyingAttribute": "agility",
+            "operation": "postMul"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "alignTime",
+            "modifyingAttribute": "mass",
+            "operation": "postMul"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "alignTime",
+            "modifyingAttribute": "thousand",
+            "operation": "postDiv"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "alignTime",
+            "modifyingAttribute": "thousand",
+            "operation": "postDiv"
+          }
+        ]
+      }
+    ],
+    "typeDogma": [
+      {
+        "patch": [
+          {
+            "category": "Ship"
+          }
+        ],
+        "dogmaEffects": [
+          {
+            "effect": "alignTime",
+            "isDefault": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "file": "capacitor.yaml",
+    "attributes": [
+      {
+        "new": {
+          "name": "capacitorPeakRecharge"
+        },
+        "published": true,
+        "defaultValue": 2.5,
+        "highIsGood": true,
+        "stackable": true
+      },
+      {
+        "new": {
+          "name": "cycleTime"
+        },
+        "published": true,
+        "defaultValue": 0,
+        "highIsGood": false,
+        "stackable": true
+      },
+      {
+        "new": {
+          "name": "capacitorPeakLoad"
+        },
+        "published": true,
+        "defaultValue": 0,
+        "highIsGood": true,
+        "stackable": true
+      },
+      {
+        "new": {
+          "name": "capacitorPeakDelta"
+        },
+        "published": true,
+        "defaultValue": 0,
+        "highIsGood": true,
+        "stackable": true
+      },
+      {
+        "new": {
+          "name": "capacitorPeakDeltaPercentage"
+        },
+        "published": true,
+        "defaultValue": 100,
+        "highIsGood": true,
+        "stackable": true
+      },
+      {
+        "new": {
+          "name": "capacitorDepletesIn"
+        },
+        "published": true,
+        "defaultValue": 0,
+        "highIsGood": true,
+        "stackable": true
+      }
+    ],
+    "effects": [
+      {
+        "new": {
+          "name": "capacitorPeakRecharge"
+        },
+        "effectCategory": "passive",
+        "electronicChance": false,
+        "isAssistance": false,
+        "isOffensive": false,
+        "isWarpSafe": true,
+        "propulsionChance": false,
+        "rangeChance": false,
+        "modifierInfo": [
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "capacitorPeakRecharge",
+            "modifyingAttribute": "capacitorCapacity",
+            "operation": "postMul"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "capacitorPeakRecharge",
+            "modifyingAttribute": "rechargeRate",
+            "operation": "postDiv"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "capacitorPeakRecharge",
+            "modifyingAttribute": "thousand",
+            "operation": "postMul"
+          }
+        ]
+      },
+      {
+        "new": {
+          "name": "cycleTimeDuration"
+        },
+        "effectCategory": "active",
+        "electronicChance": false,
+        "isAssistance": false,
+        "isOffensive": false,
+        "isWarpSafe": true,
+        "propulsionChance": false,
+        "rangeChance": false,
+        "modifierInfo": [
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "cycleTime",
+            "modifyingAttribute": "duration",
+            "operation": "modAdd"
+          }
+        ]
+      },
+      {
+        "new": {
+          "name": "cycleTimeDurationHighisGood"
+        },
+        "effectCategory": "active",
+        "electronicChance": false,
+        "isAssistance": false,
+        "isOffensive": false,
+        "isWarpSafe": true,
+        "propulsionChance": false,
+        "rangeChance": false,
+        "modifierInfo": [
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "cycleTime",
+            "modifyingAttribute": "durationHighisGood",
+            "operation": "modAdd"
+          }
+        ]
+      },
+      {
+        "new": {
+          "name": "cycleTimeSpeed"
+        },
+        "effectCategory": "active",
+        "electronicChance": false,
+        "isAssistance": false,
+        "isOffensive": false,
+        "isWarpSafe": true,
+        "propulsionChance": false,
+        "rangeChance": false,
+        "modifierInfo": [
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "cycleTime",
+            "modifyingAttribute": "speed",
+            "operation": "modAdd"
+          }
+        ]
+      },
+      {
+        "new": {
+          "name": "cycleTimeReactivationDelay"
+        },
+        "effectCategory": "active",
+        "electronicChance": false,
+        "isAssistance": false,
+        "isOffensive": false,
+        "isWarpSafe": true,
+        "propulsionChance": false,
+        "rangeChance": false,
+        "modifierInfo": [
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "cycleTime",
+            "modifyingAttribute": "moduleReactivationDelay",
+            "operation": "modAdd"
+          }
+        ]
+      },
+      {
+        "new": {
+          "name": "capacitorPeakLoad"
+        },
+        "effectCategory": "active",
+        "electronicChance": false,
+        "isAssistance": false,
+        "isOffensive": false,
+        "isWarpSafe": true,
+        "propulsionChance": false,
+        "rangeChance": false,
+        "modifierInfo": [
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "capacitorPeakLoad",
+            "modifyingAttribute": "capacitorNeed",
+            "operation": "preAssign"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "capacitorPeakLoad",
+            "modifyingAttribute": "cycleTime",
+            "operation": "postDiv"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "capacitorPeakLoad",
+            "modifyingAttribute": "thousand",
+            "operation": "postMul"
+          },
+          {
+            "domain": "shipID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "capacitorPeakLoad",
+            "modifyingAttribute": "capacitorPeakLoad",
+            "operation": "modAdd"
+          }
+        ]
+      },
+      {
+        "new": {
+          "name": "capacitorPeakDelta"
+        },
+        "effectCategory": "passive",
+        "electronicChance": false,
+        "isAssistance": false,
+        "isOffensive": false,
+        "isWarpSafe": true,
+        "propulsionChance": false,
+        "rangeChance": false,
+        "modifierInfo": [
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "capacitorPeakDelta",
+            "modifyingAttribute": "capacitorPeakRecharge",
+            "operation": "preAssign"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "capacitorPeakDelta",
+            "modifyingAttribute": "capacitorPeakLoad",
+            "operation": "modSub"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "capacitorPeakDeltaPercentage",
+            "modifyingAttribute": "capacitorPeakDelta",
+            "operation": "postMul"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "capacitorPeakDeltaPercentage",
+            "modifyingAttribute": "capacitorPeakRecharge",
+            "operation": "postDiv"
+          }
+        ]
+      }
+    ],
+    "typeDogma": [
+      {
+        "patch": [
+          {
+            "category": "Ship"
+          }
+        ],
+        "dogmaEffects": [
+          {
+            "effect": "capacitorPeakRecharge",
+            "isDefault": false
+          }
+        ]
+      },
+      {
+        "patch": [
+          {
+            "category": "Module",
+            "hasAllAttributes": [
+              {
+                "name": "capacitorNeed"
+              }
+            ]
+          }
+        ],
+        "dogmaEffects": [
+          {
+            "effect": "capacitorPeakLoad",
+            "isDefault": false
+          }
+        ]
+      },
+      {
+        "patch": [
+          {
+            "category": "Module",
+            "hasAllAttributes": [
+              {
+                "name": "capacitorNeed"
+              },
+              {
+                "name": "duration"
+              }
+            ]
+          }
+        ],
+        "dogmaEffects": [
+          {
+            "effect": "cycleTimeDuration",
+            "isDefault": false
+          }
+        ]
+      },
+      {
+        "patch": [
+          {
+            "category": "Module",
+            "hasAllAttributes": [
+              {
+                "name": "capacitorNeed"
+              },
+              {
+                "name": "durationHighisGood"
+              }
+            ]
+          }
+        ],
+        "dogmaEffects": [
+          {
+            "effect": "cycleTimeDurationHighisGood",
+            "isDefault": false
+          }
+        ]
+      },
+      {
+        "patch": [
+          {
+            "category": "Module",
+            "hasAllAttributes": [
+              {
+                "name": "capacitorNeed"
+              },
+              {
+                "name": "speed"
+              }
+            ]
+          }
+        ],
+        "dogmaEffects": [
+          {
+            "effect": "cycleTimeSpeed",
+            "isDefault": false
+          }
+        ]
+      },
+      {
+        "patch": [
+          {
+            "category": "Module",
+            "hasAllAttributes": [
+              {
+                "name": "capacitorNeed"
+              },
+              {
+                "name": "moduleReactivationDelay"
+              }
+            ]
+          }
+        ],
+        "dogmaEffects": [
+          {
+            "effect": "cycleTimeReactivationDelay",
+            "isDefault": false
+          }
+        ]
+      },
+      {
+        "patch": [
+          {
+            "category": "Ship"
+          }
+        ],
+        "dogmaEffects": [
+          {
+            "effect": "capacitorPeakDelta",
+            "isDefault": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "file": "chargeAmount.yaml",
+    "attributes": [
+      {
+        "new": {
+          "name": "chargeAmount"
+        },
+        "published": true,
+        "defaultValue": 1,
+        "highIsGood": true,
+        "stackable": true
+      }
+    ],
+    "effects": [
+      {
+        "new": {
+          "name": "chargeAmount"
+        },
+        "effectCategory": "passive",
+        "electronicChance": false,
+        "isAssistance": false,
+        "isOffensive": false,
+        "isWarpSafe": true,
+        "propulsionChance": false,
+        "rangeChance": false,
+        "modifierInfo": [
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "chargeAmount",
+            "modifyingAttribute": "capacity",
+            "operation": "preAssign"
+          }
+        ]
+      },
+      {
+        "new": {
+          "name": "chargeAmountAmmo"
+        },
+        "effectCategory": "passive",
+        "electronicChance": false,
+        "isAssistance": false,
+        "isOffensive": false,
+        "isWarpSafe": true,
+        "propulsionChance": false,
+        "rangeChance": false,
+        "modifierInfo": [
+          {
+            "domain": "otherID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "chargeAmount",
+            "modifyingAttribute": "volume",
+            "operation": "postDiv"
+          }
+        ]
+      }
+    ],
+    "typeDogma": [
+      {
+        "patch": [
+          {
+            "category": "Module",
+            "hasAnyAttributes": [
+              {
+                "name": "chargeGroup1"
+              },
+              {
+                "name": "chargeGroup2"
+              },
+              {
+                "name": "chargeGroup3"
+              },
+              {
+                "name": "chargeGroup4"
+              },
+              {
+                "name": "chargeGroup5"
+              }
+            ]
+          }
+        ],
+        "dogmaEffects": [
+          {
+            "effect": "chargeAmount",
+            "isDefault": false
+          }
+        ]
+      },
+      {
+        "patch": [
+          {
+            "category": "Charge"
+          }
+        ],
+        "dogmaEffects": [
+          {
+            "effect": "chargeAmountAmmo",
+            "isDefault": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "file": "cpuPower.yaml",
+    "attributes": [
+      {
+        "new": {
+          "name": "cpuFree"
+        },
+        "published": true,
+        "defaultValue": 0,
+        "highIsGood": true,
+        "stackable": true
+      },
+      {
+        "new": {
+          "name": "powerFree"
+        },
+        "published": true,
+        "defaultValue": 0,
+        "highIsGood": true,
+        "stackable": true
+      }
+    ],
+    "effects": [
+      {
+        "new": {
+          "name": "cpuPowerLoad"
+        },
+        "effectCategory": "online",
+        "electronicChance": false,
+        "isAssistance": false,
+        "isOffensive": false,
+        "isWarpSafe": true,
+        "propulsionChance": false,
+        "rangeChance": false,
+        "modifierInfo": [
+          {
+            "domain": "shipID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "cpuLoad",
+            "modifyingAttribute": "cpu",
+            "operation": "modAdd"
+          },
+          {
+            "domain": "shipID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "powerLoad",
+            "modifyingAttribute": "power",
+            "operation": "modAdd"
+          }
+        ]
+      },
+      {
+        "new": {
+          "name": "cpuPowerFree"
+        },
+        "effectCategory": "passive",
+        "electronicChance": false,
+        "isAssistance": false,
+        "isOffensive": false,
+        "isWarpSafe": true,
+        "propulsionChance": false,
+        "rangeChance": false,
+        "modifierInfo": [
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "cpuFree",
+            "modifyingAttribute": "cpuOutput",
+            "operation": "preAssign"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "cpuFree",
+            "modifyingAttribute": "cpuLoad",
+            "operation": "modSub"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "powerFree",
+            "modifyingAttribute": "powerOutput",
+            "operation": "preAssign"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "powerFree",
+            "modifyingAttribute": "powerLoad",
+            "operation": "modSub"
+          }
+        ]
+      }
+    ],
+    "typeDogma": [
+      {
+        "patch": [
+          {
+            "category": "Module"
+          }
+        ],
+        "dogmaEffects": [
+          {
+            "effect": "cpuPowerLoad",
+            "isDefault": false
+          }
+        ]
+      },
+      {
+        "patch": [
+          {
+            "category": "Ship"
+          }
+        ],
+        "dogmaEffects": [
+          {
+            "effect": "cpuPowerFree",
+            "isDefault": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "file": "damageAlpha.yaml",
+    "attributes": [
+      {
+        "new": {
+          "name": "damageAlpha"
+        },
+        "published": true,
+        "defaultValue": 0,
+        "highIsGood": true,
+        "stackable": true
+      }
+    ],
+    "effects": [
+      {
+        "new": {
+          "name": "damageAlpha"
+        },
+        "effectCategory": "active",
+        "electronicChance": false,
+        "isAssistance": false,
+        "isOffensive": false,
+        "isWarpSafe": true,
+        "propulsionChance": false,
+        "rangeChance": false,
+        "modifierInfo": [
+          {
+            "domain": "shipID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "damageAlpha",
+            "modifyingAttribute": "damageVolley",
+            "operation": "modAdd"
+          }
+        ]
+      }
+    ],
+    "typeDogma": [
+      {
+        "patch": [
+          {
+            "category": "Module",
+            "hasAnyAttributes": [
+              {
+                "name": "emDamage"
+              },
+              {
+                "name": "explosiveDamage"
+              },
+              {
+                "name": "kineticDamage"
+              },
+              {
+                "name": "thermalDamage"
+              }
+            ]
+          },
+          {
+            "category": "Module",
+            "hasAnyEffects": [
+              {
+                "name": "useMissiles"
+              },
+              {
+                "name": "turretFitted"
+              }
+            ]
+          }
+        ],
+        "dogmaEffects": [
+          {
+            "effect": "damageAlpha",
+            "isDefault": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "file": "damagePerSecond.yaml",
+    "attributes": [
+      {
+        "new": {
+          "name": "damagePerSecondWithoutReload"
+        },
+        "published": true,
+        "defaultValue": 0,
+        "highIsGood": true,
+        "stackable": true
+      },
+      {
+        "new": {
+          "name": "damagePerSecondWithReload"
+        },
+        "published": true,
+        "defaultValue": 0,
+        "highIsGood": true,
+        "stackable": true
+      },
+      {
+        "new": {
+          "name": "droneDamagePerSecond"
+        },
+        "published": true,
+        "defaultValue": 0,
+        "highIsGood": true,
+        "stackable": true
+      },
+      {
+        "new": {
+          "name": "speedOfReload"
+        },
+        "published": true,
+        "defaultValue": 0,
+        "highIsGood": true,
+        "stackable": true
+      },
+      {
+        "new": {
+          "name": "speedWithReload"
+        },
+        "published": true,
+        "defaultValue": 0,
+        "highIsGood": true,
+        "stackable": true
+      }
+    ],
+    "effects": [
+      {
+        "new": {
+          "name": "damagePerSecondBasedOnSpeed"
+        },
+        "effectCategory": "active",
+        "electronicChance": false,
+        "isAssistance": false,
+        "isOffensive": false,
+        "isWarpSafe": true,
+        "propulsionChance": false,
+        "rangeChance": false,
+        "modifierInfo": [
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "damagePerSecondWithoutReload",
+            "modifyingAttribute": "speed",
+            "operation": "postDiv"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "speedWithReload",
+            "modifyingAttribute": "speed",
+            "operation": "preAssign"
+          }
+        ]
+      },
+      {
+        "new": {
+          "name": "damagePerSecondBasedOnDuration"
+        },
+        "effectCategory": "active",
+        "electronicChance": false,
+        "isAssistance": false,
+        "isOffensive": false,
+        "isWarpSafe": true,
+        "propulsionChance": false,
+        "rangeChance": false,
+        "modifierInfo": [
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "damagePerSecondWithoutReload",
+            "modifyingAttribute": "duration",
+            "operation": "postDiv"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "speedWithReload",
+            "modifyingAttribute": "duration",
+            "operation": "preAssign"
+          }
+        ]
+      },
+      {
+        "new": {
+          "name": "damagePerSecondWithoutReload"
+        },
+        "effectCategory": "active",
+        "electronicChance": false,
+        "isAssistance": false,
+        "isOffensive": false,
+        "isWarpSafe": true,
+        "propulsionChance": false,
+        "rangeChance": false,
+        "modifierInfo": [
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "damagePerSecondWithoutReload",
+            "modifyingAttribute": "thousand",
+            "operation": "preAssign"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "damagePerSecondWithoutReload",
+            "modifyingAttribute": "damageVolley",
+            "operation": "postMul"
+          },
+          {
+            "domain": "shipID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "damagePerSecondWithoutReload",
+            "modifyingAttribute": "damagePerSecondWithoutReload",
+            "operation": "modAdd"
+          }
+        ]
+      },
+      {
+        "new": {
+          "name": "damagePerSecondWithReload"
+        },
+        "effectCategory": "active",
+        "electronicChance": false,
+        "isAssistance": false,
+        "isOffensive": false,
+        "isWarpSafe": true,
+        "propulsionChance": false,
+        "rangeChance": false,
+        "modifierInfo": [
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "speedOfReload",
+            "modifyingAttribute": "reloadTime",
+            "operation": "preAssign"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "speedOfReload",
+            "modifyingAttribute": "chargeAmount",
+            "operation": "postDiv"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "speedWithReload",
+            "modifyingAttribute": "speedOfReload",
+            "operation": "modAdd"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "damagePerSecondWithReload",
+            "modifyingAttribute": "thousand",
+            "operation": "preAssign"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "damagePerSecondWithReload",
+            "modifyingAttribute": "damageVolley",
+            "operation": "postMul"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "damagePerSecondWithReload",
+            "modifyingAttribute": "speedWithReload",
+            "operation": "postDiv"
+          },
+          {
+            "domain": "shipID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "damagePerSecondWithReload",
+            "modifyingAttribute": "damagePerSecondWithReload",
+            "operation": "modAdd"
+          }
+        ]
+      },
+      {
+        "new": {
+          "name": "damagePerSecondWithReloadDrone"
+        },
+        "effectCategory": "active",
+        "electronicChance": false,
+        "isAssistance": false,
+        "isOffensive": false,
+        "isWarpSafe": true,
+        "propulsionChance": false,
+        "rangeChance": false,
+        "modifierInfo": [
+          {
+            "domain": "shipID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "droneDamagePerSecond",
+            "modifyingAttribute": "damagePerSecondWithoutReload",
+            "operation": "modAdd"
+          },
+          {
+            "domain": "shipID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "damagePerSecondWithReload",
+            "modifyingAttribute": "damagePerSecondWithoutReload",
+            "operation": "modAdd"
+          }
+        ]
+      }
+    ],
+    "typeDogma": [
+      {
+        "patch": [
+          {
+            "category": "Module",
+            "hasAllAttributes": [
+              {
+                "name": "speed"
+              }
+            ],
+            "hasAnyAttributes": [
+              {
+                "name": "emDamage"
+              },
+              {
+                "name": "explosiveDamage"
+              },
+              {
+                "name": "kineticDamage"
+              },
+              {
+                "name": "thermalDamage"
+              }
+            ]
+          },
+          {
+            "category": "Module",
+            "hasAllAttributes": [
+              {
+                "name": "speed"
+              }
+            ],
+            "hasAnyEffects": [
+              {
+                "name": "useMissiles"
+              },
+              {
+                "name": "turretFitted"
+              }
+            ]
+          },
+          {
+            "category": "Drone",
+            "hasAnyAttributes": [
+              {
+                "name": "emDamage"
+              },
+              {
+                "name": "explosiveDamage"
+              },
+              {
+                "name": "kineticDamage"
+              },
+              {
+                "name": "thermalDamage"
+              }
+            ]
+          }
+        ],
+        "dogmaEffects": [
+          {
+            "effect": "damagePerSecondBasedOnSpeed",
+            "isDefault": false
+          },
+          {
+            "effect": "damagePerSecondWithoutReload",
+            "isDefault": false
+          }
+        ]
+      },
+      {
+        "patch": [
+          {
+            "category": "Module",
+            "hasAllAttributes": [
+              {
+                "name": "speed"
+              }
+            ],
+            "hasAnyAttributes": [
+              {
+                "name": "emDamage"
+              },
+              {
+                "name": "explosiveDamage"
+              },
+              {
+                "name": "kineticDamage"
+              },
+              {
+                "name": "thermalDamage"
+              }
+            ]
+          },
+          {
+            "category": "Module",
+            "hasAllAttributes": [
+              {
+                "name": "speed"
+              }
+            ],
+            "hasAnyEffects": [
+              {
+                "name": "useMissiles"
+              },
+              {
+                "name": "turretFitted"
+              }
+            ]
+          }
+        ],
+        "dogmaEffects": [
+          {
+            "effect": "damagePerSecondWithReload",
+            "isDefault": false
+          }
+        ]
+      },
+      {
+        "patch": [
+          {
+            "category": "Module",
+            "hasAllAttributes": [
+              {
+                "name": "duration"
+              }
+            ],
+            "hasAnyAttributes": [
+              {
+                "name": "emDamage"
+              },
+              {
+                "name": "explosiveDamage"
+              },
+              {
+                "name": "kineticDamage"
+              },
+              {
+                "name": "thermalDamage"
+              }
+            ]
+          },
+          {
+            "category": "Module",
+            "hasAllAttributes": [
+              {
+                "name": "duration"
+              }
+            ],
+            "hasAnyEffects": [
+              {
+                "name": "useMissiles"
+              },
+              {
+                "name": "turretFitted"
+              }
+            ]
+          }
+        ],
+        "dogmaEffects": [
+          {
+            "effect": "damagePerSecondBasedOnDuration",
+            "isDefault": false
+          },
+          {
+            "effect": "damagePerSecondWithoutReload",
+            "isDefault": false
+          }
+        ]
+      },
+      {
+        "patch": [
+          {
+            "category": "Module",
+            "hasAllAttributes": [
+              {
+                "name": "duration"
+              }
+            ],
+            "hasAnyAttributes": [
+              {
+                "name": "emDamage"
+              },
+              {
+                "name": "explosiveDamage"
+              },
+              {
+                "name": "kineticDamage"
+              },
+              {
+                "name": "thermalDamage"
+              }
+            ]
+          },
+          {
+            "category": "Module",
+            "hasAllAttributes": [
+              {
+                "name": "duration"
+              }
+            ],
+            "hasAnyEffects": [
+              {
+                "name": "useMissiles"
+              },
+              {
+                "name": "turretFitted"
+              }
+            ]
+          }
+        ],
+        "dogmaEffects": [
+          {
+            "effect": "damagePerSecondWithReload",
+            "isDefault": false
+          }
+        ]
+      },
+      {
+        "patch": [
+          {
+            "category": "Drone",
+            "hasAnyAttributes": [
+              {
+                "name": "emDamage"
+              },
+              {
+                "name": "explosiveDamage"
+              },
+              {
+                "name": "kineticDamage"
+              },
+              {
+                "name": "thermalDamage"
+              }
+            ]
+          },
+          {
+            "category": "Module",
+            "hasAllAttributes": [
+              {
+                "name": "duration"
+              }
+            ],
+            "hasAnyAttributes": [
+              {
+                "name": "emDamage"
+              },
+              {
+                "name": "explosiveDamage"
+              },
+              {
+                "name": "kineticDamage"
+              },
+              {
+                "name": "thermalDamage"
+              }
+            ]
+          },
+          {
+            "category": "Module",
+            "hasAllAttributes": [
+              {
+                "name": "duration"
+              }
+            ],
+            "hasAnyEffects": [
+              {
+                "name": "useMissiles"
+              },
+              {
+                "name": "turretFitted"
+              }
+            ]
+          }
+        ],
+        "dogmaEffects": [
+          {
+            "effect": "damagePerSecondWithReloadDrone",
+            "isDefault": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "file": "damageProfile.yaml",
+    "attributes": [
+      {
+        "new": {
+          "name": "damageProfileEm"
+        },
+        "published": true,
+        "defaultValue": 0.25,
+        "highIsGood": true,
+        "stackable": true
+      },
+      {
+        "new": {
+          "name": "damageProfileExplosive"
+        },
+        "published": true,
+        "defaultValue": 0.25,
+        "highIsGood": true,
+        "stackable": true
+      },
+      {
+        "new": {
+          "name": "damageProfileKinetic"
+        },
+        "published": true,
+        "defaultValue": 0.25,
+        "highIsGood": true,
+        "stackable": true
+      },
+      {
+        "new": {
+          "name": "damageProfileThermal"
+        },
+        "published": true,
+        "defaultValue": 0.25,
+        "highIsGood": true,
+        "stackable": true
+      }
+    ],
+    "effects": [],
+    "typeDogma": []
+  },
+  {
+    "file": "damageSkills.yaml",
+    "attributes": [],
+    "effects": [
+      {
+        "patch": [
+          {
+            "name": "missileEMDmgBonus"
+          }
+        ],
+        "modifierInfo": [
+          {
+            "domain": "charID",
+            "func": "OwnerRequiredSkillModifier",
+            "skillType": "IfSkillRequired",
+            "modifiedAttribute": "emDamage",
+            "modifyingAttribute": "damageMultiplierBonus",
+            "operation": "postPercent"
+          }
+        ]
+      },
+      {
+        "patch": [
+          {
+            "name": "missileExplosiveDmgBonus"
+          }
+        ],
+        "modifierInfo": [
+          {
+            "domain": "charID",
+            "func": "OwnerRequiredSkillModifier",
+            "skillType": "IfSkillRequired",
+            "modifiedAttribute": "explosiveDamage",
+            "modifyingAttribute": "damageMultiplierBonus",
+            "operation": "postPercent"
+          }
+        ]
+      },
+      {
+        "patch": [
+          {
+            "name": "missileKineticDmgBonus2"
+          }
+        ],
+        "modifierInfo": [
+          {
+            "domain": "charID",
+            "func": "OwnerRequiredSkillModifier",
+            "skillType": "IfSkillRequired",
+            "modifiedAttribute": "kineticDamage",
+            "modifyingAttribute": "damageMultiplierBonus",
+            "operation": "postPercent"
+          }
+        ]
+      },
+      {
+        "patch": [
+          {
+            "name": "missileThermalDmgBonus"
+          }
+        ],
+        "modifierInfo": [
+          {
+            "domain": "charID",
+            "func": "OwnerRequiredSkillModifier",
+            "skillType": "IfSkillRequired",
+            "modifiedAttribute": "thermalDamage",
+            "modifyingAttribute": "damageMultiplierBonus",
+            "operation": "postPercent"
+          }
+        ]
+      },
+      {
+        "patch": [
+          {
+            "name": "selfRof"
+          }
+        ],
+        "modifierInfo": [
+          {
+            "domain": "shipID",
+            "func": "LocationRequiredSkillModifier",
+            "skillType": "IfSkillRequired",
+            "modifiedAttribute": "speed",
+            "modifyingAttribute": "rofBonus",
+            "operation": "postPercent"
+          }
+        ]
+      },
+      {
+        "patch": [
+          {
+            "name": "droneDmgBonus"
+          }
+        ],
+        "modifierInfo": [
+          {
+            "domain": "charID",
+            "func": "OwnerRequiredSkillModifier",
+            "skillType": "IfSkillRequired",
+            "modifiedAttribute": "damageMultiplier",
+            "modifyingAttribute": "damageMultiplierBonus",
+            "operation": "postPercent"
+          }
+        ]
+      }
+    ],
+    "typeDogma": []
+  },
+  {
+    "file": "damageVolley.yaml",
+    "attributes": [
+      {
+        "new": {
+          "name": "damageVolley"
+        },
+        "published": true,
+        "defaultValue": 0,
+        "highIsGood": true,
+        "stackable": true
+      }
+    ],
+    "effects": [
+      {
+        "new": {
+          "name": "damageVolleyAmmo"
+        },
+        "effectCategory": "passive",
+        "electronicChance": false,
+        "isAssistance": false,
+        "isOffensive": false,
+        "isWarpSafe": true,
+        "propulsionChance": false,
+        "rangeChance": false,
+        "modifierInfo": [
+          {
+            "domain": "otherID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "damageVolley",
+            "modifyingAttribute": "emDamage",
+            "operation": "modAdd"
+          },
+          {
+            "domain": "otherID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "damageVolley",
+            "modifyingAttribute": "explosiveDamage",
+            "operation": "modAdd"
+          },
+          {
+            "domain": "otherID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "damageVolley",
+            "modifyingAttribute": "kineticDamage",
+            "operation": "modAdd"
+          },
+          {
+            "domain": "otherID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "damageVolley",
+            "modifyingAttribute": "thermalDamage",
+            "operation": "modAdd"
+          }
+        ]
+      },
+      {
+        "new": {
+          "name": "damageVolleyDot"
+        },
+        "effectCategory": "passive",
+        "electronicChance": false,
+        "isAssistance": false,
+        "isOffensive": false,
+        "isWarpSafe": true,
+        "propulsionChance": false,
+        "rangeChance": false,
+        "modifierInfo": [
+          {
+            "domain": "otherID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "damageVolley",
+            "modifyingAttribute": "dotMaxDamagePerTick",
+            "operation": "modAdd"
+          },
+          {
+            "domain": "otherID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "damagePerSecondWithReload",
+            "modifyingAttribute": "dotMaxDamagePerTick",
+            "operation": "postAssign"
+          },
+          {
+            "domain": "otherID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "damagePerSecondWithoutReload",
+            "modifyingAttribute": "dotMaxDamagePerTick",
+            "operation": "postAssign"
+          }
+        ]
+      },
+      {
+        "new": {
+          "name": "damageVolley"
+        },
+        "effectCategory": "passive",
+        "electronicChance": false,
+        "isAssistance": false,
+        "isOffensive": false,
+        "isWarpSafe": true,
+        "propulsionChance": false,
+        "rangeChance": false,
+        "modifierInfo": [
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "damageVolley",
+            "modifyingAttribute": "emDamage",
+            "operation": "modAdd"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "damageVolley",
+            "modifyingAttribute": "explosiveDamage",
+            "operation": "modAdd"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "damageVolley",
+            "modifyingAttribute": "kineticDamage",
+            "operation": "modAdd"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "damageVolley",
+            "modifyingAttribute": "thermalDamage",
+            "operation": "modAdd"
+          }
+        ]
+      },
+      {
+        "new": {
+          "name": "damageVolleyMultiplier"
+        },
+        "effectCategory": "passive",
+        "electronicChance": false,
+        "isAssistance": false,
+        "isOffensive": false,
+        "isWarpSafe": true,
+        "propulsionChance": false,
+        "rangeChance": false,
+        "modifierInfo": [
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "damageVolley",
+            "modifyingAttribute": "damageMultiplier",
+            "operation": "postMul"
+          }
+        ]
+      }
+    ],
+    "typeDogma": [
+      {
+        "patch": [
+          {
+            "category": "Charge",
+            "hasAnyAttributes": [
+              {
+                "name": "dotMaxDamagePerTick"
+              }
+            ]
+          }
+        ],
+        "dogmaEffects": [
+          {
+            "effect": "damageVolleyDot",
+            "isDefault": false
+          }
+        ]
+      },
+      {
+        "patch": [
+          {
+            "category": "Charge",
+            "hasAnyAttributes": [
+              {
+                "name": "emDamage"
+              },
+              {
+                "name": "explosiveDamage"
+              },
+              {
+                "name": "kineticDamage"
+              },
+              {
+                "name": "thermalDamage"
+              }
+            ]
+          }
+        ],
+        "dogmaEffects": [
+          {
+            "effect": "damageVolleyAmmo",
+            "isDefault": false
+          }
+        ]
+      },
+      {
+        "patch": [
+          {
+            "category": "Module",
+            "hasAnyAttributes": [
+              {
+                "name": "emDamage"
+              },
+              {
+                "name": "explosiveDamage"
+              },
+              {
+                "name": "kineticDamage"
+              },
+              {
+                "name": "thermalDamage"
+              }
+            ]
+          },
+          {
+            "category": "Module",
+            "hasAnyEffects": [
+              {
+                "name": "useMissiles"
+              },
+              {
+                "name": "turretFitted"
+              }
+            ]
+          },
+          {
+            "category": "Drone",
+            "hasAnyAttributes": [
+              {
+                "name": "emDamage"
+              },
+              {
+                "name": "explosiveDamage"
+              },
+              {
+                "name": "kineticDamage"
+              },
+              {
+                "name": "thermalDamage"
+              }
+            ]
+          }
+        ],
+        "dogmaEffects": [
+          {
+            "effect": "damageVolley",
+            "isDefault": false
+          }
+        ]
+      },
+      {
+        "patch": [
+          {
+            "category": "Module",
+            "hasAllAttributes": [
+              {
+                "name": "damageMultiplier"
+              }
+            ],
+            "hasAnyAttributes": [
+              {
+                "name": "emDamage"
+              },
+              {
+                "name": "explosiveDamage"
+              },
+              {
+                "name": "kineticDamage"
+              },
+              {
+                "name": "thermalDamage"
+              }
+            ]
+          },
+          {
+            "category": "Module",
+            "hasAllAttributes": [
+              {
+                "name": "damageMultiplier"
+              }
+            ],
+            "hasAnyEffects": [
+              {
+                "name": "useMissiles"
+              },
+              {
+                "name": "turretFitted"
+              }
+            ]
+          },
+          {
+            "category": "Drone",
+            "hasAllAttributes": [
+              {
+                "name": "damageMultiplier"
+              }
+            ],
+            "hasAnyAttributes": [
+              {
+                "name": "emDamage"
+              },
+              {
+                "name": "explosiveDamage"
+              },
+              {
+                "name": "kineticDamage"
+              },
+              {
+                "name": "thermalDamage"
+              }
+            ]
+          }
+        ],
+        "dogmaEffects": [
+          {
+            "effect": "damageVolleyMultiplier",
+            "isDefault": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "file": "droneActive.yaml",
+    "attributes": [
+      {
+        "new": {
+          "name": "droneActive"
+        },
+        "published": true,
+        "defaultValue": 0,
+        "highIsGood": true,
+        "stackable": true
+      },
+      {
+        "new": {
+          "name": "droneUsage"
+        },
+        "published": true,
+        "defaultValue": 1,
+        "highIsGood": true,
+        "stackable": true
+      }
+    ],
+    "effects": [
+      {
+        "new": {
+          "name": "droneActive"
+        },
+        "effectCategory": "active",
+        "electronicChance": false,
+        "isAssistance": false,
+        "isOffensive": false,
+        "isWarpSafe": true,
+        "propulsionChance": false,
+        "rangeChance": false,
+        "modifierInfo": [
+          {
+            "domain": "shipID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "droneActive",
+            "modifyingAttribute": "droneUsage",
+            "operation": "modAdd"
+          },
+          {
+            "domain": "shipID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "droneBandwidthLoad",
+            "modifyingAttribute": "droneBandwidthUsed",
+            "operation": "modAdd"
+          }
+        ]
+      }
+    ],
+    "typeDogma": [
+      {
+        "patch": [
+          {
+            "category": "Drone"
+          }
+        ],
+        "dogmaEffects": [
+          {
+            "effect": "droneActive",
+            "isDefault": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "file": "droneCapacity.yaml",
+    "attributes": [
+      {
+        "new": {
+          "name": "droneCapacityLoad"
+        },
+        "published": true,
+        "defaultValue": 0,
+        "highIsGood": true,
+        "stackable": true
+      }
+    ],
+    "effects": [
+      {
+        "new": {
+          "name": "droneLoad"
+        },
+        "effectCategory": "passive",
+        "electronicChance": false,
+        "isAssistance": false,
+        "isOffensive": false,
+        "isWarpSafe": true,
+        "propulsionChance": false,
+        "rangeChance": false,
+        "modifierInfo": [
+          {
+            "domain": "shipID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "droneCapacityLoad",
+            "modifyingAttribute": "volume",
+            "operation": "modAdd"
+          }
+        ]
+      }
+    ],
+    "typeDogma": [
+      {
+        "patch": [
+          {
+            "category": "Drone"
+          }
+        ],
+        "dogmaEffects": [
+          {
+            "effect": "droneLoad",
+            "isDefault": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "file": "ehp.yaml",
+    "attributes": [
+      {
+        "new": {
+          "name": "ehp"
+        },
+        "published": true,
+        "defaultValue": 0,
+        "highIsGood": true,
+        "stackable": true
+      }
+    ],
+    "effects": [
+      {
+        "new": {
+          "name": "ehp"
+        },
+        "effectCategory": "passive",
+        "electronicChance": false,
+        "isAssistance": false,
+        "isOffensive": false,
+        "isWarpSafe": true,
+        "propulsionChance": false,
+        "rangeChance": false,
+        "modifierInfo": [
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "ehp",
+            "modifyingAttribute": "shieldEhp",
+            "operation": "modAdd"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "ehp",
+            "modifyingAttribute": "armorEhp",
+            "operation": "modAdd"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "ehp",
+            "modifyingAttribute": "hullEhp",
+            "operation": "modAdd"
+          }
+        ]
+      }
+    ],
+    "typeDogma": [
+      {
+        "patch": [
+          {
+            "category": "Ship"
+          }
+        ],
+        "dogmaEffects": [
+          {
+            "effect": "ehp",
+            "isDefault": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "file": "ehpArmor.yaml",
+    "attributes": [
+      {
+        "new": {
+          "name": "armorEmDamageEffectiveResonance"
+        },
+        "published": true,
+        "defaultValue": 0,
+        "highIsGood": true,
+        "stackable": true
+      },
+      {
+        "new": {
+          "name": "armorExplosiveDamageEffectiveResonance"
+        },
+        "published": true,
+        "defaultValue": 0,
+        "highIsGood": true,
+        "stackable": true
+      },
+      {
+        "new": {
+          "name": "armorKineticDamageEffectiveResonance"
+        },
+        "published": true,
+        "defaultValue": 0,
+        "highIsGood": true,
+        "stackable": true
+      },
+      {
+        "new": {
+          "name": "armorThermalDamageEffectiveResonance"
+        },
+        "published": true,
+        "defaultValue": 0,
+        "highIsGood": true,
+        "stackable": true
+      },
+      {
+        "new": {
+          "name": "armorDamageEffectiveResonance"
+        },
+        "published": true,
+        "defaultValue": 0,
+        "highIsGood": true,
+        "stackable": true
+      },
+      {
+        "new": {
+          "name": "armorEhp"
+        },
+        "published": true,
+        "defaultValue": 0,
+        "highIsGood": true,
+        "stackable": true
+      }
+    ],
+    "effects": [
+      {
+        "new": {
+          "name": "armorEhp"
+        },
+        "effectCategory": "passive",
+        "electronicChance": false,
+        "isAssistance": false,
+        "isOffensive": false,
+        "isWarpSafe": true,
+        "propulsionChance": false,
+        "rangeChance": false,
+        "modifierInfo": [
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "armorEmDamageEffectiveResonance",
+            "modifyingAttribute": "damageProfileEm",
+            "operation": "preAssign"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "armorEmDamageEffectiveResonance",
+            "modifyingAttribute": "armorEmDamageResonance",
+            "operation": "postMul"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "armorDamageEffectiveResonance",
+            "modifyingAttribute": "armorEmDamageEffectiveResonance",
+            "operation": "modAdd"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "armorExplosiveDamageEffectiveResonance",
+            "modifyingAttribute": "damageProfileExplosive",
+            "operation": "preAssign"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "armorExplosiveDamageEffectiveResonance",
+            "modifyingAttribute": "armorExplosiveDamageResonance",
+            "operation": "postMul"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "armorDamageEffectiveResonance",
+            "modifyingAttribute": "armorExplosiveDamageEffectiveResonance",
+            "operation": "modAdd"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "armorKineticDamageEffectiveResonance",
+            "modifyingAttribute": "damageProfileKinetic",
+            "operation": "preAssign"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "armorKineticDamageEffectiveResonance",
+            "modifyingAttribute": "armorKineticDamageResonance",
+            "operation": "postMul"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "armorDamageEffectiveResonance",
+            "modifyingAttribute": "armorKineticDamageEffectiveResonance",
+            "operation": "modAdd"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "armorThermalDamageEffectiveResonance",
+            "modifyingAttribute": "damageProfileThermal",
+            "operation": "preAssign"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "armorThermalDamageEffectiveResonance",
+            "modifyingAttribute": "armorThermalDamageResonance",
+            "operation": "postMul"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "armorDamageEffectiveResonance",
+            "modifyingAttribute": "armorThermalDamageEffectiveResonance",
+            "operation": "modAdd"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "armorEhp",
+            "modifyingAttribute": "armorHP",
+            "operation": "preAssign"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "armorEhp",
+            "modifyingAttribute": "armorDamageEffectiveResonance",
+            "operation": "postDiv"
+          }
+        ]
+      }
+    ],
+    "typeDogma": [
+      {
+        "patch": [
+          {
+            "category": "Ship"
+          }
+        ],
+        "dogmaEffects": [
+          {
+            "effect": "armorEhp",
+            "isDefault": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "file": "ehpHull.yaml",
+    "attributes": [
+      {
+        "new": {
+          "name": "hullEmDamageEffectiveResonance"
+        },
+        "published": true,
+        "defaultValue": 0,
+        "highIsGood": true,
+        "stackable": true
+      },
+      {
+        "new": {
+          "name": "hullExplosiveDamageEffectiveResonance"
+        },
+        "published": true,
+        "defaultValue": 0,
+        "highIsGood": true,
+        "stackable": true
+      },
+      {
+        "new": {
+          "name": "hullKineticDamageEffectiveResonance"
+        },
+        "published": true,
+        "defaultValue": 0,
+        "highIsGood": true,
+        "stackable": true
+      },
+      {
+        "new": {
+          "name": "hullThermalDamageEffectiveResonance"
+        },
+        "published": true,
+        "defaultValue": 0,
+        "highIsGood": true,
+        "stackable": true
+      },
+      {
+        "new": {
+          "name": "hullDamageEffectiveResonance"
+        },
+        "published": true,
+        "defaultValue": 0,
+        "highIsGood": true,
+        "stackable": true
+      },
+      {
+        "new": {
+          "name": "hullEhp"
+        },
+        "published": true,
+        "defaultValue": 0,
+        "highIsGood": true,
+        "stackable": true
+      }
+    ],
+    "effects": [
+      {
+        "new": {
+          "name": "hullEhp"
+        },
+        "effectCategory": "passive",
+        "electronicChance": false,
+        "isAssistance": false,
+        "isOffensive": false,
+        "isWarpSafe": true,
+        "propulsionChance": false,
+        "rangeChance": false,
+        "modifierInfo": [
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "hullEmDamageEffectiveResonance",
+            "modifyingAttribute": "damageProfileEm",
+            "operation": "preAssign"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "hullEmDamageEffectiveResonance",
+            "modifyingAttribute": "emDamageResonance",
+            "operation": "postMul"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "hullDamageEffectiveResonance",
+            "modifyingAttribute": "hullEmDamageEffectiveResonance",
+            "operation": "modAdd"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "hullExplosiveDamageEffectiveResonance",
+            "modifyingAttribute": "damageProfileExplosive",
+            "operation": "preAssign"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "hullExplosiveDamageEffectiveResonance",
+            "modifyingAttribute": "explosiveDamageResonance",
+            "operation": "postMul"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "hullDamageEffectiveResonance",
+            "modifyingAttribute": "hullExplosiveDamageEffectiveResonance",
+            "operation": "modAdd"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "hullKineticDamageEffectiveResonance",
+            "modifyingAttribute": "damageProfileKinetic",
+            "operation": "preAssign"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "hullKineticDamageEffectiveResonance",
+            "modifyingAttribute": "kineticDamageResonance",
+            "operation": "postMul"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "hullDamageEffectiveResonance",
+            "modifyingAttribute": "hullKineticDamageEffectiveResonance",
+            "operation": "modAdd"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "hullThermalDamageEffectiveResonance",
+            "modifyingAttribute": "damageProfileThermal",
+            "operation": "preAssign"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "hullThermalDamageEffectiveResonance",
+            "modifyingAttribute": "thermalDamageResonance",
+            "operation": "postMul"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "hullDamageEffectiveResonance",
+            "modifyingAttribute": "hullThermalDamageEffectiveResonance",
+            "operation": "modAdd"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "hullEhp",
+            "modifyingAttribute": "hp",
+            "operation": "preAssign"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "hullEhp",
+            "modifyingAttribute": "hullDamageEffectiveResonance",
+            "operation": "postDiv"
+          }
+        ]
+      }
+    ],
+    "typeDogma": [
+      {
+        "patch": [
+          {
+            "category": "Ship"
+          }
+        ],
+        "dogmaEffects": [
+          {
+            "effect": "hullEhp",
+            "isDefault": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "file": "ehpShield.yaml",
+    "attributes": [
+      {
+        "new": {
+          "name": "shieldEmDamageEffectiveResonance"
+        },
+        "published": true,
+        "defaultValue": 0,
+        "highIsGood": true,
+        "stackable": true
+      },
+      {
+        "new": {
+          "name": "shieldExplosiveDamageEffectiveResonance"
+        },
+        "published": true,
+        "defaultValue": 0,
+        "highIsGood": true,
+        "stackable": true
+      },
+      {
+        "new": {
+          "name": "shieldKineticDamageEffectiveResonance"
+        },
+        "published": true,
+        "defaultValue": 0,
+        "highIsGood": true,
+        "stackable": true
+      },
+      {
+        "new": {
+          "name": "shieldThermalDamageEffectiveResonance"
+        },
+        "published": true,
+        "defaultValue": 0,
+        "highIsGood": true,
+        "stackable": true
+      },
+      {
+        "new": {
+          "name": "shieldDamageEffectiveResonance"
+        },
+        "published": true,
+        "defaultValue": 0,
+        "highIsGood": true,
+        "stackable": true
+      },
+      {
+        "new": {
+          "name": "shieldEhp"
+        },
+        "published": true,
+        "defaultValue": 0,
+        "highIsGood": true,
+        "stackable": true
+      }
+    ],
+    "effects": [
+      {
+        "new": {
+          "name": "shieldEhp"
+        },
+        "effectCategory": "passive",
+        "electronicChance": false,
+        "isAssistance": false,
+        "isOffensive": false,
+        "isWarpSafe": true,
+        "propulsionChance": false,
+        "rangeChance": false,
+        "modifierInfo": [
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "shieldEmDamageEffectiveResonance",
+            "modifyingAttribute": "damageProfileEm",
+            "operation": "preAssign"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "shieldEmDamageEffectiveResonance",
+            "modifyingAttribute": "shieldEmDamageResonance",
+            "operation": "postMul"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "shieldDamageEffectiveResonance",
+            "modifyingAttribute": "shieldEmDamageEffectiveResonance",
+            "operation": "modAdd"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "shieldExplosiveDamageEffectiveResonance",
+            "modifyingAttribute": "damageProfileExplosive",
+            "operation": "preAssign"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "shieldExplosiveDamageEffectiveResonance",
+            "modifyingAttribute": "shieldExplosiveDamageResonance",
+            "operation": "postMul"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "shieldDamageEffectiveResonance",
+            "modifyingAttribute": "shieldExplosiveDamageEffectiveResonance",
+            "operation": "modAdd"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "shieldKineticDamageEffectiveResonance",
+            "modifyingAttribute": "damageProfileKinetic",
+            "operation": "preAssign"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "shieldKineticDamageEffectiveResonance",
+            "modifyingAttribute": "shieldKineticDamageResonance",
+            "operation": "postMul"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "shieldDamageEffectiveResonance",
+            "modifyingAttribute": "shieldKineticDamageEffectiveResonance",
+            "operation": "modAdd"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "shieldThermalDamageEffectiveResonance",
+            "modifyingAttribute": "damageProfileThermal",
+            "operation": "preAssign"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "shieldThermalDamageEffectiveResonance",
+            "modifyingAttribute": "shieldThermalDamageResonance",
+            "operation": "postMul"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "shieldDamageEffectiveResonance",
+            "modifyingAttribute": "shieldThermalDamageEffectiveResonance",
+            "operation": "modAdd"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "shieldEhp",
+            "modifyingAttribute": "shieldCapacity",
+            "operation": "preAssign"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "shieldEhp",
+            "modifyingAttribute": "shieldDamageEffectiveResonance",
+            "operation": "postDiv"
+          }
+        ]
+      }
+    ],
+    "typeDogma": [
+      {
+        "patch": [
+          {
+            "category": "Ship"
+          }
+        ],
+        "dogmaEffects": [
+          {
+            "effect": "shieldEhp",
+            "isDefault": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "file": "missileSkills.yaml",
+    "attributes": [],
+    "effects": [
+      {
+        "new": {
+          "name": "missileDamage"
+        },
+        "effectCategory": "passive",
+        "electronicChance": false,
+        "isAssistance": false,
+        "isOffensive": true,
+        "isWarpSafe": true,
+        "propulsionChance": false,
+        "rangeChance": false,
+        "modifierInfo": [
+          {
+            "domain": "charID",
+            "func": "OwnerRequiredSkillModifier",
+            "skillType": "Missile Launcher Operation",
+            "modifiedAttribute": "emDamage",
+            "modifyingAttribute": "missileDamageMultiplier",
+            "operation": "postMul"
+          },
+          {
+            "domain": "charID",
+            "func": "OwnerRequiredSkillModifier",
+            "skillType": "Missile Launcher Operation",
+            "modifiedAttribute": "explosiveDamage",
+            "modifyingAttribute": "missileDamageMultiplier",
+            "operation": "postMul"
+          },
+          {
+            "domain": "charID",
+            "func": "OwnerRequiredSkillModifier",
+            "skillType": "Missile Launcher Operation",
+            "modifiedAttribute": "kineticDamage",
+            "modifyingAttribute": "missileDamageMultiplier",
+            "operation": "postMul"
+          },
+          {
+            "domain": "charID",
+            "func": "OwnerRequiredSkillModifier",
+            "skillType": "Missile Launcher Operation",
+            "modifiedAttribute": "thermalDamage",
+            "modifyingAttribute": "missileDamageMultiplier",
+            "operation": "postMul"
+          }
+        ]
+      }
+    ],
+    "typeDogma": [
+      {
+        "patch": [
+          {
+            "type": "CharacterType"
+          }
+        ],
+        "dogmaEffects": [
+          {
+            "effect": "missileDamage",
+            "isDefault": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "file": "onlineEffect.yaml",
+    "attributes": [],
+    "effects": [
+      {
+        "patch": [
+          {
+            "name": "online"
+          }
+        ],
+        "effectCategory": "online"
+      }
+    ],
+    "typeDogma": []
+  },
+  {
+    "file": "propulsionModules.yaml",
+    "attributes": [
+      {
+        "new": {
+          "name": "velocityBoost"
+        },
+        "published": true,
+        "defaultValue": 0,
+        "highIsGood": true,
+        "stackable": true
+      }
+    ],
+    "effects": [
+      {
+        "new": {
+          "name": "velocityBoost"
+        },
+        "effectCategory": "passive",
+        "electronicChance": false,
+        "isAssistance": false,
+        "isOffensive": false,
+        "isWarpSafe": true,
+        "propulsionChance": false,
+        "rangeChance": false,
+        "modifierInfo": [
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "velocityBoost",
+            "modifyingAttribute": "mass",
+            "operation": "postDiv"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "maxVelocity",
+            "modifyingAttribute": "velocityBoost",
+            "operation": "postPercent"
+          }
+        ]
+      },
+      {
+        "patch": [
+          {
+            "name": "moduleBonusMicrowarpdrive"
+          }
+        ],
+        "modifierInfo": [
+          {
+            "domain": "shipID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "signatureRadius",
+            "modifyingAttribute": "signatureRadiusBonus",
+            "operation": "postPercent"
+          }
+        ]
+      },
+      {
+        "patch": [
+          {
+            "name": "microJumpDrive"
+          }
+        ],
+        "modifierInfo": [
+          {
+            "domain": "shipID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "signatureRadius",
+            "modifyingAttribute": "signatureRadiusBonusPercent",
+            "operation": "postPercent"
+          }
+        ]
+      },
+      {
+        "patch": [
+          {
+            "name": "moduleBonusAfterburner"
+          },
+          {
+            "name": "moduleBonusMicrowarpdrive"
+          }
+        ],
+        "modifierInfo": [
+          {
+            "domain": "shipID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "mass",
+            "modifyingAttribute": "massAddition",
+            "operation": "modAdd"
+          },
+          {
+            "domain": "shipID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "velocityBoost",
+            "modifyingAttribute": "speedBoostFactor",
+            "operation": "modAdd"
+          },
+          {
+            "domain": "shipID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "velocityBoost",
+            "modifyingAttribute": "speedFactor",
+            "operation": "postMul"
+          }
+        ]
+      }
+    ],
+    "typeDogma": [
+      {
+        "patch": [
+          {
+            "category": "Ship"
+          }
+        ],
+        "dogmaEffects": [
+          {
+            "effect": "velocityBoost",
+            "isDefault": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "file": "reactiveArmorHardener.yaml",
+    "attributes": [],
+    "effects": [
+      {
+        "patch": [
+          {
+            "name": "adaptiveArmorHardener"
+          }
+        ],
+        "modifierInfo": [
+          {
+            "domain": "shipID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "armorEmDamageResonance",
+            "modifyingAttribute": "armorEmDamageResonance",
+            "operation": "preMul"
+          },
+          {
+            "domain": "shipID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "armorExplosiveDamageResonance",
+            "modifyingAttribute": "armorExplosiveDamageResonance",
+            "operation": "preMul"
+          },
+          {
+            "domain": "shipID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "armorKineticDamageResonance",
+            "modifyingAttribute": "armorKineticDamageResonance",
+            "operation": "preMul"
+          },
+          {
+            "domain": "shipID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "armorThermalDamageResonance",
+            "modifyingAttribute": "armorThermalDamageResonance",
+            "operation": "preMul"
+          }
+        ]
+      }
+    ],
+    "typeDogma": []
+  },
+  {
+    "file": "rechargeArmor.yaml",
+    "attributes": [
+      {
+        "new": {
+          "name": "armorRepairRate"
+        },
+        "published": true,
+        "defaultValue": 0,
+        "highIsGood": true,
+        "stackable": true
+      },
+      {
+        "new": {
+          "name": "armorEffectiveRepairRate"
+        },
+        "published": true,
+        "defaultValue": 0,
+        "highIsGood": true,
+        "stackable": true
+      }
+    ],
+    "effects": [
+      {
+        "new": {
+          "name": "armorRepairRate"
+        },
+        "effectCategory": "active",
+        "electronicChance": false,
+        "isAssistance": false,
+        "isOffensive": false,
+        "isWarpSafe": true,
+        "propulsionChance": false,
+        "rangeChance": false,
+        "modifierInfo": [
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "armorRepairRate",
+            "modifyingAttribute": "thousand",
+            "operation": "preAssign"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "armorRepairRate",
+            "modifyingAttribute": "armorDamageAmount",
+            "operation": "postMul"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "armorRepairRate",
+            "modifyingAttribute": "duration",
+            "operation": "postDiv"
+          },
+          {
+            "domain": "shipID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "armorRepairRate",
+            "modifyingAttribute": "armorRepairRate",
+            "operation": "modAdd"
+          }
+        ]
+      },
+      {
+        "new": {
+          "name": "armorEffectiveRepairRate"
+        },
+        "effectCategory": "passive",
+        "electronicChance": false,
+        "isAssistance": false,
+        "isOffensive": false,
+        "isWarpSafe": true,
+        "propulsionChance": false,
+        "rangeChance": false,
+        "modifierInfo": [
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "armorEffectiveRepairRate",
+            "modifyingAttribute": "armorRepairRate",
+            "operation": "modAdd"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "armorEffectiveRepairRate",
+            "modifyingAttribute": "armorDamageEffectiveResonance",
+            "operation": "postDiv"
+          }
+        ]
+      }
+    ],
+    "typeDogma": [
+      {
+        "patch": [
+          {
+            "category": "Module",
+            "hasAllAttributes": [
+              {
+                "name": "armorDamageAmount"
+              },
+              {
+                "name": "duration"
+              }
+            ],
+            "hasAnyEffects": [
+              {
+                "name": "armorRepair"
+              }
+            ]
+          }
+        ],
+        "dogmaEffects": [
+          {
+            "effect": "armorRepairRate",
+            "isDefault": false
+          }
+        ]
+      },
+      {
+        "patch": [
+          {
+            "category": "Ship"
+          }
+        ],
+        "dogmaEffects": [
+          {
+            "effect": "armorEffectiveRepairRate",
+            "isDefault": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "file": "rechargeHull.yaml",
+    "attributes": [
+      {
+        "new": {
+          "name": "hullRepairRate"
+        },
+        "published": true,
+        "defaultValue": 0,
+        "highIsGood": true,
+        "stackable": true
+      },
+      {
+        "new": {
+          "name": "hullEffectiveRepairRate"
+        },
+        "published": true,
+        "defaultValue": 0,
+        "highIsGood": true,
+        "stackable": true
+      }
+    ],
+    "effects": [
+      {
+        "new": {
+          "name": "hullRepairRate"
+        },
+        "effectCategory": "active",
+        "electronicChance": false,
+        "isAssistance": false,
+        "isOffensive": false,
+        "isWarpSafe": true,
+        "propulsionChance": false,
+        "rangeChance": false,
+        "modifierInfo": [
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "hullRepairRate",
+            "modifyingAttribute": "thousand",
+            "operation": "preAssign"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "hullRepairRate",
+            "modifyingAttribute": "structureDamageAmount",
+            "operation": "postMul"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "hullRepairRate",
+            "modifyingAttribute": "duration",
+            "operation": "postDiv"
+          },
+          {
+            "domain": "shipID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "hullRepairRate",
+            "modifyingAttribute": "hullRepairRate",
+            "operation": "modAdd"
+          }
+        ]
+      },
+      {
+        "new": {
+          "name": "hullEffectiveRepairRate"
+        },
+        "effectCategory": "passive",
+        "electronicChance": false,
+        "isAssistance": false,
+        "isOffensive": false,
+        "isWarpSafe": true,
+        "propulsionChance": false,
+        "rangeChance": false,
+        "modifierInfo": [
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "hullEffectiveRepairRate",
+            "modifyingAttribute": "hullRepairRate",
+            "operation": "modAdd"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "hullEffectiveRepairRate",
+            "modifyingAttribute": "hullDamageEffectiveResonance",
+            "operation": "postDiv"
+          }
+        ]
+      }
+    ],
+    "typeDogma": [
+      {
+        "patch": [
+          {
+            "category": "Module",
+            "hasAllAttributes": [
+              {
+                "name": "structureDamageAmount"
+              },
+              {
+                "name": "duration"
+              }
+            ],
+            "hasAnyEffects": [
+              {
+                "name": "structureRepair"
+              }
+            ]
+          }
+        ],
+        "dogmaEffects": [
+          {
+            "effect": "hullRepairRate",
+            "isDefault": false
+          }
+        ]
+      },
+      {
+        "patch": [
+          {
+            "category": "Ship"
+          }
+        ],
+        "dogmaEffects": [
+          {
+            "effect": "hullEffectiveRepairRate",
+            "isDefault": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "file": "rechargeShield.yaml",
+    "attributes": [
+      {
+        "new": {
+          "name": "shieldBoostRate"
+        },
+        "published": true,
+        "defaultValue": 0,
+        "highIsGood": true,
+        "stackable": true
+      },
+      {
+        "new": {
+          "name": "shieldEffectiveBoostRate"
+        },
+        "published": true,
+        "defaultValue": 0,
+        "highIsGood": true,
+        "stackable": true
+      }
+    ],
+    "effects": [
+      {
+        "new": {
+          "name": "shieldBoostRate"
+        },
+        "effectCategory": "active",
+        "electronicChance": false,
+        "isAssistance": false,
+        "isOffensive": false,
+        "isWarpSafe": true,
+        "propulsionChance": false,
+        "rangeChance": false,
+        "modifierInfo": [
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "shieldBoostRate",
+            "modifyingAttribute": "thousand",
+            "operation": "preAssign"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "shieldBoostRate",
+            "modifyingAttribute": "shieldBonus",
+            "operation": "postMul"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "shieldBoostRate",
+            "modifyingAttribute": "duration",
+            "operation": "postDiv"
+          },
+          {
+            "domain": "shipID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "shieldBoostRate",
+            "modifyingAttribute": "shieldBoostRate",
+            "operation": "modAdd"
+          }
+        ]
+      },
+      {
+        "new": {
+          "name": "shieldEffectiveBoostRate"
+        },
+        "effectCategory": "passive",
+        "electronicChance": false,
+        "isAssistance": false,
+        "isOffensive": false,
+        "isWarpSafe": true,
+        "propulsionChance": false,
+        "rangeChance": false,
+        "modifierInfo": [
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "shieldEffectiveBoostRate",
+            "modifyingAttribute": "shieldBoostRate",
+            "operation": "modAdd"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "shieldEffectiveBoostRate",
+            "modifyingAttribute": "shieldDamageEffectiveResonance",
+            "operation": "postDiv"
+          }
+        ]
+      }
+    ],
+    "typeDogma": [
+      {
+        "patch": [
+          {
+            "category": "Module",
+            "hasAllAttributes": [
+              {
+                "name": "shieldBonus"
+              }
+            ],
+            "hasAnyEffects": [
+              {
+                "name": "shieldBoosting"
+              }
+            ]
+          }
+        ],
+        "dogmaEffects": [
+          {
+            "effect": "shieldBoostRate",
+            "isDefault": false
+          }
+        ]
+      },
+      {
+        "patch": [
+          {
+            "category": "Ship"
+          }
+        ],
+        "dogmaEffects": [
+          {
+            "effect": "shieldEffectiveBoostRate",
+            "isDefault": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "file": "rechargeShieldPassive.yaml",
+    "attributes": [
+      {
+        "new": {
+          "name": "passiveShieldRechargeRate"
+        },
+        "published": true,
+        "defaultValue": 2500,
+        "highIsGood": true,
+        "stackable": true
+      },
+      {
+        "new": {
+          "name": "passiveShieldEffectiveRechargeRate"
+        },
+        "published": true,
+        "defaultValue": 2500,
+        "highIsGood": true,
+        "stackable": true
+      }
+    ],
+    "effects": [
+      {
+        "new": {
+          "name": "passiveShieldRechargeRate"
+        },
+        "effectCategory": "passive",
+        "electronicChance": false,
+        "isAssistance": false,
+        "isOffensive": false,
+        "isWarpSafe": true,
+        "propulsionChance": false,
+        "rangeChance": false,
+        "modifierInfo": [
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "passiveShieldRechargeRate",
+            "modifyingAttribute": "shieldRechargeRate",
+            "operation": "postDiv"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "passiveShieldRechargeRate",
+            "modifyingAttribute": "shieldCapacity",
+            "operation": "postMul"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "passiveShieldEffectiveRechargeRate",
+            "modifyingAttribute": "shieldRechargeRate",
+            "operation": "postDiv"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "passiveShieldEffectiveRechargeRate",
+            "modifyingAttribute": "shieldCapacity",
+            "operation": "postMul"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "passiveShieldEffectiveRechargeRate",
+            "modifyingAttribute": "shieldDamageEffectiveResonance",
+            "operation": "postDiv"
+          }
+        ]
+      }
+    ],
+    "typeDogma": [
+      {
+        "patch": [
+          {
+            "category": "Ship"
+          }
+        ],
+        "dogmaEffects": [
+          {
+            "effect": "passiveShieldRechargeRate",
+            "isDefault": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "file": "scanStrength.yaml",
+    "attributes": [
+      {
+        "new": {
+          "name": "scanStrength"
+        },
+        "published": true,
+        "defaultValue": 0,
+        "highIsGood": true,
+        "stackable": true
+      }
+    ],
+    "effects": [
+      {
+        "new": {
+          "name": "scanStrength"
+        },
+        "effectCategory": "passive",
+        "electronicChance": false,
+        "isAssistance": false,
+        "isOffensive": false,
+        "isWarpSafe": true,
+        "propulsionChance": false,
+        "rangeChance": false,
+        "modifierInfo": [
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "scanStrength",
+            "modifyingAttribute": "scanRadarStrength",
+            "operation": "modAdd"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "scanStrength",
+            "modifyingAttribute": "scanLadarStrength",
+            "operation": "modAdd"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "scanStrength",
+            "modifyingAttribute": "scanMagnetometricStrength",
+            "operation": "modAdd"
+          },
+          {
+            "domain": "itemID",
+            "func": "ItemModifier",
+            "modifiedAttribute": "scanStrength",
+            "modifyingAttribute": "scanGravimetricStrength",
+            "operation": "modAdd"
+          }
+        ]
+      }
+    ],
+    "typeDogma": [
+      {
+        "patch": [
+          {
+            "category": "Ship"
+          }
+        ],
+        "dogmaEffects": [
+          {
+            "effect": "scanStrength",
+            "isDefault": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "file": "timing.yaml",
+    "attributes": [
+      {
+        "new": {
+          "name": "thousand"
+        },
+        "published": true,
+        "defaultValue": 1000,
+        "highIsGood": true,
+        "stackable": true
+      }
+    ],
+    "effects": [],
+    "typeDogma": []
+  }
+]
