@@ -24,6 +24,8 @@ const nextConfig = {
     { source: '/api/orders', destination: '/api/character/orders', permanent: true },
     { source: '/api/industry', destination: '/api/character/jobs', permanent: true },
     { source: '/characters/refresh', destination: '/character/refresh', permanent: true },
+    // The short-lived bare fit view moved when ships got their own page.
+    { source: '/asset/:itemId/fit', destination: '/ship/:itemId', permanent: false },
   ],
 }
 

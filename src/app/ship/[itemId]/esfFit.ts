@@ -1,6 +1,6 @@
 import type { EsiFit } from '@eveshipfit/react'
 
-import type { ItemRow } from './locationAssets'
+import type { ItemRow } from '../../asset/[locationId]/locationAssets'
 
 // Only these 4 fields of ItemRow are actually needed, so callers that don't
 // already have a full ItemRow (e.g. a lean fetch that skips owners/contents)

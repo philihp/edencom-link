@@ -26,9 +26,9 @@ import {
 
 import { ALL_OWNERS, OwnerSelect, ownerNames, useOwnerFilter, type Owners } from '../../ownerFilter'
 import { TypeName } from '../../typeName'
-import styles from '../assets.module.css'
-import { OWNER_STORAGE_KEY } from '../filterKey'
-import { type ItemRow } from './locationAssets'
+import styles from '../../asset/assets.module.css'
+import { OWNER_STORAGE_KEY } from '../../asset/filterKey'
+import { type ItemRow } from '../../asset/[locationId]/locationAssets'
 import bayStyles from './shipCargo.module.css'
 
 // Fitted-slot flags (HiSlot0, MedSlot3, RigSlot1, …) share a bay per slot
@@ -158,8 +158,8 @@ export const ShipCargo = ({ rows, owners, typeNamesPromise }: ShipCargoProps) =>
                   )
                   return (
                     <li key={`item-${item.itemId}`} className={bayStyles.tile}>
-                      {item.contents > 0 ? (
-                        <Link href={`/asset/${item.itemId}`} className={bayStyles.tileLink}>
+                      {item.href ? (
+                        <Link href={item.href} className={bayStyles.tileLink}>
                           {tile}
                         </Link>
                       ) : (

@@ -19,6 +19,10 @@ export type ItemRow = {
   isSingleton: boolean | null
   flag: string | null
   contents: number
+  // Where clicking the item goes: /ship/[id] for ships, /asset/[id] for
+  // containers with contents, null for plain stacks (no link). Computed
+  // server-side, where the SDE category lookup lives.
+  href: string | null
 }
 
 type LocationAssetsProps = {
@@ -56,9 +60,9 @@ export const LocationAssets = ({ rows, owners, typeNamesPromise }: LocationAsset
               <tr key={`item-${row.itemId}`}>
                 <td>{ownerMap.get(row.ownerId) ?? row.ownerId}</td>
                 <td>
-                  {row.contents > 0 ? (
-                    // Ships and containers hold items — drill into them.
-                    <Link href={`/asset/${row.itemId}`}>
+                  {row.href ? (
+                    // Ships open their own /ship page; containers drill into /asset.
+                    <Link href={row.href}>
                       <TypeName id={row.typeId} name={row.name} promise={typeNamesPromise} />
                     </Link>
                   ) : (
