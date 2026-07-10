@@ -1,4 +1,4 @@
-// MCP server endpoint (Streamable HTTP at /api/mcp/mcp). Clients authorize
+// MCP server endpoint (Streamable HTTP at /api/mcp). Clients authorize
 // via OAuth 2.1 against Supabase Auth acting as the authorization server (the
 // consent page lives at /oauth/consent; discovery metadata at
 // /.well-known/oauth-protected-resource). Tools are read-only queries over
@@ -15,7 +15,11 @@ const handler = createMcpHandler(
   { serverInfo: { name: 'edencom-link', version: '1.0.0' } },
   // No Redis in this deployment, so the (spec-deprecated) SSE transport stays
   // off; Streamable HTTP keeps everything within a single function invocation.
-  { basePath: '/api/mcp', disableSse: true, maxDuration: 60 }
+  // basePath derives the endpoint paths: '/api' makes the streamable HTTP
+  // endpoint '/api/mcp' — exactly where this route file lives. (With
+  // '/api/mcp' the handler would only answer '/api/mcp/mcp', a path no route
+  // serves, so every authenticated call would 404.)
+  { basePath: '/api', disableSse: true, maxDuration: 60 }
 )
 
 const authHandler = withMcpAuth(handler, verifySupabaseToken, { required: true })
