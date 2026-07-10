@@ -3,59 +3,59 @@
   "crons": [
     {
       "path": "/api/cron/character-orders",
-      "schedule": "24 * * * *"
+      "schedule": "24 */6 * * *"
     },
     {
       "path": "/api/cron/character-assets",
-      "schedule": "26 * * * *"
+      "schedule": "26 */6 * * *"
     },
     {
       "path": "/api/cron/character-blueprints",
-      "schedule": "28 * * * *"
+      "schedule": "28 */6 * * *"
     },
     {
       "path": "/api/cron/corp-wallet-journal",
-      "schedule": "37 * * * *"
+      "schedule": "37 */6 * * *"
     },
     {
       "path": "/api/cron/character-wallet",
-      "schedule": "44 * * * *"
+      "schedule": "44 */6 * * *"
     },
     {
       "path": "/api/cron/character-wallet-transactions",
-      "schedule": "46 * * * *"
+      "schedule": "46 */6 * * *"
     },
     {
       "path": "/api/cron/corp-industry-jobs",
-      "schedule": "47 * * * *"
+      "schedule": "47 */6 * * *"
     },
     {
       "path": "/api/cron/character-industry-jobs",
-      "schedule": "48 * * * *"
+      "schedule": "48 */6 * * *"
     },
     {
       "path": "/api/cron/character-location",
-      "schedule": "14 * * * *"
+      "schedule": "14 */6 * * *"
     },
     {
       "path": "/api/cron/character-implants",
-      "schedule": "16 * * * *"
+      "schedule": "16 */6 * * *"
     },
     {
       "path": "/api/cron/character-clones",
-      "schedule": "18 * * * *"
+      "schedule": "18 */6 * * *"
     },
     {
       "path": "/api/cron/corp-wallet-transactions",
-      "schedule": "50 * * * *"
+      "schedule": "50 */6 * * *"
     },
     {
       "path": "/api/cron/universe-names",
-      "schedule": "58 * * * *"
+      "schedule": "58 */6 * * *"
     },
     {
       "path": "/api/cron/industry-systems",
-      "schedule": "10 * * * *"
+      "schedule": "10 */6 * * *"
     },
     {
       "path": "/api/cron/corp-blueprints",
