@@ -1,6 +1,5 @@
 import { Analytics } from '@vercel/analytics/react'
 import { SpeedInsights } from '@vercel/speed-insights/next'
-// import { GoogleAnalytics } from '@next/third-parties/google'
 import type { Metadata } from 'next'
 import './globals.css'
 import Header from './layout/header'
@@ -43,7 +42,6 @@ const RootLayout = ({
         <Analytics />
         <SpeedInsights />
       </body>
-      {/* <GoogleAnalytics gaId="{ process.env.NEXT_PUBLIC_GOOGLE_ANALYTICS_ID }" /> */}
     </html>
   )
 }
