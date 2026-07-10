@@ -5,8 +5,8 @@
 // the extracted DB — see tools.ts.
 import { createMcpHandler, withMcpAuth } from 'mcp-handler'
 
-import { verifySupabaseToken } from '../auth'
-import { registerTools } from '../tools'
+import { verifySupabaseToken } from './auth'
+import { registerTools } from './tools'
 
 const handler = createMcpHandler(
   (server) => {
