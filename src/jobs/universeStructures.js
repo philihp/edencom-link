@@ -35,8 +35,8 @@ const fetchAssetLocationRows = async (from = 0) => {
 }
 
 // GET /universe/structures/{id} → universe_structure. Resolves and caches the
-// names/systems of the player structures characters hold assets in. Candidates
-// are pooled across *all* linked characters and each is attempted against
+// names/systems of the player structures characters hold assets or clones in.
+// Candidates are pooled across *all* linked characters and each is attempted against
 // *every* scoped token until one can dock and resolve it — a structure only
 // needs a single character with docking access, and that character is often not
 // the one whose assets sit there. Cheap in steady state: candidates exclude
@@ -72,6 +72,24 @@ export const runUniverseStructures = async () => {
       if (Number.isFinite(id) && id >= STRUCTURE_ID_FLOOR) locationIds.add(id)
     },
     await fetchAssetLocationRows()
+  )
+
+  // Clones parked in player structures are candidates too — the character-clones
+  // job resolves what it can with each clone's own token, but only a character
+  // with docking access can resolve a given structure, and that's often a
+  // different character than the clone's owner.
+  const { data: cloneRows, error: clonesErr } = await sudoSupabase
+    .from('character_clone_over_time')
+    .select('location_id')
+    .eq('is_current', true)
+    .eq('location_type', 'structure')
+  if (clonesErr) throw clonesErr
+  forEach(
+    (r) => {
+      const id = Number(r.location_id)
+      if (Number.isFinite(id) && id >= STRUCTURE_ID_FLOOR) locationIds.add(id)
+    },
+    cloneRows ?? []
   )
 
   const candidates = reject((id) => itemIds.has(id) || resolved.has(id), [...locationIds])

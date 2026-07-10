@@ -150,6 +150,13 @@ export const universeStructure = (access_token, structureID) =>
     label: `universeStructure ${structureID}`,
   })
 
+// Public (no token): resolve a single NPC station. Returns { system_id, name,
+// type_id, ... }; used to place clones parked in NPC stations in a solar system.
+export const universeStation = (stationID) =>
+  esiJson(`/universe/stations/${stationID}/`, {
+    label: `universeStation ${stationID}`,
+  })
+
 // A character's current solar system (and station/structure, if docked).
 export const characterLocation = (access_token, characterID) =>
   esiJson(`/characters/${characterID}/location/`, {
