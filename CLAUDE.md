@@ -122,6 +122,7 @@ All functions take `(accessToken, id, ...)` unless noted. Returns raw ESI respon
 - `resolveBatch(ids[])` / `resolveAllIds(ids[])` — bulk ESI `universeNames` with bisect-on-error fallback
 - `resolveCorpJournalNames()` — resolve first/second party IDs seen in corp wallet journal rows into `universe_name`
 - `resolveKnownCorpNames()` — resolve+cache corp names seen in `corp_wallet_transaction`/`character_affiliation`/`corp_structure`
+- `resolveCorpIndustryJobInstallerNames()` — resolve+cache the character name of every `corp_industry_job.installer_id` (whichever corp member ran the job, not necessarily one of this app's linked characters)
 - `resolveCorpStructureSystemNames()` — resolve system IDs for corp structures
 - `resolveAssetStationNames()` — resolve+cache NPC station names (location_type 'station' in assets) into `universe_name`
 - `resolveAssetSystemNames()` — resolve+cache solar system names for assets floating directly in space (location_type 'solar_system') into `universe_name`
