@@ -5,6 +5,7 @@ import { getSdeType } from '@/sdeTypes'
 import { createClient } from '@/utils/supabase/server'
 import { createServiceClient } from '@/utils/supabase/service'
 import { fetchOwners } from '../../owners'
+import type { Owners } from '../../ownerFilter'
 import { resolveLocations } from '../../resolveLocations'
 import { fetchTypeNames } from '../../typeNames'
 import { type ItemRow } from '../../asset/[locationId]/locationAssets'
@@ -213,7 +214,7 @@ const SharedShipPage = async ({ itemId, token }: { itemId: string; token: string
   const [{ data: characterChildren }, { data: corpChildren }] = await Promise.all([
     supabase
       .from('character_asset')
-      .select('item_id, type_id, location_flag, quantity, is_singleton')
+      .select('item_id, type_id, location_flag, quantity, is_singleton, name')
       .eq('location_id', itemId)
       .in('character_id', scope.characterIds),
     supabase
@@ -224,6 +225,9 @@ const SharedShipPage = async ({ itemId, token }: { itemId: string; token: string
   ])
   const children = [...((characterChildren ?? []) as ChildRow[]), ...((corpChildren ?? []) as ChildRow[])]
 
+  // Everything inside a ship belongs to whoever owns the ship, so the whole
+  // cargo view carries a single owner.
+  const ownerId = characterSelf?.character_id ?? String(corpSelf?.corporation_id)
   let ownerName: string
   if (characterSelf?.character_id) {
     ownerName = scope.characterNames.get(characterSelf.character_id) ?? 'Unknown character'
@@ -236,17 +240,32 @@ const SharedShipPage = async ({ itemId, token }: { itemId: string; token: string
       .maybeSingle<{ name: string }>()
     ownerName = corpName?.name ?? `Corporation #${corporationId}`
   }
+  // ShipCargo's owner filter wants an Owners shape; a shared ship has exactly
+  // one owner, so build a single-entry list on the correct side.
+  const owners: Owners = characterSelf?.character_id
+    ? { characters: [{ id: ownerId, name: ownerName }], corporations: [] }
+    : { characters: [], corporations: [{ id: ownerId, name: ownerName }] }
 
   const typeNames = await fetchTypeNames([Number(self.type_id)])
   const typeName = typeNames[Number(self.type_id)] ?? `#${self.type_id}`
   const heading = self.name && self.name !== typeName ? `${self.name} (${typeName})` : typeName
 
-  const fitRows = children.map((c) => ({
-    itemId: String(c.item_id),
-    typeId: Number(c.type_id),
-    flag: c.location_flag,
-    quantity: c.quantity,
-  }))
+  const typeNamesPromise = fetchTypeNames(children.map((c) => Number(c.type_id)))
+  // Display-only in the shared view: no href (a nested container would need its
+  // own share token to open), and contents is unused without drill-down links.
+  const rows: ItemRow[] = children
+    .map((c) => ({
+      itemId: String(c.item_id),
+      ownerId,
+      typeId: Number(c.type_id),
+      name: c.name ?? null,
+      quantity: c.quantity,
+      isSingleton: c.is_singleton,
+      flag: c.location_flag,
+      contents: 0,
+      href: null,
+    }))
+    .sort((a, b) => a.typeId - b.typeId)
 
   return (
     <>
@@ -254,7 +273,8 @@ const SharedShipPage = async ({ itemId, token }: { itemId: string; token: string
       <p>
         Owner: <span className="serif">{ownerName}</span>
       </p>
-      <ShipFitViewDynamic esiFit={toEsiFit(Number(self.type_id), self.name ?? null, fitRows)} />
+      <ShipFitViewDynamic esiFit={toEsiFit(Number(self.type_id), self.name ?? null, rows)} />
+      <ShipCargo rows={rows} owners={owners} typeNamesPromise={typeNamesPromise} />
     </>
   )
 }
