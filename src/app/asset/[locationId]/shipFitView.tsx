@@ -34,12 +34,18 @@ type ShipFitViewProps = {
 
 // eveship.fit's own hosted data is deliberately CORS-locked to their site, so
 // this points at our own build-time mirror (see src/buildEsfData.js).
+// ShipFit's root CSS is `width: 100%; height: 100%` — it fills its container,
+// and positions its ring elements absolutely within it. Without a sized
+// square wrapper it inflates to the whole viewport (the wheel is circular, so
+// the container must be square for the rings to line up).
 export const ShipFitView = ({ esiFit }: ShipFitViewProps) => (
   <EveDataProvider dataUrl="/esf-data/">
     <DogmaEngineProvider>
       <FitFromEsi esiFit={esiFit}>
         <StatisticsProvider>
-          <ShipFit withStats readOnly />
+          <div style={{ width: 'min(90vw, 42rem)', aspectRatio: '1' }}>
+            <ShipFit withStats readOnly />
+          </div>
         </StatisticsProvider>
       </FitFromEsi>
     </DogmaEngineProvider>
