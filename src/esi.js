@@ -28,6 +28,27 @@ const esiPaged = async (path, opts) => {
   return [await response.json(), response.headers.get('x-pages')]
 }
 
+// Conditional GET for the single-request snapshot endpoints (orders, wallet
+// transactions, industry jobs): send the caller's stored ETag as If-None-Match
+// and return { status, json, etag }. On 304 (Not Modified) ESI sends no body, so
+// json is null and the caller skips re-processing an unchanged snapshot; the
+// ETag is echoed on both 200 and 304 so the caller can refresh what it stored.
+// One ETag covers the whole response here — safe only because these endpoints
+// return the entire collection in a single, un-paginated request.
+const esiConditionalJson = async (path, { access_token, params = {}, ifNoneMatch, label } = {}) => {
+  const search = new URLSearchParams({ ...(access_token ? { token: access_token } : {}), ...params })
+  const headers = { 'User-Agent': userAgent }
+  if (ifNoneMatch) headers['If-None-Match'] = ifNoneMatch
+  const response = await fetch(`${ESI_BASE}${path}?${search}`, { method: 'GET', headers })
+  const etag = response.headers.get('etag')
+  if (response.status === 304) return { status: 304, json: null, etag }
+  if (!response.ok) {
+    const text = await response.text().catch(() => '')
+    throw new Error(`${label ?? path}: ${response.status} ${response.statusText} body=${text.slice(0, 500)}`)
+  }
+  return { status: 200, json: await response.json(), etag }
+}
+
 export const assets = (access_token, characterID, page = 1) =>
   esiPaged(`/characters/${characterID}/assets/`, {
     access_token,
@@ -42,16 +63,20 @@ export const blueprints = (access_token, characterID, page = 1) =>
     label: `blueprints ${characterID} page=${page}`,
   })
 
-export const transactions = (access_token, characterID) =>
-  esiJson(`/characters/${characterID}/wallet/transactions/`, {
+// Conditional (ETag-aware); returns { status, json, etag }. See esiConditionalJson.
+export const transactions = (access_token, characterID, ifNoneMatch) =>
+  esiConditionalJson(`/characters/${characterID}/wallet/transactions/`, {
     access_token,
+    ifNoneMatch,
     label: `transactions ${characterID}`,
   })
 
-export const industryJobs = (access_token, characterID) =>
-  esiJson(`/characters/${characterID}/industry/jobs/`, {
+// Conditional (ETag-aware); returns { status, json, etag }. See esiConditionalJson.
+export const industryJobs = (access_token, characterID, ifNoneMatch) =>
+  esiConditionalJson(`/characters/${characterID}/industry/jobs/`, {
     access_token,
     params: { include_completed: 'true' },
+    ifNoneMatch,
     label: `industry jobs ${characterID}`,
   })
 
@@ -62,10 +87,12 @@ export const wallet = (access_token, characterID) =>
   })
 
 // A character's open market orders (buy and sell). Not paginated — ESI returns
-// every open order in one response.
-export const orders = (access_token, characterID) =>
-  esiJson(`/characters/${characterID}/orders/`, {
+// every open order in one response. Conditional (ETag-aware); returns
+// { status, json, etag }. See esiConditionalJson.
+export const orders = (access_token, characterID, ifNoneMatch) =>
+  esiConditionalJson(`/characters/${characterID}/orders/`, {
     access_token,
+    ifNoneMatch,
     label: `orders ${characterID}`,
   })
 
