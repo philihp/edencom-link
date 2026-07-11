@@ -1,5 +1,5 @@
 import { transactions } from '../esi.js'
-import { sudoSupabase } from '../supabase.js'
+import { getEsiEtag, putEsiEtag, sudoSupabase } from '../supabase.js'
 import { cli, forEachCharacter } from './lib.js'
 
 const TAG = 'character-wallet-transactions'
@@ -7,10 +7,16 @@ const SCOPE = 'esi-wallet.read_character_wallet.v1'
 
 // GET /characters/{id}/wallet/transactions/ → character_wallet_transaction.
 // transaction_id is globally unique in EVE, so the upsert dedupes re-fetches of
-// the same recent history.
+// the same recent history. Conditional: a 304 means no new transactions since
+// last run, so the upsert is skipped.
 export const runCharacterWalletTransactions = ({ characterIds } = {}) =>
   forEachCharacter(TAG, { scope: SCOPE, characterIds }, async ({ access_token, characterID, character_id, name }) => {
-    const txns = await transactions(access_token, characterID)
+    const cacheKey = `${TAG}:${character_id}`
+    const { status, json: txns, etag } = await transactions(access_token, characterID, await getEsiEtag(cacheKey))
+    if (status === 304) {
+      console.log(`[${TAG}] ${name} ${character_id} (${characterID}): not modified`)
+      return
+    }
     if (txns.length > 0) {
       const rows = txns.map((t) => ({
         transaction_id: t.transaction_id,
@@ -30,6 +36,8 @@ export const runCharacterWalletTransactions = ({ characterIds } = {}) =>
         .upsert(rows, { onConflict: 'transaction_id', ignoreDuplicates: true })
       if (error) throw error
     }
+    // Store the ETag only after the upsert committed (see characterOrders.js).
+    await putEsiEtag(cacheKey, etag)
     console.log(`[${TAG}] ${name} ${character_id} (${characterID}): ${txns.length} fetched`)
   })
 

@@ -1,5 +1,5 @@
 import { industryJobs } from '../esi.js'
-import { sudoSupabase } from '../supabase.js'
+import { getEsiEtag, putEsiEtag, sudoSupabase } from '../supabase.js'
 import { cli, forEachCharacter } from './lib.js'
 
 const TAG = 'character-industry-jobs'
@@ -7,9 +7,16 @@ const SCOPE = 'esi-industry.read_character_jobs.v1'
 
 // GET /characters/{id}/industry/jobs/ → character_industry_job. Fetched with
 // include_completed, so finished jobs get their terminal status recorded too.
+// Conditional: a 304 means the job list and every status is unchanged since last
+// run (nothing started or completed), so the upsert is skipped.
 export const runCharacterIndustryJobs = ({ characterIds } = {}) =>
   forEachCharacter(TAG, { scope: SCOPE, characterIds }, async ({ access_token, characterID, character_id, name }) => {
-    const jobs = await industryJobs(access_token, characterID)
+    const cacheKey = `${TAG}:${character_id}`
+    const { status, json: jobs, etag } = await industryJobs(access_token, characterID, await getEsiEtag(cacheKey))
+    if (status === 304) {
+      console.log(`[${TAG}] ${name} ${character_id} (${characterID}): not modified`)
+      return
+    }
     if (jobs.length > 0) {
       const rows = jobs.map((j) => ({
         job_id: j.job_id,
@@ -39,6 +46,8 @@ export const runCharacterIndustryJobs = ({ characterIds } = {}) =>
       const { error } = await sudoSupabase.from('character_industry_job').upsert(rows, { onConflict: 'job_id' })
       if (error) throw error
     }
+    // Store the ETag only after the upsert committed (see characterOrders.js).
+    await putEsiEtag(cacheKey, etag)
     console.log(`[${TAG}] ${name} ${character_id} (${characterID}): ${jobs.length} jobs`)
   })
 

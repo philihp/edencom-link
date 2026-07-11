@@ -181,3 +181,27 @@ export const selectToken = async (character_id, scope = []) => {
     .order('expires_at', { ascending: true })
   return response
 }
+
+// The last ETag stored for an ESI conditional-request cache key (a per-character
+// snapshot endpoint — see esiConditionalJson in src/esi.js), or null if none.
+// A lookup failure is swallowed to null so a missing/unreadable ETag just means
+// an unconditional fetch — the extract still runs, it merely misses the 304.
+export const getEsiEtag = async (cacheKey) => {
+  const { data, error } = await sudoSupabase.from('esi_etag').select('etag').eq('cache_key', cacheKey).maybeSingle()
+  if (error) {
+    console.error(`[esi_etag] read failed for ${cacheKey}: ${error.message}`)
+    return null
+  }
+  return data?.etag ?? null
+}
+
+// Store the ETag ESI returned for a cache key so the next run can send it as
+// If-None-Match. Best-effort: a write failure is logged, not thrown, so it never
+// aborts an extract that already succeeded.
+export const putEsiEtag = async (cacheKey, etag) => {
+  if (!etag) return
+  const { error } = await sudoSupabase
+    .from('esi_etag')
+    .upsert({ cache_key: cacheKey, etag, updated_at: new Date().toISOString() }, { onConflict: 'cache_key' })
+  if (error) console.error(`[esi_etag] write failed for ${cacheKey}: ${error.message}`)
+}
