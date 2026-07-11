@@ -1,12 +1,21 @@
-// Generates src/generated/sdeTypes.json, src/generated/sdeSystems.json, and
-// src/generated/sdeStations.json from CCP's Static Data Export so the app can
-// resolve type names/groups/categories, solar-system names, and NPC station
-// names locally instead of depending on a remote service or DB round trip.
-// Runs as a `predev`/`prebuild` step (see package.json) — re-run
-// `pnpm run sde:build -- --force` to refresh the data.
-import { access, mkdir, writeFile } from 'node:fs/promises'
+// Generates src/generated/sdeTypes.json, src/generated/sdeSystems.json,
+// src/generated/sdeStations.json, and src/generated/sdeBlueprints.json from
+// CCP's official Static Data Export so the app can resolve type
+// names/groups/categories, solar-system names, NPC station names, and
+// blueprint material bills locally instead of depending on a remote service
+// or DB round trip. Runs as a `predev`/`prebuild` step (see package.json) —
+// re-run `pnpm run sde:build -- --force` to refresh the data. Mirrors
+// buildEsfData.js's download/extract approach (same source zip, unzipped via
+// the system `unzip` binary — already required for that script to work).
+import { spawn } from 'node:child_process'
+import { createReadStream } from 'node:fs'
+import { access, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { createInterface } from 'node:readline'
 import { fileURLToPath } from 'node:url'
+
+import { universeNames } from './esi.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const TYPES_OUTPUT_PATH = join(__dirname, 'generated', 'sdeTypes.json')
@@ -14,76 +23,48 @@ const SYSTEMS_OUTPUT_PATH = join(__dirname, 'generated', 'sdeSystems.json')
 const STATIONS_OUTPUT_PATH = join(__dirname, 'generated', 'sdeStations.json')
 const BLUEPRINTS_OUTPUT_PATH = join(__dirname, 'generated', 'sdeBlueprints.json')
 
-// Fuzzwork republishes CCP's SDE as flat CSVs, refreshed shortly after each
-// game patch — much smaller and faster to fetch than CCP's own multi-file zip.
-const TYPES_URL = 'https://www.fuzzwork.co.uk/dump/latest/csv/invTypes.csv'
-const GROUPS_URL = 'https://www.fuzzwork.co.uk/dump/latest/csv/invGroups.csv'
-const SYSTEMS_URL = 'https://www.fuzzwork.co.uk/dump/latest/csv/mapSolarSystems.csv'
-const STATIONS_URL = 'https://www.fuzzwork.co.uk/dump/latest/csv/staStations.csv'
-const BLUEPRINT_PRODUCTS_URL = 'https://www.fuzzwork.co.uk/dump/latest/csv/industryActivityProducts.csv'
-const BLUEPRINT_MATERIALS_URL = 'https://www.fuzzwork.co.uk/dump/latest/csv/industryActivityMaterials.csv'
+// CCP's own Static Data Export: one zip of per-dataset JSONL files, refreshed
+// each game patch (see developers.eveonline.com/docs/services/static-data).
+const SDE_URL = 'https://developers.eveonline.com/static-data/eve-online-static-data-latest-jsonl.zip'
 
-// Minimal RFC 4180 CSV parser: invTypes' description column embeds raw commas
-// and newlines inside quoted fields, so a naive line/comma split corrupts rows.
-const parseCsv = (text) => {
-  const rows = []
-  let row = []
-  let field = ''
-  let inQuotes = false
-  for (let i = 0; i < text.length; i += 1) {
-    const c = text[i]
-    if (inQuotes) {
-      if (c === '"' && text[i + 1] === '"') {
-        field += '"'
-        i += 1
-      } else if (c === '"') {
-        inQuotes = false
-      } else {
-        field += c
-      }
-      continue
-    }
-    if (c === '"') inQuotes = true
-    else if (c === ',') {
-      row.push(field)
-      field = ''
-    } else if (c === '\r') continue
-    else if (c === '\n') {
-      row.push(field)
-      rows.push(row)
-      row = []
-      field = ''
-    } else field += c
-  }
-  if (field !== '' || row.length > 0) {
-    row.push(field)
-    rows.push(row)
-  }
-  return rows
+const SOURCE_FILES = ['types.jsonl', 'groups.jsonl', 'mapSolarSystems.jsonl', 'npcStations.jsonl', 'blueprints.jsonl']
+
+const downloadSde = async (destZip) => {
+  console.log(`sde: downloading SDE from ${SDE_URL}…`)
+  const res = await fetch(SDE_URL, { redirect: 'follow' })
+  if (!res.ok) throw new Error(`GET ${SDE_URL} → ${res.status}`)
+  await writeFile(destZip, Buffer.from(await res.arrayBuffer()))
+  console.log('sde: downloaded SDE zip')
 }
 
-const BOM = String.fromCharCode(0xfeff)
+const extractSources = (zipPath, destDir) =>
+  new Promise((resolve, reject) => {
+    const proc = spawn('unzip', ['-q', '-o', '-j', zipPath, ...SOURCE_FILES, '-d', destDir], { stdio: 'inherit' })
+    proc.on('close', (code) => (code === 0 ? resolve() : reject(new Error(`unzip exited ${code}`))))
+  })
 
-const fetchRecords = async (url) => {
-  const res = await fetch(url)
-  if (!res.ok) throw new Error(`GET ${url} → ${res.status}`)
-  const text = await res.text()
-  const rows = parseCsv(text.startsWith(BOM) ? text.slice(1) : text)
-  const [header, ...body] = rows
-  return body.filter((r) => r.length === header.length).map((r) => Object.fromEntries(header.map((h, i) => [h, r[i]])))
+const readJsonl = async function* (path) {
+  const rl = createInterface({ input: createReadStream(path), crlfDelay: Infinity })
+  for await (const line of rl) {
+    if (line.trim()) yield JSON.parse(line)
+  }
 }
 
-const buildTypes = async () => {
-  console.log('sde: downloading invTypes/invGroups from the SDE…')
-  const [types, groups] = await Promise.all([fetchRecords(TYPES_URL), fetchRecords(GROUPS_URL)])
-  const categoryIDByGroup = new Map(groups.map((g) => [g.groupID, Number(g.categoryID)]))
+const en = (localized) => localized?.en ?? ''
+
+const buildTypes = async (dir) => {
+  console.log('sde: parsing types/groups from the SDE…')
+  const categoryIDByGroup = new Map()
+  for await (const g of readJsonl(join(dir, 'groups.jsonl'))) categoryIDByGroup.set(g._key, g.categoryID ?? null)
 
   // [typeID, name, groupID, categoryID] tuples, published types only — this is
   // the same "curated" cut the old remote service exposed.
-  const out = types
-    .filter((t) => t.published === '1' && t.typeName.trim() !== '')
-    .map((t) => [Number(t.typeID), t.typeName, Number(t.groupID), categoryIDByGroup.get(t.groupID) ?? null])
-    .sort((a, b) => a[0] - b[0])
+  const out = []
+  for await (const t of readJsonl(join(dir, 'types.jsonl'))) {
+    const name = en(t.name)
+    if (t.published && name.trim() !== '') out.push([t._key, name, t.groupID, categoryIDByGroup.get(t.groupID) ?? null])
+  }
+  out.sort((a, b) => a[0] - b[0])
 
   await writeFile(TYPES_OUTPUT_PATH, JSON.stringify(out))
   console.log(`sde: wrote ${out.length} types to ${TYPES_OUTPUT_PATH}`)
@@ -95,32 +76,49 @@ const buildTypes = async () => {
 const KSPACE_MIN = 30_000_000
 const KSPACE_MAX = 31_000_000
 
-const buildSystems = async () => {
-  console.log('sde: downloading mapSolarSystems from the SDE…')
-  const systems = await fetchRecords(SYSTEMS_URL)
+const buildSystems = async (dir) => {
+  console.log('sde: parsing solar systems from the SDE…')
 
   // [solarSystemID, name, security] tuples. Security is the raw SDE float,
   // rounded for display by the consumer.
-  const out = systems
-    .map((s) => [Number(s.solarSystemID), s.solarSystemName, Number(s.security)])
-    .filter(([id, name]) => id >= KSPACE_MIN && id < KSPACE_MAX && name.trim() !== '')
-    .sort((a, b) => a[0] - b[0])
+  const out = []
+  for await (const s of readJsonl(join(dir, 'mapSolarSystems.jsonl'))) {
+    const name = en(s.name)
+    if (s._key >= KSPACE_MIN && s._key < KSPACE_MAX && name.trim() !== '') out.push([s._key, name, s.securityStatus])
+  }
+  out.sort((a, b) => a[0] - b[0])
 
   await writeFile(SYSTEMS_OUTPUT_PATH, JSON.stringify(out))
   console.log(`sde: wrote ${out.length} solar systems to ${SYSTEMS_OUTPUT_PATH}`)
 }
 
+// ESI /universe/names/ rejects more than 1000 ids per call.
+const ESI_NAMES_BATCH_SIZE = 1000
+
 // NPC stations only — conquerable outposts (player-held stations) were
 // removed from the game years ago, so every station id ESI can return is
 // static SDE data and never needs an ESI/DB fallback.
-const buildStations = async () => {
-  console.log('sde: downloading staStations from the SDE…')
-  const stations = await fetchRecords(STATIONS_URL)
+const buildStations = async (dir) => {
+  console.log('sde: parsing NPC stations from the SDE…')
+  const stations = []
+  for await (const s of readJsonl(join(dir, 'npcStations.jsonl'))) stations.push([s._key, s.solarSystemID])
+
+  // The SDE carries each station's structure (system, type, owning corp,
+  // operation) but not its display name — that's generated client-side from
+  // those pieces plus the celestial it orbits. Resolving via ESI's public
+  // /universe/names/ sidesteps reimplementing that naming algorithm.
+  const nameById = new Map()
+  const ids = stations.map(([id]) => id)
+  for (let i = 0; i < ids.length; i += ESI_NAMES_BATCH_SIZE) {
+    const batch = ids.slice(i, i + ESI_NAMES_BATCH_SIZE)
+    const resolved = await universeNames(batch)
+    for (const r of resolved) nameById.set(r.id, r.name)
+  }
 
   // [stationID, name, solarSystemID] tuples.
   const out = stations
-    .map((s) => [Number(s.stationID), s.stationName, Number(s.solarSystemID)])
-    .filter(([id, name, systemId]) => Number.isFinite(id) && Number.isFinite(systemId) && name.trim() !== '')
+    .map(([id, systemId]) => [id, nameById.get(id), systemId])
+    .filter(([id, name, systemId]) => Number.isFinite(id) && Number.isFinite(systemId) && (name ?? '').trim() !== '')
     .sort((a, b) => a[0] - b[0])
 
   await writeFile(STATIONS_OUTPUT_PATH, JSON.stringify(out))
@@ -133,40 +131,25 @@ const buildStations = async () => {
 // the way the eve-industry cost modifiers assume.
 const MANUFACTURING = 1
 const REACTION = 11
-const BLUEPRINT_ACTIVITIES = new Set([MANUFACTURING, REACTION])
+const BLUEPRINT_ACTIVITIES = { manufacturing: MANUFACTURING, reaction: REACTION }
 
-const buildBlueprints = async () => {
-  console.log('sde: downloading industryActivityProducts/Materials from the SDE…')
-  const [products, materials] = await Promise.all([
-    fetchRecords(BLUEPRINT_PRODUCTS_URL),
-    fetchRecords(BLUEPRINT_MATERIALS_URL),
-  ])
+const buildBlueprints = async (dir) => {
+  console.log('sde: parsing blueprints from the SDE…')
 
-  // Group materials by "<blueprintTypeID>:<activityID>" so each blueprint's
-  // input bill is assembled in one pass rather than re-scanning per product.
-  const key = (typeID, activityID) => `${typeID}:${activityID}`
-  const materialsByActivity = new Map()
-  for (const m of materials) {
-    const activityID = Number(m.activityID)
-    if (!BLUEPRINT_ACTIVITIES.has(activityID)) continue
-    const k = key(m.typeID, m.activityID)
-    const list = materialsByActivity.get(k) ?? []
-    list.push([Number(m.materialTypeID), Number(m.quantity)])
-    materialsByActivity.set(k, list)
-  }
-
-  // One tuple per (blueprint, activity) that yields a product:
+  // One tuple per (blueprint, activity, product):
   // [blueprintTypeID, activityID, productTypeID, productQuantity, [[matTypeID, qty], …]]
-  const out = products
-    .filter((p) => BLUEPRINT_ACTIVITIES.has(Number(p.activityID)))
-    .map((p) => [
-      Number(p.typeID),
-      Number(p.activityID),
-      Number(p.productTypeID),
-      Number(p.quantity),
-      (materialsByActivity.get(key(p.typeID, p.activityID)) ?? []).sort((a, b) => a[0] - b[0]),
-    ])
-    .sort((a, b) => a[2] - b[2] || a[0] - b[0])
+  const out = []
+  for await (const bp of readJsonl(join(dir, 'blueprints.jsonl'))) {
+    for (const [key, activityID] of Object.entries(BLUEPRINT_ACTIVITIES)) {
+      const activity = bp.activities?.[key]
+      if (!activity?.products?.length) continue
+      const materials = (activity.materials ?? []).map((m) => [m.typeID, m.quantity]).sort((a, b) => a[0] - b[0])
+      for (const product of activity.products) {
+        out.push([bp._key, activityID, product.typeID, product.quantity, materials])
+      }
+    }
+  }
+  out.sort((a, b) => a[2] - b[2] || a[0] - b[0])
 
   await writeFile(BLUEPRINTS_OUTPUT_PATH, JSON.stringify(out))
   console.log(`sde: wrote ${out.length} blueprints to ${BLUEPRINTS_OUTPUT_PATH}`)
@@ -182,6 +165,8 @@ const run = async () => {
   ]
 
   await mkdir(dirname(TYPES_OUTPUT_PATH), { recursive: true })
+
+  const pending = []
   for (const [path, build] of artifacts) {
     if (!force) {
       const exists = await access(path).then(
@@ -193,7 +178,20 @@ const run = async () => {
         continue
       }
     }
-    await build()
+    pending.push(build)
+  }
+  if (pending.length === 0) return
+
+  const workDir = await mkdtemp(join(tmpdir(), 'sde-'))
+  try {
+    const zipPath = join(workDir, 'sde.zip')
+    await downloadSde(zipPath)
+    console.log('sde: extracting source tables…')
+    await extractSources(zipPath, workDir)
+
+    for (const build of pending) await build(workDir)
+  } finally {
+    await rm(workDir, { recursive: true, force: true })
   }
 }
 
