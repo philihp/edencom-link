@@ -7,14 +7,29 @@
 // on a client carrying that token, so RLS scopes results to the caller.
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js'
+import {
+  cost,
+  type BlueprintME,
+  type ModifierParams,
+  type RigBonus,
+  type SecBonus,
+  type StructureBonus,
+} from 'eve-industry'
 import { prop, uniqBy } from 'ramda'
 import { z } from 'zod'
 
 import { ACTIVITY_NAMES } from '@/app/industry/jobFields'
 import { resolveLocations, type LocationRef } from '@/app/resolveLocations'
 import { fetchSystemNames } from '@/app/systemNames'
-import { getSdeSystemNames, searchSdeSystems } from '@/sdeSystems'
-import { getSdeTypeNames } from '@/sdeTypes'
+import {
+  getBlueprintForProduct,
+  getBlueprintsForMaterial,
+  MANUFACTURING,
+  REACTION,
+  type Blueprint,
+} from '@/sdeBlueprints'
+import { getSdeSystem, getSdeSystemNames, searchSdeSystems } from '@/sdeSystems'
+import { getSdeType, getSdeTypeNames, searchSdeTypesAll } from '@/sdeTypes'
 import { createBearerClient } from '@/utils/supabase/bearer'
 
 import {
@@ -51,6 +66,230 @@ const typeName = (names: Record<number, string>, typeId: number | string | null 
 
 const capNote = (total: number, shown: number, what: string): string | undefined =>
   total > shown ? `Showing the first ${shown} of ${total} ${what}; counts and totals cover everything.` : undefined
+
+// Resolve a fuzzy item name to the single best-matching SDE type (highest
+// coverage rank), surfacing the runner-up names so the model can correct a
+// mis-pick. Used by the blueprint tools, which each act on one type.
+type ResolvedType = { ok: true; typeID: number; name: string; alsoMatched: string[] } | { ok: false; message: string }
+
+const resolveOneType = (query: string): ResolvedType => {
+  const matches = searchSdeTypesAll(query.trim())
+  if (matches.length === 0) return { ok: false, message: `No item type matched "${query}".` }
+  const [best, ...rest] = matches
+  return { ok: true, typeID: best.typeID, name: best.name, alsoMatched: rest.slice(0, 4).map((m) => m.name) }
+}
+
+// The industry material-efficiency modifiers exposed on the blueprint tools,
+// mapped to eve-industry's cost() parameters. Kept LLM-friendly (levels and
+// named tiers) rather than raw multipliers.
+const MODIFIER_SHAPE = {
+  runs: z.number().int().min(1).max(100000).optional().describe('Number of blueprint runs (default 1)'),
+  material_efficiency: z
+    .number()
+    .int()
+    .min(0)
+    .max(10)
+    .optional()
+    .describe('Blueprint material efficiency level, 0–10 (default 0)'),
+  structure: z
+    .enum(['none', 'engineering_complex'])
+    .optional()
+    .describe(
+      'Structure role bonus: engineering_complex gives 1% material reduction (default none). Ignored when structure_id is given.'
+    ),
+  rig: z
+    .enum(['none', 't1', 't2'])
+    .optional()
+    .describe(
+      'Material-efficiency rig fitted: t1 = 2%, t2 = 2.4% base reduction (default none). Ignored when structure_id is given.'
+    ),
+  security: z
+    .enum(['highsec', 'lowsec', 'nullsec'])
+    .optional()
+    .describe(
+      'System security, which scales the rig bonus: highsec ×1, lowsec ×1.9, null/wormhole ×2.1 (default highsec). Ignored when structure_id is given.'
+    ),
+  structure_id: z
+    .string()
+    .optional()
+    .describe(
+      'Id of one of your monitored Upwell structures (e.g. "1050603051889"). When set, its hull role bonus, fitted material-efficiency rig, and system security are derived automatically and OVERRIDE the structure/rig/security fields above (blueprint ME still comes from material_efficiency).'
+    ),
+}
+
+type ModifierArgs = {
+  runs?: number
+  material_efficiency?: number
+  structure?: 'none' | 'engineering_complex'
+  rig?: 'none' | 't1' | 't2'
+  security?: 'highsec' | 'lowsec' | 'nullsec'
+  structure_id?: string
+}
+
+// The three material-reduction bonuses eve-industry's cost() takes, already
+// mapped to its literal-union types. The casts are safe: the enum-backed
+// inputs (and the structure resolver) only ever produce valid members.
+type Bonuses = { structure: StructureBonus; rig: RigBonus; sec: SecBonus }
+
+const manualBonuses = (m: ModifierArgs): Bonuses => ({
+  structure: (m.structure === 'engineering_complex' ? 0.01 : 0) as StructureBonus,
+  rig: (m.rig === 't2' ? 0.024 : m.rig === 't1' ? 0.02 : 0) as RigBonus,
+  sec: (m.security === 'nullsec' ? 2.1 : m.security === 'lowsec' ? 1.9 : 1) as SecBonus,
+})
+
+// eve-industry cost() params: material reduction is
+//   runs * base * (1 - ME) * (1 - structure) * (1 - rig*sec).
+const toCostParams = (m: ModifierArgs, bonuses: Bonuses): Omit<ModifierParams, 'base'> => ({
+  runs: m.runs ?? 1,
+  blueprint: ((m.material_efficiency ?? 0) / 100) as BlueprintME,
+  ...bonuses,
+})
+
+// EVE Upwell structure hull groups (stable SDE group ids). Engineering
+// complexes carry a 1% manufacturing material role bonus; refineries a 1%
+// reaction material role bonus. Citadels give neither.
+const ENGINEERING_COMPLEX_GROUP = 1404
+const REFINERY_GROUP = 1406
+
+// Round the raw SDE security to EVE's displayed band → the rig security
+// multiplier eve-industry expects (highsec ×1, lowsec ×1.9, null/WH ×2.1).
+const securityMultiplier = (rawSecurity: number | null): { sec: SecBonus; band: string } => {
+  if (rawSecurity == null) return { sec: 2.1, band: 'nullsec/wormhole' } // WH & unknown systems aren't in the SDE k-space set
+  const rounded = Math.round(rawSecurity * 10) / 10
+  if (rounded >= 0.5) return { sec: 1, band: 'highsec' }
+  if (rounded > 0) return { sec: 1.9, band: 'lowsec' }
+  return { sec: 2.1, band: 'nullsec' }
+}
+
+// Tier of a Standup material-efficiency rig from its name: the "… II" variant
+// is T2 (2.4% base), the "… I" variant T1 (2.0%).
+const rigBonusFromName = (name: string): RigBonus => (/\bII$/.test(name.trim()) ? 0.024 : 0.02)
+
+export type StructureBonuses = {
+  ok: true
+  bonuses: Bonuses
+  resolved: {
+    structure: string
+    system: string | null
+    security_band: string
+    hull: string
+    role_bonus_applies: boolean
+    rig: string | null
+    rig_note?: string
+  }
+}
+export type StructureLookupError = { ok: false; message: string }
+
+// Derive the material-efficiency bonuses for a blueprint made in one of the
+// caller's monitored structures. RLS on corp_structure / corp_structure_rig
+// scopes the lookup to structures the caller can actually see, so an id they
+// don't monitor simply reads as "not found". The rig bonus is applied by tier
+// but NOT gated on the rig's product category — its full name is reported so
+// the caller can see, e.g., that a "Component" rig was used (matching the
+// single-knob model of the eve-industry library).
+const resolveStructureBonuses = async (
+  supabase: SupabaseClient,
+  structureId: string,
+  activityID: number
+): Promise<StructureBonuses | StructureLookupError> => {
+  const { data: structure } = await supabase
+    .from('corp_structure')
+    .select('structure_id, type_id, system_id, name')
+    .eq('structure_id', structureId)
+    .maybeSingle()
+  if (!structure) {
+    return { ok: false, message: `Structure ${structureId} isn't among the structures you monitor (corp_structure).` }
+  }
+
+  const { data: rigRows } = await supabase.from('corp_structure_rig').select('type_id').eq('structure_id', structureId)
+  const rigTypeIds = ((rigRows ?? []) as Array<{ type_id: number | string }>).map((r) => Number(r.type_id))
+
+  const hullType = getSdeType(Number(structure.type_id))
+  const hullGroup = hullType?.groupID
+  const roleApplies =
+    (hullGroup === ENGINEERING_COMPLEX_GROUP && activityID === MANUFACTURING) ||
+    (hullGroup === REFINERY_GROUP && activityID === REACTION)
+
+  const system = getSdeSystem(Number(structure.system_id))
+  const { sec, band } = securityMultiplier(system?.security ?? null)
+
+  // Pick the strongest material-efficiency rig fitted (structures rarely carry
+  // more than one that's relevant); report every ME rig name for transparency.
+  const rigNames = getSdeTypeNames(rigTypeIds)
+  const meRigs = rigTypeIds
+    .map((id) => rigNames[id])
+    .filter((n): n is string => typeof n === 'string' && /Material Efficiency/i.test(n))
+  const bestRig = meRigs.map((n) => ({ name: n, bonus: rigBonusFromName(n) })).sort((a, b) => b.bonus - a.bonus)[0]
+
+  return {
+    ok: true,
+    bonuses: {
+      structure: (roleApplies ? 0.01 : 0) as StructureBonus,
+      rig: (bestRig?.bonus ?? 0) as RigBonus,
+      sec,
+    },
+    resolved: {
+      structure: (structure.name as string) ?? `Structure #${structureId}`,
+      system: system?.name ?? null,
+      security_band: band,
+      hull: hullType?.name ?? `Type #${structure.type_id}`,
+      role_bonus_applies: roleApplies,
+      rig: bestRig?.name ?? null,
+      ...(meRigs.length > 1 && { rig_note: `Multiple ME rigs fitted; used the strongest. All: ${meRigs.join(', ')}.` }),
+    },
+  }
+}
+
+// Resolve the effective bonuses for a blueprint, honoring structure_id (which
+// overrides the manual structure/rig/security fields) when present.
+type ResolvedModifiers =
+  { ok: true; costParams: Omit<ModifierParams, 'base'>; echo: Record<string, unknown> } | { ok: false; message: string }
+
+const resolveModifiers = async (
+  m: ModifierArgs,
+  activityID: number,
+  extra: { authInfo?: AuthInfo }
+): Promise<ResolvedModifiers> => {
+  const base = {
+    runs: m.runs ?? 1,
+    material_efficiency: m.material_efficiency ?? 0,
+  }
+  if (m.structure_id) {
+    const supabase = clientFor(extra)
+    if (!supabase) return { ok: false, message: 'Missing bearer token.' }
+    const s = await resolveStructureBonuses(supabase, m.structure_id, activityID)
+    if (!s.ok) return s
+    return {
+      ok: true,
+      costParams: toCostParams(m, s.bonuses),
+      echo: { ...base, from_structure: s.resolved },
+    }
+  }
+  return {
+    ok: true,
+    costParams: toCostParams(m, manualBonuses(m)),
+    echo: {
+      ...base,
+      structure: m.structure ?? 'none',
+      rig: m.rig ?? 'none',
+      security: m.security ?? 'highsec',
+    },
+  }
+}
+
+// Apply resolved cost params to a blueprint's per-run material bill, returning
+// base and adjusted quantities side by side. cost() preserves input order, so
+// the returned array zips back onto the materials.
+const modifiedMaterials = (bp: Blueprint, costParams: Omit<ModifierParams, 'base'>, names: Record<number, string>) => {
+  const required = cost({ base: bp.materials.map((mat) => mat.quantity), ...costParams })
+  return bp.materials.map((mat, i) => ({
+    material: names[mat.typeID] ?? `Type #${mat.typeID}`,
+    quantity_per_run: mat.quantity,
+    quantity_required: required[i],
+  }))
+}
+
+const activityName = (activityID: number): string => ACTIVITY_NAMES[activityID] ?? `Activity #${activityID}`
 
 export const registerTools = (server: McpServer): void => {
   server.registerTool(
@@ -692,6 +931,118 @@ export const registerTools = (server: McpServer): void => {
           }
         }),
         data_refreshed: await dataFreshness(supabase, ['character-wallet-transactions', 'corp-wallet-transactions']),
+      })
+    }
+  )
+
+  server.registerTool(
+    'blueprint_for_product',
+    {
+      title: 'Blueprint for a product',
+      description:
+        'Given something you want to build, return the blueprint that produces it (manufacturing or reaction) and its material bill — from static game data, independent of what you own. The bill is adjusted for the material-efficiency modifiers you pass: blueprint ME, an engineering-complex/refinery role bonus, a material-efficiency rig, and the system security that scales the rig.',
+      inputSchema: {
+        product: z.string().min(1).describe('The item you want to build, e.g. "Nightmare", "Nitrogen Fuel Block"'),
+        ...MODIFIER_SHAPE,
+      },
+    },
+    async ({ product, ...modifiers }, extra) => {
+      const resolved = resolveOneType(product)
+      if (!resolved.ok) return textResult(resolved.message)
+
+      const bp = getBlueprintForProduct(resolved.typeID)
+      if (!bp) {
+        return textResult(
+          `"${resolved.name}" has no manufacturing or reaction blueprint (nothing builds it from materials).${
+            resolved.alsoMatched.length ? ` Other close name matches: ${resolved.alsoMatched.join(', ')}.` : ''
+          }`
+        )
+      }
+
+      const mods = await resolveModifiers(modifiers, bp.activityID, extra)
+      if (!mods.ok) return textResult(mods.message)
+
+      const names = getSdeTypeNames([bp.blueprintTypeID, bp.productTypeID, ...bp.materials.map((mat) => mat.typeID)])
+      const runs = modifiers.runs ?? 1
+      return textResult({
+        product: names[bp.productTypeID] ?? resolved.name,
+        ...(resolved.alsoMatched.length && { note: `Interpreted "${product}" as ${resolved.name}.` }),
+        blueprint: names[bp.blueprintTypeID] ?? `Type #${bp.blueprintTypeID}`,
+        activity: activityName(bp.activityID),
+        produces_per_run: bp.productQuantity,
+        produces_total: bp.productQuantity * runs,
+        modifiers: mods.echo,
+        materials: modifiedMaterials(bp, mods.costParams, names),
+      })
+    }
+  )
+
+  server.registerTool(
+    'blueprints_using_material',
+    {
+      title: 'Blueprints using a material',
+      description:
+        'Given an input material, return every blueprint (manufacturing or reaction) that consumes it — from static game data. Each entry shows how much of this material that blueprint needs after the material-efficiency modifiers you pass (blueprint ME, structure role bonus, rig, and the security that scales the rig).',
+      inputSchema: {
+        material: z.string().min(1).describe('The input material, e.g. "Tritanium", "Fernite Carbide"'),
+        ...MODIFIER_SHAPE,
+      },
+    },
+    async ({ material, ...modifiers }, extra) => {
+      const resolved = resolveOneType(material)
+      if (!resolved.ok) return textResult(resolved.message)
+
+      const blueprints = getBlueprintsForMaterial(resolved.typeID)
+      if (blueprints.length === 0) {
+        return textResult(
+          `No blueprint consumes "${resolved.name}" as an input material.${
+            resolved.alsoMatched.length ? ` Other close name matches: ${resolved.alsoMatched.join(', ')}.` : ''
+          }`
+        )
+      }
+
+      // A structure's bonuses depend on the activity, which varies per row
+      // here (manufacturing vs reaction). Resolve the structure once against
+      // each activity present so a reaction row gets the refinery role bonus
+      // and a manufacturing row the engineering-complex one.
+      const activities = [...new Set(blueprints.map((bp) => bp.activityID))]
+      const byActivity = new Map<number, Omit<ModifierParams, 'base'>>()
+      let echo: Record<string, unknown> | null = null
+      for (const activityID of activities) {
+        const mods = await resolveModifiers(modifiers, activityID, extra)
+        if (!mods.ok) return textResult(mods.message)
+        byActivity.set(activityID, mods.costParams)
+        echo = mods.echo
+      }
+
+      const names = getSdeTypeNames([
+        resolved.typeID,
+        ...blueprints.flatMap((bp) => [bp.blueprintTypeID, bp.productTypeID]),
+      ])
+      const shown = blueprints.slice(0, MAX_ROWS)
+      const rows = shown.map((bp) => {
+        // Adjust only this material's line; each blueprint's other inputs are
+        // irrelevant to "how much of X does it take".
+        const base = bp.materials.find((mat) => mat.typeID === resolved.typeID)?.quantity ?? 0
+        const [quantityRequired] = cost({ base: [base], ...byActivity.get(bp.activityID)! })
+        return {
+          product: names[bp.productTypeID] ?? `Type #${bp.productTypeID}`,
+          blueprint: names[bp.blueprintTypeID] ?? `Type #${bp.blueprintTypeID}`,
+          activity: activityName(bp.activityID),
+          quantity_per_run: base,
+          quantity_required: quantityRequired,
+        }
+      })
+
+      return textResult({
+        material: resolved.name,
+        ...(resolved.alsoMatched.length && { note: `Interpreted "${material}" as ${resolved.name}.` }),
+        total_blueprints: blueprints.length,
+        modifiers: echo,
+        blueprints: rows,
+        ...(capNote(blueprints.length, shown.length, 'blueprints') && {
+          cap_note: capNote(blueprints.length, shown.length, 'blueprints'),
+        }),
       })
     }
   )
