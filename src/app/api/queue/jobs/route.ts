@@ -52,6 +52,14 @@ const JOBS = {
     characterIds: true,
     load: async () => (await import('@/jobs/characterImplants.js')).runCharacterImplants,
   },
+  // Combined live-state job: runs character-wallet + character-location +
+  // character-implants + character-clones per character in one invocation. The
+  // four individual entries above stay for manual/backfill runs, but the cron
+  // and the /character/refresh UI dispatch this one instead.
+  'character-status': {
+    characterIds: true,
+    load: async () => (await import('@/jobs/characterStatus.js')).runCharacterStatus,
+  },
   'corp-structures': {
     characterIds: true,
     load: async () => (await import('@/jobs/corpStructures.js')).runCorpStructures,

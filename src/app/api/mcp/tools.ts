@@ -519,7 +519,9 @@ export const registerTools = (server: McpServer): void => {
 
       return textResult({
         characters,
-        data_refreshed: await dataFreshness(supabase, ['character-clones', 'character-implants', 'character-location']),
+        // Clones, implants, and location are all refreshed by the combined
+        // character-status job now (src/jobs/characterStatus.js).
+        data_refreshed: await dataFreshness(supabase, ['character-status']),
       })
     }
   )

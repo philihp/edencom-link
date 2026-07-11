@@ -5,7 +5,7 @@ import { sudoSupabase } from '../supabase.js'
 import { cli, forEachCharacter, forEachSequential } from './lib.js'
 
 const TAG = 'character-clones'
-const SCOPE = 'esi-clones.read_clones.v1'
+export const SCOPE = 'esi-clones.read_clones.v1'
 
 // GET /characters/{id}/clones/ → character_clone_over_time (SCD type 2), one
 // row per clone (the home clone plus every jump clone). Most jump clones sit
@@ -35,7 +35,7 @@ const signature = (c) =>
 // with the character's own token (403 if it can't dock — the daily
 // universe-structures job pools clone locations too, so another character's
 // token may backfill it later). Unresolvable locations stay null.
-const makeSystemResolver = () => {
+export const makeSystemResolver = () => {
   const memo = new Map()
   return async (location_id, location_type, access_token) => {
     if (memo.has(location_id)) return memo.get(location_id)
@@ -167,50 +167,58 @@ const reconcile = async (character_id, fetchedClones) => {
   return { touched: touchIds.length + retags.length, opened: inserts.length, closed: allCloseIds.length }
 }
 
+// One character's clone pull. Takes a `resolveSystem` memo (from
+// makeSystemResolver) so a whole run's clones — which cluster in the same few
+// stations/structures — resolve each location once. Exported so the combined
+// character-status job (characterStatus.js) can reuse it with a shared resolver.
+export const syncCharacterClones = async ({ access_token, characterID, character_id, ctx }, resolveSystem) => {
+  const payload = await characterClones(access_token, characterID)
+  const home = payload.home_location
+    ? [
+        {
+          is_home: true,
+          location_id: payload.home_location.location_id,
+          location_type: payload.home_location.location_type ?? null,
+          implants: [],
+        },
+      ]
+    : []
+  const jumpClones = map(
+    (c) => ({
+      is_home: false,
+      jump_clone_id: c.jump_clone_id,
+      location_id: c.location_id,
+      location_type: c.location_type ?? null,
+      name: c.name ?? null,
+      implants: c.implants ?? [],
+    }),
+    payload.jump_clones ?? []
+  )
+  const clones = [...home, ...jumpClones]
+  await forEachSequential(clones, async (c) => {
+    c.system_id = await resolveSystem(c.location_id, c.location_type, access_token)
+  })
+
+  const { error: stateErr } = await sudoSupabase.from('character_clone_state').upsert(
+    {
+      character_id,
+      last_clone_jump_date: payload.last_clone_jump_date ?? null,
+      last_station_change_date: payload.last_station_change_date ?? null,
+      recorded_at: new Date().toISOString(),
+    },
+    { onConflict: 'character_id' }
+  )
+  if (stateErr) throw stateErr
+
+  const { touched, opened, closed } = await reconcile(character_id, clones)
+  console.log(`[${TAG}] ${ctx}: ${touched} unchanged, ${opened} opened, ${closed} closed`)
+}
+
 export const runCharacterClones = ({ characterIds } = {}) => {
   const resolveSystem = makeSystemResolver()
-  return forEachCharacter(TAG, { scope: SCOPE, characterIds }, async ({ access_token, characterID, character_id, ctx }) => {
-    const payload = await characterClones(access_token, characterID)
-    const home = payload.home_location
-      ? [
-          {
-            is_home: true,
-            location_id: payload.home_location.location_id,
-            location_type: payload.home_location.location_type ?? null,
-            implants: [],
-          },
-        ]
-      : []
-    const jumpClones = map(
-      (c) => ({
-        is_home: false,
-        jump_clone_id: c.jump_clone_id,
-        location_id: c.location_id,
-        location_type: c.location_type ?? null,
-        name: c.name ?? null,
-        implants: c.implants ?? [],
-      }),
-      payload.jump_clones ?? []
-    )
-    const clones = [...home, ...jumpClones]
-    await forEachSequential(clones, async (c) => {
-      c.system_id = await resolveSystem(c.location_id, c.location_type, access_token)
-    })
-
-    const { error: stateErr } = await sudoSupabase.from('character_clone_state').upsert(
-      {
-        character_id,
-        last_clone_jump_date: payload.last_clone_jump_date ?? null,
-        last_station_change_date: payload.last_station_change_date ?? null,
-        recorded_at: new Date().toISOString(),
-      },
-      { onConflict: 'character_id' }
-    )
-    if (stateErr) throw stateErr
-
-    const { touched, opened, closed } = await reconcile(character_id, clones)
-    console.log(`[${TAG}] ${ctx}: ${touched} unchanged, ${opened} opened, ${closed} closed`)
-  })
+  return forEachCharacter(TAG, { scope: SCOPE, characterIds }, (handlerCtx) =>
+    syncCharacterClones(handlerCtx, resolveSystem)
+  )
 }
 
 cli(import.meta.url, TAG, runCharacterClones)
