@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { createClient } from '@/utils/supabase/server'
-import { indexesFlag } from '@/flags'
+import { indexesFlag, mercenaryDensFlag } from '@/flags'
 import { Freshness } from '../Freshness'
 import styles from './header.module.css'
 
@@ -40,7 +40,7 @@ const Header = async () => {
     lastRefreshedAt = latestBeat?.ended_at ?? null
   }
 
-  const showIndexes = await indexesFlag()
+  const [showIndexes, showMercenaryDens] = await Promise.all([indexesFlag(), mercenaryDensFlag()])
   return (
     <header>
       <div className={styles.bar}>
@@ -71,6 +71,12 @@ const Header = async () => {
               {showIndexes && (
                 <>
                   <Link href="/indexes">indexes</Link>
+                  <span className={styles.sep}>|</span>
+                </>
+              )}
+              {showMercenaryDens && (
+                <>
+                  <Link href="/mercenary-dens">mercenary&nbsp;dens</Link>
                   <span className={styles.sep}>|</span>
                 </>
               )}
