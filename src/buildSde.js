@@ -12,6 +12,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 const TYPES_OUTPUT_PATH = join(__dirname, 'generated', 'sdeTypes.json')
 const SYSTEMS_OUTPUT_PATH = join(__dirname, 'generated', 'sdeSystems.json')
 const STATIONS_OUTPUT_PATH = join(__dirname, 'generated', 'sdeStations.json')
+const BLUEPRINTS_OUTPUT_PATH = join(__dirname, 'generated', 'sdeBlueprints.json')
 
 // Fuzzwork republishes CCP's SDE as flat CSVs, refreshed shortly after each
 // game patch — much smaller and faster to fetch than CCP's own multi-file zip.
@@ -19,6 +20,8 @@ const TYPES_URL = 'https://www.fuzzwork.co.uk/dump/latest/csv/invTypes.csv'
 const GROUPS_URL = 'https://www.fuzzwork.co.uk/dump/latest/csv/invGroups.csv'
 const SYSTEMS_URL = 'https://www.fuzzwork.co.uk/dump/latest/csv/mapSolarSystems.csv'
 const STATIONS_URL = 'https://www.fuzzwork.co.uk/dump/latest/csv/staStations.csv'
+const BLUEPRINT_PRODUCTS_URL = 'https://www.fuzzwork.co.uk/dump/latest/csv/industryActivityProducts.csv'
+const BLUEPRINT_MATERIALS_URL = 'https://www.fuzzwork.co.uk/dump/latest/csv/industryActivityMaterials.csv'
 
 // Minimal RFC 4180 CSV parser: invTypes' description column embeds raw commas
 // and newlines inside quoted fields, so a naive line/comma split corrupts rows.
@@ -124,12 +127,58 @@ const buildStations = async () => {
   console.log(`sde: wrote ${out.length} stations to ${STATIONS_OUTPUT_PATH}`)
 }
 
+// EVE industry activity ids we model as "consume materials → produce output":
+// manufacturing and reactions. Invention (8), copying (5), and research (3/4)
+// are deliberately excluded — they don't turn a material bill into a product
+// the way the eve-industry cost modifiers assume.
+const MANUFACTURING = 1
+const REACTION = 11
+const BLUEPRINT_ACTIVITIES = new Set([MANUFACTURING, REACTION])
+
+const buildBlueprints = async () => {
+  console.log('sde: downloading industryActivityProducts/Materials from the SDE…')
+  const [products, materials] = await Promise.all([
+    fetchRecords(BLUEPRINT_PRODUCTS_URL),
+    fetchRecords(BLUEPRINT_MATERIALS_URL),
+  ])
+
+  // Group materials by "<blueprintTypeID>:<activityID>" so each blueprint's
+  // input bill is assembled in one pass rather than re-scanning per product.
+  const key = (typeID, activityID) => `${typeID}:${activityID}`
+  const materialsByActivity = new Map()
+  for (const m of materials) {
+    const activityID = Number(m.activityID)
+    if (!BLUEPRINT_ACTIVITIES.has(activityID)) continue
+    const k = key(m.typeID, m.activityID)
+    const list = materialsByActivity.get(k) ?? []
+    list.push([Number(m.materialTypeID), Number(m.quantity)])
+    materialsByActivity.set(k, list)
+  }
+
+  // One tuple per (blueprint, activity) that yields a product:
+  // [blueprintTypeID, activityID, productTypeID, productQuantity, [[matTypeID, qty], …]]
+  const out = products
+    .filter((p) => BLUEPRINT_ACTIVITIES.has(Number(p.activityID)))
+    .map((p) => [
+      Number(p.typeID),
+      Number(p.activityID),
+      Number(p.productTypeID),
+      Number(p.quantity),
+      (materialsByActivity.get(key(p.typeID, p.activityID)) ?? []).sort((a, b) => a[0] - b[0]),
+    ])
+    .sort((a, b) => a[2] - b[2] || a[0] - b[0])
+
+  await writeFile(BLUEPRINTS_OUTPUT_PATH, JSON.stringify(out))
+  console.log(`sde: wrote ${out.length} blueprints to ${BLUEPRINTS_OUTPUT_PATH}`)
+}
+
 const run = async () => {
   const force = process.argv.includes('--force')
   const artifacts = [
     [TYPES_OUTPUT_PATH, buildTypes],
     [SYSTEMS_OUTPUT_PATH, buildSystems],
     [STATIONS_OUTPUT_PATH, buildStations],
+    [BLUEPRINTS_OUTPUT_PATH, buildBlueprints],
   ]
 
   await mkdir(dirname(TYPES_OUTPUT_PATH), { recursive: true })
