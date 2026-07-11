@@ -1,4 +1,5 @@
 import { orders } from '../esi.js'
+import { recordEsiConditional } from '../observability.js'
 import { getEsiEtag, putEsiEtag, sudoSupabase } from '../supabase.js'
 import { cli, forEachCharacter } from './lib.js'
 
@@ -15,8 +16,19 @@ const SCOPE = 'esi-markets.read_character_orders.v1'
 export const runCharacterOrders = ({ characterIds } = {}) =>
   forEachCharacter(TAG, { scope: SCOPE, characterIds }, async ({ access_token, characterID, character_id, name }) => {
     const cacheKey = `${TAG}:${character_id}`
-    const { status, json: fetched, etag } = await orders(access_token, characterID, await getEsiEtag(cacheKey))
+    const priorEtag = await getEsiEtag(cacheKey)
+    const t0 = Date.now()
+    const { status, json: fetched, etag } = await orders(access_token, characterID, priorEtag)
+    const durationMs = Date.now() - t0
     if (status === 304) {
+      recordEsiConditional({
+        job: TAG,
+        characterId: character_id,
+        characterName: name,
+        outcome: 'not_modified',
+        conditional: true,
+        durationMs,
+      })
       console.log(`[${TAG}] ${name} ${character_id} (${characterID}): not modified`)
       return
     }
@@ -59,6 +71,15 @@ export const runCharacterOrders = ({ characterIds } = {}) =>
     // Store the ETag only after the reconcile committed, so a mid-run failure
     // never leaves us skipping a fetch whose data we didn't persist.
     await putEsiEtag(cacheKey, etag)
+    recordEsiConditional({
+      job: TAG,
+      characterId: character_id,
+      characterName: name,
+      outcome: 'modified',
+      conditional: priorEtag != null,
+      rows: fetched.length,
+      durationMs,
+    })
     console.log(`[${TAG}] ${name} ${character_id} (${characterID}): ${fetched.length} open`)
   })
 
