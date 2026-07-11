@@ -115,64 +115,89 @@ type Msg = {
 
 // A thrown error fails the callback, so the Vercel queue retries the message
 // (per retryAfterSeconds in vercel.json).
+// Log this invocation's memory footprint to the console. Called from a `finally`
+// so it prints on every exit path (success, throw, tracked, untracked) — the
+// point is to see what the job actually needs so the function's `memory` limit
+// (vercel.json) can be sized against real usage rather than guessed. `maxRSS`
+// (process.resourceUsage) is the peak resident set size in KB on Linux; under
+// Vercel Fluid Compute the instance is reused across messages, so it's the
+// high-water mark for the whole worker, which is exactly the number to compare
+// against the configured limit.
+const mb = (bytes: number) => Math.round((bytes / 1024 / 1024) * 10) / 10
+const logMemoryUsage = (job: string) => {
+  const mem = process.memoryUsage()
+  const peakRssMb = Math.round((process.resourceUsage().maxRSS / 1024) * 10) / 10
+  console.log(
+    `[queue/jobs] mem job=${job} rss=${mb(mem.rss)}MB heapUsed=${mb(mem.heapUsed)}MB external=${mb(
+      mem.external
+    )}MB peakRss=${peakRssMb}MB`
+  )
+}
+
+// A thrown error fails the callback, so the Vercel queue retries the message
+// (per retryAfterSeconds in vercel.json).
 export const POST = handleCallback(async (message: Msg) => {
   const { job, characterId, characterIds, taskId } = message
   const ids = characterIds ?? (characterId != null ? [characterId] : undefined)
   console.log(`[queue/jobs] consume job=${job} characterIds=${ids?.join(',') ?? '-'} taskId=${taskId ?? '-'}`)
 
-  const entry = JOBS[job]
-  if (!entry) throw new Error(`unknown job: ${String(job)}`)
+  try {
+    const entry = JOBS[job]
+    if (!entry) throw new Error(`unknown job: ${String(job)}`)
 
-  const runJob = async () => {
-    const run = await entry.load()
-    if (entry.characterIds) {
-      await run(ids ? { characterIds: ids } : undefined)
+    const runJob = async () => {
+      const run = await entry.load()
+      if (entry.characterIds) {
+        await run(ids ? { characterIds: ids } : undefined)
+        return
+      }
+      // Account-wide jobs consume a single whole-job message, so the consumer records
+      // their heartbeat here. Per-character/per-corp jobs record their own instead,
+      // one row per character/corp attributed via character_id/corporation_id/user_id
+      // (see withHeartbeat in src/jobs/lib.js), regardless of whether this queue or a
+      // GitHub Actions cron invoked them.
+      const { recordHeartbeat } = await import('@/supabase.js')
+      const runId = randomInt(1, 2 ** 48)
+      await recordHeartbeat(job, 'start', { runId, source: 'vercel' })
+      try {
+        await run()
+      } finally {
+        await recordHeartbeat(job, 'end', { runId, source: 'vercel' })
+      }
+    }
+
+    // Not part of a tracked "Refresh ESI" run: just run it, letting a throw retry.
+    if (taskId == null) {
+      await runJob()
       return
     }
-    // Account-wide jobs consume a single whole-job message, so the consumer records
-    // their heartbeat here. Per-character/per-corp jobs record their own instead,
-    // one row per character/corp attributed via character_id/corporation_id/user_id
-    // (see withHeartbeat in src/jobs/lib.js), regardless of whether this queue or a
-    // GitHub Actions cron invoked them.
-    const { recordHeartbeat } = await import('@/supabase.js')
-    const runId = randomInt(1, 2 ** 48)
-    await recordHeartbeat(job, 'start', { runId, source: 'vercel' })
+
+    // Tracked: record status on the refresh_task row. Best-effort — a failure is
+    // recorded and swallowed rather than rethrown, so the queue doesn't retry it and
+    // the page settles on a terminal state the user can see.
+    const { sudoSupabase } = await import('@/supabase.js')
+    await sudoSupabase
+      .from('refresh_task')
+      .update({ status: 'running', started_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+      .eq('id', taskId)
     try {
-      await run()
-    } finally {
-      await recordHeartbeat(job, 'end', { runId, source: 'vercel' })
+      await runJob()
+      await sudoSupabase
+        .from('refresh_task')
+        .update({ status: 'done', ended_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+        .eq('id', taskId)
+    } catch (e) {
+      await sudoSupabase
+        .from('refresh_task')
+        .update({
+          status: 'error',
+          ended_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          error: String(e instanceof Error ? e.message : e).slice(0, 500),
+        })
+        .eq('id', taskId)
     }
-  }
-
-  // Not part of a tracked "Refresh ESI" run: just run it, letting a throw retry.
-  if (taskId == null) {
-    await runJob()
-    return
-  }
-
-  // Tracked: record status on the refresh_task row. Best-effort — a failure is
-  // recorded and swallowed rather than rethrown, so the queue doesn't retry it and
-  // the page settles on a terminal state the user can see.
-  const { sudoSupabase } = await import('@/supabase.js')
-  await sudoSupabase
-    .from('refresh_task')
-    .update({ status: 'running', started_at: new Date().toISOString(), updated_at: new Date().toISOString() })
-    .eq('id', taskId)
-  try {
-    await runJob()
-    await sudoSupabase
-      .from('refresh_task')
-      .update({ status: 'done', ended_at: new Date().toISOString(), updated_at: new Date().toISOString() })
-      .eq('id', taskId)
-  } catch (e) {
-    await sudoSupabase
-      .from('refresh_task')
-      .update({
-        status: 'error',
-        ended_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        error: String(e instanceof Error ? e.message : e).slice(0, 500),
-      })
-      .eq('id', taskId)
+  } finally {
+    logMemoryUsage(job)
   }
 })
