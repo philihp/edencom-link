@@ -1,0 +1,104 @@
+.pageHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12pt;
+}
+
+.pageHeader h1 {
+  margin: 0;
+}
+
+.subtitle {
+  color: var(--ink-soft);
+  margin-top: 4pt;
+}
+
+/* Network topology diagram — scales to the container, capped so it doesn't
+ * balloon on wide screens. */
+.topology {
+  display: block;
+  width: 100%;
+  max-width: 640px;
+  height: auto;
+  margin: 8pt 0 4pt;
+}
+
+.edge {
+  stroke: var(--line);
+  stroke-width: 2;
+}
+
+.nodeBox {
+  fill: var(--paper-raised);
+  stroke: var(--line);
+  stroke-width: 1.5;
+}
+
+.nodeLabel {
+  fill: var(--ink);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+/* The staging system stands apart with the indigo accent. */
+.nodeStaging .nodeBox {
+  fill: var(--accent-tint);
+  stroke: var(--accent);
+}
+
+.nodeStaging .nodeLabel {
+  fill: var(--accent-strong);
+  font-weight: 600;
+}
+
+.table {
+  border-collapse: collapse;
+  margin-top: 8pt;
+}
+
+.table th {
+  text-align: left;
+  font-size: 9pt;
+  color: var(--ink-soft);
+  padding: 2pt 8pt;
+}
+
+.table td {
+  padding: 2pt 8pt;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.table tbody tr:hover {
+  background: color-mix(in srgb, currentColor 6%, transparent);
+}
+
+.system {
+  font-weight: 600;
+}
+
+.planet {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.empty {
+  color: var(--ink-faint);
+}
+
+/* A den currently in its reinforcement timer — flagged in a warm alert color. */
+.reinforced {
+  color: #c0392b;
+  font-weight: 600;
+}
+
+@media (prefers-color-scheme: dark) {
+  .reinforced {
+    color: #ff6b5e;
+  }
+}
+
+.stable {
+  color: var(--ink-soft);
+}
