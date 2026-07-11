@@ -3,17 +3,16 @@ import { randomUUID } from 'node:crypto'
 import { forEach, reduce } from 'ramda'
 
 // The per-character ESI extracts a refresh fans out, one queue message per
-// character each. Each job is named after the ESI endpoint it extracts.
+// character each. Most are named after the ESI endpoint they extract;
+// character-status is the combined live-state job that pulls wallet, location,
+// implants, and clones in one invocation (see src/jobs/characterStatus.js).
 export const PER_CHARACTER_JOBS = [
   'character-assets',
   'character-blueprints',
   'character-orders',
-  'character-wallet',
   'character-wallet-transactions',
   'character-industry-jobs',
-  'character-location',
-  'character-clones',
-  'character-implants',
+  'character-status',
 ] as const
 
 // Corp-scoped jobs pull one corp's whole asset/job/transaction set. Fanning one

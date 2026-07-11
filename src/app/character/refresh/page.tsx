@@ -19,12 +19,11 @@ const CHARACTER_JOBS = [
   ['character-assets', 'assets'],
   ['character-blueprints', 'blueprints'],
   ['character-orders', 'orders'],
-  ['character-wallet', 'wallet'],
   ['character-wallet-transactions', 'transactions'],
   ['character-industry-jobs', 'industry'],
-  ['character-location', 'location'],
-  ['character-clones', 'clones'],
-  ['character-implants', 'implants'],
+  // Combined live-state job: wallet, location, implants, and clones in one pull
+  // (see src/jobs/characterStatus.js).
+  ['character-status', 'status'],
 ] as const
 
 // The corp-scoped extracts that can be kicked on demand. Each runs once per
@@ -212,8 +211,8 @@ const RefreshPage = async () => {
       <h1>Refresh ESI</h1>
       <p>
         Extracts run on their own schedule (every 6 hours for most, daily for corp assets and affiliations); nothing
-        starts just by opening this page. A cell shows when its job last ran — green within 15 minutes, yellow within
-        6 hours, red beyond that — and stale cells can be refreshed one at a time.
+        starts just by opening this page. A cell shows when its job last ran — green within 15 minutes, yellow within 6
+        hours, red beyond that — and stale cells can be refreshed one at a time.
       </p>
 
       {registrations.length === 0 ? (

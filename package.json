@@ -41,6 +41,7 @@
     "character-location": "node src/jobs/characterLocation.js",
     "character-clones": "node src/jobs/characterClones.js",
     "character-implants": "node src/jobs/characterImplants.js",
+    "character-status": "node src/jobs/characterStatus.js",
     "character-affiliations": "node src/jobs/characterAffiliations.js",
     "corp-structures": "node src/jobs/corpStructures.js",
     "corp-assets": "node src/jobs/corpAssets.js",

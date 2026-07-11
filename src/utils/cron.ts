@@ -45,6 +45,20 @@ export const fanOutPerCharacterCronJob = async (job: string, scope: string) => {
   return characterIds.length
 }
 
+// Same fan-out as fanOutPerCharacterCronJob, but for a job that fronts several
+// endpoints with different scopes (character-status): enumerate every character
+// carrying *any* of `scopes` (selectCharacterIdsWithScopes already unions them)
+// and send one message each. The consumer's handler
+// (forEachCharacterAnyScope) then runs only the endpoints each token is
+// authorized for.
+export const fanOutPerCharacterAnyScopeCronJob = async (job: string, scopes: string[]) => {
+  const { selectCharacterIdsWithScopes } = await import('@/supabase.js')
+  const { send } = await import('@/utils/queue')
+  const characterIds = await selectCharacterIdsWithScopes(scopes)
+  await Promise.all(characterIds.map((characterId) => send('jobs', { job, characterId })))
+  return characterIds.length
+}
+
 // For the corp-scoped extract jobs (corp-assets, corp-industry-jobs,
 // corp-wallet-transactions): fanning out one message per character, like
 // fanOutPerCharacterCronJob, can enqueue two *concurrent* messages for the same

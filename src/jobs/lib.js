@@ -45,15 +45,9 @@ const withHeartbeat = async (tag, owner, fn) => {
 export const forEachSequential = (items, fn) =>
   reduce((settled, item) => settled.then(() => fn(item)), Promise.resolve(), items)
 
-// Iterate the tokens that carry `scope`, calling handler once per token with
-// { access_token, characterID, character_id, userId, name, ctx }. `characterID`
-// is the EVE character id from the token; `character_id` is the registration
-// uuid. Each call is wrapped in a start/end heartbeat attributed to that
-// character (job/character_id/user_id), unless `heartbeat: false` — set by
-// forEachCorporation, which records its own corp-attributed heartbeat instead
-// so a corp job doesn't get two rows (one bare-character, one per-corp) for
-// the same unit of work.
-export const forEachCharacter = async (tag, { scope, characterIds, heartbeat = true }, handler) => {
+// Load the registration id -> name / user_id maps once per run, shared by the
+// token loops below. Throws on a lookup failure.
+const loadCharacterMaps = async (tag) => {
   const { data: characters, error: charactersError } = await sudoSupabase
     .from('registration')
     .select('id, name, user_id')
@@ -61,8 +55,62 @@ export const forEachCharacter = async (tag, { scope, characterIds, heartbeat = t
     console.error(`[${tag}] character lookup failed:`, charactersError)
     throw charactersError
   }
-  const characterName = new Map((characters ?? []).map((c) => [c.id, c.name]))
-  const characterUserId = new Map((characters ?? []).map((c) => [c.id, c.user_id]))
+  return {
+    characterName: new Map((characters ?? []).map((c) => [c.id, c.name])),
+    characterUserId: new Map((characters ?? []).map((c) => [c.id, c.user_id])),
+  }
+}
+
+// The shared token loop: refresh each token, guard its refreshed scope with
+// `hasScope(freshScope)`, and call `handler` with the token context (plus the
+// fresh scope list, so a handler covering several endpoints can pick which to
+// run per token). Each call is wrapped in a start/end heartbeat attributed to
+// that character (job/character_id/user_id), unless `heartbeat: false`. A
+// failing token is logged and skipped so one bad token never aborts the rest.
+const runTokenLoop = async (tag, tokens, { characterName, characterUserId, heartbeat }, hasScope, handler) => {
+  await forEachSequential(tokens ?? [], async (tokenRow) => {
+    const name = characterName.get(tokenRow.character_id) ?? '?'
+    const userId = characterUserId.get(tokenRow.character_id) ?? null
+    const ctx = `character=${name} (${tokenRow.character_id}) token=${tokenRow.id}`
+    const t0 = Date.now()
+    try {
+      const { access_token, characterID, scope: freshScope } = await refreshAccessToken(tokenRow)
+      if (!hasScope(freshScope)) {
+        console.error(`[${tag}] ${ctx}: refreshed token no longer carries the required scope, skipping`)
+        return
+      }
+      const run = () =>
+        handler({
+          access_token,
+          characterID,
+          character_id: tokenRow.character_id,
+          userId,
+          name,
+          ctx,
+          scopes: freshScope,
+        })
+      if (heartbeat) {
+        await withHeartbeat(tag, { characterId: tokenRow.character_id, userId }, run)
+      } else {
+        await run()
+      }
+    } catch (e) {
+      const dt = Date.now() - t0
+      console.error(`[${tag}] ${ctx}: FAILED after ${dt}ms name=${e?.name} message=${e?.message}\n${e?.stack ?? e}`)
+    }
+  })
+}
+
+// Iterate the tokens that carry `scope`, calling handler once per token with
+// { access_token, characterID, character_id, userId, name, ctx, scopes }.
+// `characterID` is the EVE character id from the token; `character_id` is the
+// registration uuid. Each call is wrapped in a start/end heartbeat attributed
+// to that character (job/character_id/user_id), unless `heartbeat: false` — set
+// by forEachCorporation, which records its own corp-attributed heartbeat instead
+// so a corp job doesn't get two rows (one bare-character, one per-corp) for
+// the same unit of work.
+export const forEachCharacter = async (tag, { scope, characterIds, heartbeat = true }, handler) => {
+  const { characterName, characterUserId } = await loadCharacterMaps(tag)
 
   let tokenQuery = sudoSupabase.from('token').select('id, character_id, refresh_token').contains('scope', [scope])
   if (characterIds) tokenQuery = tokenQuery.in('character_id', characterIds)
@@ -74,28 +122,34 @@ export const forEachCharacter = async (tag, { scope, characterIds, heartbeat = t
 
   console.log(`[${tag}] found ${tokens?.length ?? 0} token(s) with ${scope}`)
 
-  await forEachSequential(tokens ?? [], async (tokenRow) => {
-    const name = characterName.get(tokenRow.character_id) ?? '?'
-    const userId = characterUserId.get(tokenRow.character_id) ?? null
-    const ctx = `character=${name} (${tokenRow.character_id}) token=${tokenRow.id}`
-    const t0 = Date.now()
-    try {
-      const { access_token, characterID, scope: freshScope } = await refreshAccessToken(tokenRow)
-      if (!freshScope.includes(scope)) {
-        console.error(`[${tag}] ${ctx}: refreshed token no longer has ${scope}, skipping`)
-        return
-      }
-      const run = () => handler({ access_token, characterID, character_id: tokenRow.character_id, userId, name, ctx })
-      if (heartbeat) {
-        await withHeartbeat(tag, { characterId: tokenRow.character_id, userId }, run)
-      } else {
-        await run()
-      }
-    } catch (e) {
-      const dt = Date.now() - t0
-      console.error(`[${tag}] ${ctx}: FAILED after ${dt}ms name=${e?.name} message=${e?.message}\n${e?.stack ?? e}`)
-    }
-  })
+  await runTokenLoop(tag, tokens, { characterName, characterUserId, heartbeat }, (s) => s.includes(scope), handler)
+}
+
+// Like forEachCharacter, but for a job that fronts several ESI endpoints with
+// *different* scopes (see characterStatus.js). Selects every token carrying at
+// least one of `scopes` (Postgres array overlap), and passes the token's fresh
+// scope list to the handler as `scopes` so it can run only the endpoints that
+// token is actually authorized for. One heartbeat per character, under `tag`.
+export const forEachCharacterAnyScope = async (tag, { scopes, characterIds, heartbeat = true }, handler) => {
+  const { characterName, characterUserId } = await loadCharacterMaps(tag)
+
+  let tokenQuery = sudoSupabase.from('token').select('id, character_id, refresh_token').overlaps('scope', scopes)
+  if (characterIds) tokenQuery = tokenQuery.in('character_id', characterIds)
+  const { data: tokens, error } = await tokenQuery
+  if (error) {
+    console.error(`[${tag}] token lookup failed:`, error)
+    throw error
+  }
+
+  console.log(`[${tag}] found ${tokens?.length ?? 0} token(s) with any of [${scopes.join(', ')}]`)
+
+  await runTokenLoop(
+    tag,
+    tokens,
+    { characterName, characterUserId, heartbeat },
+    (s) => scopes.some((scope) => s.includes(scope)),
+    handler
+  )
 }
 
 // Iterate the corporations reachable through tokens carrying `scope`, calling

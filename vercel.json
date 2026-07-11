@@ -18,8 +18,8 @@
       "schedule": "37 */6 * * *"
     },
     {
-      "path": "/api/cron/character-wallet",
-      "schedule": "44 */6 * * *"
+      "path": "/api/cron/character-status",
+      "schedule": "14 */6 * * *"
     },
     {
       "path": "/api/cron/character-wallet-transactions",
@@ -32,18 +32,6 @@
     {
       "path": "/api/cron/character-industry-jobs",
       "schedule": "48 */6 * * *"
-    },
-    {
-      "path": "/api/cron/character-location",
-      "schedule": "14 */6 * * *"
-    },
-    {
-      "path": "/api/cron/character-implants",
-      "schedule": "16 */6 * * *"
-    },
-    {
-      "path": "/api/cron/character-clones",
-      "schedule": "18 */6 * * *"
     },
     {
       "path": "/api/cron/corp-wallet-transactions",
