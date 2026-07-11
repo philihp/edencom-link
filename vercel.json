@@ -81,6 +81,7 @@
   "functions": {
     "src/app/api/queue/jobs/route.ts": {
       "maxDuration": 60,
+      "memory": 512,
       "experimentalTriggers": [
         {
           "type": "queue/v2beta",
