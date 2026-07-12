@@ -207,6 +207,16 @@ export const characterImplants = (access_token, characterID) =>
     label: `implants ${characterID}`,
   })
 
+// The ship the character is currently in — { ship_item_id, ship_name,
+// ship_type_id }. This is the item_id of whichever ship the character is
+// presently sitting in, docked or not, distinguishing it from any other ship
+// the character owns that happens to be parked at the same location.
+export const characterShip = (access_token, characterID) =>
+  esiJson(`/characters/${characterID}/ship/`, {
+    access_token,
+    label: `ship ${characterID}`,
+  })
+
 export const characterAffiliations = (ids) =>
   esiJson(`/characters/affiliation/`, {
     method: 'POST',

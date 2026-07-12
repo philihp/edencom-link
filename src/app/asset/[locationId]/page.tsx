@@ -91,7 +91,21 @@ const AssetLocationPage = async ({
     .select('item_id, corporation_id, type_id, location_id, location_flag, location_type, quantity, is_singleton')
     .eq('location_id', locationId)
   if (corpScope) corpQuery = corpQuery.in('corporation_id', corpScope)
-  const [{ data: characterChildren }, { data: corpChildren }] = await Promise.all([characterQuery, corpQuery])
+  // A character's currently-piloted ship reports its location as wherever it's
+  // docked — physically indistinguishable from any other ship parked there —
+  // so it otherwise shows up as an ordinary item in that station's listing.
+  // Still shown (it belongs here from the DB's point of view), but flagged so
+  // the UI can tell it apart from a ship that's merely parked.
+  let currentShipQuery = supabase.from('character_ship').select('ship_item_id')
+  if (characterScope) currentShipQuery = currentShipQuery.in('character_id', characterScope)
+  const [{ data: characterChildren }, { data: corpChildren }, { data: currentShips }] = await Promise.all([
+    characterQuery,
+    corpQuery,
+    currentShipQuery,
+  ])
+  const currentShipItemIds = new Set(
+    ((currentShips ?? []) as { ship_item_id: number | string }[]).map((s) => String(s.ship_item_id))
+  )
   const rootItems: Asset[] = [
     ...((characterChildren ?? []) as CharacterAsset[]).map(({ character_id, ...a }) => ({
       ...a,
@@ -243,6 +257,7 @@ const AssetLocationPage = async ({
         isSingleton: a.is_singleton,
         flag: a.location_flag,
         contents,
+        isCurrentShip: currentShipItemIds.has(String(a.item_id)),
         href: scope ? null : isShip(a.type_id) ? `/ship/${a.item_id}` : contents > 0 ? `/asset/${a.item_id}` : null,
       }
     })

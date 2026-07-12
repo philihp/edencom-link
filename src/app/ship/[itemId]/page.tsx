@@ -153,6 +153,7 @@ const ShipPage = async ({
         isSingleton: c.is_singleton,
         flag: c.location_flag,
         contents,
+        isCurrentShip: false,
         href: isShip(c.type_id) ? `/ship/${c.item_id}` : contents > 0 ? `/asset/${c.item_id}` : null,
       }
     })
@@ -263,6 +264,7 @@ const SharedShipPage = async ({ itemId, token }: { itemId: string; token: string
       isSingleton: c.is_singleton,
       flag: c.location_flag,
       contents: 0,
+      isCurrentShip: false,
       href: null,
     }))
     .sort((a, b) => a.typeId - b.typeId)
