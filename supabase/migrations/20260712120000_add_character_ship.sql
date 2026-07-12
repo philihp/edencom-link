@@ -1,9 +1,11 @@
 -- Character's currently-piloted ship (ESI /characters/{id}/ship/), used to
 -- tag the character's current ship in a station's asset listing — otherwise
--- it's indistinguishable from any other ship parked there. Which ship (and
--- its player-given name) changes over a character's life, so this mirrors
--- the character_asset_over_time / character_clone_over_time SCD Type 2
--- pattern rather than being a plain live upsert.
+-- it's indistinguishable from any other ship parked there. Which ship changes
+-- over a character's life, so this mirrors the character_asset_over_time /
+-- character_clone_over_time SCD Type 2 pattern rather than being a plain live
+-- upsert. A row's identity is ship_item_id alone (stable while the ship stays
+-- assembled; repackaging destroys it): switching ships closes the open row
+-- and opens a new one, renaming just updates the open row's ship_name.
 
 create table public.character_ship_over_time (
   id bigint generated always as identity primary key,

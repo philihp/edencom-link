@@ -941,11 +941,13 @@ grant all    on public.character_implant to service_role;
 -- that ship reports its location as the station it last docked at,
 -- physically indistinguishable from any other ship parked there. Used to tag
 -- the character's current ship in a station's asset listing. A character can
--- only be in one ship at a time, but which ship (and its player-given name)
--- changes over a character's life, so this mirrors the
--- character_asset_over_time / character_clone_over_time SCD Type 2 pattern
--- rather than being a plain live upsert: switching ships or renaming the
--- current one closes the open row and opens a new one.
+-- only be in one ship at a time, but which ship changes over a character's
+-- life, so this mirrors the character_asset_over_time /
+-- character_clone_over_time SCD Type 2 pattern rather than being a plain live
+-- upsert. A row's identity is ship_item_id alone — stable for as long as the
+-- ship stays assembled (repackaging destroys it) — so switching ships closes
+-- the open row and opens a new one, while renaming the current ship just
+-- updates the open row's ship_name in place.
 create table public.character_ship_over_time (
   id bigint generated always as identity primary key,
   character_id uuid not null references public.registration(id) on delete cascade,

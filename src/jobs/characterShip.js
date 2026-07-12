@@ -7,16 +7,16 @@ export const SCOPE = 'esi-location.read_ship_type.v1'
 
 // GET /characters/{id}/ship/ → character_ship_over_time (SCD type 2): the
 // ship the character is currently in, docked or not. A character can only be
-// in one ship at a time, but which ship (and its player-given name) changes
-// over a character's life, so this tracks history the same way
-// character_asset_over_time does, just with a single open row per character
-// instead of one per item.
-
-// The tracked attributes that define a version of the character's current
-// ship. Any difference — a different ship, or the current one renamed —
-// closes the open row and opens a new one, mirroring character_asset_over_time's
-// signature.
-const signature = (s) => JSON.stringify([Number(s.ship_item_id), Number(s.ship_type_id), s.ship_name ?? null])
+// in one ship at a time, but which ship changes over a character's life, so
+// this tracks history the same way character_asset_over_time does, just with
+// a single open row per character instead of one per item.
+//
+// A row's identity is the ship's item_id alone: an assembled (singleton)
+// ship keeps its item_id for as long as it stays assembled — repackaging
+// destroys it and re-assembling issues a new one — so "same item_id" means
+// "same physical ship". Renaming the ship doesn't open a new row; the open
+// row's ship_name is updated in place (like the clones job backfilling
+// system_id), so the history reads as one stint per ship, not per name.
 
 const fetchCurrentRow = async (character_id) => {
   const { data, error } = await sudoSupabase
@@ -30,16 +30,18 @@ const fetchCurrentRow = async (character_id) => {
 }
 
 // Reconcile the freshly fetched ship against the character's current (open)
-// row: unchanged extends last_seen_at; a different ship or a rename closes
-// the old row (if any) and opens a new one.
+// row: the same ship extends last_seen_at (refreshing ship_name in place if
+// it was renamed); a different ship closes the old row (if any) and opens a
+// new one.
 const reconcile = async (character_id, fetchedShip) => {
   const current = await fetchCurrentRow(character_id)
   const now = new Date().toISOString()
 
-  if (current && signature(current) === signature(fetchedShip)) {
+  if (current && Number(current.ship_item_id) === Number(fetchedShip.ship_item_id)) {
+    const renamed = (current.ship_name ?? null) !== (fetchedShip.ship_name ?? null)
     const { error } = await sudoSupabase
       .from('character_ship_over_time')
-      .update({ last_seen_at: now })
+      .update({ last_seen_at: now, ...(renamed ? { ship_name: fetchedShip.ship_name ?? null } : {}) })
       .eq('id', current.id)
     if (error) throw error
     return false
