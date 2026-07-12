@@ -19,6 +19,10 @@ export type ItemRow = {
   isSingleton: boolean | null
   flag: string | null
   contents: number
+  // True for the ship this row's owner is presently piloting (docked or not).
+  // ESI reports it at wherever it's docked, indistinguishable from any other
+  // ship parked there, so the UI tags it instead of hiding it.
+  isCurrentShip: boolean
   // Where clicking the item goes: /ship/[id] for ships, /asset/[id] for
   // containers with contents, null for plain stacks (no link). Computed
   // server-side, where the SDE category lookup lives.
@@ -68,6 +72,7 @@ export const LocationAssets = ({ rows, owners, typeNamesPromise }: LocationAsset
                   ) : (
                     <TypeName id={row.typeId} name={row.name} promise={typeNamesPromise} />
                   )}
+                  {row.isCurrentShip && <span className={styles.badge}>current ship</span>}
                 </td>
                 <td className={retro.num}>{row.isSingleton ? '—' : <Quantity value={row.quantity} />}</td>
                 <td>{row.flag ?? '—'}</td>

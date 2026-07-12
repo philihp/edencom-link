@@ -80,3 +80,13 @@
   color: var(--ink-soft);
   white-space: nowrap;
 }
+
+.badge {
+  margin-left: 8pt;
+  padding: 1pt 6pt;
+  border: 1px solid var(--line);
+  border-radius: 3pt;
+  font-size: 9pt;
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
