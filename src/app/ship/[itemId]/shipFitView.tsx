@@ -19,17 +19,46 @@ import {
 } from '@eveshipfit/react'
 import type { EsiFit } from '@eveshipfit/react'
 
-// DogmaEngineProvider dynamic-imports the @eveshipfit/dogma-engine wasm with
-// no .catch(): if the wasm fails to load (bundler wasm handling is the
-// historically fragile part), the provider just stays null forever and the
-// wheel silently renders without modules, slot arcs, or stats. Import it
-// ourselves once — same module, so this costs nothing when it works — purely
-// to surface the real error the library swallows.
+// DogmaEngineProvider dynamic-imports the @eveshipfit/dogma-engine wasm and
+// then calls `m.init()` in a `.then()` with no `.catch()`: if the import loads
+// but `init()` is missing (ESM-namespace interop) or throws (wasm not linked),
+// the provider stays null forever and the wheel silently renders without
+// modules, slot arcs, or stats. The runtime diagnostic showed the import
+// resolves but the engine context is null, so replicate the provider's exact
+// init path here — reporting whether `init` exists and the precise throw — and
+// listen for the provider's own swallowed rejection, so the failure is visible
+// in devtools instead of silent.
 let probeStarted = false
 const probeDogmaEngine = () => {
   if (probeStarted) return
   probeStarted = true
-  import('@eveshipfit/dogma-engine').catch((e) => console.error('esf: dogma-engine failed to load:', e))
+
+  // Surface the library provider's own uncaught `m.init()` rejection/throw.
+  const mentionsEngine = (text: string) => /dogma|wasm|init|webassembly/i.test(text)
+  window.addEventListener('unhandledrejection', (e) => {
+    const reason = e.reason
+    const text = reason instanceof Error ? `${reason.name}: ${reason.message}` : String(reason)
+    if (mentionsEngine(text)) console.error('esf: unhandled rejection near engine init:', reason)
+  })
+  window.addEventListener('error', (e) => {
+    if (e.message && mentionsEngine(e.message)) console.error('esf: window error near engine init:', e.error ?? e.message)
+  })
+
+  // Replicate DogmaEngineProvider's import(...).then(m => m.init()) so the
+  // failure it swallows is printed: is `init` even a function here, and if so
+  // what does calling it throw?
+  import('@eveshipfit/dogma-engine')
+    .then((m) => {
+      const mod = m as unknown as Record<string, unknown>
+      console.log('esf: dogma module keys:', Object.keys(mod), '— typeof init:', typeof mod.init)
+      try {
+        ;(mod.init as (() => void) | undefined)?.()
+        console.log('esf: dogma init() ok')
+      } catch (e) {
+        console.error('esf: dogma init() threw:', e)
+      }
+    })
+    .catch((e) => console.error('esf: dogma-engine import rejected:', e))
 }
 
 // Module icons on the wheel come from StatisticsProvider's dogma-engine
