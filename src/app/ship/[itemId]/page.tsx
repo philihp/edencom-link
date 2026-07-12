@@ -1,12 +1,9 @@
-import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
 
 import { getSdeType } from '@/sdeTypes'
 import { createClient } from '@/utils/supabase/server'
 import { createServiceClient } from '@/utils/supabase/service'
-import { fetchOwners } from '../../owners'
-import type { Owners } from '../../ownerFilter'
-import { resolveLocations } from '../../resolveLocations'
+import { AssetPath, fetchAssetPath } from '../../assetPath'
 import { fetchTypeNames } from '../../typeNames'
 import { type ItemRow } from '../../asset/[locationId]/locationAssets'
 import { resolveShareToken } from '../access'
@@ -128,18 +125,14 @@ const ShipPage = async ({
     ownerName = corpName?.name ?? `Corporation #${corporationId}`
   }
 
-  // Location: the hangar the ship sits in (station / structure / system).
-  const location =
-    self.location_id != null
-      ? await resolveLocations([{ id: String(self.location_id), type: self.location_type }])
-      : null
-  const locationRef = self.location_id != null ? { id: String(self.location_id), type: self.location_type } : null
+  // Where the ship lives: the full container chain up to its station /
+  // structure / system, rendered as the breadcrumb above the heading.
+  const crumbs = await fetchAssetPath(itemId, supabase)
 
   const typeNames = await fetchTypeNames([Number(self.type_id)])
   const typeName = typeNames[Number(self.type_id)] ?? `#${self.type_id}`
   const heading = self.name && self.name !== typeName ? `${self.name} (${typeName})` : typeName
 
-  const owners = await fetchOwners()
   const typeNamesPromise = fetchTypeNames(children.map((c) => Number(c.type_id)))
   const rows: ItemRow[] = children
     .map((c) => {
@@ -167,22 +160,14 @@ const ShipPage = async ({
 
   return (
     <>
+      <AssetPath crumbs={crumbs} current={heading} />
       <h1 className="serif">{heading}</h1>
       <p>
         Owner: <span className="serif">{ownerName}</span>
-        {location && locationRef ? (
-          <>
-            {' '}
-            — <Link href={`/asset/${locationRef.id}`}>{location.nameFor(locationRef)}</Link>
-            {location.systemFor(locationRef) && location.systemFor(locationRef) !== location.nameFor(locationRef) ? (
-              <> ({location.systemFor(locationRef)})</>
-            ) : null}
-          </>
-        ) : null}
       </p>
       <ShareControls itemId={itemId} initialToken={share?.token ?? null} />
       <ShipFitViewDynamic esiFit={toEsiFit(Number(self.type_id), self.name ?? null, rows)} />
-      <ShipCargo rows={rows} owners={owners} typeNamesPromise={typeNamesPromise} />
+      <ShipCargo rows={rows} typeNamesPromise={typeNamesPromise} />
     </>
   )
 }
@@ -241,11 +226,6 @@ const SharedShipPage = async ({ itemId, token }: { itemId: string; token: string
       .maybeSingle<{ name: string }>()
     ownerName = corpName?.name ?? `Corporation #${corporationId}`
   }
-  // ShipCargo's owner filter wants an Owners shape; a shared ship has exactly
-  // one owner, so build a single-entry list on the correct side.
-  const owners: Owners = characterSelf?.character_id
-    ? { characters: [{ id: ownerId, name: ownerName }], corporations: [] }
-    : { characters: [], corporations: [{ id: ownerId, name: ownerName }] }
 
   const typeNames = await fetchTypeNames([Number(self.type_id)])
   const typeName = typeNames[Number(self.type_id)] ?? `#${self.type_id}`
@@ -276,7 +256,7 @@ const SharedShipPage = async ({ itemId, token }: { itemId: string; token: string
         Owner: <span className="serif">{ownerName}</span>
       </p>
       <ShipFitViewDynamic esiFit={toEsiFit(Number(self.type_id), self.name ?? null, rows)} />
-      <ShipCargo rows={rows} owners={owners} typeNamesPromise={typeNamesPromise} />
+      <ShipCargo rows={rows} typeNamesPromise={typeNamesPromise} />
     </>
   )
 }

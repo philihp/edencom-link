@@ -80,8 +80,3 @@
   line-height: 1.25;
   overflow-wrap: anywhere;
 }
-
-.owner {
-  font-size: 10px;
-  color: var(--ink-faint);
-}

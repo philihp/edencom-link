@@ -9,7 +9,6 @@ import {
   complement,
   cond,
   equals,
-  filter,
   groupBy,
   gt,
   isNil,
@@ -24,10 +23,7 @@ import {
   view,
 } from 'ramda'
 
-import { ALL_OWNERS, OwnerSelect, ownerNames, useOwnerFilter, type Owners } from '../../ownerFilter'
 import { TypeName } from '../../typeName'
-import styles from '../../asset/assets.module.css'
-import { OWNER_STORAGE_KEY } from '../../asset/filterKey'
 import { type ItemRow } from '../../asset/[locationId]/locationAssets'
 import bayStyles from './shipCargo.module.css'
 
@@ -108,27 +104,19 @@ const hasVisibleQuantity: (item: ItemRow) => boolean = allPass([
 
 type ShipCargoProps = {
   rows: ItemRow[]
-  owners: Owners
   typeNamesPromise: Promise<Record<number, string>>
 }
 
 // Item icons/quantity tiles grouped by hold/slot, echoing the EVE client's
 // fitting-and-cargo layout — the bays a ship actually has (only sections with
-// at least one item render) rather than a blank slot-by-slot mockup.
-export const ShipCargo = ({ rows, owners, typeNamesPromise }: ShipCargoProps) => {
-  const [ownerId, setOwnerId] = useOwnerFilter(OWNER_STORAGE_KEY, owners)
-
-  const filtered = filter((r: ItemRow) => equals(ownerId, ALL_OWNERS) || equals(r.ownerId, ownerId), rows)
-  const ownerMap = ownerNames(owners)
-  const bays = groupIntoBays(filtered)
+// at least one item render) rather than a blank slot-by-slot mockup. No owner
+// filter or per-tile owner labels: everything inside a ship belongs to
+// whoever owns the ship.
+export const ShipCargo = ({ rows, typeNamesPromise }: ShipCargoProps) => {
+  const bays = groupIntoBays(rows)
 
   return (
     <section>
-      <label className={styles.filter}>
-        Owner:&nbsp;
-        <OwnerSelect owners={owners} value={ownerId} onChange={setOwnerId} />
-      </label>
-
       {bays.length > 0 ? (
         map(
           (bay: Bay) => (
@@ -151,9 +139,6 @@ export const ShipCargo = ({ rows, owners, typeNamesPromise }: ShipCargoProps) =>
                       <span className={bayStyles.name}>
                         <TypeName id={item.typeId} name={item.name} promise={typeNamesPromise} />
                       </span>
-                      {equals(ownerId, ALL_OWNERS) && (
-                        <span className={bayStyles.owner}>{ownerMap.get(item.ownerId) ?? item.ownerId}</span>
-                      )}
                     </>
                   )
                   return (
@@ -174,7 +159,7 @@ export const ShipCargo = ({ rows, owners, typeNamesPromise }: ShipCargoProps) =>
           bays
         )
       ) : (
-        <p>Nothing in this ship for this owner.</p>
+        <p>Nothing in this ship.</p>
       )}
     </section>
   )

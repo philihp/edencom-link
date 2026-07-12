@@ -1,9 +1,9 @@
-import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
 
 import { getSdeType } from '@/sdeTypes'
 import { createClient } from '@/utils/supabase/server'
 import { createServiceClient } from '@/utils/supabase/service'
+import { AssetPath, fetchAssetPath, type Crumb } from '../../assetPath'
 import { fetchOwners } from '../../owners'
 import { resolveShareToken } from '../../ship/access'
 import { fetchStationNames, fetchStationSystems } from '../../stationNames'
@@ -164,19 +164,21 @@ const AssetLocationPage = async ({
   }
 
   let heading: string
-  let backHref = '/asset'
-  let backLabel = 'Back to Assets'
+  // Where this location lives: the full container chain up to its root place,
+  // rendered as the breadcrumb above the heading. A bare place (station /
+  // structure / system) has no ancestry, so its path is just the Assets root.
+  // Skipped in the token path: the RPC would walk unscoped as service_role,
+  // and a shared hangar shouldn't reveal where it lives anyway.
+  let crumbs: Crumb[] = [{ href: '/asset', label: 'Assets' }]
   let systemName: string | undefined
 
   if (self) {
-    // A container: title it by its custom name (if any) plus type, and step
-    // back to whatever holds it.
+    // A container: title it by its custom name (if any) plus type.
     const typeNames = await fetchTypeNames([Number(self.type_id)])
     const typeName = typeNames[Number(self.type_id)] ?? `#${self.type_id}`
     heading = self.name && self.name !== typeName ? `${self.name} (${typeName})` : typeName
-    if (self.location_id != null) {
-      backHref = `/asset/${self.location_id}`
-      backLabel = 'Back'
+    if (!scope) {
+      crumbs = await fetchAssetPath(locationId, supabase)
     }
   } else {
     // Resolve the location's own name/system the same way the index page does:
@@ -265,15 +267,11 @@ const AssetLocationPage = async ({
 
   return (
     <>
+      {!scope ? <AssetPath crumbs={crumbs} current={heading} /> : null}
       <h1 className="serif">{heading}</h1>
       {systemName && systemName !== heading ? (
         <p>
           System: <span className="serif">{systemName}</span>
-        </p>
-      ) : null}
-      {!scope ? (
-        <p>
-          <Link href={backHref}>&laquo; {backLabel}</Link>
         </p>
       ) : null}
 
