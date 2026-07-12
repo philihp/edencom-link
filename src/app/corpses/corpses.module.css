@@ -1,0 +1,37 @@
+/* Page header: title left, corpse tally right — same arrangement as the
+ * Indexes page's header. */
+.pageHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12pt;
+}
+
+.pageHeader h1 {
+  margin: 0;
+}
+
+.count {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 10pt;
+  color: var(--ink-soft);
+}
+
+.list {
+  margin-top: 8pt;
+  padding-left: 3ch;
+}
+
+.row {
+  padding: 1pt 0;
+}
+
+.unknown {
+  color: var(--ink-faint);
+  font-style: italic;
+}
+
+.empty {
+  color: var(--ink-faint);
+}
