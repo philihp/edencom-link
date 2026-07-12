@@ -6,8 +6,7 @@ import { createClient } from '@/utils/supabase/server'
 import { formatBisk } from '../isk'
 import { fetchSystemNames } from '../systemNames'
 import { fetchTypeNames } from '../typeNames'
-import { register, setMainCharacter } from './actions'
-import MainCharacterForm from './mainCharacterForm'
+import { register } from './actions'
 import { requiredScopes } from './scopes'
 import { getEnabledScopes } from './userScopes'
 import styles from './character.module.css'
@@ -87,8 +86,6 @@ const CharacterPage = async () => {
   const enabledScopes = await getEnabledScopes(supabase, data.user.id)
   const hasNoOptionalScopes = enabledScopes.every((scope) => requiredScopes.includes(scope))
 
-  const mainId = characters?.find((c) => c.is_main)?.id ?? null
-
   return (
     <>
       <h1>Characters</h1>
@@ -102,65 +99,60 @@ const CharacterPage = async () => {
           </p>
         </div>
       )}
-      <MainCharacterForm mainId={mainId} hasCharacters={!!characters?.length} action={setMainCharacter}>
-        <ul className={styles.grid}>
-          {characters?.map((c) => (
-            <li key={`character-${c.id}`} className={styles.tile}>
-              {c.character_id ? (
-                <img
-                  className={styles.avatar}
-                  src={`https://images.evetech.net/characters/${c.character_id}/portrait?size=128`}
-                  alt={c.name}
-                />
-              ) : (
-                <div className={styles.avatar} aria-hidden="true" />
-              )}
-              <div className={styles.body}>
-                <div className={styles.name}>{c.name}</div>
-                <div className={styles.meta}>
-                  <span className={styles.metaLabel}>ISK:</span>
-                  {latestBalance.has(c.id) ? formatBisk(latestBalance.get(c.id)!) : '—'}
-                </div>
-                <div className={styles.meta}>
-                  <span className={styles.metaLabel}>Location:</span>
-                  {locationSystem.get(c.id) ?? '—'}
-                </div>
-                <div className={styles.meta}>
-                  <span className={styles.metaLabel}>Ship:</span>
-                  {currentShip.has(c.id) ? (
-                    <Link href={`/ship/${currentShip.get(c.id)!.itemId}`}>{currentShip.get(c.id)!.label}</Link>
-                  ) : (
-                    '—'
-                  )}
-                </div>
-                {(cloneSystems.get(c.id)?.length ?? 0) > 0 && (
-                  <div className={styles.metaBlock}>
-                    <span className={styles.metaLabel}>Clone systems:</span>
-                    <ul className={styles.bulletList}>
-                      {cloneSystems.get(c.id)!.map((system) => (
-                        <li key={system}>{system}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-                {(implantsByCharacter.get(c.id)?.length ?? 0) > 0 && (
-                  <div className={styles.metaBlock}>
-                    <span className={styles.metaLabel}>Implants:</span>
-                    <ul className={styles.bulletList}>
-                      {implantsByCharacter.get(c.id)!.map((name: string, i: number) => (
-                        <li key={i}>{name}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-                <label className={styles.meta}>
-                  <input type="radio" name="main" value={c.id} defaultChecked={c.is_main} /> Main Character
-                </label>
+      <ul className={styles.grid}>
+        {characters?.map((c) => (
+          <li key={`character-${c.id}`} className={styles.tile}>
+            {c.character_id ? (
+              <img
+                className={styles.avatar}
+                src={`https://images.evetech.net/characters/${c.character_id}/portrait?size=128`}
+                alt={c.name}
+              />
+            ) : (
+              <div className={styles.avatar} aria-hidden="true" />
+            )}
+            <div className={styles.body}>
+              <div className={styles.name}>{c.name}</div>
+              <div className={styles.meta}>
+                <span className={styles.metaLabel}>ISK:</span>
+                {latestBalance.has(c.id) ? formatBisk(latestBalance.get(c.id)!) : '—'}
               </div>
-            </li>
-          ))}
-        </ul>
-      </MainCharacterForm>
+              <div className={styles.meta}>
+                <span className={styles.metaLabel}>Location:</span>
+                {locationSystem.get(c.id) ?? '—'}
+              </div>
+              <div className={styles.meta}>
+                <span className={styles.metaLabel}>Ship:</span>
+                {currentShip.has(c.id) ? (
+                  <Link href={`/ship/${currentShip.get(c.id)!.itemId}`}>{currentShip.get(c.id)!.label}</Link>
+                ) : (
+                  '—'
+                )}
+              </div>
+              {(cloneSystems.get(c.id)?.length ?? 0) > 0 && (
+                <div className={styles.metaBlock}>
+                  <span className={styles.metaLabel}>Clone systems:</span>
+                  <ul className={styles.bulletList}>
+                    {cloneSystems.get(c.id)!.map((system) => (
+                      <li key={system}>{system}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {(implantsByCharacter.get(c.id)?.length ?? 0) > 0 && (
+                <div className={styles.metaBlock}>
+                  <span className={styles.metaLabel}>Implants:</span>
+                  <ul className={styles.bulletList}>
+                    {implantsByCharacter.get(c.id)!.map((name: string, i: number) => (
+                      <li key={i}>{name}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          </li>
+        ))}
+      </ul>
       {error && (
         <>
           <strong>
