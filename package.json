@@ -24,7 +24,7 @@
     "ramda": "^0.32.0",
     "react": "19.2.7",
     "react-dom": "19.2.7",
-    "zod": "^3.25.76"
+    "zod": "^4.0.0"
   },
   "scripts": {
     "build": "next build",
