@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect } from 'react'
 import type { ReactNode } from 'react'
 
 import {
@@ -10,9 +11,52 @@ import {
   EveDataProvider,
   ShipFit,
   StatisticsProvider,
+  useCurrentCharacter,
+  useDogmaEngine,
+  useEveData,
   useImportEsiFitting,
+  useStatistics,
 } from '@eveshipfit/react'
 import type { EsiFit } from '@eveshipfit/react'
+
+// DogmaEngineProvider dynamic-imports the @eveshipfit/dogma-engine wasm with
+// no .catch(): if the wasm fails to load (bundler wasm handling is the
+// historically fragile part), the provider just stays null forever and the
+// wheel silently renders without modules, slot arcs, or stats. Import it
+// ourselves once — same module, so this costs nothing when it works — purely
+// to surface the real error the library swallows.
+let probeStarted = false
+const probeDogmaEngine = () => {
+  if (probeStarted) return
+  probeStarted = true
+  import('@eveshipfit/dogma-engine').catch((e) => console.error('esf: dogma-engine failed to load:', e))
+}
+
+// Module icons on the wheel come from StatisticsProvider's dogma-engine
+// output, not the fit itself, so "statistics stuck at null" IS the
+// empty-wheel bug. When it persists after the type/dogma data is ready, name
+// the dependency that's null so devtools shows where the chain broke.
+const EngineDiagnostics = () => {
+  const eveData = useEveData()
+  const dogmaEngine = useDogmaEngine()
+  const { character } = useCurrentCharacter()
+  const statistics = useStatistics()
+
+  useEffect(probeDogmaEngine, [])
+
+  useEffect(() => {
+    if (eveData === null || statistics !== null) return
+    const timer = setTimeout(() => {
+      console.warn(
+        `esf: fit statistics unavailable — dogma engine ${dogmaEngine === null ? 'NOT loaded' : 'ok'}, ` +
+          `character skills ${character?.skills ? 'ok' : 'MISSING'}`
+      )
+    }, 3000)
+    return () => clearTimeout(timer)
+  }, [eveData, statistics, dogmaEngine, character])
+
+  return null
+}
 
 type FitFromEsiProps = {
   esiFit: EsiFit
@@ -53,6 +97,7 @@ export const ShipFitView = ({ esiFit }: ShipFitViewProps) => (
         <CurrentCharacterProvider>
           <FitFromEsi esiFit={esiFit}>
             <StatisticsProvider>
+              <EngineDiagnostics />
               <div style={{ width: 'min(90vw, 42rem)', aspectRatio: '1' }}>
                 <ShipFit withStats readOnly />
               </div>
