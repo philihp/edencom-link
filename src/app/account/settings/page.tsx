@@ -7,6 +7,7 @@ import { isChancellor } from '../chancellor/chancellor'
 import ApiToken from './apiToken'
 import ChangePassword from './changePassword'
 import { LogoffButton } from './logoffButton'
+import MainCharacter from './mainCharacter'
 
 const SettingsPage = async () => {
   const supabase = await createClient()
@@ -17,6 +18,12 @@ const SettingsPage = async () => {
   }
 
   const { data: settings } = await supabase.from('user_settings').select('api_token').maybeSingle()
+  const { data: characters } = await supabase
+    .from('registration')
+    .select('id, name, is_main')
+    .order('is_main', { ascending: false })
+    .order('name', { ascending: true })
+  const mainId = characters?.find((c) => c.is_main)?.id ?? null
   const chancellor = await isChancellor(data.user.id)
 
   return (
@@ -24,6 +31,8 @@ const SettingsPage = async () => {
       <h1>Settings</h1>
 
       <ChangePassword />
+
+      <MainCharacter characters={characters ?? []} mainId={mainId} />
 
       <h2>ESI Access</h2>
       <p>Choose which data we may read from EVE Online when you add a character.</p>
