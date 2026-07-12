@@ -1,0 +1,20 @@
+/*
+ * Breadcrumb showing the materialized path of where an item lives (see
+ * assetPath.tsx), sitting above the page heading in the app's flat/paper
+ * visual language.
+ */
+
+.path {
+  margin: 0 0 12px;
+  font-size: 12px;
+  color: var(--ink-faint);
+}
+
+.separator {
+  margin: 0 6px;
+  color: var(--ink-faint);
+}
+
+.current {
+  color: var(--ink);
+}
