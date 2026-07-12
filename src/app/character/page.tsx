@@ -65,6 +65,23 @@ const CharacterPage = async () => {
     ])
   )
 
+  const { data: shipRows } = await supabase
+    .from('character_ship')
+    .select('character_id, ship_item_id, ship_type_id, ship_name')
+  const shipTypeNames = await fetchTypeNames((shipRows ?? []).map((r) => Number(r.ship_type_id)))
+  const currentShip = new Map(
+    (shipRows ?? []).map((r) => {
+      const typeName = shipTypeNames[Number(r.ship_type_id)] ?? `Type #${r.ship_type_id}`
+      return [
+        r.character_id as string,
+        {
+          itemId: String(r.ship_item_id),
+          label: r.ship_name && r.ship_name !== typeName ? `${r.ship_name} (${typeName})` : typeName,
+        },
+      ]
+    })
+  )
+
   // If the player has turned off every optional ESI scope, characters they add
   // grant nothing beyond identification, so almost no features will work.
   const enabledScopes = await getEnabledScopes(supabase, data.user.id)
@@ -110,6 +127,11 @@ const CharacterPage = async () => {
                 </div>
                 <div className={styles.meta}>
                   <span className={styles.metaLabel}>Ship:</span>
+                  {currentShip.has(c.id) ? (
+                    <Link href={`/ship/${currentShip.get(c.id)!.itemId}`}>{currentShip.get(c.id)!.label}</Link>
+                  ) : (
+                    '—'
+                  )}
                 </div>
                 {(cloneSystems.get(c.id)?.length ?? 0) > 0 && (
                   <div className={styles.metaBlock}>

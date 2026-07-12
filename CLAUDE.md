@@ -15,7 +15,7 @@ EVE Online hangar/wallet/industry tracker. Package name `edencom-link` (private)
 - **No test runner / no `test` script** — there are no automated tests. No `typecheck` script (rely on `next build` / editor).
 - Pre-commit: husky + lint-staged auto-format & `eslint --fix` staged files.
 - `pnpm run sde:build` — downloads CCP's SDE type/group, solar-system, NPC-station, and blueprint industry data and writes `src/generated/sdeTypes.json` + `src/generated/sdeSystems.json` + `src/generated/sdeStations.json` + `src/generated/sdeBlueprints.json` (gitignored). Runs automatically as a `predev`/`prebuild` step; skips re-downloading any file that already exists (pass `--force` to refresh). See `src/buildSde.js`.
-- Extract job scripts (one per ESI endpoint, scheduled via Vercel Cron, see below): `pnpm run character-assets` / `character-blueprints` / `character-orders` / `character-wallet` / `character-wallet-transactions` / `character-industry-jobs` / `character-location` / `character-clones` / `character-implants` / `character-status` (combined wallet+location+implants+clones) / `character-affiliations` / `corp-structures` / `corp-assets` / `corp-blueprints` / `corp-wallet-journal` / `corp-wallet-transactions` / `corp-industry-jobs` / `industry-systems` / `universe-names` / `universe-structures`, plus `heartbeat`. `connect`, `ping`, `refresh` are DB/token utilities.
+- Extract job scripts (one per ESI endpoint, scheduled via Vercel Cron, see below): `pnpm run character-assets` / `character-blueprints` / `character-orders` / `character-wallet` / `character-wallet-transactions` / `character-industry-jobs` / `character-location` / `character-clones` / `character-implants` / `character-ship` / `character-status` (combined wallet+location+implants+clones+ship) / `character-affiliations` / `corp-structures` / `corp-assets` / `corp-blueprints` / `corp-wallet-journal` / `corp-wallet-transactions` / `corp-industry-jobs` / `industry-systems` / `universe-names` / `universe-structures`, plus `heartbeat`. `connect`, `ping`, `refresh` are DB/token utilities.
 - DB migrations (Supabase CLI, configured by `supabase/config.toml`): `pnpm run db:new <name>` scaffolds a migration under `supabase/migrations/`; `pnpm run db:push` applies pending migrations to the linked project (`supabase link --project-ref <ref>` first). On push to `main` that touches `supabase/migrations/**`, the `Migrate` workflow runs `supabase db push` automatically (also manually dispatchable).
 
 ## Layout
@@ -88,6 +88,7 @@ All functions take `(accessToken, id, ...)` unless noted. Returns raw ESI respon
 - `characterLocation(token, characterId)` — current solar system (and station/structure, if docked)
 - `characterClones(token, characterId)` — home clone + jump clones, each with location and (for jump clones) implants, plus `last_clone_jump_date`/`last_station_change_date`
 - `characterImplants(token, characterId)` — implants currently plugged into whichever clone body the character occupies
+- `characterShip(token, characterId)` — the ship the character is currently in (docked or not): `{ ship_item_id, ship_name, ship_type_id }`
 - `corpStructures(token, corpId, page)` — corporation Upwell structures (paged)
 - `corpAssets(token, corpId, page)` — corporation assets (paged)
 - `corpBlueprints(token, corpId, page)` — corporation blueprints list (paged)
@@ -195,7 +196,7 @@ One job per ESI endpoint. The npm script, queue job name, and heartbeat job labe
 | `character-orders` | `/characters/{id}/orders/` | `character_order` | every 6h `:24` |
 | `character-wallet-transactions` | `/characters/{id}/wallet/transactions/` | `character_wallet_transaction` | every 6h `:46` |
 | `character-industry-jobs` | `/characters/{id}/industry/jobs/` | `character_industry_job` | every 6h `:48` |
-| `character-status` | `/characters/{id}/wallet/` + `/location/` + `/implants/` + `/clones/` | `character_wallet`, `character_location`, `character_implant`, `character_clone_over_time`, `character_clone_state` | every 6h `:14` |
+| `character-status` | `/characters/{id}/wallet/` + `/location/` + `/implants/` + `/clones/` + `/ship/` | `character_wallet`, `character_location`, `character_implant`, `character_clone_over_time`, `character_clone_state`, `character_ship` | every 6h `:14` |
 | `character-affiliations` | `/characters/affiliation/` | `character_affiliation` | 11:41 daily |
 | `corp-structures` | `/corporations/{id}/structures/` | `corp_structure` | 09:17 daily |
 | `corp-assets` | `/corporations/{id}/assets/` | `corp_asset_over_time`, `corp_structure_rig` | 09:27 daily |
@@ -207,7 +208,7 @@ One job per ESI endpoint. The npm script, queue job name, and heartbeat job labe
 | `universe-names` | `/universe/names/` | `universe_name` | every 6h `:58` |
 | `universe-structures` | `/universe/structures/{id}` | `universe_structure` | 09:57 daily |
 
-`character-status` (`src/jobs/characterStatus.js`) is the one exception to "one job per ESI endpoint": it folds the four cheap live-state per-character pulls (wallet, location, implants, clones) into a single extract so they share one Vercel function invocation per character instead of four, to cut per-invocation cost. It writes to each endpoint's original table, keeps their separate ESI scopes (a character runs only the endpoints its token carries — via `forEachCharacterAnyScope` in `src/jobs/lib.js`, which selects tokens overlapping any of the scopes and hands the handler the token's scope list), and fault-isolates each endpoint so one failing doesn't abort the others. The individual `character-wallet`/`character-location`/`character-implants`/`character-clones` job modules still exist and run standalone via CLI (`node src/jobs/<job>.js`) and the queue — each exports a reusable `sync*` per-character helper that `characterStatus.js` calls — but only `character-status` is scheduled (Vercel Cron) and shown on `/character/refresh`.
+`character-status` (`src/jobs/characterStatus.js`) is the one exception to "one job per ESI endpoint": it folds the five cheap live-state per-character pulls (wallet, location, implants, clones, current ship) into a single extract so they share one Vercel function invocation per character instead of five, to cut per-invocation cost. It writes to each endpoint's original table, keeps their separate ESI scopes (a character runs only the endpoints its token carries — via `forEachCharacterAnyScope` in `src/jobs/lib.js`, which selects tokens overlapping any of the scopes and hands the handler the token's scope list), and fault-isolates each endpoint so one failing doesn't abort the others. The individual `character-wallet`/`character-location`/`character-implants`/`character-clones`/`character-ship` job modules still exist and run standalone via CLI (`node src/jobs/<job>.js`) and the queue — each exports a reusable `sync*` per-character helper that `characterStatus.js` calls — but only `character-status` is scheduled (Vercel Cron) and shown on `/character/refresh`.
 
 `src/heartbeat.js` (`heartbeat.yml`, 10:55 daily) is a canary that just proves heartbeat recording works; it remains on GitHub Actions since it isn't an ESI extract job.
 
@@ -239,6 +240,7 @@ Requires a `CRON_SECRET` env var set in Vercel (see `.env.example`).
 | `character_clone` | View: `is_current` clones | same columns as above |
 | `character_clone_state` | Live per-character clone-jump timers (next jump ≈ `last_clone_jump_date` + 24h) | `character_id` (PK), `last_clone_jump_date`, `last_station_change_date`, `recorded_at` |
 | `character_implant` | Live current implants plugged into the character's active clone | `character_id` (PK), `type_ids` (bigint array), `recorded_at` |
+| `character_ship` | Live current ship the character is piloting (docked or not); used to exclude it from a station's asset listing | `character_id` (PK), `ship_item_id`, `ship_type_id`, `ship_name`, `recorded_at` |
 | `character_affiliation` | Character→Corp mapping | `character_id`, `corporation_id` |
 | `corp_structure` | Corp Upwell structures | `structure_id`, `corporation_id`, `type_id`, `system_id`, `name`, `state`, `fuel_expires`, `services` (jsonb) |
 | `corp_structure_rig` | Rigs on structures | `structure_id`, `location_flag`, `type_id`, `corporation_id` |

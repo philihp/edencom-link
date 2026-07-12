@@ -91,12 +91,27 @@ const AssetLocationPage = async ({
     .select('item_id, corporation_id, type_id, location_id, location_flag, location_type, quantity, is_singleton')
     .eq('location_id', locationId)
   if (corpScope) corpQuery = corpQuery.in('corporation_id', corpScope)
-  const [{ data: characterChildren }, { data: corpChildren }] = await Promise.all([characterQuery, corpQuery])
+  // A character's currently-piloted ship reports its location as wherever it's
+  // docked — physically indistinguishable from any other ship parked there —
+  // so it otherwise shows up as an ordinary item in that station's listing.
+  // Exclude it: it's not "stored" here, the character is sitting in it.
+  let currentShipQuery = supabase.from('character_ship').select('ship_item_id')
+  if (characterScope) currentShipQuery = currentShipQuery.in('character_id', characterScope)
+  const [{ data: characterChildren }, { data: corpChildren }, { data: currentShips }] = await Promise.all([
+    characterQuery,
+    corpQuery,
+    currentShipQuery,
+  ])
+  const currentShipItemIds = new Set(
+    ((currentShips ?? []) as { ship_item_id: number | string }[]).map((s) => String(s.ship_item_id))
+  )
   const rootItems: Asset[] = [
-    ...((characterChildren ?? []) as CharacterAsset[]).map(({ character_id, ...a }) => ({
-      ...a,
-      owner_id: character_id,
-    })),
+    ...((characterChildren ?? []) as CharacterAsset[])
+      .filter((a) => !currentShipItemIds.has(String(a.item_id)))
+      .map(({ character_id, ...a }) => ({
+        ...a,
+        owner_id: character_id,
+      })),
     ...((corpChildren ?? []) as CorpAsset[]).map(({ corporation_id, ...a }) => ({
       ...a,
       owner_id: String(corporation_id),

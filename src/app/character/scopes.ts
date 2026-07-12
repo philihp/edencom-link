@@ -104,6 +104,13 @@ export const esiScopes: EsiScope[] = [
     without: 'this character’s currently active implants will not be shown.',
   },
   {
+    scope: 'esi-location.read_ship_type.v1',
+    name: 'Character current ship',
+    why: 'Identifies the ship this character is currently in, so it can be excluded from the asset listing at wherever the character is docked.',
+    without:
+      'this character’s current ship will be shown as an ordinary asset at the station it is docked at, alongside any other ships parked there.',
+  },
+  {
     scope: 'esi-universe.read_structures.v1',
     name: 'Structure names',
     why: 'Resolves the names of player-owned Upwell structures where this character keeps assets, so they show a name instead of a raw ID.',

@@ -1,26 +1,29 @@
 import { SCOPE as CLONES_SCOPE, makeSystemResolver, syncCharacterClones } from './characterClones.js'
 import { SCOPE as IMPLANTS_SCOPE, syncCharacterImplants } from './characterImplants.js'
 import { SCOPE as LOCATION_SCOPE, syncCharacterLocation } from './characterLocation.js'
+import { SCOPE as SHIP_SCOPE, syncCharacterShip } from './characterShip.js'
 import { SCOPE as WALLET_SCOPE, syncCharacterWallet } from './characterWallet.js'
 import { cli, forEachCharacterAnyScope, forEachSequential } from './lib.js'
 
 const TAG = 'character-status'
 
-// The four live-state per-character ESI pulls — wallet balance, current
-// location, active-clone implants, and clones — folded into a single extract
-// job. Each is a cheap, single-call endpoint that used to run as its own job
-// (and its own Vercel function invocation) on its own schedule; combining them
-// means one queue message / one function invocation per character covers all
-// four, sharing the token refresh and cutting per-invocation overhead.
+// The five live-state per-character ESI pulls — wallet balance, current
+// location, active-clone implants, clones, and the ship the character is
+// presently in — folded into a single extract job. Each is a cheap,
+// single-call endpoint that used to run as its own job (and its own Vercel
+// function invocation) on its own schedule; combining them means one queue
+// message / one function invocation per character covers all five, sharing
+// the token refresh and cutting per-invocation overhead.
 //
 // They keep their separate ESI scopes and separate destination tables, so a
 // character only carrying some of the scopes runs only those endpoints, and
 // each endpoint is fault-isolated: one failing (e.g. a clones 403 when the
 // token lacks docking access) never aborts the others. The individual
-// character-wallet / character-location / character-implants / character-clones
-// job modules remain runnable on their own (CLI + queue) for manual use; only
-// their scheduling and the /character/refresh UI merge into this job.
-export const SCOPES = [WALLET_SCOPE, LOCATION_SCOPE, IMPLANTS_SCOPE, CLONES_SCOPE]
+// character-wallet / character-location / character-implants / character-clones /
+// character-ship job modules remain runnable on their own (CLI + queue) for
+// manual use; only their scheduling and the /character/refresh UI merge into
+// this job.
+export const SCOPES = [WALLET_SCOPE, LOCATION_SCOPE, IMPLANTS_SCOPE, CLONES_SCOPE, SHIP_SCOPE]
 
 export const runCharacterStatus = ({ characterIds } = {}) => {
   // One resolver memo for the whole run: clones across characters cluster in the
@@ -32,6 +35,7 @@ export const runCharacterStatus = ({ characterIds } = {}) => {
     { scope: LOCATION_SCOPE, label: 'location', run: syncCharacterLocation },
     { scope: IMPLANTS_SCOPE, label: 'implants', run: syncCharacterImplants },
     { scope: CLONES_SCOPE, label: 'clones', run: (handlerCtx) => syncCharacterClones(handlerCtx, resolveSystem) },
+    { scope: SHIP_SCOPE, label: 'ship', run: syncCharacterShip },
   ]
 
   return forEachCharacterAnyScope(TAG, { scopes: SCOPES, characterIds }, async (handlerCtx) => {

@@ -71,6 +71,7 @@ drop view  if exists public.character_clone            cascade;
 drop table if exists public.character_clone_over_time  cascade;
 drop table if exists public.character_clone_state      cascade;
 drop table if exists public.character_implant          cascade;
+drop table if exists public.character_ship             cascade;
 drop table if exists public.universe_name        cascade;
 drop table if exists public.universe_structure   cascade;
 drop table if exists public.invite_code          cascade;
@@ -932,6 +933,36 @@ create policy "Users read own implants"
 
 grant select on public.character_implant to authenticated;
 grant all    on public.character_implant to service_role;
+
+-- ── character_ship ─────────────────────────────────────────────────────────
+-- ESI /characters/{id}/ship/, written by the character-ship job: the item_id
+-- of whichever ship the character is currently in, docked or not — a
+-- character's asset row for that ship reports its location as the station it
+-- last docked at, physically indistinguishable from any other ship parked
+-- there. Used to exclude the character's current ship from a station's asset
+-- listing. Live current-state data, like character_location — a single
+-- upserted row per character rather than a history table.
+create table public.character_ship (
+  character_id uuid primary key references public.registration(id) on delete cascade,
+  ship_item_id bigint not null,
+  ship_type_id bigint not null,
+  ship_name text,
+  recorded_at timestamptz not null default now()
+);
+
+alter table public.character_ship enable row level security;
+create policy "Users read own ship"
+  on public.character_ship
+  for select
+  to authenticated
+  using (
+    character_id in (
+      select id from public.registration where user_id = (select auth.uid())
+    )
+  );
+
+grant select on public.character_ship to authenticated;
+grant all    on public.character_ship to service_role;
 
 -- ── character_clone_state ──────────────────────────────────────────────────
 -- Character-level fields from ESI /characters/{id}/clones/, written by the
