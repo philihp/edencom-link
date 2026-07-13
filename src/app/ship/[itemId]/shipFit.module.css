@@ -1,0 +1,62 @@
+/* Layout for the eveship.fit wheel + its statistics readout. */
+.layout {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+  align-items: flex-start;
+}
+
+.wheel {
+  width: min(90vw, 42rem);
+  aspect-ratio: 1;
+  flex: 0 0 auto;
+  /* eveship.fit sizes the wheel's ring items relative to a 15px baseline. */
+  font-size: 15px;
+}
+
+/*
+ * The eveship.fit wheel is authored against the browser defaults — content-box
+ * sizing and unconstrained <img> dimensions. This app's globals.css sets
+ * `* { box-sizing: border-box }` and `img { max-width: 100% }` globally, which
+ * leak into the wheel: the slot icons are drawn at `width: 120%` with negative
+ * margins, so clamping them to 100% shifts every module up and to the left.
+ * Restore the defaults the library expects, scoped to the wheel only.
+ */
+.wheel * {
+  box-sizing: content-box;
+}
+.wheel img {
+  max-width: none;
+}
+
+.stats {
+  flex: 1 1 18rem;
+  min-width: 16rem;
+}
+
+/* Interactive (owner-only) hardware browser used to drag modules/ammo onto the
+ * wheel. Collapsed by default so the big listing doesn't dominate the page. */
+.hardware {
+  margin-top: 1.5rem;
+  max-width: min(90vw, 42rem);
+}
+.hardware > summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.hardwareHint {
+  font-size: 0.85rem;
+  opacity: 0.75;
+  margin: 0.5rem 0;
+}
+.hardwareListing {
+  height: 28rem;
+  overflow: auto;
+  border: 1px solid var(--rule, #cbb8a0);
+  border-radius: 6px;
+}
+/* Same global-img override the wheel needs: keep the listing's icons at their
+ * intended size instead of the app-wide max-width: 100% clamp. */
+.hardwareListing img {
+  max-width: none;
+}
