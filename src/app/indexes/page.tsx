@@ -1,6 +1,5 @@
 import { redirect } from 'next/navigation'
 
-import { indexesFlag } from '@/flags'
 import { formatSecurity, getSdeSystem } from '@/sdeSystems'
 import { createClient } from '@/utils/supabase/server'
 
@@ -33,10 +32,6 @@ const IndexesPage = async ({ searchParams }: { searchParams: Promise<{ days?: st
 
   const { data, error: authError } = await supabase.auth.getUser()
   if (authError || !data?.user) {
-    redirect('/')
-  }
-
-  if (!(await indexesFlag())) {
     redirect('/')
   }
 

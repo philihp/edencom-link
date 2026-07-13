@@ -1752,10 +1752,10 @@ grant all    on public.universe_structure to service_role;
 -- and scope the results to their characters. Null until the user generates one
 -- in settings.
 -- `flags` is the set of Vercel Flags (src/flags.ts) a user has enabled, e.g.
--- 'indexes' gates the /indexes page and nav link per-user (likewise
--- 'mercenary-dens'). 'corpses' both shows the owner's nav link and opts their
--- account into the public /corpses/[characterID] share page — an account
--- without it set renders as a 404 there.
+-- 'mercenary-dens' gates the /mercenary-dens page and nav link per-user.
+-- 'corpses' both shows the owner's nav link and opts their account into the
+-- public /corpses/[characterID] share page — an account without it set renders
+-- as a 404 there.
 -- `share_mercenary_dens` is the user's opt-in to share their deployed
 -- mercenary dens (character_mercenary_den) with corpmates; toggled from the top
 -- of the /mercenary-dens page. Default false (private).
