@@ -1,18 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 import { resolvePlayer } from '@/utils/apiToken'
+import { AT_PARAM_ERROR, parseAtParam } from '@/utils/atParam'
 import { toCsv } from '@/utils/csv'
 
 // Public CSV endpoint for Google Sheets =IMPORTDATA(): the player's industry jobs
-// across all of their characters, with the owning character's name. The first row
-// is the column headers. Authenticated by the per-user api_token in the query
-// string (Sheets carries no session cookie), so it always recomputes — no caching.
+// across all of their characters, with the owning character's name, as of an
+// optional `at` timestamp. The first row is the column headers. Authenticated by
+// the per-user api_token in the query string (Sheets carries no session cookie),
+// so it always recomputes — no caching.
 export const dynamic = 'force-dynamic'
 // Headroom over Vercel's default function timeout.
 export const maxDuration = 60
 
 export const GET = async (request: NextRequest): Promise<NextResponse> => {
   const { searchParams } = new URL(request.url)
+
+  // `at` time-travels the SCD-2 history (character_industry_job_over_time) to the
+  // job versions valid at that moment; default now is the live set.
+  const at = parseAtParam(searchParams.get('at'))
+  if (!at.ok) {
+    return NextResponse.json({ error: AT_PARAM_ERROR }, { status: 400 })
+  }
 
   const player = await resolvePlayer(searchParams.get('token')?.trim())
   if (!player.ok) {
@@ -30,6 +39,7 @@ export const GET = async (request: NextRequest): Promise<NextResponse> => {
   const { data: rows, error: rowsError } = await player.supabase.rpc('character_industry_jobs', {
     character_ids: player.characterIds,
     include_delivered: includeDelivered,
+    as_of: at.iso,
   })
   if (rowsError) {
     return NextResponse.json({ error: 'Query failed' }, { status: 500 })

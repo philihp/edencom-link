@@ -284,11 +284,11 @@ Key Postgres functions (callable via RPC or SQL):
 - `corp_asset_search(type_ids[])` — mirrors `character_asset_search()` over corp assets (used by `/asset/search`)
 - `latest_heartbeats()` — most recent completed heartbeat per job per owner (character/corp/whole-job), RLS-scoped to the caller; feeds the `/character/refresh` freshness matrix
 - `character_asset_snapshot_at(character_ids[], as_of)` — time-travel asset snapshot as JSON (used by `/api/character/assets`)
-- `character_industry_jobs(character_ids[], include_delivered)` — export for Sheets IMPORTDATA (used by `/api/character/jobs`)
-- `character_orders(character_ids[])` — export for Sheets IMPORTDATA (used by `/api/character/orders`)
+- `character_industry_jobs(character_ids[], include_delivered, as_of)` — time-travel industry-job snapshot as JSON (used by `/api/character/jobs`; `as_of` defaults to now, reconstructed from the SCD-2 history like `character_asset_snapshot_at`)
+- `character_orders(character_ids[], as_of)` — time-travel open-order snapshot as JSON (used by `/api/character/orders`; `as_of` defaults to now)
 - `character_blueprints(character_ids[])` — current blueprint snapshot as JSON, export for Sheets IMPORTDATA (used by `/api/character/blueprints`)
 - `corp_assets(character_ids[])` — corp asset snapshot for the caller's corp(s), export for Sheets IMPORTDATA (used by `/api/corp/assets`)
-- `corp_industry_jobs(character_ids[], include_delivered)` — corp industry jobs for the caller's corp(s), export for Sheets IMPORTDATA (used by `/api/corp/jobs`)
+- `corp_industry_jobs(character_ids[], include_delivered, as_of)` — time-travel corp industry-job snapshot for the caller's corp(s) as JSON (used by `/api/corp/jobs`; `as_of` defaults to now)
 - `corp_blueprints(character_ids[])` — corp blueprint snapshot for the caller's corp(s), export for Sheets IMPORTDATA (used by `/api/corp/blueprints`)
 
 ## Design patterns
