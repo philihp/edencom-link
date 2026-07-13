@@ -4,6 +4,7 @@ import { mercenaryDensFlag } from '@/flags'
 import { createClient } from '@/utils/supabase/server'
 
 import { STAGING, TEMPERATE_PLANETS } from './data'
+import ShareToggle from './shareToggle'
 import { Topology } from './topology'
 import styles from './mercenaryDens.module.css'
 
@@ -23,10 +24,13 @@ const MercenaryDensPage = async () => {
     redirect('/')
   }
 
+  const { data: settings } = await supabase.from('user_settings').select('share_mercenary_dens').maybeSingle()
+
   return (
     <>
       <div className={styles.pageHeader}>
         <h1>Mercenary Dens</h1>
+        <ShareToggle initialShared={settings?.share_mercenary_dens ?? false} />
       </div>
       <p className={styles.subtitle}>
         Systems immediately accessible from our staging system, <span className={styles.system}>{STAGING}</span>.
