@@ -30,7 +30,7 @@ const fetchCurrentRow = async (character_id) => {
 }
 
 // Reconcile the freshly fetched ship against the character's current (open)
-// row: the same ship extends last_seen_at (refreshing ship_name in place if
+// row: the same ship extends valid_until (refreshing ship_name in place if
 // it was renamed); a different ship closes the old row (if any) and opens a
 // new one.
 const reconcile = async (character_id, fetchedShip) => {
@@ -41,7 +41,7 @@ const reconcile = async (character_id, fetchedShip) => {
     const renamed = (current.ship_name ?? null) !== (fetchedShip.ship_name ?? null)
     const { error } = await sudoSupabase
       .from('character_ship_over_time')
-      .update({ last_seen_at: now, ...(renamed ? { ship_name: fetchedShip.ship_name ?? null } : {}) })
+      .update({ valid_until: now, ...(renamed ? { ship_name: fetchedShip.ship_name ?? null } : {}) })
       .eq('id', current.id)
     if (error) throw error
     return false
@@ -59,7 +59,7 @@ const reconcile = async (character_id, fetchedShip) => {
     ship_item_id: fetchedShip.ship_item_id,
     ship_type_id: fetchedShip.ship_type_id,
     ship_name: fetchedShip.ship_name ?? null,
-    last_seen_at: now,
+    valid_until: now,
   })
   if (error) throw error
   return true

@@ -51,8 +51,10 @@ drop view  if exists public.character_blueprint            cascade;
 drop table if exists public.character_blueprint_over_time  cascade;
 drop table if exists public.character_wallet              cascade;
 drop table if exists public.character_wallet_transaction  cascade;
-drop table if exists public.character_order               cascade;
-drop table if exists public.character_industry_job        cascade;
+drop view  if exists public.character_order                cascade;
+drop table if exists public.character_order_over_time      cascade;
+drop view  if exists public.character_industry_job              cascade;
+drop table if exists public.character_industry_job_over_time    cascade;
 drop table if exists public.character_affiliation         cascade;
 drop table if exists public.industry_system_index cascade;
 drop table if exists public.corp_structure_rig   cascade;
@@ -64,7 +66,8 @@ drop table if exists public.corp_wallet_transaction cascade;
 -- already-reset database failed on them.
 drop view  if exists public.corp_asset                cascade;
 drop table if exists public.corp_asset_over_time      cascade;
-drop table if exists public.corp_industry_job         cascade;
+drop view  if exists public.corp_industry_job              cascade;
+drop table if exists public.corp_industry_job_over_time    cascade;
 drop view  if exists public.corp_blueprint            cascade;
 drop table if exists public.corp_blueprint_over_time  cascade;
 drop table if exists public.character_location        cascade;
@@ -162,7 +165,7 @@ grant all                            on public.token to service_role;
 -- one item's state. When the extract sees an item whose tracked attributes
 -- (location, quantity, ...) differ from its current row, that row is closed
 -- (is_current = false) and a new row inserted, so full history is retained.
--- last_seen_at on the open row is extended every run the item is seen
+-- valid_until on the open row is extended every run the item is seen
 -- unchanged. The `character_asset` view below exposes just the live rows.
 create table public.character_asset_over_time (
   id bigint generated always as identity primary key,
@@ -176,8 +179,8 @@ create table public.character_asset_over_time (
   is_singleton boolean,
   is_blueprint_copy boolean,
   is_current boolean not null default true,
-  first_seen_at timestamptz not null default now(),
-  last_seen_at timestamptz not null default now(),
+  valid_from timestamptz not null default now(),
+  valid_until timestamptz not null default now(),
   -- Player-assigned name (ship/container custom name) for singleton items; null
   -- otherwise. Kept last to match the add-column migration's column order.
   name text
@@ -186,7 +189,7 @@ create index character_asset_over_time_character_id_idx on public.character_asse
 -- At most one live row per item; also the conflict target the extract relies on.
 create unique index character_asset_over_time_current_item_idx on public.character_asset_over_time (item_id) where is_current;
 -- Time-travel lookups walking an item's version history.
-create index character_asset_over_time_item_id_idx on public.character_asset_over_time (item_id, last_seen_at desc);
+create index character_asset_over_time_item_id_idx on public.character_asset_over_time (item_id, valid_until desc);
 
 alter table public.character_asset_over_time enable row level security;
 create policy "Users read own assets"
@@ -239,7 +242,7 @@ as $$
     -- a container owned by someone else (a corpmate's) still can't be bridged.
     select distinct on (item_id) item_id, location_id, location_type
     from public.character_asset_over_time
-    order by item_id, is_current desc, last_seen_at desc
+    order by item_id, is_current desc, valid_until desc
   ),
   walk as (
     select
@@ -317,7 +320,7 @@ as $$
   with recursive parent_of as (
     select distinct on (item_id) item_id, location_id, location_type
     from public.character_asset_over_time
-    order by item_id, is_current desc, last_seen_at desc
+    order by item_id, is_current desc, valid_until desc
   ),
   matched as (
     select a.item_id, a.character_id, a.type_id, a.quantity, a.is_singleton, a.name,
@@ -378,8 +381,8 @@ grant execute on function public.character_asset_search(bigint[])          to au
 -- per item stack), with the owning character's name, as of `as_of`,
 -- reconstructed from the SCD-2 history. A row counts when it had started by
 -- `as_of` and was either still open then or is the current version (its state
--- extends forward past last_seen_at to now); a later version of an item always
--- starts after the prior one's last_seen_at, so at most one version per item
+-- extends forward past valid_until to now); a later version of an item always
+-- starts after the prior one's valid_until, so at most one version per item
 -- matches. Returns the whole result as a single json array so PostgREST's
 -- max-rows cap never truncates it and the function (not the serverless route)
 -- pages the table — what kept the endpoint under Vercel's timeout. Uses json
@@ -412,8 +415,8 @@ as $$
   from public.character_asset_over_time a
   join public.registration r on r.id = a.character_id
   where a.character_id = any(character_ids)
-    and a.first_seen_at <= as_of
-    and (a.last_seen_at >= as_of or a.is_current)
+    and a.valid_from <= as_of
+    and (a.valid_until >= as_of or a.is_current)
     and (not a.is_singleton or a.is_blueprint_copy);
 $$;
 
@@ -423,7 +426,7 @@ grant execute on function public.character_asset_snapshot_at(uuid[], timestamptz
 -- ESI /characters/{id}/blueprints/, written by the character-blueprints job.
 -- SCD Type 2 history of a character's blueprints, mirroring
 -- character_asset_over_time: is_current=true rows form the current snapshot,
--- last_seen_at is bumped each run for unchanged blueprints, and a new row is
+-- valid_until is bumped each run for unchanged blueprints, and a new row is
 -- inserted when anything tracked changes (old row's is_current set false).
 -- quantity is -1 for an original (BPO), -2 for a copy (BPC), or the stack size
 -- for multiple BPOs stacked together; runs is -1 for a BPO (unlimited) or the
@@ -441,14 +444,14 @@ create table public.character_blueprint_over_time (
   time_efficiency smallint,
   runs integer,
   is_current boolean not null default true,
-  first_seen_at timestamptz not null default now(),
-  last_seen_at timestamptz not null default now()
+  valid_from timestamptz not null default now(),
+  valid_until timestamptz not null default now()
 );
 create index character_blueprint_over_time_character_id_idx on public.character_blueprint_over_time (character_id);
 -- At most one live row per item; also the conflict target the extract relies on.
 create unique index character_blueprint_over_time_current_item_idx on public.character_blueprint_over_time (item_id) where is_current;
 -- Time-travel lookups walking an item's version history.
-create index character_blueprint_over_time_item_id_idx on public.character_blueprint_over_time (item_id, last_seen_at desc);
+create index character_blueprint_over_time_item_id_idx on public.character_blueprint_over_time (item_id, valid_until desc);
 
 alter table public.character_blueprint_over_time enable row level security;
 create policy "Users read own blueprints"
@@ -661,15 +664,23 @@ create policy "Users read own transactions"
 grant select on public.character_wallet_transaction to authenticated;
 grant all    on public.character_wallet_transaction to service_role;
 
--- ── character_order ───────────────────────────────────────────────────────
--- ESI /characters/{id}/orders/, written by the character-orders job: the
--- character's currently open market orders. The job keeps this a live
--- snapshot: each run upserts every open order and sweeps away that character's
--- rows it didn't see, which have since filled, expired or been cancelled.
--- is_buy is false for sell orders (ESI omits is_buy_order on those);
--- escrow/min_volume are buy-order-only, hence nullable.
-create table public.character_order (
-  order_id bigint primary key,
+-- ── character_order_over_time ─────────────────────────────────────────────
+-- ESI /characters/{id}/orders/, written by the character-orders job. The
+-- character's open market orders as a slowly changing dimension (SCD type 2),
+-- mirroring character_asset_over_time: each row is a versioned snapshot of one
+-- order's mutable state (price, remaining volume, escrow, ...). When the
+-- extract sees an order whose tracked attributes differ from its current row,
+-- that row is closed (is_current = false) and a new one inserted, so the order's
+-- fill/price trajectory is retained. valid_until on the open row is extended
+-- every run the order is seen unchanged. An order that drops out of the
+-- snapshot (filled, expired or cancelled) has its open row closed, so the
+-- character_order view of is_current rows holds exactly the still-open orders
+-- — the same live set the old plain table exposed. is_buy is false for sell
+-- orders (ESI omits is_buy_order on those); escrow/min_volume are
+-- buy-order-only, hence nullable.
+create table public.character_order_over_time (
+  id bigint generated always as identity primary key,
+  order_id bigint not null,
   character_id uuid not null references public.registration(id) on delete cascade,
   type_id bigint not null,
   region_id bigint not null,
@@ -684,13 +695,19 @@ create table public.character_order (
   escrow numeric(20, 2),
   duration integer not null,
   issued timestamptz not null,
-  seen_at timestamptz not null default now()
+  is_current boolean not null default true,
+  valid_from timestamptz not null default now(),
+  valid_until timestamptz not null default now()
 );
-create index character_order_character_id_issued_idx on public.character_order (character_id, issued desc);
+create index character_order_over_time_character_id_idx on public.character_order_over_time (character_id);
+-- At most one live row per order; also the conflict target the reconcile relies on.
+create unique index character_order_over_time_current_order_idx on public.character_order_over_time (order_id) where is_current;
+-- Time-travel lookups walking an order's version history.
+create index character_order_over_time_order_id_idx on public.character_order_over_time (order_id, valid_until desc);
 
-alter table public.character_order enable row level security;
+alter table public.character_order_over_time enable row level security;
 create policy "Users read own orders"
-  on public.character_order
+  on public.character_order_over_time
   for select
   to authenticated
   using (
@@ -699,8 +716,14 @@ create policy "Users read own orders"
     )
   );
 
-grant select on public.character_order to authenticated;
-grant all    on public.character_order to service_role;
+-- Live snapshot of open orders. security_invoker keeps the underlying RLS in
+-- force for the querying (authenticated) role rather than running as the view owner.
+create view public.character_order with (security_invoker = on) as
+  select * from public.character_order_over_time where is_current;
+
+grant select on public.character_order_over_time to authenticated;
+grant select on public.character_order           to authenticated;
+grant all    on public.character_order_over_time to service_role;
 
 -- /api/character/orders IMPORTDATA endpoint: the player's open market orders
 -- across all of their characters, with the owning character's name. Returns the
@@ -743,10 +766,22 @@ $$;
 
 grant execute on function public.character_orders(uuid[]) to service_role;
 
--- ── character_industry_job ────────────────────────────────────────────────
--- ESI /characters/{id}/industry/jobs/, written by the character-industry-jobs job.
-create table public.character_industry_job (
-  job_id bigint primary key,
+-- ── character_industry_job_over_time ──────────────────────────────────────
+-- ESI /characters/{id}/industry/jobs/ (include_completed), written by the
+-- character-industry-jobs job. SCD Type 2 history of a character's industry
+-- jobs, mirroring character_asset_over_time: each row is a versioned snapshot
+-- of one job keyed on job_id. As a job advances (active → paused → delivered)
+-- its tracked state (status, pause/completed dates, completed_character_id,
+-- successful_runs) changes, closing the old row and opening a new one, so the
+-- transition history is retained; valid_until is bumped each run a job is
+-- seen unchanged. Unlike the orders/assets reconcile, a job that drops out of
+-- the ESI listing (a delivered job aged past include_completed's window) is
+-- NOT closed — its terminal row stays is_current so the character_industry_job
+-- view keeps every job the endpoint ever reported, matching the old plain
+-- table (which never swept completed jobs).
+create table public.character_industry_job_over_time (
+  id bigint generated always as identity primary key,
+  job_id bigint not null,
   character_id uuid not null references public.registration(id) on delete cascade,
   installer_id bigint not null,
   facility_id bigint not null,
@@ -769,13 +804,19 @@ create table public.character_industry_job (
   completed_date timestamptz,
   completed_character_id bigint,
   successful_runs integer,
-  seen_at timestamptz not null default now()
+  is_current boolean not null default true,
+  valid_from timestamptz not null default now(),
+  valid_until timestamptz not null default now()
 );
-create index character_industry_job_character_id_end_date_idx on public.character_industry_job (character_id, end_date desc);
+create index character_industry_job_over_time_character_id_idx on public.character_industry_job_over_time (character_id);
+-- At most one live row per job; also the conflict target the reconcile relies on.
+create unique index character_industry_job_over_time_current_job_idx on public.character_industry_job_over_time (job_id) where is_current;
+-- Time-travel lookups walking a job's version history.
+create index character_industry_job_over_time_job_id_idx on public.character_industry_job_over_time (job_id, valid_until desc);
 
-alter table public.character_industry_job enable row level security;
+alter table public.character_industry_job_over_time enable row level security;
 create policy "Users read own industry jobs"
-  on public.character_industry_job
+  on public.character_industry_job_over_time
   for select
   to authenticated
   using (
@@ -784,8 +825,14 @@ create policy "Users read own industry jobs"
     )
   );
 
-grant select on public.character_industry_job to authenticated;
-grant all    on public.character_industry_job to service_role;
+-- Live snapshot of industry jobs. security_invoker keeps the underlying RLS in
+-- force for the querying (authenticated) role rather than running as the view owner.
+create view public.character_industry_job with (security_invoker = on) as
+  select * from public.character_industry_job_over_time where is_current;
+
+grant select on public.character_industry_job_over_time to authenticated;
+grant select on public.character_industry_job           to authenticated;
+grant all    on public.character_industry_job_over_time to service_role;
 
 -- /api/character/jobs IMPORTDATA endpoint: the player's industry jobs across
 -- all of their characters, with the owning character's name. Returns the whole
@@ -880,8 +927,8 @@ create table public.character_clone_over_time (
   name text,
   implants jsonb not null default '[]'::jsonb,
   is_current boolean not null default true,
-  first_seen_at timestamptz not null default now(),
-  last_seen_at timestamptz not null default now(),
+  valid_from timestamptz not null default now(),
+  valid_until timestamptz not null default now(),
   -- Solar system the clone's station/structure sits in, resolved at extract
   -- time (null until resolvable). Kept last so a fresh reset matches the
   -- column order of migrated databases (the character_clone view is select *).
@@ -956,8 +1003,8 @@ create table public.character_ship_over_time (
   ship_type_id bigint not null,
   ship_name text,
   is_current boolean not null default true,
-  first_seen_at timestamptz not null default now(),
-  last_seen_at timestamptz not null default now()
+  valid_from timestamptz not null default now(),
+  valid_until timestamptz not null default now()
 );
 create index character_ship_over_time_character_id_idx on public.character_ship_over_time (character_id);
 create unique index character_ship_over_time_current_idx
@@ -985,11 +1032,12 @@ grant all    on public.character_ship_over_time to service_role;
 -- A character's deployed Mercenary Dens and their live status, from the
 -- compatibility-date ESI endpoints /characters/{id}/structures/mercenary-dens
 -- (+ per-den detail). The listing is a full snapshot, so this is a live table
--- reconciled like character_order: each run upserts every den the character
--- currently fields (refreshing recorded_at) and deletes rows left with an
--- older recorded_at (dens unanchored, destroyed, or transferred away). Not
--- SCD-2: development/anarchy amounts drift continuously, which would open a new
--- history row almost every run — the current status is what matters here.
+-- reconciled by a plain upsert-and-sweep: each run upserts every den the
+-- character currently fields (refreshing recorded_at) and deletes rows left
+-- with an older recorded_at (dens unanchored, destroyed, or transferred away).
+-- Not SCD-2 (unlike character_order/character_industry_job): development/anarchy
+-- amounts drift continuously, which would open a new history row almost every
+-- run — only the current status matters here.
 
 create table public.character_mercenary_den (
   character_id uuid not null references public.registration(id) on delete cascade,
@@ -1231,7 +1279,7 @@ grant all    on public.corp_wallet_transaction to service_role;
 -- ESI /corporations/{id}/assets/ (esi-assets.read_corporation_assets.v1),
 -- written by the corp-assets job. SCD Type 2 history of a corporation's assets,
 -- mirroring character_asset_over_time for per-character assets: is_current=true
--- rows form the current snapshot, last_seen_at is bumped each run for unchanged
+-- rows form the current snapshot, valid_until is bumped each run for unchanged
 -- items, and a new row is inserted when anything changes (old row's is_current
 -- set false). Sourced from the same ESI pull that feeds corp_structure_rig.
 create table public.corp_asset_over_time (
@@ -1246,14 +1294,14 @@ create table public.corp_asset_over_time (
   is_singleton boolean,
   is_blueprint_copy boolean,
   is_current boolean not null default true,
-  first_seen_at timestamptz not null default now(),
-  last_seen_at timestamptz not null default now()
+  valid_from timestamptz not null default now(),
+  valid_until timestamptz not null default now()
 );
 create index corp_asset_over_time_corporation_id_idx on public.corp_asset_over_time (corporation_id);
 -- At most one live row per item; also the conflict target the reconcile relies on.
 create unique index corp_asset_over_time_current_item_idx on public.corp_asset_over_time (item_id) where is_current;
 -- Time-travel lookups walking an item's version history.
-create index corp_asset_over_time_item_id_idx on public.corp_asset_over_time (item_id, last_seen_at desc);
+create index corp_asset_over_time_item_id_idx on public.corp_asset_over_time (item_id, valid_until desc);
 
 alter table public.corp_asset_over_time enable row level security;
 create policy "Users read assets for own corps"
@@ -1296,7 +1344,7 @@ as $$
     -- bridge a container that momentarily dropped out of the current snapshot.
     select distinct on (item_id) item_id, location_id, location_type
     from public.corp_asset_over_time
-    order by item_id, is_current desc, last_seen_at desc
+    order by item_id, is_current desc, valid_until desc
   ),
   walk as (
     select
@@ -1371,7 +1419,7 @@ as $$
   with recursive parent_of as (
     select distinct on (item_id) item_id, location_id, location_type
     from public.corp_asset_over_time
-    order by item_id, is_current desc, last_seen_at desc
+    order by item_id, is_current desc, valid_until desc
   ),
   matched as (
     select a.item_id, a.corporation_id, a.type_id, a.quantity, a.is_singleton,
@@ -1502,7 +1550,7 @@ grant execute on function public.corp_assets(uuid[]) to service_role;
 -- ESI /corporations/{id}/blueprints/, written by the corp-blueprints job. SCD
 -- Type 2 history of a corporation's blueprints, mirroring
 -- character_blueprint_over_time for per-character blueprints: is_current=true
--- rows form the current snapshot, last_seen_at is bumped each run for
+-- rows form the current snapshot, valid_until is bumped each run for
 -- unchanged blueprints, and a new row is inserted when anything tracked
 -- changes (old row's is_current set false).
 create table public.corp_blueprint_over_time (
@@ -1517,14 +1565,14 @@ create table public.corp_blueprint_over_time (
   time_efficiency smallint,
   runs integer,
   is_current boolean not null default true,
-  first_seen_at timestamptz not null default now(),
-  last_seen_at timestamptz not null default now()
+  valid_from timestamptz not null default now(),
+  valid_until timestamptz not null default now()
 );
 create index corp_blueprint_over_time_corporation_id_idx on public.corp_blueprint_over_time (corporation_id);
 -- At most one live row per item; also the conflict target the extract relies on.
 create unique index corp_blueprint_over_time_current_item_idx on public.corp_blueprint_over_time (item_id) where is_current;
 -- Time-travel lookups walking an item's version history.
-create index corp_blueprint_over_time_item_id_idx on public.corp_blueprint_over_time (item_id, last_seen_at desc);
+create index corp_blueprint_over_time_item_id_idx on public.corp_blueprint_over_time (item_id, valid_until desc);
 
 alter table public.corp_blueprint_over_time enable row level security;
 create policy "Users read blueprints for own corps"
@@ -1581,13 +1629,17 @@ $$;
 
 grant execute on function public.corp_blueprints(uuid[]) to service_role;
 
--- ── corp_industry_job ─────────────────────────────────────────────────────
+-- ── corp_industry_job_over_time ───────────────────────────────────────────
 -- ESI /corporations/{id}/industry/jobs/ (esi-industry.read_corporation_jobs.v1),
--- written by the corp-industry-jobs job, once per corp per run. Same shape as
--- the per-character character_industry_job table plus corporation_id;
--- installer_id is the character who started the job.
-create table public.corp_industry_job (
-  job_id bigint primary key,
+-- written by the corp-industry-jobs job, once per corp per run. SCD Type 2
+-- history mirroring character_industry_job_over_time (plus corporation_id);
+-- installer_id is the character who started the job. Same reconcile: a job's
+-- status transitions open new versions, and a job that drops out of the ESI
+-- listing keeps its terminal row is_current rather than being closed, so the
+-- corp_industry_job view retains every job the endpoint ever reported.
+create table public.corp_industry_job_over_time (
+  id bigint generated always as identity primary key,
+  job_id bigint not null,
   corporation_id bigint not null,
   installer_id bigint not null,
   facility_id bigint not null,
@@ -1610,13 +1662,19 @@ create table public.corp_industry_job (
   completed_date timestamptz,
   completed_character_id bigint,
   successful_runs integer,
-  seen_at timestamptz not null default now()
+  is_current boolean not null default true,
+  valid_from timestamptz not null default now(),
+  valid_until timestamptz not null default now()
 );
-create index corp_industry_job_corporation_id_end_date_idx on public.corp_industry_job (corporation_id, end_date desc);
+create index corp_industry_job_over_time_corporation_id_idx on public.corp_industry_job_over_time (corporation_id);
+-- At most one live row per job; also the conflict target the reconcile relies on.
+create unique index corp_industry_job_over_time_current_job_idx on public.corp_industry_job_over_time (job_id) where is_current;
+-- Time-travel lookups walking a job's version history.
+create index corp_industry_job_over_time_job_id_idx on public.corp_industry_job_over_time (job_id, valid_until desc);
 
-alter table public.corp_industry_job enable row level security;
+alter table public.corp_industry_job_over_time enable row level security;
 create policy "Users read industry jobs for own corps"
-  on public.corp_industry_job
+  on public.corp_industry_job_over_time
   for select
   to authenticated
   using (
@@ -1626,8 +1684,14 @@ create policy "Users read industry jobs for own corps"
     )
   );
 
-grant select on public.corp_industry_job to authenticated;
-grant all    on public.corp_industry_job to service_role;
+-- Live snapshot of corp industry jobs. security_invoker keeps the underlying RLS
+-- in force for the querying (authenticated) role rather than running as the view owner.
+create view public.corp_industry_job with (security_invoker = on) as
+  select * from public.corp_industry_job_over_time where is_current;
+
+grant select on public.corp_industry_job_over_time to authenticated;
+grant select on public.corp_industry_job           to authenticated;
+grant all    on public.corp_industry_job_over_time to service_role;
 
 -- /api/corp/jobs IMPORTDATA endpoint: the caller's corporation(s) industry
 -- jobs, mirroring character_industry_jobs()'s shape for the per-character

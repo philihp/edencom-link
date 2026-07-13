@@ -46,7 +46,7 @@ const fetchCurrentRows = async (character_id, cols, from = 0) => {
 }
 
 // Reconcile freshly fetched blueprints against the character's current (open)
-// rows: unchanged blueprints get their last_seen_at extended, changed ones
+// rows: unchanged blueprints get their valid_until extended, changed ones
 // have their old row closed and a new one inserted, and vanished ones
 // (scrapped, transferred away, converted) are closed.
 const reconcile = async (character_id, fetched) => {
@@ -72,7 +72,7 @@ const reconcile = async (character_id, fetched) => {
         acc.touchIds.push(cur.id)
       } else {
         if (cur) acc.closeIds.push(cur.id)
-        // first_seen_at is left to its `default now()` so it marks this version's debut.
+        // valid_from is left to its `default now()` so it marks this version's debut.
         acc.inserts.push({
           item_id: b.item_id,
           character_id,
@@ -83,7 +83,7 @@ const reconcile = async (character_id, fetched) => {
           material_efficiency: b.material_efficiency ?? null,
           time_efficiency: b.time_efficiency ?? null,
           runs: b.runs ?? null,
-          last_seen_at: now,
+          valid_until: now,
         })
       }
       return acc
@@ -103,7 +103,7 @@ const reconcile = async (character_id, fetched) => {
   await forEachSequential(splitEvery(200, touchIds), async (ids) => {
     const { error: touchErr } = await sudoSupabase
       .from('character_blueprint_over_time')
-      .update({ last_seen_at: now })
+      .update({ valid_until: now })
       .in('id', ids)
     if (touchErr) throw touchErr
   })

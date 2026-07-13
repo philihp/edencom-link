@@ -51,7 +51,7 @@ const fetchCurrentRows = async (corporation_id, cols, from = 0) => {
 
 // Reconcile freshly fetched corp assets against the corp's current (open) rows
 // in corp_asset_over_time, the same SCD-2 approach the character-assets job uses
-// for per-character assets: unchanged items get last_seen_at extended, changed
+// for per-character assets: unchanged items get valid_until extended, changed
 // items close their old row and open a new one, and vanished items are closed.
 const reconcile = async (corporation_id, fetched) => {
   const cols =
@@ -87,7 +87,7 @@ const reconcile = async (corporation_id, fetched) => {
           quantity: a.quantity ?? null,
           is_singleton: a.is_singleton ?? null,
           is_blueprint_copy: !!a.is_blueprint_copy,
-          last_seen_at: now,
+          valid_until: now,
         })
       }
       return acc
@@ -105,7 +105,7 @@ const reconcile = async (corporation_id, fetched) => {
   const allCloseIds = [...closeIds, ...vanishedIds]
 
   await forEachSequential(splitEvery(200, touchIds), async (ids) => {
-    const { error } = await sudoSupabase.from('corp_asset_over_time').update({ last_seen_at: now }).in('id', ids)
+    const { error } = await sudoSupabase.from('corp_asset_over_time').update({ valid_until: now }).in('id', ids)
     if (error) throw error
   })
   // Close before inserting so the unique-current-per-item index never collides.
