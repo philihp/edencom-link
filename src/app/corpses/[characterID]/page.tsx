@@ -38,6 +38,7 @@ const pilotFromName = (name: string | null): string | null => {
 export const dynamic = 'force-dynamic'
 
 type RegistrationRow = {
+  id: string
   user_id: string
   character_id: number | string | null
   name: string
@@ -76,13 +77,14 @@ const CorpsesPage = async ({ params }: { params: Promise<{ characterID: string }
   // Every character on the account, for both the corpse scope and the label.
   const { data: registrations } = await service
     .from('registration')
-    .select('user_id, character_id, name, is_main')
+    .select('id, user_id, character_id, name, is_main')
     .eq('user_id', owner.user_id)
     .returns<RegistrationRow[]>()
 
-  const characterIds = (registrations ?? [])
-    .map((r) => r.character_id)
-    .filter((id): id is number | string => id != null)
+  // The asset tables key on the registration row's uuid (character_asset.
+  // character_id → registration.id), not the EVE character id, so scope the
+  // corpse query by those uuids.
+  const registrationIds = (registrations ?? []).map((r) => r.id)
 
   // Label the account by its main character, falling back to the character in
   // the URL, then any character on the account.
@@ -95,11 +97,11 @@ const CorpsesPage = async ({ params }: { params: Promise<{ characterID: string }
   const typeIds = corpseTypeIds()
 
   const { data: rows } =
-    characterIds.length && typeIds.length
+    registrationIds.length && typeIds.length
       ? await service
           .from('character_asset')
           .select('item_id, name, first_seen_at')
-          .in('character_id', characterIds)
+          .in('character_id', registrationIds)
           .in('type_id', typeIds)
           .returns<CorpseRow[]>()
       : { data: [] as CorpseRow[] }
