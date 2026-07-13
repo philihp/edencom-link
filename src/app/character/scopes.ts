@@ -111,6 +111,12 @@ export const esiScopes: EsiScope[] = [
       'this character’s current ship will be shown as an ordinary asset at the station it is docked at, alongside any other ships parked there.',
   },
   {
+    scope: 'esi-structures.read_character.v1',
+    name: 'Mercenary dens',
+    why: 'Tracks the Mercenary Dens this character has deployed — each den’s development and anarchy levels, running state, and reinforcement timer.',
+    without: 'this character’s mercenary dens and their status will not be tracked.',
+  },
+  {
     scope: 'esi-universe.read_structures.v1',
     name: 'Structure names',
     why: 'Resolves the names of player-owned Upwell structures where this character keeps assets, so they show a name instead of a raw ID.',

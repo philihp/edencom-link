@@ -14,6 +14,10 @@
       "schedule": "28 */6 * * *"
     },
     {
+      "path": "/api/cron/character-mercenary-dens",
+      "schedule": "30 */6 * * *"
+    },
+    {
       "path": "/api/cron/corp-wallet-journal",
       "schedule": "37 */6 * * *"
     },
