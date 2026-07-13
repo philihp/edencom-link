@@ -1,0 +1,85 @@
+name: Bump vendored @eveshipfit
+
+# Renovate can't track the vendored @eveshipfit tarballs (they're `file:`
+# specifiers pointing at committed .tgz blobs, and the upstream registry is
+# GitHub Packages behind auth), so this replaces it for those two packages:
+# weekly it checks npm.pkg.github.com for a newer @eveshipfit/react or
+# @eveshipfit/dogma-engine, re-packs the tarball into vendor/eveshipfit/,
+# rewrites package.json + the lockfile, and opens (or updates) a PR.
+# See .github/scripts/bump-eveshipfit.mjs and the "Vendored @eveshipfit/*
+# packages" note in CLAUDE.md.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 8 * * 1' # Mondays 08:00 UTC
+
+concurrency:
+  group: bump-eveshipfit
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  packages: read
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    env:
+      BUMP_BRANCH: automation/eveshipfit-bump
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          node-version: 24.x
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      # npm auth for GitHub Packages, written to a runner-temp file so the token
+      # never lands in the repo working tree (and can't be committed). Public
+      # @eveshipfit packages read fine with the default GITHUB_TOKEN; set the
+      # EVESHIPFIT_PACKAGES_TOKEN secret (a PAT with read:packages) only if that
+      # ever 403s.
+      - name: Configure GitHub Packages auth
+        run: |
+          {
+            echo "@eveshipfit:registry=https://npm.pkg.github.com"
+            echo "//npm.pkg.github.com/:_authToken=${TOKEN}"
+          } > "${RUNNER_TEMP}/npmrc"
+        env:
+          TOKEN: ${{ secrets.EVESHIPFIT_PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Check for and apply updates
+        id: bump
+        run: node .github/scripts/bump-eveshipfit.mjs
+        env:
+          NPM_CONFIG_USERCONFIG: ${{ runner.temp }}/npmrc
+          PR_BODY_PATH: ${{ runner.temp }}/pr-body.md
+
+      - name: Regenerate lockfile
+        if: steps.bump.outputs.changed == 'true'
+        run: pnpm install --no-frozen-lockfile
+        env:
+          HUSKY: '0'
+
+      - name: Open or update PR
+        if: steps.bump.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TITLE: ${{ steps.bump.outputs.title }}
+          BODY_PATH: ${{ runner.temp }}/pr-body.md
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git switch -C "$BUMP_BRANCH"
+          git add -A package.json pnpm-lock.yaml vendor/eveshipfit
+          git commit -m "$TITLE"
+          git push --force origin "$BUMP_BRANCH"
+          if [ -z "$(gh pr list --head "$BUMP_BRANCH" --state open --json number --jq '.[].number')" ]; then
+            gh pr create --base main --head "$BUMP_BRANCH" --title "$TITLE" --body-file "$BODY_PATH"
+          else
+            echo "PR already open for $BUMP_BRANCH; the force-push updated it."
+          fi
