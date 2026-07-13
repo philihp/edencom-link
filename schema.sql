@@ -77,6 +77,13 @@ drop table if exists public.character_clone_state      cascade;
 drop table if exists public.character_implant          cascade;
 drop view  if exists public.character_ship              cascade;
 drop table if exists public.character_ship_over_time    cascade;
+-- Pre-existing gap: character_mercenary_den never had a drop statement (added
+-- via migration), so re-running this file failed on it. Now an SCD table +
+-- current-snapshot view, with status/share siblings.
+drop view  if exists public.character_mercenary_den            cascade;
+drop table if exists public.character_mercenary_den_share               cascade;
+drop table if exists public.character_mercenary_den_status              cascade;
+drop table if exists public.character_mercenary_den_over_time  cascade;
 drop table if exists public.universe_name        cascade;
 drop table if exists public.universe_structure   cascade;
 drop table if exists public.invite_code          cascade;
@@ -1028,39 +1035,44 @@ grant select on public.character_ship_over_time to authenticated;
 grant select on public.character_ship           to authenticated;
 grant all    on public.character_ship_over_time to service_role;
 
--- ── character_mercenary_den ────────────────────────────────────────────────
--- A character's deployed Mercenary Dens and their live status, from the
--- compatibility-date ESI endpoints /characters/{id}/structures/mercenary-dens
--- (+ per-den detail). The listing is a full snapshot, so this is a live table
--- reconciled by a plain upsert-and-sweep: each run upserts every den the
--- character currently fields (refreshing recorded_at) and deletes rows left
--- with an older recorded_at (dens unanchored, destroyed, or transferred away).
--- Not SCD-2 (unlike character_order/character_industry_job): development/anarchy
--- amounts drift continuously, which would open a new history row almost every
--- run — only the current status matters here.
-
-create table public.character_mercenary_den (
+-- ── character_mercenary_den (SCD type 2) ──────────────────────────────────
+-- A character's deployed Mercenary Dens, from the compatibility-date ESI
+-- endpoints /characters/{id}/structures/mercenary-dens (+ per-den detail). Only
+-- the den's stable identity/config lives here — which character owns it, where
+-- it sits, and its skyhook. The volatile observed state (development, anarchy,
+-- infomorphs, running state, reinforcement timer) lives in the append-only
+-- character_mercenary_den_status table below, so its constant drift doesn't churn a row
+-- here. SCD-2 like character_asset_over_time: one open (is_current) row per den,
+-- valid_until bumped when the config is unchanged, a new row opened (and the old
+-- one closed) when the config changes, and the open row closed when the den is no
+-- longer listed (unanchored/transferred). The character_mercenary_den view is the
+-- live snapshot.
+create table public.character_mercenary_den_over_time (
+  id bigint generated always as identity primary key,
   character_id uuid not null references public.registration(id) on delete cascade,
   den_id bigint not null,
   planet_id bigint not null,
   type_id bigint,
-  state text,
-  development_level text,
-  development_amount bigint,
-  anarchy_level text,
-  anarchy_amount bigint,
-  infomorphs bigint,
-  reinforcement_end timestamptz,
   skyhook_id bigint,
   skyhook_corporation_id bigint,
-  recorded_at timestamptz not null default now(),
-  primary key (character_id, den_id)
+  is_current boolean not null default true,
+  valid_from timestamptz not null default now(),
+  valid_until timestamptz not null default now()
 );
-create index character_mercenary_den_character_id_idx on public.character_mercenary_den (character_id);
+create index character_mercenary_den_over_time_character_id_idx
+  on public.character_mercenary_den_over_time (character_id);
+-- At most one live row per den; also the conflict target the extract relies on.
+create unique index character_mercenary_den_over_time_current_idx
+  on public.character_mercenary_den_over_time (character_id, den_id) where is_current;
+-- Time-travel lookups walking a den's version history.
+create index character_mercenary_den_over_time_den_idx
+  on public.character_mercenary_den_over_time (character_id, den_id, valid_until desc);
 
-alter table public.character_mercenary_den enable row level security;
+alter table public.character_mercenary_den_over_time enable row level security;
+-- Base policy: a user reads their own characters' dens. The corp-sharing policy
+-- that widens this to corpmates is added after character_mercenary_den_share below.
 create policy "Users read own mercenary dens"
-  on public.character_mercenary_den
+  on public.character_mercenary_den_over_time
   for select
   to authenticated
   using (
@@ -1069,8 +1081,125 @@ create policy "Users read own mercenary dens"
     )
   );
 
-grant select on public.character_mercenary_den to authenticated;
-grant all    on public.character_mercenary_den to service_role;
+-- Live snapshot of dens, each enriched with its most recent observed status
+-- (development/anarchy, infomorphs, running state, reinforcement timer) from
+-- character_mercenary_den_status — null if the den has never been observed.
+-- security_invoker keeps the underlying RLS in force for the querying
+-- (authenticated) role rather than running as the view owner.
+create view public.character_mercenary_den with (security_invoker = on) as
+  select
+    d.*,
+    s.state,
+    s.development_level,
+    s.development_amount,
+    s.anarchy_level,
+    s.anarchy_amount,
+    s.infomorphs,
+    s.reinforcement_end,
+    s.observed_at as status_observed_at
+  from public.character_mercenary_den_over_time d
+  left join lateral (
+    select state, development_level, development_amount, anarchy_level, anarchy_amount,
+           infomorphs, reinforcement_end, observed_at
+    from public.character_mercenary_den_status s
+    where s.character_id = d.character_id and s.den_id = d.den_id
+    order by s.observed_at desc
+    limit 1
+  ) s on true
+  where d.is_current;
+
+grant select on public.character_mercenary_den_over_time to authenticated;
+grant select on public.character_mercenary_den           to authenticated;
+grant all    on public.character_mercenary_den_over_time to service_role;
+
+-- ── character_mercenary_den_status ───────────────────────────────────────────────────
+-- Append-only observation history for each den's volatile state. Every extract
+-- run inserts one row per den it sees, rather than mutating the den row — these
+-- values (development/anarchy evolution, stored infomorphs, running state, the
+-- reinforcement timer) change constantly. Identified by the logical den
+-- (character_id, den_id); character_id cascades from registration (the den table
+-- is SCD, so there's no single den row to FK against).
+create table public.character_mercenary_den_status (
+  id bigint generated always as identity primary key,
+  character_id uuid not null references public.registration(id) on delete cascade,
+  den_id bigint not null,
+  state text,
+  development_level text,
+  development_amount bigint,
+  anarchy_level text,
+  anarchy_amount bigint,
+  infomorphs bigint,
+  reinforcement_end timestamptz,
+  observed_at timestamptz not null default now()
+);
+create index character_mercenary_den_status_den_idx
+  on public.character_mercenary_den_status (character_id, den_id, observed_at desc);
+
+alter table public.character_mercenary_den_status enable row level security;
+-- A status row is readable exactly when its den is: the subquery over the SCD den
+-- table inherits its own + corp-sharing policies (any version of the den), so
+-- visibility is defined in one place and mirrored here.
+create policy "Read status for visible mercenary dens"
+  on public.character_mercenary_den_status
+  for select
+  to authenticated
+  using (
+    exists (
+      select 1 from public.character_mercenary_den_over_time d
+      where d.character_id = character_mercenary_den_status.character_id
+        and d.den_id = character_mercenary_den_status.den_id
+    )
+  );
+
+grant select on public.character_mercenary_den_status to authenticated;
+grant all    on public.character_mercenary_den_status to service_role;
+
+-- ── character_mercenary_den_share ────────────────────────────────────────────────────
+-- Cross-reference table for the many-to-many "which dens are shared to which
+-- corporations". One row = a den (its logical character_id/den_id) shared to one
+-- corporation. A user shares by picking the corps to share with, which writes a
+-- row per den per chosen corp (writes go through the service role in the share
+-- server action, which checks the den belongs to the caller); un-sharing deletes
+-- the rows. Deliberately NO row-level security: the corp-sharing policy on
+-- character_mercenary_den_over_time reads this table cross-user (a shared row is
+-- authored by the den's owner but must be visible when evaluating a corpmate's
+-- access), and the table holds only the non-sensitive "den D shared to corp C".
+create table public.character_mercenary_den_share (
+  character_id uuid not null references public.registration(id) on delete cascade,
+  den_id bigint not null,
+  corporation_id bigint not null,
+  created_at timestamptz not null default now(),
+  primary key (character_id, den_id, corporation_id)
+);
+create index character_mercenary_den_share_corporation_id_idx
+  on public.character_mercenary_den_share (corporation_id);
+
+-- RLS intentionally left disabled (see above). authenticated needs SELECT so the
+-- corp-sharing policy's subquery can read it; writes are service-role only.
+grant select on public.character_mercenary_den_share to authenticated;
+grant all    on public.character_mercenary_den_share to service_role;
+
+-- Corp-sharing policy: a den is visible to the caller when it has been shared
+-- (a character_mercenary_den_share row) to a corporation the caller owns a character in.
+-- Reads the RLS-free share table plus the caller's own registrations — no reach
+-- into any other user's RLS-protected rows. Additive/permissive: OR'd with
+-- "Users read own mercenary dens" above.
+create policy "Corpmates read shared mercenary dens"
+  on public.character_mercenary_den_over_time
+  for select
+  to authenticated
+  using (
+    exists (
+      select 1
+      from public.character_mercenary_den_share sh
+      where sh.character_id = character_mercenary_den_over_time.character_id
+        and sh.den_id = character_mercenary_den_over_time.den_id
+        and sh.corporation_id in (
+          select c.corporation_id from public.registration c
+          where c.user_id = (select auth.uid()) and c.corporation_id is not null
+        )
+    )
+  );
 
 -- ── character_clone_state ──────────────────────────────────────────────────
 -- Character-level fields from ESI /characters/{id}/clones/, written by the
@@ -1820,15 +1949,11 @@ grant all    on public.universe_structure to service_role;
 -- 'corpses' both shows the owner's nav link and opts their account into the
 -- public /corpses/[characterID] share page — an account without it set renders
 -- as a 404 there.
--- `share_mercenary_dens` is the user's opt-in to share their deployed
--- mercenary dens (character_mercenary_den) with corpmates; toggled from the top
--- of the /mercenary-dens page. Default false (private).
 create table public.user_settings (
   user_id uuid primary key references auth.users(id) on delete cascade,
   enabled_scopes text[] not null default '{}',
   api_token text unique,
   flags text[] not null default '{}',
-  share_mercenary_dens boolean not null default false,
   updated_at timestamptz not null default now()
 );
 
