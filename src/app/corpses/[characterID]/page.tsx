@@ -46,6 +46,7 @@ type RegistrationRow = {
 
 type CorpseRow = {
   item_id: number | string
+  type_id: number | string
   name: string | null
   first_seen_at: string | null
 }
@@ -99,7 +100,7 @@ const CorpsesPage = async ({ params }: { params: Promise<{ characterID: string }
     registrationIds.length && typeIds.length
       ? await service
           .from('character_asset')
-          .select('item_id, name, first_seen_at')
+          .select('item_id, type_id, name, first_seen_at')
           .in('character_id', registrationIds)
           .in('type_id', typeIds)
           .returns<CorpseRow[]>()
@@ -114,6 +115,7 @@ const CorpsesPage = async ({ params }: { params: Promise<{ characterID: string }
       const firstSeenMs = r.first_seen_at ? new Date(r.first_seen_at).getTime() : NaN
       return {
         itemId: String(r.item_id),
+        typeId: Number(r.type_id),
         pilot: pilotFromName(r.name),
         isNew: Number.isFinite(firstSeenMs) && firstSeenMs >= cutoff,
       }
@@ -128,24 +130,23 @@ const CorpsesPage = async ({ params }: { params: Promise<{ characterID: string }
       </div>
 
       {corpses.length > 0 ? (
-        <table className={styles.table}>
-          <thead>
-            <tr>
-              <th>Pilot</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {corpses.map(({ itemId, pilot, isNew }) => (
-              <tr key={itemId}>
-                <td className={styles.pilot}>
-                  {pilot ?? <span className={styles.unknown}>Unknown (#{itemId})</span>}
-                </td>
-                <td>{isNew && <span className={styles.badge}>New!</span>}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <ul className={styles.grid}>
+          {corpses.map(({ itemId, typeId, pilot, isNew }) => (
+            <li key={itemId} className={styles.tile}>
+              {isNew && <span className={styles.badge}>New!</span>}
+              <img
+                className={styles.icon}
+                src={`https://images.evetech.net/types/${typeId}/icon?size=64`}
+                alt=""
+                width={48}
+                height={48}
+              />
+              <span className={styles.name}>
+                {pilot ?? <span className={styles.unknown}>Unknown (#{itemId})</span>}
+              </span>
+            </li>
+          ))}
+        </ul>
       ) : (
         <p className={styles.empty}>No corpses in this collection.</p>
       )}
