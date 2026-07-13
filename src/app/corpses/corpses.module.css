@@ -44,11 +44,6 @@
   font-weight: 600;
 }
 
-.seen {
-  font-size: 9pt;
-  color: var(--ink-faint);
-}
-
 .unknown {
   color: var(--ink-faint);
   font-style: italic;

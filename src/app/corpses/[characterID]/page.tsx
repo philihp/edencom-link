@@ -3,7 +3,6 @@ import { notFound } from 'next/navigation'
 import { searchSdeTypesAll } from '@/sdeTypes'
 import { createServiceClient } from '@/utils/supabase/service'
 
-import { DateTime } from '../../DateTime'
 import styles from '../corpses.module.css'
 
 // Modern capsuleer corpses are the gendered "Corpse Male"/"Corpse Female"
@@ -116,7 +115,6 @@ const CorpsesPage = async ({ params }: { params: Promise<{ characterID: string }
       return {
         itemId: String(r.item_id),
         pilot: pilotFromName(r.name),
-        firstSeen: r.first_seen_at,
         isNew: Number.isFinite(firstSeenMs) && firstSeenMs >= cutoff,
       }
     })
@@ -134,18 +132,14 @@ const CorpsesPage = async ({ params }: { params: Promise<{ characterID: string }
           <thead>
             <tr>
               <th>Pilot</th>
-              <th>First seen</th>
               <th />
             </tr>
           </thead>
           <tbody>
-            {corpses.map(({ itemId, pilot, firstSeen, isNew }) => (
+            {corpses.map(({ itemId, pilot, isNew }) => (
               <tr key={itemId}>
                 <td className={styles.pilot}>
                   {pilot ?? <span className={styles.unknown}>Unknown (#{itemId})</span>}
-                </td>
-                <td className={styles.seen}>
-                  <DateTime value={firstSeen} />
                 </td>
                 <td>{isNew && <span className={styles.badge}>New!</span>}</td>
               </tr>
