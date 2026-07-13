@@ -166,7 +166,7 @@ const ShipPage = async ({
         Owner: <span className="serif">{ownerName}</span>
       </p>
       <ShareControls itemId={itemId} initialToken={share?.token ?? null} />
-      <ShipFitViewDynamic esiFit={toEsiFit(Number(self.type_id), self.name ?? null, rows)} editable />
+      <ShipFitViewDynamic esiFit={toEsiFit(Number(self.type_id), self.name ?? null, rows)} />
       <ShipCargo rows={rows} typeNamesPromise={typeNamesPromise} />
     </>
   )

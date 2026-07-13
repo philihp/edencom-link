@@ -62,26 +62,7 @@ const FitFromEsi = ({ esiFit, children }: FitFromEsiProps) => {
 
 type ShipFitViewProps = {
   esiFit: EsiFit
-  /**
-   * When true, the wheel is interactive: modules/charges can be dragged from
-   * the hardware browser onto slots (e.g. loading ammo to simulate DPS). Edits
-   * are client-side only — never persisted back to ESI. Gated to the
-   * authenticated owner view; the anonymous share-token view stays read-only.
-   */
-  editable?: boolean
 }
-
-// The wheel + numeric readout, shared by the read-only and editable layouts.
-const WheelAndStats = ({ readOnly }: { readOnly: boolean }) => (
-  <div className={styles.layout}>
-    <div className={styles.wheel}>
-      <ShipFit withStats readOnly={readOnly} />
-    </div>
-    <div className={styles.stats}>
-      <ShipStatistics />
-    </div>
-  </div>
-)
 
 // eveship.fit's own hosted data is deliberately CORS-locked to their site, so
 // EveDataProvider points at our own build-time mirror (see src/buildEsfData.js).
@@ -97,7 +78,12 @@ const WheelAndStats = ({ readOnly }: { readOnly: boolean }) => (
 // we pin all-skills-L5 both via initialCharacterId (fresh-load default) and by
 // normalizing the localStorage key first (which otherwise wins) — the standard
 // "assume max skills" baseline fitting tools use.
-export const ShipFitView = ({ esiFit, editable = false }: ShipFitViewProps) => {
+//
+// The wheel is interactive for every viewer (owner and anonymous share-token
+// alike): modules/charges can be dragged from the hardware browser onto slots
+// to simulate a fit (e.g. loading ammo to see DPS). Edits are client-side only
+// — nothing is ever written back to ESI — so there's no reason to gate it.
+export const ShipFitView = ({ esiFit }: ShipFitViewProps) => {
   // Lazy initializer: runs once, synchronously, on first render — before the
   // child CurrentCharacterProvider reads localStorage in its own initializer.
   useState(ensureDefaultCharacter)
@@ -109,27 +95,30 @@ export const ShipFitView = ({ esiFit, editable = false }: ShipFitViewProps) => {
           <CurrentCharacterProvider initialCharacterId={DEFAULT_CHARACTER_ID}>
             <FitFromEsi esiFit={esiFit}>
               <StatisticsProvider>
-                {editable ? (
-                  // FitManagerProvider must sit inside CurrentFit/Statistics/
-                  // EveData (all above). It backs the drag-to-fit interactions:
-                  // dragging a charge from HardwareListing onto a weapon slot
-                  // calls setCharge, and the stats/wheel recompute live.
-                  <FitManagerProvider>
-                    <WheelAndStats readOnly={false} />
-                    <details className={styles.hardware}>
-                      <summary>Load modules &amp; ammo (simulate)</summary>
-                      <p className={styles.hardwareHint}>
-                        Drag a charge onto a weapon slot to load ammo and see damage update. Changes here are a local
-                        simulation and are never saved back to the game.
-                      </p>
-                      <div className={styles.hardwareListing}>
-                        <HardwareListing />
-                      </div>
-                    </details>
-                  </FitManagerProvider>
-                ) : (
-                  <WheelAndStats readOnly />
-                )}
+                {/* FitManagerProvider must sit inside CurrentFit/Statistics/
+                    EveData (all above). It backs the drag-to-fit interactions:
+                    dragging a charge from HardwareListing onto a weapon slot
+                    calls setCharge, and the stats/wheel recompute live. */}
+                <FitManagerProvider>
+                  <div className={styles.layout}>
+                    <div className={styles.wheel}>
+                      <ShipFit withStats />
+                    </div>
+                    <div className={styles.stats}>
+                      <ShipStatistics />
+                    </div>
+                  </div>
+                  <details className={styles.hardware}>
+                    <summary>Load modules &amp; ammo (simulate)</summary>
+                    <p className={styles.hardwareHint}>
+                      Drag a charge onto a weapon slot to load ammo and see damage update. Changes here are a local
+                      simulation and are never saved back to the game.
+                    </p>
+                    <div className={styles.hardwareListing}>
+                      <HardwareListing />
+                    </div>
+                  </details>
+                </FitManagerProvider>
               </StatisticsProvider>
             </FitFromEsi>
           </CurrentCharacterProvider>
