@@ -125,7 +125,7 @@ const CorpsesPage = async ({ params }: { params: Promise<{ characterID: string }
   return (
     <>
       <div className={styles.pageHeader}>
-        <h1>{accountName ? `${accountName}'s corpses` : 'Corpses'}</h1>
+        <h1>{accountName ? `The Many Corpses of ${accountName}` : 'The Many Corpses'}</h1>
         {corpses.length > 0 && <span className={styles.count}>{corpses.length}</span>}
       </div>
 
