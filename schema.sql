@@ -1710,7 +1710,9 @@ grant all    on public.universe_structure to service_role;
 -- in settings.
 -- `flags` is the set of Vercel Flags (src/flags.ts) a user has enabled, e.g.
 -- 'indexes' gates the /indexes page and nav link per-user (likewise
--- 'mercenary-dens' and 'corpses' for their dark-launched pages).
+-- 'mercenary-dens'). 'corpses' both shows the owner's nav link and opts their
+-- account into the public /corpses/[characterID] share page — an account
+-- without it set renders as a 404 there.
 create table public.user_settings (
   user_id uuid primary key references auth.users(id) on delete cascade,
   enabled_scopes text[] not null default '{}',

@@ -15,16 +15,20 @@ const Header = async () => {
   // earliest one, and to their email if they haven't registered a character yet.
   // Mirrors the inviter lookup on /account/invite.
   let displayName: string | undefined
+  let mainCharacterId: number | string | null = null
   let lastRefreshedAt: string | null = null
   if (user) {
     const { data: mainCharacter } = await supabase
       .from('registration')
-      .select('name')
+      .select('name, character_id')
       .order('is_main', { ascending: false })
       .order('created_at', { ascending: true })
       .limit(1)
       .maybeSingle()
     displayName = mainCharacter?.name ?? user.email ?? undefined
+    // The corpses share page is keyed on a character id; link the signed-in
+    // user to their own (their main character's).
+    mainCharacterId = mainCharacter?.character_id ?? null
 
     // When this user's ESI data last landed: the most recent completed extract
     // heartbeat attributed to them, whether a scheduled cron pull or an
@@ -84,9 +88,9 @@ const Header = async () => {
                   <span className={styles.sep}>|</span>
                 </>
               )}
-              {showCorpses && (
+              {showCorpses && mainCharacterId != null && (
                 <>
-                  <Link href="/corpses">corpses</Link>
+                  <Link href={`/corpses/${mainCharacterId}`}>corpses</Link>
                   <span className={styles.sep}>|</span>
                 </>
               )}

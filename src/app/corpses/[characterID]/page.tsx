@@ -1,0 +1,147 @@
+import { notFound } from 'next/navigation'
+
+import { createServiceClient } from '@/utils/supabase/service'
+
+import { DateTime } from '../../DateTime'
+import styles from '../corpses.module.css'
+
+// Every player corpse in EVE is the same type — typeID 25, "Corpse". They're
+// singleton items, so the extract job resolves each one's ESI asset name, which
+// for a corpse reads "<pilot>'s Frozen Corpse".
+const CORPSE_TYPE_ID = 25
+
+// A corpse first seen within this window is flagged "New!".
+const NEW_WINDOW_MS = 48 * 60 * 60 * 1000
+
+// Strip the "'s Frozen Corpse" suffix ESI tacks onto a corpse's name, leaving
+// just the dead pilot's name. Straight or curly apostrophe, case-insensitive.
+const pilotFromName = (name: string | null): string | null => {
+  const trimmed = name?.trim()
+  if (!trimmed) return null
+  return trimmed.replace(/['’]s\s+Frozen\s+Corpse$/i, '').trim() || trimmed
+}
+
+// Public share page — no login required. It reads through the service-role
+// client (bypassing RLS), so every query is explicitly scoped to the owning
+// account's characters. Owners opt in by enabling the 'corpses' flag; a page
+// for an account that hasn't is a 404, so this never leaks a random pilot's
+// collection just because their character id was guessed.
+export const dynamic = 'force-dynamic'
+
+type RegistrationRow = {
+  user_id: string
+  character_id: number | string | null
+  name: string
+  is_main: boolean
+}
+
+type CorpseRow = {
+  item_id: number | string
+  name: string | null
+  first_seen_at: string | null
+}
+
+const CorpsesPage = async ({ params }: { params: Promise<{ characterID: string }> }) => {
+  const { characterID } = await params
+
+  const service = createServiceClient()
+
+  // Which account owns the character in the URL? Its registrations give us the
+  // full set of characters whose corpses we list.
+  const { data: owner } = await service
+    .from('registration')
+    .select('user_id')
+    .eq('character_id', characterID)
+    .limit(1)
+    .maybeSingle<Pick<RegistrationRow, 'user_id'>>()
+  if (!owner) notFound()
+
+  // The owner must have opted into sharing by enabling the 'corpses' flag.
+  const { data: settings } = await service
+    .from('user_settings')
+    .select('flags')
+    .eq('user_id', owner.user_id)
+    .maybeSingle<{ flags: string[] | null }>()
+  if (!(settings?.flags ?? []).includes('corpses')) notFound()
+
+  // Every character on the account, for both the corpse scope and the label.
+  const { data: registrations } = await service
+    .from('registration')
+    .select('user_id, character_id, name, is_main')
+    .eq('user_id', owner.user_id)
+    .returns<RegistrationRow[]>()
+
+  const characterIds = (registrations ?? [])
+    .map((r) => r.character_id)
+    .filter((id): id is number | string => id != null)
+
+  // Label the account by its main character, falling back to the character in
+  // the URL, then any character on the account.
+  const accountName =
+    (registrations ?? []).find((r) => r.is_main)?.name ??
+    (registrations ?? []).find((r) => String(r.character_id) === String(characterID))?.name ??
+    (registrations ?? [])[0]?.name ??
+    null
+
+  const { data: rows } = characterIds.length
+    ? await service
+        .from('character_asset')
+        .select('item_id, name, first_seen_at')
+        .in('character_id', characterIds)
+        .eq('type_id', CORPSE_TYPE_ID)
+        .returns<CorpseRow[]>()
+    : { data: [] as CorpseRow[] }
+
+  const cutoff = Date.now() - NEW_WINDOW_MS
+
+  // The pilot name lives in the asset name; a corpse whose name hasn't been
+  // resolved yet falls back to its item id so it still shows in the tally.
+  const corpses = (rows ?? [])
+    .map((r) => {
+      const firstSeenMs = r.first_seen_at ? new Date(r.first_seen_at).getTime() : NaN
+      return {
+        itemId: String(r.item_id),
+        pilot: pilotFromName(r.name),
+        firstSeen: r.first_seen_at,
+        isNew: Number.isFinite(firstSeenMs) && firstSeenMs >= cutoff,
+      }
+    })
+    .sort((a, b) => (a.pilot ?? '').localeCompare(b.pilot ?? '', undefined, { sensitivity: 'base' }))
+
+  return (
+    <>
+      <div className={styles.pageHeader}>
+        <h1>{accountName ? `${accountName}'s corpses` : 'Corpses'}</h1>
+        {corpses.length > 0 && <span className={styles.count}>{corpses.length}</span>}
+      </div>
+
+      {corpses.length > 0 ? (
+        <table className={styles.table}>
+          <thead>
+            <tr>
+              <th>Pilot</th>
+              <th>First seen</th>
+              <th />
+            </tr>
+          </thead>
+          <tbody>
+            {corpses.map(({ itemId, pilot, firstSeen, isNew }) => (
+              <tr key={itemId}>
+                <td className={styles.pilot}>
+                  {pilot ?? <span className={styles.unknown}>Unknown (#{itemId})</span>}
+                </td>
+                <td className={styles.seen}>
+                  <DateTime value={firstSeen} />
+                </td>
+                <td>{isNew && <span className={styles.badge}>New!</span>}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : (
+        <p className={styles.empty}>No corpses in this collection.</p>
+      )}
+    </>
+  )
+}
+export default CorpsesPage
