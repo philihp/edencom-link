@@ -79,7 +79,7 @@
     "globals": "^17.0.0",
     "husky": "9.1.7",
     "lint-staged": "17.0.8",
-    "prettier": "3.9.4",
+    "prettier": "3.9.5",
     "supabase": "2.109.0",
     "typescript": "6.0.3",
     "typescript-eslint": "8.62.1"
