@@ -67,7 +67,7 @@
   },
   "prettier": "@philihp/prettier-config",
   "devDependencies": {
-    "@eslint/eslintrc": "3.3.5",
+    "@eslint/eslintrc": "3.3.6",
     "@eslint/js": "^10.0.0",
     "@philihp/prettier-config": "1.0.0",
     "@types/node": "25.9.4",
