@@ -32,8 +32,12 @@ drop function if exists public.corp_asset_location_summary()             cascade
 drop function if exists public.corp_asset_location_contents(bigint)      cascade;
 drop function if exists public.asset_ancestors(bigint)                   cascade;
 drop function if exists public.character_asset_snapshot_at(uuid[], timestamptz) cascade;
-drop function if exists public.character_industry_jobs(uuid[], boolean)  cascade;
+drop function if exists public.character_industry_jobs(uuid[], boolean)             cascade;
+drop function if exists public.character_industry_jobs(uuid[], boolean, timestamptz) cascade;
+drop function if exists public.corp_industry_jobs(uuid[], boolean)                  cascade;
+drop function if exists public.corp_industry_jobs(uuid[], boolean, timestamptz)     cascade;
 drop function if exists public.character_orders(uuid[])                  cascade;
+drop function if exists public.character_orders(uuid[], timestamptz)     cascade;
 drop function if exists public.latest_heartbeats()                       cascade;
 drop view  if exists public.asset                cascade;
 drop table if exists public.asset_over_time      cascade;
@@ -423,7 +427,7 @@ as $$
   join public.registration r on r.id = a.character_id
   where a.character_id = any(character_ids)
     and a.valid_from <= as_of
-    and (a.valid_until >= as_of or a.is_current)
+    and (a.is_current or a.valid_until >= as_of)
     and (not a.is_singleton or a.is_blueprint_copy);
 $$;
 
@@ -733,12 +737,18 @@ grant select on public.character_order           to authenticated;
 grant all    on public.character_order_over_time to service_role;
 
 -- /api/character/orders IMPORTDATA endpoint: the player's open market orders
--- across all of their characters, with the owning character's name. Returns the
--- whole result as a single json array (json, not jsonb, so json_build_object's
--- key order is preserved for the sheet's columns) and sidesteps PostgREST's
--- max-rows cap. The stored `is_buy` flag is exposed as `is_buy_order` to match
--- ESI's field name.
-create or replace function public.character_orders(character_ids uuid[])
+-- across all of their characters, with the owning character's name, as of an
+-- optional `as_of` timestamp (default now). Reconstructed from the SCD-2 history
+-- exactly like character_asset_snapshot_at: the version of each order valid at
+-- `as_of` is the one that had started by then and was either still open then
+-- (valid_until >= as_of) or is the current version (its state extends forward to
+-- now) — and versions of one order never overlap, so at most one matches. At the
+-- default now() this returns precisely the still-open orders (the is_current
+-- set), matching the character_order view. Returns the whole result as a single
+-- json array (json, not jsonb, so json_build_object's key order is preserved for
+-- the sheet's columns) and sidesteps PostgREST's max-rows cap. The stored
+-- `is_buy` flag is exposed as `is_buy_order` to match ESI's field name.
+create or replace function public.character_orders(character_ids uuid[], as_of timestamptz default now())
 returns json
 language sql
 stable
@@ -766,12 +776,14 @@ as $$
     ),
     '[]'::json
   )
-  from public.character_order o
+  from public.character_order_over_time o
   join public.registration r on r.id = o.character_id
-  where o.character_id = any(character_ids);
+  where o.character_id = any(character_ids)
+    and o.valid_from <= as_of
+    and (o.is_current or o.valid_until >= as_of);
 $$;
 
-grant execute on function public.character_orders(uuid[]) to service_role;
+grant execute on function public.character_orders(uuid[], timestamptz) to service_role;
 
 -- ── character_industry_job_over_time ──────────────────────────────────────
 -- ESI /characters/{id}/industry/jobs/ (include_completed), written by the
@@ -847,7 +859,14 @@ grant all    on public.character_industry_job_over_time to service_role;
 -- order is preserved for the sheet's columns; one scalar also sidesteps
 -- PostgREST's max-rows cap). Called with the service role over the caller's own
 -- registration ids, so it takes them as a parameter rather than leaning on RLS.
-create or replace function public.character_industry_jobs(character_ids uuid[], include_delivered boolean default false)
+-- `as_of` (default now) time-travels through the SCD-2 history like
+-- character_asset_snapshot_at: the version of each job valid then is the one
+-- that had started by `as_of` and was either still open then or is the current
+-- version. The include_delivered filter is applied to that version's status, so
+-- a job that is delivered now but was active at `as_of` shows as active. At the
+-- default now() this returns the is_current set, matching the
+-- character_industry_job view.
+create or replace function public.character_industry_jobs(character_ids uuid[], include_delivered boolean default false, as_of timestamptz default now())
 returns json
 language sql
 stable
@@ -883,13 +902,15 @@ as $$
     ),
     '[]'::json
   )
-  from public.character_industry_job j
+  from public.character_industry_job_over_time j
   join public.registration r on r.id = j.character_id
   where j.character_id = any(character_ids)
+    and j.valid_from <= as_of
+    and (j.is_current or j.valid_until >= as_of)
     and (include_delivered or j.status not in ('delivered', 'cancelled', 'archived'));
 $$;
 
-grant execute on function public.character_industry_jobs(uuid[], boolean) to service_role;
+grant execute on function public.character_industry_jobs(uuid[], boolean, timestamptz) to service_role;
 
 -- ── character_location ────────────────────────────────────────────────────
 -- ESI /characters/{id}/location/, written by the character-location job. Live
@@ -1827,7 +1848,9 @@ grant all    on public.corp_industry_job_over_time to service_role;
 -- endpoint. Returns json (not jsonb) so json_build_object's key order is
 -- preserved for the sheet's columns, and a single scalar sidesteps PostgREST's
 -- max-rows cap.
-create or replace function public.corp_industry_jobs(character_ids uuid[], include_delivered boolean default false)
+-- `as_of` (default now) time-travels through the SCD-2 history exactly like the
+-- per-character character_industry_jobs above.
+create or replace function public.corp_industry_jobs(character_ids uuid[], include_delivered boolean default false, as_of timestamptz default now())
 returns json
 language sql
 stable
@@ -1863,15 +1886,17 @@ as $$
     ),
     '[]'::json
   )
-  from public.corp_industry_job j
+  from public.corp_industry_job_over_time j
   where j.corporation_id in (
     select corporation_id from public.registration
     where id = any(character_ids) and corporation_id is not null
   )
+  and j.valid_from <= as_of
+  and (j.is_current or j.valid_until >= as_of)
   and (include_delivered or j.status not in ('delivered', 'cancelled', 'archived'));
 $$;
 
-grant execute on function public.corp_industry_jobs(uuid[], boolean) to service_role;
+grant execute on function public.corp_industry_jobs(uuid[], boolean, timestamptz) to service_role;
 
 -- ── universe_name ─────────────────────────────────────────────────────────
 -- ESI /universe/names/, written by the universe-names job: cache of resolved
