@@ -427,7 +427,7 @@ as $$
   join public.registration r on r.id = a.character_id
   where a.character_id = any(character_ids)
     and a.valid_from <= as_of
-    and (a.valid_until >= as_of or a.is_current)
+    and (a.is_current or a.valid_until >= as_of)
     and (not a.is_singleton or a.is_blueprint_copy);
 $$;
 
@@ -780,7 +780,7 @@ as $$
   join public.registration r on r.id = o.character_id
   where o.character_id = any(character_ids)
     and o.valid_from <= as_of
-    and (o.valid_until >= as_of or o.is_current);
+    and (o.is_current or o.valid_until >= as_of);
 $$;
 
 grant execute on function public.character_orders(uuid[], timestamptz) to service_role;
@@ -906,7 +906,7 @@ as $$
   join public.registration r on r.id = j.character_id
   where j.character_id = any(character_ids)
     and j.valid_from <= as_of
-    and (j.valid_until >= as_of or j.is_current)
+    and (j.is_current or j.valid_until >= as_of)
     and (include_delivered or j.status not in ('delivered', 'cancelled', 'archived'));
 $$;
 
@@ -1892,7 +1892,7 @@ as $$
     where id = any(character_ids) and corporation_id is not null
   )
   and j.valid_from <= as_of
-  and (j.valid_until >= as_of or j.is_current)
+  and (j.is_current or j.valid_until >= as_of)
   and (include_delivered or j.status not in ('delivered', 'cancelled', 'archived'));
 $$;
 
