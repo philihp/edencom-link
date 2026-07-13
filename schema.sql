@@ -1756,11 +1756,15 @@ grant all    on public.universe_structure to service_role;
 -- 'mercenary-dens'). 'corpses' both shows the owner's nav link and opts their
 -- account into the public /corpses/[characterID] share page — an account
 -- without it set renders as a 404 there.
+-- `share_mercenary_dens` is the user's opt-in to share their deployed
+-- mercenary dens (character_mercenary_den) with corpmates; toggled from the top
+-- of the /mercenary-dens page. Default false (private).
 create table public.user_settings (
   user_id uuid primary key references auth.users(id) on delete cascade,
   enabled_scopes text[] not null default '{}',
   api_token text unique,
   flags text[] not null default '{}',
+  share_mercenary_dens boolean not null default false,
   updated_at timestamptz not null default now()
 );
 
