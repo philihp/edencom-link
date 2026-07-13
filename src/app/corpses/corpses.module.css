@@ -18,46 +18,64 @@
   color: var(--ink-soft);
 }
 
-.table {
-  border-collapse: collapse;
-  margin-top: 8pt;
+/* Tiled corpse collection: item-icon tiles echoing the ship cargo/asset view
+ * (see shipCargo.module.css), one tile per dead pilot. */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 8px;
+  list-style: none;
+  padding: 0;
+  margin: 16px 0 0;
 }
 
-.table th {
-  text-align: left;
-  font-size: 9pt;
-  color: var(--ink-soft);
-  padding: 2pt 12pt 2pt 0;
+.tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--paper-raised);
+  text-align: center;
+  min-width: 0;
 }
 
-.table td {
-  padding: 2pt 12pt 2pt 0;
-  white-space: nowrap;
-  vertical-align: middle;
+.icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 4px;
 }
 
-.table tbody tr:hover {
-  background: color-mix(in srgb, currentColor 6%, transparent);
-}
-
-.pilot {
+.name {
+  font-size: 11px;
+  line-height: 1.25;
   font-weight: 600;
+  overflow-wrap: anywhere;
 }
 
 .unknown {
   color: var(--ink-faint);
   font-style: italic;
+  font-weight: 400;
 }
 
-/* "New!" flag for corpses first seen within the last 48 hours. */
+/* "New!" flag for corpses first seen within the last 48 hours; pinned to the
+ * tile's top-right corner like the quantity badge on cargo tiles. */
 .badge {
+  position: absolute;
+  top: 4px;
+  right: 4px;
   font-size: 8pt;
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--ink);
+  background: var(--paper);
   border: 1px solid currentColor;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   padding: 0 4pt;
 }
 
