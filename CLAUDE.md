@@ -200,7 +200,7 @@ One job per ESI endpoint. The npm script, queue job name, and heartbeat job labe
 | `character-orders` | `/characters/{id}/orders/` | `character_order_over_time` | every 6h `:24` |
 | `character-wallet-transactions` | `/characters/{id}/wallet/transactions/` | `character_wallet_transaction` | every 6h `:46` |
 | `character-industry-jobs` | `/characters/{id}/industry/jobs/` | `character_industry_job_over_time` | every 6h `:48` |
-| `character-mercenary-dens` | `/characters/{id}/structures/mercenary-dens/` (+ per-den detail) | `character_mercenary_den` | every 6h `:30` |
+| `character-mercenary-dens` | `/characters/{id}/structures/mercenary-dens/` (+ per-den detail) | `character_mercenary_den_over_time` (SCD identity), `character_mercenary_den_status` (append-only observations) | every 6h `:30` |
 | `character-status` | `/characters/{id}/wallet/` + `/location/` + `/implants/` + `/clones/` + `/ship/` | `character_wallet`, `character_location`, `character_implant`, `character_clone_over_time`, `character_clone_state`, `character_ship` | every 6h `:14` |
 | `character-affiliations` | `/characters/affiliation/` | `character_affiliation` | 11:41 daily |
 | `corp-structures` | `/corporations/{id}/structures/` | `corp_structure` | 09:17 daily |
@@ -249,7 +249,10 @@ Requires a `CRON_SECRET` env var set in Vercel (see `.env.example`).
 | `character_implant` | Live current implants plugged into the character's active clone | `character_id` (PK), `type_ids` (bigint array), `recorded_at` |
 | `character_ship_over_time` | SCD Type 2 history of the ship the character is piloting (docked or not); used to tag it in a station's asset listing | `character_id`, `ship_item_id`, `ship_type_id`, `ship_name`, `is_current`, `valid_from`, `valid_until` |
 | `character_ship` | View: `is_current` ship | same columns as above |
-| `character_mercenary_den` | Live snapshot of a character's deployed Mercenary Dens + status (upsert every den seen this run, delete rows left with an older `recorded_at`) | `character_id`, `den_id`, `planet_id`, `type_id`, `state`, `development_level`/`_amount`, `anarchy_level`/`_amount`, `infomorphs`, `reinforcement_end`, `skyhook_id`/`_corporation_id`, `recorded_at` |
+| `character_mercenary_den_over_time` | SCD Type 2 history of a character's deployed Mercenary Dens — stable identity/config only | `id`, `character_id` (owner registration), `den_id`, `planet_id`, `type_id`, `skyhook_id`/`_corporation_id`, `is_current`, `valid_from`, `valid_until` |
+| `character_mercenary_den` | View: `is_current` dens, each left-joined to its most recent `character_mercenary_den_status` observation | den columns above + `state`, `development_level`/`_amount`, `anarchy_level`/`_amount`, `infomorphs`, `reinforcement_end`, `status_observed_at` |
+| `character_mercenary_den_status` | Append-only observation history of each den's volatile state (one row per den per extract run) | `id`, `character_id`, `den_id`, `state`, `development_level`/`_amount`, `anarchy_level`/`_amount`, `infomorphs`, `reinforcement_end`, `observed_at` |
+| `character_mercenary_den_share` | Many-to-many: which dens are shared to which corporations (drives the corp-sharing RLS policy on `character_mercenary_den_over_time`). **No RLS** — holds only "den D shared to corp C"; writes are service-role only, reads open to authenticated | `character_id`, `den_id`, `corporation_id`, `created_at` |
 | `character_affiliation` | Character→Corp mapping | `character_id`, `corporation_id` |
 | `corp_structure` | Corp Upwell structures | `structure_id`, `corporation_id`, `type_id`, `system_id`, `name`, `state`, `fuel_expires`, `services` (jsonb) |
 | `corp_structure_rig` | Rigs on structures | `structure_id`, `location_flag`, `type_id`, `corporation_id` |
