@@ -33,3 +33,30 @@
   flex: 1 1 18rem;
   min-width: 16rem;
 }
+
+/* Interactive (owner-only) hardware browser used to drag modules/ammo onto the
+ * wheel. Collapsed by default so the big listing doesn't dominate the page. */
+.hardware {
+  margin-top: 1.5rem;
+  max-width: min(90vw, 42rem);
+}
+.hardware > summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.hardwareHint {
+  font-size: 0.85rem;
+  opacity: 0.75;
+  margin: 0.5rem 0;
+}
+.hardwareListing {
+  height: 28rem;
+  overflow: auto;
+  border: 1px solid var(--rule, #cbb8a0);
+  border-radius: 6px;
+}
+/* Same global-img override the wheel needs: keep the listing's icons at their
+ * intended size instead of the app-wide max-width: 100% clamp. */
+.hardwareListing img {
+  max-width: none;
+}
