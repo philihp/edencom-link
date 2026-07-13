@@ -66,7 +66,7 @@ const fetchCurrentRows = async (character_id, cols, from = 0) => {
 }
 
 // Reconcile the freshly fetched assets against the character's current (open)
-// rows: unchanged items get their last_seen_at extended, changed items have
+// rows: unchanged items get their valid_until extended, changed items have
 // their old row closed and a new one inserted, and vanished items are closed.
 const reconcile = async (character_id, fetched) => {
   const cols =
@@ -94,7 +94,7 @@ const reconcile = async (character_id, fetched) => {
         acc.touchIds.push(cur.id)
       } else {
         if (cur) acc.closeIds.push(cur.id)
-        // first_seen_at is left to its `default now()` so it marks this version's debut.
+        // valid_from is left to its `default now()` so it marks this version's debut.
         acc.inserts.push({
           item_id: a.item_id,
           character_id,
@@ -105,7 +105,7 @@ const reconcile = async (character_id, fetched) => {
           quantity: a.quantity ?? null,
           is_singleton: a.is_singleton ?? null,
           is_blueprint_copy: !!a.is_blueprint_copy,
-          last_seen_at: now,
+          valid_until: now,
           name: a.name ?? null,
         })
       }
@@ -126,7 +126,7 @@ const reconcile = async (character_id, fetched) => {
   await forEachSequential(splitEvery(200, touchIds), async (ids) => {
     const { error: touchErr } = await sudoSupabase
       .from('character_asset_over_time')
-      .update({ last_seen_at: now })
+      .update({ valid_until: now })
       .in('id', ids)
     if (touchErr) throw touchErr
   })

@@ -41,7 +41,7 @@ const fetchCurrentRows = async (corporation_id, cols, from = 0) => {
 
 // Reconcile freshly fetched corp jobs against the corp's current (open) rows in
 // corp_industry_job_over_time (SCD type 2), the same approach the
-// character-industry-jobs job uses: unchanged jobs get last_seen_at extended,
+// character-industry-jobs job uses: unchanged jobs get valid_until extended,
 // jobs whose state advanced close their old row and open a new one, and a job
 // that drops out of the ESI listing keeps its terminal row is_current rather
 // than being closed — so the corp_industry_job view retains every job the
@@ -88,7 +88,7 @@ const reconcile = async (corporation_id, fetched) => {
           completed_date: j.completed_date ?? null,
           completed_character_id: j.completed_character_id ?? null,
           successful_runs: j.successful_runs ?? null,
-          last_seen_at: now,
+          valid_until: now,
         })
       }
       return acc
@@ -98,7 +98,7 @@ const reconcile = async (corporation_id, fetched) => {
   )
 
   await forEachSequential(splitEvery(200, touchIds), async (ids) => {
-    const { error } = await sudoSupabase.from('corp_industry_job_over_time').update({ last_seen_at: now }).in('id', ids)
+    const { error } = await sudoSupabase.from('corp_industry_job_over_time').update({ valid_until: now }).in('id', ids)
     if (error) throw error
   })
   // Close before inserting so the unique-current-per-job index never collides.

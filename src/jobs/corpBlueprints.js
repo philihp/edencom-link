@@ -44,7 +44,7 @@ const fetchCurrentRows = async (corporation_id, cols, from = 0) => {
 
 // Reconcile freshly fetched corp blueprints against the corp's current (open)
 // rows in corp_blueprint_over_time, the same SCD-2 approach the
-// character-blueprints job uses: unchanged blueprints get last_seen_at
+// character-blueprints job uses: unchanged blueprints get valid_until
 // extended, changed ones close their old row and open a new one, and
 // vanished ones are closed.
 const reconcile = async (corporation_id, fetched) => {
@@ -80,7 +80,7 @@ const reconcile = async (corporation_id, fetched) => {
           material_efficiency: b.material_efficiency ?? null,
           time_efficiency: b.time_efficiency ?? null,
           runs: b.runs ?? null,
-          last_seen_at: now,
+          valid_until: now,
         })
       }
       return acc
@@ -98,7 +98,7 @@ const reconcile = async (corporation_id, fetched) => {
   const allCloseIds = [...closeIds, ...vanishedIds]
 
   await forEachSequential(splitEvery(200, touchIds), async (ids) => {
-    const { error } = await sudoSupabase.from('corp_blueprint_over_time').update({ last_seen_at: now }).in('id', ids)
+    const { error } = await sudoSupabase.from('corp_blueprint_over_time').update({ valid_until: now }).in('id', ids)
     if (error) throw error
   })
   // Close before inserting so the unique-current-per-item index never collides.

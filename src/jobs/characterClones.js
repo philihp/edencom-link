@@ -88,7 +88,7 @@ const fetchCurrentRows = async (character_id) => {
 }
 
 // Reconcile the freshly fetched clones against the character's current (open)
-// rows: an unchanged clone gets its last_seen_at extended (and its system_id
+// rows: an unchanged clone gets its valid_until extended (and its system_id
 // backfilled if resolution newly succeeded), a changed clone has its old row
 // closed and a new one inserted, and a clone that's gone (jump clone
 // destroyed/consumed) is closed.
@@ -119,7 +119,7 @@ const reconcile = async (character_id, fetchedClones) => {
           name: c.name ?? null,
           implants: c.implants ?? [],
           system_id: c.system_id ?? null,
-          last_seen_at: now,
+          valid_until: now,
         })
       }
       return acc
@@ -138,16 +138,16 @@ const reconcile = async (character_id, fetchedClones) => {
   if (touchIds.length) {
     const { error } = await sudoSupabase
       .from('character_clone_over_time')
-      .update({ last_seen_at: now })
+      .update({ valid_until: now })
       .in('id', touchIds)
     if (error) throw error
   }
   // Unchanged rows whose location just became resolvable: backfill system_id
-  // per row (each may resolve to a different system) while extending last_seen_at.
+  // per row (each may resolve to a different system) while extending valid_until.
   await forEachSequential(retags, async ({ id, system_id }) => {
     const { error } = await sudoSupabase
       .from('character_clone_over_time')
-      .update({ last_seen_at: now, system_id })
+      .update({ valid_until: now, system_id })
       .eq('id', id)
     if (error) throw error
   })

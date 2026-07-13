@@ -43,7 +43,7 @@ const fetchCurrentRows = async (character_id, cols, from = 0) => {
 
 // Reconcile freshly fetched open orders against the character's current (open)
 // rows in character_order_over_time (SCD type 2): unchanged orders get their
-// last_seen_at extended, changed ones (partial fill, re-price) close their old
+// valid_until extended, changed ones (partial fill, re-price) close their old
 // row and open a new one, and vanished ones (filled, expired or cancelled)
 // are closed. The character_order view of is_current rows then holds exactly
 // the still-open orders.
@@ -70,7 +70,7 @@ const reconcile = async (character_id, fetched) => {
         acc.touchIds.push(cur.id)
       } else {
         if (cur) acc.closeIds.push(cur.id)
-        // first_seen_at is left to its `default now()` so it marks this version's debut.
+        // valid_from is left to its `default now()` so it marks this version's debut.
         acc.inserts.push({
           order_id: o.order_id,
           character_id,
@@ -88,7 +88,7 @@ const reconcile = async (character_id, fetched) => {
           escrow: o.escrow ?? null,
           duration: o.duration,
           issued: o.issued,
-          last_seen_at: now,
+          valid_until: now,
         })
       }
       return acc
@@ -106,7 +106,7 @@ const reconcile = async (character_id, fetched) => {
   const allCloseIds = [...closeIds, ...vanishedIds]
 
   await forEachSequential(splitEvery(200, touchIds), async (ids) => {
-    const { error } = await sudoSupabase.from('character_order_over_time').update({ last_seen_at: now }).in('id', ids)
+    const { error } = await sudoSupabase.from('character_order_over_time').update({ valid_until: now }).in('id', ids)
     if (error) throw error
   })
   // Close before inserting so the unique-current-per-order index never collides.

@@ -45,7 +45,7 @@ const fetchCurrentRows = async (character_id, cols, from = 0) => {
 
 // Reconcile freshly fetched jobs against the character's current (open) rows in
 // character_industry_job_over_time (SCD type 2): unchanged jobs get their
-// last_seen_at extended, jobs whose state advanced (active → paused →
+// valid_until extended, jobs whose state advanced (active → paused →
 // delivered) close their old row and open a new one. Unlike the orders/assets
 // reconcile, a job that drops out of the ESI listing (a delivered job aged past
 // include_completed's window) is NOT closed — its terminal row stays is_current
@@ -72,7 +72,7 @@ const reconcile = async (character_id, fetched) => {
         acc.touchIds.push(cur.id)
       } else {
         if (cur) acc.closeIds.push(cur.id)
-        // first_seen_at is left to its `default now()` so it marks this version's debut.
+        // valid_from is left to its `default now()` so it marks this version's debut.
         acc.inserts.push({
           job_id: j.job_id,
           character_id,
@@ -97,7 +97,7 @@ const reconcile = async (character_id, fetched) => {
           completed_date: j.completed_date ?? null,
           completed_character_id: j.completed_character_id ?? null,
           successful_runs: j.successful_runs ?? null,
-          last_seen_at: now,
+          valid_until: now,
         })
       }
       return acc
@@ -109,7 +109,7 @@ const reconcile = async (character_id, fetched) => {
   await forEachSequential(splitEvery(200, touchIds), async (ids) => {
     const { error } = await sudoSupabase
       .from('character_industry_job_over_time')
-      .update({ last_seen_at: now })
+      .update({ valid_until: now })
       .in('id', ids)
     if (error) throw error
   })
