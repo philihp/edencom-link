@@ -5,9 +5,9 @@
   "type": "module",
   "packageManager": "pnpm@11.10.0",
   "dependencies": {
-    "@eveshipfit/data": "^10.4.20260609",
-    "@eveshipfit/dogma-engine": "^7.1.0",
-    "@eveshipfit/react": "^4.7.2",
+    "@eveshipfit/data": "file:vendor/eveshipfit/data-stub",
+    "@eveshipfit/dogma-engine": "file:vendor/eveshipfit/eveshipfit-dogma-engine-7.1.0.tgz",
+    "@eveshipfit/react": "file:vendor/eveshipfit/eveshipfit-react-4.7.2.tgz",
     "@modelcontextprotocol/sdk": "1.26.0",
     "@philihp/eve-sso": "2.1.0",
     "@supabase/ssr": "0.12.0",

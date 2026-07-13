@@ -4,10 +4,9 @@
 // the function's logs — so the fields below are queryable and aggregatable in
 // the Observability dashboard (and any attached log drain) without shipping an
 // OpenTelemetry exporter. That zero-dependency choice is deliberate: adding
-// @vercel/otel would mean a package.json + lockfile change, and this repo's
-// lockfile can't be regenerated in every environment (the private @eveshipfit
-// registry). This module is the single seam to later swap in @vercel/otel
-// metrics (a Counter/Histogram) without touching the call sites.
+// @vercel/otel would pull a heavy dependency tree in for a single metric line.
+// This module is the single seam to later swap in @vercel/otel metrics (a
+// Counter/Histogram) without touching the call sites.
 //
 // Convention: every line carries a stable `metric` name plus flat, low-cardinality
 // dimensions, so a query can group by `metric` + `job` + `outcome`.
