@@ -1,0 +1,14 @@
+# pnpm 11 (used locally and in CI via the pinned `packageManager`) no longer
+# reads the `pnpm` field from package.json, so build-script approvals must live
+# here. `allowBuilds` lets sharp run its install script (its predecessor,
+# `pnpm.onlyBuiltDependencies` in package.json, is ignored by pnpm 11).
+#
+# The `packages` list is required only to keep Vercel's builds green: Vercel
+# still installs with pnpm 9, which aborts with "packages field missing or
+# empty" when it finds a pnpm-workspace.yaml without one (pnpm/pnpm#9361, the
+# breakage reverted in #528). This is a single-package repo, so `.` is the sole
+# member; pnpm 9 ignores the unknown `allowBuilds` key.
+packages:
+  - .
+allowBuilds:
+  sharp: true
