@@ -49,6 +49,32 @@ const esiConditionalJson = async (path, { access_token, params = {}, ifNoneMatch
   return { status: 200, json: await response.json(), etag }
 }
 
+// The newer, kebab-case ESI endpoints (Equinox onward — e.g. mercenary dens)
+// don't live under the legacy `/latest` base. They're the "compatibility date"
+// API: the same host with no version segment, gated by an `X-Compatibility-Date`
+// header that pins the response shape, and authenticated with a Bearer token
+// rather than the legacy `?token=` query param. Pin a fixed date so the schema
+// we decode against never shifts under us; bump it deliberately when adopting a
+// newer field. See https://developers.eveonline.com/docs/services/esi/.
+const ESI_BASE_COMPAT = 'https://esi.evetech.net'
+const ESI_COMPATIBILITY_DATE = '2026-07-12'
+
+const esiCompatJson = async (path, { access_token, params = {}, label } = {}) => {
+  const qs = new URLSearchParams(params).toString()
+  const headers = {
+    'User-Agent': userAgent,
+    'X-Compatibility-Date': ESI_COMPATIBILITY_DATE,
+    Accept: 'application/json',
+  }
+  if (access_token) headers.Authorization = `Bearer ${access_token}`
+  const response = await fetch(`${ESI_BASE_COMPAT}${path}${qs ? `?${qs}` : ''}`, { headers })
+  if (!response.ok) {
+    const text = await response.text().catch(() => '')
+    throw new Error(`${label ?? path}: ${response.status} ${response.statusText} body=${text.slice(0, 500)}`)
+  }
+  return response.json()
+}
+
 export const assets = (access_token, characterID, page = 1) =>
   esiPaged(`/characters/${characterID}/assets/`, {
     access_token,
@@ -222,4 +248,21 @@ export const characterAffiliations = (ids) =>
     method: 'POST',
     body: ids,
     label: `characterAffiliations(${ids.length})`,
+  })
+
+// The character's deployed Mercenary Dens — a full snapshot list of
+// { id, planet_id }. Compatibility-date endpoint (see esiCompatJson).
+export const characterMercenaryDens = (access_token, characterID) =>
+  esiCompatJson(`/characters/${characterID}/structures/mercenary-dens`, {
+    access_token,
+    label: `mercenary-dens ${characterID}`,
+  })
+
+// One den's live status by id: state (Running/Paused/Disabled), development &
+// anarchy evolution (each { amount, level }), infomorphs, reinforcement_timer
+// ({ end }), and the skyhook it draws from. Compatibility-date endpoint.
+export const characterMercenaryDen = (access_token, characterID, denID) =>
+  esiCompatJson(`/characters/${characterID}/structures/mercenary-dens/${denID}`, {
+    access_token,
+    label: `mercenary-den ${characterID}/${denID}`,
   })
