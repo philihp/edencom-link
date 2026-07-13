@@ -18,18 +18,52 @@
   color: var(--ink-soft);
 }
 
-.list {
+.table {
+  border-collapse: collapse;
   margin-top: 8pt;
-  padding-left: 3ch;
 }
 
-.row {
-  padding: 1pt 0;
+.table th {
+  text-align: left;
+  font-size: 9pt;
+  color: var(--ink-soft);
+  padding: 2pt 12pt 2pt 0;
+}
+
+.table td {
+  padding: 2pt 12pt 2pt 0;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.table tbody tr:hover {
+  background: color-mix(in srgb, currentColor 6%, transparent);
+}
+
+.pilot {
+  font-weight: 600;
+}
+
+.seen {
+  font-size: 9pt;
+  color: var(--ink-faint);
 }
 
 .unknown {
   color: var(--ink-faint);
   font-style: italic;
+}
+
+/* "New!" flag for corpses first seen within the last 48 hours. */
+.badge {
+  font-size: 8pt;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink);
+  border: 1px solid currentColor;
+  border-radius: 3px;
+  padding: 0 4pt;
 }
 
 .empty {
