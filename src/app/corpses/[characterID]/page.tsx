@@ -1,14 +1,23 @@
 import { notFound } from 'next/navigation'
 
+import { searchSdeTypesAll } from '@/sdeTypes'
 import { createServiceClient } from '@/utils/supabase/service'
 
 import { DateTime } from '../../DateTime'
 import styles from '../corpses.module.css'
 
-// Every player corpse in EVE is the same type — typeID 25, "Corpse". They're
-// singleton items, so the extract job resolves each one's ESI asset name, which
-// for a corpse reads "<pilot>'s Frozen Corpse".
-const CORPSE_TYPE_ID = 25
+// Modern capsuleer corpses are the gendered "Corpse Male"/"Corpse Female"
+// types; "Corpse" is the legacy generic. They're singleton items, so the
+// extract job resolves each one's ESI asset name, which for a corpse reads
+// "<pilot>'s Frozen Corpse". Match on the SDE type name rather than a
+// hardcoded id so a game patch adding a variant is picked up automatically
+// (and NPC "…Frozen Corpse" types, which aren't named exactly this, stay out).
+const CORPSE_TYPE_NAMES = new Set(['corpse', 'corpse male', 'corpse female'])
+
+const corpseTypeIds = (): number[] =>
+  searchSdeTypesAll('corpse')
+    .filter((t) => CORPSE_TYPE_NAMES.has(t.name.toLowerCase()))
+    .map((t) => t.typeID)
 
 // A corpse first seen within this window is flagged "New!".
 const NEW_WINDOW_MS = 48 * 60 * 60 * 1000
@@ -83,14 +92,17 @@ const CorpsesPage = async ({ params }: { params: Promise<{ characterID: string }
     (registrations ?? [])[0]?.name ??
     null
 
-  const { data: rows } = characterIds.length
-    ? await service
-        .from('character_asset')
-        .select('item_id, name, first_seen_at')
-        .in('character_id', characterIds)
-        .eq('type_id', CORPSE_TYPE_ID)
-        .returns<CorpseRow[]>()
-    : { data: [] as CorpseRow[] }
+  const typeIds = corpseTypeIds()
+
+  const { data: rows } =
+    characterIds.length && typeIds.length
+      ? await service
+          .from('character_asset')
+          .select('item_id, name, first_seen_at')
+          .in('character_id', characterIds)
+          .in('type_id', typeIds)
+          .returns<CorpseRow[]>()
+      : { data: [] as CorpseRow[] }
 
   const cutoff = Date.now() - NEW_WINDOW_MS
 
