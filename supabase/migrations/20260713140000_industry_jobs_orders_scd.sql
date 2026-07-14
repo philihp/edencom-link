@@ -17,7 +17,19 @@
 -- ── character_order → character_order_over_time + view ─────────────────────
 alter table public.character_order rename to character_order_over_time;
 
-alter table public.character_order_over_time drop constraint character_order_pkey;
+-- Drop the existing primary key by its real name. This table was renamed from
+-- market_order (see 20260702150000_endpoint_naming.sql), and renaming a table
+-- leaves its PK constraint named after the original table — so the constraint is
+-- market_order_pkey, not character_order_pkey. Look it up rather than guess.
+do $$
+declare cname text;
+begin
+  select conname into cname from pg_constraint
+   where conrelid = 'public.character_order_over_time'::regclass and contype = 'p';
+  if cname is not null then
+    execute format('alter table public.character_order_over_time drop constraint %I', cname);
+  end if;
+end $$;
 alter table public.character_order_over_time
   add column id bigint generated always as identity,
   add column is_current boolean not null default true,
@@ -40,7 +52,17 @@ grant select on public.character_order to authenticated;
 -- ── character_industry_job → character_industry_job_over_time + view ───────
 alter table public.character_industry_job rename to character_industry_job_over_time;
 
-alter table public.character_industry_job_over_time drop constraint character_industry_job_pkey;
+-- Drop the existing primary key by its real name (renamed from industry_job, so
+-- the constraint is industry_job_pkey). Look it up rather than guess.
+do $$
+declare cname text;
+begin
+  select conname into cname from pg_constraint
+   where conrelid = 'public.character_industry_job_over_time'::regclass and contype = 'p';
+  if cname is not null then
+    execute format('alter table public.character_industry_job_over_time drop constraint %I', cname);
+  end if;
+end $$;
 alter table public.character_industry_job_over_time
   add column id bigint generated always as identity,
   add column is_current boolean not null default true,
@@ -63,7 +85,16 @@ grant select on public.character_industry_job to authenticated;
 -- ── corp_industry_job → corp_industry_job_over_time + view ─────────────────
 alter table public.corp_industry_job rename to corp_industry_job_over_time;
 
-alter table public.corp_industry_job_over_time drop constraint corp_industry_job_pkey;
+-- Drop the existing primary key by its real name. Look it up rather than guess.
+do $$
+declare cname text;
+begin
+  select conname into cname from pg_constraint
+   where conrelid = 'public.corp_industry_job_over_time'::regclass and contype = 'p';
+  if cname is not null then
+    execute format('alter table public.corp_industry_job_over_time drop constraint %I', cname);
+  end if;
+end $$;
 alter table public.corp_industry_job_over_time
   add column id bigint generated always as identity,
   add column is_current boolean not null default true,

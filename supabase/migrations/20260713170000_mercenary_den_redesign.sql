@@ -44,7 +44,17 @@ alter table public.character_mercenary_den rename to character_mercenary_den_ove
 
 -- Swap the composite PK for a surrogate id and add SCD-2 bookkeeping; the
 -- existing rows become the current (is_current = true) versions.
-alter table public.character_mercenary_den_over_time drop constraint character_mercenary_den_pkey;
+-- Drop the existing composite primary key by its real name (look it up rather
+-- than guess — this table wasn't renamed, but be robust regardless).
+do $$
+declare cname text;
+begin
+  select conname into cname from pg_constraint
+   where conrelid = 'public.character_mercenary_den_over_time'::regclass and contype = 'p';
+  if cname is not null then
+    execute format('alter table public.character_mercenary_den_over_time drop constraint %I', cname);
+  end if;
+end $$;
 alter table public.character_mercenary_den_over_time
   add column id bigint generated always as identity primary key,
   add column is_current boolean not null default true,
