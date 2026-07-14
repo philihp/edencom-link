@@ -36,7 +36,7 @@ type MergedRow = {
   system: string
   planet: string // roman numeral
   intel?: { owner: string; alliance: string | null; reinforced: boolean }
-  den?: DenRow & { ownerLabel: string; typeName: string | null }
+  den?: DenRow & { ownerLabel: string; ownerCharacterId: string | null; typeName: string | null }
 }
 
 const isReinforced = (row: MergedRow): boolean =>
@@ -68,9 +68,14 @@ const MercenaryDensPage = async () => {
   // The caller's characters + corporations (share targets, and to label/scope own
   // dens) and which corps their dens are currently shared with.
   const { corporations } = await fetchOwners(supabase)
-  const { data: myRegs } = await supabase.from('registration').select('id, name')
-  const ownNameById = new Map((myRegs ?? []).map((r) => [r.id as string, r.name as string]))
-  const registrationIds = [...ownNameById.keys()]
+  const { data: myRegs } = await supabase.from('registration').select('id, name, character_id')
+  const ownRegById = new Map(
+    (myRegs ?? []).map((r) => [
+      r.id as string,
+      { name: r.name as string, characterId: r.character_id != null ? String(r.character_id) : null },
+    ])
+  )
+  const registrationIds = [...ownRegById.keys()]
   const { data: shares } = registrationIds.length
     ? await supabase.from('character_mercenary_den_share').select('corporation_id').in('character_id', registrationIds)
     : { data: [] }
@@ -97,9 +102,14 @@ const MercenaryDensPage = async () => {
     const planet = getSdePlanet(den.planet_id)
     const system = planet?.systemName ?? ''
     const roman = planet?.roman ?? ''
+    const ownReg = ownRegById.get(den.character_id)
     const enriched = {
       ...den,
-      ownerLabel: ownNameById.get(den.character_id) ?? 'Corpmate',
+      ownerLabel: ownReg?.name ?? 'Corpmate',
+      // The EVE character id, shown in parens after the owner. Only resolvable
+      // for the caller's own characters — a corpmate's registration is hidden
+      // by RLS, so their id (and name) stay unknown.
+      ownerCharacterId: ownReg?.characterId ?? null,
       typeName: den.type_id != null ? (typeNames[den.type_id] ?? null) : null,
     }
     const k = key(system, roman)
@@ -155,6 +165,7 @@ const MercenaryDensPage = async () => {
             <tr>
               <th>System</th>
               <th>Planet</th>
+              <th>Den ID</th>
               <th>Owner</th>
               <th>Type</th>
               <th>State</th>
@@ -174,8 +185,10 @@ const MercenaryDensPage = async () => {
                 <tr key={`${row.system}-${row.planet}-${i}`} className={color ? styles[`row_${color}`] : undefined}>
                   <td className={styles.system}>{row.system}</td>
                   <td className={styles.planet}>{row.planet || dash}</td>
+                  <td className={styles.planet}>{den ? den.den_id : dash}</td>
                   <td>
                     {owner ?? dash}
+                    {den?.ownerCharacterId ? <span className={styles.alliance}> ({den.ownerCharacterId})</span> : null}
                     {row.intel?.alliance ? <span className={styles.alliance}> [{row.intel.alliance}]</span> : null}
                   </td>
                   <td>{den?.typeName ?? dash}</td>
