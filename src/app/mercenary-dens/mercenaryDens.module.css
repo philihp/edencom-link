@@ -95,6 +95,12 @@
   font-weight: 600;
 }
 
+/* The details table can outgrow narrow screens — let it scroll on its own
+ * rather than forcing the page body to scroll sideways. */
+.tableScroll {
+  overflow-x: auto;
+}
+
 .table {
   border-collapse: collapse;
   margin-top: 8pt;
@@ -144,4 +150,62 @@
 
 .stable {
   color: var(--ink-soft);
+}
+
+.alliance {
+  color: var(--ink-soft);
+}
+
+/* Row + node status colours (shared scheme): red = reinforced, green = our/corp
+ * den, yellow = a den owned outside our corps (from intel). Rows get a faint
+ * left border + tint; nodes fill the pill. */
+.row_red {
+  box-shadow: inset 3px 0 var(--merc-red);
+  background: color-mix(in srgb, var(--merc-red) 8%, transparent);
+}
+.row_yellow {
+  box-shadow: inset 3px 0 var(--merc-yellow);
+  background: color-mix(in srgb, var(--merc-yellow) 8%, transparent);
+}
+.row_green {
+  box-shadow: inset 3px 0 var(--merc-green);
+  background: color-mix(in srgb, var(--merc-green) 8%, transparent);
+}
+
+.nodeRed .nodeBox {
+  fill: color-mix(in srgb, var(--merc-red) 22%, var(--paper-raised));
+  stroke: var(--merc-red);
+}
+.nodeYellow .nodeBox {
+  fill: color-mix(in srgb, var(--merc-yellow) 22%, var(--paper-raised));
+  stroke: var(--merc-yellow);
+}
+.nodeGreen .nodeBox {
+  fill: color-mix(in srgb, var(--merc-green) 22%, var(--paper-raised));
+  stroke: var(--merc-green);
+}
+.nodeRed .nodeLabel,
+.nodeYellow .nodeLabel,
+.nodeGreen .nodeLabel {
+  font-weight: 600;
+}
+
+.tableScroll {
+  --merc-red: #c0392b;
+  --merc-yellow: #b7791f;
+  --merc-green: #1e8449;
+}
+.topology {
+  --merc-red: #c0392b;
+  --merc-yellow: #b7791f;
+  --merc-green: #1e8449;
+}
+
+@media (prefers-color-scheme: dark) {
+  .tableScroll,
+  .topology {
+    --merc-red: #ff6b5e;
+    --merc-yellow: #f6c453;
+    --merc-green: #4ade80;
+  }
 }
