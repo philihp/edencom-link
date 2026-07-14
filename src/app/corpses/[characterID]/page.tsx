@@ -48,7 +48,7 @@ type CorpseRow = {
   item_id: number | string
   type_id: number | string
   name: string | null
-  valid_from: string | null
+  first_seen_at: string | null
 }
 
 const CorpsesPage = async ({ params }: { params: Promise<{ characterID: string }> }) => {
@@ -100,7 +100,7 @@ const CorpsesPage = async ({ params }: { params: Promise<{ characterID: string }
     registrationIds.length && typeIds.length
       ? await service
           .from('character_asset')
-          .select('item_id, type_id, name, valid_from')
+          .select('item_id, type_id, name, first_seen_at')
           .in('character_id', registrationIds)
           .in('type_id', typeIds)
           .returns<CorpseRow[]>()
@@ -112,7 +112,7 @@ const CorpsesPage = async ({ params }: { params: Promise<{ characterID: string }
   // resolved yet falls back to its item id so it still shows in the tally.
   const corpses = (rows ?? [])
     .map((r) => {
-      const firstSeenMs = r.valid_from ? new Date(r.valid_from).getTime() : NaN
+      const firstSeenMs = r.first_seen_at ? new Date(r.first_seen_at).getTime() : NaN
       return {
         itemId: String(r.item_id),
         typeId: Number(r.type_id),
