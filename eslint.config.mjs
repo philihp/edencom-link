@@ -4,7 +4,9 @@ import tseslint from 'typescript-eslint'
 
 const config = [
   {
-    ignores: ['.next/**', 'node_modules/**', 'next-env.d.ts'],
+    // src/app/.well-known/workflow is generated (and gitignored) by the
+    // workflow compiler (withWorkflow in next.config.mjs) on every build.
+    ignores: ['.next/**', 'node_modules/**', 'next-env.d.ts', 'src/app/.well-known/workflow/**'],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,

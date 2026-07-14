@@ -1,3 +1,5 @@
+import { withWorkflow } from 'workflow/next'
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   // @eveshipfit/dogma-engine ships a Rust-compiled WASM module (a bundler-style
@@ -29,4 +31,6 @@ const nextConfig = {
   ],
 }
 
-export default nextConfig
+// withWorkflow compiles the 'use workflow'/'use step' directives (see
+// src/workflows/) into their orchestrator/step routes.
+export default withWorkflow(nextConfig)
