@@ -1181,10 +1181,7 @@ grant all    on public.character_mercenary_den_status to service_role;
 -- corporation. A user shares by picking the corps to share with, which writes a
 -- row per den per chosen corp (writes go through the service role in the share
 -- server action, which checks the den belongs to the caller); un-sharing deletes
--- the rows. Deliberately NO row-level security: the corp-sharing policy on
--- character_mercenary_den_over_time reads this table cross-user (a shared row is
--- authored by the den's owner but must be visible when evaluating a corpmate's
--- access), and the table holds only the non-sensitive "den D shared to corp C".
+-- the rows.
 create table public.character_mercenary_den_share (
   character_id uuid not null references public.registration(id) on delete cascade,
   den_id bigint not null,
@@ -1195,16 +1192,47 @@ create table public.character_mercenary_den_share (
 create index character_mercenary_den_share_corporation_id_idx
   on public.character_mercenary_den_share (corporation_id);
 
--- RLS intentionally left disabled (see above). authenticated needs SELECT so the
--- corp-sharing policy's subquery can read it; writes are service-role only.
+alter table public.character_mercenary_den_share enable row level security;
+
+-- Corpmates read the share rows aimed at their corps. This also keeps the
+-- corp-sharing policy on character_mercenary_den_over_time working: its USING
+-- subquery over this table runs as the querying user, and the only rows it
+-- needs are exactly the ones this policy exposes.
+create policy "Corpmates read shares to their corps"
+  on public.character_mercenary_den_share
+  for select
+  to authenticated
+  using (
+    corporation_id in (
+      select c.corporation_id from public.registration c
+      where c.user_id = (select auth.uid()) and c.corporation_id is not null
+    )
+  );
+
+-- Owners always read their own share rows (drives the /mercenary-dens corp
+-- picker's checked state), even if the sharing character has since left the
+-- shared-to corp — without this, such a stale share would turn invisible to the
+-- very user who created it. Permissive: OR'd with the corp policy above.
+create policy "Users read own den shares"
+  on public.character_mercenary_den_share
+  for select
+  to authenticated
+  using (
+    character_id in (
+      select id from public.registration where user_id = (select auth.uid())
+    )
+  );
+
+-- Writes are service-role only (no insert/update/delete policies or grants for
+-- authenticated — the share server action goes through the service client).
 grant select on public.character_mercenary_den_share to authenticated;
 grant all    on public.character_mercenary_den_share to service_role;
 
 -- Corp-sharing policy: a den is visible to the caller when it has been shared
--- (a character_mercenary_den_share row) to a corporation the caller owns a character in.
--- Reads the RLS-free share table plus the caller's own registrations — no reach
--- into any other user's RLS-protected rows. Additive/permissive: OR'd with
--- "Users read own mercenary dens" above.
+-- (a character_mercenary_den_share row) to a corporation the caller owns a
+-- character in. The share table's own RLS ("Corpmates read shares to their
+-- corps") exposes exactly the rows this subquery needs, so the two policies
+-- compose. Additive/permissive: OR'd with "Users read own mercenary dens" above.
 create policy "Corpmates read shared mercenary dens"
   on public.character_mercenary_den_over_time
   for select
