@@ -3,7 +3,7 @@
 EVE Online hangar/wallet/industry tracker. Package name `edencom-link` (private). Deployed on Vercel.
 
 - **Stack:** Next.js 16 (App Router) + React 19 + TypeScript 6, ESM (`"type": "module"`). Supabase (Postgres) for storage. `ramda` for utilities.
-- **Node:** 24.16.0 (`.node-version`). **Package manager:** pnpm (`pnpm-lock.yaml`; version pinned by the `packageManager` field in `package.json`, set up in CI via `pnpm/action-setup`).
+- **Node:** 24.18.0 (`.node-version`). **Package manager:** pnpm (`pnpm-lock.yaml`; version pinned by the `packageManager` field in `package.json`, set up in CI via `pnpm/action-setup`).
 - **Path alias:** `@/*` → `./src/*`.
 
 ## Commands
@@ -22,10 +22,10 @@ EVE Online hangar/wallet/industry tracker. Package name `edencom-link` (private)
 
 ## Layout
 
-- `src/app/` — Next.js App Router. Page routes: `account/`, `asset/`, `character/`, `industry/`, `market/`, `ship/` (a ship's own page: eveship.fit wheel + stats, owner/location, share links; `/asset/[id]` redirects ships here), `structure/`, plus `layout/` (Header/Footer), `private/`. Shared helpers at top level: `typeNames.ts`/`typeName.tsx`, `systemNames.ts`, `stationNames.ts`, `isk.ts`, `DateTime.tsx`.
+- `src/app/` — Next.js App Router. Page routes: `account/`, `asset/`, `blueprint/`, `character/`, `corpses/`, `indexes/`, `industry/`, `market/`, `mercenary-dens/`, `ship/` (a ship's own page: eveship.fit wheel + stats, owner/location, share links; `/asset/[id]` redirects ships here), `structure/`, `settings/`, `oauth/`, `xrpc/`, plus `layout/` (Header/Footer), `error/`, `private/`. Shared helpers at top level: `typeNames.ts`/`typeName.tsx`, `systemNames.ts`, `stationNames.ts`, `isk.ts`, `DateTime.tsx`, `names.tsx`, `assetPath.tsx` (see the routes section).
 - `src/` (Node cron/scripts): `esi.js` (ESI API wrapper), `supabase.js` (clients — anon + `sudoSupabase` service role that bypasses RLS), `resolveNames.js`, `tokenRefresh.js`/`refresh.js`, `proxy.ts`, `utils/`. The extract jobs live under `src/jobs/` — one file per ESI endpoint (`characterAssets.js`, `corpStructures.js`, …) plus the shared plumbing in `src/jobs/lib.js` (`forEachCharacter`/`forEachCorporation` token loops, `fetchAllPages`, `forEachSequential`, `cli`). Each job exports a `run*` function (callable from the Vercel queue consumer) and self-runs as a CLI when invoked directly (`node src/jobs/<job>.js`).
 - `schema.sql` — the single source of truth for the Supabase schema (in the default `public` schema). It's a full reset: it DROPs the app's tables and recreates them, so re-running wipes data — never run it against a database with data you want to keep. To change the schema, edit this file (so a fresh reset stays correct) **and** add a non-destructive incremental migration under `supabase/migrations/` (Supabase CLI format, applied with `supabase db push`) so the change can be rolled out to existing databases without wiping data.
-- `.github/workflows/` — `heartbeat.yml` (daily canary; still GitHub Actions since it's specifically a canary for scheduled-trigger health, not an ESI extract); `migrate.yml` (applies Supabase migrations on push to `main`). All ESI extract jobs used to have a like-named workflow here but have moved to Vercel Cron (see `src/app/api/cron/`) since the GitHub Actions schedule wasn't firing reliably.
+- `.github/workflows/` — `heartbeat.yml` (daily canary; still GitHub Actions since it's specifically a canary for scheduled-trigger health, not an ESI extract); `migrate.yml` (applies Supabase migrations on push to `main`); `bump-eveshipfit.yml` (Mondays 08:00 UTC; Renovate can't track the vendored `file:` tarballs, so this checks GitHub Packages for newer `@eveshipfit/react`/`@eveshipfit/dogma-engine`, re-packs into `vendor/eveshipfit/`, and opens/updates a PR — see `.github/scripts/bump-eveshipfit.mjs`). All ESI extract jobs used to have a like-named workflow here but have moved to Vercel Cron (see `src/app/api/cron/`) since the GitHub Actions schedule wasn't firing reliably.
 
 ## Database & ESI
 
@@ -124,13 +124,14 @@ All functions take `(accessToken, id, ...)` unless noted. Returns raw ESI respon
 - `supabase` — anon client (respects RLS)
 - `sudoSupabase` — service-role client (bypasses RLS; use in cron only)
 - `recordHeartbeat(job, phase, opts)` — write a heartbeat row; `opts.characterId`/`corporationId`/`userId` attribute it to the entity a per-character/per-corp job ran for (omit for whole-job/account-wide runs). The start/end pair upserts onto one row keyed on `job, run_id, run_attempt, owner_key` — `owner_key` is a generated column folding `character_id`/`corporation_id` into a single non-null discriminator so per-entity rows within the same run pair correctly instead of collapsing onto each other
-- `authenticate(token)` — verify user session token
+- `authenticate()` — sign the anon client in via `SUPABASE_USERNAME`/`SUPABASE_PASSWORD` env vars (CLI utility scripts)
 - `upsertCharacter(characterId, name, ownerId, corporationId)` — insert/update registration row
 - `upsertToken(characterId, accessToken, refreshToken, issuedAt, expiresAt, scope[])` — store OAuth tokens
 - `upsertAssets(characterId, assets[])` — asset upsert (legacy `refresh.js` utility)
-- `selectCharacters(userId)` — registered characters for a user
+- `selectCharacters(columns, owner?)` — registration rows (given select-column list), optionally filtered by `owner`
 - `selectCharacterIdsWithScopes(scopes[])` — character IDs that have all listed ESI scopes
-- `selectToken(characterId)` — fetch stored token for a character
+- `groupCharacterIdsByCorporation(scopes)` — `{ byCorp, unresolved }`: scoped character ids grouped by corporation, for the per-corporation job fan-out
+- `selectToken(characterId, scope?[])` — fetch stored token for a character, optionally requiring scopes
 - `getEsiEtag(cacheKey)` / `putEsiEtag(cacheKey, etag)` — read/store the last ESI ETag for a conditional-request cache key (`esi_etag` table); both are best-effort (a DB failure degrades to an unconditional fetch rather than throwing). Used by the single-request snapshot jobs (`character-orders`/`-wallet-transactions`/`-industry-jobs`) to send `If-None-Match` and skip re-processing on a `304`
 
 ### `src/tokenRefresh.js`
@@ -146,10 +147,22 @@ All functions take `(accessToken, id, ...)` unless noted. Returns raw ESI respon
 - `resolveAssetSystemNames()` — resolve+cache solar system names for assets floating directly in space (location_type 'solar_system') into `universe_name`
 
 ### `src/utils/apiToken.ts`
-- `resolvePlayer(token: string)` — look up `user_settings.api_token`, return `{ supabase, characterIds }` for Sheets API endpoints
+- `resolvePlayer(token: string)` — look up `user_settings.api_token` for Sheets API endpoints; returns `{ ok: true, supabase, characterIds }` or `{ ok: false, status, error }`
 
 ### `src/utils/csv.ts`
 - `toCsv(rows: object[])` — serialize flat object array to RFC 4180 CSV string
+
+### `src/utils/atParam.ts`
+- `parseAtParam(raw)` — parse the optional `at=` time-travel query param on the snapshot API endpoints (pads partial ISO dates) → `{ ok: true, iso }` | `{ ok: false }`; `AT_PARAM_ERROR` is the invalid-`at` hint string
+
+### `src/utils/queue.ts`
+- `queue` — region-pinned `@vercel/queue` `QueueClient` (default `sfo1`, override via `QUEUE_REGION`), plus its destructured `send` / `handleCallback`
+
+### `src/utils/cron.ts`
+- `requireCronSecret(request)` plus the four cron dispatch shapes: `fanOutPerCharacterCronJob`, `fanOutPerCharacterAnyScopeCronJob`, `fanOutPerCorporationCronJob`, `dispatchAccountCronJob`, `runDirectCronJob` (see the Extract jobs section)
+
+### `src/flags.ts`
+- `mercenaryDensFlag` / `corpsesFlag` — per-user Vercel Flags (`flags/next`) backed by the `user_settings.flags` array, gating the dark-launched `/mercenary-dens` and `/corpses` pages (false for signed-out users and anyone without the flag)
 
 ### `src/utils/supabase/client.ts` / `server.ts` / `service.ts` / `bearer.ts`
 - Browser / server-cookie / service-role / OAuth-bearer-token Supabase client factories (`bearer.ts` builds an RLS-scoped client from an MCP caller's access token)
@@ -163,6 +176,10 @@ All functions take `(accessToken, id, ...)` unless noted. Returns raw ESI respon
 | `/account/register` | `src/app/account/register/page.tsx` |
 | `/account/settings` | `src/app/account/settings/page.tsx` |
 | `/account/invite` | `src/app/account/invite/page.tsx` |
+| `/account/reset` | `src/app/account/reset/page.tsx` |
+| `/account/confirm` | `src/app/account/confirm/route.ts` |
+| `/account/debug` | `src/app/account/debug/page.tsx` |
+| `/account/chancellor` | `src/app/account/chancellor/page.tsx` |
 | `/asset` | `src/app/asset/page.tsx` |
 | `/asset/[locationId]` | `src/app/asset/[locationId]/page.tsx` |
 | `/asset/search` | `src/app/asset/search/page.tsx` |
@@ -173,7 +190,10 @@ All functions take `(accessToken, id, ...)` unless noted. Returns raw ESI respon
 | `/market` | `src/app/market/page.tsx` |
 | `/industry` | `src/app/industry/page.tsx` |
 | `/indexes` | `src/app/indexes/page.tsx` |
+| `/mercenary-dens` | `src/app/mercenary-dens/page.tsx` |
+| `/corpses/[characterID]` | `src/app/corpses/[characterID]/page.tsx` |
 | `/structure` | `src/app/structure/page.tsx` |
+| `/structure/revenue` | `src/app/structure/revenue/page.tsx` |
 | `/structure/[structureId]` | `src/app/structure/[structureId]/page.tsx` |
 | `/settings/grants` | `src/app/settings/grants/page.tsx` |
 | `/blueprint` | `src/app/blueprint/page.tsx` |
@@ -190,10 +210,19 @@ All functions take `(accessToken, id, ...)` unless noted. Returns raw ESI respon
 | `/api/corp/jobs` | `src/app/api/corp/jobs/route.ts` |
 | `/api/queue/jobs` | `src/app/api/queue/jobs/route.ts` |
 | `/api/type/search` | `src/app/api/type/search/route.ts` |
+| `/xrpc/[method]` | `src/app/xrpc/[method]/route.ts` |
 
-The old CSV endpoint paths (`/api/assets`, `/api/orders`, `/api/industry`) and `/characters/refresh` permanently redirect to their new homes (see `next.config.mjs`) so existing Google Sheets keep working.
+Notable pages:
+- `/mercenary-dens` — dark-launched (gated by `mercenaryDensFlag`): unions the DB's extracted dens (own + corp-shared via RLS) with hand-maintained intel in `src/app/mercenary-dens/data.ts` (`STAGING`, `LINKS` system adjacency, `TEMPERATE_PLANETS`, per-planet `den` ownership — the volatile, hand-edited part), rendered as a server-side SVG topology (`topology.tsx`, red reinforced > green ours > yellow external) plus a table; `shareCorps.tsx` manages den sharing to corps.
+- `/corpses/[characterID]` — public share page (no login; gated by the owner's `corpses` flag, else 404). Reads via the service-role client explicitly scoped to the owning account's registrations; lists corpse-type items from `character_asset`, deriving the dead pilot's name from the asset name (`"<pilot>'s Frozen Corpse"`), with a "New!" badge for corpses first seen within 48h (`valid_from`).
+- `/structure/revenue` — corp industry-job-tax revenue (`corp_wallet_journal` `ref_type='industry_job_tax'`) grouped by UTC day with a day pager; pages past PostgREST's 1000-row cap via range paging.
+- `/account/chancellor` — admin page for Chancellor accounts (an account that redeemed an `invite_code` with `is_chancellor=true`; `isChancellor()` in `src/app/account/chancellor/chancellor.ts` checks via the service role). Grants/revokes Chancellor status via invite codes.
+- `/account/debug` — dumps the signed-in user's settings (scopes, api_token, flags); `/account/confirm` handles Supabase email-OTP confirm links; `/account/reset` is password reset; `/error` is the generic error page.
+- `/xrpc/[method]` — edge-runtime stub answering AT Protocol XRPC calls with a 404 JSON body; the domain used to run an ATProto PDS and decommissioned-relay crawlers still poll it. Deliberately minimal to reject bot noise cheaply (404, not 5xx, to keep Vercel logs clean).
 
-Shared UI helpers: `src/app/isk.ts` (ISK formatting), `src/app/DateTime.tsx`, `src/app/typeName.tsx` (renders a type name from ID), `src/app/typeNames.ts` (resolves type names from the locally generated SDE data), `src/app/systemNames.ts`, `src/app/stationNames.ts`, `src/app/owners.ts` / `src/app/ownerFilter.tsx` (the character/corp "owner" picker shared by the assets and industry pages), `src/app/resolveLocations.ts` (resolves a set of root locations — station, player structure, or bare solar system — to display names + systems; shared by `/asset` and `/asset/search`; it and `owners.ts`/`systemNames.ts`/`stationNames.ts` accept an optional Supabase client so the MCP tools can reuse them with a bearer-token client instead of the cookie session), `src/app/freshness.ts` / `src/app/Freshness.tsx` (data-freshness grading — green under 15 minutes, yellow under 75, red beyond — and the live dot + "N minutes ago" client component; used by the header's "Refreshed …" indicator and the `/character/refresh` matrix).
+The old CSV endpoint paths (`/api/assets`, `/api/orders`, `/api/industry`) and `/characters/refresh` permanently redirect to their new homes (see `next.config.mjs`) so existing Google Sheets keep working; `/asset/:itemId/fit` temporarily redirects to `/ship/:itemId`. `next.config.mjs` also sets `turbopack: {}` (WASM handling for `@eveshipfit/dogma-engine`) and injects build-time `BUILD_TIME`/`COMMIT_SHA` env vars.
+
+Shared UI helpers: `src/app/isk.ts` (ISK formatting), `src/app/DateTime.tsx`, `src/app/typeName.tsx` (renders a type name from ID), `src/app/typeNames.ts` (resolves type names from the locally generated SDE data), `src/app/systemNames.ts`, `src/app/stationNames.ts`, `src/app/names.tsx` (`Name`/`CharacterName`/`SystemName`/`StationName` — thin serif-face wrappers for dynamic entity names with `#id` / `—` fallbacks), `src/app/assetPath.tsx` (the breadcrumb of where an item lives on `/asset/[locationId]` and `/ship/[itemId]`, fed by the `asset_ancestors()` Postgres function), `src/app/owners.ts` / `src/app/ownerFilter.tsx` (the character/corp "owner" picker shared by the assets and industry pages), `src/app/resolveLocations.ts` (resolves a set of root locations — station, player structure, or bare solar system — to display names + systems; shared by `/asset` and `/asset/search`; it and `owners.ts`/`systemNames.ts`/`stationNames.ts` accept an optional Supabase client so the MCP tools can reuse them with a bearer-token client instead of the cookie session), `src/app/freshness.ts` / `src/app/Freshness.tsx` (data-freshness grading — green under 15 minutes, yellow under 75, red beyond — and the live dot + "N minutes ago" client component; used by the header's "Refreshed …" indicator and the `/character/refresh` matrix).
 
 ## Extract jobs
 
@@ -223,10 +252,11 @@ One job per ESI endpoint. The npm script, queue job name, and heartbeat job labe
 
 `src/heartbeat.js` (`heartbeat.yml`, 10:55 daily) is a canary that just proves heartbeat recording works; it remains on GitHub Actions since it isn't an ESI extract job.
 
-The per-character jobs (`character-assets`, `character-blueprints`, `character-orders`, `character-wallet-transactions`, `character-industry-jobs`, `character-status`, plus `corp-wallet-transactions`, `corp-assets`, `corp-industry-jobs`) are also dispatched on demand via the Vercel queue at `/api/queue/jobs` (the "Refresh ESI" flow); `character-affiliations` and `universe-names` are dispatched once account-wide. On demand means: adding a character dispatches the full set for it (`dispatchRefresh`), and `/character/refresh` shows a per-character × per-job freshness matrix (fed by `latest_heartbeats()`) with a refresh button per stale cell that dispatches just that one job (`dispatchSingleJob`); nothing is auto-dispatched by merely visiting the page. The header shows the signed-in user's most recent extract heartbeat as a colored "Refreshed N minutes ago" indicator linking there. The remaining daily corp jobs (`corp-structures`, `corp-blueprints`, `corp-wallet-journal`) are never dispatched on demand — they do whole-corp work that isn't character-scoped, so a per-character fan-out would just redo the same pull once per character. `industry-systems` is similarly whole-universe work, but Chancellor accounts (see `src/app/account/chancellor`) get an extra row on `/character/refresh` to kick it on demand — `refreshCell` (`src/app/character/refresh/actions.ts`) gates that one job behind `isChancellor()` server-side, independent of `dispatchRefresh`'s own account-wide job list, so adding a character never fans it out.
+The per-character jobs (`PER_CHARACTER_JOBS` in `src/app/character/dispatchRefresh.ts`: `character-assets`, `character-blueprints`, `character-orders`, `character-wallet-transactions`, `character-industry-jobs`, `character-mercenary-dens`, `character-status`) are also dispatched on demand via the Vercel queue at `/api/queue/jobs` (the "Refresh ESI" flow), one message per character. The corp-scoped jobs (`PER_CORPORATION_JOBS`: `corp-wallet-transactions`, `corp-assets`, `corp-industry-jobs`) are dispatched **one message per corporation**, not per character — two of a user's characters in the same corp would otherwise race a concurrent reconcile of the same corp rows (duplicate-key aborts that leave items closed but never reopened); the message carries every character known to carry the job's scope for that corp so `forEachCorporation` can fall back through them if one lacks the required in-game role. `character-affiliations` and `universe-names` (`ACCOUNT_JOBS`) are dispatched once account-wide. On demand means: adding a character dispatches the full set for it (`dispatchRefresh`), and `/character/refresh` shows a per-character × per-job freshness matrix (fed by `latest_heartbeats()`) with a refresh button per stale cell that dispatches just that one job (`dispatchSingleJob`); nothing is auto-dispatched by merely visiting the page. The header shows the signed-in user's most recent extract heartbeat as a colored "Refreshed N minutes ago" indicator linking there. The remaining daily corp jobs (`corp-structures`, `corp-blueprints`, `corp-wallet-journal`) are never dispatched on demand — they do whole-corp work that isn't character-scoped, so a per-character fan-out would just redo the same pull once per character. `industry-systems` is similarly whole-universe work, but Chancellor accounts (see `src/app/account/chancellor`) get an extra row on `/character/refresh` to kick it on demand — `refreshCell` (`src/app/character/refresh/actions.ts`) gates that one job behind `isChancellor()` server-side, independent of `dispatchRefresh`'s own account-wide job list, so adding a character never fans it out.
 
-Every `/api/cron/<job>/route.ts` checks the `Authorization: Bearer $CRON_SECRET` header Vercel signs cron requests with (see `src/utils/cron.ts`'s `requireCronSecret`), then does one of three things depending on the job's shape (also in `src/utils/cron.ts`):
-- **Per-character jobs** (the ones also dispatchable on demand, above): `fanOutPerCharacterCronJob` enumerates every character carrying the job's ESI scope (`selectCharacterIdsWithScopes` in `src/supabase.js`) and fans out one Vercel queue message per character — mirroring the on-demand "Refresh ESI" flow (`dispatchRefresh.ts`) — so each invocation stays small regardless of how many characters are registered. The queued consumer records its own per-character heartbeat (see `forEachCharacter`/`forEachCorporation` in `src/jobs/lib.js`).
+Every `/api/cron/<job>/route.ts` checks the `Authorization: Bearer $CRON_SECRET` header Vercel signs cron requests with (see `src/utils/cron.ts`'s `requireCronSecret`), then does one of four things depending on the job's shape (also in `src/utils/cron.ts`):
+- **Per-character jobs**: `fanOutPerCharacterCronJob` enumerates every character carrying the job's ESI scope (`selectCharacterIdsWithScopes` in `src/supabase.js`) and fans out one Vercel queue message per character — mirroring the on-demand "Refresh ESI" flow (`dispatchRefresh.ts`) — so each invocation stays small regardless of how many characters are registered. The queued consumer records its own per-character heartbeat (see `forEachCharacter`/`forEachCorporation` in `src/jobs/lib.js`). `character-status` uses the `fanOutPerCharacterAnyScopeCronJob` variant (any of several scopes rather than one required scope).
+- **Per-corporation jobs** (`corp-assets`, `corp-industry-jobs`, `corp-wallet-transactions`): `fanOutPerCorporationCronJob` groups scoped characters by corporation (`groupCharacterIdsByCorporation` in `src/supabase.js`) and sends one queue message per corp, avoiding the same-corp concurrent-reconcile race described above.
 - **Account-wide jobs** (`character-affiliations`, `universe-names`): `dispatchAccountCronJob` sends a single queue message; the queue consumer records the whole-job heartbeat (`source: 'vercel'`).
 - **Whole-corp/whole-universe jobs** (`corp-structures`, `corp-blueprints`, `corp-wallet-journal`, `universe-structures`, `industry-systems`): `runDirectCronJob` calls the job's `run*()` function inline and records its own start/end heartbeat (`source: 'vercel-cron'`), since there's no useful way to fan these out further. This is the one category still exposed to the 60s function duration limit (see `src/app/api/queue/jobs/route.ts`) if a tracked corp/universe dataset ever grows large enough — watch these jobs' heartbeat durations.
 
@@ -276,7 +306,7 @@ Requires a `CRON_SECRET` env var set in Vercel (see `.env.example`).
 | `watched_system` | Per-user systems to track indexes for (drives `industry-systems` + `/indexes`) | `user_id`, `system_id`, `position` (drag order) |
 | `shared_asset_token` | Public share links for own assets (`/ship/[itemId]?token=…`; hangar shares have no UI yet). Resolved server-side via the service client, which then scopes every query to the sharer's characters/corps — no anon RLS policy | `token` (PK, 16 random bytes hex), `user_id`, `item_id`, unique `(user_id, item_id)` |
 | `user_settings` | User preferences | `user_id`, `enabled_scopes[]`, `api_token` (unique), `flags[]` |
-| `invite_code` | Invite-only registration | `code` (unique), `created_by`, `redeemed_by`, `redeemed_at` |
+| `invite_code` | Invite-only registration; redeeming an `is_chancellor` code confers Chancellor (admin) status | `code` (unique), `created_by`, `redeemed_by`, `redeemed_at`, `is_chancellor` |
 | `refresh_task` | On-demand job tracking | `batch_id`, `user_id`, `job`, `character_id`, `status` (pending/running/done/error) |
 | `heartbeat` | Cron job monitoring | `job`, `run_id`, `started_at`, `ended_at`, `duration` (generated), `character_id`, `corporation_id`, `user_id`, `owner_key` (generated) |
 | `esi_etag` | Last ESI ETag per conditional-request cache key (service-role only; RLS on, no policy) | `cache_key` (PK, `<job>:<registration uuid>`), `etag`, `updated_at` |
@@ -288,6 +318,7 @@ Key Postgres functions (callable via RPC or SQL):
 - `corp_asset_location_summary()` — aggregate corp assets per location (mirrors the character version; RLS scopes to corps the caller has a registered character in)
 - `corp_asset_location_contents(parent_id)` — count nested corp items in a location
 - `corp_asset_search(type_ids[])` — mirrors `character_asset_search()` over corp assets (used by `/asset/search`)
+- `asset_ancestors(start_id)` — one item's ancestor chain (enclosing containers up to the root station/structure/system), climbing the live `character_asset ∪ corp_asset` views, depth-capped at 16; feeds the `assetPath.tsx` breadcrumb on `/asset/[locationId]` and `/ship/[itemId]`
 - `latest_heartbeats()` — most recent completed heartbeat per job per owner (character/corp/whole-job), RLS-scoped to the caller; feeds the `/character/refresh` freshness matrix
 - `character_asset_snapshot_at(character_ids[], as_of)` — time-travel asset snapshot as JSON (used by `/api/character/assets`)
 - `character_industry_jobs(character_ids[], include_delivered, as_of)` — time-travel industry-job snapshot as JSON (used by `/api/character/jobs`; `as_of` defaults to now, reconstructed from the SCD-2 history like `character_asset_snapshot_at`)
@@ -304,6 +335,8 @@ Key Postgres functions (callable via RPC or SQL):
 - **SCD Type 2 assets:** `character_asset_over_time` tracks the full history of each item. `is_current=true` rows form the current snapshot. `valid_until` is bumped each run for unchanged items; a new row is inserted when anything changes, and the old row's `is_current` is set to `false`. `corp_asset_over_time` (+ `corp_asset` view) mirrors this exact pattern for corp assets, reconciled in `src/jobs/corpAssets.js`. `character_blueprint_over_time` / `corp_blueprint_over_time` (+ their `_blueprint` views) apply the identical SCD-2 pattern to blueprints (location, quantity, ME/TE, runs), reconciled in `src/jobs/characterBlueprints.js` / `src/jobs/corpBlueprints.js`. `character_ship_over_time` (+ `character_ship` view) applies the same pattern with a single open row per character instead of one per item, reconciled in `src/jobs/characterShip.js`. `character_order_over_time` (+ `character_order` view) and `character_industry_job_over_time` / `corp_industry_job_over_time` (+ their `_order`/`_job` views) apply SCD-2 keyed on `order_id` / `job_id`, reconciled in `src/jobs/characterOrders.js` / `characterIndustryJobs.js` / `corpIndustryJobs.js`: an order's fills and re-prices, or a job's status transitions, open new versions. The two families differ in how a row that vanishes from the ESI snapshot is handled — an order that vanished has **filled/expired/cancelled**, so it's closed (the view holds only still-open orders, matching the old sweep-delete); an industry job that vanished has just **aged past ESI's `include_completed` window**, so its terminal (delivered) row is left `is_current` (the view keeps every job ever reported, matching the old table that never swept completed jobs).
 - **Asset location-walk functions come in two shapes:** the `*_location_summary()`/`*_location_contents()` functions seed their recursive climb/descend from *every* asset (they're computing an aggregate over the whole hangar). `character_asset_search()`/`corp_asset_search()` instead seed from just the rows matching a filter (a set of type ids), so a search stays cheap regardless of hangar size — reuse this seeded-recursion shape for any future "look up a few items, walk their location tree" function rather than the walk-everything shape.
 - **Supabase RLS:** All tables use RLS scoped to `auth.uid()`. Cron scripts use the service-role key (`sudoSupabase` / `src/utils/supabase/service.ts`) which bypasses RLS.
+- **Dark launches via per-user flags:** new pages ship gated behind an entry in the `user_settings.flags` text array, exposed as a Vercel Flag in `src/flags.ts` (`mercenaryDensFlag`, `corpsesFlag`). The header nav link and the page itself both check the flag; there is no UI to set flags (edit the DB row / use `/account/debug` to inspect). `/corpses/[characterID]` doubles as the flag's public opt-in: the owner enabling `corpses` is what makes their share page resolve instead of 404.
+- **Chancellor (admin) accounts:** an account that redeemed an `invite_code` with `is_chancellor=true`. `isChancellor(userId)` (`src/app/account/chancellor/chancellor.ts`) checks via the service role (a user's RLS view of `invite_code` only covers codes they created, not the one they redeemed). Gates `/account/chancellor` and the on-demand `industry-systems` refresh row.
 - **Google Sheets IMPORTDATA:** `/api/character/assets`, `/api/character/blueprints`, `/api/character/orders`, `/api/character/jobs`, `/api/corp/assets`, `/api/corp/blueprints`, `/api/corp/jobs` authenticate via `user_settings.api_token`, call a Postgres function, and return CSV. The pre-rename paths permanently redirect to the new ones.
 - **Vercel queue:** The queue consumer at `/api/queue/jobs` dispatches to the same `run*()` functions the CLI jobs use. The UI enqueues work via `@vercel/queue`.
 - **Vercel Workflows pilot:** `character-implants` is the first extract job to execute as a Vercel Workflow (`workflow` package; `withWorkflow` wraps `next.config.mjs`, generating gitignored routes under `src/app/.well-known/workflow/`). The queue consumer special-cases it: instead of running the job inline, it `start()`s `characterImplantsWorkflow` (`src/workflows/characterImplants.ts`), whose single `'use step'` function calls `runCharacterImplants` unchanged — validating the queue → workflow → step chain (each step is its own function invocation with its own duration budget and bounded retries; runs/steps are visible under Vercel's Observability → Workflows) before any other job migrates. A manual, deliberately unscheduled trigger route at `/api/cron/character-implants` (CRON_SECRET-protected, no `vercel.json` crons entry — `character-status` already covers implants on the schedule) fans out the queue messages to exercise the chain in production. The job module itself is untouched and still CLI-runnable.
