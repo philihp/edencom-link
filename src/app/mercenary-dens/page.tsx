@@ -6,6 +6,7 @@ import { getSdeTypeNames } from '@/sdeTypes'
 import { createClient } from '@/utils/supabase/server'
 
 import { fetchOwners } from '../owners'
+import CopyDiscordPing from './copyDiscordPing'
 import { STAGING, TEMPERATE_PLANETS } from './data'
 import { formatDuration, formatUtc } from './duration'
 import ShareCorps from './shareCorps'
@@ -213,7 +214,14 @@ const MercenaryDensPage = async () => {
                             : ''}
                         </span>
                         {den?.reinforcement_end ? (
-                          <span className={styles.timestamp}> {formatUtc(den.reinforcement_end)}</span>
+                          <>
+                            <span className={styles.timestamp}> {formatUtc(den.reinforcement_end)}</span>
+                            <CopyDiscordPing
+                              system={row.system}
+                              planet={row.planet}
+                              reinforcementEnd={den.reinforcement_end}
+                            />
+                          </>
                         ) : null}
                       </>
                     ) : den || row.intel ? (

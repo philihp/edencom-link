@@ -162,6 +162,22 @@
   font-size: 9pt;
 }
 
+/* Tiny inline clipboard button beside a reinforcement timer. */
+.copyButton {
+  border: none;
+  background: none;
+  padding: 0 2pt;
+  margin-left: 4pt;
+  font-size: 9pt;
+  line-height: 1;
+  cursor: pointer;
+  vertical-align: middle;
+}
+
+.copyButton:hover {
+  opacity: 0.7;
+}
+
 /* Row + node status colours (shared scheme): red = reinforced, green = our/corp
  * den, yellow = a den owned outside our corps (from intel). Rows get a faint
  * left border + tint; nodes fill the pill. */
