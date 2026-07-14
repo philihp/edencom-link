@@ -1,9 +1,9 @@
 // Generates src/generated/sdeTypes.json, src/generated/sdeSystems.json,
-// src/generated/sdeStations.json, and src/generated/sdeBlueprints.json from
-// CCP's official Static Data Export so the app can resolve type
-// names/groups/categories, solar-system names, NPC station names, and
-// blueprint material bills locally instead of depending on a remote service
-// or DB round trip. Runs as a `predev`/`prebuild` step (see package.json) —
+// src/generated/sdeStations.json, src/generated/sdeBlueprints.json, and
+// src/generated/sdePlanets.json from CCP's official Static Data Export so the
+// app can resolve type names/groups/categories, solar-system names, NPC station
+// names, blueprint material bills, and planet system/index/type locally instead
+// of depending on a remote service or DB round trip. Runs as a `predev`/`prebuild` step (see package.json) —
 // re-run `pnpm run sde:build -- --force` to refresh the data. Mirrors
 // buildEsfData.js's download/extract approach (same source zip, unzipped via
 // the system `unzip` binary — already required for that script to work).
@@ -22,12 +22,20 @@ const TYPES_OUTPUT_PATH = join(__dirname, 'generated', 'sdeTypes.json')
 const SYSTEMS_OUTPUT_PATH = join(__dirname, 'generated', 'sdeSystems.json')
 const STATIONS_OUTPUT_PATH = join(__dirname, 'generated', 'sdeStations.json')
 const BLUEPRINTS_OUTPUT_PATH = join(__dirname, 'generated', 'sdeBlueprints.json')
+const PLANETS_OUTPUT_PATH = join(__dirname, 'generated', 'sdePlanets.json')
 
 // CCP's own Static Data Export: one zip of per-dataset JSONL files, refreshed
 // each game patch (see developers.eveonline.com/docs/services/static-data).
 const SDE_URL = 'https://developers.eveonline.com/static-data/eve-online-static-data-latest-jsonl.zip'
 
-const SOURCE_FILES = ['types.jsonl', 'groups.jsonl', 'mapSolarSystems.jsonl', 'npcStations.jsonl', 'blueprints.jsonl']
+const SOURCE_FILES = [
+  'types.jsonl',
+  'groups.jsonl',
+  'mapSolarSystems.jsonl',
+  'npcStations.jsonl',
+  'blueprints.jsonl',
+  'mapPlanets.jsonl',
+]
 
 const downloadSde = async (destZip) => {
   console.log(`sde: downloading SDE from ${SDE_URL}…`)
@@ -155,6 +163,26 @@ const buildBlueprints = async (dir) => {
   console.log(`sde: wrote ${out.length} blueprints to ${BLUEPRINTS_OUTPUT_PATH}`)
 }
 
+// A planet carries no display name in the SDE — EVE derives it as
+// "<system name> <roman(celestialIndex)>", so the consumer (src/sdePlanets.ts)
+// reconstructs it from the system name + celestial index. typeID is the planet
+// type (11 = Temperate), kept so callers can filter by planet type.
+const buildPlanets = async (dir) => {
+  console.log('sde: parsing planets from the SDE…')
+
+  // [planetID, solarSystemID, celestialIndex, typeID] tuples.
+  const out = []
+  for await (const p of readJsonl(join(dir, 'mapPlanets.jsonl'))) {
+    if (Number.isFinite(p._key) && Number.isFinite(p.solarSystemID)) {
+      out.push([p._key, p.solarSystemID, p.celestialIndex ?? null, p.typeID ?? null])
+    }
+  }
+  out.sort((a, b) => a[0] - b[0])
+
+  await writeFile(PLANETS_OUTPUT_PATH, JSON.stringify(out))
+  console.log(`sde: wrote ${out.length} planets to ${PLANETS_OUTPUT_PATH}`)
+}
+
 const run = async () => {
   const force = process.argv.includes('--force')
   const artifacts = [
@@ -162,6 +190,7 @@ const run = async () => {
     [SYSTEMS_OUTPUT_PATH, buildSystems],
     [STATIONS_OUTPUT_PATH, buildStations],
     [BLUEPRINTS_OUTPUT_PATH, buildBlueprints],
+    [PLANETS_OUTPUT_PATH, buildPlanets],
   ]
 
   await mkdir(dirname(TYPES_OUTPUT_PATH), { recursive: true })

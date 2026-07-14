@@ -1,17 +1,57 @@
 import { redirect } from 'next/navigation'
 
 import { mercenaryDensFlag } from '@/flags'
+import { getSdePlanet } from '@/sdePlanets'
+import { getSdeTypeNames } from '@/sdeTypes'
 import { createClient } from '@/utils/supabase/server'
 
 import { fetchOwners } from '../owners'
 import { STAGING, TEMPERATE_PLANETS } from './data'
 import ShareCorps from './shareCorps'
-import { Topology } from './topology'
+import { Topology, type NodeColor } from './topology'
 import styles from './mercenaryDens.module.css'
 
-// Hand-maintained static intel; nothing here moves per request, but keep it
-// server-rendered behind the auth + flag gates.
 export const dynamic = 'force-dynamic'
+
+// A den we can see in the DB — our own, plus dens shared to one of our corps
+// (RLS on character_mercenary_den only ever surfaces those). So every DB den is
+// "ours" for colouring purposes; external dens come only from the hand-kept intel.
+type DenRow = {
+  character_id: string
+  den_id: number
+  planet_id: number
+  type_id: number | null
+  state: string | null
+  development_level: string | null
+  development_amount: number | null
+  anarchy_level: string | null
+  anarchy_amount: number | null
+  infomorphs: number | null
+  reinforcement_end: string | null
+  skyhook_id: number | null
+  skyhook_corporation_id: number | null
+}
+
+type MergedRow = {
+  system: string
+  planet: string // roman numeral
+  intel?: { owner: string; alliance: string | null; reinforced: boolean }
+  den?: DenRow & { ownerLabel: string; typeName: string | null }
+}
+
+const isReinforced = (row: MergedRow): boolean =>
+  row.den?.reinforcement_end != null && new Date(row.den.reinforcement_end).getTime() > Date.now()
+    ? true
+    : (row.intel?.reinforced ?? false)
+
+// Reinforced (red) wins; then our own/corp den (green); then external intel
+// (yellow); an empty temperate planet has no colour.
+const colorOf = (row: MergedRow): NodeColor | null => {
+  if (isReinforced(row)) return 'red'
+  if (row.den) return 'green'
+  if (row.intel) return 'yellow'
+  return null
+}
 
 const MercenaryDensPage = async () => {
   const supabase = await createClient()
@@ -25,15 +65,76 @@ const MercenaryDensPage = async () => {
     redirect('/')
   }
 
-  // The caller's corporations (to offer as share targets) and which of them
-  // their dens are currently shared with.
+  // The caller's characters + corporations (share targets, and to label/scope own
+  // dens) and which corps their dens are currently shared with.
   const { corporations } = await fetchOwners(supabase)
-  const { data: myRegs } = await supabase.from('registration').select('id')
-  const registrationIds = (myRegs ?? []).map((r) => r.id)
+  const { data: myRegs } = await supabase.from('registration').select('id, name')
+  const ownNameById = new Map((myRegs ?? []).map((r) => [r.id as string, r.name as string]))
+  const registrationIds = [...ownNameById.keys()]
   const { data: shares } = registrationIds.length
     ? await supabase.from('character_mercenary_den_share').select('corporation_id').in('character_id', registrationIds)
     : { data: [] }
   const sharedCorpIds = [...new Set((shares ?? []).map((s) => String(s.corporation_id)))]
+
+  // Every mercenary den we can see (own + shared to our corps), each enriched
+  // with its latest observed status (the view left-joins it).
+  const { data: denData } = await supabase.from('character_mercenary_den').select('*')
+  const dens = (denData ?? []) as DenRow[]
+  const typeNames = getSdeTypeNames(dens.map((d) => d.type_id).filter((t): t is number => t != null))
+
+  // Merge the hand-maintained temperate-planet intel with our real dens, keyed by
+  // system + roman numeral. A den's planet_id is resolved to (system, roman) via
+  // the generated SDE (src/sdePlanets.ts); dens on a planet not in the static
+  // list are appended as extra rows.
+  const rowsByKey = new Map<string, MergedRow>()
+  const key = (system: string, planet: string) => `${system}|${planet}`
+
+  for (const { system, planet, den } of TEMPERATE_PLANETS) {
+    rowsByKey.set(key(system, planet), { system, planet, intel: den ?? undefined })
+  }
+
+  for (const den of dens) {
+    const planet = getSdePlanet(den.planet_id)
+    const system = planet?.systemName ?? ''
+    const roman = planet?.roman ?? ''
+    const enriched = {
+      ...den,
+      ownerLabel: ownNameById.get(den.character_id) ?? 'Corpmate',
+      typeName: den.type_id != null ? (typeNames[den.type_id] ?? null) : null,
+    }
+    const k = key(system, roman)
+    const existing = rowsByKey.get(k)
+    if (existing) {
+      existing.den = enriched
+    } else {
+      rowsByKey.set(k, { system: system || `Planet #${den.planet_id}`, planet: roman, den: enriched })
+    }
+  }
+
+  // Static planets first (in their curated outward-from-staging order), then any
+  // appended den-only rows sorted by system/planet.
+  const staticKeys = new Set(TEMPERATE_PLANETS.map(({ system, planet }) => key(system, planet)))
+  const staticRows = TEMPERATE_PLANETS.map(({ system, planet }) => rowsByKey.get(key(system, planet))!)
+  const extraRows = [...rowsByKey.entries()]
+    .filter(([k]) => !staticKeys.has(k))
+    .map(([, row]) => row)
+    .sort((a, b) => a.system.localeCompare(b.system) || a.planet.localeCompare(b.planet))
+  const rows = [...staticRows, ...extraRows]
+
+  // Node colour per system: the most severe colour among that system's rows
+  // (red > yellow > green).
+  const severity: Record<NodeColor, number> = { red: 3, yellow: 2, green: 1 }
+  const nodeColors: Record<string, NodeColor> = {}
+  for (const row of rows) {
+    const c = colorOf(row)
+    if (!c) continue
+    const cur = nodeColors[row.system]
+    if (!cur || severity[c] > severity[cur]) nodeColors[row.system] = c
+  }
+
+  const dash = <span className={styles.empty}>—</span>
+  const evolution = (level: string | null, amount: number | null) =>
+    level != null ? `${level}${amount != null ? ` (${amount})` : ''}` : dash
 
   return (
     <>
@@ -45,41 +146,59 @@ const MercenaryDensPage = async () => {
         Systems immediately accessible from our staging system, <span className={styles.system}>{STAGING}</span>.
       </p>
 
-      <Topology />
+      <Topology nodeColors={nodeColors} />
 
       <h2>Temperate planets</h2>
-      <table className={styles.table}>
-        <thead>
-          <tr>
-            <th>System</th>
-            <th>Planet</th>
-            <th>Den owner</th>
-            <th>Alliance</th>
-            <th>Reinforced</th>
-          </tr>
-        </thead>
-        <tbody>
-          {TEMPERATE_PLANETS.map(({ system, planet, den }, i) => (
-            <tr key={`${system}-${planet}-${i}`}>
-              <td className={styles.system}>{system}</td>
-              <td className={styles.planet}>{planet}</td>
-              <td>{den ? den.owner : <span className={styles.empty}>— none —</span>}</td>
-              <td>{den?.alliance ?? <span className={styles.empty}>—</span>}</td>
-              <td>
-                {den ? (
-                  den.reinforced ? (
-                    <span className={styles.reinforced}>reinforced</span>
-                  ) : (
-                    <span className={styles.stable}>stable</span>
-                  )
-                ) : (
-                  <span className={styles.empty}>—</span>
-                )}
-              </td>
+      <div className={styles.tableScroll}>
+        <table className={styles.table}>
+          <thead>
+            <tr>
+              <th>System</th>
+              <th>Planet</th>
+              <th>Owner</th>
+              <th>Type</th>
+              <th>State</th>
+              <th>Development</th>
+              <th>Anarchy</th>
+              <th>Infomorphs</th>
+              <th>Reinforced</th>
+              <th>Skyhook</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {rows.map((row, i) => {
+              const color = colorOf(row)
+              const den = row.den
+              const owner = den ? den.ownerLabel : (row.intel?.owner ?? null)
+              return (
+                <tr key={`${row.system}-${row.planet}-${i}`} className={color ? styles[`row_${color}`] : undefined}>
+                  <td className={styles.system}>{row.system}</td>
+                  <td className={styles.planet}>{row.planet || dash}</td>
+                  <td>
+                    {owner ?? dash}
+                    {row.intel?.alliance ? <span className={styles.alliance}> [{row.intel.alliance}]</span> : null}
+                  </td>
+                  <td>{den?.typeName ?? dash}</td>
+                  <td>{den?.state ?? dash}</td>
+                  <td>{den ? evolution(den.development_level, den.development_amount) : dash}</td>
+                  <td>{den ? evolution(den.anarchy_level, den.anarchy_amount) : dash}</td>
+                  <td>{den?.infomorphs ?? dash}</td>
+                  <td>
+                    {isReinforced(row) ? (
+                      <span className={styles.reinforced}>reinforced</span>
+                    ) : den || row.intel ? (
+                      <span className={styles.stable}>stable</span>
+                    ) : (
+                      dash
+                    )}
+                  </td>
+                  <td>{den?.skyhook_corporation_id ? `corp ${den.skyhook_corporation_id}` : dash}</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
     </>
   )
 }
