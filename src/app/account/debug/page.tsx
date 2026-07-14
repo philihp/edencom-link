@@ -2,6 +2,8 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 
 import { createClient } from '@/utils/supabase/server'
+import { ADMIN_USER_ID } from './adminUserId'
+import ImpersonateForm from './impersonateForm'
 
 const DebugPage = async () => {
   const supabase = await createClient()
@@ -35,6 +37,14 @@ const DebugPage = async () => {
       <h1>Debug</h1>
 
       <pre>{JSON.stringify(debugInfo, null, 2)}</pre>
+
+      {data.user.id === ADMIN_USER_ID && (
+        <>
+          <h2>Impersonate</h2>
+          <p>Swaps this session for a real session as another account. Sign back in as yourself to return.</p>
+          <ImpersonateForm />
+        </>
+      )}
     </>
   )
 }
