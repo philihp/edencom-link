@@ -10,7 +10,7 @@
     "@eveshipfit/react": "file:vendor/eveshipfit/eveshipfit-react-4.7.2.tgz",
     "@modelcontextprotocol/sdk": "1.29.0",
     "@philihp/eve-sso": "2.1.0",
-    "@supabase/ssr": "0.12.0",
+    "@supabase/ssr": "0.12.1",
     "@supabase/supabase-js": "2.110.3",
     "@vercel/analytics": "2.0.1",
     "@vercel/queue": "^0.4.0",
