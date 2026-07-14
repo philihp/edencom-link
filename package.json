@@ -8,12 +8,12 @@
     "@eveshipfit/data": "file:vendor/eveshipfit/data-stub",
     "@eveshipfit/dogma-engine": "file:vendor/eveshipfit/eveshipfit-dogma-engine-7.1.0.tgz",
     "@eveshipfit/react": "file:vendor/eveshipfit/eveshipfit-react-4.7.2.tgz",
-    "@modelcontextprotocol/sdk": "1.26.0",
+    "@modelcontextprotocol/sdk": "1.29.0",
     "@philihp/eve-sso": "2.1.0",
     "@supabase/ssr": "0.12.0",
-    "@supabase/supabase-js": "2.110.0",
+    "@supabase/supabase-js": "2.110.3",
     "@vercel/analytics": "2.0.1",
-    "@vercel/queue": "^0.3.0",
+    "@vercel/queue": "^0.4.0",
     "@vercel/speed-insights": "2.0.0",
     "eve-industry": "0.1.0",
     "fast-shuffle": "^6.2.0",
@@ -24,7 +24,7 @@
     "ramda": "^0.32.0",
     "react": "19.2.7",
     "react-dom": "19.2.7",
-    "zod": "^3.25.76"
+    "zod": "^4.4.3"
   },
   "scripts": {
     "build": "next build",
@@ -71,7 +71,7 @@
     "@eslint/eslintrc": "3.3.6",
     "@eslint/js": "^10.0.0",
     "@philihp/prettier-config": "1.0.0",
-    "@types/node": "25.9.5",
+    "@types/node": "26.1.1",
     "@types/ramda": "0.32.0",
     "@types/react": "19.2.17",
     "@types/react-dom": "19.2.3",
@@ -82,6 +82,6 @@
     "prettier": "3.9.5",
     "supabase": "2.109.1",
     "typescript": "6.0.3",
-    "typescript-eslint": "8.62.1"
+    "typescript-eslint": "8.64.0"
   }
 }
