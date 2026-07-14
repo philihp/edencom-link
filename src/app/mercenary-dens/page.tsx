@@ -7,6 +7,7 @@ import { createClient } from '@/utils/supabase/server'
 
 import { fetchOwners } from '../owners'
 import { STAGING, TEMPERATE_PLANETS } from './data'
+import { formatDuration, formatUtc } from './duration'
 import ShareCorps from './shareCorps'
 import { Topology, type NodeColor } from './topology'
 import styles from './mercenaryDens.module.css'
@@ -30,6 +31,7 @@ type DenRow = {
   reinforcement_end: string | null
   skyhook_id: number | null
   skyhook_corporation_id: number | null
+  status_observed_at: string | null
 }
 
 type MergedRow = {
@@ -146,6 +148,10 @@ const MercenaryDensPage = async () => {
   const evolution = (level: string | null, amount: number | null) =>
     level != null ? `${level}${amount != null ? ` (${amount})` : ''}` : dash
 
+  // One render-time reference point for the countdown/elapsed cells, so every
+  // row is measured against the same instant.
+  const now = Date.now()
+
   return (
     <>
       <div className={styles.pageHeader}>
@@ -174,6 +180,7 @@ const MercenaryDensPage = async () => {
               <th>Infomorphs</th>
               <th>Reinforced</th>
               <th>Skyhook</th>
+              <th>Observed At</th>
             </tr>
           </thead>
           <tbody>
@@ -198,7 +205,17 @@ const MercenaryDensPage = async () => {
                   <td>{den?.infomorphs ?? dash}</td>
                   <td>
                     {isReinforced(row) ? (
-                      <span className={styles.reinforced}>reinforced</span>
+                      <>
+                        <span className={styles.reinforced}>
+                          reinforced
+                          {den?.reinforcement_end
+                            ? ` ${formatDuration(new Date(den.reinforcement_end).getTime() - now)}`
+                            : ''}
+                        </span>
+                        {den?.reinforcement_end ? (
+                          <span className={styles.timestamp}> {formatUtc(den.reinforcement_end)}</span>
+                        ) : null}
+                      </>
                     ) : den || row.intel ? (
                       <span className={styles.stable}>stable</span>
                     ) : (
@@ -206,6 +223,16 @@ const MercenaryDensPage = async () => {
                     )}
                   </td>
                   <td>{den?.skyhook_corporation_id ? `corp ${den.skyhook_corporation_id}` : dash}</td>
+                  <td>
+                    {den?.status_observed_at ? (
+                      <>
+                        {formatDuration(now - new Date(den.status_observed_at).getTime())} ago
+                        <span className={styles.timestamp}> {formatUtc(den.status_observed_at)}</span>
+                      </>
+                    ) : (
+                      dash
+                    )}
+                  </td>
                 </tr>
               )
             })}
