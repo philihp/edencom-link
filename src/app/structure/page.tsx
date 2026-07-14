@@ -68,20 +68,25 @@ const StructuresPage = async () => {
   const list = (structures ?? []) as Structure[]
 
   // Tax revenue each structure generates. Each industry-tax journal entry references its job via
-  // context_id (context_id_type = industry_job_id); outer-join those job ids to the
-  // character_industry_job table to find the structure (station_id, falling back to facility_id)
-  // the job is installed in, then sum the journal amounts. Bigint ids can come back from PostgREST
-  // as strings, so key every map by string.
+  // context_id (context_id_type = industry_job_id); outer-join those job ids to the industry-job
+  // tables to find the structure (station_id, falling back to facility_id) the job is installed in,
+  // then sum the journal amounts. The installer pays the tax and isn't necessarily one of this app's
+  // linked characters (character_industry_job only covers those) — anyone in the corp can run a job
+  // here (reactions in a refinery are often run by a dedicated alt), so corp_industry_job (pulled by
+  // a director, covering every corp member) is unioned in too, mirroring /structure/revenue.
+  // Otherwise a corp-run job's tax lands in "unaccounted" instead of its structure. Bigint ids can
+  // come back from PostgREST as strings, so key every map by string.
   const structureIds = list.map((s) => Number(s.structure_id))
-  const { data: jobs } = structureIds.length
-    ? await supabase
-        .from('character_industry_job')
-        .select('job_id, station_id, facility_id')
-        .or(`station_id.in.(${structureIds.join(',')}),facility_id.in.(${structureIds.join(',')})`)
-    : { data: [] }
+  const jobStructureFilter = `station_id.in.(${structureIds.join(',')}),facility_id.in.(${structureIds.join(',')})`
+  const [{ data: characterJobs }, { data: corpJobs }] = structureIds.length
+    ? await Promise.all([
+        supabase.from('character_industry_job').select('job_id, station_id, facility_id').or(jobStructureFilter),
+        supabase.from('corp_industry_job').select('job_id, station_id, facility_id').or(jobStructureFilter),
+      ])
+    : [{ data: [] }, { data: [] }]
 
   const structureByJob = new Map<string, string>()
-  for (const j of (jobs ?? []) as JobRow[]) {
+  for (const j of [...((characterJobs ?? []) as JobRow[]), ...((corpJobs ?? []) as JobRow[])]) {
     const structureId = j.station_id ?? j.facility_id
     if (structureId != null) structureByJob.set(String(j.job_id), String(structureId))
   }
