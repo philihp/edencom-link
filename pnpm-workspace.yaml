@@ -10,5 +10,10 @@
 # member; pnpm 9 ignores the unknown `allowBuilds` key.
 packages:
   - .
+# workflow's native deps all ship prebuilt binaries (optional platform
+# packages / prebuilds), so their install scripts are fallbacks we don't need.
 allowBuilds:
+  '@swc/core': false
+  cbor-extract: false
+  esbuild: false
   sharp: true
