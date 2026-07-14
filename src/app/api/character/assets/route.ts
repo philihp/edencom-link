@@ -2,7 +2,22 @@ import { NextRequest, NextResponse } from 'next/server'
 
 import { resolvePlayer } from '@/utils/apiToken'
 import { AT_PARAM_ERROR, parseAtParam } from '@/utils/atParam'
+import { parseColumnsParam, selectColumns } from '@/utils/columnsParam'
 import { toCsv } from '@/utils/csv'
+
+// Default column set/order, matching character_asset_snapshot_at()'s
+// json_build_object in schema.sql. ?columns= can reorder/subset these.
+const ALLOWED_COLUMNS = [
+  'is_blueprint_copy',
+  'is_singleton',
+  'item_id',
+  'location_flag',
+  'location_id',
+  'location_type',
+  'quantity',
+  'type_id',
+  'character_name',
+] as const
 
 // Public CSV endpoint for Google Sheets =IMPORTDATA(): the player's raw asset
 // rows (one per item stack) with the owning character's name, as of an optional
@@ -25,6 +40,11 @@ export const GET = async (request: NextRequest): Promise<NextResponse> => {
   }
   const atIso = at.iso
 
+  const columnsResult = parseColumnsParam(searchParams.get('columns'), ALLOWED_COLUMNS)
+  if (!columnsResult.ok) {
+    return NextResponse.json({ error: columnsResult.error }, { status: 400 })
+  }
+
   const player = await resolvePlayer(searchParams.get('token')?.trim())
   if (!player.ok) {
     return NextResponse.json({ error: player.error }, { status: player.status })
@@ -42,7 +62,7 @@ export const GET = async (request: NextRequest): Promise<NextResponse> => {
     return NextResponse.json({ error: 'Query failed' }, { status: 500 })
   }
 
-  return new NextResponse(toCsv(rows ?? []), {
+  return new NextResponse(toCsv(selectColumns(rows ?? [], columnsResult.columns)), {
     headers: { 'Content-Type': 'text/csv; charset=utf-8' },
   })
 }
