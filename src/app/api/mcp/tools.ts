@@ -1,4 +1,4 @@
-// The six MCP tools: read-only questions over the extracted EVE data ("where
+// The MCP tools: read-only questions over the extracted EVE data ("where
 // is my titan", "how many fuel blocks do I have in EKPB-3"). Tools accept
 // fuzzy names (items, systems, owners) and return resolved names, mirroring
 // the equivalent web pages' queries — the DB is the only source here; MCP
