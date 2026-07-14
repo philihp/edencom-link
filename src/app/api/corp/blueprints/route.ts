@@ -1,7 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 import { resolvePlayer } from '@/utils/apiToken'
+import { parseColumnsParam, selectColumns } from '@/utils/columnsParam'
 import { toCsv } from '@/utils/csv'
+
+// Default column set/order, matching corp_blueprints()'s json_build_object in
+// schema.sql. ?columns= can reorder/subset these.
+const ALLOWED_COLUMNS = [
+  'item_id',
+  'corporation_id',
+  'location_flag',
+  'location_id',
+  'material_efficiency',
+  'quantity',
+  'runs',
+  'time_efficiency',
+  'type_id',
+] as const
 
 // Public CSV endpoint for Google Sheets =IMPORTDATA(): the current live
 // blueprint rows (one per blueprint stack) for the corporation(s) the
@@ -13,6 +28,11 @@ export const maxDuration = 60
 
 export const GET = async (request: NextRequest): Promise<NextResponse> => {
   const { searchParams } = new URL(request.url)
+
+  const columnsResult = parseColumnsParam(searchParams.get('columns'), ALLOWED_COLUMNS)
+  if (!columnsResult.ok) {
+    return NextResponse.json({ error: columnsResult.error }, { status: 400 })
+  }
 
   const player = await resolvePlayer(searchParams.get('token')?.trim())
   if (!player.ok) {
@@ -29,7 +49,7 @@ export const GET = async (request: NextRequest): Promise<NextResponse> => {
     return NextResponse.json({ error: 'Query failed' }, { status: 500 })
   }
 
-  return new NextResponse(toCsv(rows ?? []), {
+  return new NextResponse(toCsv(selectColumns(rows ?? [], columnsResult.columns)), {
     headers: { 'Content-Type': 'text/csv; charset=utf-8' },
   })
 }

@@ -2,7 +2,28 @@ import { NextRequest, NextResponse } from 'next/server'
 
 import { resolvePlayer } from '@/utils/apiToken'
 import { AT_PARAM_ERROR, parseAtParam } from '@/utils/atParam'
+import { parseColumnsParam, selectColumns } from '@/utils/columnsParam'
 import { toCsv } from '@/utils/csv'
+
+// Default column set/order, matching character_orders()'s json_build_object
+// in schema.sql. ?columns= can reorder/subset these.
+const ALLOWED_COLUMNS = [
+  'duration',
+  'escrow',
+  'is_buy_order',
+  'is_corporation',
+  'issued',
+  'location_id',
+  'min_volume',
+  'order_id',
+  'price',
+  'range',
+  'region_id',
+  'type_id',
+  'volume_remain',
+  'volume_total',
+  'character_name',
+] as const
 
 // Public CSV endpoint for Google Sheets =IMPORTDATA(): the player's open market
 // orders across all of their characters, with the owning character's name, as of
@@ -23,6 +44,11 @@ export const GET = async (request: NextRequest): Promise<NextResponse> => {
     return NextResponse.json({ error: AT_PARAM_ERROR }, { status: 400 })
   }
 
+  const columnsResult = parseColumnsParam(searchParams.get('columns'), ALLOWED_COLUMNS)
+  if (!columnsResult.ok) {
+    return NextResponse.json({ error: columnsResult.error }, { status: 400 })
+  }
+
   const player = await resolvePlayer(searchParams.get('token')?.trim())
   if (!player.ok) {
     return NextResponse.json({ error: player.error }, { status: player.status })
@@ -38,7 +64,7 @@ export const GET = async (request: NextRequest): Promise<NextResponse> => {
     return NextResponse.json({ error: 'Query failed' }, { status: 500 })
   }
 
-  return new NextResponse(toCsv(rows ?? []), {
+  return new NextResponse(toCsv(selectColumns(rows ?? [], columnsResult.columns)), {
     headers: { 'Content-Type': 'text/csv; charset=utf-8' },
   })
 }
