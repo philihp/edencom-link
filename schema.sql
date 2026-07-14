@@ -97,6 +97,7 @@ drop table if exists public.refresh_task         cascade;
 drop table if exists public.shared_asset_token   cascade;
 drop table if exists public.heartbeat            cascade;
 drop table if exists public.esi_etag             cascade;
+drop table if exists public.impersonation_log    cascade;
 drop table if exists public.token                cascade;
 drop table if exists public.registration         cascade;
 
@@ -593,6 +594,23 @@ create table public.esi_etag (
 
 alter table public.esi_etag enable row level security;
 grant all on public.esi_etag to service_role;
+
+-- ── impersonation_log ──────────────────────────────────────────────────────
+-- Admin-impersonation audit trail: one row per magic-link impersonation session
+-- minted via /account/debug (see src/app/account/debug/impersonate.ts).
+-- Internal-only, service-role bookkeeping — RLS is on with no policy, mirroring
+-- esi_etag, so neither the admin nor the impersonated user can read it through
+-- the API.
+create table public.impersonation_log (
+  id uuid primary key default gen_random_uuid(),
+  admin_user_id uuid not null references auth.users(id) on delete cascade,
+  target_user_id uuid not null references auth.users(id) on delete cascade,
+  created_at timestamptz not null default now()
+);
+create index impersonation_log_target_user_id_idx on public.impersonation_log (target_user_id);
+
+alter table public.impersonation_log enable row level security;
+grant all on public.impersonation_log to service_role;
 
 -- The most recent completed heartbeat per job per owner (character, corp, or
 -- whole-job), driving the freshness dots on /character/refresh. DISTINCT ON
