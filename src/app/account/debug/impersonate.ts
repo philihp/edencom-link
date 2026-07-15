@@ -4,22 +4,22 @@ import { redirect } from 'next/navigation'
 
 import { createClient } from '@/utils/supabase/server'
 import { createServiceClient } from '@/utils/supabase/service'
-import { ADMIN_USER_ID } from './adminUserId'
+import { isChancellor } from '../chancellor/chancellor'
 
 // Swap the caller's own session for a real session as another account, via a
 // server-minted magic link: generateLink() (service role) issues a token
 // without emailing anything, and verifyOtp() redeems it on the cookie-bound
 // client, which writes the resulting session straight into httpOnly cookies —
-// nothing session-related ever reaches client-side JS. The admin's own session
-// is gone once this succeeds; sign back in as the admin to return. Re-checks
-// the caller here — not just by hiding the form on the page — since a server
-// action is reachable independent of what rendered it.
+// nothing session-related ever reaches client-side JS. The caller's own
+// session is gone once this succeeds; sign back in normally to return.
+// Re-checks Chancellor status here — not just by hiding the form on the page
+// — since a server action is reachable independent of what rendered it.
 export const impersonate = async (formData: FormData): Promise<{ error: string } | undefined> => {
   const supabase = await createClient()
   const {
     data: { user },
   } = await supabase.auth.getUser()
-  if (user?.id !== ADMIN_USER_ID) return { error: 'Not authorized.' }
+  if (!user?.id || !(await isChancellor(user.id))) return { error: 'Not authorized.' }
 
   const targetUserId = `${formData.get('userId') ?? ''}`.trim()
   if (!targetUserId) return { error: 'Enter a user ID.' }
@@ -43,7 +43,7 @@ export const impersonate = async (formData: FormData): Promise<{ error: string }
 
   // Best-effort audit trail — the impersonation has already happened by this
   // point, so a logging failure shouldn't block the redirect.
-  await service.from('impersonation_log').insert({ admin_user_id: user.id, target_user_id: targetUserId })
+  await service.from('impersonation_log').insert({ chancellor_user_id: user.id, target_user_id: targetUserId })
 
   redirect('/')
 }

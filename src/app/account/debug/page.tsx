@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 
 import { createClient } from '@/utils/supabase/server'
-import { ADMIN_USER_ID } from './adminUserId'
+import { isChancellor } from '../chancellor/chancellor'
 import ImpersonateForm from './impersonateForm'
 
 const DebugPage = async () => {
@@ -30,6 +30,8 @@ const DebugPage = async () => {
     settings_updated_at: settings?.updated_at ?? null,
   }
 
+  const chancellor = await isChancellor(data.user.id)
+
   return (
     <>
       <Link href="/account/settings">&laquo; Back to settings</Link>
@@ -38,7 +40,7 @@ const DebugPage = async () => {
 
       <pre>{JSON.stringify(debugInfo, null, 2)}</pre>
 
-      {data.user.id === ADMIN_USER_ID && (
+      {chancellor && (
         <>
           <h2>Impersonate</h2>
           <p>Swaps this session for a real session as another account. Sign back in as yourself to return.</p>
