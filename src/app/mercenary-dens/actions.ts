@@ -47,7 +47,10 @@ export const setSharedCorps = async (corpIds: number[]): Promise<{ error?: strin
 
   // Replace this user's shares wholesale: clear their existing rows, then insert
   // the desired (den × chosen corp) set.
-  const { error: delError } = await service.from('character_mercenary_den_share').delete().in('character_id', registrationIds)
+  const { error: delError } = await service
+    .from('character_mercenary_den_share')
+    .delete()
+    .in('character_id', registrationIds)
   if (delError) {
     return { error: delError.message }
   }
@@ -60,6 +63,76 @@ export const setSharedCorps = async (corpIds: number[]): Promise<{ error?: strin
     if (insError) {
       return { error: insError.message }
     }
+  }
+
+  revalidatePath('/mercenary-dens')
+  return {}
+}
+
+export type EnemyDenIntelInput = {
+  system: string
+  planet: string
+  owner: string
+  alliance: string
+  reinforcementEnd: string
+  notes: string
+  reportedBy: string
+}
+
+// Post one sighting to the shared enemy-den-intel corkboard (mercenary_den_enemy_intel).
+// RLS lets any authenticated user insert a row attributed to themselves, so this
+// runs on the cookie-session client rather than the service role. Returns
+// { error } on failure.
+export const addEnemyDenIntel = async (input: EnemyDenIntelInput): Promise<{ error?: string }> => {
+  const supabase = await createClient()
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user?.id) {
+    return { error: 'Not signed in' }
+  }
+
+  const system = input.system.trim()
+  const planet = input.planet.trim()
+  const owner = input.owner.trim()
+  const reportedBy = input.reportedBy.trim()
+  if (!system || !planet || !owner || !reportedBy) {
+    return { error: 'System, planet, owner, and reported by are required' }
+  }
+
+  // The <input type="datetime-local"> value ("YYYY-MM-DDTHH:mm") is entered as
+  // EVE/UTC time (that's the clock every pilot is already reading in-game), not
+  // the browser's local timezone — so it's stamped with a literal "Z" rather
+  // than passed through Date parsing, which would apply the browser's offset.
+  const reinforcementEnd = input.reinforcementEnd ? `${input.reinforcementEnd}:00Z` : null
+
+  const { error } = await supabase.from('mercenary_den_enemy_intel').insert({
+    system,
+    planet,
+    owner,
+    alliance: input.alliance.trim() || null,
+    reinforcement_end: reinforcementEnd,
+    notes: input.notes.trim() || null,
+    reported_by: reportedBy,
+    created_by: user.id,
+  })
+  if (error) {
+    return { error: error.message }
+  }
+
+  revalidatePath('/mercenary-dens')
+  return {}
+}
+
+// Remove one sighting. RLS restricts deletion to the row's own submitter, so an
+// attempt on someone else's row is simply a no-op rather than an error.
+export const deleteEnemyDenIntel = async (id: number): Promise<{ error?: string }> => {
+  const supabase = await createClient()
+
+  const { error } = await supabase.from('mercenary_den_enemy_intel').delete().eq('id', id)
+  if (error) {
+    return { error: error.message }
   }
 
   revalidatePath('/mercenary-dens')

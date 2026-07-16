@@ -88,6 +88,7 @@ drop view  if exists public.character_mercenary_den            cascade;
 drop table if exists public.character_mercenary_den_share               cascade;
 drop table if exists public.character_mercenary_den_status              cascade;
 drop table if exists public.character_mercenary_den_over_time  cascade;
+drop table if exists public.mercenary_den_enemy_intel           cascade;
 drop table if exists public.universe_name        cascade;
 drop table if exists public.universe_structure   cascade;
 drop table if exists public.invite_code          cascade;
@@ -1290,6 +1291,55 @@ create policy "Corpmates read shared mercenary dens"
         )
     )
   );
+
+-- ── mercenary_den_enemy_intel ────────────────────────────────────────────────────
+-- Hand-submitted intel on enemy-owned Mercenary Dens seen reinforced. ESI has no
+-- feed for another corp's dens, so this is a shared corkboard: any authenticated
+-- user can post a sighting (system/planet, the enemy owner, and when its
+-- reinforcement timer ends) and every authenticated user can see the whole
+-- board, mirroring the hand-maintained intel in data.ts but user-editable at
+-- runtime instead of requiring a code change. Rendered as its own table below
+-- the Temperate planets table on /mercenary-dens, not merged into it, since an
+-- enemy den can be on any planet, not just the tracked temperate ones.
+create table public.mercenary_den_enemy_intel (
+  id bigint generated always as identity primary key,
+  system text not null,
+  planet text not null,
+  owner text not null,
+  alliance text,
+  reinforcement_end timestamptz,
+  notes text,
+  reported_by text not null,
+  created_by uuid not null references auth.users(id) on delete cascade default auth.uid(),
+  created_at timestamptz not null default now()
+);
+create index mercenary_den_enemy_intel_reinforcement_end_idx
+  on public.mercenary_den_enemy_intel (reinforcement_end);
+
+alter table public.mercenary_den_enemy_intel enable row level security;
+
+-- Shared board: every authenticated user reads every sighting.
+create policy "Authenticated read enemy den intel"
+  on public.mercenary_den_enemy_intel
+  for select
+  to authenticated
+  using (true);
+
+-- A user can only post (and later remove) intel attributed to themselves.
+create policy "Authenticated insert own enemy den intel"
+  on public.mercenary_den_enemy_intel
+  for insert
+  to authenticated
+  with check (created_by = (select auth.uid()));
+
+create policy "Authenticated delete own enemy den intel"
+  on public.mercenary_den_enemy_intel
+  for delete
+  to authenticated
+  using (created_by = (select auth.uid()));
+
+grant select, insert, delete on public.mercenary_den_enemy_intel to authenticated;
+grant all                    on public.mercenary_den_enemy_intel to service_role;
 
 -- ── character_clone_state ──────────────────────────────────────────────────
 -- Character-level fields from ESI /characters/{id}/clones/, written by the

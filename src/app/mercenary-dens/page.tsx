@@ -8,6 +8,7 @@ import { fetchOwners } from '../owners'
 import CopyDiscordPing from './copyDiscordPing'
 import { STAGING, TEMPERATE_PLANETS } from './data'
 import { formatDuration, formatUtc } from './duration'
+import EnemyDenIntel, { type EnemyDenIntelRow } from './enemyDenIntel'
 import ShareCorps from './shareCorps'
 import { Topology, type NodeColor } from './topology'
 import styles from './mercenaryDens.module.css'
@@ -83,6 +84,27 @@ const MercenaryDensPage = async () => {
   // with its latest observed status (the view left-joins it).
   const { data: denData } = await supabase.from('character_mercenary_den').select('*')
   const dens = (denData ?? []) as DenRow[]
+
+  // Hand-submitted enemy-den sightings — a shared corkboard readable by every
+  // authenticated user (see mercenary_den_enemy_intel's RLS), soonest
+  // reinforcement timer first.
+  const { data: intelData } = await supabase
+    .from('mercenary_den_enemy_intel')
+    .select('*')
+    .order('reinforcement_end', { ascending: true, nullsFirst: false })
+  const enemyDenIntel: EnemyDenIntelRow[] = (intelData ?? []).map((row) => ({
+    id: row.id,
+    system: row.system,
+    planet: row.planet,
+    owner: row.owner,
+    alliance: row.alliance,
+    reinforcementEnd: row.reinforcement_end,
+    notes: row.notes,
+    reportedBy: row.reported_by,
+    createdAt: row.created_at,
+    mine: row.created_by === data.user.id,
+  }))
+  const defaultReportedBy = [...ownRegById.values()][0]?.name ?? ''
   const typeNames = getSdeTypeNames(dens.map((d) => d.type_id).filter((t): t is number => t != null))
 
   // Merge the hand-maintained temperate-planet intel with our real dens, keyed by
@@ -242,6 +264,8 @@ const MercenaryDensPage = async () => {
           </tbody>
         </table>
       </div>
+
+      <EnemyDenIntel rows={enemyDenIntel} defaultReportedBy={defaultReportedBy} />
     </>
   )
 }
