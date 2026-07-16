@@ -1218,18 +1218,21 @@ grant select on public.character_mercenary_den           to authenticated;
 grant all    on public.character_mercenary_den_over_time to service_role;
 
 -- ── character_mercenary_den_share ────────────────────────────────────────────────────
--- Cross-reference table for the many-to-many "which dens are shared to which
--- corporations". One row = a den (its logical character_id/den_id) shared to one
--- corporation. A user shares by picking the corps to share with, which writes a
--- row per den per chosen corp (writes go through the service role in the share
--- server action, which checks the den belongs to the caller); un-sharing deletes
--- the rows.
+-- Per-character sharing preference: which corporations a character's owner has
+-- opted to share their Mercenary Den data with. One row = "this character's
+-- owner shares with this corporation." Originally one row per den per chosen
+-- corp, but the UI has always treated it as all-or-nothing ("share ALL my dens
+-- with X"), so it's collapsed to one row per (character, corp) — a plain
+-- preference, not tied to any particular den. That lets the same table also
+-- gate visibility of mercenary_den_enemy_intel (below): a user's reported
+-- sightings are visible to a corpmate exactly when that user shares with the
+-- corpmate's corp. Writes go through the service role in the share server
+-- action; un-sharing deletes the rows.
 create table public.character_mercenary_den_share (
   character_id uuid not null references public.registration(id) on delete cascade,
-  den_id bigint not null,
   corporation_id bigint not null,
   created_at timestamptz not null default now(),
-  primary key (character_id, den_id, corporation_id)
+  primary key (character_id, corporation_id)
 );
 create index character_mercenary_den_share_corporation_id_idx
   on public.character_mercenary_den_share (corporation_id);
@@ -1270,8 +1273,8 @@ create policy "Users read own den shares"
 grant select on public.character_mercenary_den_share to authenticated;
 grant all    on public.character_mercenary_den_share to service_role;
 
--- Corp-sharing policy: a den is visible to the caller when it has been shared
--- (a character_mercenary_den_share row) to a corporation the caller owns a
+-- Corp-sharing policy: a den is visible to the caller when its owner shares
+-- (a character_mercenary_den_share row) with a corporation the caller owns a
 -- character in. The share table's own RLS ("Corpmates read shares to their
 -- corps") exposes exactly the rows this subquery needs, so the two policies
 -- compose. Additive/permissive: OR'd with "Users read own mercenary dens" above.
@@ -1284,7 +1287,6 @@ create policy "Corpmates read shared mercenary dens"
       select 1
       from public.character_mercenary_den_share sh
       where sh.character_id = character_mercenary_den_over_time.character_id
-        and sh.den_id = character_mercenary_den_over_time.den_id
         and sh.corporation_id in (
           select c.corporation_id from public.registration c
           where c.user_id = (select auth.uid()) and c.corporation_id is not null
@@ -1296,11 +1298,13 @@ create policy "Corpmates read shared mercenary dens"
 -- Hand-submitted intel on enemy-owned Mercenary Dens seen reinforced. ESI has no
 -- feed for another corp's dens, so this is a shared corkboard: any authenticated
 -- user can post a sighting (system/planet, the enemy owner, and when its
--- reinforcement timer ends) and every authenticated user can see the whole
--- board, mirroring the hand-maintained intel in data.ts but user-editable at
--- runtime instead of requiring a code change. Rendered as its own table below
--- the Temperate planets table on /mercenary-dens, not merged into it, since an
--- enemy den can be on any planet, not just the tracked temperate ones.
+-- reinforcement timer ends), mirroring the hand-maintained intel in data.ts but
+-- user-editable at runtime instead of requiring a code change. Rendered as its
+-- own table below the Temperate planets table on /mercenary-dens, not merged
+-- into it, since an enemy den can be on any planet, not just the tracked
+-- temperate ones. Visibility (below) piggybacks on character_mercenary_den_share
+-- — the same "share my dens with corp X" preference also governs who sees a
+-- user's reported sightings, rather than a separate opt-in.
 create table public.mercenary_den_enemy_intel (
   id bigint generated always as identity primary key,
   system text not null,
@@ -1318,12 +1322,33 @@ create index mercenary_den_enemy_intel_reinforcement_end_idx
 
 alter table public.mercenary_den_enemy_intel enable row level security;
 
--- Shared board: every authenticated user reads every sighting.
-create policy "Authenticated read enemy den intel"
+-- A submitter always sees their own reports, shared or not.
+create policy "Users read own enemy den intel"
   on public.mercenary_den_enemy_intel
   for select
   to authenticated
-  using (true);
+  using (created_by = (select auth.uid()));
+
+-- Corpmates read another user's reports exactly when that user shares their
+-- Mercenary Den data with a corporation the caller owns a character in — the
+-- same character_mercenary_den_share preference that gates real dens.
+-- Additive/permissive: OR'd with "Users read own enemy den intel" above.
+create policy "Corpmates read shared enemy den intel"
+  on public.mercenary_den_enemy_intel
+  for select
+  to authenticated
+  using (
+    exists (
+      select 1
+      from public.registration r
+      join public.character_mercenary_den_share sh on sh.character_id = r.id
+      where r.user_id = mercenary_den_enemy_intel.created_by
+        and sh.corporation_id in (
+          select c.corporation_id from public.registration c
+          where c.user_id = (select auth.uid()) and c.corporation_id is not null
+        )
+    )
+  );
 
 -- A user can only post (and later remove) intel attributed to themselves.
 create policy "Authenticated insert own enemy den intel"

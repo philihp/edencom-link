@@ -1,8 +1,11 @@
 -- Shared corkboard for hand-submitted intel on enemy-owned Mercenary Dens seen
 -- reinforced. ESI has no feed for another corp's dens, so any authenticated
--- user can post a sighting and every authenticated user can read the whole
--- board. Rendered as its own table on /mercenary-dens, below the Temperate
--- planets table.
+-- user can post a sighting. Visibility piggybacks on
+-- character_mercenary_den_share: a submitter always sees their own reports,
+-- and a corpmate sees them exactly when the submitter shares their Mercenary
+-- Den data with that corp (see 20260716040000_mercenary_den_share_per_user.sql,
+-- applied after this one, for that table's restructuring). Rendered as its own
+-- table on /mercenary-dens, below the Temperate planets table.
 create table if not exists public.mercenary_den_enemy_intel (
   id bigint generated always as identity primary key,
   system text not null,
@@ -20,12 +23,12 @@ create index if not exists mercenary_den_enemy_intel_reinforcement_end_idx
 
 alter table public.mercenary_den_enemy_intel enable row level security;
 
-drop policy if exists "Authenticated read enemy den intel" on public.mercenary_den_enemy_intel;
-create policy "Authenticated read enemy den intel"
+drop policy if exists "Users read own enemy den intel" on public.mercenary_den_enemy_intel;
+create policy "Users read own enemy den intel"
   on public.mercenary_den_enemy_intel
   for select
   to authenticated
-  using (true);
+  using (created_by = (select auth.uid()));
 
 drop policy if exists "Authenticated insert own enemy den intel" on public.mercenary_den_enemy_intel;
 create policy "Authenticated insert own enemy den intel"

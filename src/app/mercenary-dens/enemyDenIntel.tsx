@@ -59,7 +59,8 @@ const EnemyDenIntel = ({ rows, defaultReportedBy }: { rows: EnemyDenIntelRow[]; 
     <>
       <h2>Enemy den intel</h2>
       <p className={styles.subtitle}>
-        No ESI feed exists for another corp&apos;s dens — report sightings here so the timers are visible to everyone.
+        No ESI feed exists for another corp&apos;s dens — report sightings here so the timers are visible to whoever you
+        share your dens with, above.
       </p>
 
       <form className={styles.intelForm} onSubmit={onSubmit}>

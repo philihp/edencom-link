@@ -85,9 +85,11 @@ const MercenaryDensPage = async () => {
   const { data: denData } = await supabase.from('character_mercenary_den').select('*')
   const dens = (denData ?? []) as DenRow[]
 
-  // Hand-submitted enemy-den sightings — a shared corkboard readable by every
-  // authenticated user (see mercenary_den_enemy_intel's RLS), soonest
-  // reinforcement timer first.
+  // Hand-submitted enemy-den sightings — a submitter always sees their own, and
+  // sees others' reports exactly when that submitter shares their Mercenary Den
+  // data with one of the caller's corps (mercenary_den_enemy_intel's RLS
+  // piggybacks on character_mercenary_den_share). Soonest reinforcement timer
+  // first.
   const { data: intelData } = await supabase
     .from('mercenary_den_enemy_intel')
     .select('*')

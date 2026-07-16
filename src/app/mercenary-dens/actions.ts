@@ -5,12 +5,14 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/utils/supabase/server'
 import { createServiceClient } from '@/utils/supabase/service'
 
-// Reconcile which corporations the caller shares ALL their mercenary dens with.
-// Sharing writes one character_mercenary_den_share row per den per chosen corp; unsharing
-// removes them. character_mercenary_den_share is RLS-free and authenticated has no write
-// grant, so writes go through the service role — scoped here to the caller's own
-// dens and restricted to corporations the caller actually owns a character in.
-// Returns { error } on failure.
+// Reconcile which corporations the caller shares their Mercenary Den data
+// with — both their own deployed dens and any enemy-den intel they report
+// (mercenary_den_enemy_intel gates visibility off this same preference). One
+// row per (character, chosen corp), independent of whether that character has
+// a den deployed right now. character_mercenary_den_share is RLS-free for
+// writes (authenticated has no insert/update/delete grant), so writes go
+// through the service role — scoped here to corporations the caller actually
+// owns a character in. Returns { error } on failure.
 export const setSharedCorps = async (corpIds: number[]): Promise<{ error?: string }> => {
   const supabase = await createClient()
 
@@ -37,16 +39,8 @@ export const setSharedCorps = async (corpIds: number[]): Promise<{ error?: strin
   )
   const corps = [...new Set(corpIds.map(Number))].filter((c) => ownCorps.has(c))
 
-  // Every den the caller currently owns (current SCD rows).
-  const { data: dens } = await service
-    .from('character_mercenary_den_over_time')
-    .select('character_id, den_id')
-    .eq('is_current', true)
-    .in('character_id', registrationIds)
-  const denRows = (dens ?? []) as Array<{ character_id: string; den_id: number }>
-
   // Replace this user's shares wholesale: clear their existing rows, then insert
-  // the desired (den × chosen corp) set.
+  // the desired (character × chosen corp) set.
   const { error: delError } = await service
     .from('character_mercenary_den_share')
     .delete()
@@ -55,9 +49,9 @@ export const setSharedCorps = async (corpIds: number[]): Promise<{ error?: strin
     return { error: delError.message }
   }
 
-  if (corps.length > 0 && denRows.length > 0) {
-    const rows = denRows.flatMap((d) =>
-      corps.map((corporation_id) => ({ character_id: d.character_id, den_id: d.den_id, corporation_id }))
+  if (corps.length > 0) {
+    const rows = registrationIds.flatMap((character_id) =>
+      corps.map((corporation_id) => ({ character_id, corporation_id }))
     )
     const { error: insError } = await service.from('character_mercenary_den_share').insert(rows)
     if (insError) {
