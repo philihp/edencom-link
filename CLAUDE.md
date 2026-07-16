@@ -41,12 +41,12 @@ EVE Online hangar/wallet/industry tracker. Package name `edencom-link` (private)
 
 # Data sources
 
-- NEVER query the `evesde` SDE schema in the database. That data is out of date and must not be used for any work. Resolve type/name lookups via `fetchTypeNames` (`src/app/typeNames.ts`), which reads the locally generated SDE data (`src/sdeTypes.ts`), instead. If a needed lookup has no non-SDE source, show the raw ID rather than reading the SDE.
+- The legacy `evesde` DB schema has been dropped (stale out-of-band data) — do not recreate or reference it. SDE lookups go through the `src/sde*.ts` loaders. If a needed lookup has no non-SDE source, show the raw ID rather than reading the SDE.
 
 # Architecture
 
 - Data from ESI flows into the database via the per-endpoint extract jobs in `src/jobs/`. The UI then reads from the database. The UI/Next.js server components must never call ESI directly.
-- Avoid using the `evesde` schema in the database for new work — it can be out of date. Instead, type/group/category lookups are resolved from `src/generated/sdeTypes.json`, generated at build time by `src/buildSde.js` (`pnpm run sde:build`, wired as `predev`/`prebuild`) from CCP's official Static Data Export (`developers.eveonline.com/static-data`, JSONL format, refreshed each game patch — never Fuzzwork's third-party mirror, which is off-limits for this project). `src/sdeTypes.ts` loads that file once per server process and exposes `getSdeType`/`getSdeTypeNames`/`searchSdeTypes`, used by `src/app/typeNames.ts`, `src/app/blueprint/api.ts`, and `src/app/api/type/search/route.ts`. If a needed field isn't in the generated dataset, extend `src/buildSde.js` to include it rather than reaching into the `evesde` schema.
+- Type/group/category lookups are resolved from `src/generated/sdeTypes.json`, generated at build time by `src/buildSde.js` (`pnpm run sde:build`, wired as `predev`/`prebuild`) from CCP's official Static Data Export (`developers.eveonline.com/static-data`, JSONL format, refreshed each game patch — never Fuzzwork's third-party mirror, which is off-limits for this project). `src/sdeTypes.ts` loads that file once per server process and exposes `getSdeType`/`getSdeTypeNames`/`searchSdeTypes`, used by `src/app/typeNames.ts`, `src/app/blueprint/api.ts`, and `src/app/api/type/search/route.ts`. If a needed field isn't in the generated dataset, extend `src/buildSde.js` to include it.
 
 # Codebase map
 
