@@ -1,6 +1,5 @@
 import { redirect } from 'next/navigation'
 
-import { mercenaryDensFlag } from '@/flags'
 import { getSdePlanet } from '@/sdePlanets'
 import { getSdeTypeNames } from '@/sdeTypes'
 import { createClient } from '@/utils/supabase/server'
@@ -61,10 +60,6 @@ const MercenaryDensPage = async () => {
 
   const { data, error: authError } = await supabase.auth.getUser()
   if (authError || !data?.user) {
-    redirect('/')
-  }
-
-  if (!(await mercenaryDensFlag())) {
     redirect('/')
   }
 
