@@ -55,6 +55,7 @@
     "industry-systems": "node src/jobs/industrySystems.js",
     "universe-names": "node src/jobs/universeNames.js",
     "universe-structures": "node src/jobs/universeStructures.js",
+    "sde-mirror": "node src/jobs/sdeMirror.js",
     "connect": "node src/connect.js",
     "db:new": "supabase migration new",
     "db:push": "supabase db push",
