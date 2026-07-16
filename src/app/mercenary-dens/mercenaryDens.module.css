@@ -231,3 +231,26 @@
     --merc-green: #4ade80;
   }
 }
+
+/* Enemy-den-intel submission form: a compact row of inputs above the shared
+ * sightings table. */
+.intelForm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6pt;
+  margin-top: 8pt;
+}
+
+.intelForm input {
+  padding: 3pt 6pt;
+  font-size: 10pt;
+}
+
+.intelForm input[type='text'] {
+  width: 130pt;
+}
+
+.intelForm input[type='datetime-local'] {
+  width: 150pt;
+}

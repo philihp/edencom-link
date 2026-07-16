@@ -7,10 +7,11 @@ import styles from './mercenaryDens.module.css'
 
 type Corp = { id: string; name: string }
 
-// Top-of-page control: pick which of your corporations to share ALL your
-// deployed mercenary dens with. Each corp is a checkbox; toggling one
-// optimistically updates the selection and persists the whole set via the
-// server action (which reconciles character_mercenary_den_share rows), reverting on error.
+// Top-of-page control: pick which of your corporations to share your
+// Mercenary Den data with — both your deployed dens and any enemy-den intel
+// you report. Each corp is a checkbox; toggling one optimistically updates the
+// selection and persists the whole set via the server action (which
+// reconciles character_mercenary_den_share rows), reverting on error.
 const ShareCorps = ({ corporations, sharedCorpIds }: { corporations: Corp[]; sharedCorpIds: string[] }) => {
   const [selected, setSelected] = useState<Set<string>>(new Set(sharedCorpIds))
   const [error, setError] = useState('')
@@ -37,7 +38,7 @@ const ShareCorps = ({ corporations, sharedCorpIds }: { corporations: Corp[]; sha
 
   return (
     <div className={styles.shareCorps}>
-      <span className={styles.shareCorpsLabel}>Share my dens with:</span>
+      <span className={styles.shareCorpsLabel}>Share my dens &amp; intel with:</span>
       <div className={styles.shareCorpsList}>
         {corporations.map((corp) => (
           <label key={corp.id} className={styles.shareCorp}>
