@@ -1120,37 +1120,6 @@ create policy "Users read own mercenary dens"
     )
   );
 
--- Live snapshot of dens, each enriched with its most recent observed status
--- (development/anarchy, infomorphs, running state, reinforcement timer) from
--- character_mercenary_den_status — null if the den has never been observed.
--- security_invoker keeps the underlying RLS in force for the querying
--- (authenticated) role rather than running as the view owner.
-create view public.character_mercenary_den with (security_invoker = on) as
-  select
-    d.*,
-    s.state,
-    s.development_level,
-    s.development_amount,
-    s.anarchy_level,
-    s.anarchy_amount,
-    s.infomorphs,
-    s.reinforcement_end,
-    s.observed_at as status_observed_at
-  from public.character_mercenary_den_over_time d
-  left join lateral (
-    select state, development_level, development_amount, anarchy_level, anarchy_amount,
-           infomorphs, reinforcement_end, observed_at
-    from public.character_mercenary_den_status s
-    where s.character_id = d.character_id and s.den_id = d.den_id
-    order by s.observed_at desc
-    limit 1
-  ) s on true
-  where d.is_current;
-
-grant select on public.character_mercenary_den_over_time to authenticated;
-grant select on public.character_mercenary_den           to authenticated;
-grant all    on public.character_mercenary_den_over_time to service_role;
-
 -- ── character_mercenary_den_status ───────────────────────────────────────────────────
 -- Append-only observation history for each den's volatile state. Every extract
 -- run inserts one row per den it sees, rather than mutating the den row — these
@@ -1192,6 +1161,37 @@ create policy "Read status for visible mercenary dens"
 
 grant select on public.character_mercenary_den_status to authenticated;
 grant all    on public.character_mercenary_den_status to service_role;
+
+-- Live snapshot of dens, each enriched with its most recent observed status
+-- (development/anarchy, infomorphs, running state, reinforcement timer) from
+-- character_mercenary_den_status — null if the den has never been observed.
+-- security_invoker keeps the underlying RLS in force for the querying
+-- (authenticated) role rather than running as the view owner.
+create view public.character_mercenary_den with (security_invoker = on) as
+  select
+    d.*,
+    s.state,
+    s.development_level,
+    s.development_amount,
+    s.anarchy_level,
+    s.anarchy_amount,
+    s.infomorphs,
+    s.reinforcement_end,
+    s.observed_at as status_observed_at
+  from public.character_mercenary_den_over_time d
+  left join lateral (
+    select state, development_level, development_amount, anarchy_level, anarchy_amount,
+           infomorphs, reinforcement_end, observed_at
+    from public.character_mercenary_den_status s
+    where s.character_id = d.character_id and s.den_id = d.den_id
+    order by s.observed_at desc
+    limit 1
+  ) s on true
+  where d.is_current;
+
+grant select on public.character_mercenary_den_over_time to authenticated;
+grant select on public.character_mercenary_den           to authenticated;
+grant all    on public.character_mercenary_den_over_time to service_role;
 
 -- ── character_mercenary_den_share ────────────────────────────────────────────────────
 -- Cross-reference table for the many-to-many "which dens are shared to which
