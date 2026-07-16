@@ -61,6 +61,8 @@ drop view  if exists public.character_industry_job              cascade;
 drop table if exists public.character_industry_job_over_time    cascade;
 drop table if exists public.character_affiliation         cascade;
 drop table if exists public.industry_system_index cascade;
+drop table if exists public.corporation          cascade;
+drop table if exists public.alliance             cascade;
 drop table if exists public.corp_structure_rig   cascade;
 drop table if exists public.corp_structure       cascade;
 drop table if exists public.corp_wallet_journal  cascade;
@@ -1412,6 +1414,46 @@ create policy "Everyone reads industry indexes"
 
 grant select on public.industry_system_index to anon, authenticated;
 grant all    on public.industry_system_index to service_role;
+
+-- ── alliance / corporation ────────────────────────────────────────────────
+-- Universal id→name directories, not siloed by user — the same shape as
+-- industry_system_index: whoever's data we're extracting, we all share one
+-- copy. Populated whenever an alliance/corp is seen anywhere (a linked
+-- character's own corp/alliance, corpmates, structure owners, wallet/journal
+-- counterparties, ...), not just for corps/alliances a user has registered.
+create table public.alliance (
+  alliance_id bigint primary key,
+  name text not null,
+  updated_at timestamptz not null default now()
+);
+
+alter table public.alliance enable row level security;
+create policy "Everyone reads alliances"
+  on public.alliance
+  for select
+  to anon, authenticated
+  using (true);
+
+grant select on public.alliance to anon, authenticated;
+grant all    on public.alliance to service_role;
+
+create table public.corporation (
+  corporation_id bigint primary key,
+  name text not null,
+  alliance_id bigint references public.alliance (alliance_id),
+  updated_at timestamptz not null default now()
+);
+create index corporation_alliance_id_idx on public.corporation (alliance_id);
+
+alter table public.corporation enable row level security;
+create policy "Everyone reads corporations"
+  on public.corporation
+  for select
+  to anon, authenticated
+  using (true);
+
+grant select on public.corporation to anon, authenticated;
+grant all    on public.corporation to service_role;
 
 -- ── corp_wallet_journal ───────────────────────────────────────────────────
 -- ESI /corporations/{id}/wallets/{division}/journal/, written by the
