@@ -1,4 +1,11 @@
-# PR 1 (large): cut the SDE loaders over to the database, stop downloading the SDE at build time
+# Stage 1: cut the SDE loaders over to the database, stop downloading the SDE at build time
+
+> **Delivered as an incremental PR stack, not one big PR.** An earlier
+> single-PR attempt (#617, closed unmerged) touched 26 files at once because the
+> loaders flip sync → async in lockstep with every caller. This stage is now
+> split into the stack in [Delivery](#delivery-incremental-pr-stack) below. The
+> **Goal / Prerequisite / Step / consumer** sections that follow are the full
+> end-state spec — read them as the destination; the stack is how we get there.
 
 ## Goal
 
@@ -16,6 +23,45 @@ After this PR, `pnpm run build` no longer downloads CCP's SDE for the app:
   `predev`/`prebuild` become `"pnpm run esf:build"` only.
 - `esf:build` / `src/buildEsfData.js` (ship-fitting protobufs) are **not
   touched** — that's a separate, optional, later PR (doc 03).
+
+## Delivery: incremental PR stack
+
+The sync → async signature flip is the one breaking change: every caller of a
+loader must gain `await` in the same PR that converts it. Two facts make the
+stage splittable anyway, so each PR stays small, builds, lints, and deploys on
+its own:
+
+1. **The five loaders are independent modules** — each reads its own data and
+   has its own consumers, so `sdeStations` can go async while `sdeTypes` stays
+   sync+JSON.
+2. **The mirror is already populated in prod** (nightly `sde-mirror`, #607) and
+   the build keeps emitting the JSON until the very last PR — so a *half*-
+   migrated app works: migrated loaders read the DB, the rest read JSON. Every
+   intermediate state is shippable, and the never-cache-misses rule (see
+   `src/sdeCache.ts`) means even a fresh/empty table degrades to `#id`
+   fallbacks rather than 500s.
+
+This is a standard expand-contract migration. The stack, smallest/most-isolated
+first:
+
+| PR | Scope | Consumers touched |
+|----|-------|-------------------|
+| **1 — infra + stations** ✅ (this PR) | Add `src/utils/supabase/sde.ts` (anon client) + `src/sdeCache.ts` (`createByIdCache` + `bulkLookup`); migrate `sdeStations` → async DB-backed as the first loader | `stationNames.ts` |
+| **2 — planets** | `sdePlanets` → async; drop its `sdeSystems` import (the `sde_planet` view carries `system_name`) | `mercenary-dens` |
+| **3 — systems** | `sdeSystems` → async, add `getSdeSystems` bulk helper | `systemNames`, `indexes` page + actions, `mcp/lib` + `tools` (`resolveSystemNames`) |
+| **4 — blueprints** | `sdeBlueprints` → async | `mcp/tools` (2 fns) |
+| **5 — types** | `sdeTypes` → async, `getSdeTypes` bulk, `SdeSearchResult` gains `categoryID` (drops per-row category lookups) | the big fan-out: `typeNames`, `blueprint/api`, `type/search`, `asset/search`, `asset/[locationId]`, `ship/[itemId]`, `corpses`, `mercenary-dens`, `mcp/lib` + `tools` |
+| **6 — contract** | Delete `src/buildSde.js`, drop the `sde:build` script, `predev`/`prebuild` → `esf:build` only, remove `/src/generated` from `.gitignore`, finish the CLAUDE.md prose | none |
+
+Ordering notes: PRs 2–5 are mutually independent (a shared consumer like
+`mcp/tools.ts` is touched by several, each awaiting only the loader it's
+migrating — the file compiles at every step because the others are still sync).
+Only PR 1 (must be first — it adds the shared client/cache) and PR 6 (must be
+last — the contract step, gated on `rm -rf src/generated && pnpm build`) are
+ordered. Each loader PR updates that loader's section in CLAUDE.md; the
+Commands/Architecture/build-pipeline prose lands with PR 6. If PR 5 (types)
+still feels too large, it can split again by consumer cluster, since
+`getSdeTypeNames` can go async before `searchSdeTypesAll` does.
 
 ## Prerequisite
 
