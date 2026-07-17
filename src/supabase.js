@@ -28,12 +28,12 @@ export const sudoSupabaseAdmin = sudoSupabase.auth.admin
 // straight to it. Used to land a run's start/end heartbeats on one row.
 const githubRun = () => {
   const runId = process.env.GITHUB_RUN_ID
-  if (!runId) return { run_id: null, run_attempt: null, run_url: null }
+  if (!runId) return { run_id: null, run_attempt: null, run_url: null, source: null }
   const server = process.env.GITHUB_SERVER_URL ?? 'https://github.com'
   const repo = process.env.GITHUB_REPOSITORY ?? ''
   const attempt = process.env.GITHUB_RUN_ATTEMPT ? Number(process.env.GITHUB_RUN_ATTEMPT) : null
   const run_url = `${server}/${repo}/actions/runs/${runId}${attempt ? `/attempts/${attempt}` : ''}`
-  return { run_id: Number(runId), run_attempt: attempt, run_url }
+  return { run_id: Number(runId), run_attempt: attempt, run_url, source: 'github' }
 }
 
 // Record a scheduled job's progress in public.heartbeat. Workflows call this as
@@ -50,6 +50,12 @@ const githubRun = () => {
 // in src/jobs/lib.js, which pass these so a run's duration can later be broken
 // down per job/character-or-corp/user rather than just per whole job invocation).
 // Leave them unset for whole-job/account-wide jobs.
+//
+// opts.source records which execution path ran the job ('vercel' from the
+// queue consumer, 'vercel-cron' from the direct cron routes, 'vercel-workflow'
+// from workflow steps); GitHub Actions runs are stamped 'github' automatically.
+// Callers were already passing this — until the heartbeat.source column landed
+// it was silently dropped.
 export const recordHeartbeat = async (job, phase = 'end', opts = {}) => {
   // GitHub Actions path: derive run identity from the environment so the two steps
   // of one workflow run land on a single row. Vercel queue path (and the
@@ -70,6 +76,10 @@ export const recordHeartbeat = async (job, phase = 'end', opts = {}) => {
     character_id: opts.characterId ?? null,
     corporation_id: opts.corporationId ?? null,
     user_id: opts.userId ?? null,
+    // Execution-path provenance ('vercel' / 'vercel-cron' / 'vercel-workflow'
+    // from callers, 'github' derived from the Actions env). Null when neither
+    // is known (local CLI runs, the per-character/per-corp loop rows).
+    source: opts.source ?? gh.source,
     ...(phase === 'start' ? { started_at: now } : { ended_at: now }),
   }
   const table = sudoSupabase.from('heartbeat')

@@ -217,8 +217,11 @@ lists as it adds the registry entry, so no job is ever listed in both places.
 
 ## Open decisions
 
-1. **Heartbeat `source` column.** Take the optional provenance column now, or
-   skip until something needs it (registry suffices for the UI).
+1. **Heartbeat `source` column.** ~~Take the optional provenance column now, or
+   skip until something needs it (registry suffices for the UI).~~ Taken:
+   `heartbeat.source` now persists the value callers pass (see the
+   `20260717084000_heartbeat_source` migration). The registry remains the
+   UI's source of truth for workflow membership.
 
 ## Verification (no test runner; gates are lint + build + manual)
 
