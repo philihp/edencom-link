@@ -46,8 +46,8 @@ first:
 
 | PR | Scope | Consumers touched |
 |----|-------|-------------------|
-| **1 — infra + stations** ✅ (this PR) | Add `src/utils/supabase/sde.ts` (anon client) + `src/sdeCache.ts` (`createByIdCache` + `bulkLookup`); migrate `sdeStations` → async DB-backed as the first loader | `stationNames.ts` |
-| **2 — planets** | `sdePlanets` → async; drop its `sdeSystems` import (the `sde_planet` view carries `system_name`) | `mercenary-dens` |
+| **1 — infra + stations** ✅ | Add `src/utils/supabase/sde.ts` (anon client) + `src/sdeCache.ts` (`createByIdCache` + `bulkLookup`); migrate `sdeStations` → async DB-backed as the first loader | `stationNames.ts` |
+| **2 — planets** ✅ (this PR) | `sdePlanets` → async; drop its `sdeSystems` import (the `sde_planet` view carries `system_name`) | `mercenary-dens` |
 | **3 — systems** | `sdeSystems` → async, add `getSdeSystems` bulk helper | `systemNames`, `indexes` page + actions, `mcp/lib` + `tools` (`resolveSystemNames`) |
 | **4 — blueprints** | `sdeBlueprints` → async | `mcp/tools` (2 fns) |
 | **5 — types** | `sdeTypes` → async, `getSdeTypes` bulk, `SdeSearchResult` gains `categoryID` (drops per-row category lookups) | the big fan-out: `typeNames`, `blueprint/api`, `type/search`, `asset/search`, `asset/[locationId]`, `ship/[itemId]`, `corpses`, `mercenary-dens`, `mcp/lib` + `tools` |
