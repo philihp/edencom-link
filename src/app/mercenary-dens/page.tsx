@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
 
-import { getSdePlanet } from '@/sdePlanets'
+import { getSdePlanets } from '@/sdePlanets'
 import { getSdeTypeNames } from '@/sdeTypes'
 import { createClient } from '@/utils/supabase/server'
 
@@ -111,8 +111,10 @@ const MercenaryDensPage = async () => {
 
   // Merge the hand-maintained temperate-planet intel with our real dens, keyed by
   // system + roman numeral. A den's planet_id is resolved to (system, roman) via
-  // the generated SDE (src/sdePlanets.ts); dens on a planet not in the static
-  // list are appended as extra rows.
+  // the nightly-mirrored SDE (src/sdePlanets.ts); dens on a planet not in the
+  // static list are appended as extra rows. One bulk lookup for every den's
+  // planet up front, so the merge loop below stays a sync record read.
+  const planetsById = await getSdePlanets(dens.map((d) => d.planet_id))
   const rowsByKey = new Map<string, MergedRow>()
   const key = (system: string, planet: string) => `${system}|${planet}`
 
@@ -121,7 +123,7 @@ const MercenaryDensPage = async () => {
   }
 
   for (const den of dens) {
-    const planet = getSdePlanet(den.planet_id)
+    const planet = planetsById[den.planet_id] ?? null
     const system = planet?.systemName ?? ''
     const roman = planet?.roman ?? ''
     const ownReg = ownRegById.get(den.character_id)

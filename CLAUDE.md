@@ -70,15 +70,16 @@ Quick-reference for navigation. Covers key exports, route→file paths, DB table
 - `searchSdeSystems(query, limit?)` — case-insensitive substring search over system names (backs the /indexes watch-a-system autocomplete)
 - `formatSecurity(security)` — one-decimal display rounding
 
-### `src/sdeStations.ts`
-- `getSdeStation(stationID)` — `{ stationID, name, systemID }` from the generated SDE data, or `null`
+### `src/sdeStations.ts` (async; DB-backed over the `sde_station` view — SDE cutover PR 1)
+- `getSdeStations(stationIDs[])` — bulk id→`{ stationID, name, systemID }`, cached per process (see `src/sdeCache.ts`)
+- `getSdeStation(stationID)` — single lookup, or `null`
 - `getSdeStationNames(stationIDs[])` — bulk id→name lookup
 - `getSdeStationSystems(stationIDs[])` — bulk id→solar-system-id lookup (the SDE carries this directly; ESI's `universe/names` never did)
 
-### `src/sdePlanets.ts`
-- `getSdePlanet(planetID)` — `{ planetID, systemID, systemName, celestialIndex, typeID, roman, name }` from the generated SDE data, or `null`. Planets carry no name in the SDE, so `name` is derived as `"<system> <roman(celestialIndex)>"` (e.g. `RXA-W1 III`) — the same key the hand-maintained mercenary-den intel uses
-- `getSdePlanets(planetIDs[])` — bulk id→planet lookup
-- `toRoman(n)` — celestial-index → roman numeral; `TEMPERATE_PLANET_TYPE_ID` (11) constant
+### `src/sdePlanets.ts` (async; DB-backed over the `sde_planet` view — SDE cutover PR 2)
+- `getSdePlanets(planetIDs[])` — bulk id→`{ planetID, systemID, systemName, celestialIndex, typeID, roman, name }`, cached per process. `name` is derived as `"<system> <roman(celestialIndex)>"` (e.g. `RXA-W1 III`) — the same key the hand-maintained mercenary-den intel uses. No longer depends on `sdeSystems` (the view carries `system_name`)
+- `getSdePlanet(planetID)` — single lookup, or `null`
+- `toRoman(n)` — celestial-index → roman numeral (sync, pure); `TEMPERATE_PLANET_TYPE_ID` (11) constant
 - Backs the `/mercenary-dens` page, which resolves each den's `planet_id` to a system + roman to union real dens with the static temperate-planet list
 
 ### `src/sdeBlueprints.ts`
