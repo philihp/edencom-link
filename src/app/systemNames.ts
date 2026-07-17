@@ -1,10 +1,9 @@
-// Resolve solar-system names from the locally generated SDE data (see
-// src/sdeSystems.ts / src/buildSde.js) — known-space solar systems are static
-// (they change only around once a year, at most), so a name lookup is a free
-// in-memory hit with no DB round trip or ESI call. Falls back to the
-// universe_name DB cache only for ids the SDE dump doesn't recognize; still
-// omits anything neither source has, so callers fall back to showing the raw
-// id (never read the evesde SDE schema).
+// Resolve solar-system names from the nightly-mirrored SDE tables via the
+// DB-backed loader (src/sdeSystems.ts) — known-space systems change only around
+// once a game patch, so the loader caches them per process. Falls back to the
+// universe_name DB cache only for ids the SDE doesn't recognize (e.g. wormhole
+// systems); still omits anything neither source has, so callers fall back to
+// showing the raw id (never read the evesde SDE schema).
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { difference, filter, fromPairs, keys, map, mergeRight, uniq } from 'ramda'
 import { createClient } from '@/utils/supabase/server'
@@ -19,7 +18,7 @@ export const fetchSystemNames = async (
   const ids = uniq(filter(Number.isFinite, [...systemIDs]))
   if (ids.length === 0) return {}
 
-  const sdeNames = getSdeSystemNames(ids)
+  const sdeNames = await getSdeSystemNames(ids)
   const unresolvedIds = difference(ids, map(Number, keys(sdeNames)))
   if (unresolvedIds.length === 0) return sdeNames
 

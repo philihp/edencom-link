@@ -7,9 +7,9 @@ import { getSdeSystem, searchSdeSystems } from '@/sdeSystems'
 import { createClient } from '@/utils/supabase/server'
 
 // Autocomplete backing the "watch a system" search box. Resolved from the
-// locally generated SDE data (src/sdeSystems.ts) — no ESI call.
+// nightly-mirrored SDE tables (src/sdeSystems.ts) — no ESI call.
 export const searchSystems = async (query: string): Promise<[systemID: number, name: string, security: number][]> =>
-  searchSdeSystems(query, 8).map((s) => [s.systemID, s.name, s.security])
+  (await searchSdeSystems(query, 8)).map((s) => [s.systemID, s.name, s.security])
 
 const requireUser = async () => {
   const supabase = await createClient()
@@ -26,7 +26,7 @@ const requireUser = async () => {
 // the upsert (with ignoreDuplicates) tolerates re-adding an already-watched
 // system without disturbing its existing position.
 export const watchSystem = async (systemId: number) => {
-  if (!getSdeSystem(Number(systemId))) return
+  if (!(await getSdeSystem(Number(systemId)))) return
   const { supabase, userId } = await requireUser()
   const { data: last } = await supabase
     .from('watched_system')
