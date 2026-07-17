@@ -1,17 +1,20 @@
-# Plan: Vercel Workflow jobs page
+# Plan: Vercel Workflow jobs page (`/workflow`)
 
-A page focused **only on jobs that execute as Vercel Workflows** — the
-dashboard for the incremental migration of the extract system onto the
-`workflow` package. Jobs appear here as they migrate; the existing
-`/character/refresh` matrix keeps covering everything that still runs inline
-via Cron + Queue. Three sections, in this order:
+A page at **`/workflow`** focused **only on jobs that execute as Vercel
+Workflows** — the dashboard for the incremental migration of the extract
+system onto the `workflow` package. Jobs **move** here as they migrate: each
+migration PR adds the job to this page's registry **and removes it from
+`/character/refresh`**, so every job has exactly one home. The refresh page
+keeps covering everything still running inline via Cron + Queue, shrinking as
+the migration proceeds. Three sections, in this order:
 
 1. **Universal** — read-only. Whole-universe/account workflow jobs; just the
    last time each ran. No buttons.
-2. **Corp** — one row per corporation with columns for the corp workflow jobs
-   (**wallet**, **structures**, **industry** once migrated), each a freshness
-   cell + refresh button, plus a **Token** column naming the character whose
-   director-role token the last pull ran under.
+2. **Corp** — **hidden until a corp job migrates.** Then: one row per
+   corporation with columns for the corp workflow jobs (**wallet**,
+   **structures**, **industry**), each a freshness cell + refresh button, plus
+   a **Token** column naming the character whose director-role token the last
+   pull ran under.
 3. **Character** — a per-character × per-job freshness matrix like the current
    refresh page, restricted to migrated per-character jobs.
 
@@ -29,9 +32,16 @@ permissions.
 | `sde-mirror` | Universal | `src/workflows/sdeMirror.ts` | 12:21 UTC daily (cron route `start()`s it) | `user_id IS NULL` — readable by any authenticated user |
 | `character-implants` | Character | `src/workflows/characterImplants.ts` | No (pilot; manual trigger route only — `character-status` covers implants on the schedule) | per-character (`character_id` + `user_id` via `forEachCharacter`) |
 
-So at launch: Universal shows one row, Character shows one column, and Corp
-renders an empty-state note ("no corp jobs run as workflows yet"). That's
-correct, not a bug — the page is the migration's scoreboard and grows with it.
+So at launch: Universal shows one row, Character shows one column, and the
+Corp section doesn't render at all (no corp job runs as a workflow yet).
+That's correct, not a bug — the page is the migration's scoreboard and grows
+with it.
+
+**Nothing actually moves off `/character/refresh` at launch**, because
+neither of today's two workflow jobs is listed there: `character-implants` is
+folded into the `character-status` column (which stays — it's the scheduled,
+queue-run extract), and `sde-mirror` was never on the refresh page. The
+move-per-migration rule starts biting with the first future migration.
 
 ## The registry: which jobs are "workflow jobs"
 
@@ -43,7 +53,7 @@ heartbeats written from inside a workflow step (`forEachCharacter` →
 ones. So membership can't be inferred from data; it's declared in code:
 
 ```ts
-// src/app/jobs/registry.ts (new)
+// src/app/workflow/registry.ts (new)
 export const WORKFLOW_JOBS = [
   { job: 'sde-mirror',          section: 'universal', label: 'SDE mirror' },
   { job: 'character-implants',  section: 'character', label: 'implants' },
@@ -54,17 +64,24 @@ export const WORKFLOW_JOBS = [
 ] as const
 ```
 
-Migrating a job = writing its `src/workflows/*.ts` + consumer/cron wiring
-**and adding one registry line**. The page renders whatever the registry
-holds; a section with no entries renders its empty-state note (or a row/column
-appears the moment the entry lands). This keeps the page honest — it never
-shows a job as "workflow-run" that isn't.
+Migrating a job = writing its `src/workflows/*.ts` + consumer/cron wiring,
+**adding one registry line, and removing the job from `/character/refresh`'s
+lists**. The page renders whatever the registry holds; a section with no
+entries renders nothing (this is what keeps Corp hidden for now — its first
+registry entry is what makes the section appear). This keeps the page honest —
+it never shows a job as "workflow-run" that isn't.
 
-Also recommended (small, optional): give `recordHeartbeat` a persisted
-`source` text column (`vercel-workflow` / `vercel` / `github`) so run
-provenance is at least queryable later. Not needed for this page; the registry
-stays the UI's source of truth either way. If taken, it's a normal dual write:
-`schema.sql` + an incremental migration.
+Also recommended (small, optional): persist the `source` that callers already
+pass. Three call sites hand `recordHeartbeat` a source today — the queue
+consumer (`source: 'vercel'`), the direct-cron helper (`'vercel-cron'`), and
+the sde-mirror workflow steps (`'vercel-workflow'`) — but the `heartbeat`
+table has no `source` column and `recordHeartbeat`'s row object omits it, so
+the value is silently dropped. Adding `source text` to the table and `source:
+opts.source ?? null` to the row makes run provenance queryable (e.g. "did this
+run come from the workflow or the old queue path" while both exist during a
+job's cutover). Not needed for this page — the registry stays the UI's source
+of truth either way. If taken, it's a normal dual write: `schema.sql` + an
+incremental migration.
 
 ## Section-by-section
 
@@ -94,10 +111,12 @@ stays out of the UI.)
 > `Freshness`, reusing its formatter). A registry `cadence` field can later
 > drive per-job thresholds if we want color back.
 
-### 2. Corp (freshness + Token, refreshable) — lands with the corp migrations
+### 2. Corp (freshness + Token, refreshable) — hidden until the corp migrations
 
-Target state, activated as corp jobs migrate (see migration order below): one
-row per corporation the user has a registered character in, columns:
+The section renders **nothing** while the registry has no `section: 'corp'`
+entries — no heading, no empty-state note. Target state once corp jobs migrate
+(see migration order below): one row per corporation the user has a registered
+character in, columns:
 
 | Corporation | Token | wallet | structures | industry |
 |---|---|---|---|---|
@@ -168,7 +187,8 @@ order, by payoff:
 
 1. **`corp-wallet-journal`** — the job the codebase already flags as the 60s
    duration risk (per-division, sequential). Steps-per-division gives each
-   division its own budget. First corp column (`wallet`) appears.
+   division its own budget. This is what makes the hidden Corp section appear,
+   with its first column (`wallet`) and the Token column.
 2. **`corp-structures`**, then **`corp-industry-jobs`** — completes the corp
    section as requested (structures is small; industry benefits from paging
    steps).
@@ -184,39 +204,31 @@ registry at today's two entries, and each migration PR adds its line.
 
 | File | Change |
 |---|---|
-| `src/app/jobs/registry.ts` | New — `WORKFLOW_JOBS` registry. |
-| `src/app/jobs/page.tsx` | New page: three registry-driven sections, reusing the refresh page's `Cell`/`Freshness`/`RefreshButton`/`RefreshPoller`/reductions (lift the shared pieces out of `src/app/character/refresh/` rather than duplicating). |
-| `src/app/jobs/actions.ts` | Kick action: auth + registry-membership check + `dispatchSingleJob`. |
-| `src/app/character/refresh/*` | Extract the shared `Cell`/reduction helpers for reuse; page behavior unchanged. |
+| `src/app/workflow/registry.ts` | New — `WORKFLOW_JOBS` registry. |
+| `src/app/workflow/page.tsx` | New page: registry-driven sections (Corp hidden while empty), reusing the refresh page's `Cell`/`Freshness`/`RefreshButton`/`RefreshPoller`/reductions (lift the shared pieces out of `src/app/character/refresh/` rather than duplicating). |
+| `src/app/workflow/actions.ts` | Kick action: auth + registry-membership check + `dispatchSingleJob`. |
+| `src/app/character/refresh/*` | Extract the shared `Cell`/reduction helpers for reuse; page behavior otherwise unchanged at launch (nothing de-lists yet — see above). |
 | `src/app/api/queue/jobs/route.ts` | Generalize the workflow branch: a job-name → workflow map (today one entry) + the `taskId`-through-workflow pattern from gap 2. |
-| `src/app/layout/header.tsx` | Optional: link to `/jobs` next to the existing refresh link. |
+| `src/app/layout/header.tsx` | Optional: link to `/workflow` next to the existing refresh link. |
 
 No schema migration required (unless the optional heartbeat `source` column is
-taken). The existing `/character/refresh` page is untouched by the page PR;
-whether a migrated job's column is *removed* from it (so each job has one
-home) is decided per migration PR — recommended yes, to avoid double-listing.
+taken). Each future migration PR removes its job from `/character/refresh`'s
+lists as it adds the registry entry, so no job is ever listed in both places.
 
 ## Open decisions
 
-1. **Route.** New page at `/jobs` (recommended — workflows-only scope
-   coexists with `/character/refresh` during the migration) vs. rebuilding
-   the refresh page in place. Plan assumes `/jobs`.
-2. **Empty corp section.** Render the empty-state note (recommended — shows
-   the target shape) vs. hiding the section until a corp job migrates.
-3. **Heartbeat `source` column.** Take the optional provenance column now, or
+1. **Heartbeat `source` column.** Take the optional provenance column now, or
    skip until something needs it (registry suffices for the UI).
-4. **De-listing migrated jobs from `/character/refresh`.** Recommended per
-   migration PR; keep or change per job.
 
 ## Verification (no test runner; gates are lint + build + manual)
 
 - `pnpm run lint`, `pnpm run build`.
-- Manually: `/jobs` signed in — Universal shows `sde-mirror`'s last nightly
-  run as plain relative text (no dot, no button); Character shows the
-  `implants` column with per-character freshness; Corp shows the empty-state
-  note. Kick `implants` for one character: `refresh_task` goes pending →
-  running → done as the workflow completes (gap 2 wiring), the poller settles,
-  and the run appears under Vercel Observability → Workflows.
+- Manually: `/workflow` signed in — Universal shows `sde-mirror`'s last
+  nightly run as plain relative text (no dot, no button); Character shows the
+  `implants` column with per-character freshness; no Corp section renders.
+  Kick `implants` for one character: `refresh_task` goes pending → running →
+  done as the workflow completes (gap 2 wiring), the poller settles, and the
+  run appears under Vercel Observability → Workflows.
 - Confirm a signed-out visit redirects to login, and a second account sees the
   same `sde-mirror` row (the `user_id IS NULL` heartbeat) but only its own
   characters.
@@ -228,4 +240,5 @@ home) is decided per migration PR — recommended yes, to avoid double-listing.
 - The job migrations themselves (each is its own PR per the order above; this
   page PR ships with today's two workflows).
 - Any change to schedules, job logic, or the extract tables.
-- Jobs that stay on Cron + Queue — they remain on `/character/refresh`.
+- Jobs that stay on Cron + Queue — they remain on `/character/refresh` until
+  their own migration PR moves them here.
