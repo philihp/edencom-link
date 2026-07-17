@@ -4,9 +4,8 @@
 // https://github.com/EVEShipFit/data). Downloading eveshipfit's own
 // pre-built copies isn't viable: data.eveship.fit 403s plain server-side
 // fetches from Vercel's build network (datacenter-IP bot-blocking) — CCP's
-// own export doesn't have that problem (buildSde.js already relies on the
-// Fuzzwork mirror successfully at build time; this uses CCP's official
-// export directly, matching every field the proto needs 1:1).
+// own export doesn't have that problem, so this fetches CCP's official
+// export directly, matching every field the proto needs 1:1.
 // Runs as a `predev`/`prebuild` step (see package.json) — re-run
 // `pnpm run esf:build -- --force` to refresh mid-session.
 import { spawn } from 'node:child_process'

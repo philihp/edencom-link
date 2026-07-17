@@ -1,6 +1,6 @@
 import { notFound, redirect } from 'next/navigation'
 
-import { getSdeType } from '@/sdeTypes'
+import { getSdeType, getSdeTypes } from '@/sdeTypes'
 import { createClient } from '@/utils/supabase/server'
 import { createServiceClient } from '@/utils/supabase/service'
 import { AssetPath, fetchAssetPath } from '../../assetPath'
@@ -36,7 +36,10 @@ type ChildRow = {
   corporation_id?: number | string
 }
 
-const isShip = (typeId: number | string) => getSdeType(Number(typeId))?.categoryID === SHIP_CATEGORY_ID
+// Whether a single type is in the Ship category — one SDE lookup, for the
+// self-type gate that decides ship page vs asset browser.
+const isShipType = async (typeId: number | string): Promise<boolean> =>
+  (await getSdeType(Number(typeId)))?.categoryID === SHIP_CATEGORY_ID
 
 // A ship's own page: the eveship.fit wheel + stats built from its fitted
 // modules, its cargo bays, owner and location. Reachable authenticated (RLS
@@ -78,7 +81,7 @@ const ShipPage = async ({
   const self = characterSelf ?? corpSelf
   if (!self) notFound()
   // Non-ships (containers, loose stacks) live on the asset browser instead.
-  if (!isShip(self.type_id)) redirect(`/asset/${itemId}`)
+  if (!(await isShipType(self.type_id))) redirect(`/asset/${itemId}`)
 
   const [{ data: characterChildren }, { data: corpChildren }] = await Promise.all([
     supabase
@@ -133,6 +136,15 @@ const ShipPage = async ({
   const typeName = typeNames[Number(self.type_id)] ?? `#${self.type_id}`
   const heading = self.name && self.name !== typeName ? `${self.name} (${typeName})` : typeName
 
+  // One bulk SDE lookup → set of Ship-category type ids among the cargo, so the
+  // per-row drill-in link test stays a sync Set.has.
+  const childTypes = await getSdeTypes(children.map((c) => Number(c.type_id)))
+  const childShipTypeIds = new Set(
+    Object.values(childTypes)
+      .filter((t) => t.categoryID === SHIP_CATEGORY_ID)
+      .map((t) => t.typeID)
+  )
+
   const typeNamesPromise = fetchTypeNames(children.map((c) => Number(c.type_id)))
   const rows: ItemRow[] = children
     .map((c) => {
@@ -147,7 +159,11 @@ const ShipPage = async ({
         flag: c.location_flag,
         contents,
         isCurrentShip: false,
-        href: isShip(c.type_id) ? `/ship/${c.item_id}` : contents > 0 ? `/asset/${c.item_id}` : null,
+        href: childShipTypeIds.has(Number(c.type_id))
+          ? `/ship/${c.item_id}`
+          : contents > 0
+            ? `/asset/${c.item_id}`
+            : null,
       }
     })
     .sort((a, b) => b.contents - a.contents || a.typeId - b.typeId)
@@ -195,7 +211,7 @@ const SharedShipPage = async ({ itemId, token }: { itemId: string; token: string
         .maybeSingle<ShipRow>()
   const self = characterSelf ?? corpSelf
   // The share outlived the ship (sold, transferred, unlinked): dead link.
-  if (!self || !isShip(self.type_id)) notFound()
+  if (!self || !(await isShipType(self.type_id))) notFound()
 
   const [{ data: characterChildren }, { data: corpChildren }] = await Promise.all([
     supabase

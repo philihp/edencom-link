@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
 
-import { formatSecurity, getSdeSystem } from '@/sdeSystems'
+import { formatSecurity, getSdeSystems } from '@/sdeSystems'
 import { createClient } from '@/utils/supabase/server'
 
 import { fetchLatestSystemIndexes, fetchSystemIndexHistory, type Activity } from '../structure/industryIndex'
@@ -42,10 +42,9 @@ const IndexesPage = async ({ searchParams }: { searchParams: Promise<{ days?: st
     .select('system_id')
     .order('position', { ascending: true })
     .order('created_at', { ascending: true })
-  const systems = (watchedRows ?? []).map((r) => {
-    const id = Number(r.system_id)
-    return { id, sde: getSdeSystem(id) }
-  })
+  const watchedIds = (watchedRows ?? []).map((r) => Number(r.system_id))
+  const sdeSystems = await getSdeSystems(watchedIds)
+  const systems = watchedIds.map((id) => ({ id, sde: sdeSystems[id] ?? null }))
   const systemIds = systems.map((s) => s.id)
 
   const [latestBySystem, historyBySystem] = await Promise.all([

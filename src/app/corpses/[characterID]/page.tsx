@@ -13,10 +13,8 @@ import styles from '../corpses.module.css'
 // (and NPC "…Frozen Corpse" types, which aren't named exactly this, stay out).
 const CORPSE_TYPE_NAMES = new Set(['corpse', 'corpse male', 'corpse female'])
 
-const corpseTypeIds = (): number[] =>
-  searchSdeTypesAll('corpse')
-    .filter((t) => CORPSE_TYPE_NAMES.has(t.name.toLowerCase()))
-    .map((t) => t.typeID)
+const corpseTypeIds = async (): Promise<number[]> =>
+  (await searchSdeTypesAll('corpse')).filter((t) => CORPSE_TYPE_NAMES.has(t.name.toLowerCase())).map((t) => t.typeID)
 
 // A corpse first seen within this window is flagged "New!".
 const NEW_WINDOW_MS = 48 * 60 * 60 * 1000
@@ -94,7 +92,7 @@ const CorpsesPage = async ({ params }: { params: Promise<{ characterID: string }
     (registrations ?? [])[0]?.name ??
     null
 
-  const typeIds = corpseTypeIds()
+  const typeIds = await corpseTypeIds()
 
   const { data: rows } =
     registrationIds.length && typeIds.length

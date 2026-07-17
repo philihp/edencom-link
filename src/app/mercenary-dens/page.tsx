@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
 
-import { getSdePlanet } from '@/sdePlanets'
+import { getSdePlanets } from '@/sdePlanets'
 import { getSdeTypeNames } from '@/sdeTypes'
 import { createClient } from '@/utils/supabase/server'
 
@@ -107,7 +107,10 @@ const MercenaryDensPage = async () => {
     mine: row.created_by === data.user.id,
   }))
   const defaultReportedBy = [...ownRegById.values()][0]?.name ?? ''
-  const typeNames = getSdeTypeNames(dens.map((d) => d.type_id).filter((t): t is number => t != null))
+  const typeNames = await getSdeTypeNames(dens.map((d) => d.type_id).filter((t): t is number => t != null))
+  // One bulk lookup for every den's planet → (system, roman); dens on a planet
+  // not in the static list are appended as extra rows below.
+  const planetsById = await getSdePlanets(dens.map((d) => d.planet_id))
 
   // Merge the hand-maintained temperate-planet intel with our real dens, keyed by
   // system + roman numeral. A den's planet_id is resolved to (system, roman) via
@@ -121,7 +124,7 @@ const MercenaryDensPage = async () => {
   }
 
   for (const den of dens) {
-    const planet = getSdePlanet(den.planet_id)
+    const planet = planetsById[den.planet_id] ?? null
     const system = planet?.systemName ?? ''
     const roman = planet?.roman ?? ''
     const ownReg = ownRegById.get(den.character_id)

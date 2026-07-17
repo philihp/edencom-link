@@ -51,11 +51,11 @@ type SupabaseClient = ReturnType<typeof createBearerClient>
 const clientFor = (extra: { authInfo?: AuthInfo }): SupabaseClient | null =>
   extra.authInfo?.token ? createBearerClient(extra.authInfo.token) : null
 
-// Solar-system names resolve from the generated SDE data first (known space),
-// falling back to the universe_name cache for anything the SDE build doesn't
+// Solar-system names resolve from the nightly-mirrored SDE tables first (known
+// space), falling back to the universe_name cache for anything the SDE doesn't
 // carry (e.g. wormhole systems).
 const resolveSystemNames = async (supabase: SupabaseClient, systemIds: number[]): Promise<Record<number, string>> => {
-  const fromSde = getSdeSystemNames(systemIds)
+  const fromSde = await getSdeSystemNames(systemIds)
   const missing = systemIds.filter((id) => !(id in fromSde))
   const fromDb = await fetchSystemNames(missing, supabase)
   return { ...fromDb, ...fromSde }
@@ -72,8 +72,8 @@ const capNote = (total: number, shown: number, what: string): string | undefined
 // mis-pick. Used by the blueprint tools, which each act on one type.
 type ResolvedType = { ok: true; typeID: number; name: string; alsoMatched: string[] } | { ok: false; message: string }
 
-const resolveOneType = (query: string): ResolvedType => {
-  const matches = searchSdeTypesAll(query.trim())
+const resolveOneType = async (query: string): Promise<ResolvedType> => {
+  const matches = await searchSdeTypesAll(query.trim())
   if (matches.length === 0) return { ok: false, message: `No item type matched "${query}".` }
   const [best, ...rest] = matches
   return { ok: true, typeID: best.typeID, name: best.name, alsoMatched: rest.slice(0, 4).map((m) => m.name) }
@@ -204,18 +204,18 @@ const resolveStructureBonuses = async (
   const { data: rigRows } = await supabase.from('corp_structure_rig').select('type_id').eq('structure_id', structureId)
   const rigTypeIds = ((rigRows ?? []) as Array<{ type_id: number | string }>).map((r) => Number(r.type_id))
 
-  const hullType = getSdeType(Number(structure.type_id))
+  const hullType = await getSdeType(Number(structure.type_id))
   const hullGroup = hullType?.groupID
   const roleApplies =
     (hullGroup === ENGINEERING_COMPLEX_GROUP && activityID === MANUFACTURING) ||
     (hullGroup === REFINERY_GROUP && activityID === REACTION)
 
-  const system = getSdeSystem(Number(structure.system_id))
+  const system = await getSdeSystem(Number(structure.system_id))
   const { sec, band } = securityMultiplier(system?.security ?? null)
 
   // Pick the strongest material-efficiency rig fitted (structures rarely carry
   // more than one that's relevant); report every ME rig name for transparency.
-  const rigNames = getSdeTypeNames(rigTypeIds)
+  const rigNames = await getSdeTypeNames(rigTypeIds)
   const meRigs = rigTypeIds
     .map((id) => rigNames[id])
     .filter((n): n is string => typeof n === 'string' && /Material Efficiency/i.test(n))
@@ -308,7 +308,7 @@ export const registerTools = (server: McpServer): void => {
       const supabase = clientFor(extra)
       if (!supabase) return textResult('Missing bearer token.')
 
-      const filter = resolveTypeFilter(item, { includeBlueprints: include_blueprints ?? false })
+      const filter = await resolveTypeFilter(item, { includeBlueprints: include_blueprints ?? false })
       if (!filter.ok) return textResult(filter.message)
       if (!filter.matches) return textResult('Provide an item name to search for.')
 
@@ -360,7 +360,8 @@ export const registerTools = (server: McpServer): void => {
 
       // Canonicalize a partial system filter through the SDE search so
       // "ekpb" still matches items sitting in EKPB-3.
-      const systemFilter = system?.trim() ? (searchSdeSystems(system, 1)[0]?.name ?? system.trim()).toLowerCase() : null
+      const systemMatch = system?.trim() ? ((await searchSdeSystems(system, 1))[0]?.name ?? system.trim()) : null
+      const systemFilter = systemMatch != null ? systemMatch.toLowerCase() : null
 
       const located = rows
         .map((row) => {
@@ -469,7 +470,7 @@ export const registerTools = (server: McpServer): void => {
         ...clones.flatMap((c) => c.implants ?? []),
         ...((implantRows ?? []) as Array<{ type_ids: number[] }>).flatMap((r) => r.type_ids ?? []),
       ].map(Number)
-      const implantNames = getSdeTypeNames(implantTypeIds)
+      const implantNames = await getSdeTypeNames(implantTypeIds)
 
       const implantsByCharacter = new Map(
         ((implantRows ?? []) as Array<{ character_id: string; type_ids: number[] }>).map((r) => [
@@ -544,7 +545,7 @@ export const registerTools = (server: McpServer): void => {
       const supabase = clientFor(extra)
       if (!supabase) return textResult('Missing bearer token.')
 
-      const filter = resolveTypeFilter(item)
+      const filter = await resolveTypeFilter(item)
       if (!filter.ok) return textResult(filter.message)
       const typeIds = filter.matches?.map((m) => m.typeID) ?? null
 
@@ -583,7 +584,7 @@ export const registerTools = (server: McpServer): void => {
         ...corpRows.map((r) => ({ ...r, ownerId: String(r.corporation_id) })),
       ].filter((r) => ownerFilter.ownerIds == null || ownerFilter.ownerIds.has(r.ownerId))
 
-      const typeNames = getSdeTypeNames(rows.map((r) => Number(r.type_id)))
+      const typeNames = await getSdeTypeNames(rows.map((r) => Number(r.type_id)))
       const locationRefs = uniqBy(
         prop('id'),
         rows.map((r) => guessLocationRef(r.location_id)).filter((r): r is LocationRef => r != null)
@@ -691,7 +692,7 @@ export const registerTools = (server: McpServer): void => {
         .filter((j) => ownerFilter.ownerIds == null || ownerFilter.ownerIds.has(j.ownerId))
         .sort((a, b) => new Date(a.end_date).getTime() - new Date(b.end_date).getTime())
 
-      const typeNames = getSdeTypeNames(
+      const typeNames = await getSdeTypeNames(
         rows.flatMap((j) => [
           Number(j.blueprint_type_id),
           ...(j.product_type_id != null ? [Number(j.product_type_id)] : []),
@@ -757,7 +758,7 @@ export const registerTools = (server: McpServer): void => {
       const supabase = clientFor(extra)
       if (!supabase) return textResult('Missing bearer token.')
 
-      const filter = resolveTypeFilter(item)
+      const filter = await resolveTypeFilter(item)
       if (!filter.ok) return textResult(filter.message)
       const typeIds = filter.matches?.map((m) => m.typeID) ?? null
 
@@ -790,7 +791,7 @@ export const registerTools = (server: McpServer): void => {
         fetchOwnerContext(supabase),
       ])
 
-      const typeNames = getSdeTypeNames(orders.map((o) => Number(o.type_id)))
+      const typeNames = await getSdeTypeNames(orders.map((o) => Number(o.type_id)))
       const locationRefs = uniqBy(
         prop('id'),
         orders.map((o) => guessLocationRef(o.location_id)).filter((r): r is LocationRef => r != null)
@@ -845,7 +846,7 @@ export const registerTools = (server: McpServer): void => {
       const supabase = clientFor(extra)
       if (!supabase) return textResult('Missing bearer token.')
 
-      const filter = resolveTypeFilter(item)
+      const filter = await resolveTypeFilter(item)
       if (!filter.ok) return textResult(filter.message)
       const typeIds = filter.matches?.map((m) => m.typeID) ?? null
 
@@ -900,7 +901,7 @@ export const registerTools = (server: McpServer): void => {
         })),
       ].sort((a, b) => (a.date < b.date ? 1 : -1))
 
-      const typeNames = getSdeTypeNames(rows.map((r) => Number(r.type_id)))
+      const typeNames = await getSdeTypeNames(rows.map((r) => Number(r.type_id)))
       const locationRefs = uniqBy(
         prop('id'),
         rows.map((r) => guessLocationRef(r.location_id)).filter((r): r is LocationRef => r != null)
@@ -949,10 +950,10 @@ export const registerTools = (server: McpServer): void => {
       },
     },
     async ({ product, ...modifiers }, extra) => {
-      const resolved = resolveOneType(product)
+      const resolved = await resolveOneType(product)
       if (!resolved.ok) return textResult(resolved.message)
 
-      const bp = getBlueprintForProduct(resolved.typeID)
+      const bp = await getBlueprintForProduct(resolved.typeID)
       if (!bp) {
         return textResult(
           `"${resolved.name}" has no manufacturing or reaction blueprint (nothing builds it from materials).${
@@ -964,7 +965,11 @@ export const registerTools = (server: McpServer): void => {
       const mods = await resolveModifiers(modifiers, bp.activityID, extra)
       if (!mods.ok) return textResult(mods.message)
 
-      const names = getSdeTypeNames([bp.blueprintTypeID, bp.productTypeID, ...bp.materials.map((mat) => mat.typeID)])
+      const names = await getSdeTypeNames([
+        bp.blueprintTypeID,
+        bp.productTypeID,
+        ...bp.materials.map((mat) => mat.typeID),
+      ])
       const runs = modifiers.runs ?? 1
       return textResult({
         product: names[bp.productTypeID] ?? resolved.name,
@@ -991,10 +996,10 @@ export const registerTools = (server: McpServer): void => {
       },
     },
     async ({ material, ...modifiers }, extra) => {
-      const resolved = resolveOneType(material)
+      const resolved = await resolveOneType(material)
       if (!resolved.ok) return textResult(resolved.message)
 
-      const blueprints = getBlueprintsForMaterial(resolved.typeID)
+      const blueprints = await getBlueprintsForMaterial(resolved.typeID)
       if (blueprints.length === 0) {
         return textResult(
           `No blueprint consumes "${resolved.name}" as an input material.${
@@ -1017,7 +1022,7 @@ export const registerTools = (server: McpServer): void => {
         echo = mods.echo
       }
 
-      const names = getSdeTypeNames([
+      const names = await getSdeTypeNames([
         resolved.typeID,
         ...blueprints.flatMap((bp) => [bp.blueprintTypeID, bp.productTypeID]),
       ])
