@@ -566,6 +566,11 @@ create table public.heartbeat (
   corporation_id bigint,
   user_id uuid references auth.users(id) on delete cascade,
   owner_key text generated always as (coalesce(character_id::text, '') || '|' || coalesce(corporation_id::text, '')) stored,
+  -- Which execution path recorded the run: 'vercel' (queue consumer),
+  -- 'vercel-cron' (direct cron routes), 'vercel-workflow' (workflow steps),
+  -- 'github' (Actions). Null for local CLI runs and the per-character/per-corp
+  -- loop rows, which don't know how they were invoked.
+  source text,
   started_at timestamptz,
   ended_at timestamptz,
   -- How long the run took for that job/entity; null until ended_at lands.
