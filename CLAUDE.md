@@ -83,10 +83,10 @@ Quick-reference for navigation. Covers key exports, route→file paths, DB table
 - `toRoman(n)` — celestial-index → roman numeral (sync, pure); `TEMPERATE_PLANET_TYPE_ID` (11) constant
 - Backs the `/mercenary-dens` page, which resolves each den's `planet_id` to a system + roman to union real dens with the static temperate-planet list
 
-### `src/sdeBlueprints.ts`
+### `src/sdeBlueprints.ts` (async; DB-backed over the `sde_blueprint_product` materialized view — SDE cutover PR 4)
 - `getBlueprintForProduct(productTypeID)` — the manufacturing/reaction `Blueprint` that produces a given output (manufacturing preferred over reaction), or `null`
-- `getBlueprintsForMaterial(materialTypeID)` — every `Blueprint` that consumes a given type as an input material
-- `Blueprint` = `{ blueprintTypeID, activityID, productTypeID, productQuantity, materials: [{ typeID, quantity }] }`; `MANUFACTURING`/`REACTION` activity-id constants. Backs the MCP `blueprint_for_product` / `blueprints_using_material` tools.
+- `getBlueprintsForMaterial(materialTypeID)` — every `Blueprint` that consumes a given type as an input material (via a `@>` containment probe on the GIN-indexed `materials` jsonb)
+- `Blueprint` = `{ blueprintTypeID, activityID, productTypeID, productQuantity, materials: [{ typeID, quantity }] }`; `MANUFACTURING`/`REACTION` activity-id constants. Not cached (low-volume paths). Backs the MCP `blueprint_for_product` / `blueprints_using_material` tools.
 
 ### `src/esi.js` — ESI API wrapper
 All functions take `(accessToken, id, ...)` unless noted. Returns raw ESI response JSON (paged wrappers return `[json, xPagesHeader]`).
