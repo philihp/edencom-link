@@ -64,11 +64,12 @@ Quick-reference for navigation. Covers key exports, route→file paths, DB table
 - `searchSdeTypesAll(query)` — case-insensitive substring search over every published type name, ranked by match coverage, unbounded (used where the true match count matters, e.g. `/asset/search`'s "too many types" check)
 - `searchSdeTypes(query, limit?)` — same search capped to `limit` results, for autocomplete UIs
 
-### `src/sdeSystems.ts`
-- `getSdeSystem(systemID)` — `{ systemID, name, security }` from the generated SDE data, or `null`
+### `src/sdeSystems.ts` (async; DB-backed over `sde_kspace_system` + `sde_search_system` — SDE cutover PR 3)
+- `getSdeSystems(systemIDs[])` — bulk id→`{ systemID, name, security }`, cached per process (see `src/sdeCache.ts`)
+- `getSdeSystem(systemID)` — single lookup, or `null`
 - `getSdeSystemNames(systemIDs[])` — bulk id→name lookup
-- `searchSdeSystems(query, limit?)` — case-insensitive substring search over system names (backs the /indexes watch-a-system autocomplete)
-- `formatSecurity(security)` — one-decimal display rounding
+- `searchSdeSystems(query, limit?)` — case-insensitive substring search over system names via the `sde_search_system` RPC (backs the /indexes watch-a-system autocomplete)
+- `formatSecurity(security)` — one-decimal display rounding (sync, pure)
 
 ### `src/sdeStations.ts` (async; DB-backed over the `sde_station` view — SDE cutover PR 1)
 - `getSdeStations(stationIDs[])` — bulk id→`{ stationID, name, systemID }`, cached per process (see `src/sdeCache.ts`)

@@ -51,11 +51,11 @@ type SupabaseClient = ReturnType<typeof createBearerClient>
 const clientFor = (extra: { authInfo?: AuthInfo }): SupabaseClient | null =>
   extra.authInfo?.token ? createBearerClient(extra.authInfo.token) : null
 
-// Solar-system names resolve from the generated SDE data first (known space),
-// falling back to the universe_name cache for anything the SDE build doesn't
+// Solar-system names resolve from the nightly-mirrored SDE tables first (known
+// space), falling back to the universe_name cache for anything the SDE doesn't
 // carry (e.g. wormhole systems).
 const resolveSystemNames = async (supabase: SupabaseClient, systemIds: number[]): Promise<Record<number, string>> => {
-  const fromSde = getSdeSystemNames(systemIds)
+  const fromSde = await getSdeSystemNames(systemIds)
   const missing = systemIds.filter((id) => !(id in fromSde))
   const fromDb = await fetchSystemNames(missing, supabase)
   return { ...fromDb, ...fromSde }
@@ -210,7 +210,7 @@ const resolveStructureBonuses = async (
     (hullGroup === ENGINEERING_COMPLEX_GROUP && activityID === MANUFACTURING) ||
     (hullGroup === REFINERY_GROUP && activityID === REACTION)
 
-  const system = getSdeSystem(Number(structure.system_id))
+  const system = await getSdeSystem(Number(structure.system_id))
   const { sec, band } = securityMultiplier(system?.security ?? null)
 
   // Pick the strongest material-efficiency rig fitted (structures rarely carry
@@ -360,7 +360,8 @@ export const registerTools = (server: McpServer): void => {
 
       // Canonicalize a partial system filter through the SDE search so
       // "ekpb" still matches items sitting in EKPB-3.
-      const systemFilter = system?.trim() ? (searchSdeSystems(system, 1)[0]?.name ?? system.trim()).toLowerCase() : null
+      const systemMatch = system?.trim() ? ((await searchSdeSystems(system, 1))[0]?.name ?? system.trim()) : null
+      const systemFilter = systemMatch != null ? systemMatch.toLowerCase() : null
 
       const located = rows
         .map((row) => {
