@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react'
 
 import { addEnemyDenIntel, deleteEnemyDenIntel } from './actions'
+import CopyDiscordPing from './copyDiscordPing'
 import { formatDuration, formatUtc } from './duration'
 import styles from './mercenaryDens.module.css'
 
@@ -112,6 +113,11 @@ const EnemyDenIntel = ({ rows, defaultReportedBy }: { rows: EnemyDenIntelRow[]; 
                           reinforced {formatDuration(new Date(row.reinforcementEnd).getTime() - now)}
                         </span>
                         <span className={styles.timestamp}> {formatUtc(row.reinforcementEnd)}</span>
+                        <CopyDiscordPing
+                          system={row.system}
+                          planet={row.planet}
+                          reinforcementEnd={row.reinforcementEnd}
+                        />
                       </>
                     ) : (
                       <span className={styles.stable}>timer expired {formatUtc(row.reinforcementEnd)}</span>
