@@ -953,7 +953,7 @@ export const registerTools = (server: McpServer): void => {
       const resolved = resolveOneType(product)
       if (!resolved.ok) return textResult(resolved.message)
 
-      const bp = getBlueprintForProduct(resolved.typeID)
+      const bp = await getBlueprintForProduct(resolved.typeID)
       if (!bp) {
         return textResult(
           `"${resolved.name}" has no manufacturing or reaction blueprint (nothing builds it from materials).${
@@ -995,7 +995,7 @@ export const registerTools = (server: McpServer): void => {
       const resolved = resolveOneType(material)
       if (!resolved.ok) return textResult(resolved.message)
 
-      const blueprints = getBlueprintsForMaterial(resolved.typeID)
+      const blueprints = await getBlueprintsForMaterial(resolved.typeID)
       if (blueprints.length === 0) {
         return textResult(
           `No blueprint consumes "${resolved.name}" as an input material.${
