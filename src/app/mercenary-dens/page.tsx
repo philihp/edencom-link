@@ -107,7 +107,7 @@ const MercenaryDensPage = async () => {
     mine: row.created_by === data.user.id,
   }))
   const defaultReportedBy = [...ownRegById.values()][0]?.name ?? ''
-  const typeNames = getSdeTypeNames(dens.map((d) => d.type_id).filter((t): t is number => t != null))
+  const typeNames = await getSdeTypeNames(dens.map((d) => d.type_id).filter((t): t is number => t != null))
 
   // Merge the hand-maintained temperate-planet intel with our real dens, keyed by
   // system + roman numeral. A den's planet_id is resolved to (system, roman) via

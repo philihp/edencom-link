@@ -1,6 +1,6 @@
 import { notFound, redirect } from 'next/navigation'
 
-import { getSdeType } from '@/sdeTypes'
+import { getSdeTypes } from '@/sdeTypes'
 import { createClient } from '@/utils/supabase/server'
 import { createServiceClient } from '@/utils/supabase/service'
 import { AssetPath, fetchAssetPath, type Crumb } from '../../assetPath'
@@ -41,8 +41,6 @@ type Structure = {
   name: string | null
   system_id: number | string | null
 }
-
-const isShip = (typeId: number | string) => getSdeType(Number(typeId))?.categoryID === SHIP_CATEGORY_ID
 
 // Directory browsing for a location's contents. Ships are their own thing —
 // navigating to a ship's id redirects to /ship/[itemId]. Reachable
@@ -156,6 +154,20 @@ const AssetLocationPage = async ({
     ? { data: null }
     : await corpSelfQuery.maybeSingle<Pick<CorpAsset, 'item_id' | 'corporation_id' | 'type_id' | 'location_id'>>()
   const self = characterSelf ?? (corpSelf ? { ...corpSelf, name: null } : null)
+
+  // One bulk SDE lookup for every type in play (this location's root items plus
+  // the location itself, if it's an item) → the set of Ship-category type ids,
+  // so the per-row ship test stays a sync Set.has.
+  const shipTypes = await getSdeTypes([
+    ...rootItems.map((a) => Number(a.type_id)),
+    ...(self ? [Number(self.type_id)] : []),
+  ])
+  const shipTypeIds = new Set(
+    Object.values(shipTypes)
+      .filter((t) => t.categoryID === SHIP_CATEGORY_ID)
+      .map((t) => t.typeID)
+  )
+  const isShip = (typeId: number | string) => shipTypeIds.has(Number(typeId))
 
   // A ship is its own page, not a directory level (a ship share token stays
   // valid through the redirect — it's bound to the same id).

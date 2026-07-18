@@ -58,10 +58,11 @@ Quick-reference for navigation. Covers key exports, route→file paths, DB table
 ### `src/buildSde.js` — SDE generator (run via `pnpm run sde:build`)
 - Downloads CCP's official Static Data Export zip (JSONL variant, `developers.eveonline.com/static-data`, build number from its `latest.jsonl`) once per run and reads specific entries out of it with a small hand-rolled ZIP central-directory reader (no unzip dependency). From `types.jsonl`/`groups.jsonl`, joins them and writes published types as `[typeID, name, groupID, categoryID]` tuples to `src/generated/sdeTypes.json` (gitignored). From `mapSolarSystems.jsonl`, writes known-space systems as `[systemID, name, security]` tuples to `src/generated/sdeSystems.json`. From `npcStations.jsonl` — which carries station structure but not a display name, since that's generated client-side from the owning corp/operation/celestial — resolves each station's name via ESI's public `/universe/names/` and writes `[stationID, name, systemID]` tuples to `src/generated/sdeStations.json`. From `blueprints.jsonl`, filters to the manufacturing and reaction activities — the "consume materials → produce output" ones — and writes `[blueprintTypeID, activityID, productTypeID, productQuantity, [[matTypeID, qty], …]]` tuples to `src/generated/sdeBlueprints.json`. From `mapPlanets.jsonl`, writes `[planetID, solarSystemID, celestialIndex, typeID]` tuples to `src/generated/sdePlanets.json` (planets carry no display name in the SDE; the consumer derives `"<system> <roman(celestialIndex)>"` from the system name + index). Skips re-downloading any output that already exists; pass `--force` to refresh.
 
-### `src/sdeTypes.ts`
-- `getSdeType(typeID)` — `{ typeID, name, groupID, categoryID }` from the generated SDE data, or `null`
+### `src/sdeTypes.ts` (async; DB-backed over `sde_published_type` + `sde_search_type` — SDE cutover PR 5)
+- `getSdeTypes(typeIDs[])` — bulk id→`{ typeID, name, groupID, categoryID }`, cached per process (see `src/sdeCache.ts`)
+- `getSdeType(typeID)` — single lookup (via `getSdeTypes`), or `null`
 - `getSdeTypeNames(typeIDs[])` — bulk id→name lookup
-- `searchSdeTypesAll(query)` — case-insensitive substring search over every published type name, ranked by match coverage, unbounded (used where the true match count matters, e.g. `/asset/search`'s "too many types" check)
+- `searchSdeTypesAll(query)` — case-insensitive substring search over every published type name, ranked by match coverage, capped at 1000 rows (RPC max — every "too many types" guard triggers far below that). `SdeSearchResult` carries `categoryID`, so category filtering needs no per-row `getSdeType`
 - `searchSdeTypes(query, limit?)` — same search capped to `limit` results, for autocomplete UIs
 
 ### `src/sdeSystems.ts` (async; DB-backed over `sde_kspace_system` + `sde_search_system` — SDE cutover PR 3)
