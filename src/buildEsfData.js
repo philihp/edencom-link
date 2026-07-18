@@ -1,43 +1,39 @@
 // Builds the 6 protobuf data files @eveshipfit/react's EveDataProvider
 // expects (types/groups/marketGroups/typeDogma/dogmaEffects/dogmaAttributes)
-// from CCP's official SDE export, encoded per src/esf.proto (vendored from
-// https://github.com/EVEShipFit/data). Downloading eveshipfit's own
-// pre-built copies isn't viable: data.eveship.fit 403s plain server-side
-// fetches from Vercel's build network (datacenter-IP bot-blocking) — CCP's
-// own export doesn't have that problem (buildSde.js already relies on the
-// Fuzzwork mirror successfully at build time; this uses CCP's official
-// export directly, matching every field the proto needs 1:1).
-// Runs as a `predev`/`prebuild` step (see package.json) — re-run
+// from the SDE, encoded per src/esf.proto (vendored from
+// https://github.com/EVEShipFit/data). Reads its inputs from the
+// nightly-mirrored sde_* tables in Supabase (populated by the sde-mirror
+// workflow, src/jobs/sdeMirror.js) rather than downloading CCP's SDE zip at
+// build time — no CCP download and no `unzip` binary dependency; the build
+// consumes the same locally-mirrored SDE the runtime loaders (src/sde*.ts) do.
+// Runs as the `predev`/`prebuild` step (see package.json) — re-run
 // `pnpm run esf:build -- --force` to refresh mid-session.
-import { spawn } from 'node:child_process'
-import { createReadStream } from 'node:fs'
-import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { access, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
-import { createInterface } from 'node:readline'
 import { fileURLToPath } from 'node:url'
 
+import { createClient } from '@supabase/supabase-js'
 import protobuf from 'protobufjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const PROTO_PATH = join(__dirname, 'esf.proto')
 const OUTPUT_DIR = join(__dirname, '..', 'public', 'esf-data')
 
-const SDE_URL = 'https://developers.eveonline.com/static-data/eve-online-static-data-latest-jsonl.zip'
+// The SDE inputs come from the nightly-mirrored sde_* tables (public-read; the
+// sde-mirror workflow ingests every CCP JSONL file — see src/jobs/sdeMirror.js).
+// Each mirror row's `data` jsonb is the raw JSONL object, so the build*
+// functions below consume it exactly as they did the downloaded file's lines.
+// The sde_categories rows aren't encoded into a .pb2 — they only resolve the
+// category-name targets in the eveship.fit patches below.
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL
+const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? process.env.SUPABASE_KEY
+if (!SUPABASE_URL || !SUPABASE_KEY) {
+  throw new Error('esf: missing NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY (needed to read the sde_* mirror)')
+}
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: false, autoRefreshToken: false } })
 
-// The CCP SDE tables needed to populate all 6 esf.proto messages (Types,
-// Groups, MarketGroups, DogmaAttributes, DogmaEffects, TypeDogma).
-// categories.jsonl isn't encoded into a .pb2 — it's only needed to resolve
-// the category-name targets in the eveship.fit patches below.
-const SOURCE_FILES = [
-  'types.jsonl',
-  'groups.jsonl',
-  'categories.jsonl',
-  'marketGroups.jsonl',
-  'dogmaAttributes.jsonl',
-  'dogmaEffects.jsonl',
-  'typeDogma.jsonl',
-]
+// PostgREST caps a response at 1000 rows, so page the mirror tables.
+const PAGE_SIZE = 1000
 
 // eveship.fit's dogma engine hard-depends on ~50 synthetic attributes/effects
 // its own data pipeline patches into CCP's SDE (derived stats like ehp,
@@ -48,43 +44,38 @@ const SOURCE_FILES = [
 // applyPatches() below is a port of that repo's convert/patches/*.py.
 const PATCHES_PATH = join(__dirname, 'esfPatches.json')
 
-const readJsonl = async function* (path) {
-  const rl = createInterface({ input: createReadStream(path), crlfDelay: Infinity })
-  for await (const line of rl) {
-    if (line.trim()) yield JSON.parse(line)
+// Page through a mirror table, yielding each row's `data` jsonb — the same raw
+// SDE object the old readJsonl() yielded from the downloaded file, so the
+// build* functions are unchanged. Ordered by _key for stable pagination.
+const readMirror = async function* (stem) {
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from(`sde_${stem}`)
+      .select('data')
+      .order('_key')
+      .range(from, from + PAGE_SIZE - 1)
+    if (error) throw new Error(`esf: reading sde_${stem} failed: ${error.message}`)
+    for (const row of data) yield row.data
+    if (data.length < PAGE_SIZE) break
   }
 }
 
 const en = (localized) => localized?.en ?? ''
 
-const downloadSde = async (destZip) => {
-  console.log(`esf: downloading SDE from ${SDE_URL}…`)
-  const res = await fetch(SDE_URL, { redirect: 'follow' })
-  if (!res.ok) throw new Error(`GET ${SDE_URL} → ${res.status}`)
-  await writeFile(destZip, Buffer.from(await res.arrayBuffer()))
-  console.log(`esf: downloaded SDE zip`)
-}
-
-const extractSources = (zipPath, destDir) =>
-  new Promise((resolve, reject) => {
-    const proc = spawn('unzip', ['-q', '-o', '-j', zipPath, ...SOURCE_FILES, '-d', destDir], { stdio: 'inherit' })
-    proc.on('close', (code) => (code === 0 ? resolve() : reject(new Error(`unzip exited ${code}`))))
-  })
-
 // Builds { entries: { [id]: { name, categoryID, published } } } — groups
 // need to be loaded before types, since a type's categoryID isn't stored
 // directly on the type; it's looked up via its groupID here.
-const buildGroups = async (dir) => {
+const buildGroups = async () => {
   const entries = {}
-  for await (const g of readJsonl(join(dir, 'groups.jsonl'))) {
+  for await (const g of readMirror('groups')) {
     entries[g._key] = { name: en(g.name), categoryID: g.categoryID, published: !!g.published }
   }
   return entries
 }
 
-const buildTypes = async (dir, groups) => {
+const buildTypes = async (groups) => {
   const entries = {}
-  for await (const t of readJsonl(join(dir, 'types.jsonl'))) {
+  for await (const t of readMirror('types')) {
     const group = groups[t.groupID]
     entries[t._key] = {
       name: en(t.name),
@@ -103,9 +94,9 @@ const buildTypes = async (dir, groups) => {
   return entries
 }
 
-const buildMarketGroups = async (dir) => {
+const buildMarketGroups = async () => {
   const entries = {}
-  for await (const mg of readJsonl(join(dir, 'marketGroups.jsonl'))) {
+  for await (const mg of readMirror('market_groups')) {
     entries[mg._key] = { name: en(mg.name), parentGroupID: mg.parentGroupID, iconID: mg.iconID }
   }
   return entries
@@ -114,9 +105,9 @@ const buildMarketGroups = async (dir) => {
 // dogmaAttributes.jsonl's plain "name" (e.g. "maxVelocity") is the internal
 // identifier dogma-engine resolves attributes by — not the localized
 // "displayName" shown to players.
-const buildDogmaAttributes = async (dir) => {
+const buildDogmaAttributes = async () => {
   const entries = {}
-  for await (const a of readJsonl(join(dir, 'dogmaAttributes.jsonl'))) {
+  for await (const a of readMirror('dogma_attributes')) {
     entries[a._key] = {
       name: a.name,
       published: !!a.published,
@@ -128,9 +119,9 @@ const buildDogmaAttributes = async (dir) => {
   return entries
 }
 
-const buildDogmaEffects = async (dir) => {
+const buildDogmaEffects = async () => {
   const entries = {}
-  for await (const e of readJsonl(join(dir, 'dogmaEffects.jsonl'))) {
+  for await (const e of readMirror('dogma_effects')) {
     entries[e._key] = {
       name: e.name,
       effectCategory: e.effectCategoryID,
@@ -153,9 +144,9 @@ const buildDogmaEffects = async (dir) => {
   return entries
 }
 
-const buildTypeDogma = async (dir) => {
+const buildTypeDogma = async () => {
   const entries = {}
-  for await (const td of readJsonl(join(dir, 'typeDogma.jsonl'))) {
+  for await (const td of readMirror('type_dogma')) {
     entries[td._key] = {
       dogmaAttributes: (td.dogmaAttributes ?? []).map((a) => ({ attributeID: a.attributeID, value: a.value })),
       dogmaEffects: (td.dogmaEffects ?? []).map((e) => ({ effectID: e.effectID, isDefault: !!e.isDefault })),
@@ -164,9 +155,9 @@ const buildTypeDogma = async (dir) => {
   return entries
 }
 
-const buildCategories = async (dir) => {
+const buildCategories = async () => {
   const entries = {}
-  for await (const c of readJsonl(join(dir, 'categories.jsonl'))) {
+  for await (const c of readMirror('categories')) {
     entries[c._key] = { name: en(c.name), published: !!c.published }
   }
   return entries
@@ -357,12 +348,49 @@ const applyPatches = (patchGroups, { types, groups, categories, dogmaAttributes,
 // Message.verify() doesn't accept string enum names (e.g. "shipID") in
 // nested submessages the way fromObject() does, so skip it — fromObject()
 // and encode() both throw on genuinely malformed data anyway.
-const encodeAndWrite = (root, messageName, entries, fileName) => {
+const encodeMessage = (root, messageName, entries) => {
   const Message = root.lookupType(`esf.${messageName}`)
-  const buffer = Message.encode(Message.fromObject({ entries })).finish()
-  return writeFile(join(OUTPUT_DIR, fileName), buffer).then(() => {
-    console.log(`esf: wrote ${fileName} (${buffer.length} bytes, ${Object.keys(entries).length} entries)`)
-  })
+  return Message.encode(Message.fromObject({ entries })).finish()
+}
+
+// The six .pb2 files, in the (message, output filename) order they encode.
+const FILES = [
+  { messageName: 'Types', key: 'types', fileName: 'types.pb2' },
+  { messageName: 'Groups', key: 'groups', fileName: 'groups.pb2' },
+  { messageName: 'MarketGroups', key: 'marketGroups', fileName: 'marketGroups.pb2' },
+  { messageName: 'DogmaAttributes', key: 'dogmaAttributes', fileName: 'dogmaAttributes.pb2' },
+  { messageName: 'DogmaEffects', key: 'dogmaEffects', fileName: 'dogmaEffects.pb2' },
+  { messageName: 'TypeDogma', key: 'typeDogma', fileName: 'typeDogma.pb2' },
+]
+
+// Read the sde_* mirror, apply the eveship.fit patches, and encode the six
+// protobuf files — returning { [fileName]: Buffer } without touching disk.
+// Shared by the build-time step (run(), writes to public/esf-data/) and the
+// nightly workflow job (src/jobs/esfData.js, upserts into the esf_data table).
+export const encodeEsfData = async () => {
+  console.log('esf: reading source tables from the sde_* mirror…')
+  const groups = await buildGroups()
+  const [types, categories, marketGroups, dogmaAttributes, dogmaEffects, typeDogma] = await Promise.all([
+    buildTypes(groups),
+    buildCategories(),
+    buildMarketGroups(),
+    buildDogmaAttributes(),
+    buildDogmaEffects(),
+    buildTypeDogma(),
+  ])
+
+  const patchGroups = JSON.parse(await readFile(PATCHES_PATH, 'utf8'))
+  applyPatches(patchGroups, { types, groups, categories, dogmaAttributes, dogmaEffects, typeDogma })
+  console.log(`esf: applied ${patchGroups.length} eveship.fit patch groups`)
+
+  const entriesByKey = { types, groups, marketGroups, dogmaAttributes, dogmaEffects, typeDogma }
+  const root = await protobuf.load(PROTO_PATH)
+  const buffers = {}
+  for (const { messageName, key, fileName } of FILES) {
+    buffers[fileName] = encodeMessage(root, messageName, entriesByKey[key])
+    console.log(`esf: encoded ${fileName} (${buffers[fileName].length} bytes, ${Object.keys(entriesByKey[key]).length} entries)`)
+  }
+  return buffers
 }
 
 const run = async () => {
@@ -371,8 +399,8 @@ const run = async () => {
 
   if (!force) {
     const allExist = await Promise.all(
-      ['types', 'groups', 'marketGroups', 'typeDogma', 'dogmaEffects', 'dogmaAttributes'].map((name) =>
-        access(join(OUTPUT_DIR, `${name}.pb2`)).then(
+      FILES.map(({ fileName }) =>
+        access(join(OUTPUT_DIR, fileName)).then(
           () => true,
           () => false
         )
@@ -384,42 +412,19 @@ const run = async () => {
     }
   }
 
-  const workDir = await mkdtemp(join(tmpdir(), 'esf-sde-'))
-  try {
-    const zipPath = join(workDir, 'sde.zip')
-    await downloadSde(zipPath)
-    console.log('esf: extracting source tables…')
-    await extractSources(zipPath, workDir)
-
-    const groups = await buildGroups(workDir)
-    const [types, categories, marketGroups, dogmaAttributes, dogmaEffects, typeDogma] = await Promise.all([
-      buildTypes(workDir, groups),
-      buildCategories(workDir),
-      buildMarketGroups(workDir),
-      buildDogmaAttributes(workDir),
-      buildDogmaEffects(workDir),
-      buildTypeDogma(workDir),
-    ])
-
-    const patchGroups = JSON.parse(await readFile(PATCHES_PATH, 'utf8'))
-    applyPatches(patchGroups, { types, groups, categories, dogmaAttributes, dogmaEffects, typeDogma })
-    console.log(`esf: applied ${patchGroups.length} eveship.fit patch groups`)
-
-    const root = await protobuf.load(PROTO_PATH)
-    await Promise.all([
-      encodeAndWrite(root, 'Types', types, 'types.pb2'),
-      encodeAndWrite(root, 'Groups', groups, 'groups.pb2'),
-      encodeAndWrite(root, 'MarketGroups', marketGroups, 'marketGroups.pb2'),
-      encodeAndWrite(root, 'DogmaAttributes', dogmaAttributes, 'dogmaAttributes.pb2'),
-      encodeAndWrite(root, 'DogmaEffects', dogmaEffects, 'dogmaEffects.pb2'),
-      encodeAndWrite(root, 'TypeDogma', typeDogma, 'typeDogma.pb2'),
-    ])
-  } finally {
-    await rm(workDir, { recursive: true, force: true })
-  }
+  const buffers = await encodeEsfData()
+  await Promise.all(
+    FILES.map(({ fileName }) =>
+      writeFile(join(OUTPUT_DIR, fileName), buffers[fileName]).then(() => console.log(`esf: wrote ${fileName}`))
+    )
+  )
 }
 
-run().catch((err) => {
-  console.error(err)
-  process.exit(1)
-})
+// Only self-run as the build step when invoked as a CLI; when imported (by
+// src/jobs/esfData.js for the workflow), just expose encodeEsfData().
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  run().catch((err) => {
+    console.error(err)
+    process.exit(1)
+  })
+}

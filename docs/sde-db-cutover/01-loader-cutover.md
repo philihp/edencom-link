@@ -50,18 +50,23 @@ first:
 | **2 — planets** ✅ | `sdePlanets` → async; drop its `sdeSystems` import (the `sde_planet` view carries `system_name`) | `mercenary-dens` |
 | **3 — systems** ✅ | `sdeSystems` → async, add `getSdeSystems` bulk helper | `systemNames`, `indexes` page + actions, `mcp/tools` (`resolveSystemNames`) |
 | **4 — blueprints** ✅ | `sdeBlueprints` → async | `mcp/tools` (2 fns) |
-| **5 — types** ✅ (this PR) | `sdeTypes` → async, `getSdeTypes` bulk, `SdeSearchResult` gains `categoryID` (drops per-row category lookups) | the big fan-out: `typeNames`, `blueprint/api`, `type/search`, `asset/search`, `asset/[locationId]`, `ship/[itemId]`, `corpses`, `mercenary-dens`, `mcp/lib` + `tools` |
+| **5 — types** ✅ | `sdeTypes` → async, `getSdeTypes` bulk, `SdeSearchResult` gains `categoryID` (drops per-row category lookups) | the big fan-out: `typeNames`, `blueprint/api`, `type/search`, `asset/search`, `asset/[locationId]`, `ship/[itemId]`, `corpses`, `mercenary-dens`, `mcp/lib` + `tools` |
+| **6 — contract** ✅ (this PR) | Delete `src/buildSde.js` + the `sde:build` script; `predev`/`prebuild` → `esf:build` only; drop `/src/generated` from `.gitignore`; finish the Commands/Architecture/build-pipeline prose in CLAUDE.md. Folds in **doc 03**: `esf:build` now reads the `sde_*` mirror too (no CCP download, no `unzip`), so the build downloads nothing from CCP | `buildEsfData.js` |
 | **6 — contract** | Delete `src/buildSde.js`, drop the `sde:build` script, `predev`/`prebuild` → `esf:build` only, remove `/src/generated` from `.gitignore`, finish the CLAUDE.md prose | none |
 
 Ordering notes: PRs 2–5 are mutually independent (a shared consumer like
 `mcp/tools.ts` is touched by several, each awaiting only the loader it's
 migrating — the file compiles at every step because the others are still sync).
 Only PR 1 (must be first — it adds the shared client/cache) and PR 6 (must be
-last — the contract step, gated on `rm -rf src/generated && pnpm build`) are
-ordered. Each loader PR updates that loader's section in CLAUDE.md; the
-Commands/Architecture/build-pipeline prose lands with PR 6. If PR 5 (types)
-still feels too large, it can split again by consumer cluster, since
-`getSdeTypeNames` can go async before `searchSdeTypesAll` does.
+last — the contract step) are ordered. Each loader PR updates that loader's
+section in CLAUDE.md; the Commands/Architecture/build-pipeline prose lands with
+PR 6. (PR 6 also folded in doc 03 — pointing `esf:build` at the mirror — so the
+build downloads nothing from CCP. Note: with `esf:build` reading Supabase,
+`pnpm build` now needs `NEXT_PUBLIC_SUPABASE_URL`/`_ANON_KEY` + a populated
+mirror, so the Vercel preview build is the end-to-end gate rather than a bare
+local `pnpm build`.) If PR 5 (types) still feels too large, it can split again
+by consumer cluster, since `getSdeTypeNames` can go async before
+`searchSdeTypesAll` does.
 
 ## Prerequisite
 

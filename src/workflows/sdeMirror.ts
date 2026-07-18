@@ -60,6 +60,16 @@ async function finalize(build: number, runId: number): Promise<void> {
   await recordHeartbeat('sde-mirror', 'end', { runId, source: 'vercel-workflow' })
 }
 
+// Re-encode the eveship.fit protobuf data into the esf_data table from the
+// freshly-mirrored SDE. Its own step (own duration budget + retries) and
+// deliberately after finalize so a failure here can't hold back the mirror
+// completion the rest of the app reads.
+async function encodeEsf(build: number): Promise<void> {
+  'use step'
+  const { runEsfData } = await import('@/jobs/esfData.js')
+  await runEsfData({ build })
+}
+
 // Plain loops rather than the jobs' usual ramda/forEachSequential: the
 // orchestrator body is compiled by the workflow directive and should stay
 // simple, deterministic control flow over step calls — the cursor a step
@@ -78,4 +88,5 @@ export async function sdeMirrorWorkflow({ force = false }: { force?: boolean } =
   }
   await stationNames()
   await finalize(plan.build, plan.runId)
+  await encodeEsf(plan.build)
 }
