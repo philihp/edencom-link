@@ -100,6 +100,7 @@ drop table if exists public.refresh_task         cascade;
 drop table if exists public.shared_asset_token   cascade;
 drop table if exists public.heartbeat            cascade;
 drop table if exists public.esi_etag             cascade;
+drop table if exists public.esf_data             cascade;
 drop table if exists public.impersonation_log    cascade;
 drop table if exists public.token                cascade;
 drop table if exists public.registration         cascade;
@@ -2410,6 +2411,25 @@ create policy "Anyone reads SDE data" on public.sde_npc_station_name for select 
 grant select on public.sde_npc_station_name to anon, authenticated;
 revoke insert, update, delete on public.sde_npc_station_name from anon, authenticated;
 grant select, insert, update, delete on public.sde_npc_station_name to service_role;
+
+-- Storage for the eveship.fit protobuf data (the 6 files @eveshipfit/react's
+-- EveDataProvider reads). The sde-mirror workflow encodes the .pb2 from the
+-- sde_* mirror after each SDE build and upserts them here (src/jobs/esfData.js),
+-- so the ship-fitting data refreshes when the SDE changes without a redeploy.
+-- `data` is the base64-encoded protobuf bytes (text moves through PostgREST far
+-- more simply than bytea; the serving route base64-decodes it). Public read
+-- (non-sensitive static game data, same as the sde_* mirror); writes are
+-- service-role only (the workflow).
+create table public.esf_data (
+  name text primary key,
+  data text not null,
+  sde_build bigint not null,
+  updated_at timestamptz not null default now()
+);
+alter table public.esf_data enable row level security;
+create policy "Everyone reads esf data" on public.esf_data for select to anon, authenticated using (true);
+grant select on public.esf_data to anon, authenticated;
+grant all    on public.esf_data to service_role;
 
 -- Trigram indexes backing the ILIKE '%…%' in sde_search_type/sde_search_system.
 create index sde_types_name_trgm on public.sde_types

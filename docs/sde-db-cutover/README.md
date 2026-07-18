@@ -15,6 +15,7 @@ implementation spec: do them as **separate PRs, in order**.
 | [01-loader-cutover.md](01-loader-cutover.md) | PR stack | Rewrite the 5 SDE loaders to read the `sde_*` tables; delete `sde:build` from the build | ✅ **Done** — delivered as an incremental stack (infra+stations #621 → planets #622 → systems #623 → blueprints #624 → types #630 → contract). The contract PR folded in doc 03. |
 | [02-sql-name-joins.md](02-sql-name-joins.md) | medium | JOIN SDE names inside the Postgres functions (CSV exports, asset search) | After 01 |
 | [03-esf-data-nightly.md](03-esf-data-nightly.md) | optional | Move the ship-fitting `esf:build` off the build too | ✅ **Done** (simpler than the original sketch): `esf:build` reads the `sde_*` mirror at build time instead of downloading CCP's zip — kept a build step, no Vercel Blob. Landed with the contract PR. |
+| [04-esf-workflow.md](04-esf-workflow.md) | 2 phases | Schedule the esf encode as a `sde-mirror` workflow step into an `esf_data` table (refresh on a CCP patch without a redeploy) | Phase 1 (encode → `esf_data`, additive) in progress; Phase 2 (serve from DB, retire build step) follows |
 
 ## What already exists (build on this, don't reinvent it)
 

@@ -348,33 +348,26 @@ const applyPatches = (patchGroups, { types, groups, categories, dogmaAttributes,
 // Message.verify() doesn't accept string enum names (e.g. "shipID") in
 // nested submessages the way fromObject() does, so skip it — fromObject()
 // and encode() both throw on genuinely malformed data anyway.
-const encodeAndWrite = (root, messageName, entries, fileName) => {
+const encodeMessage = (root, messageName, entries) => {
   const Message = root.lookupType(`esf.${messageName}`)
-  const buffer = Message.encode(Message.fromObject({ entries })).finish()
-  return writeFile(join(OUTPUT_DIR, fileName), buffer).then(() => {
-    console.log(`esf: wrote ${fileName} (${buffer.length} bytes, ${Object.keys(entries).length} entries)`)
-  })
+  return Message.encode(Message.fromObject({ entries })).finish()
 }
 
-const run = async () => {
-  const force = process.argv.includes('--force')
-  await mkdir(OUTPUT_DIR, { recursive: true })
+// The six .pb2 files, in the (message, output filename) order they encode.
+const FILES = [
+  { messageName: 'Types', key: 'types', fileName: 'types.pb2' },
+  { messageName: 'Groups', key: 'groups', fileName: 'groups.pb2' },
+  { messageName: 'MarketGroups', key: 'marketGroups', fileName: 'marketGroups.pb2' },
+  { messageName: 'DogmaAttributes', key: 'dogmaAttributes', fileName: 'dogmaAttributes.pb2' },
+  { messageName: 'DogmaEffects', key: 'dogmaEffects', fileName: 'dogmaEffects.pb2' },
+  { messageName: 'TypeDogma', key: 'typeDogma', fileName: 'typeDogma.pb2' },
+]
 
-  if (!force) {
-    const allExist = await Promise.all(
-      ['types', 'groups', 'marketGroups', 'typeDogma', 'dogmaEffects', 'dogmaAttributes'].map((name) =>
-        access(join(OUTPUT_DIR, `${name}.pb2`)).then(
-          () => true,
-          () => false
-        )
-      )
-    )
-    if (allExist.every(Boolean)) {
-      console.log(`esf: ${OUTPUT_DIR} already populated, skipping (pass --force to regenerate)`)
-      return
-    }
-  }
-
+// Read the sde_* mirror, apply the eveship.fit patches, and encode the six
+// protobuf files — returning { [fileName]: Buffer } without touching disk.
+// Shared by the build-time step (run(), writes to public/esf-data/) and the
+// nightly workflow job (src/jobs/esfData.js, upserts into the esf_data table).
+export const encodeEsfData = async () => {
   console.log('esf: reading source tables from the sde_* mirror…')
   const groups = await buildGroups()
   const [types, categories, marketGroups, dogmaAttributes, dogmaEffects, typeDogma] = await Promise.all([
@@ -390,18 +383,48 @@ const run = async () => {
   applyPatches(patchGroups, { types, groups, categories, dogmaAttributes, dogmaEffects, typeDogma })
   console.log(`esf: applied ${patchGroups.length} eveship.fit patch groups`)
 
+  const entriesByKey = { types, groups, marketGroups, dogmaAttributes, dogmaEffects, typeDogma }
   const root = await protobuf.load(PROTO_PATH)
-  await Promise.all([
-    encodeAndWrite(root, 'Types', types, 'types.pb2'),
-    encodeAndWrite(root, 'Groups', groups, 'groups.pb2'),
-    encodeAndWrite(root, 'MarketGroups', marketGroups, 'marketGroups.pb2'),
-    encodeAndWrite(root, 'DogmaAttributes', dogmaAttributes, 'dogmaAttributes.pb2'),
-    encodeAndWrite(root, 'DogmaEffects', dogmaEffects, 'dogmaEffects.pb2'),
-    encodeAndWrite(root, 'TypeDogma', typeDogma, 'typeDogma.pb2'),
-  ])
+  const buffers = {}
+  for (const { messageName, key, fileName } of FILES) {
+    buffers[fileName] = encodeMessage(root, messageName, entriesByKey[key])
+    console.log(`esf: encoded ${fileName} (${buffers[fileName].length} bytes, ${Object.keys(entriesByKey[key]).length} entries)`)
+  }
+  return buffers
 }
 
-run().catch((err) => {
-  console.error(err)
-  process.exit(1)
-})
+const run = async () => {
+  const force = process.argv.includes('--force')
+  await mkdir(OUTPUT_DIR, { recursive: true })
+
+  if (!force) {
+    const allExist = await Promise.all(
+      FILES.map(({ fileName }) =>
+        access(join(OUTPUT_DIR, fileName)).then(
+          () => true,
+          () => false
+        )
+      )
+    )
+    if (allExist.every(Boolean)) {
+      console.log(`esf: ${OUTPUT_DIR} already populated, skipping (pass --force to regenerate)`)
+      return
+    }
+  }
+
+  const buffers = await encodeEsfData()
+  await Promise.all(
+    FILES.map(({ fileName }) =>
+      writeFile(join(OUTPUT_DIR, fileName), buffers[fileName]).then(() => console.log(`esf: wrote ${fileName}`))
+    )
+  )
+}
+
+// Only self-run as the build step when invoked as a CLI; when imported (by
+// src/jobs/esfData.js for the workflow), just expose encodeEsfData().
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  run().catch((err) => {
+    console.error(err)
+    process.exit(1)
+  })
+}
