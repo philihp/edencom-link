@@ -3,7 +3,7 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { prop, uniqBy } from 'ramda'
 
-import { getSdeType, searchSdeTypesAll } from '@/sdeTypes'
+import { searchSdeTypesAll } from '@/sdeTypes'
 import { createClient } from '@/utils/supabase/server'
 
 import { fetchOwners } from '../../owners'
@@ -80,13 +80,12 @@ const AssetSearchPage = async ({ searchParams }: { searchParams: Promise<{ q?: s
   }
 
   // Case-insensitive substring match against every published type name, resolved
-  // from the locally generated SDE data (never the stale evesde DB schema).
+  // from the nightly-mirrored SDE tables (never the stale evesde DB schema).
   // Blueprints (and reaction formulas, the same SDE category) are excluded
-  // unless the checkbox opts back in.
-  const allMatches = searchSdeTypesAll(query)
-  const matches = includeBlueprints
-    ? allMatches
-    : allMatches.filter((m) => getSdeType(m.typeID)?.categoryID !== BLUEPRINT_CATEGORY_ID)
+  // unless the checkbox opts back in — the search results carry each match's
+  // categoryID, so no per-row type lookup is needed.
+  const allMatches = await searchSdeTypesAll(query)
+  const matches = includeBlueprints ? allMatches : allMatches.filter((m) => m.categoryID !== BLUEPRINT_CATEGORY_ID)
 
   if (matches.length > MAX_TYPES) {
     const sample = createShuffle(SHUFFLE_SEED)(matches)

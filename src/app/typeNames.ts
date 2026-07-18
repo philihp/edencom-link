@@ -1,5 +1,5 @@
-// Resolves type names from the local SDE data baked in at build time (see
-// src/buildSde.js / src/sdeTypes.ts) — never the stale `evesde` DB schema.
+// Resolves type names from the nightly-mirrored SDE tables via the DB-backed
+// loader (src/sdeTypes.ts) — never the stale `evesde` DB schema.
 import { getSdeTypeNames } from '@/sdeTypes'
 
 export const fetchTypeNames = async (typeIDs: Iterable<number>): Promise<Record<number, string>> => {

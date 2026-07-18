@@ -8,7 +8,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 
 import { fetchOwners } from '@/app/owners'
 import type { LocationRef } from '@/app/resolveLocations'
-import { getSdeType, searchSdeTypesAll, type SdeSearchResult } from '@/sdeTypes'
+import { searchSdeTypesAll, type SdeSearchResult } from '@/sdeTypes'
 
 // Above this, the substring is too broad to be a useful item filter — same
 // threshold (and rationale) as /asset/search.
@@ -31,13 +31,16 @@ export const textResult = (payload: unknown): ToolResult => ({
 // chunk of the hangar (or bloat a `.in()` list). `null` query means no filter.
 export type TypeFilter = { ok: true; matches: SdeSearchResult[] | null } | { ok: false; message: string }
 
-export const resolveTypeFilter = (query: string | undefined, { includeBlueprints = true } = {}): TypeFilter => {
+export const resolveTypeFilter = async (
+  query: string | undefined,
+  { includeBlueprints = true } = {}
+): Promise<TypeFilter> => {
   const trimmed = (query ?? '').trim()
   if (trimmed === '') return { ok: true, matches: null }
-  const allMatches = searchSdeTypesAll(trimmed)
+  const allMatches = await searchSdeTypesAll(trimmed)
   const matches = includeBlueprints
     ? allMatches
-    : allMatches.filter((m) => getSdeType(m.typeID)?.categoryID !== BLUEPRINT_CATEGORY_ID)
+    : allMatches.filter((m) => m.categoryID !== BLUEPRINT_CATEGORY_ID)
   if (matches.length === 0) {
     const blueprintsOnlyMatched = !includeBlueprints && allMatches.length > 0
     return {
