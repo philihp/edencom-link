@@ -1,15 +1,17 @@
-# PR 4: schedule `esf:build` as a workflow step (esf_data table)
+# PR 4: move the ESF build into the SDE pipeline (Transform → serve → contract)
 
 **Status: Phase 1 in progress.** Doc 03 moved `esf:build` off CCP's zip onto
-the `sde_*` mirror but kept it a build-time step writing `public/esf-data/*.pb2`.
-This doc finishes the idea the repo owner picked ("do it as A"): encode the six
-protobuf files **inside the nightly `sde-mirror` workflow** right after a new SDE
-build lands, storing them in a Postgres table so the ship-fitting data refreshes
-on a CCP patch **without a redeploy**.
+the `sde_*` mirror but kept it a build-time step writing `public/esf-data/*.pb2`
+— which every preview deploy re-runs, costing build time and money. This doc
+retires it in three PRs, each deployed and validated before the next:
 
-The change is split into two phases so the live wheel never regresses.
+1. **Transform** — a workflow step after all the SDE extracts encodes the six
+   protobuf files into a new `esf_data` table.
+2. **Serve** — a route serves those rows as if they were static files, with
+   ETag/Last-Modified conditional-request handling and heavy CDN caching.
+3. **Contract** — remove the old ESF build job from the build.
 
-## Phase 1 — additive: encode into `esf_data` from the workflow (this PR)
+## Phase 1 — Transform: encode into `esf_data` from the workflow (PR 1)
 
 Purely additive. The live ship-fit wheel keeps being served by the build-time
 static files (`public/esf-data/`), so there is zero regression window.
@@ -39,15 +41,29 @@ Populate the table once by triggering the workflow manually (the
 `CRON_SECRET`-protected `/api/cron/sde-mirror` route, or `pnpm run sde-mirror`
 locally followed by `pnpm run esf-data`).
 
-## Phase 2 — flip serving to the DB (follow-up PR)
+## Phase 2 — Serve: a route that acts like static files (PR 2)
 
-Once `esf_data` is populated in production:
+Prerequisite: `esf_data` populated in production (trigger the workflow once).
 
-- Add a `/esf-data/[file]` route that streams the base64-decoded bytes from
-  `esf_data` with cache headers/ETag keyed on `sde_build` (so a patched SDE
-  busts browser caches). A route can't coexist with a static file at the same
-  path, which is why the flip is its own phase.
-- Retire the build-time `esf:build` (`predev`/`prebuild`) and stop committing/
-  writing `public/esf-data/`. The build then downloads nothing **and** encodes
-  nothing from the SDE — the `dataUrl="/esf-data/"` prop is unchanged because
-  the route answers at the same path.
+- Add a `/esf/[file]` route that streams the base64-decoded bytes from
+  `esf_data`. It must sit at a **new** path: the build-time static files still
+  occupy `/esf-data/` and Vercel serves `public/` assets ahead of route
+  handlers, so a same-path route would be shadowed and unvalidatable.
+- Cache signals: `ETag` keyed on `sde_build` and `Last-Modified` from
+  `updated_at`, honoring `If-None-Match`/`If-Modified-Since` with a `304`; a
+  `Cache-Control` with a long `s-maxage` + `stale-while-revalidate` so Vercel's
+  CDN keeps serving it hot, and a modest browser `max-age` so a patched SDE
+  propagates via revalidation.
+- Flip `EveDataProvider`'s `dataUrl` to `/esf/` (`src/app/ship/[itemId]/
+  shipFitView.tsx`) so the preview deploy validates the wheel against the
+  DB-served data end-to-end.
+
+## Phase 3 — Contract: remove the ESF build job from the build (PR 3)
+
+Once Phase 2 is validated, `public/esf-data/` is unread:
+
+- Drop `esf:build` from `predev`/`prebuild` (and the script itself); `run()`
+  and the `public/esf-data/` output go away. `encodeEsfData()` stays — it's
+  the workflow job's encode.
+- The build then neither downloads nor encodes anything from the SDE, and
+  preview deploys stop paying for it.
