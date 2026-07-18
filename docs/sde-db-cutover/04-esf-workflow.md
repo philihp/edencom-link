@@ -37,9 +37,14 @@ static files (`public/esf-data/`), so there is zero regression window.
   retries, and deliberately *after* finalize so an encode failure can't hold
   back the mirror completion the rest of the app reads.
 
-Populate the table once by triggering the workflow manually (the
-`CRON_SECRET`-protected `/api/cron/sde-mirror` route, or `pnpm run sde-mirror`
-locally followed by `pnpm run esf-data`).
+**Bootstrap:** the nightly workflow only reaches `encodeEsf` after a full
+ingest, and it skips ingesting when CCP's current build is already mirrored —
+so a freshly-migrated `esf_data` table stays empty until CCP ships a new build.
+Populate it once via the manual `CRON_SECRET`-protected `/api/cron/esf-data`
+route (runs `runEsfData()` against the current mirror; idempotent), or
+`pnpm run esf-data` locally. **Do this immediately after this PR deploys** —
+with Phase 2 folded into the same PR (#635 merged into it), the wheel points
+at `/esf/` as soon as it deploys and 404s until the table is populated.
 
 ## Phase 2 — Serve: a route that acts like static files (PR 2)
 
