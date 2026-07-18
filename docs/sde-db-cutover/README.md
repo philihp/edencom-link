@@ -12,9 +12,9 @@ implementation spec: do them as **separate PRs, in order**.
 | Doc | PR | What | Status / dependency |
 |---|---|---|---|
 | [00-drop-evesde-schema.md](00-drop-evesde-schema.md) | tiny | Drop the legacy `evesde` Postgres schema | Independent; may already be done — check first |
-| [01-loader-cutover.md](01-loader-cutover.md) | PR stack | Rewrite the 5 SDE loaders to read the `sde_*` tables; delete `sde:build` from the build | **The main event**, delivered as an incremental stack (infra+stations → planets → systems → blueprints → types → contract; see the doc). Requires one successful `sde-mirror` run in production first |
+| [01-loader-cutover.md](01-loader-cutover.md) | PR stack | Rewrite the 5 SDE loaders to read the `sde_*` tables; delete `sde:build` from the build | ✅ **Done** — delivered as an incremental stack (infra+stations #621 → planets #622 → systems #623 → blueprints #624 → types #630 → contract). The contract PR folded in doc 03. |
 | [02-sql-name-joins.md](02-sql-name-joins.md) | medium | JOIN SDE names inside the Postgres functions (CSV exports, asset search) | After 01 |
-| [03-esf-data-nightly.md](03-esf-data-nightly.md) | optional | Move the ship-fitting `esf:build` off the build too | Deferred; needs a design decision from the repo owner |
+| [03-esf-data-nightly.md](03-esf-data-nightly.md) | optional | Move the ship-fitting `esf:build` off the build too | ✅ **Done** (simpler than the original sketch): `esf:build` reads the `sde_*` mirror at build time instead of downloading CCP's zip — kept a build step, no Vercel Blob. Landed with the contract PR. |
 
 ## What already exists (build on this, don't reinvent it)
 

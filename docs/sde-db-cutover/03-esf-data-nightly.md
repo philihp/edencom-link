@@ -1,8 +1,17 @@
 # PR 3 (optional, needs a design decision): move `esf:build` off the build
 
-**Status: deferred.** Do not start this without the repo owner confirming the
-storage approach — it introduces new infrastructure (Vercel Blob) that the
-SDE mirror deliberately avoided.
+**Status: DONE — the repo owner chose the simpler path.** Rather than the
+Vercel-Blob sketch below, `esf:build` (`src/buildEsfData.js`) now reads its SDE
+inputs from the nightly-mirrored `sde_*` tables (public-read anon key) at build
+time and stays a `prebuild` step writing `public/esf-data/*.pb2` — no CCP zip
+download, no `unzip` binary, no new infra. Landed with the loader-cutover
+contract PR (doc 01). The Vercel Blob approach below was **not** taken; kept for
+history. Trade-off accepted: `pnpm build` now needs `NEXT_PUBLIC_SUPABASE_URL`/
+`_ANON_KEY` + a populated mirror (the Vercel build env has both).
+
+---
+
+_Original (not-taken) sketch:_
 
 ## Context
 
