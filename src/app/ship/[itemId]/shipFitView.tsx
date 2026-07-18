@@ -88,8 +88,11 @@ export const ShipFitView = ({ esiFit }: ShipFitViewProps) => {
   // child CurrentCharacterProvider reads localStorage in its own initializer.
   useState(ensureDefaultCharacter)
 
+  // /esf/ serves the .pb2 from the esf_data table (refreshed by the
+  // sde-mirror workflow), not the build-time static /esf-data/ files —
+  // see src/app/esf/[file]/route.ts.
   return (
-    <EveDataProvider dataUrl="/esf-data/">
+    <EveDataProvider dataUrl="/esf/">
       <DogmaEngineProvider>
         <DefaultCharactersProvider>
           <CurrentCharacterProvider initialCharacterId={DEFAULT_CHARACTER_ID}>
