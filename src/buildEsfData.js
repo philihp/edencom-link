@@ -363,6 +363,10 @@ const FILES = [
   { messageName: 'TypeDogma', key: 'typeDogma', fileName: 'typeDogma.pb2' },
 ]
 
+// The six output filenames, for consumers that need the set before encoding
+// (the esf_data freshness guard in src/jobs/esfData.js).
+export const ESF_FILE_NAMES = FILES.map(({ fileName }) => fileName)
+
 // Read the sde_* mirror, apply the eveship.fit patches, and encode the six
 // protobuf files — returning { [fileName]: Buffer } without touching disk.
 // Shared by the build-time step (run(), writes to public/esf-data/) and the

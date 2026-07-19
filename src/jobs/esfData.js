@@ -7,7 +7,7 @@
 //
 // CLI-runnable: `node src/jobs/esfData.js` encodes against the current mirror
 // and stamps the rows with the latest completed sde_build.
-import { encodeEsfData } from '../buildEsfData.js'
+import { encodeEsfData, ESF_FILE_NAMES } from '../buildEsfData.js'
 import { sudoSupabase } from '../supabase.js'
 import { cli } from './lib.js'
 
@@ -25,8 +25,24 @@ const latestCompletedBuild = async () => {
   return data?.build_number ?? 0
 }
 
-export const runEsfData = async ({ build } = {}) => {
+// True when esf_data already holds all six files stamped with this build —
+// so the workflow can call runEsfData() on every mirror run (including the
+// build-unchanged skip path) and only pay the ~30s encode when it's actually
+// stale. Any missing/older row makes it return false, forcing a re-encode.
+const alreadyEncoded = async (build) => {
+  const { data, error } = await sudoSupabase.from('esf_data').select('name').eq('sde_build', build)
+  if (error) throw new Error(`esf-data: reading esf_data failed: ${error.message}`)
+  const present = new Set((data ?? []).map((row) => row.name))
+  return ESF_FILE_NAMES.every((name) => present.has(name))
+}
+
+/** @param {{ build?: number, force?: boolean }} [opts] */
+export const runEsfData = async ({ build, force = false } = {}) => {
   const sdeBuild = build ?? (await latestCompletedBuild())
+  if (!force && (await alreadyEncoded(sdeBuild))) {
+    console.log(`esf-data: already encoded at sde_build ${sdeBuild}, skipping`)
+    return { files: 0, build: sdeBuild, skipped: true }
+  }
   const buffers = await encodeEsfData()
   const updatedAt = new Date().toISOString()
   const rows = Object.entries(buffers).map(([name, buffer]) => ({
