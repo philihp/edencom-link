@@ -1,3 +1,5 @@
+import Link from 'next/link'
+
 import { DateTime } from '../DateTime'
 import styles from './footer.module.css'
 
@@ -24,6 +26,11 @@ const Footer = () => {
             <a href={`${REPO}/commit/${sha}`}>{sha.slice(0, 7)}</a>
           </>
         ) : null}
+        <span className={styles.links}>
+          <Link href="/privacy">Privacy</Link>
+          {' · '}
+          <Link href="/terms">Terms</Link>
+        </span>
       </footer>
     </>
   )

@@ -1,0 +1,11 @@
+/* Shared layout for the static legal pages (/privacy, /terms): a readable
+ * measure and slightly muted meta line. */
+.wrap {
+  max-width: 42rem;
+}
+
+.updated {
+  color: var(--ink-faint);
+  font-size: 12px;
+  margin-top: -8px;
+}
