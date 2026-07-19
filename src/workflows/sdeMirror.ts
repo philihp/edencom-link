@@ -9,7 +9,7 @@
 
 type SdeFile = { entry: string; stem: string; method: number; compressedSize: number; localOffset: number }
 
-type PlanResult = { skipped: true } | { skipped: false; runId: number; build: number; zipUrl: string }
+type PlanResult = { skipped: true; build: number } | { skipped: false; runId: number; build: number; zipUrl: string }
 
 // Heartbeat start + build discovery + skip check. The runId rides through the
 // workflow so finalize()'s end heartbeat lands on the same row; on the
@@ -25,7 +25,7 @@ async function planRun(force: boolean): Promise<PlanResult> {
   if (!force && (await shouldSkip(build))) {
     console.log(`[sde-mirror] build ${build} already mirrored, skipping`)
     await recordHeartbeat('sde-mirror', 'end', { runId, source: 'vercel-workflow' })
-    return { skipped: true }
+    return { skipped: true, build }
   }
   await markBuildStarted(build)
   return { skipped: false, runId, build, zipUrl }
@@ -61,9 +61,11 @@ async function finalize(build: number, runId: number): Promise<void> {
 }
 
 // Re-encode the eveship.fit protobuf data into the esf_data table from the
-// freshly-mirrored SDE. Its own step (own duration budget + retries) and
-// deliberately after finalize so a failure here can't hold back the mirror
-// completion the rest of the app reads.
+// freshly-mirrored SDE. Its own step (own duration budget + retries), run on
+// EVERY mirror pass — including the build-unchanged skip path — so the table
+// is (re)populated whenever the SDE extract runs, not only on a fresh ingest.
+// runEsfData no-ops cheaply when esf_data is already at this build, so the
+// steady-state cost is one query; it only pays the ~30s encode when stale.
 async function encodeEsf(build: number): Promise<void> {
   'use step'
   const { runEsfData } = await import('@/jobs/esfData.js')
@@ -78,15 +80,18 @@ async function encodeEsf(build: number): Promise<void> {
 export async function sdeMirrorWorkflow({ force = false }: { force?: boolean } = {}) {
   'use workflow'
   const plan = await planRun(force)
-  if (plan.skipped) return
-  const files = await listFiles(plan.zipUrl)
-  for (const file of files) {
-    let cursor = 0
-    while (cursor !== -1) {
-      cursor = await ingestSlice(plan.zipUrl, file, plan.build, cursor)
+  if (!plan.skipped) {
+    const files = await listFiles(plan.zipUrl)
+    for (const file of files) {
+      let cursor = 0
+      while (cursor !== -1) {
+        cursor = await ingestSlice(plan.zipUrl, file, plan.build, cursor)
+      }
     }
+    await stationNames()
+    await finalize(plan.build, plan.runId)
   }
-  await stationNames()
-  await finalize(plan.build, plan.runId)
+  // Ensure the esf_data table matches the current build even when the ingest
+  // was skipped — the skip path used to return here, leaving ESF unpopulated.
   await encodeEsf(plan.build)
 }
