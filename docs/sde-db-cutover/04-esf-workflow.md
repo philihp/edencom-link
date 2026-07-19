@@ -72,5 +72,6 @@ Prerequisite: `esf_data` populated in production (trigger the workflow once).
   `encodeEsfData()` stays — it's the cron/workflow job's encode.
 - The build now neither downloads nor encodes anything from the SDE, so preview
   and production deploys stop paying for it. The ESF data is refreshed only by
-  the nightly `sde-mirror` workflow's `encodeEsf` step and the dedicated daily
-  `esf-data` cron (12:51 UTC).
+  the nightly `sde-mirror` workflow's `encodeEsf` step — the final step of that
+  job, run on every pass (including the build-unchanged skip path). No separate
+  cron; `/api/cron/esf-data` remains as an unscheduled manual bootstrap.

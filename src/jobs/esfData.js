@@ -1,11 +1,12 @@
 // Encodes the six eveship.fit protobuf files from the sde_* mirror and upserts
 // them (base64-encoded) into the esf_data table, so the ship-fitting data can
-// refresh when a new CCP SDE build lands without a redeploy. Run by the
-// sde-mirror workflow (src/workflows/sdeMirror.ts) on every pass and by the
-// daily esf-data cron — it calls encodeEsfData() (src/buildEsfData.js) and
-// writes the result to the DB. This is the ONLY thing that encodes ESF data
-// now; the web app build no longer does (the /esf/[file] route serves these
-// rows in place of the old build-time public/esf-data/ static files).
+// refresh when a new CCP SDE build lands without a redeploy. Run as the final
+// step of the sde-mirror workflow (src/workflows/sdeMirror.ts) on every pass —
+// it calls encodeEsfData() (src/buildEsfData.js) and writes the result to the
+// DB. This is the ONLY thing that encodes ESF data now; the web app build no
+// longer does (the /esf/[file] route serves these rows in place of the old
+// build-time public/esf-data/ static files). Also runnable manually via the
+// CLI or the unscheduled /api/cron/esf-data route.
 //
 // CLI-runnable: `node src/jobs/esfData.js` encodes against the current mirror
 // and stamps the rows with the latest completed sde_build.
