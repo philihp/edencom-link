@@ -7,3 +7,13 @@
 .footer a {
   font-family: var(--mono);
 }
+
+/* Privacy/Terms are UI chrome, not code — keep them in the sans face and set
+ * them off from the build metadata. */
+.links {
+  margin-left: 8px;
+}
+
+.footer .links a {
+  font-family: var(--sans);
+}
