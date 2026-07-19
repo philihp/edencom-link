@@ -72,6 +72,10 @@
     {
       "path": "/api/cron/sde-mirror",
       "schedule": "21 12 * * *"
+    },
+    {
+      "path": "/api/cron/esf-data",
+      "schedule": "51 12 * * *"
     }
   ],
   "functions": {
