@@ -99,6 +99,19 @@ whole deployment.** Consequences baked into the designs:
    responses, and turn a `429` into a friendly "try again in Ns" using
    `x-ratelimit-reset-after` — never retry automatically.
 
+**Global throttle (added post-Milestone-1).** The in-process cache can't stop
+several lambda instances from bursting past 200/hour together, so on Vercel
+every `appraise()` call is funnelled through a Vercel queue (topic
+`innominate`, consumer at `/api/queue/innominate`) that drains at most **one
+request every 18 seconds** (= 200/hour) via an atomic Postgres leaky bucket
+(`innominate_try_acquire()`). `appraise()` keeps its synchronous contract: it
+upserts a `pending` row in `innominate_appraisal`, enqueues one message, and
+blocks polling that row (up to ~50s, under the MCP function's 60s limit) until
+the consumer fills in the result — which also serves as a shared 5-minute price
+cache across instances. Local dev (no `VERCEL`) skips the queue and calls
+directly. See `src/innominate.ts` and
+`supabase/migrations/20260719000000_innominate_appraisal_throttle.sql`.
+
 ### Privacy note
 
 Requests to innomin.at carry **only type names and quantities** — never

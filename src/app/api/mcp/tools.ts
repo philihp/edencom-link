@@ -19,6 +19,7 @@ import { prop, uniqBy } from 'ramda'
 import { z } from 'zod'
 
 import { ACTIVITY_NAMES } from '@/app/industry/jobFields'
+import { appraise, MARKETS, type AppraisalItemInput, type Market } from '@/innominate'
 import { resolveLocations, type LocationRef } from '@/app/resolveLocations'
 import { fetchSystemNames } from '@/app/systemNames'
 import {
@@ -965,7 +966,11 @@ export const registerTools = (server: McpServer): void => {
       const mods = await resolveModifiers(modifiers, bp.activityID, extra)
       if (!mods.ok) return textResult(mods.message)
 
-      const names = await getSdeTypeNames([bp.blueprintTypeID, bp.productTypeID, ...bp.materials.map((mat) => mat.typeID)])
+      const names = await getSdeTypeNames([
+        bp.blueprintTypeID,
+        bp.productTypeID,
+        ...bp.materials.map((mat) => mat.typeID),
+      ])
       const runs = modifiers.runs ?? 1
       return textResult({
         product: names[bp.productTypeID] ?? resolved.name,
@@ -1046,6 +1051,105 @@ export const registerTools = (server: McpServer): void => {
         ...(capNote(blueprints.length, shown.length, 'blueprints') && {
           cap_note: capNote(blueprints.length, shown.length, 'blueprints'),
         }),
+      })
+    }
+  )
+
+  server.registerTool(
+    'appraise_items',
+    {
+      title: 'Appraise items',
+      description:
+        'Estimate the ISK market value of a batch of items via the innomin.at appraisal service (Jita by default). Answers "what\'s 3 Rifters and 100k Tritanium worth" or follows up a search_assets result with prices. Item names are matched fuzzily against EVE types. Prices are live market data, not the user\'s own orders.',
+      inputSchema: {
+        items: z
+          .array(
+            z.object({
+              item: z
+                .string()
+                .min(1)
+                .describe('Item name, e.g. "Tritanium", "Rifter" (matched fuzzily against EVE types)'),
+              quantity: z.number().int().min(1).optional().describe('How many (default 1)'),
+            })
+          )
+          .min(1)
+          .max(100)
+          .describe('The items to appraise (1–100 distinct entries)'),
+        market: z
+          .enum(MARKETS)
+          .optional()
+          .describe(
+            'Market hub to price against (default jita). Others: amarr, rens, dodi, hek, plus player markets ualx, cj6mt.'
+          ),
+      },
+    },
+    // No Supabase client and no bearer token: this tool reads nothing from the
+    // DB. It still only runs for authenticated MCP callers (the whole server is
+    // behind withMcpAuth), which is what gates the shared 200/hour budget.
+    async ({ items, market }) => {
+      // Canonicalize each fuzzy input against the SDE the way the blueprint
+      // tools do. A match sends the canonical name (noting when it differs from
+      // what was typed); a miss sends the raw name anyway so the API's own fuzzy
+      // handling can return possible_matches — better than failing locally.
+      const resolved = await Promise.all(
+        items.map(async ({ item, quantity }) => {
+          const match = await resolveOneType(item)
+          const name = match.ok ? match.name : item.trim()
+          return { input: item.trim(), name, quantity: quantity ?? 1 }
+        })
+      )
+
+      const notes = resolved
+        .filter((r) => r.name.toLowerCase() !== r.input.toLowerCase())
+        .map((r) => `Interpreted "${r.input}" as ${r.name}.`)
+
+      // Merge duplicate resolved names before sending — the API prices distinct
+      // lines separately, which would double-count and inflate the batch.
+      const merged = new Map<string, AppraisalItemInput>()
+      resolved.forEach((r) => {
+        const existing = merged.get(r.name)
+        merged.set(r.name, { name: r.name, quantity: (existing?.quantity ?? 0) + r.quantity })
+      })
+
+      const result = await appraise([...merged.values()], (market ?? 'jita') as Market)
+      if (!result.ok) {
+        if (result.kind === 'unconfigured')
+          return textResult("Appraisals aren't configured on this deployment (missing INNOMINATE_API_KEY).")
+        if (result.kind === 'rate_limited')
+          return textResult(
+            `The appraisal service is rate limited.${
+              result.retryAfterSeconds != null ? ` Try again in ${result.retryAfterSeconds}s.` : ''
+            }`
+          )
+        return textResult(result.message)
+      }
+
+      const { appraisal } = result
+      const priced = appraisal.items.filter((i) => i.error == null)
+      const unpriced = appraisal.items.filter((i) => i.error != null)
+
+      return textResult({
+        market: appraisal.market,
+        total_sell_value: appraisal.totalSellValue,
+        total_buy_value: appraisal.totalBuyValue,
+        price_split: appraisal.priceSplit,
+        total_volume_m3: appraisal.totalVol,
+        items: priced.map((i) => ({
+          item: i.name,
+          quantity: i.quantity,
+          sell_price: i.sellPrice,
+          buy_price: i.buyPrice,
+          total_sell: i.totalSellPrice,
+          total_buy: i.totalBuyPrice,
+          volume_m3: i.totalItemVol,
+        })),
+        ...(unpriced.length && {
+          unpriced: unpriced.map((i) => ({ item: i.name, possible_matches: i.possibleMatches })),
+        }),
+        ...(notes.length && { notes }),
+        ...(appraisal.cached && { cached: true }),
+        ...(appraisal.rateLimitRemaining != null && { rate_limit_remaining: appraisal.rateLimitRemaining }),
+        source: 'innomin.at',
       })
     }
   )
