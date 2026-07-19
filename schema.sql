@@ -100,6 +100,8 @@ drop table if exists public.refresh_task         cascade;
 drop table if exists public.shared_asset_token   cascade;
 drop table if exists public.heartbeat            cascade;
 drop table if exists public.esi_etag             cascade;
+drop table if exists public.innominate_throttle  cascade;
+drop table if exists public.innominate_appraisal cascade;
 drop table if exists public.esf_data             cascade;
 drop table if exists public.impersonation_log    cascade;
 drop table if exists public.token                cascade;
@@ -626,6 +628,79 @@ create table public.esi_etag (
 
 alter table public.esi_etag enable row level security;
 grant all on public.esi_etag to service_role;
+
+-- ── innominate_throttle / innominate_appraisal ──────────────────────────────
+-- Global throttle for the innomin.at appraisal API (see src/innominate.ts). The
+-- provider allows 200 requests/hour for the whole deployment, so appraisals are
+-- funnelled through a Vercel queue (topic "innominate", consumer at
+-- /api/queue/innominate) draining at most one request every 18 seconds across
+-- ALL lambda instances. Separate instances don't share memory, so the throttle
+-- timestamp and the pending/finished results live here. Internal service-role
+-- bookkeeping only: RLS on with no policy, so only the service role (the queue
+-- consumer and the MCP tool) reaches them.
+create table public.innominate_throttle (
+  id               boolean primary key default true check (id),
+  last_request_at  timestamptz not null default 'epoch'
+);
+insert into public.innominate_throttle (id) values (true) on conflict (id) do nothing;
+
+alter table public.innominate_throttle enable row level security;
+grant all on public.innominate_throttle to service_role;
+
+-- One row per distinct (market + sorted item list) request, keyed by request_key
+-- (the same hash the in-process cache uses). The producer upserts a 'pending'
+-- row and blocks polling it; the consumer flips it to 'done' (mapped Appraisal
+-- in `result`) or 'error' ({ kind, message, retryAfterSeconds } in `error`). A
+-- fresh 'done' row (< 5 min) doubles as the global price cache.
+create table public.innominate_appraisal (
+  request_key  text primary key,
+  market       text not null,
+  items        jsonb not null,
+  status       text not null default 'pending' check (status in ('pending', 'done', 'error')),
+  result       jsonb,
+  error        jsonb,
+  created_at   timestamptz not null default now(),
+  updated_at   timestamptz not null default now()
+);
+create index innominate_appraisal_updated_at_idx on public.innominate_appraisal (updated_at);
+
+alter table public.innominate_appraisal enable row level security;
+grant all on public.innominate_appraisal to service_role;
+
+-- Atomic leaky bucket: advance last_request_at to now() only if at least
+-- min_interval_seconds have elapsed, returning acquired=true; otherwise return
+-- acquired=false with wait_seconds until the next slot. The guarded UPDATE is a
+-- single atomic statement, so concurrent consumers can't both take the same slot.
+create or replace function public.innominate_try_acquire(min_interval_seconds integer default 18)
+returns table (acquired boolean, wait_seconds double precision)
+language plpgsql
+as $$
+declare
+  v_now timestamptz := now();
+begin
+  insert into public.innominate_throttle (id) values (true) on conflict (id) do nothing;
+
+  update public.innominate_throttle
+     set last_request_at = v_now
+   where id = true
+     and v_now - last_request_at >= make_interval(secs => min_interval_seconds);
+
+  if found then
+    return query select true, 0::double precision;
+  else
+    return query
+      select false,
+             greatest(
+               extract(epoch from (make_interval(secs => min_interval_seconds) - (v_now - last_request_at))),
+               0
+             )::double precision
+        from public.innominate_throttle
+       where id = true;
+  end if;
+end;
+$$;
+
+grant execute on function public.innominate_try_acquire(integer) to service_role;
 
 -- ── impersonation_log ──────────────────────────────────────────────────────
 -- Chancellor-impersonation audit trail: one row per magic-link impersonation

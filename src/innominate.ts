@@ -7,7 +7,21 @@
 // prices aren't in our DB at all, so we call innomin.at server-side at request
 // time. Nothing is persisted, and we still never call ESI. See
 // docs/appraisals/README.md for the API reference and the 200 req/hour budget.
+//
+// Global throttle: the provider's 200 requests/hour is a budget for the WHOLE
+// deployment, not per user or per lambda. In-process state can't enforce that —
+// separate serverless instances don't share memory — so on Vercel every call is
+// funnelled through a Vercel queue (topic "innominate", consumer at
+// /api/queue/innominate) that drains at most one request every 18 seconds
+// (= 200/hour) via an atomic Postgres leaky bucket. The MCP tool stays
+// synchronous: appraise() enqueues the request and BLOCKS polling a shared
+// Supabase row until the consumer fills it in (or a ~50s budget elapses). Local
+// dev (no VERCEL) skips the queue and calls directly — a single developer isn't
+// a threat to the shared budget, and it keeps `pnpm run dev` working.
 import { sortBy } from 'ramda'
+
+import { send } from '@/utils/queue'
+import { createServiceClient } from '@/utils/supabase/service'
 
 export type AppraisalItemInput = { name: string; quantity: number }
 
@@ -52,6 +66,13 @@ const ENDPOINT = 'https://innomin.at/api/v1/appraise/'
 const USER_AGENT = 'edencom-link (philihp@gmail.com)'
 const TIMEOUT_MS = 10_000
 
+// The global rate: one request per 18 seconds = 200/hour, the provider's budget.
+const THROTTLE_SECONDS = 18
+// How long appraise() blocks polling the shared row before giving up — kept
+// under the MCP route's 60s function limit (src/app/api/mcp/route.ts).
+const POLL_BUDGET_MS = 50_000
+const POLL_INTERVAL_MS = 1_000
+
 // The raw response shapes (snake_case) we map to the camelCase exports above.
 type RawAppraisedItem = {
   name?: string
@@ -94,18 +115,17 @@ const mapItem = (r: RawAppraisedItem): AppraisedItem => ({
 
 // ---- In-process TTL cache -------------------------------------------------
 //
-// Both consumers re-request identical batches (double-clicks, an LLM re-asking
-// the same question); the 200 req/hour budget makes that expensive, so we
-// absorb bursts here. On Vercel this Map is per-lambda-instance and evaporates
-// on cold starts — that's fine. It exists to smooth repeats, NOT to be a
-// durable price store; market prices don't move fast enough for a 5-minute TTL
-// to matter. Only successful results are cached; errors never are.
+// A per-lambda-instance fast path over the shared DB cache below: identical
+// batches re-requested on the SAME instance (double-clicks, an LLM re-asking)
+// skip the DB round-trip and the queue entirely. It evaporates on cold starts —
+// that's fine; the shared innominate_appraisal row is the durable/global cache.
+// Only successful results are cached; errors never are.
 const CACHE_TTL_MS = 5 * 60 * 1000
 const CACHE_MAX_ENTRIES = 200
 const cache = new Map<string, { at: number; appraisal: Appraisal }>()
 
 // Key on market + the item list sorted by name, so batches that differ only in
-// input order hit the same entry.
+// input order hit the same entry. Doubles as the shared row's request_key.
 const cacheKey = (items: AppraisalItemInput[], market: Market): string =>
   JSON.stringify({ market, items: sortBy((i) => i.name, items).map((i) => [i.name, i.quantity]) })
 
@@ -129,19 +149,15 @@ const cacheSet = (key: string, appraisal: Appraisal): void => {
   }
 }
 
-// ---- The one call ---------------------------------------------------------
-
-export const appraise = async (items: AppraisalItemInput[], market: Market = 'jita'): Promise<AppraisalResult> => {
+// ---- The raw call ---------------------------------------------------------
+//
+// Actually hits innomin.at. Only ever called by the queue consumer (one call at
+// a time, throttled) — or directly by appraise() in local dev. Never throws.
+const callInnominate = async (items: AppraisalItemInput[], market: Market): Promise<AppraisalResult> => {
   const apiKey = process.env.INNOMINATE_API_KEY
   if (!apiKey) {
-    // No key locally → answer without hitting the network, so dev without the
-    // key still works.
     return { ok: false, kind: 'unconfigured', message: 'INNOMINATE_API_KEY is not set on this deployment.' }
   }
-
-  const key = cacheKey(items, market)
-  const cached = cacheGet(key)
-  if (cached) return { ok: true, appraisal: { ...cached, cached: true } }
 
   let response: Response
   try {
@@ -164,8 +180,8 @@ export const appraise = async (items: AppraisalItemInput[], market: Market = 'ji
   }
 
   if (response.status === 429) {
-    // 200/hour is a hard budget; a retry loop is how it dies. Surface the
-    // wait instead of retrying automatically.
+    // 200/hour is a hard budget; the throttle should keep us under it, but if
+    // the provider still 429s, surface the wait — never retry automatically.
     const resetAfter = response.headers.get('x-ratelimit-reset-after')
     const retryAfterSeconds = resetAfter != null && resetAfter !== '' ? Number(resetAfter) : null
     return {
@@ -200,6 +216,167 @@ export const appraise = async (items: AppraisalItemInput[], market: Market = 'ji
     rateLimitRemaining,
     cached: false,
   }
-  cacheSet(key, appraisal)
   return { ok: true, appraisal }
+}
+
+// ---- Shared DB row (throttle coordination + global cache) -----------------
+
+type ServiceClient = ReturnType<typeof createServiceClient>
+type AppraisalRow = {
+  request_key: string
+  market: string
+  items: AppraisalItemInput[]
+  status: 'pending' | 'done' | 'error'
+  result: Appraisal | null
+  error: AppraisalError | null
+  updated_at: string
+}
+
+const readAppraisalRow = async (supabase: ServiceClient, requestKey: string): Promise<AppraisalRow | null> => {
+  const { data } = await supabase
+    .from('innominate_appraisal')
+    .select('request_key, market, items, status, result, error, updated_at')
+    .eq('request_key', requestKey)
+    .maybeSingle()
+  return (data as AppraisalRow | null) ?? null
+}
+
+const isFresh = (updatedAt: string): boolean => Date.now() - new Date(updatedAt).getTime() < CACHE_TTL_MS
+
+const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
+
+// Block until the consumer fills in the shared row, or the poll budget elapses.
+// Recursion rather than a while loop (ramda house style — sequential async).
+const pollForResult = async (supabase: ServiceClient, key: string, deadline: number): Promise<AppraisalResult> => {
+  const row = await readAppraisalRow(supabase, key)
+  if (row?.status === 'done' && row.result) {
+    const appraisal: Appraisal = { ...row.result, cached: false }
+    cacheSet(key, appraisal)
+    return { ok: true, appraisal }
+  }
+  if (row?.status === 'error' && row.error) return row.error
+  if (Date.now() >= deadline) {
+    // Still queued behind the global throttle backlog after our budget. Report
+    // it as rate-limited so the caller retries rather than treating it as a hard
+    // failure — the identical retry will find the by-then-cached result.
+    return {
+      ok: false,
+      kind: 'rate_limited',
+      message: 'The appraisal is queued behind the global rate limit; try again in a moment.',
+      retryAfterSeconds: THROTTLE_SECONDS,
+    }
+  }
+  await delay(POLL_INTERVAL_MS)
+  return pollForResult(supabase, key, deadline)
+}
+
+const appraiseViaQueue = async (items: AppraisalItemInput[], market: Market, key: string): Promise<AppraisalResult> => {
+  // appraise() must never throw (the MCP tool relies on that), so a DB or queue
+  // outage becomes a clean upstream error rather than a rejection.
+  try {
+    const supabase = createServiceClient()
+
+    // Global cache: a fresh 'done' row (< TTL) is reusable across every instance.
+    const existing = await readAppraisalRow(supabase, key)
+    if (existing?.status === 'done' && existing.result && isFresh(existing.updated_at)) {
+      const appraisal: Appraisal = { ...existing.result, cached: true }
+      cacheSet(key, appraisal)
+      return { ok: true, appraisal }
+    }
+
+    // Upsert a pending row and enqueue one message for the consumer to drain. The
+    // idempotency key is bucketed to the TTL so a hot key doesn't pile up
+    // duplicate messages within a window, while a later request can re-drive a
+    // stale row. Concurrent producers for the same key share this one row and both
+    // poll it. (A rare race can reset a just-finished 'done' row back to pending,
+    // costing one extra throttled call — harmless given the low request volume.)
+    await supabase.from('innominate_appraisal').upsert(
+      {
+        request_key: key,
+        market,
+        items,
+        status: 'pending',
+        result: null,
+        error: null,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'request_key' }
+    )
+
+    const bucket = Math.floor(Date.now() / CACHE_TTL_MS)
+    await send('innominate', { requestKey: key }, { idempotencyKey: `${key}:${bucket}` })
+
+    return pollForResult(supabase, key, Date.now() + POLL_BUDGET_MS)
+  } catch {
+    return { ok: false, kind: 'upstream', message: 'Could not queue the appraisal request (queue or database error).' }
+  }
+}
+
+// ---- Public entry point ---------------------------------------------------
+
+export const appraise = async (items: AppraisalItemInput[], market: Market = 'jita'): Promise<AppraisalResult> => {
+  if (!process.env.INNOMINATE_API_KEY) {
+    // No key → answer without any network/queue work, so local dev without the
+    // key still works and the tool degrades gracefully in prod if it's unset.
+    return { ok: false, kind: 'unconfigured', message: 'INNOMINATE_API_KEY is not set on this deployment.' }
+  }
+
+  const key = cacheKey(items, market)
+  const hit = cacheGet(key)
+  if (hit) return { ok: true, appraisal: { ...hit, cached: true } }
+
+  // Local dev has no Vercel queue infrastructure and is a single developer, so
+  // it calls directly (bypassing the shared-budget throttle); production routes
+  // every call through the throttled queue.
+  if (process.env.VERCEL !== '1') {
+    const result = await callInnominate(items, market)
+    if (result.ok) cacheSet(key, result.appraisal)
+    return result
+  }
+
+  return appraiseViaQueue(items, market, key)
+}
+
+// ---- Queue consumer entry point -------------------------------------------
+
+// Thrown by the consumer when it isn't this message's turn under the global
+// throttle; the queue route's retry handler turns it into a reschedule.
+export class InnominateThrottleRetry extends Error {
+  constructor(public readonly afterSeconds: number) {
+    super('innominate request throttled')
+    this.name = 'InnominateThrottleRetry'
+  }
+}
+
+export type InnominateQueueMessage = { requestKey: string }
+
+// Runs one queued appraisal request: reads its shared row, takes the global
+// throttle slot (or throws InnominateThrottleRetry to reschedule), calls
+// innomin.at, and writes the result/error back onto the row for the blocked
+// producer to pick up. Called only by /api/queue/innominate.
+export const runInnominateQueueMessage = async ({ requestKey }: InnominateQueueMessage): Promise<void> => {
+  const supabase = createServiceClient()
+
+  const row = await readAppraisalRow(supabase, requestKey)
+  // Row expired/swept, or another delivery already satisfied it — nothing to do.
+  if (!row) return
+  if (row.status === 'done' && row.result && isFresh(row.updated_at)) return
+
+  // Global throttle: at most one innomin.at request per THROTTLE_SECONDS across
+  // every lambda instance and deployment (they share this Supabase project).
+  const { data } = await supabase.rpc('innominate_try_acquire', { min_interval_seconds: THROTTLE_SECONDS })
+  const gate = (Array.isArray(data) ? data[0] : data) as { acquired: boolean; wait_seconds: number } | null
+  if (!gate?.acquired) {
+    throw new InnominateThrottleRetry(Math.max(1, Math.ceil(gate?.wait_seconds ?? THROTTLE_SECONDS)))
+  }
+
+  const result = await callInnominate(row.items, row.market as Market)
+  await supabase
+    .from('innominate_appraisal')
+    .update(
+      result.ok
+        ? { status: 'done', result: result.appraisal, error: null, updated_at: new Date().toISOString() }
+        : { status: 'error', result: null, error: result, updated_at: new Date().toISOString() }
+    )
+    .eq('request_key', requestKey)
 }
