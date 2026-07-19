@@ -29,9 +29,6 @@
   },
   "scripts": {
     "build": "next build",
-    "predev": "pnpm run esf:build",
-    "prebuild": "pnpm run esf:build",
-    "esf:build": "node src/buildEsfData.js",
     "character-assets": "node src/jobs/characterAssets.js",
     "character-blueprints": "node src/jobs/characterBlueprints.js",
     "character-orders": "node src/jobs/characterOrders.js",

@@ -63,12 +63,15 @@ Prerequisite: `esf_data` populated in production (trigger the workflow once).
   shipFitView.tsx`) so the preview deploy validates the wheel against the
   DB-served data end-to-end.
 
-## Phase 3 — Contract: remove the ESF build job from the build (PR 3)
+## Phase 3 — Contract: remove the ESF build job from the build (PR 3) ✅ done
 
-Once Phase 2 is validated, `public/esf-data/` is unread:
+`public/esf-data/` was unread once the wheel moved to `/esf/`:
 
-- Drop `esf:build` from `predev`/`prebuild` (and the script itself); `run()`
-  and the `public/esf-data/` output go away. `encodeEsfData()` stays — it's
-  the workflow job's encode.
-- The build then neither downloads nor encodes anything from the SDE, and
-  preview deploys stop paying for it.
+- Dropped `esf:build` from `predev`/`prebuild` and removed the script, `run()`,
+  and the `public/esf-data/` output (and its `.gitignore` entry).
+  `encodeEsfData()` stays — it's the cron/workflow job's encode.
+- The build now neither downloads nor encodes anything from the SDE, so preview
+  and production deploys stop paying for it. The ESF data is refreshed only by
+  the nightly `sde-mirror` workflow's `encodeEsf` step — the final step of that
+  job, run on every pass (including the build-unchanged skip path). No separate
+  cron; `/api/cron/esf-data` remains as an unscheduled manual bootstrap.
