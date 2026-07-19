@@ -83,10 +83,12 @@ cp .env.example .env
 pnpm run dev
 ```
 
-This first runs `predev` (`pnpm run sde:build` + `pnpm run esf:build`), which downloads
-CCP's Static Data Export and ship-fitting data into `src/generated/` (gitignored,
-skipped on subsequent runs unless you pass `--force`), then starts the Next.js dev
-server at `http://localhost:3000`.
+This starts the Next.js dev server at `http://localhost:3000`. The app reads SDE
+lookups and the ship-fitting protobuf data straight from Supabase at runtime (the
+nightly-mirrored `sde_*` tables and the `esf_data` table) — there's no build-time SDE
+download or generation step anymore. If your Supabase `esf_data` table is empty, run
+`pnpm run esf-data` once to populate it (or trigger the `sde-mirror` workflow), so the
+ship-fit wheel on `/ship/[itemId]` has data to serve at `/esf/`.
 
 Sign in with your EVE Online character to register it, then trigger a manual refresh
 from `/character/refresh` to pull data in via the extract jobs (see below) — nothing is

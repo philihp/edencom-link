@@ -1,14 +1,15 @@
-// Builds the 6 protobuf data files @eveshipfit/react's EveDataProvider
+// Encodes the 6 protobuf data files @eveshipfit/react's EveDataProvider
 // expects (types/groups/marketGroups/typeDogma/dogmaEffects/dogmaAttributes)
-// from the SDE, encoded per src/esf.proto (vendored from
+// from the SDE, per src/esf.proto (vendored from
 // https://github.com/EVEShipFit/data). Reads its inputs from the
 // nightly-mirrored sde_* tables in Supabase (populated by the sde-mirror
-// workflow, src/jobs/sdeMirror.js) rather than downloading CCP's SDE zip at
-// build time — no CCP download and no `unzip` binary dependency; the build
-// consumes the same locally-mirrored SDE the runtime loaders (src/sde*.ts) do.
-// Runs as the `predev`/`prebuild` step (see package.json) — re-run
-// `pnpm run esf:build -- --force` to refresh mid-session.
-import { access, mkdir, readFile, writeFile } from 'node:fs/promises'
+// workflow, src/jobs/sdeMirror.js) — no CCP download, no `unzip` binary.
+//
+// This module no longer runs at build time: encodeEsfData() is called by the
+// sde-mirror workflow / the daily esf-data cron (src/jobs/esfData.js), which
+// upserts the encoded files into the esf_data table for /esf/[file] to serve.
+// So the web app build neither downloads nor encodes any SDE data.
+import { readFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -17,7 +18,6 @@ import protobuf from 'protobufjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const PROTO_PATH = join(__dirname, 'esf.proto')
-const OUTPUT_DIR = join(__dirname, '..', 'public', 'esf-data')
 
 // The SDE inputs come from the nightly-mirrored sde_* tables (public-read; the
 // sde-mirror workflow ingests every CCP JSONL file — see src/jobs/sdeMirror.js).
@@ -369,8 +369,8 @@ export const ESF_FILE_NAMES = FILES.map(({ fileName }) => fileName)
 
 // Read the sde_* mirror, apply the eveship.fit patches, and encode the six
 // protobuf files — returning { [fileName]: Buffer } without touching disk.
-// Shared by the build-time step (run(), writes to public/esf-data/) and the
-// nightly workflow job (src/jobs/esfData.js, upserts into the esf_data table).
+// Consumed by the nightly workflow job (src/jobs/esfData.js), which base64-
+// upserts the buffers into the esf_data table for /esf/[file] to serve.
 export const encodeEsfData = async () => {
   console.log('esf: reading source tables from the sde_* mirror…')
   const groups = await buildGroups()
@@ -395,40 +395,4 @@ export const encodeEsfData = async () => {
     console.log(`esf: encoded ${fileName} (${buffers[fileName].length} bytes, ${Object.keys(entriesByKey[key]).length} entries)`)
   }
   return buffers
-}
-
-const run = async () => {
-  const force = process.argv.includes('--force')
-  await mkdir(OUTPUT_DIR, { recursive: true })
-
-  if (!force) {
-    const allExist = await Promise.all(
-      FILES.map(({ fileName }) =>
-        access(join(OUTPUT_DIR, fileName)).then(
-          () => true,
-          () => false
-        )
-      )
-    )
-    if (allExist.every(Boolean)) {
-      console.log(`esf: ${OUTPUT_DIR} already populated, skipping (pass --force to regenerate)`)
-      return
-    }
-  }
-
-  const buffers = await encodeEsfData()
-  await Promise.all(
-    FILES.map(({ fileName }) =>
-      writeFile(join(OUTPUT_DIR, fileName), buffers[fileName]).then(() => console.log(`esf: wrote ${fileName}`))
-    )
-  )
-}
-
-// Only self-run as the build step when invoked as a CLI; when imported (by
-// src/jobs/esfData.js for the workflow), just expose encodeEsfData().
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
-  run().catch((err) => {
-    console.error(err)
-    process.exit(1)
-  })
 }
