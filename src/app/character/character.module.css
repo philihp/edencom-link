@@ -8,8 +8,7 @@
 }
 
 .tile {
-  display: flex;
-  gap: 10pt;
+  position: relative;
   padding: 12px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -22,6 +21,9 @@
 }
 
 .avatar {
+  position: absolute;
+  top: 12px;
+  right: 12px;
   width: 64px;
   height: 64px;
   flex-shrink: 0;
@@ -35,7 +37,8 @@
   flex-direction: column;
   gap: 2pt;
   min-width: 0;
-  flex: 1;
+  padding-right: 74px;
+  text-align: left;
 }
 
 .name {
