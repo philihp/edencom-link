@@ -21,7 +21,6 @@ export const runCorpStructures = ({ characterIds } = {}) =>
       profile_id: s.profile_id ?? null,
       name: s.name ?? null,
       state: s.state ?? null,
-      fuel_expires: s.fuel_expires ?? null,
       unanchors_at: s.unanchors_at ?? null,
       reinforce_hour: s.reinforce_hour ?? null,
       next_reinforce_hour: s.next_reinforce_hour ?? null,
@@ -32,9 +31,23 @@ export const runCorpStructures = ({ characterIds } = {}) =>
       updated_at: now,
     }))
 
+    // fuel_expires lives in corp_structure_status now (own-corp-only, while
+    // corp_structure opens to alliance-mates). Upsert the structures first — the
+    // status table's FK points back at them.
+    const statusRows = all.map((s) => ({
+      structure_id: s.structure_id,
+      corporation_id: s.corporation_id,
+      fuel_expires: s.fuel_expires ?? null,
+      updated_at: now,
+    }))
+
     if (rows.length > 0) {
       const { error } = await sudoSupabase.from('corp_structure').upsert(rows, { onConflict: 'structure_id' })
       if (error) throw error
+      const { error: statusError } = await sudoSupabase
+        .from('corp_structure_status')
+        .upsert(statusRows, { onConflict: 'structure_id' })
+      if (statusError) throw statusError
     }
     console.log(`[${TAG}] ${ctx}: corp ${corporation_id} ${rows.length} structure(s) in ${Date.now() - t0}ms`)
   })

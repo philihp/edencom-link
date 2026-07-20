@@ -63,6 +63,7 @@ drop table if exists public.character_affiliation         cascade;
 drop table if exists public.industry_system_index cascade;
 drop table if exists public.corporation          cascade;
 drop table if exists public.alliance             cascade;
+drop table if exists public.corp_structure_status cascade;
 drop table if exists public.corp_structure_rig   cascade;
 drop table if exists public.corp_structure       cascade;
 drop table if exists public.corp_wallet_journal  cascade;
@@ -1555,7 +1556,6 @@ create table public.corp_structure (
   profile_id bigint,
   name text,
   state text,
-  fuel_expires timestamptz,
   unanchors_at timestamptz,
   reinforce_hour int,
   next_reinforce_hour int,
@@ -1579,8 +1579,60 @@ create policy "Users read structures for own corps"
     )
   );
 
+-- Open corp_structure viewing to alliance-mates: a structure whose owning
+-- corporation's alliance is one of the alliances the caller's own characters'
+-- corporations belong to. Additive/permissive — OR'd with the own-corps policy
+-- above. Fuel stays private: it lives in corp_structure_status (below), which
+-- keeps the own-corps-only policy.
+create policy "Alliance members read corp structures"
+  on public.corp_structure
+  for select
+  to authenticated
+  using (
+    exists (
+      select 1
+      from public.corporation owner_corp
+      where owner_corp.corporation_id = corp_structure.corporation_id
+        and owner_corp.alliance_id is not null
+        and owner_corp.alliance_id in (
+          select member_corp.alliance_id
+          from public.registration r
+          join public.corporation member_corp on member_corp.corporation_id = r.corporation_id
+          where r.user_id = (select auth.uid())
+            and member_corp.alliance_id is not null
+        )
+    )
+  );
+
 grant select on public.corp_structure to authenticated;
 grant all    on public.corp_structure to service_role;
+
+-- ── corp_structure_status ──────────────────────────────────────────────────
+-- The volatile fuel timer, split off corp_structure so it can stay own-corp
+-- only while corp_structure opens up to alliance-mates. One row per structure,
+-- pointing back to it.
+create table public.corp_structure_status (
+  structure_id bigint primary key references public.corp_structure (structure_id) on delete cascade,
+  corporation_id bigint not null,
+  fuel_expires timestamptz,
+  updated_at timestamptz not null default now()
+);
+create index corp_structure_status_corporation_id_idx on public.corp_structure_status (corporation_id);
+
+alter table public.corp_structure_status enable row level security;
+create policy "Users read structure status for own corps"
+  on public.corp_structure_status
+  for select
+  to authenticated
+  using (
+    corporation_id in (
+      select corporation_id from public.registration
+      where user_id = (select auth.uid()) and corporation_id is not null
+    )
+  );
+
+grant select on public.corp_structure_status to authenticated;
+grant all    on public.corp_structure_status to service_role;
 
 -- ── corp_structure_rig ────────────────────────────────────────────────────
 -- Rigs (and other fitted modules) in Upwell structures. ESI has no dedicated
