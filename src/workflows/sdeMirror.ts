@@ -9,26 +9,23 @@
 
 type SdeFile = { entry: string; stem: string; method: number; compressedSize: number; localOffset: number }
 
-type PlanResult = { skipped: true; build: number } | { skipped: false; runId: number; build: number; zipUrl: string }
+type PlanResult = { runId: number; build: number; zipUrl: string }
 
-// Heartbeat start + build discovery + skip check. The runId rides through the
-// workflow so finalize()'s end heartbeat lands on the same row; on the
-// skip path the pair closes right here.
-async function planRun(force: boolean): Promise<PlanResult> {
+// Heartbeat start + build discovery. The runId rides through the workflow so
+// finalize()'s end heartbeat lands on the same row. The "already mirrored"
+// skip check is intentionally omitted: this workflow ALWAYS re-ingests the
+// current build, even when CCP's build is unchanged (the CLI path in
+// src/jobs/sdeMirror.js keeps its own shouldSkip/--force for manual runs).
+async function planRun(): Promise<PlanResult> {
   'use step'
   const { randomInt } = await import('node:crypto')
-  const { fetchLatestBuild, shouldSkip, markBuildStarted } = await import('@/jobs/sdeMirror.js')
+  const { fetchLatestBuild, markBuildStarted } = await import('@/jobs/sdeMirror.js')
   const { recordHeartbeat } = await import('@/supabase.js')
   const runId = randomInt(1, 2 ** 48)
   await recordHeartbeat('sde-mirror', 'start', { runId, source: 'vercel-workflow' })
   const { build, zipUrl } = await fetchLatestBuild()
-  if (!force && (await shouldSkip(build))) {
-    console.log(`[sde-mirror] build ${build} already mirrored, skipping`)
-    await recordHeartbeat('sde-mirror', 'end', { runId, source: 'vercel-workflow' })
-    return { skipped: true, build }
-  }
   await markBuildStarted(build)
-  return { skipped: false, runId, build, zipUrl }
+  return { runId, build, zipUrl }
 }
 
 async function listFiles(zipUrl: string): Promise<SdeFile[]> {
@@ -77,21 +74,19 @@ async function encodeEsf(build: number): Promise<void> {
 // simple, deterministic control flow over step calls — the cursor a step
 // returns is what drives the loop, and helpers imported at the top level
 // would execute in workflow context rather than inside a step.
-export async function sdeMirrorWorkflow({ force = false }: { force?: boolean } = {}) {
+export async function sdeMirrorWorkflow() {
   'use workflow'
-  const plan = await planRun(force)
-  if (!plan.skipped) {
-    const files = await listFiles(plan.zipUrl)
-    for (const file of files) {
-      let cursor = 0
-      while (cursor !== -1) {
-        cursor = await ingestSlice(plan.zipUrl, file, plan.build, cursor)
-      }
+  const plan = await planRun()
+  const files = await listFiles(plan.zipUrl)
+  for (const file of files) {
+    let cursor = 0
+    while (cursor !== -1) {
+      cursor = await ingestSlice(plan.zipUrl, file, plan.build, cursor)
     }
-    await stationNames()
-    await finalize(plan.build, plan.runId)
   }
-  // Ensure the esf_data table matches the current build even when the ingest
-  // was skipped — the skip path used to return here, leaving ESF unpopulated.
+  await stationNames()
+  await finalize(plan.build, plan.runId)
+  // Re-encode the esf_data table from the freshly-mirrored build (runEsfData
+  // still no-ops cheaply when esf_data already matches this build).
   await encodeEsf(plan.build)
 }
