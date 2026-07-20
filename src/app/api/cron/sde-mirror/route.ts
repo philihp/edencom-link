@@ -8,8 +8,8 @@ import { requireCronSecret } from '@/utils/cron'
 // Vercel Workflow (src/workflows/sdeMirror.ts) and returns. Fire-and-forget:
 // the workflow owns retries and its run/step status shows under
 // Observability → Workflows; the heartbeat pair is recorded by the workflow's
-// first and last steps. Pass ?force=1 to re-ingest a build that's already
-// mirrored (the first manual kick, or repairing a bad ingest).
+// first and last steps. The workflow always re-ingests the current build (no
+// "already mirrored" skip), so there's no force flag.
 export const runtime = 'nodejs'
 export const maxDuration = 60
 
@@ -17,11 +17,10 @@ export async function GET(request: NextRequest) {
   const denied = requireCronSecret(request)
   if (denied) return denied
 
-  const force = request.nextUrl.searchParams.get('force') != null
   const { start } = await import('workflow/api')
   const { sdeMirrorWorkflow } = await import('@/workflows/sdeMirror')
-  const run = await start(sdeMirrorWorkflow, [{ force }])
-  console.log(`[cron/sde-mirror] started workflow run=${run.runId} force=${force}`)
+  const run = await start(sdeMirrorWorkflow, [])
+  console.log(`[cron/sde-mirror] started workflow run=${run.runId}`)
 
   return NextResponse.json({ ok: true, runId: run.runId })
 }
