@@ -17,13 +17,21 @@ const COLOR_CLASS: Record<NodeColor, string> = {
 // fixed hand-placed layout (see NODE_POSITIONS) — no interactivity — so it
 // renders on the server and scales to the container width. Each system node is
 // tinted by the most severe den status among its temperate planets (red
-// reinforced > yellow external > green ours), matching the table below.
-export const Topology = ({ nodeColors = {} }: { nodeColors?: Record<string, NodeColor> }) => (
+// reinforced > yellow external > green ours), matching the table below; a
+// system with reported enemy-den intel also gets a dashed red outline
+// (`enemyIntel`, upper-cased system names) on top of that tint.
+export const Topology = ({
+  nodeColors = {},
+  enemyIntel,
+}: {
+  nodeColors?: Record<string, NodeColor>
+  enemyIntel?: Set<string>
+}) => (
   <svg
     className={styles.topology}
     viewBox="0 0 760 450"
     role="img"
-    aria-label="Network topology of systems accessible from the staging system, coloured by mercenary den status"
+    aria-label="Network topology of systems accessible from the staging system, coloured by mercenary den status; a dashed red outline marks a system with reported enemy-den intel"
   >
     {EDGES.map(([from, to]) => {
       const a = NODE_POSITIONS[from]
@@ -36,9 +44,13 @@ export const Topology = ({ nodeColors = {} }: { nodeColors?: Record<string, Node
       const isStaging = system === STAGING
       const color = nodeColors[system]
       // A den-status colour wins; otherwise the staging system keeps its accent.
+      // (styles.node is undefined — a plain node just gets the base .nodeBox —
+      // so compose with a filter to avoid a stray "undefined" class.)
       const groupClass = color ? COLOR_CLASS[color] : isStaging ? styles.nodeStaging : styles.node
+      // Enemy-den intel overlays a dashed red outline regardless of the tint.
+      const className = [groupClass, enemyIntel?.has(system) ? styles.nodeEnemyIntel : null].filter(Boolean).join(' ')
       return (
-        <g key={system} className={groupClass}>
+        <g key={system} className={className}>
           <rect
             x={x - NODE_W / 2}
             y={y - NODE_H / 2}

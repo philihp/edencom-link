@@ -192,6 +192,13 @@ const MercenaryDensPage = async () => {
     if (!cur || severity[c] > severity[cur]) nodeColors[row.system] = c
   }
 
+  // Systems with a reported enemy-den sighting get a dashed red outline on the
+  // topology, on top of whatever den-status tint they already have. Matched by
+  // name against the node keys, upper-cased since sightings are free text.
+  const enemyIntelSystems = new Set(
+    enemyDenIntel.map((r) => r.system?.trim().toUpperCase()).filter((s): s is string => !!s)
+  )
+
   const dash = <span className={styles.empty}>—</span>
   const evolution = (level: string | null, amount: number | null) =>
     level != null ? `${level}${amount != null ? ` (${amount})` : ''}` : dash
@@ -210,7 +217,7 @@ const MercenaryDensPage = async () => {
         Systems immediately accessible from our staging system, <span className={styles.system}>{STAGING}</span>.
       </p>
 
-      <Topology nodeColors={nodeColors} />
+      <Topology nodeColors={nodeColors} enemyIntel={enemyIntelSystems} />
 
       <h2>Temperate planets</h2>
       <div className={styles.tableScroll}>
