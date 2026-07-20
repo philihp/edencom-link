@@ -29,4 +29,12 @@ jobs:
         env:
           SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
       - name: Push migrations
-        run: supabase db push
+        # --include-all applies pending migrations even when one has a timestamp
+        # earlier than the last migration already on remote. That happens
+        # routinely when PRs merge in a different order than their migration
+        # timestamps (e.g. a migration dated 07-19 merging after one dated
+        # 07-19T12:00 that already landed) — without this flag `db push` aborts
+        # the whole batch with "found local migration files to be inserted
+        # before the last migration on remote". The migrations here are
+        # independent and additive, so applying them in filename order is safe.
+        run: supabase db push --include-all
