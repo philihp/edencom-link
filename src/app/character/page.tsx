@@ -141,7 +141,7 @@ const CharacterPage = async () => {
               {(cloneSystems.get(c.id)?.length ?? 0) > 0 && (
                 <div className={styles.metaBlock}>
                   <span className={styles.metaLabel}>Clone systems:</span>
-                  <ul className={styles.bulletList}>
+                  <ul className={`${styles.bulletList} ${styles.cloneList}`}>
                     {cloneSystems.get(c.id)!.map((system) => (
                       <li key={system}>{system}</li>
                     ))}
