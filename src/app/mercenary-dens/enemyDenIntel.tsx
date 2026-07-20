@@ -24,7 +24,8 @@ export type EnemyDenIntelRow = {
 // sighting, plus the shared list sorted soonest-reinforcement-first; a
 // submitter can delete their own rows (server-enforced by RLS). "Reported by"
 // is fixed to the caller's main character (derived server-side), and the
-// reinforcement time defaults to today at 00:00:00 UTC.
+// reinforcement time defaults to 24h out (date only, so the reporter fills in
+// just the time).
 const EnemyDenIntel = ({
   rows,
   defaultReportedBy,
