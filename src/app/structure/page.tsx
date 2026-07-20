@@ -60,7 +60,7 @@ const StructuresPage = async () => {
   const { data: structures } = await supabase
     .from('corp_structure')
     .select(
-      'structure_id, corporation_id, type_id, system_id, name, state, fuel_expires, unanchors_at, services, last_seen_at'
+      'structure_id, corporation_id, type_id, system_id, name, state, unanchors_at, services, last_seen_at'
     )
     .order('corporation_id', { ascending: true })
     .order('structure_id', { ascending: true })
@@ -90,6 +90,20 @@ const StructuresPage = async () => {
     const structureId = j.station_id ?? j.facility_id
     if (structureId != null) structureByJob.set(String(j.job_id), String(structureId))
   }
+
+  // Fuel timers live in corp_structure_status now (own-corp only). RLS returns a
+  // row only for structures the caller's corp owns, so an alliance-mate's
+  // structure that's visible via corp_structure simply has no fuel here.
+  const { data: statusRows } = structureIds.length
+    ? await supabase.from('corp_structure_status').select('structure_id, fuel_expires').in('structure_id', structureIds)
+    : { data: [] }
+  const fuelByStructure = new Map<string, string | null>(
+    ((statusRows ?? []) as Array<{ structure_id: number | string; fuel_expires: string | null }>).map((r) => [
+      String(r.structure_id),
+      r.fuel_expires,
+    ])
+  )
+  for (const s of list) s.fuel_expires = fuelByStructure.get(String(s.structure_id)) ?? null
 
   // Rigs fitted to each structure (pulled from corp assets by the corp-assets job).
   const { data: rigRows } = structureIds.length
