@@ -1377,6 +1377,73 @@ create policy "Corpmates read shared mercenary dens"
     )
   );
 
+-- ── Shared-den owner visibility helpers ──────────────────────────────────────
+-- registration RLS only exposes a user's own rows, so a corpmate viewing a
+-- shared den (or shared enemy-den intel) can't resolve the owner/reporter's
+-- identity. These SECURITY DEFINER helpers bypass that for exactly the data the
+-- caller may already see, exposing only public EVE identity (name,
+-- character_id) or a boolean — never user_id / which characters share an
+-- account.
+
+-- Own + shared-to-caller registrations, resolved to name + character_id only.
+-- "Shared to caller" mirrors "Corpmates read shared mercenary dens" above, so a
+-- registration is returned exactly when the caller can already see its dens.
+-- Backs the /mercenary-dens owner column (a shared den would otherwise show
+-- "Corpmate").
+create or replace function public.mercenary_den_owner_names(reg_ids uuid[])
+returns table (id uuid, name text, character_id bigint)
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select r.id, r.name, r.character_id
+  from public.registration r
+  where r.id = any(reg_ids)
+    and (
+      r.user_id = auth.uid()
+      or exists (
+        select 1
+        from public.character_mercenary_den_share sh
+        where sh.character_id = r.id
+          and sh.corporation_id in (
+            select c.corporation_id
+            from public.registration c
+            where c.user_id = auth.uid() and c.corporation_id is not null
+          )
+      )
+    );
+$$;
+
+grant execute on function public.mercenary_den_owner_names(uuid[]) to authenticated;
+
+-- True when target_user shares their Mercenary Den data with a corporation the
+-- caller owns a character in. Computed under definer rights so it can read the
+-- reporter's registrations (hidden from the caller by registration RLS); backs
+-- the enemy-intel corp-sharing policy below (whose earlier direct join on
+-- registration silently matched nothing for the corpmate).
+create or replace function public.user_shares_dens_with_caller(target_user uuid)
+returns boolean
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select exists (
+    select 1
+    from public.registration r
+    join public.character_mercenary_den_share sh on sh.character_id = r.id
+    where r.user_id = target_user
+      and sh.corporation_id in (
+        select c.corporation_id
+        from public.registration c
+        where c.user_id = auth.uid() and c.corporation_id is not null
+      )
+  );
+$$;
+
+grant execute on function public.user_shares_dens_with_caller(uuid) to authenticated;
+
 -- ── mercenary_den_enemy_intel ────────────────────────────────────────────────────
 -- Hand-submitted intel on enemy-owned Mercenary Dens seen reinforced. ESI has no
 -- feed for another corp's dens, so this is a shared corkboard: any authenticated
@@ -1415,24 +1482,15 @@ create policy "Users read own enemy den intel"
 
 -- Corpmates read another user's reports exactly when that user shares their
 -- Mercenary Den data with a corporation the caller owns a character in — the
--- same character_mercenary_den_share preference that gates real dens.
--- Additive/permissive: OR'd with "Users read own enemy den intel" above.
+-- same character_mercenary_den_share preference that gates real dens. Goes
+-- through the definer helper because a direct join on registration runs as the
+-- querying corpmate, whose RLS hides the reporter's rows (so the branch never
+-- matched). Additive/permissive: OR'd with "Users read own enemy den intel".
 create policy "Corpmates read shared enemy den intel"
   on public.mercenary_den_enemy_intel
   for select
   to authenticated
-  using (
-    exists (
-      select 1
-      from public.registration r
-      join public.character_mercenary_den_share sh on sh.character_id = r.id
-      where r.user_id = mercenary_den_enemy_intel.created_by
-        and sh.corporation_id in (
-          select c.corporation_id from public.registration c
-          where c.user_id = (select auth.uid()) and c.corporation_id is not null
-        )
-    )
-  );
+  using (public.user_shares_dens_with_caller(created_by));
 
 -- A user can only post (and later remove) intel attributed to themselves.
 create policy "Authenticated insert own enemy den intel"

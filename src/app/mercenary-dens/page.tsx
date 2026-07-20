@@ -88,6 +88,19 @@ const MercenaryDensPage = async () => {
   const { data: denData } = await supabase.from('character_mercenary_den').select('*')
   const dens = (denData ?? []) as DenRow[]
 
+  // Resolve owner identity for dens we can see but don't own (shared to one of
+  // our corps). Their registration is hidden from us by RLS, so a
+  // security-definer RPC returns just the public EVE name + id for own +
+  // shared-to-us registrations — without it a shared den shows only "Corpmate".
+  const denOwnerById = new Map(ownRegById)
+  const foreignOwnerIds = [...new Set(dens.map((d) => d.character_id))].filter((id) => !denOwnerById.has(id))
+  if (foreignOwnerIds.length) {
+    const { data: owners } = await supabase.rpc('mercenary_den_owner_names', { reg_ids: foreignOwnerIds })
+    for (const o of (owners ?? []) as { id: string; name: string; character_id: number | null }[]) {
+      denOwnerById.set(o.id, { name: o.name, characterId: o.character_id != null ? String(o.character_id) : null })
+    }
+  }
+
   // Hand-submitted enemy-den sightings — a submitter always sees their own, and
   // sees others' reports exactly when that submitter shares their Mercenary Den
   // data with one of the caller's corps (mercenary_den_enemy_intel's RLS
@@ -114,10 +127,11 @@ const MercenaryDensPage = async () => {
     mine: row.created_by === data.user.id,
   }))
   const defaultReportedBy = [...ownRegById.values()][0]?.name ?? ''
-  // Reinforcement time input defaults to today at 00:00:00 UTC (EVE time).
+  // Reinforcement time input defaults to 24h out (a den reinforces for roughly a
+  // day), date only — "YYYY-MM-DDT" — so the reporter just fills in the hh:mm:ss.
   // Computed on the server so the client's initial state matches (no hydration
-  // mismatch) — the value is a plain ISO date the client edits.
-  const defaultReinforcementEnd = `${new Date().toISOString().slice(0, 10)}T00:00:00`
+  // mismatch) — the value is a plain string the client edits.
+  const defaultReinforcementEnd = `${new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10)}T`
   const typeNames = await getSdeTypeNames(dens.map((d) => d.type_id).filter((t): t is number => t != null))
 
   // Merge the hand-maintained temperate-planet intel with our real dens, keyed by
@@ -137,13 +151,14 @@ const MercenaryDensPage = async () => {
     const planet = planetsById[den.planet_id] ?? null
     const system = planet?.systemName ?? ''
     const roman = planet?.roman ?? ''
-    const ownReg = ownRegById.get(den.character_id)
+    const ownReg = denOwnerById.get(den.character_id)
     const enriched = {
       ...den,
       ownerLabel: ownReg?.name ?? 'Corpmate',
-      // The EVE character id, shown in parens after the owner. Only resolvable
-      // for the caller's own characters — a corpmate's registration is hidden
-      // by RLS, so their id (and name) stay unknown.
+      // The EVE character id, shown in parens after the owner. Resolvable for
+      // the caller's own characters and for shared dens' owners (via the
+      // security-definer RPC above); "Corpmate" only survives if resolution
+      // somehow fails.
       ownerCharacterId: ownReg?.characterId ?? null,
       typeName: den.type_id != null ? (typeNames[den.type_id] ?? null) : null,
     }
