@@ -38,14 +38,10 @@ Add `src/workflows/lib.ts` with the workflow-side equivalent of
 `runDirectCronJob` (same start/end heartbeat contract, workflow source):
 
 ```ts
-// src/workflows/lib.ts
-// Single-step execution of a whole extract job, with the same start/end
-// heartbeat pair runDirectCronJob records — but source: 'vercel-workflow',
-// and the step gets Workflows' bounded retries. Job modules are imported
-// lazily by the caller-supplied loader: their top-level supabase/esi setup
-// needs env vars absent at build time.
-export async function runJobStep(job: string, load: () => Promise<() => Promise<unknown>>) {
-  'use step'
+// src/workflows/lib.ts — a PLAIN function, NOT a `'use step'` (see below).
+// Run a whole extract job with the same start/end heartbeat pair
+// runDirectCronJob records — but source: 'vercel-workflow'.
+export async function runJobWithHeartbeat(job: string, load: () => Promise<() => Promise<unknown>>) {
   const { randomInt } = await import('node:crypto')
   const { recordHeartbeat } = await import('@/supabase.js')
   const run = await load()
@@ -59,13 +55,20 @@ export async function runJobStep(job: string, load: () => Promise<() => Promise<
 }
 ```
 
-Notes:
+**Resolved during the `industry-systems` PR — the shared-module `'use step'`
+approach does NOT compile.** The workflow compiler bans Node modules in
+workflow context, and it traces *every import reachable from workflow
+context*, but treats imports written *inside a `'use step'` function body* as
+running in Node. A `load` closure defined in `'use workflow'` context (as the
+first draft had it) makes the compiler pull the job module — and its
+`src/jobs/lib.js` → `node:crypto`/`node:url` — into workflow context, which
+fails the build (`plugin: workflow-node-module-error`).
 
-- A `'use step'` function may live in a shared module — but **verify this
-  compiles under the `workflow` package's build in the first PR** (the
-  directive compiler must pick it up outside the workflow's own file). If
-  it doesn't, inline the step into each workflow file; the boilerplate is
-  small and the pilot files already look like that.
+The working shape: `runJobWithHeartbeat` is a **plain** function (it runs
+inline within whatever step calls it), and each workflow file keeps a tiny
+inlined `'use step'` where **both** the `./lib` import and the job-module
+import are written inside the step body:
+
 - Retry caveat: if the *end* heartbeat write itself fails after the job
   succeeded, a step retry re-runs the whole job. Every job in this phase is
   idempotent (upserts / keyed appends / SCD-2 reconcile that converges), so
@@ -74,22 +77,32 @@ Notes:
 
 ## Step 2 — one workflow file per job
 
-Thin, named per job so Observability → Workflows shows which is which
-(mirror `src/workflows/characterImplants.ts`):
+Thin, named per job so Observability → Workflows shows which is which. Both
+imports live inside the step body on purpose (see the compiler note above):
 
 ```ts
 // src/workflows/industrySystems.ts
-import { runJobStep } from './lib'
+async function runStep() {
+  'use step'
+  const { runJobWithHeartbeat } = await import('./lib')
+  await runJobWithHeartbeat(
+    'industry-systems',
+    async () => (await import('@/jobs/industrySystems.js')).runIndustrySystems
+  )
+}
 
 export async function industrySystemsWorkflow() {
   'use workflow'
-  await runJobStep('industry-systems', async () => (await import('@/jobs/industrySystems.js')).runIndustrySystems)
+  await runStep()
 }
 ```
 
 Same file shape for `universeStructures.ts`, `corpStructures.ts`,
 `corpWalletJournal.ts`, `corpBlueprints.ts`, each loading its
-`run*()` export.
+`run*()` export. Verify the build (`pnpm run build`) after each — the
+"workflows build complete (N steps, M workflows)" line and the manifest
+entry (`src/app/.well-known/workflow/v1/manifest.json`) confirm the compiler
+picked up the new step.
 
 **Heartbeat subtlety for the corp jobs (#3–#5):** their `run*()` functions
 use `forEachCorporation`, which records its own per-corp heartbeat rows.

@@ -115,7 +115,7 @@ migration PR only swaps the scheduled trigger.
 
 | Doc | Jobs (in-phase risk order) | Shape change | Status |
 |---|---|---|---|
-| [01-direct-jobs.md](01-direct-jobs.md) | `industry-systems`, `universe-structures`, `corp-structures`, `corp-wallet-journal`, `corp-blueprints` | inline → single-step workflow | — |
+| [01-direct-jobs.md](01-direct-jobs.md) | `industry-systems` ✅, `universe-structures`, `corp-structures`, `corp-wallet-journal`, `corp-blueprints` | inline → single-step workflow | `industry-systems` done — pattern established |
 | [02-account-jobs.md](02-account-jobs.md) | `universe-names`, `character-affiliations` | 1 queue msg → single-step workflow | — |
 | [03-per-character.md](03-per-character.md) | `character-wallet-transactions`, `character-orders`, `character-industry-jobs`, `character-status`, `character-mercenary-dens`, `character-blueprints`, `character-assets` | per-char queue fan-out → fan-out workflow | — |
 | [04-per-corporation.md](04-per-corporation.md) | `corp-wallet-transactions`, `corp-industry-jobs`, `corp-assets` | per-corp queue fan-out → fan-out workflow | — |
