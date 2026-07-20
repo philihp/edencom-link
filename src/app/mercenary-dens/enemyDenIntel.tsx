@@ -3,8 +3,9 @@
 import { useState, useTransition } from 'react'
 
 import { addEnemyDenIntel, deleteEnemyDenIntel } from './actions'
+import { Countdown } from './countdown'
 import CopyDiscordPing from './copyDiscordPing'
-import { formatDuration, formatUtc } from './duration'
+import { formatUtc } from './duration'
 import styles from './mercenaryDens.module.css'
 
 export type EnemyDenIntelRow = {
@@ -30,16 +31,19 @@ const EnemyDenIntel = ({
   rows,
   defaultReportedBy,
   defaultReinforcementEnd,
+  now,
 }: {
   rows: EnemyDenIntelRow[]
   defaultReportedBy: string
   defaultReinforcementEnd: string
+  // Server render time — used for the reinforced/expired split and as the
+  // Countdown's hydration-safe starting point (its display then ticks live).
+  now: number
 }) => {
   const emptyForm = { system: '', planet: '', owner: '', reinforcementEnd: defaultReinforcementEnd, notes: '' }
   const [form, setForm] = useState(emptyForm)
   const [error, setError] = useState('')
   const [pending, startTransition] = useTransition()
-  const now = Date.now()
 
   const set = (field: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
     setForm((f) => ({ ...f, [field]: e.target.value }))
@@ -118,7 +122,7 @@ const EnemyDenIntel = ({
                     new Date(row.reinforcementEnd).getTime() > now ? (
                       <>
                         <span className={styles.reinforced}>
-                          reinforced {formatDuration(new Date(row.reinforcementEnd).getTime() - now)}
+                          reinforced <Countdown end={row.reinforcementEnd} now={now} />
                         </span>
                         <span className={styles.timestamp}> {formatUtc(row.reinforcementEnd)}</span>
                         <CopyDiscordPing

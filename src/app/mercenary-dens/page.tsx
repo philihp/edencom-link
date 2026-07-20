@@ -5,6 +5,7 @@ import { getSdeTypeNames } from '@/sdeTypes'
 import { createClient } from '@/utils/supabase/server'
 
 import { fetchOwners } from '../owners'
+import { Countdown } from './countdown'
 import CopyDiscordPing from './copyDiscordPing'
 import { STAGING, TEMPERATE_PLANETS } from './data'
 import { formatDuration, formatUtc } from './duration'
@@ -263,9 +264,12 @@ const MercenaryDensPage = async () => {
                       <>
                         <span className={styles.reinforced}>
                           reinforced
-                          {den?.reinforcement_end
-                            ? ` ${formatDuration(new Date(den.reinforcement_end).getTime() - now)}`
-                            : ''}
+                          {den?.reinforcement_end ? (
+                            <>
+                              {' '}
+                              <Countdown end={den.reinforcement_end} now={now} />
+                            </>
+                          ) : null}
                         </span>
                         {den?.reinforcement_end ? (
                           <>
@@ -307,6 +311,7 @@ const MercenaryDensPage = async () => {
         rows={enemyDenIntel}
         defaultReportedBy={defaultReportedBy}
         defaultReinforcementEnd={defaultReinforcementEnd}
+        now={now}
       />
     </>
   )
