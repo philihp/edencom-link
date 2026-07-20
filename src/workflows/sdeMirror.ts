@@ -3,7 +3,10 @@
 // function invocation, so each step — build discovery, the zip's entry
 // listing, every bounded ingest slice, station-name resolution, finalize —
 // runs as its own invocation with its own duration budget and Workflows'
-// bounded retries. All the real work lives in src/jobs/sdeMirror.js (also
+// bounded retries. Files ingest concurrently across a bounded pool of lanes
+// (safe: each file owns its own sde_<stem> table and reads an immutable
+// build-pinned zip), and the tail steps start as soon as the specific files
+// they read have landed. All the real work lives in src/jobs/sdeMirror.js (also
 // CLI-runnable); every step lazy-imports it because the job module's
 // top-level supabase setup needs env vars absent at build time.
 
@@ -70,24 +73,82 @@ async function encodeEsf(build: number): Promise<void> {
   await runEsfData({ build, force: true })
 }
 
+// Ingest fan-out sizing: how many per-file slice chains run concurrently.
+// Each file writes its own sde_<stem> table, so concurrent lanes share no rows
+// and each file's stale-row sweep stays self-contained; the cap is only about
+// being polite to CCP's CDN (concurrent Range readers of the same zip) and to
+// Supabase's PostgREST (concurrent upsert streams).
+const INGEST_LANES = 6
+
+// The sde_* stems encodeEsf() actually reads (the readMirror() calls in
+// src/buildEsfData.js) — it can start as soon as these files have fully
+// landed, instead of waiting for every entry in the export.
+const ESF_INPUT_STEMS = [
+  'types',
+  'groups',
+  'categories',
+  'market_groups',
+  'dogma_attributes',
+  'dogma_effects',
+  'type_dogma',
+]
+
 // Plain loops rather than the jobs' usual ramda/forEachSequential: the
 // orchestrator body is compiled by the workflow directive and should stay
 // simple, deterministic control flow over step calls — the cursor a step
-// returns is what drives the loop, and helpers imported at the top level
-// would execute in workflow context rather than inside a step.
+// returns is what drives each drain loop, and helpers imported at the top
+// level would execute in workflow context rather than inside a step.
+//
+// Files are ingested in parallel lanes rather than one after another: lane
+// assignment is static (largest-first, round-robin), not pulled from a shared
+// queue, so the file→step-call mapping is identical on every replay
+// regardless of how the runtime resolves in-flight steps. Within a file the
+// slice chain stays sequential — each slice's cursor feeds the next.
 export async function sdeMirrorWorkflow() {
   'use workflow'
   const plan = await planRun()
   const files = await listFiles(plan.zipUrl)
-  for (const file of files) {
+
+  // Drain one entry: chase its slice cursor until the entry reports done.
+  const drainFile = async (file: SdeFile): Promise<void> => {
     let cursor = 0
     while (cursor !== -1) {
       cursor = await ingestSlice(plan.zipUrl, file, plan.build, cursor)
     }
   }
-  await stationNames()
+
+  // Largest compressed entries first, so the longest slice chains (typeDogma)
+  // start at t=0 and wall clock tracks the longest chain instead of whatever
+  // happened to queue behind it.
+  const ordered = [...files].sort((a, b) => b.compressedSize - a.compressedSize)
+  const lanes: SdeFile[][] = Array.from({ length: INGEST_LANES }, () => [])
+  ordered.forEach((file, i) => lanes[i % INGEST_LANES].push(file))
+
+  // Build each lane's sequential drain chain synchronously, keeping a per-file
+  // completion promise so the tail steps below can start on their actual
+  // inputs rather than on the whole ingest.
+  const drained = new Map<string, Promise<void>>()
+  const laneDone = lanes.map((lane) => {
+    let prev: Promise<void> = Promise.resolve()
+    for (const file of lane) {
+      prev = prev.then(() => drainFile(file))
+      drained.set(file.stem, prev)
+    }
+    return prev
+  })
+  const allDrained = Promise.all(laneDone)
+  // Wait for specific files; if CCP ever renames one away, degrade to waiting
+  // for the full ingest rather than starting a tail step on a missing table.
+  const afterStems = (stems: string[]) => Promise.all(stems.map((stem) => drained.get(stem) ?? allDrained))
+
+  // Tail steps overlap the remaining ingest: station-name resolution needs
+  // only sde_npc_stations, and the esf_data re-encode (forced — it re-writes
+  // every night alongside the full re-ingest) needs only its 7 input tables.
+  const stations = afterStems(['npc_stations']).then(() => stationNames())
+  const esf = afterStems(ESF_INPUT_STEMS).then(() => encodeEsf(plan.build))
+
+  await Promise.all([allDrained, stations, esf])
+  // Last, once every table has landed: refresh the derived views, mark the
+  // build completed, and close the heartbeat planRun() opened.
   await finalize(plan.build, plan.runId)
-  // Re-encode the esf_data table from the freshly-mirrored build (forced, so it
-  // re-writes every night alongside the full re-ingest above).
-  await encodeEsf(plan.build)
 }
