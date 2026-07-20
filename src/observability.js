@@ -39,3 +39,11 @@ export const recordEsiConditional = ({
     rows,
     duration_ms: durationMs,
   })
+
+// One Discord interaction outcome — see src/app/api/discord/interactions/route.ts.
+// Group by (type, outcome) to watch signature rejections (portal validation and
+// spoof attempts) and, later, command traffic.
+//   type: the Discord interaction type (1=PING, 2=APPLICATION_COMMAND, ...), or null
+//   outcome: 'pong' | 'unimplemented' | 'unhandled' | 'bad_signature'
+export const recordDiscordInteraction = ({ type, outcome }) =>
+  recordMetric('discord.interaction', { type, outcome })
