@@ -251,6 +251,11 @@
   width: 130pt;
 }
 
-.intelForm input[type='datetime-local'] {
-  width: 150pt;
+.intelForm input[type='text'].reinforcement {
+  width: 170pt;
+}
+
+.reportingAs {
+  font-size: 10pt;
+  opacity: 0.75;
 }

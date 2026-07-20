@@ -11,8 +11,7 @@ export type EnemyDenIntelRow = {
   id: number
   system: string
   planet: string
-  owner: string
-  alliance: string | null
+  owner: string | null
   reinforcementEnd: string | null
   notes: string | null
   reportedBy: string
@@ -20,14 +19,23 @@ export type EnemyDenIntelRow = {
   mine: boolean
 }
 
-const EMPTY_FORM = { system: '', planet: '', owner: '', alliance: '', reinforcementEnd: '', notes: '', reportedBy: '' }
-
 // User-submitted corkboard of enemy dens seen reinforced — there's no ESI feed
 // for another corp's dens, so this is manually reported. A form to post a new
 // sighting, plus the shared list sorted soonest-reinforcement-first; a
-// submitter can delete their own rows (server-enforced by RLS).
-const EnemyDenIntel = ({ rows, defaultReportedBy }: { rows: EnemyDenIntelRow[]; defaultReportedBy: string }) => {
-  const [form, setForm] = useState({ ...EMPTY_FORM, reportedBy: defaultReportedBy })
+// submitter can delete their own rows (server-enforced by RLS). "Reported by"
+// is fixed to the caller's main character (derived server-side), and the
+// reinforcement time defaults to today at 00:00:00 UTC.
+const EnemyDenIntel = ({
+  rows,
+  defaultReportedBy,
+  defaultReinforcementEnd,
+}: {
+  rows: EnemyDenIntelRow[]
+  defaultReportedBy: string
+  defaultReinforcementEnd: string
+}) => {
+  const emptyForm = { system: '', planet: '', owner: '', reinforcementEnd: defaultReinforcementEnd, notes: '' }
+  const [form, setForm] = useState(emptyForm)
   const [error, setError] = useState('')
   const [pending, startTransition] = useTransition()
   const now = Date.now()
@@ -44,7 +52,7 @@ const EnemyDenIntel = ({ rows, defaultReportedBy }: { rows: EnemyDenIntelRow[]; 
         setError(result.error)
         return
       }
-      setForm({ ...EMPTY_FORM, reportedBy: form.reportedBy })
+      setForm(emptyForm)
     })
   }
 
@@ -67,16 +75,18 @@ const EnemyDenIntel = ({ rows, defaultReportedBy }: { rows: EnemyDenIntelRow[]; 
       <form className={styles.intelForm} onSubmit={onSubmit}>
         <input type="text" placeholder="System" value={form.system} onChange={set('system')} required />
         <input type="text" placeholder="Planet (e.g. III)" value={form.planet} onChange={set('planet')} required />
-        <input type="text" placeholder="Owner" value={form.owner} onChange={set('owner')} required />
-        <input type="text" placeholder="Alliance (optional)" value={form.alliance} onChange={set('alliance')} />
+        <input type="text" placeholder="Owner (optional)" value={form.owner} onChange={set('owner')} />
         <input
-          type="datetime-local"
+          type="text"
+          className={styles.reinforcement}
+          placeholder="Reinforced at (YYYY-MM-DDTHH:MM:SS UTC)"
           value={form.reinforcementEnd}
           onChange={set('reinforcementEnd')}
-          title="Reinforcement ends at (enter in EVE/UTC time)"
+          pattern="\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}"
+          title="Reinforcement ends at, in EVE/UTC time — ISO 8601 with seconds, e.g. 2026-07-20T14:30:45"
         />
         <input type="text" placeholder="Notes (optional)" value={form.notes} onChange={set('notes')} />
-        <input type="text" placeholder="Reported by" value={form.reportedBy} onChange={set('reportedBy')} required />
+        <span className={styles.reportingAs}>Reporting as {defaultReportedBy || '—'}</span>
         <button type="submit" disabled={pending}>
           Report sighting
         </button>
@@ -101,10 +111,7 @@ const EnemyDenIntel = ({ rows, defaultReportedBy }: { rows: EnemyDenIntelRow[]; 
               <tr key={row.id}>
                 <td className={styles.system}>{row.system}</td>
                 <td className={styles.planet}>{row.planet}</td>
-                <td>
-                  {row.owner}
-                  {row.alliance ? <span className={styles.alliance}> [{row.alliance}]</span> : null}
-                </td>
+                <td>{row.owner || dash}</td>
                 <td>
                   {row.reinforcementEnd ? (
                     new Date(row.reinforcementEnd).getTime() > now ? (
@@ -117,6 +124,7 @@ const EnemyDenIntel = ({ rows, defaultReportedBy }: { rows: EnemyDenIntelRow[]; 
                           system={row.system}
                           planet={row.planet}
                           reinforcementEnd={row.reinforcementEnd}
+                          enemy
                         />
                       </>
                     ) : (

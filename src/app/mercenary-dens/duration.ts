@@ -28,10 +28,11 @@ export const formatDuration = (ms: number): string => {
   return `${Math.round(t / MINUTE)}m`
 }
 
-// "2026-07-15 14:32 UTC" — EVE time is UTC, so render the wall-clock stamp
-// directly rather than localizing it.
+// "2026-07-15 14:32:07 UTC" — EVE time is UTC, so render the wall-clock stamp
+// directly rather than localizing it. Seconds included: mercenary-den timers
+// are second-precise and the reinforcement time is now entered to the second.
 export const formatUtc = (iso: string): string => {
   const date = new Date(iso)
   if (Number.isNaN(date.getTime())) return iso
-  return `${date.toISOString().slice(0, 16).replace('T', ' ')} UTC`
+  return `${date.toISOString().slice(0, 19).replace('T', ' ')} UTC`
 }

@@ -6,24 +6,30 @@ import styles from './mercenaryDens.module.css'
 
 // Small clipboard button next to a reinforced den's timer. Copies a
 // Discord-ready ping, e.g.
-//   Mercenary Den Reinforced - `JVA-FE` planet `II` at <t:1784057275:s> @ <t:1784057275:R>
-// where <t:…:s> renders in Discord as the viewer's local wall-clock time and
-// <t:…:R> as a live relative countdown ("in 26 hours"). Flashes a ✓ on success.
+//   Friendly Den Reinforced - QQGH-G V at <t:1784057275:s> <t:1784057275:R>
+// which renders in Discord as
+//   Friendly Den Reinforced - QQGH-G V at 7/20/26, 02:53 20 minutes ago
+// where <t:…:s> is the viewer's local wall-clock time and <t:…:R> a live
+// relative countdown. "Friendly" for our own dens, "Enemy" for reported
+// sightings. Flashes a ✓ on success.
 const CopyDiscordPing = ({
   system,
   planet,
   reinforcementEnd,
+  enemy,
 }: {
   system: string
   planet: string
   reinforcementEnd: string
+  enemy: boolean
 }) => {
   const [copied, setCopied] = useState(false)
   const resetTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const onClick = async () => {
     const unix = Math.floor(new Date(reinforcementEnd).getTime() / 1000)
-    const text = `Mercenary Den Reinforced - \`${system}\` planet \`${planet}\` at <t:${unix}:s> @ <t:${unix}:R>`
+    const label = enemy ? 'Enemy' : 'Friendly'
+    const text = `${label} Den Reinforced - ${system} ${planet} at <t:${unix}:s> <t:${unix}:R>`
     try {
       await navigator.clipboard.writeText(text)
       setCopied(true)
