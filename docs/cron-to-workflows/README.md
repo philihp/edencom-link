@@ -46,7 +46,7 @@ the workflow shape used by `sde-mirror`:
 
 | Shape | Jobs | Execution today |
 |---|---|---|
-| `runDirectCronJob` (inline) | `industry-systems`, `universe-structures`, `corp-structures`, `corp-wallet-journal`, `corp-blueprints` | Whole job inside the cron route's single 60s invocation |
+| `runDirectCronJob` (inline) | ~~`industry-systems`~~, ~~`universe-structures`~~, ~~`corp-structures`~~, ~~`corp-wallet-journal`~~ (migrated), `corp-blueprints` | Whole job inside the cron route's single 60s invocation |
 | `dispatchAccountCronJob` (1 queue msg) | `universe-names`, `character-affiliations` | Queue consumer runs the batch, records the whole-job heartbeat |
 | `fanOutPerCharacterCronJob` (1 msg/char) | `character-orders`, `character-assets`, `character-blueprints`, `character-mercenary-dens`, `character-wallet-transactions`, `character-industry-jobs` | Queue consumer runs per character |
 | `fanOutPerCharacterAnyScopeCronJob` | `character-status` | Same, any-of-scopes token selection |
@@ -115,7 +115,7 @@ migration PR only swaps the scheduled trigger.
 
 | Doc | Jobs (in-phase risk order) | Shape change | Status |
 |---|---|---|---|
-| [01-direct-jobs.md](01-direct-jobs.md) | `industry-systems` ✅, `universe-structures`, `corp-structures`, `corp-wallet-journal`, `corp-blueprints` | inline → single-step workflow | `industry-systems` done — pattern established |
+| [01-direct-jobs.md](01-direct-jobs.md) | `industry-systems` ✅, `universe-structures` ✅, `corp-structures` ✅, `corp-wallet-journal` ✅, `corp-blueprints` | inline → single-step workflow | 4/5 done — only the SCD-2 `corp-blueprints` remains |
 | [02-account-jobs.md](02-account-jobs.md) | `universe-names`, `character-affiliations` | 1 queue msg → single-step workflow | — |
 | [03-per-character.md](03-per-character.md) | `character-wallet-transactions`, `character-orders`, `character-industry-jobs`, `character-status`, `character-mercenary-dens`, `character-blueprints`, `character-assets` | per-char queue fan-out → fan-out workflow | — |
 | [04-per-corporation.md](04-per-corporation.md) | `corp-wallet-transactions`, `corp-industry-jobs`, `corp-assets` | per-corp queue fan-out → fan-out workflow | — |
