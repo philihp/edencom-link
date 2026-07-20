@@ -70,10 +70,13 @@ const EnemyDenIntel = ({ rows, defaultReportedBy }: { rows: EnemyDenIntelRow[]; 
         <input type="text" placeholder="Owner" value={form.owner} onChange={set('owner')} required />
         <input type="text" placeholder="Alliance (optional)" value={form.alliance} onChange={set('alliance')} />
         <input
-          type="datetime-local"
+          type="text"
+          className={styles.reinforcement}
+          placeholder="Reinforced at (YYYY-MM-DDTHH:MM:SS UTC)"
           value={form.reinforcementEnd}
           onChange={set('reinforcementEnd')}
-          title="Reinforcement ends at (enter in EVE/UTC time)"
+          pattern="\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}"
+          title="Reinforcement ends at, in EVE/UTC time — ISO 8601 with seconds, e.g. 2026-07-20T14:30:45"
         />
         <input type="text" placeholder="Notes (optional)" value={form.notes} onChange={set('notes')} />
         <input type="text" placeholder="Reported by" value={form.reportedBy} onChange={set('reportedBy')} required />

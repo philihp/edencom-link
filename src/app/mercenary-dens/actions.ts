@@ -95,11 +95,21 @@ export const addEnemyDenIntel = async (input: EnemyDenIntelInput): Promise<{ err
     return { error: 'System, planet, owner, and reported by are required' }
   }
 
-  // The <input type="datetime-local"> value ("YYYY-MM-DDTHH:mm") is entered as
-  // EVE/UTC time (that's the clock every pilot is already reading in-game), not
-  // the browser's local timezone — so it's stamped with a literal "Z" rather
-  // than passed through Date parsing, which would apply the browser's offset.
-  const reinforcementEnd = input.reinforcementEnd ? `${input.reinforcementEnd}:00Z` : null
+  // The reinforcement time is entered as EVE/UTC ISO 8601 with seconds
+  // ("YYYY-MM-DDTHH:MM:SS" — the clock every pilot is already reading in-game),
+  // not the browser's local timezone, so it's stamped with a literal "Z"
+  // rather than passed through Date parsing, which would apply the browser's
+  // offset. A space separator is accepted in place of the "T"; seconds are
+  // required.
+  let reinforcementEnd: string | null = null
+  const rawReinforcement = input.reinforcementEnd.trim()
+  if (rawReinforcement) {
+    const iso = rawReinforcement.replace(' ', 'T')
+    if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(iso)) {
+      return { error: 'Reinforcement time must be ISO 8601 with seconds, e.g. 2026-07-20T14:30:45 (UTC)' }
+    }
+    reinforcementEnd = `${iso}Z`
+  }
 
   const { error } = await supabase.from('mercenary_den_enemy_intel').insert({
     system,
