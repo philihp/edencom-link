@@ -19,7 +19,8 @@ export const LINKS: Record<string, string[]> = {
   'JVA-FE': ['RXA-W1', 'QFU-4S', '8P-LKL', 'VK6-EZ'],
   'QFU-4S': ['8P-LKL', 'QQGH-G'],
   '8P-LKL': ['JVA-FE', 'QFU-4S', 'QQGH-G'],
-  'VK6-EZ': ['JVA-FE', 'Q-UVY6', 'QQGH-G'],
+  'VK6-EZ': ['JVA-FE', 'Q-UVY6', 'QQGH-G', 'L-WG68'],
+  'L-WG68': ['VK6-EZ', 'HIK-MC', 'GZM-KB'],
 }
 
 // The current owner of a mercenary den on a temperate planet. `null` den means
@@ -41,9 +42,9 @@ export type TemperatePlanet = {
   den: Den | null
 }
 
-// One row per temperate planet in the area. JVA-FE and 8P-LKL each have two
-// temperate planets, so they appear twice. Ordered to follow the topology
-// outward from staging.
+// One row per temperate planet in the area. JVA-FE, 8P-LKL, and GZM-KB each
+// have two temperate planets, so they appear twice. Ordered to follow the
+// topology outward from staging.
 export const TEMPERATE_PLANETS: TemperatePlanet[] = [
   { system: 'RXA-W1', planet: 'III', den: null },
   { system: 'JVA-FE', planet: 'II', den: null },
@@ -54,6 +55,8 @@ export const TEMPERATE_PLANETS: TemperatePlanet[] = [
   { system: 'VK6-EZ', planet: 'IV', den: null },
   { system: 'QQGH-G', planet: 'V', den: null },
   { system: 'Q-UVY6', planet: 'II', den: null },
+  { system: 'GZM-KB', planet: 'IV', den: null },
+  { system: 'GZM-KB', planet: 'V', den: null },
 ]
 
 // Fixed 2-D layout for the topology graph, in the SVG's own coordinate space
@@ -68,6 +71,9 @@ export const NODE_POSITIONS: Record<string, { x: number; y: number }> = {
   'VK6-EZ': { x: 470, y: 285 },
   'QQGH-G': { x: 285, y: 400 },
   'Q-UVY6': { x: 520, y: 385 },
+  'L-WG68': { x: 600, y: 245 },
+  'HIK-MC': { x: 700, y: 185 },
+  'GZM-KB': { x: 700, y: 310 },
 }
 
 // Distinct undirected edges derived from LINKS (each pair once), for drawing.

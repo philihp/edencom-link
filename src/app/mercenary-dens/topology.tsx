@@ -21,7 +21,7 @@ const COLOR_CLASS: Record<NodeColor, string> = {
 export const Topology = ({ nodeColors = {} }: { nodeColors?: Record<string, NodeColor> }) => (
   <svg
     className={styles.topology}
-    viewBox="0 0 600 450"
+    viewBox="0 0 760 450"
     role="img"
     aria-label="Network topology of systems accessible from the staging system, coloured by mercenary den status"
   >
