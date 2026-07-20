@@ -1,16 +1,29 @@
 import { notFound, redirect } from 'next/navigation'
 
+import { getSdeSystem } from '@/sdeSystems'
 import { getSdeTypes } from '@/sdeTypes'
 import { createClient } from '@/utils/supabase/server'
 import { createServiceClient } from '@/utils/supabase/service'
 import { AssetPath, fetchAssetPath, regionSystemCrumbs, type Crumb } from '../../assetPath'
 import { fetchOwners } from '../../owners'
+import { resolveLocations, type LocationRef } from '../../resolveLocations'
 import { resolveShareToken } from '../../ship/access'
 import { fetchStationNames, fetchStationSystems } from '../../stationNames'
 import { fetchSystemNames } from '../../systemNames'
 import { fetchTypeNames } from '../../typeNames'
 import type { Owners } from '../../ownerFilter'
+import { type Location } from '../assetsTable'
 import { LocationAssets, type ItemRow } from './locationAssets'
+import { SystemLocations } from './systemLocations'
+
+// A row from the *_asset_location_summary() RPCs, normalized to whoever owns the
+// stacks (a character registration uuid or an EVE corporation id).
+type SummaryRow = {
+  location_id: number | string
+  location_type: string | null
+  owner_id: string
+  stacks: number | string
+}
 
 // invGroups.categoryID for the Ship category in CCP's SDE.
 const SHIP_CATEGORY_ID = 6
@@ -183,6 +196,11 @@ const AssetLocationPage = async ({
   // and a shared hangar shouldn't reveal where it lives anyway.
   let crumbs: Crumb[] = [{ href: '/asset', label: 'Assets' }]
   let systemName: string | undefined
+  // True when the id is a solar system: its heading is the system name, and it
+  // lists the stations/structures in the system where we hold assets (see
+  // systemLocations below) rather than only the items floating in its space.
+  let isSolarSystem = false
+  let systemLocations: Location[] = []
 
   if (self) {
     // A container: title it by its custom name (if any) plus type.
@@ -210,33 +228,91 @@ const AssetLocationPage = async ({
     const structure = (corpStructures?.[0] ?? playerStructures?.[0] ?? null) as Structure | null
 
     const locationType = rootItems[0]?.location_type ?? null
+    // A system id resolves in the SDE; a station/structure id doesn't. Only
+    // probed when the type is unknown (no root items) — the case that needs
+    // disambiguating: a system opened directly with nothing floating in its
+    // space. A location with items already reports its type.
+    const sdeSystem =
+      locationType == null && !structure && Number.isFinite(numericId) ? await getSdeSystem(numericId) : null
+    isSolarSystem = !structure && (locationType === 'solar_system' || sdeSystem != null)
+
     const [stationNames, stationSystems] = await Promise.all([
       fetchStationNames([numericId]),
       fetchStationSystems([numericId]),
     ])
 
-    const systemId = structure?.system_id != null ? Number(structure.system_id) : stationSystems[numericId]
+    const systemId = isSolarSystem
+      ? numericId
+      : structure?.system_id != null
+        ? Number(structure.system_id)
+        : stationSystems[numericId]
     const systemNames = await fetchSystemNames(
-      [systemId, locationType === 'solar_system' ? numericId : undefined].filter((n): n is number => n != null)
+      [systemId, isSolarSystem ? numericId : undefined].filter((n): n is number => n != null)
     )
 
     heading =
       (structure
         ? (structure.name ?? `Structure #${locationId}`)
-        : (stationNames[numericId] ?? (locationType === 'solar_system' ? systemNames[numericId] : undefined))) ??
-      `Location #${locationId}`
+        : isSolarSystem
+          ? (systemNames[numericId] ?? sdeSystem?.name ?? `System #${locationId}`)
+          : stationNames[numericId]) ?? `Location #${locationId}`
     systemName = systemId != null ? (systemNames[systemId] ?? `#${systemId}`) : undefined
 
     // Breadcrumb: region › system for this place (the place itself is the
     // heading). For a bare solar system the system is the heading, so only the
     // region shows. Falls back to the Assets root when it can't be placed.
-    const prefix = await regionSystemCrumbs(systemId, systemName, locationType === 'solar_system')
+    const prefix = await regionSystemCrumbs(systemId, systemName, isSolarSystem)
     if (prefix.length > 0) {
       crumbs = prefix
       // The system now lives in the breadcrumb (region › system), so drop the
       // redundant "System:" line below the heading. Kept only in the Assets
       // fallback, where the breadcrumb can't show the system.
       systemName = undefined
+    }
+
+    // For a solar system, the items parked in its stations/structures live under
+    // those locations (location_id = station/structure), not the system id, so
+    // the root-item query only surfaced things floating in space. List every
+    // station/structure in this system where we hold assets as a navigable
+    // directory, built from the same RLS-scoped location-summary RPCs the index
+    // page uses. Authenticated path only — those RPCs walk unscoped as
+    // service_role, and a share token is always bound to a single item.
+    if (isSolarSystem && !scope) {
+      const [{ data: characterSummary }, { data: corpSummary }] = await Promise.all([
+        supabase.rpc('character_asset_location_summary'),
+        supabase.rpc('corp_asset_location_summary'),
+      ])
+      const summary: SummaryRow[] = [
+        ...((characterSummary ?? []) as Array<Omit<SummaryRow, 'owner_id'> & { character_id: string }>).map(
+          ({ character_id, ...r }) => ({ ...r, owner_id: character_id })
+        ),
+        ...((corpSummary ?? []) as Array<Omit<SummaryRow, 'owner_id'> & { corporation_id: number | string }>).map(
+          ({ corporation_id, ...r }) => ({ ...r, owner_id: String(corporation_id) })
+        ),
+      ]
+      // Tally stacks per location/owner, dropping the system's own space bucket
+      // (its items are already shown inline below, and it would self-link).
+      const byLocation = new Map<string, { root: LocationRef; counts: Map<string, number> }>()
+      for (const row of summary) {
+        const id = String(row.location_id)
+        if (id === locationId) continue
+        const entry = byLocation.get(id) ?? { root: { id, type: row.location_type }, counts: new Map() }
+        entry.counts.set(row.owner_id, (entry.counts.get(row.owner_id) ?? 0) + Number(row.stacks))
+        byLocation.set(id, entry)
+      }
+      const entries = [...byLocation.values()]
+      const { nameFor, systemIdFor } = await resolveLocations(
+        entries.map(({ root }) => root),
+        supabase
+      )
+      systemLocations = entries
+        .filter(({ root }) => systemIdFor(root) === numericId)
+        .map(({ root, counts }) => ({
+          id: root.id,
+          name: nameFor(root),
+          system: null,
+          counts: Object.fromEntries(counts),
+        }))
     }
   }
 
@@ -299,7 +375,21 @@ const AssetLocationPage = async ({
         </p>
       ) : null}
 
-      <LocationAssets rows={rows} owners={owners} typeNamesPromise={typeNamesPromise} />
+      {isSolarSystem ? (
+        <>
+          <SystemLocations locations={systemLocations} owners={owners} />
+          {/* Items floating directly in the system's space (not docked in any of
+              its stations) — usually none, so only shown when present. */}
+          {rootItems.length > 0 ? (
+            <>
+              <h2 className="serif">In space</h2>
+              <LocationAssets rows={rows} owners={owners} typeNamesPromise={typeNamesPromise} />
+            </>
+          ) : null}
+        </>
+      ) : (
+        <LocationAssets rows={rows} owners={owners} typeNamesPromise={typeNamesPromise} />
+      )}
     </>
   )
 }
