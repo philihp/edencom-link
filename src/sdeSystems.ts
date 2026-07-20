@@ -59,11 +59,11 @@ export const getSdeSystemNames = async (systemIDs: Iterable<number>): Promise<Re
   return Object.fromEntries(Object.entries(systems).map(([id, s]) => [id, s.name]))
 }
 
-// "[region]/[constellation]/[system]" — falls back to just the system name
+// "[system] / [constellation] / [region]" — falls back to just the system name
 // for systems the mirror can't place in a constellation/region (shouldn't
 // happen for known-space systems, but the join is a left join).
 export const formatSystemPath = (system: SdeSystem): string =>
-  [system.regionName, system.constellationName, system.name].filter((part): part is string => Boolean(part)).join('/')
+  [system.name, system.constellationName, system.regionName].filter((part): part is string => Boolean(part)).join(' / ')
 
 export const getSdeSystemPaths = async (systemIDs: Iterable<number>): Promise<Record<number, string>> => {
   const systems = await getSdeSystems(systemIDs)

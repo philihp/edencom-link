@@ -79,14 +79,15 @@
   padding-left: 16pt;
 }
 
-/* Clone systems: keep each region/constellation/system path on one line and
-   pull the bullet in closer to the label. */
-.cloneList {
-  padding-left: 11pt;
+/* Neither the clone-system paths nor the implant names should wrap. */
+.bulletList li {
+  white-space: nowrap;
 }
 
-.cloneList li {
-  white-space: nowrap;
+/* Clone systems: no bullet, aligned flush under the label. */
+.cloneList {
+  list-style: none;
+  padding-left: 0;
 }
 
 .actions {
