@@ -3,6 +3,7 @@
 import { SupabaseClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 
+import { character } from '@/esi'
 import { createClient } from '@/utils/supabase/server'
 
 import { dispatchRefresh } from '../dispatchRefresh'
@@ -10,7 +11,13 @@ import { sso } from '../sso'
 
 const upsertCharacter =
   (supabase: SupabaseClient) =>
-  async (columns: { user_id: string; owner: string; name: string; character_id: number }) => {
+  async (columns: {
+    user_id: string
+    owner: string
+    name: string
+    character_id: number
+    corporation_id?: number
+  }) => {
     const response = await supabase.from('registration').upsert(columns, { onConflict: 'user_id, owner' }).select()
     if (response.error) throw new Error(`upsert character failed: ${JSON.stringify(response.error)}`)
     if (!response.data?.[0]?.id) throw new Error(`upsert character returned no row: ${JSON.stringify(response)}`)
@@ -78,7 +85,27 @@ export const GET = async (request: NextRequest) => {
   const expires_at = new Date(exp * 1000).toISOString()
   const eve_character_id = Number(sub.split(':')[2])
   await sso.getAccessToken(refresh_token, true)
-  const character_id = await upsertCharacter(supabase)({ user_id, owner, name, character_id: eve_character_id })
+
+  // Resolve the character's corporation up front so registration.corporation_id
+  // is populated immediately, instead of only after the first
+  // character-affiliations run. Best-effort: a transient ESI failure just leaves
+  // it unset (that job backfills it), so it never blocks registration. Only
+  // written when resolved, so a failed re-auth can't null out a known corp.
+  let corporation_id: number | undefined
+  try {
+    const sheet = await character(access_token, eve_character_id)
+    if (sheet?.corporation_id != null) corporation_id = Number(sheet.corporation_id)
+  } catch (e) {
+    console.warn(`/character/callback: corp lookup failed for ${eve_character_id}: ${(e as Error)?.message}`)
+  }
+
+  const character_id = await upsertCharacter(supabase)({
+    user_id,
+    owner,
+    name,
+    character_id: eve_character_id,
+    ...(corporation_id != null ? { corporation_id } : {}),
+  })
   await ensureMainCharacter(supabase)(user_id)
   await upsertToken(supabase)({
     user_id,
