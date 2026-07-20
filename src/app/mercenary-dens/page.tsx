@@ -92,11 +92,16 @@ const MercenaryDensPage = async () => {
   // sees others' reports exactly when that submitter shares their Mercenary Den
   // data with one of the caller's corps (mercenary_den_enemy_intel's RLS
   // piggybacks on character_mercenary_den_share). Soonest reinforcement timer
-  // first.
+  // first. Only rows whose reinforcement timer is still in the future or expired
+  // less than an hour ago are shown (long-stale and undated rows drop off), and
+  // soft-deleted rows (deleted_at set) are hidden.
+  const reinforcementCutoff = new Date(Date.now() - 60 * 60 * 1000).toISOString()
   const { data: intelData } = await supabase
     .from('mercenary_den_enemy_intel')
     .select('*')
-    .order('reinforcement_end', { ascending: true, nullsFirst: false })
+    .is('deleted_at', null)
+    .gt('reinforcement_end', reinforcementCutoff)
+    .order('reinforcement_end', { ascending: true })
   const enemyDenIntel: EnemyDenIntelRow[] = (intelData ?? []).map((row) => ({
     id: row.id,
     system: row.system,

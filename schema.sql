@@ -1398,7 +1398,8 @@ create table public.mercenary_den_enemy_intel (
   notes text,
   reported_by text not null,
   created_by uuid not null references auth.users(id) on delete cascade default auth.uid(),
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  deleted_at timestamptz
 );
 create index mercenary_den_enemy_intel_reinforcement_end_idx
   on public.mercenary_den_enemy_intel (reinforcement_end);
@@ -1446,7 +1447,16 @@ create policy "Authenticated delete own enemy den intel"
   to authenticated
   using (created_by = (select auth.uid()));
 
-grant select, insert, delete on public.mercenary_den_enemy_intel to authenticated;
+-- Removal is a soft delete (stamping deleted_at), so the submitter needs update
+-- on their own rows.
+create policy "Authenticated soft-delete own enemy den intel"
+  on public.mercenary_den_enemy_intel
+  for update
+  to authenticated
+  using (created_by = (select auth.uid()))
+  with check (created_by = (select auth.uid()));
+
+grant select, insert, update, delete on public.mercenary_den_enemy_intel to authenticated;
 grant all                    on public.mercenary_den_enemy_intel to service_role;
 
 -- ── character_clone_state ──────────────────────────────────────────────────

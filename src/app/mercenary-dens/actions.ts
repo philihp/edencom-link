@@ -139,12 +139,17 @@ export const addEnemyDenIntel = async (input: EnemyDenIntelInput): Promise<{ err
   return {}
 }
 
-// Remove one sighting. RLS restricts deletion to the row's own submitter, so an
-// attempt on someone else's row is simply a no-op rather than an error.
+// Soft-delete one sighting: stamp deleted_at rather than removing the row, so
+// the record is retained (the /mercenary-dens query hides deleted_at rows).
+// RLS restricts the update to the row's own submitter, so an attempt on someone
+// else's row simply matches nothing.
 export const deleteEnemyDenIntel = async (id: number): Promise<{ error?: string }> => {
   const supabase = await createClient()
 
-  const { error } = await supabase.from('mercenary_den_enemy_intel').delete().eq('id', id)
+  const { error } = await supabase
+    .from('mercenary_den_enemy_intel')
+    .update({ deleted_at: new Date().toISOString() })
+    .eq('id', id)
   if (error) {
     return { error: error.message }
   }
