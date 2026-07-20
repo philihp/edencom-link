@@ -59,14 +59,15 @@ async function finalize(build: number, runId: number): Promise<void> {
 
 // Re-encode the eveship.fit protobuf data into the esf_data table from the
 // freshly-mirrored SDE. Its own step (own duration budget + retries), run on
-// EVERY mirror pass — including the build-unchanged skip path — so the table
-// is (re)populated whenever the SDE extract runs, not only on a fresh ingest.
-// runEsfData no-ops cheaply when esf_data is already at this build, so the
-// steady-state cost is one query; it only pays the ~30s encode when stale.
+// every mirror pass. force: true re-encodes unconditionally — the nightly run
+// always re-does the full ingest (planRun no longer skips), and the ESF encode
+// matches that: it re-writes esf_data every night rather than no-opping when
+// the build is unchanged. (The manual /api/cron/esf-data route keeps the
+// build-guard by default; pass ?force=1 there to match.)
 async function encodeEsf(build: number): Promise<void> {
   'use step'
   const { runEsfData } = await import('@/jobs/esfData.js')
-  await runEsfData({ build })
+  await runEsfData({ build, force: true })
 }
 
 // Plain loops rather than the jobs' usual ramda/forEachSequential: the
@@ -86,7 +87,7 @@ export async function sdeMirrorWorkflow() {
   }
   await stationNames()
   await finalize(plan.build, plan.runId)
-  // Re-encode the esf_data table from the freshly-mirrored build (runEsfData
-  // still no-ops cheaply when esf_data already matches this build).
+  // Re-encode the esf_data table from the freshly-mirrored build (forced, so it
+  // re-writes every night alongside the full re-ingest above).
   await encodeEsf(plan.build)
 }
