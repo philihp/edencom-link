@@ -206,6 +206,14 @@
   fill: color-mix(in srgb, var(--merc-green) 22%, var(--paper-raised));
   stroke: var(--merc-green);
 }
+/* Reported enemy-den intel: a dashed red outline over the node's existing fill.
+ * Same specificity as the status-stroke rules above, so being later in source
+ * order lets it override their stroke while keeping their fill. */
+.nodeEnemyIntel .nodeBox {
+  stroke: var(--merc-red);
+  stroke-width: 2;
+  stroke-dasharray: 4 2;
+}
 .nodeRed .nodeLabel,
 .nodeYellow .nodeLabel,
 .nodeGreen .nodeLabel {
