@@ -241,6 +241,7 @@ const MercenaryDensPage = async () => {
                               system={row.system}
                               planet={row.planet}
                               reinforcementEnd={den.reinforcement_end}
+                              enemy={false}
                             />
                           </>
                         ) : null}

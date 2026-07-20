@@ -120,6 +120,7 @@ const EnemyDenIntel = ({ rows, defaultReportedBy }: { rows: EnemyDenIntelRow[]; 
                           system={row.system}
                           planet={row.planet}
                           reinforcementEnd={row.reinforcementEnd}
+                          enemy
                         />
                       </>
                     ) : (
