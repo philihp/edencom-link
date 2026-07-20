@@ -67,7 +67,10 @@ const MercenaryDensPage = async () => {
   // The caller's characters + corporations (share targets, and to label/scope own
   // dens) and which corps their dens are currently shared with.
   const { corporations } = await fetchOwners(supabase)
-  const { data: myRegs } = await supabase.from('registration').select('id, name, character_id')
+  const { data: myRegs } = await supabase
+    .from('registration')
+    .select('id, name, character_id, is_main')
+    .order('is_main', { ascending: false })
   const ownRegById = new Map(
     (myRegs ?? []).map((r) => [
       r.id as string,
@@ -99,7 +102,6 @@ const MercenaryDensPage = async () => {
     system: row.system,
     planet: row.planet,
     owner: row.owner,
-    alliance: row.alliance,
     reinforcementEnd: row.reinforcement_end,
     notes: row.notes,
     reportedBy: row.reported_by,
@@ -107,6 +109,10 @@ const MercenaryDensPage = async () => {
     mine: row.created_by === data.user.id,
   }))
   const defaultReportedBy = [...ownRegById.values()][0]?.name ?? ''
+  // Reinforcement time input defaults to today at 00:00:00 UTC (EVE time).
+  // Computed on the server so the client's initial state matches (no hydration
+  // mismatch) — the value is a plain ISO date the client edits.
+  const defaultReinforcementEnd = `${new Date().toISOString().slice(0, 10)}T00:00:00`
   const typeNames = await getSdeTypeNames(dens.map((d) => d.type_id).filter((t): t is number => t != null))
 
   // Merge the hand-maintained temperate-planet intel with our real dens, keyed by
@@ -270,7 +276,11 @@ const MercenaryDensPage = async () => {
         </table>
       </div>
 
-      <EnemyDenIntel rows={enemyDenIntel} defaultReportedBy={defaultReportedBy} />
+      <EnemyDenIntel
+        rows={enemyDenIntel}
+        defaultReportedBy={defaultReportedBy}
+        defaultReinforcementEnd={defaultReinforcementEnd}
+      />
     </>
   )
 }

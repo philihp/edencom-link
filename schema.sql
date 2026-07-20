@@ -1392,7 +1392,7 @@ create table public.mercenary_den_enemy_intel (
   id bigint generated always as identity primary key,
   system text not null,
   planet text not null,
-  owner text not null,
+  owner text,
   alliance text,
   reinforcement_end timestamptz,
   notes text,

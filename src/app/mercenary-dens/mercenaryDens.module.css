@@ -254,3 +254,8 @@
 .intelForm input[type='text'].reinforcement {
   width: 170pt;
 }
+
+.reportingAs {
+  font-size: 10pt;
+  opacity: 0.75;
+}
