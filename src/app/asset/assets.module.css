@@ -28,6 +28,18 @@
   color: var(--ink-soft);
 }
 
+/* Solar-system group header: the root level the location rows nest under. */
+.systemRow th,
+.systemRow td {
+  background: var(--paper-raised);
+  border-bottom: 1px solid var(--line);
+  padding-top: 14px;
+}
+
+.systemRow th {
+  color: var(--ink);
+}
+
 .pagination {
   display: flex;
   align-items: center;

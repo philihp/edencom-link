@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
+import { reduce } from 'ramda'
 
 import { ALL_OWNERS, OwnerSelect, useOwnerFilter, type Owners } from '../ownerFilter'
 import retro from '../retro.module.css'
@@ -22,30 +23,56 @@ type AssetsTableProps = {
   owners: Owners
 }
 
-// Rendering every location in one table got sluggish for accounts with
-// hundreds of them, so the list is paged client-side — the full owner-scoped
-// row set is already in memory (switching owners is instant, no round trip),
-// so paging is just a slice.
-const PAGE_SIZE = 50
+type LocationRow = { loc: Location; count: number }
+type SystemGroup = { system: string; rows: LocationRow[]; total: number }
+
+// Assets are organized by solar system first, then the stations/structures
+// within it. Rendering every location in one table got sluggish for accounts
+// with hundreds of them, so the systems are paged client-side — the full
+// owner-scoped set is already in memory (switching owners is instant, no round
+// trip), so paging is just a slice. Paging is by system group so a system's
+// locations never split across a page boundary.
+const PAGE_SIZE = 25
 
 export const AssetsTable = ({ locations, owners }: AssetsTableProps) => {
   const [ownerId, setOwnerId] = useOwnerFilter(OWNER_STORAGE_KEY, owners)
   const [page, setPage] = useState(0)
 
-  const rows = locations
+  const rows: LocationRow[] = locations
     .map((loc) => ({
       loc,
       count: ownerId === ALL_OWNERS ? Object.values(loc.counts).reduce((a, b) => a + b, 0) : (loc.counts[ownerId] ?? 0),
     }))
     .filter((row) => row.count > 0)
-    // Busiest locations first, then by name for a stable order.
-    .sort((a, b) => b.count - a.count || a.loc.name.localeCompare(b.loc.name))
 
-  const pageCount = Math.max(1, Math.ceil(rows.length / PAGE_SIZE))
-  // Switching owners reorders/shrinks the row set, which can leave `page`
-  // past the end — clamp rather than render a blank page.
+  // Group each location under its solar system (a location with no known system
+  // — e.g. an unresolved structure — groups under its own name).
+  const groups: SystemGroup[] = [
+    ...reduce(
+      (acc, row) => {
+        const key = row.loc.system ?? row.loc.name
+        const group = acc.get(key) ?? { system: key, rows: [], total: 0 }
+        group.rows.push(row)
+        group.total += row.count
+        return acc.set(key, group)
+      },
+      new Map<string, SystemGroup>(),
+      rows
+    ).values(),
+  ]
+    // Busiest location first within a system, then by name for stability.
+    .map((group) => ({
+      ...group,
+      rows: group.rows.sort((a, b) => b.count - a.count || a.loc.name.localeCompare(b.loc.name)),
+    }))
+    // Busiest system first, then by name.
+    .sort((a, b) => b.total - a.total || a.system.localeCompare(b.system))
+
+  const pageCount = Math.max(1, Math.ceil(groups.length / PAGE_SIZE))
+  // Switching owners reorders/shrinks the set, which can leave `page` past the
+  // end — clamp rather than render a blank page.
   const currentPage = Math.min(page, pageCount - 1)
-  const pageRows = rows.slice(currentPage * PAGE_SIZE, currentPage * PAGE_SIZE + PAGE_SIZE)
+  const pageGroups = groups.slice(currentPage * PAGE_SIZE, currentPage * PAGE_SIZE + PAGE_SIZE)
 
   // A new owner has its own busiest-first order, so always land back on page 1.
   useEffect(() => setPage(0), [ownerId])
@@ -64,29 +91,37 @@ export const AssetsTable = ({ locations, owners }: AssetsTableProps) => {
           No assets visible. Link a character with the <code>esi-assets.read_assets.v1</code> scope on the{' '}
           <a href="/character">Characters</a> page so the hourly job can fetch them.
         </p>
-      ) : rows.length > 0 ? (
+      ) : groups.length > 0 ? (
         <>
           <table className={retro.retro}>
             <thead>
               <tr>
-                <th>Location</th>
                 <th>System</th>
+                <th>Location</th>
                 <th className={retro.num}>Items</th>
               </tr>
             </thead>
-            <tbody>
-              {pageRows.map(({ loc, count }) => (
-                <tr key={`location-${loc.id}`}>
-                  <td>
-                    <Link href={`/asset/${loc.id}`} className="serif">
-                      {loc.name}
-                    </Link>
-                  </td>
-                  <td className="serif">{loc.system && loc.system !== loc.name ? loc.system : '—'}</td>
-                  <td className={retro.num}>{count}</td>
+            {pageGroups.map((group) => (
+              <tbody key={`system-${group.system}`}>
+                <tr className={styles.systemRow}>
+                  <th scope="rowgroup" colSpan={2} className="serif">
+                    {group.system}
+                  </th>
+                  <td className={retro.num}>{group.total}</td>
                 </tr>
-              ))}
-            </tbody>
+                {group.rows.map(({ loc, count }) => (
+                  <tr key={`location-${loc.id}`}>
+                    <td aria-hidden="true" />
+                    <td>
+                      <Link href={`/asset/${loc.id}`} className="serif">
+                        {loc.name}
+                      </Link>
+                    </td>
+                    <td className={retro.num}>{count}</td>
+                  </tr>
+                ))}
+              </tbody>
+            ))}
           </table>
           {pageCount > 1 && (
             <div className={styles.pagination}>
@@ -94,7 +129,7 @@ export const AssetsTable = ({ locations, owners }: AssetsTableProps) => {
                 ‹ Prev
               </button>
               <span className={styles.pageStatus}>
-                Page {currentPage + 1} of {pageCount} ({rows.length} locations)
+                Page {currentPage + 1} of {pageCount} ({groups.length} systems)
               </span>
               <button type="button" onClick={() => setPage(currentPage + 1)} disabled={currentPage >= pageCount - 1}>
                 Next ›
