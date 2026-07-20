@@ -243,7 +243,7 @@ One job per ESI endpoint. The npm script, queue job name, and heartbeat job labe
 | `character-industry-jobs` | `/characters/{id}/industry/jobs/` | `character_industry_job_over_time` | every 6h `:48` |
 | `character-mercenary-dens` | `/characters/{id}/structures/mercenary-dens/` (+ per-den detail) | `character_mercenary_den_over_time` (SCD identity), `character_mercenary_den_status` (append-only observations) | every 6h `:30` |
 | `character-status` | `/characters/{id}/wallet/` + `/location/` + `/implants/` + `/clones/` + `/ship/` | `character_wallet`, `character_location`, `character_implant`, `character_clone_over_time`, `character_clone_state`, `character_ship` | every 6h `:14` |
-| `character-affiliations` | `/characters/affiliation/` | `character_affiliation` | 11:41 daily |
+| `character-affiliations` | `/characters/affiliation/` | `character_affiliation`, `registration` (corporation_id) | 11:41 daily |
 | `corp-structures` | `/corporations/{id}/structures/` | `corp_structure` | 09:17 daily |
 | `corp-assets` | `/corporations/{id}/assets/` | `corp_asset_over_time`, `corp_structure_rig` | 09:27 daily |
 | `corp-blueprints` | `/corporations/{id}/blueprints/` | `corp_blueprint_over_time` | 09:07 daily |
