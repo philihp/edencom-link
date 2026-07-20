@@ -3,7 +3,7 @@ import { notFound, redirect } from 'next/navigation'
 import { getSdeTypes } from '@/sdeTypes'
 import { createClient } from '@/utils/supabase/server'
 import { createServiceClient } from '@/utils/supabase/service'
-import { AssetPath, fetchAssetPath, type Crumb } from '../../assetPath'
+import { AssetPath, fetchAssetPath, regionSystemCrumbs, type Crumb } from '../../assetPath'
 import { fetchOwners } from '../../owners'
 import { resolveShareToken } from '../../ship/access'
 import { fetchStationNames, fetchStationSystems } from '../../stationNames'
@@ -226,6 +226,18 @@ const AssetLocationPage = async ({
         : (stationNames[numericId] ?? (locationType === 'solar_system' ? systemNames[numericId] : undefined))) ??
       `Location #${locationId}`
     systemName = systemId != null ? (systemNames[systemId] ?? `#${systemId}`) : undefined
+
+    // Breadcrumb: region › system for this place (the place itself is the
+    // heading). For a bare solar system the system is the heading, so only the
+    // region shows. Falls back to the Assets root when it can't be placed.
+    const prefix = await regionSystemCrumbs(systemId, systemName, locationType === 'solar_system')
+    if (prefix.length > 0) {
+      crumbs = prefix
+      // The system now lives in the breadcrumb (region › system), so drop the
+      // redundant "System:" line below the heading. Kept only in the Assets
+      // fallback, where the breadcrumb can't show the system.
+      systemName = undefined
+    }
   }
 
   // Owner names for the filter dropdown: the caller's own owners, or — in the

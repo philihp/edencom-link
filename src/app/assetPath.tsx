@@ -7,12 +7,33 @@
 import Link from 'next/link'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { map, reverse } from 'ramda'
+import { getSdeSystem } from '@/sdeSystems'
 import { createClient } from '@/utils/supabase/server'
 import { resolveLocations } from './resolveLocations'
 import { fetchTypeNames } from './typeNames'
 import styles from './assetPath.module.css'
 
 export type Crumb = { href: string | null; label: string }
+
+// The leading location crumbs for a solar system: its region (a plain label —
+// there's no region page) followed by the system (linked to its /asset view).
+// Region is omitted for systems the SDE mirror can't place (wormhole/abyssal).
+// The system crumb is omitted when the location *is* that system (isBareSystem),
+// since the caller renders the system itself elsewhere (as the place crumb or
+// the page heading) — this avoids a duplicate. Shared by the breadcrumb here
+// and the bare-place branch of /asset/[locationId].
+export const regionSystemCrumbs = async (
+  systemId: number | undefined,
+  systemName: string | undefined,
+  isBareSystem: boolean
+): Promise<Crumb[]> => {
+  if (systemId == null) return []
+  const system = await getSdeSystem(systemId)
+  const crumbs: Crumb[] = []
+  if (system?.regionName) crumbs.push({ href: null, label: system.regionName })
+  if (!isBareSystem) crumbs.push({ href: `/asset/${systemId}`, label: systemName ?? system?.name ?? `#${systemId}` })
+  return crumbs
+}
 
 type AncestorRow = {
   item_id: number | string
@@ -46,9 +67,17 @@ export const fetchAssetPath = async (itemId: string, client?: SupabaseClient): P
     fetchTypeNames(map((a: AncestorRow) => Number(a.type_id), ancestors)),
   ])
 
+  // Lead with region › system (splitting the system out of the root place), then
+  // the root place itself (a station/structure; for a bare system it's already
+  // the system crumb). Falls back to the Assets root only when the system can't
+  // be placed in a region (non-known-space), so there's always a nav root.
+  const isBareSystem = root.type === 'solar_system'
+  const prefix = await regionSystemCrumbs(resolved.systemIdFor(root), resolved.systemFor(root), isBareSystem)
+  const placeCrumb = { href: `/asset/${root.id}`, label: resolved.nameFor(root) }
+  const head = prefix.length > 0 ? [...prefix, placeCrumb] : [ASSETS_CRUMB, placeCrumb]
+
   return [
-    ASSETS_CRUMB,
-    { href: `/asset/${root.id}`, label: resolved.nameFor(root) },
+    ...head,
     ...map(
       (a: AncestorRow) => ({
         href: `/asset/${a.item_id}`,

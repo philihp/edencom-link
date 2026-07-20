@@ -16,6 +16,7 @@ type Structure = { structure_id: number | string; name: string | null; system_id
 export type ResolvedLocations = {
   nameFor: (loc: LocationRef) => string
   systemFor: (loc: LocationRef) => string | undefined
+  systemIdFor: (loc: LocationRef) => number | undefined
 }
 
 export const resolveLocations = async (
@@ -75,16 +76,19 @@ export const resolveLocations = async (
     return `Location #${loc.id}`
   }
 
-  const systemFor = (loc: LocationRef): string | undefined => {
+  const systemIdFor = (loc: LocationRef): number | undefined => {
     const structure = structureById.get(loc.id)
-    if (structure?.system_id != null) return systemNames[Number(structure.system_id)] ?? `#${structure.system_id}`
-    if (loc.type === 'solar_system') return systemNames[Number(loc.id)]
-    if (loc.type === 'station') {
-      const systemId = stationSystems[Number(loc.id)]
-      if (systemId != null) return systemNames[systemId] ?? `#${systemId}`
-    }
+    if (structure?.system_id != null) return Number(structure.system_id)
+    if (loc.type === 'solar_system') return Number(loc.id)
+    if (loc.type === 'station') return stationSystems[Number(loc.id)] ?? undefined
     return undefined
   }
 
-  return { nameFor, systemFor }
+  const systemFor = (loc: LocationRef): string | undefined => {
+    const systemId = systemIdFor(loc)
+    if (systemId == null) return undefined
+    return systemNames[systemId] ?? `#${systemId}`
+  }
+
+  return { nameFor, systemFor, systemIdFor }
 }
