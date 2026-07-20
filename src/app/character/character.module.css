@@ -14,6 +14,8 @@
   border-radius: var(--radius);
   background: var(--paper-raised);
   transition: border-color 0.12s ease;
+  /* Clip the corner-hugging avatar to the tile's rounded rectangle. */
+  overflow: hidden;
 }
 
 .tile:hover {
@@ -22,12 +24,16 @@
 
 .avatar {
   position: absolute;
-  top: 12px;
-  right: 12px;
+  /* Hug the tile's top-right corner, overlapping the 1px border so the
+     avatar's rounded corner lines up with the tile's outer corner. The tile's
+     overflow: hidden clips the square top/right edges to the tile radius. */
+  top: -1px;
+  right: -1px;
   width: 64px;
   height: 64px;
   flex-shrink: 0;
-  border-radius: 50%;
+  /* Square top-left & bottom-right; top-right & bottom-left match the tile. */
+  border-radius: 0 var(--radius) 0 var(--radius);
   background: var(--line-soft);
   border: 1px solid var(--line);
 }
@@ -71,6 +77,16 @@
 .bulletList {
   margin: 2pt 0 0;
   padding-left: 16pt;
+}
+
+/* Clone systems: keep each region/constellation/system path on one line and
+   pull the bullet in closer to the label. */
+.cloneList {
+  padding-left: 11pt;
+}
+
+.cloneList li {
+  white-space: nowrap;
 }
 
 .actions {
