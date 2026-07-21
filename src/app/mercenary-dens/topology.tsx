@@ -1,11 +1,13 @@
-import { EDGES, NODE_POSITIONS, STAGING } from './data'
+import { EDGES, NODE_POSITIONS, STAGING, TEMPERATE_COUNTS } from './data'
 import styles from './mercenaryDens.module.css'
 
 export type NodeColor = 'red' | 'yellow' | 'green'
 
-// Pill dimensions for each system node, in SVG user units.
+// Pill dimensions for each system node, in SVG user units. A system with
+// temperate planets gets the taller pill to fit its 🌍 count on a second line.
 const NODE_W = 66
 const NODE_H = 24
+const NODE_H_BADGE = 40
 
 const COLOR_CLASS: Record<NodeColor, string> = {
   red: styles.nodeRed,
@@ -29,7 +31,7 @@ export const Topology = ({
 }) => (
   <svg
     className={styles.topology}
-    viewBox="0 0 760 450"
+    viewBox="0 0 1100 750"
     role="img"
     aria-label="Network topology of systems accessible from the staging system, coloured by mercenary den status; a dashed red outline marks a system with reported enemy-den intel"
   >
@@ -49,19 +51,25 @@ export const Topology = ({
       const groupClass = color ? COLOR_CLASS[color] : isStaging ? styles.nodeStaging : styles.node
       // Enemy-den intel overlays a dashed red outline regardless of the tint.
       const className = [groupClass, enemyIntel?.has(system) ? styles.nodeEnemyIntel : null].filter(Boolean).join(' ')
+      const temperate = TEMPERATE_COUNTS[system] ?? 0
+      const h = temperate > 0 ? NODE_H_BADGE : NODE_H
       return (
         <g key={system} className={className}>
-          <rect
-            x={x - NODE_W / 2}
-            y={y - NODE_H / 2}
-            width={NODE_W}
-            height={NODE_H}
-            rx={6}
-            className={styles.nodeBox}
-          />
-          <text x={x} y={y} className={styles.nodeLabel} textAnchor="middle" dominantBaseline="central">
+          <rect x={x - NODE_W / 2} y={y - h / 2} width={NODE_W} height={h} rx={6} className={styles.nodeBox} />
+          <text
+            x={x}
+            y={temperate > 0 ? y - 8 : y}
+            className={styles.nodeLabel}
+            textAnchor="middle"
+            dominantBaseline="central"
+          >
             {system}
           </text>
+          {temperate > 0 ? (
+            <text x={x} y={y + 10} className={styles.nodeCount} textAnchor="middle" dominantBaseline="central">
+              🌍 {temperate}
+            </text>
+          ) : null}
         </g>
       )
     })}
