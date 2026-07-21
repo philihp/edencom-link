@@ -18,7 +18,6 @@ export const runCorpStructures = ({ characterIds } = {}) =>
       corporation_id: s.corporation_id,
       type_id: s.type_id,
       system_id: s.system_id,
-      profile_id: s.profile_id ?? null,
       name: s.name ?? null,
       state: s.state ?? null,
       unanchors_at: s.unanchors_at ?? null,
@@ -31,13 +30,14 @@ export const runCorpStructures = ({ characterIds } = {}) =>
       updated_at: now,
     }))
 
-    // fuel_expires lives in corp_structure_status now (own-corp-only, while
-    // corp_structure opens to alliance-mates). Upsert the structures first — the
-    // status table's FK points back at them.
+    // fuel_expires and profile_id live in corp_structure_status now (own-corp-only,
+    // while corp_structure opens to alliance-mates). Upsert the structures first —
+    // the status table's FK points back at them.
     const statusRows = all.map((s) => ({
       structure_id: s.structure_id,
       corporation_id: s.corporation_id,
       fuel_expires: s.fuel_expires ?? null,
+      profile_id: s.profile_id ?? null,
       updated_at: now,
     }))
 

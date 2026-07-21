@@ -1584,7 +1584,6 @@ create table public.corp_structure (
   corporation_id bigint not null,
   type_id bigint not null,
   system_id bigint not null,
-  profile_id bigint,
   name text,
   state text,
   unanchors_at timestamptz,
@@ -1613,8 +1612,8 @@ create policy "Users read structures for own corps"
 -- Open corp_structure viewing to alliance-mates: a structure whose owning
 -- corporation's alliance is one of the alliances the caller's own characters'
 -- corporations belong to. Additive/permissive — OR'd with the own-corps policy
--- above. Fuel stays private: it lives in corp_structure_status (below), which
--- keeps the own-corps-only policy.
+-- above. Fuel and the reinforcement profile stay private: they live in
+-- corp_structure_status (below), which keeps the own-corps-only policy.
 create policy "Alliance members read corp structures"
   on public.corp_structure
   for select
@@ -1639,13 +1638,14 @@ grant select on public.corp_structure to authenticated;
 grant all    on public.corp_structure to service_role;
 
 -- ── corp_structure_status ──────────────────────────────────────────────────
--- The volatile fuel timer, split off corp_structure so it can stay own-corp
--- only while corp_structure opens up to alliance-mates. One row per structure,
--- pointing back to it.
+-- The private per-structure state — fuel timer and reinforcement profile — split
+-- off corp_structure so it can stay own-corp only while corp_structure opens up
+-- to alliance-mates. One row per structure, pointing back to it.
 create table public.corp_structure_status (
   structure_id bigint primary key references public.corp_structure (structure_id) on delete cascade,
   corporation_id bigint not null,
   fuel_expires timestamptz,
+  profile_id bigint,
   updated_at timestamptz not null default now()
 );
 create index corp_structure_status_corporation_id_idx on public.corp_structure_status (corporation_id);
