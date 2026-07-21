@@ -1,4 +1,4 @@
-import { EDGES, NODE_POSITIONS, STAGING, TEMPERATE_COUNTS } from './data'
+import { EDGES, NODE_POSITIONS, NODE_VIEWBOX, STAGING, TEMPERATE_COUNTS } from './data'
 import styles from './mercenaryDens.module.css'
 
 export type NodeColor = 'red' | 'yellow' | 'green'
@@ -23,8 +23,9 @@ const COLOR_CLASS: Record<NodeColor, string> = {
 }
 
 // A network diagram of the systems reachable out from staging. Pure SVG with a
-// fixed hand-placed layout (see NODE_POSITIONS) — no interactivity — so it
-// renders on the server and scales to the container width. Each system node is
+// fixed layout derived from real SDE geometry then force-relaxed (see
+// NODE_POSITIONS) — no interactivity — so it renders on the server and scales to
+// the container width. Each system node is
 // tinted by the most severe den status among its temperate planets (red
 // reinforced > yellow external > green ours), matching the table below; a
 // system with reported enemy-den intel also gets a dashed red outline
@@ -38,7 +39,7 @@ export const Topology = ({
 }) => (
   <svg
     className={styles.topology}
-    viewBox="59 -94 1173 1064"
+    viewBox={NODE_VIEWBOX}
     role="img"
     aria-label="Network topology of systems accessible from the staging system, coloured by mercenary den status; a dashed red outline marks a system with reported enemy-den intel"
   >
