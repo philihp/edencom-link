@@ -88,7 +88,7 @@ export const GET = async (request: NextRequest) => {
 
   // Resolve the character's corporation up front so registration.corporation_id
   // is populated immediately, instead of only after the first
-  // character-affiliations run. Best-effort: a transient ESI failure just leaves
+  // character-directory run. Best-effort: a transient ESI failure just leaves
   // it unset (that job backfills it), so it never blocks registration. Only
   // written when resolved, so a failed re-auth can't null out a known corp.
   let corporation_id: number | undefined

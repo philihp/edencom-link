@@ -60,6 +60,7 @@ drop table if exists public.character_order_over_time      cascade;
 drop view  if exists public.character_industry_job              cascade;
 drop table if exists public.character_industry_job_over_time    cascade;
 drop table if exists public.character_affiliation         cascade;
+drop table if exists public.character_directory   cascade;
 drop table if exists public.industry_system_index cascade;
 drop table if exists public.corporation          cascade;
 drop table if exists public.alliance             cascade;
@@ -1699,7 +1700,10 @@ grant all    on public.industry_system_index to service_role;
 -- counterparties, ...), not just for corps/alliances a user has registered.
 create table public.alliance (
   alliance_id bigint primary key,
-  name text not null,
+  -- Nullable: the character-directory job records the id from an affiliation
+  -- pull and backfills the name from a bulk universe/names lookup, which may lag
+  -- a run. A directory keyed by id shouldn't drop the id when the name misses.
+  name text,
   updated_at timestamptz not null default now()
 );
 
@@ -1715,7 +1719,7 @@ grant all    on public.alliance to service_role;
 
 create table public.corporation (
   corporation_id bigint primary key,
-  name text not null,
+  name text,   -- nullable for the same reason as alliance.name (above)
   alliance_id bigint references public.alliance (alliance_id),
   updated_at timestamptz not null default now()
 );
@@ -1730,6 +1734,42 @@ create policy "Everyone reads corporations"
 
 grant select on public.corporation to anon, authenticated;
 grant all    on public.corporation to service_role;
+
+-- ── character (directory) ─────────────────────────────────────────────────
+-- World-readable directory of EVE characters: public identity only (name,
+-- corporation, alliance) plus the registration uuid the extract tables key
+-- owners by. This is the "character" table in docs/sharing-layer/design.md;
+-- named character_directory because "character" is a SQL reserved word, and to
+-- stay distinct from the character_* extract tables (owned data). It carries NO
+-- user_id — that would let anyone correlate a user's alts — so it can be public
+-- while registration (the account binding) stays owner-only, letting the sharing
+-- layer resolve a shared row's owner via a plain RLS join instead of a SECURITY
+-- DEFINER bridge. Populated by the character-directory extract job (which also
+-- fills corporation.alliance_id and the alliance/corporation name rows from the
+-- same affiliation pull).
+create table public.character_directory (
+  character_id bigint primary key,
+  name text,
+  corporation_id bigint,
+  alliance_id bigint,
+  -- The registration this character is linked to, if any (unique: a character
+  -- links to at most one account). Extract tables key owners by registration
+  -- uuid, so this is the join back to a public name/corp/alliance. on delete set
+  -- null keeps the public directory row when an account unlinks the character.
+  registration_id uuid unique references public.registration (id) on delete set null,
+  updated_at timestamptz not null default now()
+);
+create index character_directory_corporation_id_idx on public.character_directory (corporation_id);
+
+alter table public.character_directory enable row level security;
+create policy "Everyone reads the character directory"
+  on public.character_directory
+  for select
+  to anon, authenticated
+  using (true);
+
+grant select on public.character_directory to anon, authenticated;
+grant all    on public.character_directory to service_role;
 
 -- ── corp_wallet_journal ───────────────────────────────────────────────────
 -- ESI /corporations/{id}/wallets/{division}/journal/, written by the

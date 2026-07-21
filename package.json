@@ -41,7 +41,7 @@
     "character-implants": "node src/jobs/characterImplants.js",
     "character-ship": "node src/jobs/characterShip.js",
     "character-status": "node src/jobs/characterStatus.js",
-    "character-affiliations": "node src/jobs/characterAffiliations.js",
+    "character-directory": "node src/jobs/characterDirectory.js",
     "corp-structures": "node src/jobs/corpStructures.js",
     "corp-assets": "node src/jobs/corpAssets.js",
     "corp-blueprints": "node src/jobs/corpBlueprints.js",

@@ -90,7 +90,7 @@ export const fanOutPerCorporationCronJob = async (job: string, scope: string) =>
 }
 
 // For the account-wide extract jobs that already process every registration
-// in one batch (character-affiliations, universe-names): dispatch a single
+// in one batch (character-directory, universe-names): dispatch a single
 // queue message: the consumer records its own whole-job heartbeat (see
 // src/app/api/queue/jobs/route.ts).
 export const dispatchAccountCronJob = async (job: string) => {

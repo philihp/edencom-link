@@ -50,7 +50,7 @@ export const PER_CORPORATION_JOB_NAMES = PER_CORPORATION_JOBS.map(({ job }) => j
 
 // Account-wide batch jobs (they process every registration at once), dispatched
 // once per refresh with no character.
-export const ACCOUNT_JOBS = ['character-affiliations', 'universe-names'] as const
+export const ACCOUNT_JOBS = ['character-directory', 'universe-names'] as const
 
 type Character = { id: string; name: string | null }
 

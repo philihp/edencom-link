@@ -38,7 +38,7 @@ const CORP_JOBS = [
 
 // Account-wide batch jobs — one run covers every registration at once.
 const ACCOUNT_JOBS = [
-  ['character-affiliations', 'affiliations'],
+  ['character-directory', 'characters'],
   ['universe-names', 'universe names'],
 ] as const
 
@@ -211,7 +211,7 @@ const RefreshPage = async () => {
     <>
       <h1>Refresh ESI</h1>
       <p>
-        Extracts run on their own schedule (every 6 hours for most, daily for corp assets and affiliations); nothing
+        Extracts run on their own schedule (every 6 hours for most, daily for corp assets and the character directory); nothing
         starts just by opening this page. A cell shows when its job last ran — green within 15 minutes, yellow within 6
         hours, red beyond that — and stale cells can be refreshed one at a time.
       </p>
