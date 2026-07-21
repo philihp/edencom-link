@@ -31,6 +31,8 @@ drop function if exists public.character_asset_location_contents(bigint) cascade
 drop function if exists public.corp_asset_location_summary()             cascade;
 drop function if exists public.corp_asset_location_contents(bigint)      cascade;
 drop function if exists public.asset_ancestors(bigint)                   cascade;
+drop function if exists public.character_asset_search(bigint[])          cascade;
+drop function if exists public.corp_asset_search(bigint[])               cascade;
 drop function if exists public.character_asset_snapshot_at(uuid[], timestamptz) cascade;
 drop function if exists public.character_industry_jobs(uuid[], boolean)             cascade;
 drop function if exists public.character_industry_jobs(uuid[], boolean, timestamptz) cascade;
@@ -269,7 +271,7 @@ grant all    on public.character_asset_over_time to service_role;
 -- its location_id chain through items we also own until the parent isn't ours;
 -- that parent is the root.
 create or replace function public.character_asset_location_summary()
-returns table (location_id bigint, location_type text, character_id uuid, stacks bigint)
+returns table (location_id bigint, location_type text, character_id uuid, stacks bigint, station_name text, system_id bigint)
 language sql
 stable
 as $$
@@ -310,11 +312,14 @@ as $$
     w.location_id,
     w.location_type,
     w.character_id,
-    count(*) as stacks
+    count(*) as stacks,
+    st.name as station_name,
+    st.system_id
   from walk w
+  left join public.sde_station st on st.station_id = w.location_id
   where w.location_id is not null
     and not exists (select 1 from parent_of o where o.item_id = w.location_id)
-  group by w.location_id, w.location_type, w.character_id;
+  group by w.location_id, w.location_type, w.character_id, st.name, st.system_id;
 $$;
 
 -- per-location page (/asset/[locationId]): for each item sitting directly in
@@ -355,7 +360,10 @@ returns table (
   location_flag text,
   root_location_id bigint,
   root_location_type text,
-  contents bigint
+  contents bigint,
+  type_name text,
+  root_location_name text,
+  system_id bigint
 )
 language sql
 stable
@@ -410,10 +418,15 @@ as $$
     m.location_flag,
     r.root_location_id,
     r.root_location_type,
-    coalesce(ct.contents, 0) as contents
+    coalesce(ct.contents, 0) as contents,
+    t.name as type_name,
+    st.name as root_location_name,
+    st.system_id
   from matched m
   join roots r on r.start_item = m.item_id
-  left join contents ct on ct.ancestor = m.item_id;
+  left join contents ct on ct.ancestor = m.item_id
+  left join public.sde_published_type t on t.type_id = m.type_id
+  left join public.sde_station st on st.station_id = r.root_location_id;
 $$;
 
 grant execute on function public.character_asset_location_summary()        to authenticated;
@@ -449,7 +462,8 @@ as $$
         'location_type',     a.location_type,
         'quantity',          a.quantity,
         'type_id',           a.type_id,
-        'character_name',    r.name
+        'character_name',    r.name,
+        'type_name',         t.name
       )
       order by a.item_id
     ),
@@ -457,6 +471,7 @@ as $$
   )
   from public.character_asset_over_time a
   join public.registration r on r.id = a.character_id
+  left join public.sde_published_type t on t.type_id = a.type_id
   where a.character_id = any(character_ids)
     and a.valid_from <= as_of
     and (a.is_current or a.valid_until >= as_of)
@@ -539,7 +554,8 @@ as $$
         'runs',                b.runs,
         'time_efficiency',     b.time_efficiency,
         'type_id',             b.type_id,
-        'character_name',      r.name
+        'character_name',      r.name,
+        'type_name',           t.name
       )
       order by b.item_id
     ),
@@ -547,6 +563,7 @@ as $$
   )
   from public.character_blueprint b
   join public.registration r on r.id = b.character_id
+  left join public.sde_published_type t on t.type_id = b.type_id
   where b.character_id = any(character_ids);
 $$;
 
@@ -897,7 +914,8 @@ as $$
         'type_id',        o.type_id,
         'volume_remain',  o.volume_remain,
         'volume_total',   o.volume_total,
-        'character_name', r.name
+        'character_name', r.name,
+        'type_name',      t.name
       )
       order by o.issued desc
     ),
@@ -905,6 +923,7 @@ as $$
   )
   from public.character_order_over_time o
   join public.registration r on r.id = o.character_id
+  left join public.sde_published_type t on t.type_id = o.type_id
   where o.character_id = any(character_ids)
     and o.valid_from <= as_of
     and (o.is_current or o.valid_until >= as_of);
@@ -1023,7 +1042,9 @@ as $$
         'station_id',             j.station_id,
         'status',                 j.status,
         'successful_runs',        j.successful_runs,
-        'character_name',         r.name
+        'character_name',         r.name,
+        'blueprint_type_name',    bt.name,
+        'product_type_name',      pt.name
       )
       order by j.start_date desc
     ),
@@ -1031,6 +1052,8 @@ as $$
   )
   from public.character_industry_job_over_time j
   join public.registration r on r.id = j.character_id
+  left join public.sde_published_type bt on bt.type_id = j.blueprint_type_id
+  left join public.sde_published_type pt on pt.type_id = j.product_type_id
   where j.character_id = any(character_ids)
     and j.valid_from <= as_of
     and (j.is_current or j.valid_until >= as_of)
@@ -1911,7 +1934,7 @@ grant all    on public.corp_asset_over_time to service_role;
 
 -- assets index (/asset): stacks per root location, split by owning corp.
 create or replace function public.corp_asset_location_summary()
-returns table (location_id bigint, location_type text, corporation_id bigint, stacks bigint)
+returns table (location_id bigint, location_type text, corporation_id bigint, stacks bigint, station_name text, system_id bigint)
 language sql
 stable
 as $$
@@ -1946,11 +1969,14 @@ as $$
     w.location_id,
     w.location_type,
     w.corporation_id,
-    count(*) as stacks
+    count(*) as stacks,
+    st.name as station_name,
+    st.system_id
   from walk w
+  left join public.sde_station st on st.station_id = w.location_id
   where w.location_id is not null
     and not exists (select 1 from parent_of o where o.item_id = w.location_id)
-  group by w.location_id, w.location_type, w.corporation_id;
+  group by w.location_id, w.location_type, w.corporation_id, st.name, st.system_id;
 $$;
 
 -- per-location page (/asset/[locationId]): for each corp item sitting directly
@@ -1988,7 +2014,10 @@ returns table (
   location_flag text,
   root_location_id bigint,
   root_location_type text,
-  contents bigint
+  contents bigint,
+  type_name text,
+  root_location_name text,
+  system_id bigint
 )
 language sql
 stable
@@ -2042,10 +2071,15 @@ as $$
     m.location_flag,
     r.root_location_id,
     r.root_location_type,
-    coalesce(ct.contents, 0) as contents
+    coalesce(ct.contents, 0) as contents,
+    t.name as type_name,
+    st.name as root_location_name,
+    st.system_id
   from matched m
   join roots r on r.start_item = m.item_id
-  left join contents ct on ct.ancestor = m.item_id;
+  left join contents ct on ct.ancestor = m.item_id
+  left join public.sde_published_type t on t.type_id = m.type_id
+  left join public.sde_station st on st.station_id = r.root_location_id;
 $$;
 
 grant execute on function public.corp_asset_location_summary()        to authenticated;
@@ -2061,7 +2095,7 @@ grant execute on function public.corp_asset_search(bigint[])          to authent
 -- Seeded from a single item (like the *_asset_search functions), so it stays
 -- cheap regardless of hangar size.
 create or replace function public.asset_ancestors(start_id bigint)
-returns table (item_id bigint, type_id bigint, name text, location_id bigint, location_type text, depth int)
+returns table (item_id bigint, type_id bigint, name text, location_id bigint, location_type text, depth int, type_name text)
 language sql
 stable
 as $$
@@ -2082,7 +2116,10 @@ as $$
     join parent_of p on p.item_id = w.location_id
     where w.depth < 16
   )
-  select * from walk order by depth;
+  select w.item_id, w.type_id, w.name, w.location_id, w.location_type, w.depth, t.name as type_name
+  from walk w
+  left join public.sde_published_type t on t.type_id = w.type_id
+  order by w.depth;
 $$;
 
 grant execute on function public.asset_ancestors(bigint) to authenticated;
@@ -2108,13 +2145,15 @@ as $$
         'location_type',     a.location_type,
         'quantity',          a.quantity,
         'is_singleton',      a.is_singleton,
-        'is_blueprint_copy', a.is_blueprint_copy
+        'is_blueprint_copy', a.is_blueprint_copy,
+        'type_name',         t.name
       )
       order by a.item_id
     ),
     '[]'::json
   )
   from public.corp_asset a
+  left join public.sde_published_type t on t.type_id = a.type_id
   where a.corporation_id in (
     select corporation_id from public.registration
     where id = any(character_ids) and corporation_id is not null
@@ -2191,13 +2230,15 @@ as $$
         'quantity',            b.quantity,
         'runs',                b.runs,
         'time_efficiency',     b.time_efficiency,
-        'type_id',             b.type_id
+        'type_id',             b.type_id,
+        'type_name',           t.name
       )
       order by b.item_id
     ),
     '[]'::json
   )
   from public.corp_blueprint b
+  left join public.sde_published_type t on t.type_id = b.type_id
   where b.corporation_id in (
     select corporation_id from public.registration
     where id = any(character_ids) and corporation_id is not null
@@ -2307,13 +2348,17 @@ as $$
         'start_date',             j.start_date,
         'station_id',             j.station_id,
         'status',                 j.status,
-        'successful_runs',        j.successful_runs
+        'successful_runs',        j.successful_runs,
+        'blueprint_type_name',    bt.name,
+        'product_type_name',      pt.name
       )
       order by j.start_date desc
     ),
     '[]'::json
   )
   from public.corp_industry_job_over_time j
+  left join public.sde_published_type bt on bt.type_id = j.blueprint_type_id
+  left join public.sde_published_type pt on pt.type_id = j.product_type_id
   where j.corporation_id in (
     select corporation_id from public.registration
     where id = any(character_ids) and corporation_id is not null
