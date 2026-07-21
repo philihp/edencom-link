@@ -78,7 +78,7 @@ const StructurePage = async ({ params }: StructureParams) => {
     ? await supabase
         .from('corp_structure')
         .select(
-          'structure_id, corporation_id, type_id, system_id, profile_id, name, state, unanchors_at, reinforce_hour, next_reinforce_hour, next_reinforce_apply, next_reinforce_weekday, services, last_seen_at, updated_at'
+          'structure_id, corporation_id, type_id, system_id, name, state, unanchors_at, reinforce_hour, next_reinforce_hour, next_reinforce_apply, next_reinforce_weekday, services, last_seen_at, updated_at'
         )
         .eq('structure_id', structureId)
         .maybeSingle()
@@ -98,15 +98,16 @@ const StructurePage = async ({ params }: StructureParams) => {
 
   const s = structure as Structure
 
-  // Fuel timer lives in corp_structure_status now (own-corp only). RLS returns a
-  // row only if the caller's corp owns this structure — an alliance-mate viewing
-  // it via corp_structure sees no fuel.
+  // Fuel timer and reinforcement profile live in corp_structure_status now
+  // (own-corp only). RLS returns a row only if the caller's corp owns this
+  // structure — an alliance-mate viewing it via corp_structure sees neither.
   const { data: statusRow } = await supabase
     .from('corp_structure_status')
-    .select('fuel_expires')
+    .select('fuel_expires, profile_id')
     .eq('structure_id', structureId)
-    .maybeSingle<{ fuel_expires: string | null }>()
+    .maybeSingle<{ fuel_expires: string | null; profile_id: number | null }>()
   s.fuel_expires = statusRow?.fuel_expires ?? null
+  s.profile_id = statusRow?.profile_id ?? null
 
   const { data: jobsData } = await supabase
     .from('character_industry_job')
