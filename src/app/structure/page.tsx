@@ -262,10 +262,14 @@ const StructuresPage = async () => {
                   </div>
 
                   <div className={styles.fields}>
-                    <span className={styles.label}>Revenue</span>
-                    <span className={`${styles.value} ${styles.num}`}>
-                      {formatIsk(totalByStructure.get(String(s.structure_id)) ?? 0)}
-                    </span>
+                    {totalByStructure.get(String(s.structure_id)) && (
+                      <>
+                        <span className={styles.label}>Revenue</span>
+                        <span className={`${styles.value} ${styles.num}`}>
+                          {formatIsk(totalByStructure.get(String(s.structure_id)) ?? 0)}
+                        </span>
+                      </>
+                    )}
                     <span className={styles.label}>Type</span>
                     <span className={styles.value}>
                       <Name name={structureTypeNames[Number(s.type_id)]} id={s.type_id} />
@@ -274,30 +278,34 @@ const StructuresPage = async () => {
                     <span className={styles.value}>
                       <SystemName name={systemNames[Number(s.system_id)]} id={s.system_id} />
                     </span>
-                    <span className={styles.label}>Fuel Expires</span>
-                    <span className={styles.value}>
-                      <DateTime value={s.fuel_expires} />
-                    </span>
-                  </div>
-
-                  <div className={styles.section}>
-                    <span className={styles.sectionLabel}>Services</span>
-                    {services.length > 0 ? (
-                      <ul className={styles.chips}>
-                        {services.map((svc, i) => (
-                          <li key={`svc-${s.structure_id}-${i}`} className={styles.chip}>
-                            {svc}
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <span className={styles.empty}>—</span>
+                    {s.fuel_expires && (
+                      <>
+                        <span className={styles.label}>Fuel Expires</span>
+                        <span className={styles.value}>
+                          <DateTime value={s.fuel_expires} />
+                        </span>
+                      </>
                     )}
                   </div>
 
-                  <div className={styles.section}>
-                    <span className={styles.sectionLabel}>Rigs</span>
-                    {rigs.length > 0 ? (
+                  {services.length > 0 && (
+                    <div className={styles.section}>
+                      <span className={styles.sectionLabel}>Services</span>
+                      {
+                        <ul className={styles.chips}>
+                          {services.map((svc, i) => (
+                            <li key={`svc-${s.structure_id}-${i}`} className={styles.chip}>
+                              {svc}
+                            </li>
+                          ))}
+                        </ul>
+                      }
+                    </div>
+                  )}
+
+                  {rigs.length > 0 && (
+                    <div className={styles.section}>
+                      <span className={styles.sectionLabel}>Rigs</span>
                       <ul className={styles.chips}>
                         {rigs.map((rig, i) => (
                           <li key={`rig-${s.structure_id}-${i}`} className={styles.chip}>
@@ -305,14 +313,12 @@ const StructuresPage = async () => {
                           </li>
                         ))}
                       </ul>
-                    ) : (
-                      <span className={styles.empty}>—</span>
-                    )}
-                  </div>
+                    </div>
+                  )}
 
-                  <div className={styles.section}>
-                    <span className={styles.sectionLabel}>Industry Indexes</span>
-                    {indexActivities.length > 0 ? (
+                  {indexActivities.length > 0 && (
+                    <div className={styles.section}>
+                      <span className={styles.sectionLabel}>Industry Indexes</span>
                       <ul className={styles.indexes}>
                         {indexActivities.map((activity) => {
                           const cost = systemIndexes?.get(activity)
@@ -332,10 +338,8 @@ const StructuresPage = async () => {
                           )
                         })}
                       </ul>
-                    ) : (
-                      <span className={styles.empty}>—</span>
-                    )}
-                  </div>
+                    </div>
+                  )}
                 </li>
               )
             })}
