@@ -99,51 +99,62 @@ export const TEMPERATE_PLANETS: TemperatePlanet[] = [
 ]
 
 // Fixed 2-D layout for the topology graph, in the SVG's own coordinate space
-// (see topology.tsx's viewBox). X1-IZ0 anchors the bottom of the diagram,
-// RXA-W1 directly above it, and JVA-FE directly above that; every other
-// system blooms outward and upward from JVA-FE in a radial layout (BFS ring
-// = distance from JVA-FE, angular slice sized by subtree weight — a branch
-// with more systems past it gets more angular room), so the map reads like a
-// flower with the staging spine as its stem. A few branch orderings are
-// chosen deliberately (rather than left to the generic algorithm) so that
-// systems on either end of a real cross-link — QQGH-G/VK6-EZ, and the
-// Y4OK-W/6U-1RX loop through VX1-HV — land angularly adjacent instead of on
-// opposite sides of the bloom.
+// (see topology.tsx's viewBox — kept in sync with NODE_VIEWBOX below). Rather
+// than hand-place each node, this is derived from CCP's real universe geometry
+// and then relaxed for legibility:
+//
+//   1. Start from each system's true 3-D position in the SDE (position.x/y/z),
+//      projected onto the EVE galaxy-map plane (x, z) — the same top-down plane
+//      the in-game star map uses (y is galactic "up" and is dropped).
+//   2. Relax with a force-directed pass — pairwise repulsion so crowded systems
+//      stop overlapping, edge springs so linked systems stay a readable distance
+//      apart, and a weak anchor back to the true projected position so the map
+//      keeps its real geography instead of drifting into a generic graph blob.
+//
+// Because the system list is a fixed, hand-maintained set, the positions are
+// baked here rather than recomputed at request time. The generator lives at
+// scripts/mercenaryDenLayout.mjs (raw SDE coordinates embedded, deterministic,
+// no network) — when a system is added to/removed from LINKS, add its SDE
+// coordinates there and re-run it to regenerate this block and NODE_VIEWBOX.
 export const NODE_POSITIONS: Record<string, { x: number; y: number }> = {
-  'JVA-FE': { x: 560, y: 720 },
-  'RXA-W1': { x: 560, y: 815 },
-  'X1-IZ0': { x: 560, y: 910 },
-  '8P-LKL': { x: 460, y: 803 },
-  'QFU-4S': { x: 434, y: 688 },
-  'VK6-EZ': { x: 665, y: 644 },
-  'QQGH-G': { x: 359, y: 668 },
-  'L-WG68': { x: 702, y: 568 },
-  'Q-UVY6': { x: 720, y: 853 },
-  'G-VFVB': { x: 288, y: 808 },
-  'VX1-HV': { x: 301, y: 598 },
-  'HIK-MC': { x: 713, y: 479 },
-  'GZM-KB': { x: 832, y: 808 },
-  'KPI-OW': { x: 780, y: 902 },
-  'K-XJJT': { x: 197, y: 697 },
-  'JNG7-K': { x: 231, y: 565 },
-  'FO1U-K': { x: 311, y: 455 },
-  'Y4OK-W': { x: 426, y: 382 },
-  '5LAJ-8': { x: 755, y: 413 },
-  'E4-E8W': { x: 923, y: 697 },
-  'P-NI4K': { x: 119, y: 692 },
-  '8-SPNN': { x: 160, y: 532 },
-  '6U-1RX': { x: 257, y: 398 },
-  'B9EA-G': { x: 797, y: 347 },
-  'E-BFLT': { x: 1001, y: 692 },
-  'GF-GR7': { x: 839, y: 281 },
-  'HPMN-V': { x: 560, y: 122 },
-  'Z19-B8': { x: 780, y: 164 },
-  'DVN6-0': { x: 1044, y: 369 },
-  'XR-ZL7': { x: 560, y: 44 },
-  'U1-VHY': { x: 1023, y: 227 },
-  '8OYE-Z': { x: 1172, y: 432 },
-  'XUPK-Z': { x: 560, y: -34 },
+  'JVA-FE': { x: 221, y: 501 },
+  'RXA-W1': { x: 145, y: 738 },
+  'X1-IZ0': { x: 100, y: 974 },
+  '8P-LKL': { x: 354, y: 329 },
+  'QFU-4S': { x: 383, y: 455 },
+  'VK6-EZ': { x: 278, y: 393 },
+  'QQGH-G': { x: 495, y: 374 },
+  'L-WG68': { x: 278, y: 605 },
+  'Q-UVY6': { x: 244, y: 218 },
+  'G-VFVB': { x: 561, y: 206 },
+  'VX1-HV': { x: 640, y: 552 },
+  'HIK-MC': { x: 431, y: 727 },
+  'GZM-KB': { x: 108, y: 589 },
+  'KPI-OW': { x: 347, y: 100 },
+  'K-XJJT': { x: 708, y: 388 },
+  'JNG7-K': { x: 758, y: 768 },
+  'FO1U-K': { x: 566, y: 775 },
+  'Y4OK-W': { x: 391, y: 885 },
+  '5LAJ-8': { x: 647, y: 715 },
+  'E4-E8W': { x: 566, y: 629 },
+  'P-NI4K': { x: 760, y: 245 },
+  '8-SPNN': { x: 787, y: 969 },
+  '6U-1RX': { x: 530, y: 930 },
+  'B9EA-G': { x: 765, y: 612 },
+  'E-BFLT': { x: 436, y: 597 },
+  'GF-GR7': { x: 936, y: 567 },
+  'HPMN-V': { x: 1062, y: 485 },
+  'Z19-B8': { x: 952, y: 398 },
+  'DVN6-0': { x: 1033, y: 712 },
+  'XR-ZL7': { x: 1093, y: 345 },
+  'U1-VHY': { x: 1167, y: 645 },
+  '8OYE-Z': { x: 1108, y: 870 },
+  'XUPK-Z': { x: 1238, y: 282 },
 }
+
+// SVG viewBox that frames NODE_POSITIONS with padding — regenerated alongside
+// the positions above by scripts/mercenaryDenLayout.mjs.
+export const NODE_VIEWBOX = '0 0 1338 1074'
 
 // Temperate-planet count per system, shown as the 🌍 badge under each node's
 // name on the topology. Derived from TEMPERATE_PLANETS so the badge can never
