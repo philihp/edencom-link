@@ -180,7 +180,8 @@ const MercenaryDensPage = async () => {
     .filter(([k]) => !staticKeys.has(k))
     .map(([, row]) => row)
     .sort((a, b) => a.system.localeCompare(b.system) || a.planet.localeCompare(b.planet))
-  const rows = [...staticRows, ...extraRows]
+  // Drop planets with neither a den nor intel — an empty row has nothing to show.
+  const rows = [...staticRows, ...extraRows].filter((row) => row.den || row.intel)
 
   // Node colour per system: the most severe colour among that system's rows
   // (red > yellow > green).
@@ -220,7 +221,7 @@ const MercenaryDensPage = async () => {
 
       <Topology nodeColors={nodeColors} enemyIntel={enemyIntelSystems} />
 
-      <h2>Temperate planets</h2>
+      <h2>Friendly dens</h2>
       <div className={styles.tableScroll}>
         <table className={styles.table}>
           <thead>
