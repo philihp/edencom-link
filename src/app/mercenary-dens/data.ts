@@ -101,60 +101,61 @@ export const TEMPERATE_PLANETS: TemperatePlanet[] = [
 // Fixed 2-D layout for the topology graph, in the SVG's own coordinate space
 // (see topology.tsx's viewBox — kept in sync with NODE_VIEWBOX below). Rather
 // than hand-place each node, this is derived from CCP's real universe geometry
-// and then relaxed for legibility:
+// and then untangled into a clean, crossing-free drawing:
 //
-//   1. Start from each system's true 3-D position in the SDE (position.x/y/z),
+//   1. Seed from each system's true 3-D position in the SDE (position.x/y/z),
 //      projected onto the EVE galaxy-map plane (x, z) — the same top-down plane
 //      the in-game star map uses (y is galactic "up" and is dropped).
-//   2. Relax with a force-directed pass — pairwise repulsion so crowded systems
-//      stop overlapping, edge springs so linked systems stay a readable distance
-//      apart, and a weak anchor back to the true projected position so the map
-//      keeps its real geography instead of drifting into a generic graph blob.
+//   2. Simulated annealing to a planar (zero edge-crossing) embedding, then a
+//      planarity-preserving force relaxation to even out spacing and shorten
+//      long edges without ever re-introducing a crossing.
 //
-// Because the system list is a fixed, hand-maintained set, the positions are
-// baked here rather than recomputed at request time. The generator lives at
-// scripts/mercenaryDenLayout.mjs (raw SDE coordinates embedded, deterministic,
-// no network) — when a system is added to/removed from LINKS, add its SDE
-// coordinates there and re-run it to regenerate this block and NODE_VIEWBOX.
+// So no two links cross, while the layout still broadly follows real geography
+// (the annealer starts from the SDE projection). Because the system list is a
+// fixed, hand-maintained set, the positions are baked here rather than recomputed
+// at request time. The generator lives at scripts/mercenaryDenLayout.mjs (raw SDE
+// coordinates embedded, seeded PRNG, deterministic, no network) — when a system
+// is added to/removed from LINKS, add its SDE coordinates there and re-run it to
+// regenerate this block and NODE_VIEWBOX.
 export const NODE_POSITIONS: Record<string, { x: number; y: number }> = {
-  'JVA-FE': { x: 221, y: 501 },
-  'RXA-W1': { x: 145, y: 738 },
-  'X1-IZ0': { x: 100, y: 974 },
-  '8P-LKL': { x: 354, y: 329 },
-  'QFU-4S': { x: 383, y: 455 },
-  'VK6-EZ': { x: 278, y: 393 },
-  'QQGH-G': { x: 495, y: 374 },
-  'L-WG68': { x: 278, y: 605 },
-  'Q-UVY6': { x: 244, y: 218 },
-  'G-VFVB': { x: 561, y: 206 },
-  'VX1-HV': { x: 640, y: 552 },
-  'HIK-MC': { x: 431, y: 727 },
-  'GZM-KB': { x: 108, y: 589 },
-  'KPI-OW': { x: 347, y: 100 },
-  'K-XJJT': { x: 708, y: 388 },
-  'JNG7-K': { x: 758, y: 768 },
-  'FO1U-K': { x: 566, y: 775 },
-  'Y4OK-W': { x: 391, y: 885 },
-  '5LAJ-8': { x: 647, y: 715 },
-  'E4-E8W': { x: 566, y: 629 },
-  'P-NI4K': { x: 760, y: 245 },
-  '8-SPNN': { x: 787, y: 969 },
-  '6U-1RX': { x: 530, y: 930 },
-  'B9EA-G': { x: 765, y: 612 },
-  'E-BFLT': { x: 436, y: 597 },
-  'GF-GR7': { x: 936, y: 567 },
-  'HPMN-V': { x: 1062, y: 485 },
-  'Z19-B8': { x: 952, y: 398 },
-  'DVN6-0': { x: 1033, y: 712 },
-  'XR-ZL7': { x: 1093, y: 345 },
-  'U1-VHY': { x: 1167, y: 645 },
-  '8OYE-Z': { x: 1108, y: 870 },
-  'XUPK-Z': { x: 1238, y: 282 },
+  'JVA-FE': { x: 372, y: 1262 },
+  'RXA-W1': { x: 209, y: 1421 },
+  'X1-IZ0': { x: 100, y: 1586 },
+  '8P-LKL': { x: 519, y: 1395 },
+  'QFU-4S': { x: 540, y: 1239 },
+  'VK6-EZ': { x: 521, y: 1055 },
+  'QQGH-G': { x: 705, y: 1293 },
+  'L-WG68': { x: 630, y: 777 },
+  'Q-UVY6': { x: 307, y: 958 },
+  'G-VFVB': { x: 727, y: 1498 },
+  'VX1-HV': { x: 980, y: 1381 },
+  'HIK-MC': { x: 852, y: 597 },
+  'GZM-KB': { x: 493, y: 623 },
+  'KPI-OW': { x: 118, y: 883 },
+  'K-XJJT': { x: 1069, y: 1595 },
+  'JNG7-K': { x: 1212, y: 1405 },
+  'FO1U-K': { x: 1030, y: 1177 },
+  'Y4OK-W': { x: 922, y: 787 },
+  '5LAJ-8': { x: 982, y: 392 },
+  'E4-E8W': { x: 1064, y: 518 },
+  'P-NI4K': { x: 1174, y: 1767 },
+  '8-SPNN': { x: 1412, y: 1436 },
+  '6U-1RX': { x: 1003, y: 975 },
+  'B9EA-G': { x: 1220, y: 372 },
+  'E-BFLT': { x: 1214, y: 625 },
+  'GF-GR7': { x: 1494, y: 357 },
+  'HPMN-V': { x: 1597, y: 164 },
+  'Z19-B8': { x: 1694, y: 300 },
+  'DVN6-0': { x: 1635, y: 553 },
+  'XR-ZL7': { x: 1800, y: 142 },
+  'U1-VHY': { x: 1639, y: 751 },
+  '8OYE-Z': { x: 1823, y: 634 },
+  'XUPK-Z': { x: 1993, y: 100 },
 }
 
 // SVG viewBox that frames NODE_POSITIONS with padding — regenerated alongside
 // the positions above by scripts/mercenaryDenLayout.mjs.
-export const NODE_VIEWBOX = '0 0 1338 1074'
+export const NODE_VIEWBOX = '0 0 2093 1867'
 
 // Temperate-planet count per system, shown as the 🌍 badge under each node's
 // name on the topology. Derived from TEMPERATE_PLANETS so the badge can never

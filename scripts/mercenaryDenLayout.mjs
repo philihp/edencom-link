@@ -1,20 +1,26 @@
 // Generator for the Mercenary Dens topology layout (src/app/mercenary-dens/data.ts's
 // NODE_POSITIONS). The map is a fixed, hand-maintained set of systems, so rather
-// than hand-place each node we derive the layout from CCP's real universe geometry:
+// than hand-place each node we derive the layout from CCP's real universe geometry
+// and then untangle it into a clean, crossing-free drawing:
 //
-//   1. Start from each system's true 3-D position in the SDE (position.x/y/z, in
+//   1. Seed from each system's true 3-D position in the SDE (position.x/y/z, in
 //      metres), projected onto the EVE galaxy-map plane (x, z) — the same top-down
-//      plane the in-game star map uses (y is galactic "up" and is dropped).
-//   2. Relax with a force-directed pass — pairwise repulsion so crowded systems
-//      stop overlapping, edge springs so linked systems stay a readable distance
-//      apart, and a weak anchor back to the true projected position so the map
-//      keeps its real geography instead of drifting into a generic graph blob.
+//      plane the in-game star map uses (y is galactic "up" and is dropped). This
+//      gives the untangler a starting point that already resembles real geography.
+//   2. Simulated annealing to a planar (zero edge-crossing) embedding — crossings
+//      are penalised far more heavily than spacing, and the anneal is restarted
+//      from the seed with fresh randomness until it finds a layout with no
+//      crossings (the graph is planar, so one exists).
+//   3. Planarity-preserving force relaxation — spring + repulsion forces even out
+//      spacing and shorten long edges, but any node move that would re-introduce a
+//      crossing is rejected, so the result stays crossing-free while looking tidy.
 //
-// The raw SDE coordinates are embedded below (build 3439610, mapSolarSystems.jsonl)
-// so this script reproduces the layout deterministically with no network. When the
-// system list changes, add the new system's coordinates here (from the SDE mirror)
-// and re-run: `node scripts/mercenaryDenLayout.mjs` prints the NODE_POSITIONS block
-// to paste into data.ts.
+// A seeded PRNG makes the whole thing deterministic. The raw SDE coordinates are
+// embedded below (build 3439610, mapSolarSystems.jsonl) so this reproduces the
+// layout with no network. When the system list changes, add the new system's
+// coordinates here (from the SDE mirror) and re-run:
+// `node scripts/mercenaryDenLayout.mjs` prints the NODE_POSITIONS block and the
+// viewBox to paste into data.ts.
 
 // system -> true SDE position (metres). x/z are the map plane; y is dropped.
 const SDE = {
@@ -83,15 +89,27 @@ const STAGING = 'X1-IZ0'
 
 // ── Layout parameters ────────────────────────────────────────────────────────
 const NODE_NAMES = Object.keys(SDE)
-const REST_LEN = 120 // ideal drawn distance along a link
+const IDX = Object.fromEntries(NODE_NAMES.map((n, i) => [n, i]))
+const REST_LEN = 150 // ideal drawn distance along a link
 const MIN_SEP = 92 // desired minimum centre-to-centre spacing (node badge Ø ≈ 60)
-const K_REP = 44000 // pairwise repulsion strength
-const K_SPRING = 0.06 // edge spring stiffness
-const K_ANCHOR = 0.015 // pull back toward the true SDE position (keeps geography)
-const ITERATIONS = 4000
-const T0 = 40 // initial max step (cools linearly to 0)
+const SA_ITERS = 300000 // annealing steps per restart
+const SA_RESTARTS = 30 // re-seeded attempts to find a crossing-free embedding
+const FDL_PASSES = 900 // planarity-preserving relaxation passes
 
-// Distinct undirected edges.
+// Deterministic PRNG (mulberry32) so the layout is reproducible run-to-run.
+let seed = 0
+const setSeed = (s) => {
+  seed = s | 0
+}
+const rnd = () => {
+  seed |= 0
+  seed = (seed + 0x6d2b79f5) | 0
+  let t = Math.imul(seed ^ (seed >>> 15), 1 | seed)
+  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+}
+
+// Distinct undirected edges as index pairs.
 const edges = (() => {
   const seen = new Set()
   const out = []
@@ -100,97 +118,154 @@ const edges = (() => {
       const k = [from, to].sort().join('|')
       if (seen.has(k)) continue
       seen.add(k)
-      out.push([from, to])
+      out.push([IDX[from], IDX[to]])
     }
   }
   return out
 })()
+const incident = NODE_NAMES.map(() => [])
+edges.forEach(([a, b], ei) => {
+  incident[a].push(ei)
+  incident[b].push(ei)
+})
 
-// Project true 3-D position onto the map plane (x, z), then normalise to a
-// working box so the force constants above are in "screen" units.
-const projected = (() => {
+// Seed positions: true 3-D position projected onto the map plane (x, z),
+// normalised to a ~900px working box.
+const seedProjection = (() => {
   const px = NODE_NAMES.map((n) => SDE[n].x)
   const pz = NODE_NAMES.map((n) => SDE[n].z)
-  const minX = Math.min(...px)
-  const maxX = Math.max(...px)
-  const minZ = Math.min(...pz)
-  const maxZ = Math.max(...pz)
-  const span = Math.max(maxX - minX, maxZ - minZ)
+  const lo = Math.min(...px)
+  const loZ = Math.min(...pz)
+  const span = Math.max(Math.max(...px) - lo, Math.max(...pz) - loZ)
   const scale = 900 / span
-  const out = {}
-  for (const n of NODE_NAMES) {
-    out[n] = {
-      // screen y = z (flipped later if needed so staging sits at the bottom)
-      x: (SDE[n].x - minX) * scale,
-      y: (SDE[n].z - minZ) * scale,
-    }
+  return {
+    x: NODE_NAMES.map((n) => (SDE[n].x - lo) * scale),
+    y: NODE_NAMES.map((n) => (SDE[n].z - loZ) * scale),
   }
-  return out
 })()
 
-// Simulate.
-const pos = {}
-for (const n of NODE_NAMES) pos[n] = { x: projected[n].x, y: projected[n].y }
+const X = seedProjection.x.slice()
+const Y = seedProjection.y.slice()
 
-for (let iter = 0; iter < ITERATIONS; iter++) {
-  const temp = T0 * (1 - iter / ITERATIONS)
-  const disp = {}
-  for (const n of NODE_NAMES) disp[n] = { x: 0, y: 0 }
-
-  // Repulsion between every pair.
-  for (let i = 0; i < NODE_NAMES.length; i++) {
+// Do two edges (given as index pairs) properly cross? Segments sharing an
+// endpoint don't count.
+const ccw = (ax, ay, bx, by, cx, cy) => (cy - ay) * (bx - ax) - (by - ay) * (cx - ax)
+const segCross = (i1, j1, i2, j2) => {
+  if (i1 === i2 || i1 === j2 || j1 === i2 || j1 === j2) return false
+  const d1 = ccw(X[i1], Y[i1], X[j1], Y[j1], X[i2], Y[i2])
+  const d2 = ccw(X[i1], Y[i1], X[j1], Y[j1], X[j2], Y[j2])
+  const d3 = ccw(X[i2], Y[i2], X[j2], Y[j2], X[i1], Y[i1])
+  const d4 = ccw(X[i2], Y[i2], X[j2], Y[j2], X[j1], Y[j1])
+  return d1 > 0 !== d2 > 0 && d3 > 0 !== d4 > 0
+}
+const crossings = () => {
+  let c = 0
+  for (let a = 0; a < edges.length; a++)
+    for (let b = a + 1; b < edges.length; b++) if (segCross(edges[a][0], edges[a][1], edges[b][0], edges[b][1])) c++
+  return c
+}
+// Penalty for nodes closer than MIN_SEP (spacing) and for edges longer/shorter
+// than REST_LEN (compactness) — the tie-breakers once crossings are handled.
+const spacingPenalty = () => {
+  let p = 0
+  for (let i = 0; i < NODE_NAMES.length; i++)
     for (let j = i + 1; j < NODE_NAMES.length; j++) {
-      const a = NODE_NAMES[i]
-      const b = NODE_NAMES[j]
-      let dx = pos[a].x - pos[b].x
-      let dy = pos[a].y - pos[b].y
-      let d2 = dx * dx + dy * dy
-      if (d2 < 1) {
-        // Coincident: nudge deterministically so they separate.
-        dx = (i - j) * 0.01 + 0.1
-        dy = 0.1
-        d2 = dx * dx + dy * dy
-      }
-      const d = Math.sqrt(d2)
-      const f = K_REP / d2
-      const ux = dx / d
-      const uy = dy / d
-      disp[a].x += ux * f
-      disp[a].y += uy * f
-      disp[b].x -= ux * f
-      disp[b].y -= uy * f
+      const d = Math.hypot(X[i] - X[j], Y[i] - Y[j])
+      if (d < MIN_SEP) p += MIN_SEP - d
+    }
+  let e = 0
+  for (const [a, b] of edges) {
+    const diff = Math.hypot(X[a] - X[b], Y[a] - Y[b]) - REST_LEN
+    e += diff > 0 ? diff * diff * 0.02 : -diff * 0.4
+  }
+  return p * 14 + e
+}
+const cost = () => crossings() * 200000 + spacingPenalty()
+
+// Phase 1 — simulated annealing to a crossing-free embedding, restarted from the
+// seed with fresh randomness until it finds one (crossings dominate the cost).
+let best = null
+for (let restart = 0; restart < SA_RESTARTS; restart++) {
+  setSeed(1000 + restart * 7919)
+  for (let i = 0; i < NODE_NAMES.length; i++) {
+    X[i] = seedProjection.x[i]
+    Y[i] = seedProjection.y[i]
+  }
+  for (let it = 0; it < SA_ITERS; it++) {
+    const T = 90 * Math.pow(0.0002 / 90, it / SA_ITERS) // exp cool 90 → ~0
+    const k = (rnd() * NODE_NAMES.length) | 0
+    const ox = X[k]
+    const oy = Y[k]
+    const before = cost()
+    X[k] += (rnd() - 0.5) * T * 2
+    Y[k] += (rnd() - 0.5) * T * 2
+    const after = cost()
+    if (!(after <= before || rnd() < Math.exp((before - after) / (T + 1)))) {
+      X[k] = ox
+      Y[k] = oy
     }
   }
+  const cr = crossings()
+  const c = cost()
+  if (!best || cr < best.cr || (cr === best.cr && c < best.c)) best = { cr, c, X: X.slice(), Y: Y.slice() }
+  if (best.cr === 0) break
+}
+for (let i = 0; i < NODE_NAMES.length; i++) {
+  X[i] = best.X[i]
+  Y[i] = best.Y[i]
+}
 
-  // Spring attraction along links.
-  for (const [a, b] of edges) {
-    const dx = pos[b].x - pos[a].x
-    const dy = pos[b].y - pos[a].y
-    const d = Math.hypot(dx, dy) || 0.001
-    const f = K_SPRING * (d - REST_LEN)
-    const ux = dx / d
-    const uy = dy / d
-    disp[a].x += ux * f
-    disp[a].y += uy * f
-    disp[b].x -= ux * f
-    disp[b].y -= uy * f
-  }
+// Would moving node k leave any of its incident edges crossing another edge?
+const moveBreaksPlanarity = (k) => {
+  for (const ei of incident[k])
+    for (let ej = 0; ej < edges.length; ej++)
+      if (ej !== ei && segCross(edges[ei][0], edges[ei][1], edges[ej][0], edges[ej][1])) return true
+  return false
+}
 
-  // Weak anchor back to the true projected position — this is what keeps the
-  // layout faithful to the real star geography rather than a generic blob.
-  for (const n of NODE_NAMES) {
-    disp[n].x += (projected[n].x - pos[n].x) * K_ANCHOR
-    disp[n].y += (projected[n].y - pos[n].y) * K_ANCHOR
-  }
-
-  // Apply, capped by the cooling temperature.
-  for (const n of NODE_NAMES) {
-    const d = Math.hypot(disp[n].x, disp[n].y) || 0.001
-    const step = Math.min(d, temp)
-    pos[n].x += (disp[n].x / d) * step
-    pos[n].y += (disp[n].y / d) * step
+// Phase 2 — planarity-preserving force relaxation. Apply spring + repulsion
+// forces to even out spacing and shorten long edges, but reject any move that
+// would re-introduce a crossing.
+for (let pass = 0; pass < FDL_PASSES; pass++) {
+  const damp = 0.9 * (1 - pass / FDL_PASSES) + 0.1
+  for (let k = 0; k < NODE_NAMES.length; k++) {
+    let fx = 0
+    let fy = 0
+    for (let j = 0; j < NODE_NAMES.length; j++) {
+      if (j === k) continue
+      const dx = X[k] - X[j]
+      const dy = Y[k] - Y[j]
+      const d2 = dx * dx + dy * dy || 0.01
+      const d = Math.sqrt(d2)
+      const f = 42000 / d2
+      fx += (dx / d) * f
+      fy += (dy / d) * f
+    }
+    for (const ei of incident[k]) {
+      const other = edges[ei][0] === k ? edges[ei][1] : edges[ei][0]
+      const dx = X[other] - X[k]
+      const dy = Y[other] - Y[k]
+      const d = Math.hypot(dx, dy) || 0.01
+      const f = 0.05 * (d - REST_LEN)
+      fx += (dx / d) * f
+      fy += (dy / d) * f
+    }
+    const mag = Math.hypot(fx, fy) || 0.01
+    const step = Math.min(mag, 30) * damp
+    const ox = X[k]
+    const oy = Y[k]
+    X[k] += (fx / mag) * step
+    Y[k] += (fy / mag) * step
+    if (moveBreaksPlanarity(k)) {
+      X[k] = ox
+      Y[k] = oy
+    }
   }
 }
+
+// Assemble into a name→position map for the finishing steps below.
+const pos = {}
+for (let i = 0; i < NODE_NAMES.length; i++) pos[NODE_NAMES[i]] = { x: X[i], y: Y[i] }
 
 // Orient so the staging system sits at the bottom (largest screen y), matching
 // the page's "staging anchors the bottom" convention.
@@ -202,10 +277,8 @@ if (pos[STAGING].y < midY) {
 
 // Fit to a padded integer viewBox and round positions.
 const PAD = 100
-const xs = NODE_NAMES.map((n) => pos[n].x)
-const yy = NODE_NAMES.map((n) => pos[n].y)
-const minX = Math.min(...xs)
-const minY = Math.min(...yy)
+const minX = Math.min(...NODE_NAMES.map((n) => pos[n].x))
+const minY = Math.min(...NODE_NAMES.map((n) => pos[n].y))
 for (const n of NODE_NAMES) {
   pos[n].x = Math.round(pos[n].x - minX + PAD)
   pos[n].y = Math.round(pos[n].y - minY + PAD)
@@ -213,7 +286,7 @@ for (const n of NODE_NAMES) {
 const w = Math.round(Math.max(...NODE_NAMES.map((n) => pos[n].x)) + PAD)
 const h = Math.round(Math.max(...NODE_NAMES.map((n) => pos[n].y)) + PAD)
 
-// Report closest pair (sanity check on overlaps).
+// Report crossing count + closest pair (sanity check).
 let closest = Infinity
 let closestPair = ''
 for (let i = 0; i < NODE_NAMES.length; i++) {
@@ -225,6 +298,7 @@ for (let i = 0; i < NODE_NAMES.length; i++) {
     }
   }
 }
+console.error(`crossings: ${crossings()}`)
 
 // Emit the NODE_POSITIONS block, ordered to match the current file's ordering.
 const ORDER = [
