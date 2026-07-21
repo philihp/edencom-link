@@ -66,14 +66,6 @@ const CorpsesPage = async ({ params }: { params: Promise<{ characterID: string }
     .maybeSingle<Pick<RegistrationRow, 'user_id'>>()
   if (!owner) notFound()
 
-  // The owner must have opted into sharing by enabling the 'corpses' flag.
-  const { data: settings } = await service
-    .from('user_settings')
-    .select('flags')
-    .eq('user_id', owner.user_id)
-    .maybeSingle<{ flags: string[] | null }>()
-  if (!(settings?.flags ?? []).includes('corpses')) notFound()
-
   // Every character on the account, for both the corpse scope and the label.
   const { data: registrations } = await service
     .from('registration')

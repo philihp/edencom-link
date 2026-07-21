@@ -1,6 +1,5 @@
 import Link from 'next/link'
 import { createClient } from '@/utils/supabase/server'
-import { corpsesFlag } from '@/flags'
 import { Freshness } from '../Freshness'
 import styles from './header.module.css'
 
@@ -44,7 +43,6 @@ const Header = async () => {
     lastRefreshedAt = latestBeat?.ended_at ?? null
   }
 
-  const showCorpses = await corpsesFlag()
   return (
     <header>
       <div className={styles.bar}>
@@ -76,7 +74,7 @@ const Header = async () => {
               <span className={styles.sep}>|</span>
               <Link href="/mercenary-dens">mercenary&nbsp;dens</Link>
               <span className={styles.sep}>|</span>
-              {showCorpses && mainCharacterId != null && (
+              {mainCharacterId != null && (
                 <>
                   <Link href={`/corpses/${mainCharacterId}`}>corpses</Link>
                   <span className={styles.sep}>|</span>
