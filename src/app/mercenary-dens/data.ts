@@ -99,46 +99,50 @@ export const TEMPERATE_PLANETS: TemperatePlanet[] = [
 ]
 
 // Fixed 2-D layout for the topology graph, in the SVG's own coordinate space
-// (see topology.tsx's viewBox). Positions are hand-placed so links fan out
-// without crossing; the staging system anchors the bottom-left corner, its
-// lone link running up the empty left edge to RXA-W1.
+// (see topology.tsx's viewBox). X1-IZ0 anchors the bottom of the diagram,
+// RXA-W1 directly above it, and JVA-FE directly above that; every other
+// system blooms outward and upward from JVA-FE in a radial layout (BFS ring
+// = distance from JVA-FE, angular slice sized by subtree weight — a branch
+// with more systems past it gets more angular room), so the map reads like a
+// flower with the staging spine as its stem. A few branch orderings are
+// chosen deliberately (rather than left to the generic algorithm) so that
+// systems on either end of a real cross-link — QQGH-G/VK6-EZ, and the
+// Y4OK-W/6U-1RX loop through VX1-HV — land angularly adjacent instead of on
+// opposite sides of the bloom.
 export const NODE_POSITIONS: Record<string, { x: number; y: number }> = {
-  'X1-IZ0': { x: 80, y: 700 },
-  'RXA-W1': { x: 80, y: 200 },
-  'JVA-FE': { x: 300, y: 200 },
-  'QFU-4S': { x: 140, y: 290 },
-  '8P-LKL': { x: 300, y: 300 },
-  'VK6-EZ': { x: 470, y: 285 },
-  'QQGH-G': { x: 285, y: 400 },
-  'Q-UVY6': { x: 520, y: 385 },
-  'L-WG68': { x: 600, y: 245 },
-  'HIK-MC': { x: 700, y: 185 },
-  'GZM-KB': { x: 560, y: 330 },
-  // HIK-MC's fan: the E4-E8W/5LAJ-8 pair feeds the B9EA-G→GF-GR7 cluster in
-  // the middle, while Y4OK-W starts the long loop down the right edge and along
-  // the bottom (6U-1RX → FO1U-K → VX1-HV) back to QQGH-G.
-  'E4-E8W': { x: 650, y: 290 },
-  '5LAJ-8': { x: 750, y: 315 },
-  'E-BFLT': { x: 600, y: 390 },
-  'B9EA-G': { x: 720, y: 390 },
-  'GF-GR7': { x: 720, y: 460 },
-  'HPMN-V': { x: 620, y: 510 },
-  'Z19-B8': { x: 720, y: 530 },
-  'DVN6-0': { x: 850, y: 490 },
-  'U1-VHY': { x: 840, y: 560 },
-  '8OYE-Z': { x: 930, y: 590 },
-  'XR-ZL7': { x: 660, y: 580 },
-  'XUPK-Z': { x: 760, y: 610 },
-  'Y4OK-W': { x: 1020, y: 120 },
-  '6U-1RX': { x: 1020, y: 680 },
-  'FO1U-K': { x: 560, y: 640 },
-  'VX1-HV': { x: 350, y: 520 },
-  'K-XJJT': { x: 200, y: 580 },
-  'P-NI4K': { x: 140, y: 660 },
-  'JNG7-K': { x: 390, y: 620 },
-  '8-SPNN': { x: 420, y: 700 },
-  'G-VFVB': { x: 180, y: 450 },
-  'KPI-OW': { x: 560, y: 460 },
+  'JVA-FE': { x: 560, y: 720 },
+  'RXA-W1': { x: 560, y: 815 },
+  'X1-IZ0': { x: 560, y: 910 },
+  '8P-LKL': { x: 460, y: 803 },
+  'QFU-4S': { x: 434, y: 688 },
+  'VK6-EZ': { x: 665, y: 644 },
+  'QQGH-G': { x: 359, y: 668 },
+  'L-WG68': { x: 702, y: 568 },
+  'Q-UVY6': { x: 720, y: 853 },
+  'G-VFVB': { x: 288, y: 808 },
+  'VX1-HV': { x: 301, y: 598 },
+  'HIK-MC': { x: 713, y: 479 },
+  'GZM-KB': { x: 832, y: 808 },
+  'KPI-OW': { x: 780, y: 902 },
+  'K-XJJT': { x: 197, y: 697 },
+  'JNG7-K': { x: 231, y: 565 },
+  'FO1U-K': { x: 311, y: 455 },
+  'Y4OK-W': { x: 426, y: 382 },
+  '5LAJ-8': { x: 755, y: 413 },
+  'E4-E8W': { x: 923, y: 697 },
+  'P-NI4K': { x: 119, y: 692 },
+  '8-SPNN': { x: 160, y: 532 },
+  '6U-1RX': { x: 257, y: 398 },
+  'B9EA-G': { x: 797, y: 347 },
+  'E-BFLT': { x: 1001, y: 692 },
+  'GF-GR7': { x: 839, y: 281 },
+  'HPMN-V': { x: 560, y: 122 },
+  'Z19-B8': { x: 780, y: 164 },
+  'DVN6-0': { x: 1044, y: 369 },
+  'XR-ZL7': { x: 560, y: 44 },
+  'U1-VHY': { x: 1023, y: 227 },
+  '8OYE-Z': { x: 1172, y: 432 },
+  'XUPK-Z': { x: 560, y: -34 },
 }
 
 // Temperate-planet count per system, shown as the 🌍 badge under each node's

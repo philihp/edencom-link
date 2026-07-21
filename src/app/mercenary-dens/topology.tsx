@@ -38,7 +38,7 @@ export const Topology = ({
 }) => (
   <svg
     className={styles.topology}
-    viewBox="0 0 1100 750"
+    viewBox="59 -94 1173 1064"
     role="img"
     aria-label="Network topology of systems accessible from the staging system, coloured by mercenary den status; a dashed red outline marks a system with reported enemy-den intel"
   >
