@@ -84,11 +84,12 @@
   font-size: 11px;
 }
 
-/* Second line inside a node's pill: 🌍 + how many temperate planets it has. */
+/* Second line inside a node's circle: one globe per temperate planet. Sized so
+ * even a four-planet row (XR-ZL7) fits the circle's lower chord. */
 .nodeCount {
   fill: var(--ink-soft);
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: 9px;
 }
 
 /* The staging system stands apart with the indigo accent. */
