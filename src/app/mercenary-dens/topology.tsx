@@ -23,7 +23,7 @@ const COLOR_CLASS: Record<NodeColor, string> = {
 }
 
 // A network diagram of the systems reachable out from staging. Pure SVG with a
-// fixed layout derived from real SDE geometry then force-relaxed (see
+// fixed, crossing-free layout derived from real SDE geometry then untangled (see
 // NODE_POSITIONS) — no interactivity — so it renders on the server and scales to
 // the container width. Each system node is
 // tinted by the most severe den status among its temperate planets (red
