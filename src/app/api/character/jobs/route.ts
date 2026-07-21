@@ -21,6 +21,7 @@ const ALLOWED_COLUMNS = [
   'installer_id',
   'job_id',
   'licensed_runs',
+  'output_count',
   'output_location_id',
   'pause_date',
   'probability',
