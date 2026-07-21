@@ -3,11 +3,18 @@ import styles from './mercenaryDens.module.css'
 
 export type NodeColor = 'red' | 'yellow' | 'green'
 
-// Pill dimensions for each system node, in SVG user units. A system with
-// temperate planets gets the taller pill to fit its 🌍 count on a second line.
-const NODE_W = 66
-const NODE_H = 24
-const NODE_H_BADGE = 40
+// Circle radius for each system node, in SVG user units. A system with
+// temperate planets gets the larger circle to fit its row of globes on a
+// second line.
+const NODE_R = 24
+const NODE_R_BADGE = 30
+
+// One globe per temperate planet, all showing the same face of the earth for a
+// given system — which face is a hash of the system name, so it's stable
+// across renders but varies across the map.
+const GLOBES = ['🌍', '🌎', '🌏']
+const globeFor = (system: string) =>
+  GLOBES[[...system].reduce((h, c) => (h * 31 + c.charCodeAt(0)) & 0x7fffffff, 0) % GLOBES.length]
 
 const COLOR_CLASS: Record<NodeColor, string> = {
   red: styles.nodeRed,
@@ -52,10 +59,10 @@ export const Topology = ({
       // Enemy-den intel overlays a dashed red outline regardless of the tint.
       const className = [groupClass, enemyIntel?.has(system) ? styles.nodeEnemyIntel : null].filter(Boolean).join(' ')
       const temperate = TEMPERATE_COUNTS[system] ?? 0
-      const h = temperate > 0 ? NODE_H_BADGE : NODE_H
+      const r = temperate > 0 ? NODE_R_BADGE : NODE_R
       return (
         <g key={system} className={className}>
-          <rect x={x - NODE_W / 2} y={y - h / 2} width={NODE_W} height={h} rx={6} className={styles.nodeBox} />
+          <circle cx={x} cy={y} r={r} className={styles.nodeBox} />
           <text
             x={x}
             y={temperate > 0 ? y - 8 : y}
@@ -67,7 +74,7 @@ export const Topology = ({
           </text>
           {temperate > 0 ? (
             <text x={x} y={y + 10} className={styles.nodeCount} textAnchor="middle" dominantBaseline="central">
-              🌍 {temperate}
+              {globeFor(system).repeat(temperate)}
             </text>
           ) : null}
         </g>

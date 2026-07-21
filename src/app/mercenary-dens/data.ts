@@ -99,11 +99,12 @@ export const TEMPERATE_PLANETS: TemperatePlanet[] = [
 ]
 
 // Fixed 2-D layout for the topology graph, in the SVG's own coordinate space
-// (see topology.tsx's viewBox). Positions are hand-placed so the staging system
-// sits at the top and links fan out without crossing.
+// (see topology.tsx's viewBox). Positions are hand-placed so links fan out
+// without crossing; the staging system anchors the bottom-left corner, its
+// lone link running up the empty left edge to RXA-W1.
 export const NODE_POSITIONS: Record<string, { x: number; y: number }> = {
-  'X1-IZ0': { x: 300, y: 40 },
-  'RXA-W1': { x: 300, y: 120 },
+  'X1-IZ0': { x: 80, y: 700 },
+  'RXA-W1': { x: 80, y: 200 },
   'JVA-FE': { x: 300, y: 200 },
   'QFU-4S': { x: 140, y: 290 },
   '8P-LKL': { x: 300, y: 300 },
@@ -117,7 +118,7 @@ export const NODE_POSITIONS: Record<string, { x: number; y: number }> = {
   // the middle, while Y4OK-W starts the long loop down the right edge and along
   // the bottom (6U-1RX → FO1U-K → VX1-HV) back to QQGH-G.
   'E4-E8W': { x: 650, y: 290 },
-  '5LAJ-8': { x: 740, y: 330 },
+  '5LAJ-8': { x: 750, y: 315 },
   'E-BFLT': { x: 600, y: 390 },
   'B9EA-G': { x: 720, y: 390 },
   'GF-GR7': { x: 720, y: 460 },
