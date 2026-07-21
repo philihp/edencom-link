@@ -77,7 +77,6 @@
   "functions": {
     "src/app/api/queue/jobs/route.ts": {
       "maxDuration": 60,
-      "memory": 512,
       "experimentalTriggers": [
         {
           "type": "queue/v2beta",
@@ -89,7 +88,6 @@
     },
     "src/app/api/queue/innominate/route.ts": {
       "maxDuration": 30,
-      "memory": 256,
       "experimentalTriggers": [
         {
           "type": "queue/v2beta",
