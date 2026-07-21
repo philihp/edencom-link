@@ -33,6 +33,11 @@
   background: var(--paper-raised);
 }
 
+/* Secondary in-cell text — e.g. the fitting slot next to a ship name. */
+.muted {
+  color: var(--ink-soft);
+}
+
 /* Numeric cells: the only place we use the fixed-width face. */
 .num {
   font-family: var(--mono);
