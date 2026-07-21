@@ -162,7 +162,7 @@ const RevenuePage = async ({ searchParams }: RevenueParams) => {
 
   // Resolve each payer (a character) to their name and the corp they fly for,
   // from universe_name (the universe-names job) and character_affiliation (the
-  // character-affiliations job).
+  // character-directory job).
   const partyIds = [...new Set(entries.map((e) => e.first_party_id).filter((p) => p != null))].map(Number)
   const payerNames = new Map<string, string>()
   const payerCorps = new Map<string, string>()

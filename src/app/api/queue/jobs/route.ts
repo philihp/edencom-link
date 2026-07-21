@@ -92,9 +92,9 @@ const JOBS = {
     characterIds: true,
     load: async () => (await import('@/jobs/corpIndustryJobs.js')).runCorpIndustryJobs,
   },
-  'character-affiliations': {
+  'character-directory': {
     characterIds: false,
-    load: async () => (await import('@/jobs/characterAffiliations.js')).runCharacterAffiliations,
+    load: async () => (await import('@/jobs/characterDirectory.js')).runCharacterDirectory,
   },
   'universe-names': {
     characterIds: false,

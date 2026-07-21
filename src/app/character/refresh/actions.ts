@@ -8,7 +8,7 @@ import { createClient } from '@/utils/supabase/server'
 import { isChancellor } from '../../account/chancellor/chancellor'
 import { ACCOUNT_JOBS, PER_CHARACTER_JOBS, PER_CORPORATION_JOB_NAMES, dispatchSingleJob } from '../dispatchRefresh'
 
-// Account-wide jobs reserved for Chancellors: unlike character-affiliations/
+// Account-wide jobs reserved for Chancellors: unlike character-directory/
 // universe-names (harmless, cheap, dispatched on every character add),
 // industry-systems is a heavier whole-universe pull with no per-character
 // reason to run it, so on-demand kicks are gated to Chancellors rather than

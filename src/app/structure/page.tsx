@@ -175,7 +175,7 @@ const StructuresPage = async () => {
 
   // Resolve each payer (a character) to their name and the corp they fly for. Names come from the
   // universe_name table (populated by the universe-names job) and corp affiliations from
-  // character_affiliation (populated by the character-affiliations job); ids not yet resolved fall
+  // character_affiliation (populated by the character-directory job); ids not yet resolved fall
   // back to showing the raw id.
   const partyIds = unaccountedParties.map(([party]) => party).filter((p) => p !== 'unknown')
   const payerNames = new Map<string, string>()

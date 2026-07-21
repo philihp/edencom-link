@@ -33,7 +33,10 @@ Today `registration` conflates two things with very different sensitivity:
 
 The split:
 
-- **`character`** — world-readable directory (like `corporation`/`alliance`):
+- **`character_directory`** — world-readable directory (like
+  `corporation`/`alliance`; named `character_directory` rather than `character`
+  because the latter is a SQL reserved word and collides visually with the
+  `character_*` extract tables — "the character directory" throughout this doc):
   `character_id` (bigint PK), `name`, `corporation_id`, `alliance_id`,
   `registration_id` (nullable unique FK → `registration.id`, `on delete set
   null`), `updated_at`. **No `user_id` — ever.** `registration_id` is included
@@ -49,7 +52,7 @@ The split:
 **Invariant: no SECURITY DEFINER anywhere in the sharing layer.** Every
 visibility rule must be expressible as plain invoker-rights RLS over (a) the
 viewer's own registrations, (b) the public directories
-(`character`/`corporation`/`alliance`), and (c) the `_share` tables' own
+(`character_directory`/`corporation`/`alliance`), and (c) the `_share` tables' own
 policies. If a rule can't be written that way, the data model is wrong — fix
 the model, don't add a definer bridge.
 
@@ -243,7 +246,7 @@ the alt mapping itself, opt-in, same audience model — not an oracle.
 
 ### Stage A — identity split + character directory extract
 
-New `character` directory table (shape above) + the extract job that populates
+New `character_directory` table (shape above) + the extract job that populates
 it. See the PR plan for job details. `registration` keeps its current shape
 and policies; nothing moves off it in this stage except *reads* that only
 needed public identity.
@@ -266,8 +269,8 @@ audience / audience_corporation_id / token / created_at / expires_at
   `character_mercenary_den_over_time` and `character_mercenary_den_status`.
 - **Delete the definer helpers** `mercenary_den_owner_names` and
   `user_shares_dens_with_caller` (from migration `20260720050000`): shared-den
-  owner names now come from the public `character` directory
-  (`character.registration_id = den.character_id`), and intel visibility is
+  owner names now come from the public `character_directory`
+  (`character_directory.registration_id = den.character_id`), and intel visibility is
   re-keyed (next point).
 - **Enemy intel created and owned by the main character**:
   `mercenary_den_enemy_intel` gains `reporter_id uuid references
@@ -277,7 +280,7 @@ audience / audience_corporation_id / token / created_at / expires_at
   re-key to "`reporter_id` is one of my registrations," and cross-user
   visibility becomes "a share row of `reporter_id` matches the viewer" — a
   plain join. The denormalized `reported_by` name can then come from the
-  `character` directory instead of being stored per row. Backfill: match
+  `character_directory` instead of being stored per row. Backfill: match
   `created_by`'s registration whose `name = reported_by`, else that user's
   main. `created_by` remains only as audit metadata and the ownership
   fallback for rows orphaned by a character unlink (`reporter_id` nulled) —
@@ -385,8 +388,8 @@ migration under `supabase/migrations/`.
 | PR | Stage | Contents | Notes for the implementer |
 |---|---|---|---|
 | 1 | — | This design revision | Done in this PR. |
-| 2 | A | `character` directory table + `character-directory` extract job | New table per "Identity split" (PK `character_id` bigint; **no `user_id`**; nullable unique `registration_id`). Job: seed ids from `registration`, resolve via `POST /universe/characters/affiliation/` (bulk, no auth → corp + alliance per character), then `GET /corporations/{id}/` and `GET /alliances/{id}/` (public, no auth) for names + `corporation.alliance_id` / `alliance` rows. Add the two public GET wrappers to `src/esi.js`. **Subsumes and retires `character-affiliations`** (same source endpoint): take over its 11:41 daily slot and its duties (upsert `character_affiliation`, refresh `registration.corporation_id`) so the endpoint isn't pulled twice; keep the old table until nothing reads it. Note: this also finally populates `corporation.alliance_id`, which the *existing* `corp_structure` alliance policy already depends on. Directory covers registered characters now; extending to other seen ids (e.g. `corp_industry_job.installer_id`) is a later nicety. |
-| 3 | B | Den shares on the new model + shared helpers | `my_corporation_ids` / `my_alliance_ids` / `share_audience_matches` (invoker; land here since this is their first consumer). Rebuild `character_mercenary_den_share` (1:1 migration), rewrite den/status policies as plain joins, delete both definer helpers, move enemy-intel creation/ownership to the main character (`reporter_id` + backfill; `created_by` demoted to audit/orphan fallback), rework the picker (per-character rows, alliance targets, orphan list). `/mercenary-dens` owner-name resolution switches to the `character` directory. Depends on PR 2. |
+| 2 | A | `character_directory` table + `character-directory` extract job | **Done.** New table per "Identity split" (PK `character_id` bigint; **no `user_id`**; nullable unique `registration_id`). Job resolves via `POST /characters/affiliation/` (bulk, no auth — the response already carries `alliance_id` per character, so no per-id corp/alliance GET is needed) and backfills corp/alliance names from bulk `POST /universe/names/`; `alliance.name`/`corporation.name` relaxed to nullable so an id is recorded even when its name lookup lags. **Subsumed and retired `character-affiliations`** (same source endpoint): took over its 11:41 daily slot, queue key, `ACCOUNT_JOBS` entry, cron route, and duties (upsert `character_affiliation`, refresh `registration.corporation_id`); the `character_affiliation` table stays (still read by `resolveNames`/structure pages). Also finally populates `corporation.alliance_id`, which the *existing* `corp_structure` alliance policy already depends on. Directory covers registered + universe_name-cached characters; extending to other seen ids (e.g. `corp_industry_job.installer_id`) is a later nicety. |
+| 3 | B | Den shares on the new model + shared helpers | `my_corporation_ids` / `my_alliance_ids` / `share_audience_matches` (invoker; land here since this is their first consumer). Rebuild `character_mercenary_den_share` (1:1 migration), rewrite den/status policies as plain joins, delete both definer helpers, move enemy-intel creation/ownership to the main character (`reporter_id` + backfill; `created_by` demoted to audit/orphan fallback), rework the picker (per-character rows, alliance targets, orphan list). `/mercenary-dens` owner-name resolution switches to the `character_directory`. Depends on PR 2. |
 | 4 | C | `character-roles` extract + `is_director()` | Independent of PR 3; must precede PR 5. Scope opt-in UI + refresh-matrix row like any per-character job. |
 | 5 | D | `corp_structure_share` + seeded alliance default + policy cutover | Seed rows for every existing corp in the migration itself (cutover parity), `structure_share_seeded_at` for seed-once, Director-gated writes, opt-out UI on `/structure`. Depends on PRs 2 (alliance resolution), 3 (helpers), 4 (Director). |
 | 6 | E | `character_asset_share` + `shared_asset_token` migration + containment helper | Tokens preserved so existing URLs keep working. Resolve the RLS recursion question flagged in Stage E before merging. Depends on PR 3 (helpers). |
@@ -407,5 +410,5 @@ migration under `supabase/migrations/`.
   shared rows surface there automatically and consistently — no separate code
   path.
 - Universal/public reference tables (`industry_system_index`, `sde_*`,
-  `corporation`, `alliance`, `universe_name`, and now `character`) are
+  `corporation`, `alliance`, `universe_name`, and now `character_directory`) are
   world-readable by design.
