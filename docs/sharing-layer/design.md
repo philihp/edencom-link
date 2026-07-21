@@ -89,6 +89,13 @@ rows, so the UI lists shares that no longer match any current row ("this share
 points at nothing — re-share from the new character, or delete it"). No
 cleanup job, no silent transfer.
 
+A character *itself* changing EVE accounts is detectable, not just inferable:
+the SSO `owner` claim (CharacterOwnerHash, already stored as
+`registration.owner`) changes exactly when a character transfers. When a
+re-auth presents a hash that differs from the stored one, the app should
+proactively delete/orphan that registration's shares before rebinding, rather
+than letting the new owner inherit the old owner's grants.
+
 ### Common `_share` columns
 
 ```sql
@@ -207,6 +214,23 @@ the attack users fear). Three designs were considered:
    an online privileged oracle — a SECURITY DEFINER function with extra
    steps. Structures like this can't beat "offline-checkable = enumerable;
    not offline-checkable = you've rebuilt the bridge."
+
+   A variant using ESI's owner value as the filter key (unguessable, so no
+   public enumeration) was also examined and fails twice over. First, the
+   input doesn't exist: the SSO `owner` claim is the **CharacterOwnerHash**,
+   which identifies the (character → account) *binding*, not the account —
+   alts on one account don't share it (our own `registration` table proves
+   this: `unique (user_id, owner)` would collide on a user's second character
+   otherwise), and ESI deliberately exposes no account identity anywhere. The
+   only alt-correlating id in existence is our own `user_id`. Second, even a
+   hypothetical secret account-scoped key just moves the security onto key
+   secrecy, which inverts in EVE: the parties holding large owner-value
+   dictionaries are rival alliances' ESI auth stacks, and the standard
+   alt-hunting vector — recruitment auth — hands a hunter the suspect's key
+   directly, after which one targeted membership probe confirms the alt.
+   Unguessable keys make a filter unqueryable by legitimate checkers and
+   attackers alike; derivable keys rebuild the oracle. There is no setting
+   in between.
 
 Hence **per-character shares**: nobody ever needs to resolve an account's
 character set, so there is nothing to hide and nothing to bridge. The cost is
