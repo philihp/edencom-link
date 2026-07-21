@@ -5,9 +5,10 @@ export type NodeColor = 'red' | 'yellow' | 'green'
 
 // Circle radius for each system node, in SVG user units. A system with
 // temperate planets gets the larger circle to fit its row of globes on a
-// second line.
-const NODE_R = 24
-const NODE_R_BADGE = 30
+// second line. Sized relative to the NODE_POSITIONS coordinate space (see
+// NODE_VIEWBOX) so the labels stay legible when the SVG scales to fit.
+const NODE_R = 48
+const NODE_R_BADGE = 60
 
 // One globe per temperate planet, all showing the same face of the earth for a
 // given system — which face is a hash of the system name, so it's stable
@@ -66,7 +67,7 @@ export const Topology = ({
           <circle cx={x} cy={y} r={r} className={styles.nodeBox} />
           <text
             x={x}
-            y={temperate > 0 ? y - 8 : y}
+            y={temperate > 0 ? y - 16 : y}
             className={styles.nodeLabel}
             textAnchor="middle"
             dominantBaseline="central"
@@ -74,7 +75,7 @@ export const Topology = ({
             {system}
           </text>
           {temperate > 0 ? (
-            <text x={x} y={y + 10} className={styles.nodeCount} textAnchor="middle" dominantBaseline="central">
+            <text x={x} y={y + 20} className={styles.nodeCount} textAnchor="middle" dominantBaseline="central">
               {globeFor(system).repeat(temperate)}
             </text>
           ) : null}
