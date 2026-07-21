@@ -62,7 +62,7 @@
 .topology {
   display: block;
   width: 100%;
-  max-width: 640px;
+  max-width: 960px;
   height: auto;
   margin: 8pt 0 4pt;
 }
@@ -82,6 +82,13 @@
   fill: var(--ink);
   font-family: var(--mono);
   font-size: 11px;
+}
+
+/* Second line inside a node's pill: 🌍 + how many temperate planets it has. */
+.nodeCount {
+  fill: var(--ink-soft);
+  font-family: var(--mono);
+  font-size: 10px;
 }
 
 /* The staging system stands apart with the indigo accent. */
