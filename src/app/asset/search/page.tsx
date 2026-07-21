@@ -3,7 +3,7 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { prop, uniqBy } from 'ramda'
 
-import { searchSdeTypesAll } from '@/sdeTypes'
+import { getSdeTypes, searchSdeTypesAll } from '@/sdeTypes'
 import { createClient } from '@/utils/supabase/server'
 
 import { fetchOwners } from '../../owners'
@@ -30,6 +30,10 @@ const SHUFFLE_SEED = 20260704
 // blueprints" checkbox opts back in.
 const BLUEPRINT_CATEGORY_ID = 9
 
+// invGroups.categoryID for the Ship category in CCP's SDE. A match whose
+// immediate parent is a ship (fitted module, drone, cargo) shows that ship.
+const SHIP_CATEGORY_ID = 6
+
 type CharacterSearchRow = {
   item_id: number | string
   character_id: string
@@ -41,10 +45,18 @@ type CharacterSearchRow = {
   root_location_id: number | string | null
   root_location_type: string | null
   contents: number | string
+  // The matched item's immediate parent — null when it sits directly in a
+  // station (the parent isn't one of the caller's items). parent_name is the
+  // parent's player-assigned name (a ship's custom name), if any.
+  parent_id: number | string | null
+  parent_type_id: number | string | null
+  parent_name: string | null
 }
 
 // Corp assets carry no player-assigned name column; owner is the corporation.
-type CorpSearchRow = Omit<CharacterSearchRow, 'character_id' | 'name'> & { corporation_id: number | string }
+type CorpSearchRow = Omit<CharacterSearchRow, 'character_id' | 'name' | 'parent_name'> & {
+  corporation_id: number | string
+}
 
 type SearchRow = {
   itemId: string
@@ -56,6 +68,9 @@ type SearchRow = {
   flag: string | null
   root: LocationRef | null
   contents: number
+  parentId: string | null
+  parentTypeId: number | null
+  parentName: string | null
 }
 
 const AssetSearchPage = async ({ searchParams }: { searchParams: Promise<{ q?: string; blueprints?: string }> }) => {
@@ -151,6 +166,9 @@ const AssetSearchPage = async ({ searchParams }: { searchParams: Promise<{ q?: s
       flag: r.location_flag,
       root: r.root_location_id != null ? { id: String(r.root_location_id), type: r.root_location_type } : null,
       contents: Number(r.contents),
+      parentId: r.parent_id != null ? String(r.parent_id) : null,
+      parentTypeId: r.parent_type_id != null ? Number(r.parent_type_id) : null,
+      parentName: r.parent_name,
     })),
     ...((corpRows ?? []) as CorpSearchRow[]).map((r): SearchRow => ({
       itemId: String(r.item_id),
@@ -162,6 +180,9 @@ const AssetSearchPage = async ({ searchParams }: { searchParams: Promise<{ q?: s
       flag: r.location_flag,
       root: r.root_location_id != null ? { id: String(r.root_location_id), type: r.root_location_type } : null,
       contents: Number(r.contents),
+      parentId: r.parent_id != null ? String(r.parent_id) : null,
+      parentTypeId: r.parent_type_id != null ? Number(r.parent_type_id) : null,
+      parentName: null,
     })),
   ]
 
@@ -171,6 +192,26 @@ const AssetSearchPage = async ({ searchParams }: { searchParams: Promise<{ q?: s
   )
   const { nameFor, systemFor } = await resolveLocations(rootRefs)
   const ownerMap = new Map([...owners.characters, ...owners.corporations].map((o) => [o.id, o.name]))
+
+  // A match whose immediate parent is a ship (fitted module, drone, cargo) is
+  // far more useful shown as "which ship" than as a bare slot flag. One bulk SDE
+  // lookup over every distinct parent type → the Ship-category set plus each
+  // ship's type name, so the per-row test stays a sync map/Set lookup.
+  const parentTypeIds = [...new Set(rows.map((r) => r.parentTypeId).filter((t): t is number => t != null))]
+  const parentTypes = parentTypeIds.length > 0 ? await getSdeTypes(parentTypeIds) : {}
+  const shipTypeNameById = new Map(
+    Object.values(parentTypes)
+      .filter((t) => t.categoryID === SHIP_CATEGORY_ID)
+      .map((t) => [t.typeID, t.name])
+  )
+  // The ship label mirrors the /ship page heading: "<custom name> (<type>)" when
+  // the ship was renamed, otherwise just the type name.
+  const shipLabelFor = (row: SearchRow): string | null => {
+    if (row.parentId == null || row.parentTypeId == null) return null
+    const typeName = shipTypeNameById.get(row.parentTypeId)
+    if (typeName == null) return null
+    return row.parentName && row.parentName !== typeName ? `${row.parentName} (${typeName})` : typeName
+  }
 
   const displayRows = rows
     .map((row) => {
@@ -234,7 +275,22 @@ const AssetSearchPage = async ({ searchParams }: { searchParams: Promise<{ q?: s
                   )}
                 </td>
                 <td className={retro.num}>{row.isSingleton ? '—' : <Quantity value={row.quantity} />}</td>
-                <td>{row.flag ?? '—'}</td>
+                <td>
+                  {(() => {
+                    const shipLabel = shipLabelFor(row)
+                    if (shipLabel && row.parentId) {
+                      return (
+                        <>
+                          <Link className="serif" href={`/ship/${row.parentId}`}>
+                            {shipLabel}
+                          </Link>
+                          {row.flag ? <span className={retro.muted}> · {row.flag}</span> : null}
+                        </>
+                      )
+                    }
+                    return row.flag ?? '—'
+                  })()}
+                </td>
                 <td className={retro.num}>{row.contents > 0 ? row.contents : '—'}</td>
               </tr>
             ))}

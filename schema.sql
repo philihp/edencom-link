@@ -363,7 +363,10 @@ returns table (
   contents bigint,
   type_name text,
   root_location_name text,
-  system_id bigint
+  system_id bigint,
+  parent_id bigint,
+  parent_type_id bigint,
+  parent_name text
 )
 language sql
 stable
@@ -421,12 +424,16 @@ as $$
     coalesce(ct.contents, 0) as contents,
     t.name as type_name,
     st.name as root_location_name,
-    st.system_id
+    st.system_id,
+    m.location_id as parent_id,
+    p.type_id as parent_type_id,
+    p.name as parent_name
   from matched m
   join roots r on r.start_item = m.item_id
   left join contents ct on ct.ancestor = m.item_id
   left join public.sde_published_type t on t.type_id = m.type_id
-  left join public.sde_station st on st.station_id = r.root_location_id;
+  left join public.sde_station st on st.station_id = r.root_location_id
+  left join public.character_asset p on p.item_id = m.location_id;
 $$;
 
 grant execute on function public.character_asset_location_summary()        to authenticated;
@@ -2017,7 +2024,9 @@ returns table (
   contents bigint,
   type_name text,
   root_location_name text,
-  system_id bigint
+  system_id bigint,
+  parent_id bigint,
+  parent_type_id bigint
 )
 language sql
 stable
@@ -2074,12 +2083,15 @@ as $$
     coalesce(ct.contents, 0) as contents,
     t.name as type_name,
     st.name as root_location_name,
-    st.system_id
+    st.system_id,
+    m.location_id as parent_id,
+    p.type_id as parent_type_id
   from matched m
   join roots r on r.start_item = m.item_id
   left join contents ct on ct.ancestor = m.item_id
   left join public.sde_published_type t on t.type_id = m.type_id
-  left join public.sde_station st on st.station_id = r.root_location_id;
+  left join public.sde_station st on st.station_id = r.root_location_id
+  left join public.corp_asset p on p.item_id = m.location_id;
 $$;
 
 grant execute on function public.corp_asset_location_summary()        to authenticated;
