@@ -250,6 +250,7 @@
   grid-template-columns: auto auto;
   gap: 4px 12px;
   justify-content: start;
+  align-items: baseline;
   margin: 16px 0;
   font-size: 13px;
 }
@@ -258,6 +259,35 @@
   font-family: var(--mono);
   font-variant-numeric: tabular-nums;
   text-align: right;
+}
+
+.footerControlLabel {
+  color: var(--ink-faint);
+}
+
+.footerControl {
+  justify-self: start;
+}
+
+.windowSelect {
+  font-size: 10pt;
+  color: var(--ink-soft);
+}
+
+.windowSelect[data-pending] {
+  opacity: 0.6;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .unaccountedNote {

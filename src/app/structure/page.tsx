@@ -1,4 +1,5 @@
 import { redirect } from 'next/navigation'
+import { concat } from 'ramda'
 
 import { createClient } from '@/utils/supabase/server'
 import { DateTime } from '../DateTime'
@@ -15,7 +16,27 @@ import {
 } from './industryIndex'
 import { StructureSilhouette } from './silhouette'
 import { Sparkline } from './sparkline'
+import { WindowSelect } from './windowSelect'
+import { structureWindowDays } from './windows'
 import styles from './structures.module.css'
+
+const PAGE_SIZE = 1000
+
+// Drain a PostgREST select past its max_rows (1000) cap by recursing to the
+// next page until a short (or empty/errored) page signals the end — an
+// unbounded pull written as tail recursion rather than a mutable loop, per the
+// house style (cf. src/app/structure/revenue/page.tsx). The revenue footer sums
+// every tax entry in the window, so a busy corp can exceed one page.
+const fetchAllRows = async <T,>(
+  build: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: unknown }>,
+  from = 0,
+  acc: readonly T[] = []
+): Promise<T[]> => {
+  const { data, error } = await build(from, from + PAGE_SIZE - 1)
+  if (error || !data || data.length === 0) return [...acc]
+  const rows = concat(acc, data)
+  return data.length < PAGE_SIZE ? rows : fetchAllRows(build, from + PAGE_SIZE, rows)
+}
 
 type Structure = {
   structure_id: number
@@ -49,13 +70,24 @@ type RigRow = {
   type_id: number | string
 }
 
-const StructuresPage = async () => {
+type StructuresParams = {
+  searchParams: Promise<{ days?: string }>
+}
+
+const StructuresPage = async ({ searchParams }: StructuresParams) => {
   const supabase = await createClient()
 
   const { data: auth, error: authError } = await supabase.auth.getUser()
   if (authError || !auth?.user) {
     redirect('/')
   }
+
+  // The tax-revenue window: the footer (per-structure Revenue, unaccounted tax,
+  // clone revenue) sums only entries newer than this. Driven by the ?days=N
+  // dropdown, clamped to an offered option.
+  const { days: daysParam } = await searchParams
+  const windowDays = structureWindowDays(daysParam)
+  const windowStart = new Date(Date.now() - windowDays * 86_400_000).toISOString()
 
   const { data: structures } = await supabase
     .from('corp_structure')
@@ -140,10 +172,15 @@ const StructuresPage = async () => {
   )
   console.log({ indexHistoryBySystem })
 
-  const { data: journal } = await supabase
-    .from('corp_wallet_journal')
-    .select('amount, context_id, description, first_party_id')
-    .eq('ref_type', 'industry_job_tax')
+  const journal = await fetchAllRows<JournalRow>((from, to) =>
+    supabase
+      .from('corp_wallet_journal')
+      .select('amount, context_id, description, first_party_id')
+      .eq('ref_type', 'industry_job_tax')
+      .gte('date', windowStart)
+      .order('date', { ascending: false })
+      .range(from, to)
+  )
 
   const totalByStructure = new Map<string, number>()
   // Unaccounted tax broken down by the party that paid it (the character/corp that ran the job).
@@ -213,16 +250,19 @@ const StructuresPage = async () => {
     }
   }
 
-  // Revenue from structure clone bays (jump clone installation and activation fees).
-  const { data: cloneJournal } = await supabase
-    .from('corp_wallet_journal')
-    .select('amount')
-    .in('ref_type', ['jump_clone_installation_fee', 'jump_clone_activation_fee'])
-
-  const cloneRevenue = ((cloneJournal ?? []) as Array<{ amount: number | string | null }>).reduce(
-    (sum, entry) => sum + Number(entry.amount ?? 0),
-    0
+  // Revenue from structure clone bays (jump clone installation and activation
+  // fees), over the same window as the tax revenue above.
+  const cloneJournal = await fetchAllRows<{ amount: number | string | null }>((from, to) =>
+    supabase
+      .from('corp_wallet_journal')
+      .select('amount')
+      .in('ref_type', ['jump_clone_installation_fee', 'jump_clone_activation_fee'])
+      .gte('date', windowStart)
+      .order('date', { ascending: false })
+      .range(from, to)
   )
+
+  const cloneRevenue = cloneJournal.reduce((sum, entry) => sum + Number(entry.amount ?? 0), 0)
 
   // When the Structures background job last finished. Each scheduled run writes a
   // public.heartbeat row stamped with ended_at and a link to the workflow run; we
@@ -346,17 +386,27 @@ const StructuresPage = async () => {
           </ul>
 
           <div className={styles.footer}>
-            <span>Unaccounted tax revenue:</span>
-            <span className={styles.footerValue}>{formatIsk(unaccounted)}</span>
+            <span className={styles.footerControlLabel}>Revenue window</span>
+            <span className={styles.footerControl}>
+              <WindowSelect days={windowDays} />
+            </span>
+            {unaccountedParties.length > 0 && (
+              <>
+                <span>Unaccounted tax revenue:</span>
+                <span className={styles.footerValue}>{formatIsk(unaccounted)}</span>
+              </>
+            )}
             <span>Clone revenue:</span>
             <span className={styles.footerValue}>{formatKisk(cloneRevenue)}</span>
           </div>
-          <p className={styles.unaccountedNote}>
-            <em>
-              Unaccounted revenue comes from industry jobs started by players we can&rsquo;t see, so we can&rsquo;t tie
-              the tax back to one of our structures.
-            </em>
-          </p>
+          {unaccountedParties.length > 0 && (
+            <p className={styles.unaccountedNote}>
+              <em>
+                Unaccounted revenue comes from industry jobs started by players we can&rsquo;t see, so we can&rsquo;t tie
+                the tax back to one of our structures.
+              </em>
+            </p>
+          )}
           {unaccountedParties.length > 0 && (
             <details className={styles.breakdown}>
               <summary>Breakdown by payer ({unaccountedParties.length})</summary>
