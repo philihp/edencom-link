@@ -82,9 +82,10 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
     redirect('/')
   }
 
-  // The tax-revenue window: the footer (per-structure Revenue, unaccounted tax,
-  // clone revenue) sums only entries newer than this. Driven by the ?days=N
-  // dropdown, clamped to an offered option.
+  // The time window: the footer (per-structure Revenue, unaccounted tax, clone
+  // revenue) sums only entries newer than this, and the industry-index
+  // sparklines cover the same span. Driven by the ?days=N dropdown (top-right),
+  // clamped to an offered option.
   const { days: daysParam } = await searchParams
   const windowDays = structureWindowDays(daysParam)
   const windowStart = new Date(Date.now() - windowDays * 86_400_000).toISOString()
@@ -166,11 +167,14 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
     supabase,
     list.map((s) => Number(s.system_id))
   )
+  // The same window that drives the revenue footer also scopes the index
+  // sparklines. Widen the bucket for longer windows so the point count stays
+  // sane on a 100px sparkline (~180 points max: 24h/day ÷ bucketHours).
   const indexHistoryBySystem = await fetchSystemIndexHistory(
     supabase,
-    list.map((s) => Number(s.system_id))
+    list.map((s) => Number(s.system_id)),
+    { days: windowDays, bucketHours: Math.max(1, Math.ceil((windowDays * 24) / 180)) }
   )
-  console.log({ indexHistoryBySystem })
 
   const journal = await fetchAllRows<JournalRow>((from, to) =>
     supabase
@@ -278,7 +282,13 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
 
   return (
     <>
-      <h1>Structures</h1>
+      <div className={styles.header}>
+        <h1>Structures</h1>
+        <span className={styles.headerControl}>
+          <span className={styles.headerControlLabel}>Window</span>
+          <WindowSelect days={windowDays} />
+        </span>
+      </div>
       {list.length > 0 ? (
         <>
           <ul className={styles.grid}>
@@ -386,10 +396,6 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
           </ul>
 
           <div className={styles.footer}>
-            <span className={styles.footerControlLabel}>Revenue window</span>
-            <span className={styles.footerControl}>
-              <WindowSelect days={windowDays} />
-            </span>
             {unaccountedParties.length > 0 && (
               <>
                 <span>Unaccounted tax revenue:</span>

@@ -6,17 +6,18 @@ import { useTransition } from 'react'
 import { STRUCTURE_WINDOW_OPTIONS } from './windows'
 import styles from './structures.module.css'
 
-// The tax-revenue time-window dropdown shown in the Structures footer, next to
-// the unaccounted-revenue figure — the same control as the Market/Indexes
-// pages. The window lives in the URL (?days=N) so the server component refetches
-// exactly the span it needs.
+// The time-window dropdown pinned to the top-right of the Structures page — the
+// same control as the Market/Indexes pages. It scopes both the revenue footer
+// (per-structure Revenue, unaccounted tax, clone revenue) and the industry-index
+// sparklines. The window lives in the URL (?days=N) so the server component
+// refetches exactly the span it needs.
 export const WindowSelect = ({ days }: { days: number }) => {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
 
   return (
     <label className={styles.windowSelect} data-pending={pending || undefined}>
-      <span className={styles.srOnly}>Revenue window</span>
+      <span className={styles.srOnly}>Time window</span>
       <select
         value={days}
         onChange={(e) => {

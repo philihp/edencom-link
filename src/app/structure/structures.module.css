@@ -245,6 +245,27 @@
   }
 }
 
+/* Page header: title on the left, the time-window dropdown pinned top-right. The
+ * window drives both the revenue footer and the industry-index sparklines. */
+.header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.headerControl {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.headerControlLabel {
+  color: var(--ink-faint);
+}
+
 .footer {
   display: grid;
   grid-template-columns: auto auto;
@@ -259,14 +280,6 @@
   font-family: var(--mono);
   font-variant-numeric: tabular-nums;
   text-align: right;
-}
-
-.footerControlLabel {
-  color: var(--ink-faint);
-}
-
-.footerControl {
-  justify-self: start;
 }
 
 .windowSelect {
