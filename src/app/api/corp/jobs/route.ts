@@ -2,12 +2,12 @@ import { NextRequest, NextResponse } from 'next/server'
 
 import { resolvePlayer } from '@/utils/apiToken'
 import { AT_PARAM_ERROR, parseAtParam } from '@/utils/atParam'
-import { omitColumns, parseColumnsParam, selectColumns } from '@/utils/columnsParam'
+import { parseColumnsParam, selectColumns } from '@/utils/columnsParam'
 import { toCsv } from '@/utils/csv'
 
-// Default column set/order, matching corp_industry_jobs()'s json_build_object
-// in schema.sql. ?columns= can reorder/subset these.
-const ALLOWED_COLUMNS = [
+// Column set/order returned when ?columns= is omitted, matching
+// corp_industry_jobs()'s json_build_object in schema.sql.
+const DEFAULT_COLUMNS = [
   'activity_id',
   'blueprint_id',
   'blueprint_location_id',
@@ -22,7 +22,6 @@ const ALLOWED_COLUMNS = [
   'installer_id',
   'job_id',
   'licensed_runs',
-  'output_count',
   'output_location_id',
   'pause_date',
   'probability',
@@ -32,13 +31,15 @@ const ALLOWED_COLUMNS = [
   'station_id',
   'status',
   'successful_runs',
+  'blueprint_type_name',
+  'product_type_name',
 ] as const
 
-// Columns present in corp_industry_jobs()'s json_build_object that are
-// selectable via ?columns= but excluded from the default (no ?columns=)
-// response, so adding them doesn't retroactively widen existing IMPORTDATA
-// formulas that rely on today's default column set.
-const DEFAULT_OMIT = ['output_count'] as const
+// Every column ?columns= may select, in any order/subset: DEFAULT_COLUMNS plus
+// fields that exist in the json_build_object but are opt-in only (excluded
+// from the default response so adding one doesn't retroactively widen
+// existing IMPORTDATA formulas that rely on today's default column set).
+const ALLOWED_COLUMNS = [...DEFAULT_COLUMNS, 'output_count'] as const
 
 // Public CSV endpoint for Google Sheets =IMPORTDATA(): industry jobs for the
 // corporation(s) the caller's characters belong to, as of an optional `at`
@@ -86,12 +87,7 @@ export const GET = async (request: NextRequest): Promise<NextResponse> => {
     return NextResponse.json({ error: 'Query failed' }, { status: 500 })
   }
 
-  const csvRows =
-    columnsResult.columns === null
-      ? omitColumns(rows ?? [], DEFAULT_OMIT)
-      : selectColumns(rows ?? [], columnsResult.columns)
-
-  return new NextResponse(toCsv(csvRows), {
+  return new NextResponse(toCsv(selectColumns(rows ?? [], columnsResult.columns ?? DEFAULT_COLUMNS)), {
     headers: { 'Content-Type': 'text/csv; charset=utf-8' },
   })
 }

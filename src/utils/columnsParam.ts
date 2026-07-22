@@ -35,21 +35,8 @@ export const parseColumnsParam = (
 // default json_build_object key order.
 export const selectColumns = (
   rows: Record<string, unknown>[],
-  columns: string[] | null
+  columns: readonly string[] | null
 ): Record<string, unknown>[] => {
   if (columns === null) return rows
   return rows.map((row) => Object.fromEntries(columns.map((c) => [c, row[c]])))
-}
-
-// Strips `columns` out of each row. For fields a route's json_build_object
-// returns (so they're selectable via an explicit ?columns=) but that
-// shouldn't widen the default, no-?columns= response — e.g. a computed field
-// added after the endpoint's default column set was already relied on by
-// existing IMPORTDATA formulas.
-export const omitColumns = (
-  rows: Record<string, unknown>[],
-  columns: readonly string[]
-): Record<string, unknown>[] => {
-  const omit = new Set(columns)
-  return rows.map((row) => Object.fromEntries(Object.entries(row).filter(([key]) => !omit.has(key))))
 }
