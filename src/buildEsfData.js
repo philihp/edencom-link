@@ -354,13 +354,17 @@ const encodeMessage = (root, messageName, entries) => {
 }
 
 // The six .pb2 files, in the (message, output filename) order they encode.
+// Largest-first (typeDogma dwarfs the rest): each map is released right after
+// its encode, so the biggest map's fromObject() copy never coexists with the
+// other maps plus the finished buffers. Output order doesn't matter — buffers
+// is keyed by fileName, and ESF_FILE_NAMES consumers treat it as a set.
 const FILES = [
-  { messageName: 'Types', key: 'types', fileName: 'types.pb2' },
-  { messageName: 'Groups', key: 'groups', fileName: 'groups.pb2' },
-  { messageName: 'MarketGroups', key: 'marketGroups', fileName: 'marketGroups.pb2' },
-  { messageName: 'DogmaAttributes', key: 'dogmaAttributes', fileName: 'dogmaAttributes.pb2' },
-  { messageName: 'DogmaEffects', key: 'dogmaEffects', fileName: 'dogmaEffects.pb2' },
   { messageName: 'TypeDogma', key: 'typeDogma', fileName: 'typeDogma.pb2' },
+  { messageName: 'Types', key: 'types', fileName: 'types.pb2' },
+  { messageName: 'DogmaEffects', key: 'dogmaEffects', fileName: 'dogmaEffects.pb2' },
+  { messageName: 'DogmaAttributes', key: 'dogmaAttributes', fileName: 'dogmaAttributes.pb2' },
+  { messageName: 'MarketGroups', key: 'marketGroups', fileName: 'marketGroups.pb2' },
+  { messageName: 'Groups', key: 'groups', fileName: 'groups.pb2' },
 ]
 
 // The six output filenames, for consumers that need the set before encoding
@@ -373,26 +377,32 @@ export const ESF_FILE_NAMES = FILES.map(({ fileName }) => fileName)
 // upserts the buffers into the esf_data table for /esf/[file] to serve.
 export const encodeEsfData = async () => {
   console.log('esf: reading source tables from the sde_* mirror…')
-  const groups = await buildGroups()
-  const [types, categories, marketGroups, dogmaAttributes, dogmaEffects, typeDogma] = await Promise.all([
-    buildTypes(groups),
-    buildCategories(),
-    buildMarketGroups(),
-    buildDogmaAttributes(),
-    buildDogmaEffects(),
-    buildTypeDogma(),
-  ])
+  // Built sequentially, and held in one `maps` object rather than individual
+  // bindings, so each map can be dropped the moment its last consumer is done —
+  // applyPatches needs every map alive at once (that floor is inherent), but
+  // categories dies right after patching and each encoded map dies after its
+  // encode instead of the whole set surviving to the end of the function.
+  const maps = {}
+  maps.groups = await buildGroups()
+  maps.types = await buildTypes(maps.groups)
+  maps.categories = await buildCategories()
+  maps.marketGroups = await buildMarketGroups()
+  maps.dogmaAttributes = await buildDogmaAttributes()
+  maps.dogmaEffects = await buildDogmaEffects()
+  maps.typeDogma = await buildTypeDogma()
 
   const patchGroups = JSON.parse(await readFile(PATCHES_PATH, 'utf8'))
-  applyPatches(patchGroups, { types, groups, categories, dogmaAttributes, dogmaEffects, typeDogma })
+  applyPatches(patchGroups, maps)
   console.log(`esf: applied ${patchGroups.length} eveship.fit patch groups`)
+  delete maps.categories
 
-  const entriesByKey = { types, groups, marketGroups, dogmaAttributes, dogmaEffects, typeDogma }
   const root = await protobuf.load(PROTO_PATH)
   const buffers = {}
   for (const { messageName, key, fileName } of FILES) {
-    buffers[fileName] = encodeMessage(root, messageName, entriesByKey[key])
-    console.log(`esf: encoded ${fileName} (${buffers[fileName].length} bytes, ${Object.keys(entriesByKey[key]).length} entries)`)
+    const entryCount = Object.keys(maps[key]).length
+    buffers[fileName] = encodeMessage(root, messageName, maps[key])
+    delete maps[key]
+    console.log(`esf: encoded ${fileName} (${buffers[fileName].length} bytes, ${entryCount} entries)`)
   }
   return buffers
 }

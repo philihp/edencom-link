@@ -1,4 +1,4 @@
-import { filter, map, pipe, prop, reduce, splitEvery } from 'ramda'
+import { forEach, reduce, splitEvery } from 'ramda'
 
 import { corpAssets } from '../esi.js'
 import { sudoSupabase } from '../supabase.js'
@@ -32,21 +32,31 @@ const signature = (a) =>
   ])
 
 // PostgREST caps a single select; page through every open row so a large corp
-// hangar doesn't silently truncate the "current" set.
+// hangar doesn't silently truncate the "current" set. Each page is folded into
+// a compact item_id → { id, sig } map as it arrives and then discarded — the
+// classify step only ever compares signatures, so holding every current row's
+// full columns just multiplied peak memory (see the character-assets twin).
 const PAGE = 1000
 
-const fetchCurrentRows = async (corporation_id, cols, from = 0) => {
-  const { data, error } = await sudoSupabase
-    .from('corp_asset_over_time')
-    .select(cols)
-    .eq('corporation_id', corporation_id)
-    .eq('is_current', true)
-    .order('id', { ascending: true })
-    .range(from, from + PAGE - 1)
-  if (error) throw error
-  const page = data ?? []
-  if (page.length < PAGE) return page
-  return [...page, ...(await fetchCurrentRows(corporation_id, cols, from + PAGE))]
+const fetchCurrentByItem = async (corporation_id) => {
+  const cols =
+    'id, item_id, type_id, location_id, location_flag, location_type, quantity, is_singleton, is_blueprint_copy'
+  const byItem = new Map()
+  const fetchPage = async (from) => {
+    const { data, error } = await sudoSupabase
+      .from('corp_asset_over_time')
+      .select(cols)
+      .eq('corporation_id', corporation_id)
+      .eq('is_current', true)
+      .order('id', { ascending: true })
+      .range(from, from + PAGE - 1)
+    if (error) throw error
+    const page = data ?? []
+    forEach((c) => byItem.set(Number(c.item_id), { id: c.id, sig: signature(c) }), page)
+    if (page.length === PAGE) await fetchPage(from + PAGE)
+  }
+  await fetchPage(0)
+  return byItem
 }
 
 // Reconcile freshly fetched corp assets against the corp's current (open) rows
@@ -54,11 +64,7 @@ const fetchCurrentRows = async (corporation_id, cols, from = 0) => {
 // for per-character assets: unchanged items get valid_until extended, changed
 // items close their old row and open a new one, and vanished items are closed.
 const reconcile = async (corporation_id, fetched) => {
-  const cols =
-    'id, item_id, type_id, location_id, location_flag, location_type, quantity, is_singleton, is_blueprint_copy'
-  const current = await fetchCurrentRows(corporation_id, cols)
-
-  const currentByItem = new Map(current.map((c) => [Number(c.item_id), c]))
+  const currentByItem = await fetchCurrentByItem(corporation_id)
   // ESI can return the same item twice across pages if assets shift mid-fetch;
   // collapse to one entry per item so we never queue two inserts for it.
   const fetchedByItem = new Map(fetched.map((a) => [Number(a.item_id), a]))
@@ -73,7 +79,7 @@ const reconcile = async (corporation_id, fetched) => {
   const { touchIds, closeIds, inserts } = reduce(
     (acc, a) => {
       const cur = currentByItem.get(Number(a.item_id))
-      if (cur && signature(cur) === signature(a)) {
+      if (cur && cur.sig === signature(a)) {
         acc.touchIds.push(cur.id)
       } else {
         if (cur) acc.closeIds.push(cur.id)
@@ -97,11 +103,10 @@ const reconcile = async (corporation_id, fetched) => {
   )
 
   // Anything still open but not seen this run has left the corp's assets.
-  const fetchedIds = new Set(fetchedByItem.keys())
-  const vanishedIds = pipe(
-    filter((cur) => !fetchedIds.has(Number(cur.item_id))),
-    map(prop('id'))
-  )([...currentByItem.values()])
+  const vanishedIds = []
+  currentByItem.forEach(({ id }, itemId) => {
+    if (!fetchedByItem.has(itemId)) vanishedIds.push(id)
+  })
   const allCloseIds = [...closeIds, ...vanishedIds]
 
   await forEachSequential(splitEvery(200, touchIds), async (ids) => {
