@@ -1064,7 +1064,10 @@ as $$
   left join public.sde_published_type pt on pt.type_id = j.product_type_id
   left join public.sde_blueprint_product bp
     on bp.blueprint_type_id = j.blueprint_type_id
-    and bp.activity_id = j.activity_id
+    -- ESI's job activity_id (9 = Reactions) doesn't match the SDE-internal
+    -- dogma activity id sde_blueprint_product carries for the same activity
+    -- (11); everything else (manufacturing = 1 in both) lines up already.
+    and bp.activity_id = case j.activity_id when 9 then 11 else j.activity_id end
     and bp.product_type_id = j.product_type_id
   where j.character_id = any(character_ids)
     and j.valid_from <= as_of
@@ -2379,7 +2382,10 @@ as $$
   left join public.sde_published_type pt on pt.type_id = j.product_type_id
   left join public.sde_blueprint_product bp
     on bp.blueprint_type_id = j.blueprint_type_id
-    and bp.activity_id = j.activity_id
+    -- ESI's job activity_id (9 = Reactions) doesn't match the SDE-internal
+    -- dogma activity id sde_blueprint_product carries for the same activity
+    -- (11); everything else (manufacturing = 1 in both) lines up already.
+    and bp.activity_id = case j.activity_id when 9 then 11 else j.activity_id end
     and bp.product_type_id = j.product_type_id
   where j.corporation_id in (
     select corporation_id from public.registration
