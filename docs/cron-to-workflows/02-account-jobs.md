@@ -1,7 +1,12 @@
 # Phase 2: the account-wide queue jobs → single-step workflows
 
-`universe-names` (every 6h `:58`) and `character-affiliations` (11:41
-daily). Today their cron routes call `dispatchAccountCronJob`
+> ✅ **Done.** `universe-names` and `character-directory` both migrated in one
+> PR. Note: the job this doc first called `character-affiliations` was renamed
+> to `character-directory` (it subsumed affiliations) before this phase
+> landed; the workflow file is `src/workflows/characterDirectory.ts`.
+
+`universe-names` (every 6h `:58`) and `character-directory` (11:41
+daily). Before this phase their cron routes called `dispatchAccountCronJob`
 (`src/utils/cron.ts`), which sends **one** queue message; the consumer
 (`src/app/api/queue/jobs/route.ts`) runs the batch and records the
 whole-job heartbeat itself (`source: 'vercel'`).
