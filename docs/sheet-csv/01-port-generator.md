@@ -138,10 +138,14 @@ the filter is a no-op, dropped.)
 
 ### Serialization
 
-Use `toCsv` from `src/utils/csv.ts` (RFC 4180, header from object keys, CRLF)
-— build each file as an array of flat objects whose key order is the column
-order above. No BOM (Sheets `IMPORTDATA` doesn't need the Python's
-`utf-8-sig`; that was for Excel).
+RFC 4180, header from object keys, CRLF — build each file as an array of flat
+objects whose key order is the column order above. No BOM (Sheets `IMPORTDATA`
+doesn't need the Python's `utf-8-sig`; that was for Excel). The serializer is
+**inlined** in `buildSheetCsv.js` (a copy of `src/utils/csv.ts`'s `toCsv`
+logic) rather than imported: these job modules run under plain `node`, which
+can't import a `.ts` file. `@supabase/supabase-js` is likewise imported lazily
+inside the DB path so the pure `buildSheets` transform has no runtime
+dependency and stays unit-testable without a database.
 
 ### Row ordering
 
