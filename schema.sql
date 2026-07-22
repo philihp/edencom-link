@@ -1051,7 +1051,8 @@ as $$
         'successful_runs',        j.successful_runs,
         'character_name',         r.name,
         'blueprint_type_name',    bt.name,
-        'product_type_name',      pt.name
+        'product_type_name',      pt.name,
+        'output_count',           j.runs * bp.product_quantity
       )
       order by j.start_date desc
     ),
@@ -1061,6 +1062,10 @@ as $$
   join public.registration r on r.id = j.character_id
   left join public.sde_published_type bt on bt.type_id = j.blueprint_type_id
   left join public.sde_published_type pt on pt.type_id = j.product_type_id
+  left join public.sde_blueprint_product bp
+    on bp.blueprint_type_id = j.blueprint_type_id
+    and bp.activity_id = j.activity_id
+    and bp.product_type_id = j.product_type_id
   where j.character_id = any(character_ids)
     and j.valid_from <= as_of
     and (j.is_current or j.valid_until >= as_of)
@@ -2362,7 +2367,8 @@ as $$
         'status',                 j.status,
         'successful_runs',        j.successful_runs,
         'blueprint_type_name',    bt.name,
-        'product_type_name',      pt.name
+        'product_type_name',      pt.name,
+        'output_count',           j.runs * bp.product_quantity
       )
       order by j.start_date desc
     ),
@@ -2371,6 +2377,10 @@ as $$
   from public.corp_industry_job_over_time j
   left join public.sde_published_type bt on bt.type_id = j.blueprint_type_id
   left join public.sde_published_type pt on pt.type_id = j.product_type_id
+  left join public.sde_blueprint_product bp
+    on bp.blueprint_type_id = j.blueprint_type_id
+    and bp.activity_id = j.activity_id
+    and bp.product_type_id = j.product_type_id
   where j.corporation_id in (
     select corporation_id from public.registration
     where id = any(character_ids) and corporation_id is not null

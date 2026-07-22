@@ -35,7 +35,7 @@ export const parseColumnsParam = (
 // default json_build_object key order.
 export const selectColumns = (
   rows: Record<string, unknown>[],
-  columns: string[] | null
+  columns: readonly string[] | null
 ): Record<string, unknown>[] => {
   if (columns === null) return rows
   return rows.map((row) => Object.fromEntries(columns.map((c) => [c, row[c]])))

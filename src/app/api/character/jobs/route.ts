@@ -5,9 +5,9 @@ import { AT_PARAM_ERROR, parseAtParam } from '@/utils/atParam'
 import { parseColumnsParam, selectColumns } from '@/utils/columnsParam'
 import { toCsv } from '@/utils/csv'
 
-// Default column set/order, matching character_industry_jobs()'s
-// json_build_object in schema.sql. ?columns= can reorder/subset these.
-const ALLOWED_COLUMNS = [
+// Column set/order returned when ?columns= is omitted, matching
+// character_industry_jobs()'s json_build_object in schema.sql.
+const DEFAULT_COLUMNS = [
   'activity_id',
   'blueprint_id',
   'blueprint_location_id',
@@ -31,7 +31,15 @@ const ALLOWED_COLUMNS = [
   'status',
   'successful_runs',
   'character_name',
+  'blueprint_type_name',
+  'product_type_name',
 ] as const
+
+// Every column ?columns= may select, in any order/subset: DEFAULT_COLUMNS plus
+// fields that exist in the json_build_object but are opt-in only (excluded
+// from the default response so adding one doesn't retroactively widen
+// existing IMPORTDATA formulas that rely on today's default column set).
+const ALLOWED_COLUMNS = [...DEFAULT_COLUMNS, 'output_count'] as const
 
 // Public CSV endpoint for Google Sheets =IMPORTDATA(): the player's industry jobs
 // across all of their characters, with the owning character's name, as of an
@@ -79,7 +87,7 @@ export const GET = async (request: NextRequest): Promise<NextResponse> => {
     return NextResponse.json({ error: 'Query failed' }, { status: 500 })
   }
 
-  return new NextResponse(toCsv(selectColumns(rows ?? [], columnsResult.columns)), {
+  return new NextResponse(toCsv(selectColumns(rows ?? [], columnsResult.columns ?? DEFAULT_COLUMNS)), {
     headers: { 'Content-Type': 'text/csv; charset=utf-8' },
   })
 }
