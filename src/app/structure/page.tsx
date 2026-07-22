@@ -1,4 +1,5 @@
 import { redirect } from 'next/navigation'
+import { concat } from 'ramda'
 
 import { createClient } from '@/utils/supabase/server'
 import { DateTime } from '../DateTime'
@@ -21,20 +22,20 @@ import styles from './structures.module.css'
 
 const PAGE_SIZE = 1000
 
-// Page through a select past PostgREST's max_rows (1000) cap until a short page
-// signals the end (cf. src/app/structure/revenue/page.tsx). The revenue footer
-// sums every tax entry in the window, so a busy corp can exceed one page.
+// Drain a PostgREST select past its max_rows (1000) cap by recursing to the
+// next page until a short (or empty/errored) page signals the end — an
+// unbounded pull written as tail recursion rather than a mutable loop, per the
+// house style (cf. src/app/structure/revenue/page.tsx). The revenue footer sums
+// every tax entry in the window, so a busy corp can exceed one page.
 const fetchAllRows = async <T,>(
-  build: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: unknown }>
+  build: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: unknown }>,
+  from = 0,
+  acc: readonly T[] = []
 ): Promise<T[]> => {
-  const rows: T[] = []
-  for (let from = 0; ; from += PAGE_SIZE) {
-    const { data, error } = await build(from, from + PAGE_SIZE - 1)
-    if (error || !data || data.length === 0) break
-    rows.push(...data)
-    if (data.length < PAGE_SIZE) break
-  }
-  return rows
+  const { data, error } = await build(from, from + PAGE_SIZE - 1)
+  if (error || !data || data.length === 0) return [...acc]
+  const rows = concat(acc, data)
+  return data.length < PAGE_SIZE ? rows : fetchAllRows(build, from + PAGE_SIZE, rows)
 }
 
 type Structure = {
