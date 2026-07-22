@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 
 import { resolvePlayer } from '@/utils/apiToken'
 import { AT_PARAM_ERROR, parseAtParam } from '@/utils/atParam'
-import { parseColumnsParam, selectColumns } from '@/utils/columnsParam'
+import { omitColumns, parseColumnsParam, selectColumns } from '@/utils/columnsParam'
 import { toCsv } from '@/utils/csv'
 
 // Default column set/order, matching corp_industry_jobs()'s json_build_object
@@ -33,6 +33,12 @@ const ALLOWED_COLUMNS = [
   'status',
   'successful_runs',
 ] as const
+
+// Columns present in corp_industry_jobs()'s json_build_object that are
+// selectable via ?columns= but excluded from the default (no ?columns=)
+// response, so adding them doesn't retroactively widen existing IMPORTDATA
+// formulas that rely on today's default column set.
+const DEFAULT_OMIT = ['output_count'] as const
 
 // Public CSV endpoint for Google Sheets =IMPORTDATA(): industry jobs for the
 // corporation(s) the caller's characters belong to, as of an optional `at`
@@ -80,7 +86,12 @@ export const GET = async (request: NextRequest): Promise<NextResponse> => {
     return NextResponse.json({ error: 'Query failed' }, { status: 500 })
   }
 
-  return new NextResponse(toCsv(selectColumns(rows ?? [], columnsResult.columns)), {
+  const csvRows =
+    columnsResult.columns === null
+      ? omitColumns(rows ?? [], DEFAULT_OMIT)
+      : selectColumns(rows ?? [], columnsResult.columns)
+
+  return new NextResponse(toCsv(csvRows), {
     headers: { 'Content-Type': 'text/csv; charset=utf-8' },
   })
 }
