@@ -13,6 +13,8 @@
 // Full spec (field-by-field, plus the Python quirks deliberately NOT ported):
 // docs/sheet-csv/01-port-generator.md.
 
+import { forEach } from 'ramda'
+
 // Same env + client as buildEsfData.js — the public-read sde_* mirror.
 // @supabase/supabase-js is imported lazily in encodeSheetCsv() so this module's
 // pure transform (buildSheets) loads with no runtime dependency and stays unit-
@@ -98,11 +100,11 @@ const dedupeBlueprints = (blueprints) => {
   const sorted = [...blueprints].sort((a, b) => a._key - b._key)
   const noOutput = []
   const byOutput = new Map()
-  for (const bp of sorted) {
+  forEach((bp) => {
     const output = blueprintOutput(bp)
     if (output === null) noOutput.push(bp)
     else byOutput.set(output, bp)
-  }
+  }, sorted)
   return [...noOutput, ...byOutput.values()]
 }
 
@@ -117,14 +119,14 @@ export const buildSheets = ({ types, blueprints }) => {
   const idToName = new Map()
   const nameToId = new Map()
   const typeData = new Map()
-  for (const t of types) {
+  forEach((t) => {
     typeData.set(t._key, t)
     const name = t.name?.en
     if (name != null) {
       idToName.set(t._key, name)
       nameToId.set(name, t._key)
     }
-  }
+  }, types)
   const nameOf = (id) => idToName.get(id) ?? `Type ${id}`
 
   const survivors = dedupeBlueprints(blueprints)
@@ -148,10 +150,10 @@ export const buildSheets = ({ types, blueprints }) => {
     const outputId = product.typeID
     seenTypes.add(outputId)
     outputSet.add(outputId)
-    for (const material of activity.materials) {
+    forEach((material) => {
       seenTypes.add(material.typeID)
       inputRows.push({ outputId, materialName: nameOf(material.typeID), inputQty: material.quantity })
-    }
+    }, activity.materials)
     outputRows.push({ outputId, outputQty: product.quantity, jobTime: activity.time })
   }
 
@@ -165,7 +167,7 @@ export const buildSheets = ({ types, blueprints }) => {
     seenTypes.add(d1.typeID)
     seenTypes.add(d2.typeID)
     seenTypes.add(blueprintId)
-    for (const product of activity.products ?? []) {
+    forEach((product) => {
       seenTypes.add(product.typeID)
       inventionRows.push({
         Type: nameOf(product.typeID),
@@ -178,23 +180,23 @@ export const buildSheets = ({ types, blueprints }) => {
         JobTime: activity.time,
         Probability: product.probability ?? 1,
       })
-    }
+    }, activity.products ?? [])
   }
 
-  for (const bp of survivors) {
+  forEach((bp) => {
     const activities = bp.activities ?? {}
     if (activities[MANUFACTURING]) collectIndustry(activities[MANUFACTURING], industryTypes)
     if (activities[REACTION]) collectIndustry(activities[REACTION], reactionTypes)
     if (activities[INVENTION]) collectInvention(activities[INVENTION], bp._key)
-  }
+  }, survivors)
 
   // Seed the type set with the decryptors (force-included in types.csv). A
   // rename in the SDE makes one unresolvable — log and skip rather than throw.
-  for (const name of DECRYPTOR_NAMES) {
+  forEach((name) => {
     const id = nameToId.get(name)
     if (id === undefined) console.warn(`sheet-csv: decryptor not found in SDE: ${name}`)
     else seenTypes.add(id)
-  }
+  }, DECRYPTOR_NAMES)
 
   // The group label for a type, shared by the pre-joined Group column and
   // types.csv. Reaction wins outright; otherwise miros components, then tech
@@ -253,20 +255,20 @@ export const buildSheets = ({ types, blueprints }) => {
 // ── DB read ──────────────────────────────────────────────────────────────
 
 // Page a mirror table, collecting each row's `data` jsonb (the raw SDE object,
-// which carries `_key`). Same shape as buildEsfData.js's readMirror.
-const readMirror = async (supabase, stem) => {
-  const rows = []
-  for (let from = 0; ; from += PAGE_SIZE) {
-    const { data, error } = await supabase
-      .from(`sde_${stem}`)
-      .select('data')
-      .order('_key')
-      .range(from, from + PAGE_SIZE - 1)
-    if (error) throw new Error(`sheet-csv: reading sde_${stem} failed: ${error.message}`)
-    for (const row of data) rows.push(row.data)
-    if (data.length < PAGE_SIZE) break
-  }
-  return rows
+// which carries `_key`). Tail-recursion instead of a `for (from += PAGE_SIZE)`
+// loop (CLAUDE.md house style): fetch one page and recurse on the next range
+// only while the page came back full, carrying `(from, acc)` as arguments. The
+// accumulator is push-mutated via ramda's forEach — the sanctioned O(n)
+// exception for a large collect target — never a mutable loop counter.
+const readMirror = async (supabase, stem, from = 0, acc = []) => {
+  const { data, error } = await supabase
+    .from(`sde_${stem}`)
+    .select('data')
+    .order('_key')
+    .range(from, from + PAGE_SIZE - 1)
+  if (error) throw new Error(`sheet-csv: reading sde_${stem} failed: ${error.message}`)
+  forEach((row) => acc.push(row.data), data)
+  return data.length < PAGE_SIZE ? acc : readMirror(supabase, stem, from + PAGE_SIZE, acc)
 }
 
 /** Read the mirror and build all seven CSVs. @returns {Promise<Record<string,string>>} */
