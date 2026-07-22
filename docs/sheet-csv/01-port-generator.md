@@ -34,12 +34,43 @@ it — dead code, dropped in the port):
 
 Both are already seeded stems in the mirror
 (`supabase/migrations/20260716010000_sde_mirror.sql` seeds `types` and
-`blueprints`), so **no migration is needed** for this PR. Page them 1000 rows
-at a time exactly like `buildEsfData.js`'s `readMirror(stem)` — lift that
-helper or copy it. Each row's `data` jsonb is the raw SDE JSONL object; the
-`_key` is the type/blueprint id. Verify the field casing against live rows
-before coding (the JSONL uses `typeID`, `metaGroupID`, etc. — same as the
-YAML), and confirm whether `_key` arrives as number or string.
+`blueprints`), so **no migration is needed** for this PR. Each row's `data`
+jsonb is the raw SDE JSONL object; the `_key` is the type/blueprint id. Verify
+the field casing against live rows before coding (the JSONL uses `typeID`,
+`metaGroupID`, etc. — same as the YAML), and confirm whether `_key` arrives as
+number or string.
+
+**Pagination — tail-recursion, not a `for` loop.** `buildEsfData.js`'s
+`readMirror` uses an imperative `for (from += PAGE_SIZE)` generator; don't
+copy that. Express the page walk as a small self-recursing async function (the
+house pattern in CLAUDE.md's design-patterns section: "an unbounded pagination
+loop becomes a small function that recurses on the next page"), collecting into
+a `.push()`-mutated accumulator so the drain stays O(n):
+
+```js
+import { forEach } from 'ramda'
+
+const PAGE_SIZE = 1000
+
+// Drain a mirror table by tail-recursion: fetch one page, and only if it came
+// back full (so there may be more) recurse on the next range. The accumulator
+// is push-mutated via ramda's forEach — the sanctioned exception to "never
+// respread" for a large collect target — instead of an imperative loop.
+const readMirror = async (stem, from = 0, acc = []) => {
+  const { data, error } = await sde()
+    .from(`sde_${stem}`)
+    .select('data')
+    .order('_key')
+    .range(from, from + PAGE_SIZE - 1)
+  if (error) throw new Error(`sheet-csv: reading sde_${stem} failed: ${error.message}`)
+  forEach((row) => acc.push(row.data), data)
+  return data.length < PAGE_SIZE ? acc : readMirror(stem, from + PAGE_SIZE, acc)
+}
+```
+
+Downstream steps then consume the drained array with ramda combinators
+(`indexBy`/`reduce`/`chain`/`filter`) rather than re-walking pages — the whole
+module reads as data-in → transform → data-out with no loop counters.
 
 Memory note: `sde_types` is ~50k rows and `sde_blueprints` ~5k — far smaller
 than the `type_dogma` table the ESF encode already pages inside one workflow
@@ -138,10 +169,14 @@ the filter is a no-op, dropped.)
 
 ### Serialization
 
-Use `toCsv` from `src/utils/csv.ts` (RFC 4180, header from object keys, CRLF)
-— build each file as an array of flat objects whose key order is the column
-order above. No BOM (Sheets `IMPORTDATA` doesn't need the Python's
-`utf-8-sig`; that was for Excel).
+RFC 4180, header from object keys, CRLF — build each file as an array of flat
+objects whose key order is the column order above. No BOM (Sheets `IMPORTDATA`
+doesn't need the Python's `utf-8-sig`; that was for Excel). The serializer is
+**inlined** in `buildSheetCsv.js` (a copy of `src/utils/csv.ts`'s `toCsv`
+logic) rather than imported: these job modules run under plain `node`, which
+can't import a `.ts` file. `@supabase/supabase-js` is likewise imported lazily
+inside the DB path so the pure `buildSheets` transform has no runtime
+dependency and stays unit-testable without a database.
 
 ### Row ordering
 
@@ -156,9 +191,11 @@ ascending.
 ## Style
 
 House rules apply: ramda over `for`/`while` (`src/jobs/*.js` is the model),
-mutable `.push()` accumulators inside a `reduce` are fine for the big row
-arrays, async pagination recurses or uses `forEachSequential`. Plain `.js` +
-JSDoc like `buildEsfData.js`, not TS.
+mutable `.push()` accumulators inside a `reduce`/`forEach` are fine for the big
+row arrays, and **paginated draining is tail-recursion** (the `readMirror`
+sketch above) — never an imperative page-counter loop. Sequential async work
+over an already-drained list uses `forEachSequential`. Plain `.js` + JSDoc like
+`buildEsfData.js`, not TS.
 
 ## Verification (parity check)
 
