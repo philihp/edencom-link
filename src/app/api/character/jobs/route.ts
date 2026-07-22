@@ -4,34 +4,7 @@ import { resolvePlayer } from '@/utils/apiToken'
 import { AT_PARAM_ERROR, parseAtParam } from '@/utils/atParam'
 import { parseColumnsParam, selectColumns } from '@/utils/columnsParam'
 import { toCsv } from '@/utils/csv'
-
-// Default column set/order, matching character_industry_jobs()'s
-// json_build_object in schema.sql. ?columns= can reorder/subset these.
-const ALLOWED_COLUMNS = [
-  'activity_id',
-  'blueprint_id',
-  'blueprint_location_id',
-  'blueprint_type_id',
-  'completed_character_id',
-  'completed_date',
-  'cost',
-  'duration',
-  'end_date',
-  'facility_id',
-  'installer_id',
-  'job_id',
-  'licensed_runs',
-  'output_location_id',
-  'pause_date',
-  'probability',
-  'product_type_id',
-  'runs',
-  'start_date',
-  'station_id',
-  'status',
-  'successful_runs',
-  'character_name',
-] as const
+import { CHARACTER_JOB_ALLOWED_COLUMNS, CHARACTER_JOB_DEFAULT_COLUMNS } from '@/app/api/industry/columnsConfig'
 
 // Public CSV endpoint for Google Sheets =IMPORTDATA(): the player's industry jobs
 // across all of their characters, with the owning character's name, as of an
@@ -52,7 +25,7 @@ export const GET = async (request: NextRequest): Promise<NextResponse> => {
     return NextResponse.json({ error: AT_PARAM_ERROR }, { status: 400 })
   }
 
-  const columnsResult = parseColumnsParam(searchParams.get('columns'), ALLOWED_COLUMNS)
+  const columnsResult = parseColumnsParam(searchParams.get('columns'), CHARACTER_JOB_ALLOWED_COLUMNS)
   if (!columnsResult.ok) {
     return NextResponse.json({ error: columnsResult.error }, { status: 400 })
   }
