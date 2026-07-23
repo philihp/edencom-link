@@ -123,6 +123,9 @@ drop view if exists public.sde_published_type cascade;
 drop view if exists public.sde_kspace_system  cascade;
 drop view if exists public.sde_station        cascade;
 drop view if exists public.sde_planet         cascade;
+drop view if exists public.sde_group          cascade;
+drop view if exists public.sde_category       cascade;
+drop view if exists public.sde_region         cascade;
 do $$
 declare t record;
 begin
@@ -2687,7 +2690,8 @@ grant execute on function public.ensure_sde_mirror_table(text, text) to service_
 -- Pre-create the tables the app-facing views project from.
 select public.ensure_sde_mirror_table(stem)
 from unnest(
-  array['types', 'groups', 'categories', 'map_solar_systems', 'npc_stations', 'blueprints', 'map_planets']
+  array['types', 'groups', 'categories', 'map_solar_systems', 'map_constellations', 'map_regions',
+        'npc_stations', 'blueprints', 'map_planets']
 ) as stem;
 
 -- One row per SDE build the ingest has seen; completed_at set only when every
@@ -2751,31 +2755,42 @@ create index sde_map_solar_systems_name_trgm on public.sde_map_solar_systems
 -- pushing name resolution into the asset/search functions later.
 
 -- Published, named types with their group/category — mirrors buildSde.js's
--- buildTypes() cut.
+-- buildTypes() cut. group_name/category_name added for the MCP exploration
+-- tools (migration 20260723000000_sde_taxonomy_views).
 create view public.sde_published_type
 with (security_invoker = true) as
 select
   t._key as type_id,
   t.data -> 'name' ->> 'en' as name,
   (t.data ->> 'groupID')::bigint as group_id,
-  (g.data ->> 'categoryID')::bigint as category_id
+  (g.data ->> 'categoryID')::bigint as category_id,
+  g.data -> 'name' ->> 'en' as group_name,
+  c.data -> 'name' ->> 'en' as category_name
 from public.sde_types t
 left join public.sde_groups g on g._key = (t.data ->> 'groupID')::bigint
+left join public.sde_categories c on c._key = (g.data ->> 'categoryID')::bigint
 where (t.data ->> 'published')::boolean
   and coalesce(trim(t.data -> 'name' ->> 'en'), '') <> '';
 
 -- Known-space systems (30M id band): wormhole/abyssal systems never appear in
--- the industry cost-index feed — mirrors buildSde.js's buildSystems() cut.
+-- the industry cost-index feed — mirrors buildSde.js's buildSystems() cut. The
+-- constellation/region columns come from migration 20260719120000.
 create view public.sde_kspace_system
 with (security_invoker = true) as
 select
-  _key as system_id,
-  data -> 'name' ->> 'en' as name,
-  (data ->> 'securityStatus')::real as security
-from public.sde_map_solar_systems
-where _key >= 30000000
-  and _key < 31000000
-  and coalesce(trim(data -> 'name' ->> 'en'), '') <> '';
+  s._key as system_id,
+  s.data -> 'name' ->> 'en' as name,
+  (s.data ->> 'securityStatus')::real as security,
+  c._key as constellation_id,
+  c.data -> 'name' ->> 'en' as constellation_name,
+  r._key as region_id,
+  r.data -> 'name' ->> 'en' as region_name
+from public.sde_map_solar_systems s
+left join public.sde_map_constellations c on c._key = (s.data ->> 'constellationID')::bigint
+left join public.sde_map_regions r on r._key = (c.data ->> 'regionID')::bigint
+where s._key >= 30000000
+  and s._key < 31000000
+  and coalesce(trim(s.data -> 'name' ->> 'en'), '') <> '';
 
 -- NPC stations joined to their ESI-resolved display names.
 create view public.sde_station
@@ -2788,7 +2803,8 @@ from public.sde_npc_stations s
 join public.sde_npc_station_name n on n.station_id = s._key;
 
 -- Planets with their system name (planets carry no display name in the SDE;
--- consumers derive "<system> <roman(celestial_index)>").
+-- consumers derive "<system> <roman(celestial_index)>"). security + region_*
+-- added for the MCP exploration tools (migration 20260723000000).
 create view public.sde_planet
 with (security_invoker = true) as
 select
@@ -2796,14 +2812,53 @@ select
   (p.data ->> 'solarSystemID')::bigint as system_id,
   (p.data ->> 'celestialIndex')::int as celestial_index,
   (p.data ->> 'typeID')::bigint as type_id,
-  sys.data -> 'name' ->> 'en' as system_name
+  sys.data -> 'name' ->> 'en' as system_name,
+  (sys.data ->> 'securityStatus')::real as security,
+  r._key as region_id,
+  r.data -> 'name' ->> 'en' as region_name
 from public.sde_map_planets p
-left join public.sde_map_solar_systems sys on sys._key = (p.data ->> 'solarSystemID')::bigint;
+left join public.sde_map_solar_systems sys on sys._key = (p.data ->> 'solarSystemID')::bigint
+left join public.sde_map_constellations con on con._key = (sys.data ->> 'constellationID')::bigint
+left join public.sde_map_regions r on r._key = (con.data ->> 'regionID')::bigint;
 
-grant select on public.sde_published_type, public.sde_kspace_system, public.sde_station, public.sde_planet
+-- Groups with their category, and categories/regions — the taxonomy + universe
+-- browsers for the MCP exploration tools (migration 20260723000000).
+create view public.sde_group
+with (security_invoker = true) as
+select
+  g._key as group_id,
+  g.data -> 'name' ->> 'en' as name,
+  (g.data ->> 'categoryID')::bigint as category_id,
+  c.data -> 'name' ->> 'en' as category_name,
+  (g.data ->> 'published')::boolean as published
+from public.sde_groups g
+left join public.sde_categories c on c._key = (g.data ->> 'categoryID')::bigint;
+
+create view public.sde_category
+with (security_invoker = true) as
+select
+  _key as category_id,
+  data -> 'name' ->> 'en' as name,
+  (data ->> 'published')::boolean as published
+from public.sde_categories;
+
+-- K-space regions (10M id band), mirroring sde_kspace_system's exclusion of
+-- wormhole (11M) and abyssal (12M+) space; Pochven is in-band.
+create view public.sde_region
+with (security_invoker = true) as
+select
+  _key as region_id,
+  data -> 'name' ->> 'en' as name
+from public.sde_map_regions
+where _key >= 10000000
+  and _key < 11000000
+  and coalesce(trim(data -> 'name' ->> 'en'), '') <> '';
+
+grant select on public.sde_published_type, public.sde_kspace_system, public.sde_station, public.sde_planet,
+  public.sde_group, public.sde_category, public.sde_region
   to anon, authenticated, service_role;
 revoke insert, update, delete on public.sde_published_type, public.sde_kspace_system, public.sde_station,
-  public.sde_planet from anon, authenticated;
+  public.sde_planet, public.sde_group, public.sde_category, public.sde_region from anon, authenticated;
 
 -- Blueprint "consume materials → produce output" bill, unnested from the
 -- activities jsonb once per ingest rather than per query: manufacturing (1)
