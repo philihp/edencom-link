@@ -85,6 +85,7 @@ drop view  if exists public.character_clone            cascade;
 drop table if exists public.character_clone_over_time  cascade;
 drop table if exists public.character_clone_state      cascade;
 drop table if exists public.character_implant          cascade;
+drop table if exists public.character_skill            cascade;
 drop view  if exists public.character_ship              cascade;
 drop table if exists public.character_ship_over_time    cascade;
 -- Pre-existing gap: character_mercenary_den never had a drop statement (added
@@ -1178,6 +1179,36 @@ create policy "Users read own implants"
 
 grant select on public.character_implant to authenticated;
 grant all    on public.character_implant to service_role;
+
+-- ── character_skill ───────────────────────────────────────────────────────
+-- ESI /characters/{id}/skills/, written by the character-skills job (also
+-- folded into character-status): one row per trained skill, carrying its active
+-- and trained level. Live current-state data — a plain upsert per skill, no SCD
+-- reconcile, since a skill's level only ever climbs and a skill never leaves a
+-- character. Drives the industry job-slot counts on the character list (the two
+-- Mass Production / Laboratory Operation / Mass Reactions skills per family).
+create table public.character_skill (
+  character_id uuid not null references public.registration(id) on delete cascade,
+  skill_id bigint not null,
+  active_skill_level smallint not null default 0,
+  trained_skill_level smallint not null default 0,
+  recorded_at timestamptz not null default now(),
+  primary key (character_id, skill_id)
+);
+
+alter table public.character_skill enable row level security;
+create policy "Users read own skills"
+  on public.character_skill
+  for select
+  to authenticated
+  using (
+    character_id in (
+      select id from public.registration where user_id = (select auth.uid())
+    )
+  );
+
+grant select on public.character_skill to authenticated;
+grant all    on public.character_skill to service_role;
 
 -- ── character_ship_over_time ──────────────────────────────────────────────
 -- ESI /characters/{id}/ship/, written by the character-ship job: the ship the

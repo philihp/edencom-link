@@ -104,6 +104,12 @@ export const esiScopes: EsiScope[] = [
     without: 'this character’s currently active implants will not be shown.',
   },
   {
+    scope: 'esi-skills.read_skills.v1',
+    name: 'Character skills',
+    why: 'Reads this character’s trained skill levels, used to show how many parallel manufacturing, research, and reaction jobs they can run.',
+    without: 'this character’s industry job-slot capacity will fall back to the untrained minimum of one slot per activity.',
+  },
+  {
     scope: 'esi-location.read_ship_type.v1',
     name: 'Character current ship',
     why: 'Identifies the ship this character is currently in, so it can be excluded from the asset listing at wherever the character is docked.',

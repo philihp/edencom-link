@@ -91,12 +91,13 @@
 }
 
 /* Industry job slot bubbles: one line per activity family, one bubble per
-   slot, filled while an active job occupies it. */
+   trainable slot. A running job fills its bubble solid; a job that's finished
+   and waiting to be delivered pulses; unused slots are hollow outlines. */
 .slots {
   display: flex;
   flex-direction: column;
   gap: 3px;
-  margin-top: 6pt;
+  margin: 4pt 0 2pt;
 }
 
 .slotRow {
@@ -114,6 +115,31 @@
 
 .slotFilled {
   background: var(--slot-color);
+}
+
+/* A finished job awaiting delivery: keeps the hollow outline but its fill
+   gently breathes between transparent and the family color. */
+.slotReady {
+  animation: slotBreathe 2.4s ease-in-out infinite;
+}
+
+@keyframes slotBreathe {
+  0%,
+  100% {
+    background: transparent;
+  }
+  50% {
+    background: var(--slot-color);
+  }
+}
+
+/* Respect a reduced-motion preference: hold a steady half-tone fill instead of
+   pulsing. */
+@media (prefers-reduced-motion: reduce) {
+  .slotReady {
+    animation: none;
+    background: color-mix(in srgb, var(--slot-color) 55%, transparent);
+  }
 }
 
 .manufacturing {

@@ -39,6 +39,7 @@
     "character-clones": "node src/jobs/characterClones.js",
     "character-implants": "node src/jobs/characterImplants.js",
     "character-ship": "node src/jobs/characterShip.js",
+    "character-skills": "node src/jobs/characterSkills.js",
     "character-status": "node src/jobs/characterStatus.js",
     "character-directory": "node src/jobs/characterDirectory.js",
     "corp-structures": "node src/jobs/corpStructures.js",
