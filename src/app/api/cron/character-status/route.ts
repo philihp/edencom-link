@@ -1,25 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-import { fanOutPerCharacterAnyScopeCronJob, requireCronSecret } from '@/utils/cron'
+import { requireCronSecret } from '@/utils/cron'
 
-// The combined character-status job's five ESI scopes (wallet, location,
-// implants, clones, ship). Hardcoded rather than imported from the job module so
-// this route stays free of the job's top-level service-client setup (which needs
-// env vars absent at build time) — the same reason the queue consumer lazy-imports
-// jobs. Keep in sync with SCOPES in src/jobs/characterStatus.js.
-const SCOPES = [
-  'esi-wallet.read_character_wallet.v1',
-  'esi-location.read_location.v1',
-  'esi-clones.read_implants.v1',
-  'esi-clones.read_clones.v1',
-  'esi-location.read_ship_type.v1',
-]
-
-// Vercel Cron entry for the combined character-status extract. Fans out one
-// Vercel queue message per character carrying any of the five scopes, so this
-// stays within the function duration limit regardless of account size. Replaces
-// the separate character-wallet / character-location / character-implants /
-// character-clones / character-ship cron entries.
+// Vercel Cron trigger for the combined character-status extract. Formerly fanned
+// out one queue message per character carrying any of the five scopes
+// (fanOutPerCharacterAnyScopeCronJob); it now start()s the character-status
+// Vercel Workflow (src/workflows/characterStatus.ts), which enumerates those
+// characters itself (unioning the five scopes) and runs one step per character
+// across a few lanes. Only the scheduled path moves — the on-demand "Refresh ESI"
+// flow still enqueues this job via the queue.
 export const runtime = 'nodejs'
 export const maxDuration = 60
 
@@ -27,7 +16,10 @@ export async function GET(request: NextRequest) {
   const denied = requireCronSecret(request)
   if (denied) return denied
 
-  const dispatched = await fanOutPerCharacterAnyScopeCronJob('character-status', SCOPES)
+  const { start } = await import('workflow/api')
+  const { characterStatusWorkflow } = await import('@/workflows/characterStatus')
+  const run = await start(characterStatusWorkflow, [])
+  console.log(`[cron/character-status] started workflow run=${run.runId}`)
 
-  return NextResponse.json({ ok: true, dispatched })
+  return NextResponse.json({ ok: true, runId: run.runId })
 }
