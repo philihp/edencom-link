@@ -59,10 +59,11 @@ export async function characterWalletTransactionsWorkflow() {
   // because src/jobs/lib.js can't be imported into workflow context). A step
   // that exhausts its bounded retries (e.g. a character whose token is dead)
   // should be *visible*, not silently re-looped the way the queue did, but must
-  // not abort its lane-mates — so each failure is caught and collected, and a
-  // summary is rethrown once every lane drains so the run is marked failed in
-  // Observability with every failing character listed. All characters are
-  // attempted regardless of how the runtime treats a rejection inside Promise.all.
+  // not abort its lane-mates — so each failure is caught (and logged as it
+  // happens) and collected, then once every lane drains the collected ids are
+  // mapped to one Error each and thrown together as an AggregateError, marking
+  // the run failed in Observability. All characters are attempted regardless of
+  // how the runtime treats a rejection inside Promise.all.
   const failures: number[] = []
   const drainLane = (lane: number[]): Promise<void> =>
     reduce(
@@ -79,7 +80,9 @@ export async function characterWalletTransactionsWorkflow() {
   await Promise.all(map(drainLane, lanes))
 
   if (failures.length > 0) {
-    failures.sort((a, b) => a - b)
-    throw new Error(`character-wallet-transactions: ${failures.length} character step(s) failed: ${failures.join(', ')}`)
+    throw new AggregateError(
+      map((id) => new Error(`character ${id} failed`), failures),
+      `character-wallet-transactions: ${failures.length} character step(s) failed`,
+    )
   }
 }
