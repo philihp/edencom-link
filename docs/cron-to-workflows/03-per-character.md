@@ -84,10 +84,15 @@ export async function characterWalletTransactionsWorkflow() {
 
 Notes:
 
-- **Plain loops in the orchestrator body** are the documented exception to
-  the ramda rule (see `src/workflows/sdeMirror.ts`'s comment): workflow
-  bodies must be simple deterministic control flow, and helpers imported
-  at workflow (non-step) level would execute in workflow context.
+- **Deterministic control flow in the orchestrator body**: workflow bodies
+  must be simple deterministic control flow, and helpers imported at
+  workflow (non-step) level would execute in workflow context (see
+  `src/workflows/sdeMirror.ts`'s comment). Ramda's *pure* combinators are
+  fine — referentially transparent, no Node imports — so the as-built
+  `characterWalletTransactions.ts` uses `transpose(splitEvery(LANES, ids))`
+  for the lane split and a `reduce` promise-chain (the `forEachSequential`
+  shape, inlined) for the per-lane drain. What stays banned is importing a
+  workflow-level helper that runs impure/Node code in workflow context.
 - **Lane count**: start at 4. The queue today runs messages with its own
   concurrency, so parallel per-character pulls are nothing new for ESI or
   Supabase; 4 keeps a big account polite to ESI's error-rate limits.

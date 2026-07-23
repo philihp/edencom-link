@@ -15,6 +15,8 @@
 // queue; the job module is CLI-runnable too. One job, three triggers, one
 // run*().
 
+import { map, reduce, splitEvery, transpose } from 'ramda'
+
 import { enumerateCharacters } from './lib'
 
 // This job's ESI scope, and the lane count. Four lanes keeps a big account
@@ -37,39 +39,45 @@ async function syncCharacter(characterId: number) {
 
 export async function characterWalletTransactionsWorkflow() {
   'use workflow'
-  // Plain, deterministic control flow only — the documented exception to the
-  // ramda rule (see sdeMirror.ts): the workflow body is compiled by the
-  // 'use workflow' directive, so it stays simple loops over step calls with no
-  // helpers imported at this (non-step) level.
+  // The workflow body must stay deterministic control flow over step calls (the
+  // 'use workflow' directive compiles it — see sdeMirror.ts). Ramda's pure
+  // combinators are fine here: they're referentially transparent (identical on
+  // every replay) and pull in no Node modules, unlike a workflow-level helper
+  // that would run impure/Node code in workflow context.
   const ids = await enumerateCharacters(SCOPES)
 
-  // Static round-robin lane assignment (the sde-mirror pattern): the
-  // id→step-call mapping is identical on every replay regardless of how the
-  // runtime resolves in-flight steps. Within a lane, characters run
-  // sequentially; lanes run concurrently.
-  const lanes: number[][] = Array.from({ length: LANES }, () => [])
-  ids.forEach((id, i) => lanes[i % LANES].push(id))
+  // Round-robin the characters into LANES lanes: splitEvery chunks the ids into
+  // rows of LANES, then transpose flips rows→columns, so column j collects
+  // every id at position j, j+LANES, … — i.e. id i lands in lane i % LANES, with
+  // no empty trailing lanes when there are fewer ids than lanes. The mapping is
+  // identical on every replay regardless of how the runtime resolves in-flight
+  // steps. Within a lane characters run sequentially; lanes run concurrently.
+  const lanes = transpose(splitEvery(LANES, ids))
 
-  // A step that exhausts its bounded retries (e.g. a character whose token is
-  // dead) should be *visible*, not silently re-looped the way the queue did —
-  // but it must not abort the other lanes' characters. So each character's
-  // failure is caught and the lane keeps going; a summary is rethrown at the
-  // end so the run is marked failed in Observability with every failing
-  // character listed. All characters are attempted regardless of how the
-  // runtime treats a rejection inside Promise.all.
+  // Drain each lane sequentially (the forEachSequential promise-chain: reduce a
+  // Promise.resolve() through the lane, each id awaiting the previous — inlined
+  // because src/jobs/lib.js can't be imported into workflow context). A step
+  // that exhausts its bounded retries (e.g. a character whose token is dead)
+  // should be *visible*, not silently re-looped the way the queue did, but must
+  // not abort its lane-mates — so each failure is caught and collected, and a
+  // summary is rethrown once every lane drains so the run is marked failed in
+  // Observability with every failing character listed. All characters are
+  // attempted regardless of how the runtime treats a rejection inside Promise.all.
   const failures: number[] = []
-  await Promise.all(
-    lanes.map(async (lane) => {
-      for (const id of lane) {
-        try {
-          await syncCharacter(id)
-        } catch (err) {
-          console.error(`[character-wallet-transactions] character ${id} failed:`, err)
-          failures.push(id)
-        }
-      }
-    }),
-  )
+  const drainLane = (lane: number[]): Promise<void> =>
+    reduce(
+      (p, id) =>
+        p.then(() =>
+          syncCharacter(id).catch((err) => {
+            console.error(`[character-wallet-transactions] character ${id} failed:`, err)
+            failures.push(id)
+          }),
+        ),
+      Promise.resolve(),
+      lane,
+    )
+  await Promise.all(map(drainLane, lanes))
+
   if (failures.length > 0) {
     failures.sort((a, b) => a - b)
     throw new Error(`character-wallet-transactions: ${failures.length} character step(s) failed: ${failures.join(', ')}`)

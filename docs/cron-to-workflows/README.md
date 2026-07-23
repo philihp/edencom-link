@@ -154,7 +154,16 @@ previous dispatch shape, and the job modules were never touched.
 - **Ramda over `for`/`while`** in job code — but workflow *orchestrator*
   bodies are the documented exception (see the comment in
   `src/workflows/sdeMirror.ts`): plain, deterministic control flow over
-  step calls, no helpers imported at workflow (non-step) level.
+  step calls, no helpers imported at workflow (non-step) level. Ramda
+  itself *is* okay in a workflow body, though: its pure combinators
+  (`map`, `reduce`, `transpose`, `splitEvery`, …) are referentially
+  transparent — identical on every replay — and pull in no Node modules,
+  so they don't trip the compiler's ban the way an impure/Node-touching
+  helper would. `characterWalletTransactions.ts` uses
+  `transpose(splitEvery(LANES, ids))` for the lane split and a `reduce`
+  promise-chain for the sequential per-lane drain. The exception is only
+  about *not importing workflow-level helpers that run impure/Node code in
+  workflow context*, not about avoiding ramda.
 - **Lazy-import job modules inside steps** — their top-level setup needs
   runtime env vars.
 - **`git fetch origin && git rebase origin/main`** immediately before
