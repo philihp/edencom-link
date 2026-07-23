@@ -1,0 +1,4 @@
+{
+  "error": "NotFound",
+  "message": "This host, edencom.link (including pds.edencom.link) previously ran an ATProto PDS. It might again in the future, but is currently decommissioned; please remove it from your crawl/relay list."
+}
