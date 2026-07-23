@@ -10,7 +10,7 @@
 // CLI-runnable); every step lazy-imports it because the job module's
 // top-level supabase setup needs env vars absent at build time.
 
-type SdeFile = { entry: string; stem: string; method: number; compressedSize: number; localOffset: number }
+import { INGEST_STEPS, type IngestSliceStep, type SdeFile } from './sdeIngestSteps'
 
 type PlanResult = { runId: number; build: number; zipUrl: string }
 
@@ -40,11 +40,22 @@ async function listFiles(zipUrl: string): Promise<SdeFile[]> {
 // One bounded slice of one entry: upserts rows until the entry is done
 // (returns -1) or the step's time budget runs out (returns the resume cursor).
 // Idempotent keyed upserts make the step's bounded retries safe.
+//
+// This is the GENERIC fallback step, used only for a file whose stem isn't in
+// the static INGEST_STEPS roster (a file CCP added since it was generated). The
+// common case dispatches to a per-stem named step (ingest_<stem>) so each file
+// shows under its own name in Vercel's Workflows observability rather than as a
+// wall of identical "ingestSlice" rows — see src/workflows/sdeIngestSteps.ts.
 async function ingestSlice(zipUrl: string, file: SdeFile, build: number, startLine: number): Promise<number> {
   'use step'
   const { ingestEntrySlice } = await import('@/jobs/sdeMirror.js')
   return ingestEntrySlice(zipUrl, file, build, startLine)
 }
+
+// The named ingest step for a file, or the generic fallback for a stem the
+// static roster doesn't know. Deterministic per stem, so a replay resolves the
+// same step name it recorded.
+const ingestStepFor = (file: SdeFile): IngestSliceStep => INGEST_STEPS[file.stem] ?? ingestSlice
 
 async function stationNames(): Promise<void> {
   'use step'
@@ -109,11 +120,14 @@ export async function sdeMirrorWorkflow() {
   const plan = await planRun()
   const files = await listFiles(plan.zipUrl)
 
-  // Drain one entry: chase its slice cursor until the entry reports done.
+  // Drain one entry: chase its slice cursor until the entry reports done,
+  // through the file's own named step (ingest_<stem>) so the run tree names each
+  // file instead of showing a wall of "ingestSlice".
   const drainFile = async (file: SdeFile): Promise<void> => {
+    const step = ingestStepFor(file)
     let cursor = 0
     while (cursor !== -1) {
-      cursor = await ingestSlice(plan.zipUrl, file, plan.build, cursor)
+      cursor = await step(plan.zipUrl, file, plan.build, cursor)
     }
   }
 
