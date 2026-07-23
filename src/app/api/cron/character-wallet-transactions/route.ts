@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-import { fanOutPerCharacterCronJob, requireCronSecret } from '@/utils/cron'
+import { requireCronSecret } from '@/utils/cron'
 
-const SCOPE = 'esi-wallet.read_character_wallet.v1'
-
-// Vercel Cron replacement for the old `character-wallet-transactions.yml` GitHub Action.
-// Fans out one Vercel queue message per scoped character, mirroring the on-demand
-// "Refresh ESI" flow, so this stays within the function duration limit regardless of
-// account size.
+// Vercel Cron trigger for character-wallet-transactions. Formerly fanned out one
+// queue message per scoped character (fanOutPerCharacterCronJob); it now start()s
+// the character-wallet-transactions Vercel Workflow
+// (src/workflows/characterWalletTransactions.ts), which enumerates the scoped
+// characters itself and runs one step per character across a few lanes. Only the
+// scheduled path moves — the on-demand "Refresh ESI" flow still enqueues this
+// job via the queue.
 export const runtime = 'nodejs'
 export const maxDuration = 60
 
@@ -15,7 +16,10 @@ export async function GET(request: NextRequest) {
   const denied = requireCronSecret(request)
   if (denied) return denied
 
-  const dispatched = await fanOutPerCharacterCronJob('character-wallet-transactions', SCOPE)
+  const { start } = await import('workflow/api')
+  const { characterWalletTransactionsWorkflow } = await import('@/workflows/characterWalletTransactions')
+  const run = await start(characterWalletTransactionsWorkflow, [])
+  console.log(`[cron/character-wallet-transactions] started workflow run=${run.runId}`)
 
-  return NextResponse.json({ ok: true, dispatched })
+  return NextResponse.json({ ok: true, runId: run.runId })
 }

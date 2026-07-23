@@ -3,17 +3,23 @@
 // (characterImplants.ts, sdeMirror.ts) inline everything; this lets the many
 // like-shaped jobs share the heartbeat boilerplate as they migrate.
 //
-// IMPORTANT — this module must only ever be imported *dynamically, from inside
-// a `'use step'` function body*, never at a workflow file's top level or from
-// `'use workflow'` context. It touches Node-only modules (node:crypto) and
-// pulls in the job module (which imports src/jobs/lib.js → node:crypto,
-// node:url), and the workflow compiler bans Node modules in workflow context —
-// it traces every import reachable from workflow context, but treats imports
-// written inside a step body as running in Node. So each workflow file keeps a
-// tiny inlined step that does `const { runJobWithHeartbeat } = await
-// import('./lib')` before calling this. (This is why runJobWithHeartbeat is a
-// plain function, not itself a `'use step'` — it runs inline within the
-// caller's step invocation.)
+// This module exports two *kinds* of thing, imported differently:
+//
+//   1. Plain helpers (runJobWithHeartbeat) — NOT `'use step'`. They touch
+//      Node-only modules (node:crypto) and pull in the job module (which imports
+//      src/jobs/lib.js → node:crypto, node:url), and the workflow compiler bans
+//      Node modules in workflow context. So they must only ever be imported
+//      *dynamically, from inside a `'use step'` function body*, never at a
+//      workflow file's top level. Each single-step workflow keeps a tiny inlined
+//      step that does `const { runJobWithHeartbeat } = await import('./lib')`
+//      before calling this — it runs inline within the caller's step invocation.
+//
+//   2. `'use step'` exports (enumerateCharacters) — these ARE steps, so the
+//      compiler runs their bodies in Node context wherever they're called from.
+//      They're meant to be imported at a workflow file's *top level* and called
+//      from `'use workflow'` context, exactly like the steps in
+//      sdeIngestSteps.ts. Their bodies keep their own Node imports dynamic for
+//      the same env-vars-at-build-time reason.
 
 // Run a whole extract job with the same start/end heartbeat pair
 // runDirectCronJob (src/utils/cron.ts) records for the inline cron routes — but
@@ -33,4 +39,17 @@ export async function runJobWithHeartbeat(job: string, load: () => Promise<() =>
     recordPeakRss({ job })
     await recordHeartbeat(job, 'end', { runId, source: 'vercel-workflow' })
   }
+}
+
+// Step: enumerate the character_ids carrying the job's ESI scope(s), the same
+// set fanOutPerCharacter*CronJob (src/utils/cron.ts) enumerates before sending
+// one queue message each. Returning it from a step lets the per-character
+// fan-out workflows (phase 3) map it into one step per character. Passing
+// several scopes unions them (array overlap), exactly like the any-scope cron
+// variant character-status uses. character_id is a bigint, so it comes back as a
+// JS number — safe to serialize as a step result.
+export async function enumerateCharacters(scopes: string[]): Promise<number[]> {
+  'use step'
+  const { selectCharacterIdsWithScopes } = await import('@/supabase.js')
+  return (await selectCharacterIdsWithScopes(scopes)) as number[]
 }

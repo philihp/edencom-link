@@ -109,6 +109,31 @@ Notes:
   `fanOutPerCharacterAnyScopeCronJob` does today) and its handler already
   runs only the endpoints each token carries.
 
+## As-built (PR 1: `character-wallet-transactions`)
+
+The shape above is right in spirit; two things changed once it hit the runtime:
+
+- **No function crosses a step boundary.** The sketch's
+  `runCharacterStep(job, load, characterId)` passes `load` (a function) as a
+  step argument, but Vercel Workflows serialize step inputs/outputs for durable
+  replay and a function can't serialize (this is why `sdeIngestSteps.ts` steps
+  take only `zipUrl`/`file`/`build`/`startLine`). So each workflow owns its own
+  thin `'use step'` `syncCharacter(characterId: number)` that lazy-imports *its*
+  job module — exactly the `characterImplants.ts` precedent — and only
+  `characterId` (a bigint→number) crosses the boundary. The one genuinely
+  shared step is `enumerateCharacters(scopes)` in `src/workflows/lib.ts`
+  (serializable in, serializable out), imported at the workflow's top level like
+  any step.
+- **A failed character is caught, not fatal.** `Promise.all` rejects on the
+  first lane rejection, and rather than rely on the runtime's in-flight
+  cancellation semantics, each `syncCharacter` call is wrapped in try/catch: the
+  lane records the failing id and continues, and a summary is rethrown after all
+  lanes drain so the run is marked failed in Observability with every failing
+  character listed. All characters are attempted regardless. Bounded per-step
+  retries still happen inside the runtime before the `await` throws into the
+  body. This is the "visible is better than swallowed" resolution the sketch
+  flagged; the six remaining jobs copy this body.
+
 ## Cron routes and the queue consumer
 
 - Each cron route swaps its `fanOutPerCharacter*CronJob(...)` call for the
