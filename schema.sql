@@ -85,7 +85,8 @@ drop view  if exists public.character_clone            cascade;
 drop table if exists public.character_clone_over_time  cascade;
 drop table if exists public.character_clone_state      cascade;
 drop table if exists public.character_implant          cascade;
-drop table if exists public.character_skill            cascade;
+drop view  if exists public.character_skill            cascade;
+drop table if exists public.character_skill_over_time  cascade;
 drop view  if exists public.character_ship              cascade;
 drop table if exists public.character_ship_over_time    cascade;
 -- Pre-existing gap: character_mercenary_den never had a drop statement (added
@@ -1180,25 +1181,35 @@ create policy "Users read own implants"
 grant select on public.character_implant to authenticated;
 grant all    on public.character_implant to service_role;
 
--- ── character_skill ───────────────────────────────────────────────────────
+-- ── character_skill_over_time (SCD type 2) ────────────────────────────────
 -- ESI /characters/{id}/skills/, written by the character-skills job (also
 -- folded into character-status): one row per trained skill, carrying its active
--- and trained level. Live current-state data — a plain upsert per skill, no SCD
--- reconcile, since a skill's level only ever climbs and a skill never leaves a
--- character. Drives the industry job-slot counts on the character list (the two
--- Mass Production / Laboratory Operation / Mass Reactions skills per family).
-create table public.character_skill (
+-- and trained level. A skill's level only ever climbs (and a skill never leaves
+-- a character), but that history is worth keeping — when a training completes,
+-- the open row is closed and a new one opened, mirroring the
+-- character_asset_over_time / character_ship_over_time SCD Type 2 pattern: one
+-- open (is_current) row per (character, skill), valid_until bumped when the
+-- level is unchanged, a new version opened on a level change. Because a skill is
+-- never unlearned, a row is never closed for vanishing — only superseded.
+-- Drives the industry job-slot counts on the character list (the two Mass
+-- Production / Laboratory Operation / Mass Reactions skills per family).
+create table public.character_skill_over_time (
+  id bigint generated always as identity primary key,
   character_id uuid not null references public.registration(id) on delete cascade,
   skill_id bigint not null,
   active_skill_level smallint not null default 0,
   trained_skill_level smallint not null default 0,
-  recorded_at timestamptz not null default now(),
-  primary key (character_id, skill_id)
+  is_current boolean not null default true,
+  valid_from timestamptz not null default now(),
+  valid_until timestamptz not null default now()
 );
+create index character_skill_over_time_character_id_idx on public.character_skill_over_time (character_id);
+create unique index character_skill_over_time_current_idx
+  on public.character_skill_over_time (character_id, skill_id) where is_current;
 
-alter table public.character_skill enable row level security;
+alter table public.character_skill_over_time enable row level security;
 create policy "Users read own skills"
-  on public.character_skill
+  on public.character_skill_over_time
   for select
   to authenticated
   using (
@@ -1207,8 +1218,12 @@ create policy "Users read own skills"
     )
   );
 
-grant select on public.character_skill to authenticated;
-grant all    on public.character_skill to service_role;
+create view public.character_skill with (security_invoker = on) as
+  select * from public.character_skill_over_time where is_current;
+
+grant select on public.character_skill_over_time to authenticated;
+grant select on public.character_skill           to authenticated;
+grant all    on public.character_skill_over_time to service_role;
 
 -- ── character_ship_over_time ──────────────────────────────────────────────
 -- ESI /characters/{id}/ship/, written by the character-ship job: the ship the
