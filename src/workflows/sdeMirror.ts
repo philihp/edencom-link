@@ -12,23 +12,25 @@
 
 import { INGEST_STEPS, type IngestSliceStep, type SdeFile } from './sdeIngestSteps'
 
-type PlanResult = { runId: number; build: number; zipUrl: string }
+type PlanResult = { runId: number; build: number; zipUrl: string; commit: string; skip: boolean }
 
-// Heartbeat start + build discovery. The runId rides through the workflow so
-// finalize()'s end heartbeat lands on the same row. The "already mirrored"
-// skip check is intentionally omitted: this workflow ALWAYS re-ingests the
-// current build, even when CCP's build is unchanged (the CLI path in
-// src/jobs/sdeMirror.js keeps its own shouldSkip/--force for manual runs).
+// Heartbeat start + build discovery + the skip decision (planMirror). skip is
+// true only when CCP's build is unchanged, the currently-deployed commit already
+// produced this mirror, and it's < 7 days old — in which case the workflow does
+// nothing but close the heartbeat (finalizeSkipped), the ~5 s no-op run we want
+// in steady state. Any of a new SDE build, a new code deployment, or data older
+// than 7 days makes skip false and forces the full ingest below. markBuildStarted
+// only when we're actually going to ingest (the row already exists on a skip).
 async function planRun(): Promise<PlanResult> {
   'use step'
   const { randomInt } = await import('node:crypto')
-  const { fetchLatestBuild, markBuildStarted } = await import('@/jobs/sdeMirror.js')
+  const { planMirror, markBuildStarted } = await import('@/jobs/sdeMirror.js')
   const { recordHeartbeat } = await import('@/supabase.js')
   const runId = randomInt(1, 2 ** 48)
   await recordHeartbeat('sde-mirror', 'start', { runId, source: 'vercel-workflow' })
-  const { build, zipUrl } = await fetchLatestBuild()
-  await markBuildStarted(build)
-  return { runId, build, zipUrl }
+  const { build, zipUrl, commit, skip } = await planMirror()
+  if (!skip) await markBuildStarted(build)
+  return { runId, build, zipUrl, commit, skip }
 }
 
 async function listFiles(zipUrl: string): Promise<SdeFile[]> {
@@ -63,21 +65,32 @@ async function stationNames(): Promise<void> {
   await resolveStationNames()
 }
 
-async function finalize(build: number, runId: number): Promise<void> {
+async function finalize(build: number, runId: number, commit: string): Promise<void> {
   'use step'
   const { finalizeBuild } = await import('@/jobs/sdeMirror.js')
   const { recordHeartbeat } = await import('@/supabase.js')
-  await finalizeBuild(build)
+  await finalizeBuild(build, commit)
   await recordHeartbeat('sde-mirror', 'end', { runId, source: 'vercel-workflow' })
 }
 
+// The skip path: nothing changed (same build, same deployed commit, < 7 days
+// old), so just close the heartbeat planRun() opened and return — no ingest, no
+// view refresh, no ESF re-encode. Crucially it does NOT touch completed_at, so
+// the 7-day staleness backstop keeps counting from the last real ingest.
+async function finalizeSkipped(build: number, runId: number): Promise<void> {
+  'use step'
+  const { recordHeartbeat } = await import('@/supabase.js')
+  await recordHeartbeat('sde-mirror', 'end', { runId, source: 'vercel-workflow' })
+  console.log(`[sde-mirror] build ${build}: unchanged build + deployment, fresh (< 7 days) — skipping`)
+}
+
 // Re-encode the eveship.fit protobuf data into the esf_data table from the
-// freshly-mirrored SDE. Its own step (own duration budget + retries), run on
-// every mirror pass. force: true re-encodes unconditionally — the nightly run
-// always re-does the full ingest (planRun no longer skips), and the ESF encode
-// matches that: it re-writes esf_data every night rather than no-opping when
-// the build is unchanged. (The manual /api/cron/esf-data route keeps the
-// build-guard by default; pass ?force=1 there to match.)
+// freshly-mirrored SDE. Its own step (own duration budget + retries). Only
+// reached on a NON-skipped run (new build, new deployment, or the 7-day
+// refresh), where something the encode depends on may have changed — so
+// force: true re-encodes unconditionally to match the re-ingest, rather than
+// trusting esf_data's own build-guard. (A skipped run returns before this, so
+// the ESF data is left as-is, which is correct: nothing it reads changed.)
 async function encodeEsf(build: number): Promise<void> {
   'use step'
   const { runEsfData } = await import('@/jobs/esfData.js')
@@ -118,6 +131,12 @@ const ESF_INPUT_STEMS = [
 export async function sdeMirrorWorkflow() {
   'use workflow'
   const plan = await planRun()
+  // Steady state: CCP's build is unchanged, this deployment already produced the
+  // mirror, and it's < 7 days old. Close out in one cheap step and stop.
+  if (plan.skip) {
+    await finalizeSkipped(plan.build, plan.runId)
+    return
+  }
   const files = await listFiles(plan.zipUrl)
 
   // Drain one entry: chase its slice cursor until the entry reports done,
@@ -162,7 +181,8 @@ export async function sdeMirrorWorkflow() {
   const esf = afterStems(ESF_INPUT_STEMS).then(() => encodeEsf(plan.build))
 
   await Promise.all([allDrained, stations, esf])
-  // Last, once every table has landed: refresh the derived views, mark the
-  // build completed, and close the heartbeat planRun() opened.
-  await finalize(plan.build, plan.runId)
+  // Last, once every table has landed: refresh the derived views, stamp the
+  // build completed with this run's commit, and close the heartbeat planRun()
+  // opened.
+  await finalize(plan.build, plan.runId, plan.commit)
 }

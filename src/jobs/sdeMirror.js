@@ -68,17 +68,45 @@ export const fetchLatestBuild = async () => {
   return { build: Math.floor(Date.parse(lastModified) / 1000), zipUrl: SDE_LATEST_URL }
 }
 
-export const shouldSkip = async (build) => {
+const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000
+
+// The git commit the running code was built from — its deployment identity. On
+// Vercel this is the VERCEL_GIT_COMMIT_SHA system env var (exposed to functions
+// at runtime); COMMIT_SHA is our next.config alias for local/dev. A run with no
+// known commit (bare `node` CLI) reports 'unknown', which never equals a real
+// deployed commit, so it errs toward re-ingesting rather than falsely skipping.
+export const currentCommitSha = () => process.env.VERCEL_GIT_COMMIT_SHA || process.env.COMMIT_SHA || 'unknown'
+
+// The pure skip decision, split out from the I/O so it's unit-testable. Skip —
+// the ~5 s no-op run we want in steady state — ONLY when the mirror is already
+// complete for this exact build (`completed_at` set), was produced by the
+// currently-deployed commit, AND is still fresh (< 7 days). Any of: a new SDE
+// build (no row / no completed_at), a new code deployment (commit mismatch), or
+// data ≥ 7 days old forces a full rebuild. `row` is the sde_mirror_state row for
+// the build (or null/undefined if unseen).
+export const shouldSkipMirror = (row, commit, now) => {
+  const completedAt = row?.completed_at ? Date.parse(row.completed_at) : null
+  const fresh = completedAt != null && now - completedAt < SEVEN_DAYS_MS
+  return fresh && row?.commit_sha === commit
+}
+
+// Discover CCP's current build and decide whether a full re-ingest is needed.
+// `completed_at` tracks the last real ingest (skip runs never touch it), so the
+// 7-day backstop in shouldSkipMirror actually fires instead of being pushed
+// forward by every nightly no-op.
+export const planMirror = async () => {
+  const { build, zipUrl } = await fetchLatestBuild()
+  const commit = currentCommitSha()
   const { data, error } = await sudoSupabase
     .from('sde_mirror_state')
-    .select('completed_at')
+    .select('completed_at, commit_sha')
     .eq('build_number', build)
     .maybeSingle()
   if (error) {
     console.error(`[sde-mirror] mirror_state read failed: ${error.message}`)
-    return false
+    return { build, zipUrl, commit, skip: false }
   }
-  return data?.completed_at != null
+  return { build, zipUrl, commit, skip: shouldSkipMirror(data, commit, Date.now()) }
 }
 
 export const markBuildStarted = async (build) => {
@@ -374,15 +402,19 @@ export const resolveStationNames = async () => {
 
 // ── Finalize ────────────────────────────────────────────────────────────────
 
-export const finalizeBuild = async (build) => {
+// Stamps the completed row with the current commit so a later run by the SAME
+// deployment can skip (see planMirror). `commit` is threaded from planMirror so
+// the whole run agrees on one value; it defaults to the live commit for direct
+// callers (CLI).
+export const finalizeBuild = async (build, commit = currentCommitSha()) => {
   const { error: refreshError } = await sudoSupabase.rpc('sde_refresh_views')
   if (refreshError) throw new Error(`sde-mirror: sde_refresh_views failed: ${refreshError.message}`)
   const { error } = await sudoSupabase
     .from('sde_mirror_state')
-    .update({ completed_at: new Date().toISOString() })
+    .update({ completed_at: new Date().toISOString(), commit_sha: commit })
     .eq('build_number', build)
   if (error) throw new Error(`sde-mirror: mirror_state completion failed: ${error.message}`)
-  console.log(`[sde-mirror] build ${build} complete`)
+  console.log(`[sde-mirror] build ${build} complete (commit ${commit})`)
 }
 
 // ── Whole-run orchestration (CLI / unbounded contexts) ──────────────────────
@@ -390,16 +422,16 @@ export const finalizeBuild = async (build) => {
 // blocks step by step instead of calling this.
 
 export const runSdeMirror = async ({ force = false } = {}) => {
-  const { build, zipUrl } = await fetchLatestBuild()
-  if (!force && (await shouldSkip(build))) {
-    console.log(`[sde-mirror] build ${build} already mirrored, skipping (--force to re-ingest)`)
+  const { build, zipUrl, commit, skip } = await planMirror()
+  if (!force && skip) {
+    console.log(`[sde-mirror] build ${build} already mirrored by commit ${commit} and fresh (< 7 days), skipping (--force to re-ingest)`)
     return { skipped: true, build }
   }
   await markBuildStarted(build)
   const files = await listEntries(zipUrl)
   await forEachSequential(files, (file) => ingestEntrySlice(zipUrl, file, build, 0, Infinity))
   await resolveStationNames()
-  await finalizeBuild(build)
+  await finalizeBuild(build, commit)
   return { skipped: false, build, files: files.length }
 }
 
