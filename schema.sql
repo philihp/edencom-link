@@ -2695,12 +2695,16 @@ from unnest(
 ) as stem;
 
 -- One row per SDE build the ingest has seen; completed_at set only when every
--- file landed. The nightly run short-circuits when CCP's current build already
--- has a completed row (CCP ships a new build per game patch, not nightly).
+-- file landed, commit_sha records which code deployment produced that mirror.
+-- The nightly run short-circuits (a ~5 s no-op) only when CCP's current build
+-- already has a completed row, produced by the currently-deployed commit, and
+-- less than 7 days old — so a new SDE build, a new deployment (transform
+-- change), or 7-day staleness each force a full re-ingest.
 create table public.sde_mirror_state (
   build_number bigint primary key,
   started_at timestamptz not null default now(),
-  completed_at timestamptz
+  completed_at timestamptz,
+  commit_sha text
 );
 alter table public.sde_mirror_state enable row level security;
 create policy "Anyone reads SDE data" on public.sde_mirror_state for select using (true);
