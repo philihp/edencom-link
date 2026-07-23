@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
-import { ascend, reduce, sort, uniq } from 'ramda'
+import { ascend, range, reduce, sort, uniq } from 'ramda'
 
 import { createClient } from '@/utils/supabase/server'
 import { formatBisk } from '../isk'
@@ -10,6 +10,52 @@ import { register } from './actions'
 import { requiredScopes } from './scopes'
 import { getEnabledScopes } from './userScopes'
 import styles from './character.module.css'
+
+// A character can train up to 11 slots per activity family (1 base + two
+// rank-5 skills), so each bubble line shows 11 slots and fills one per
+// active job of that family.
+const SLOT_COUNT = 11
+
+type SlotFamily = 'manufacturing' | 'research' | 'reaction'
+
+const SLOT_ROWS: { family: SlotFamily; label: string }[] = [
+  { family: 'manufacturing', label: 'Manufacturing' },
+  { family: 'research', label: 'Research' },
+  { family: 'reaction', label: 'Reactions' },
+]
+
+// ESI activity_id → slot family. Science jobs (TE/ME research, copying,
+// reverse engineering, invention) all occupy research slots.
+const ACTIVITY_FAMILY: Record<number, SlotFamily> = {
+  1: 'manufacturing',
+  3: 'research',
+  4: 'research',
+  5: 'research',
+  7: 'research',
+  8: 'research',
+  9: 'reaction',
+}
+
+const emptySlotCounts = (): Record<SlotFamily, number> => ({ manufacturing: 0, research: 0, reaction: 0 })
+
+const JobSlots = ({ counts }: { counts: Record<SlotFamily, number> }) => (
+  <div className={styles.slots}>
+    {SLOT_ROWS.map(({ family, label }) => {
+      const active = counts[family]
+      return (
+        <div
+          key={family}
+          className={`${styles.slotRow} ${styles[family]}`}
+          title={`${label}: ${active} active job${active === 1 ? '' : 's'}`}
+        >
+          {range(0, SLOT_COUNT).map((i) => (
+            <span key={i} className={i < active ? `${styles.slot} ${styles.slotFilled}` : styles.slot} />
+          ))}
+        </div>
+      )
+    })}
+  </div>
+)
 
 const CharacterPage = async () => {
   const supabase = await createClient()
@@ -90,6 +136,24 @@ const CharacterPage = async () => {
     })
   )
 
+  const { data: industryJobs } = await supabase
+    .from('character_industry_job')
+    .select('character_id, activity_id')
+    .eq('status', 'active')
+  const jobSlotCounts = reduce(
+    (acc, j) => {
+      const family = ACTIVITY_FAMILY[Number(j.activity_id)]
+      if (family) {
+        const counts = acc.get(j.character_id as string) ?? emptySlotCounts()
+        counts[family] += 1
+        acc.set(j.character_id as string, counts)
+      }
+      return acc
+    },
+    new Map<string, Record<SlotFamily, number>>(),
+    industryJobs ?? []
+  )
+
   // If the player has turned off every optional ESI scope, characters they add
   // grant nothing beyond identification, so almost no features will work.
   const enabledScopes = await getEnabledScopes(supabase, data.user.id)
@@ -158,6 +222,7 @@ const CharacterPage = async () => {
                   </ul>
                 </div>
               )}
+              <JobSlots counts={jobSlotCounts.get(c.id) ?? emptySlotCounts()} />
             </div>
           </li>
         ))}

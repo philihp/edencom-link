@@ -90,6 +90,44 @@
   padding-left: 0;
 }
 
+/* Industry job slot bubbles: one line per activity family, one bubble per
+   slot, filled while an active job occupies it. */
+.slots {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 6pt;
+}
+
+.slotRow {
+  display: flex;
+  gap: 3px;
+}
+
+.slot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  border: 1px solid var(--slot-color);
+  box-sizing: border-box;
+}
+
+.slotFilled {
+  background: var(--slot-color);
+}
+
+.manufacturing {
+  --slot-color: #e0862e;
+}
+
+.research {
+  --slot-color: #4a7fd4;
+}
+
+.reaction {
+  --slot-color: #2fb5c0;
+}
+
 .actions {
   display: flex;
   gap: 8pt;
