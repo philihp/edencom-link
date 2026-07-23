@@ -129,25 +129,14 @@ type Msg = {
   taskId?: string
 }
 
-// A thrown error fails the callback, so the Vercel queue retries the message
-// (per retryAfterSeconds in vercel.json).
-// Log this invocation's memory footprint to the console. Called from a `finally`
-// so it prints on every exit path (success, throw, tracked, untracked) — the
-// point is to see what the job actually needs so the function's `memory` limit
-// (vercel.json) can be sized against real usage rather than guessed. `maxRSS`
-// (process.resourceUsage) is the peak resident set size in KB on Linux; under
-// Vercel Fluid Compute the instance is reused across messages, so it's the
-// high-water mark for the whole worker, which is exactly the number to compare
-// against the configured limit.
-const mb = (bytes: number) => Math.round((bytes / 1024 / 1024) * 10) / 10
-const logMemoryUsage = (job: string) => {
-  const mem = process.memoryUsage()
-  const peakRssMb = Math.round((process.resourceUsage().maxRSS / 1024) * 10) / 10
-  console.log(
-    `[queue/jobs] mem job=${job} rss=${mb(mem.rss)}MB heapUsed=${mb(mem.heapUsed)}MB external=${mb(
-      mem.external
-    )}MB peakRss=${peakRssMb}MB`
-  )
+// Emit this invocation's memory footprint as a `job.peak_rss` metric line
+// (src/observability.js). Called from a `finally` so it fires on every exit
+// path (success, throw, tracked, untracked) — the point is to see what the job
+// actually needs so the function's `memory` limit (vercel.json) can be sized
+// against real usage rather than guessed.
+const logMemoryUsage = async (job: string) => {
+  const { recordPeakRss } = await import('@/observability.js')
+  recordPeakRss({ job })
 }
 
 // A thrown error fails the callback, so the Vercel queue retries the message
@@ -228,6 +217,6 @@ export const POST = handleCallback(async (message: Msg) => {
         .eq('id', taskId)
     }
   } finally {
-    logMemoryUsage(job)
+    await logMemoryUsage(job)
   }
 })

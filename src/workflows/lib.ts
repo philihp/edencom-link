@@ -23,12 +23,14 @@
 export async function runJobWithHeartbeat(job: string, load: () => Promise<() => Promise<unknown>>) {
   const { randomInt } = await import('node:crypto')
   const { recordHeartbeat } = await import('@/supabase.js')
+  const { recordPeakRss } = await import('@/observability.js')
   const run = await load()
   const runId = randomInt(1, 2 ** 48)
   await recordHeartbeat(job, 'start', { runId, source: 'vercel-workflow' })
   try {
     await run()
   } finally {
+    recordPeakRss({ job })
     await recordHeartbeat(job, 'end', { runId, source: 'vercel-workflow' })
   }
 }

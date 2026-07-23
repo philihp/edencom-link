@@ -40,6 +40,28 @@ export const recordEsiConditional = ({
     duration_ms: durationMs,
   })
 
+// One job invocation's memory footprint — emitted from the queue consumer
+// (src/app/api/queue/jobs/route.ts), the workflow heartbeat wrapper
+// (src/workflows/lib.ts), and per-entry from the sde-mirror ingest. Group by
+// (job) and chart max(peak_rss_mb) to size the function's `memory` limit
+// against real usage instead of guessing. `maxRSS` (process.resourceUsage, KB
+// on Linux) is the process-wide high-water mark; under Vercel Fluid Compute
+// the instance is reused across invocations, so it reflects the whole worker —
+// which is exactly the number the configured memory limit has to cover.
+//   entry: optional finer-grained label (e.g. the SDE zip entry a slice ingested)
+export const recordPeakRss = ({ job, entry = null }) => {
+  const mb = (bytes) => Math.round((bytes / 1024 / 1024) * 10) / 10
+  const mem = process.memoryUsage()
+  recordMetric('job.peak_rss', {
+    job,
+    entry,
+    peak_rss_mb: Math.round((process.resourceUsage().maxRSS / 1024) * 10) / 10,
+    rss_mb: mb(mem.rss),
+    heap_used_mb: mb(mem.heapUsed),
+    external_mb: mb(mem.external),
+  })
+}
+
 // One Discord interaction outcome — see src/app/api/discord/interactions/route.ts.
 // Group by (type, outcome) to watch signature rejections (portal validation and
 // spoof attempts) and, later, command traffic.

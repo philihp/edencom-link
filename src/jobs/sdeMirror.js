@@ -23,10 +23,12 @@
 //     node:zlib inflates (zip entries are raw deflate). No unzip binary, no
 //     zip library.
 import { randomInt } from 'node:crypto'
-import { inflateRawSync } from 'node:zlib'
+import { Readable } from 'node:stream'
+import { createInflateRaw, inflateRawSync } from 'node:zlib'
 import { map, splitEvery } from 'ramda'
 
 import { userAgent } from '../esi.js'
+import { recordPeakRss } from '../observability.js'
 import { resolveAllIds } from '../resolveNames.js'
 import { recordHeartbeat, sudoSupabase } from '../supabase.js'
 import { cli, forEachSequential } from './lib.js'
@@ -170,19 +172,44 @@ export const listEntries = async (zipUrl) => {
   return files
 }
 
-// Range-read one entry's compressed bytes and inflate them. The local header's
+// Open one entry's decompressed bytes as a Node Readable, Range-reading only
+// that entry's compressed bytes and inflating them incrementally — the peak
+// held in memory is a decompression chunk, not the whole entry (typeDogma
+// inflates to hundreds of MB, and buffering compressed + inflated at once was
+// what forced the workflow function's memory sizing). The local header's
 // name/extra lengths can differ from the central directory's, so read it first
-// to find where the data actually starts.
-export const fetchEntryBuffer = async (zipUrl, file) => {
+// to find where the data actually starts. Abort `signal` to stop the download
+// mid-entry (the slice budget expiring).
+export const openEntryStream = async (zipUrl, file, signal) => {
   const local = await fetchRange(zipUrl, file.localOffset, file.localOffset + 29)
   if (local.readUInt32LE(0) !== LOC_SIG) throw new Error(`sde-mirror: bad local header for ${file.entry}`)
   const nameLen = local.readUInt16LE(26)
   const extraLen = local.readUInt16LE(28)
   const dataStart = file.localOffset + 30 + nameLen + extraLen
-  const raw = await fetchRange(zipUrl, dataStart, dataStart + file.compressedSize - 1)
-  if (file.method === 0) return raw
-  if (file.method === 8) return inflateRawSync(raw)
-  throw new Error(`sde-mirror: unsupported compression method ${file.method} for ${file.entry}`)
+  const dataEnd = dataStart + file.compressedSize - 1
+  if (file.method !== 0 && file.method !== 8)
+    throw new Error(`sde-mirror: unsupported compression method ${file.method} for ${file.entry}`)
+
+  const res = await fetch(zipUrl, {
+    headers: { 'User-Agent': userAgent, Range: `bytes=${dataStart}-${dataEnd}` },
+    signal,
+  })
+  if (res.status === 206) {
+    const source = Readable.fromWeb(res.body)
+    if (file.method === 0) return source
+    const inflate = createInflateRaw()
+    // pipe() doesn't forward errors; surface network failures to the consumer.
+    source.on('error', (e) => inflate.destroy(e))
+    return source.pipe(inflate)
+  }
+  // A server ignoring Range replies 200 with the whole zip; fall back to
+  // buffering and slicing locally, as the Range path used to for every entry.
+  if (res.status === 200) {
+    const whole = Buffer.from(await res.arrayBuffer())
+    const raw = whole.subarray(dataStart, dataEnd + 1)
+    return Readable.from([file.method === 0 ? Buffer.from(raw) : inflateRawSync(raw)])
+  }
+  throw new Error(`sde-mirror: GET ${zipUrl} bytes=${dataStart}-${dataEnd} → ${res.status}`)
 }
 
 // ── Ingest ──────────────────────────────────────────────────────────────────
@@ -204,25 +231,34 @@ const sweepStaleRows = async (table, build) => {
   if (error) throw new Error(`sde-mirror: stale sweep of ${table} failed: ${error.message}`)
 }
 
-const logMemory = (label) => {
-  const peakRssMb = Math.round((process.resourceUsage().maxRSS / 1024) * 10) / 10
-  console.log(`[sde-mirror] mem ${label} peakRss=${peakRssMb}MB`)
-}
+const logMemory = (label) => recordPeakRss({ job: 'sde-mirror', entry: label })
 
 // Ingest one entry from line `startLine`, upserting {_key, data, sde_build}
 // rows in bounded chunks until the entry is done (returns -1, after sweeping
 // stale rows) or the time budget runs out (returns the cursor to resume from).
 // Re-running a slice is idempotent — everything is keyed upserts — which is
 // what makes the workflow's bounded step retries safe.
+//
+// The entry is consumed as a stream (openEntryStream): each decompressed chunk
+// is walked for complete lines, with the partial trailing line carried into the
+// next chunk, so peak memory is one chunk + one line + the pending upsert chunk
+// rather than the whole inflated entry. Backpressure comes free — the download
+// only advances as fast as the upserts drain — and when the budget expires the
+// fetch is aborted instead of having already buffered the entry's tail.
+// Deliberately imperative buffer walk, as before.
 export const ingestEntrySlice = async (zipUrl, file, build, startLine = 0, budgetMs = STEP_BUDGET_MS) => {
   const t0 = Date.now()
-  const buf = await fetchEntryBuffer(zipUrl, file)
   const table = `sde_${file.stem}`
+  const abort = new AbortController()
+  const stream = await openEntryStream(zipUrl, file, abort.signal)
 
   let line = 0
   let upserted = 0
   let chunk = []
   let chunkBytes = 0
+  let carry = Buffer.alloc(0)
+  let pauseLine = null
+  let skipFile = false
 
   const flush = async () => {
     if (chunk.length === 0) return
@@ -232,44 +268,70 @@ export const ingestEntrySlice = async (zipUrl, file, build, startLine = 0, budge
     chunkBytes = 0
   }
 
-  // Deliberately imperative buffer walk (one pass, no full-string split) — the
-  // inflated entry can run to hundreds of MB and a .split('\n') would double it.
-  let pos = 0
-  while (pos < buf.length) {
-    let nl = buf.indexOf(10, pos)
-    if (nl === -1) nl = buf.length
-    const lineStart = pos
-    const lineEnd = nl
-    pos = nl + 1
-    const thisLine = line++
-    if (thisLine < startLine || lineEnd <= lineStart) continue
+  // Walk the complete lines in `combined`, returning the offset where the
+  // partial trailing line begins (carried into the next chunk). Sets pauseLine
+  // when the budget expires and skipFile when the entry has no _key to mirror.
+  const walkLines = async (combined) => {
+    let pos = 0
+    while (pauseLine === null && !skipFile) {
+      const nl = combined.indexOf(10, pos)
+      if (nl === -1) break
+      const lineStart = pos
+      pos = nl + 1
+      const thisLine = line++
+      if (thisLine < startLine || nl <= lineStart) continue
 
-    const text = buf.toString('utf8', lineStart, lineEnd)
-    if (text.trim() === '') continue
-    const parsed = JSON.parse(text)
+      const text = combined.toString('utf8', lineStart, nl)
+      if (text.trim() === '') continue
+      const parsed = JSON.parse(text)
 
-    // The first row of the file establishes the table (and its key type) —
-    // resumed slices (startLine > 0) land in the table the first slice made.
-    // An entry whose rows carry no _key (e.g. a metadata file) has no primary
-    // key to mirror on; skip the whole file rather than erroring.
-    if (startLine === 0 && upserted === 0 && chunk.length === 0) {
-      if (parsed._key === undefined) {
-        console.log(`[sde-mirror] ${file.entry}: rows carry no _key, skipping file`)
-        return -1
+      // The first row of the file establishes the table (and its key type) —
+      // resumed slices (startLine > 0) land in the table the first slice made.
+      // An entry whose rows carry no _key (e.g. a metadata file) has no primary
+      // key to mirror on; skip the whole file rather than erroring.
+      if (startLine === 0 && upserted === 0 && chunk.length === 0) {
+        if (parsed._key === undefined) {
+          console.log(`[sde-mirror] ${file.entry}: rows carry no _key, skipping file`)
+          skipFile = true
+          return pos
+        }
+        await ensureMirrorTable(file.stem, typeof parsed._key === 'number' ? 'bigint' : 'text')
       }
-      await ensureMirrorTable(file.stem, typeof parsed._key === 'number' ? 'bigint' : 'text')
-    }
 
-    chunk.push({ _key: parsed._key, data: parsed, sde_build: build })
-    chunkBytes += text.length
-    if (chunk.length >= CHUNK_ROWS || chunkBytes >= CHUNK_BYTES) {
-      await flush()
-      if (Date.now() - t0 > budgetMs) {
-        console.log(`[sde-mirror] ${file.entry}: +${upserted} rows, pausing at line ${thisLine + 1}`)
-        logMemory(file.entry)
-        return thisLine + 1
+      chunk.push({ _key: parsed._key, data: parsed, sde_build: build })
+      chunkBytes += text.length
+      if (chunk.length >= CHUNK_ROWS || chunkBytes >= CHUNK_BYTES) {
+        await flush()
+        if (Date.now() - t0 > budgetMs) pauseLine = thisLine + 1
       }
     }
+    return pos
+  }
+
+  try {
+    for await (const piece of stream) {
+      const combined = carry.length ? Buffer.concat([carry, piece]) : piece
+      const pos = await walkLines(combined)
+      if (pauseLine !== null || skipFile) break
+      carry = combined.subarray(pos)
+    }
+    // The last line of a drained entry may lack a trailing newline.
+    if (pauseLine === null && !skipFile && carry.length > 0) {
+      await walkLines(Buffer.concat([carry, Buffer.from('\n')]))
+    }
+  } finally {
+    // Whether paused, skipped, or drained: stop the download. Breaking out of
+    // for-await already destroyed the stream; swallow the abort-induced error
+    // so it can't surface as an unhandled 'error' event.
+    stream.on('error', () => {})
+    abort.abort()
+  }
+
+  if (skipFile) return -1
+  if (pauseLine !== null) {
+    console.log(`[sde-mirror] ${file.entry}: +${upserted} rows, pausing at line ${pauseLine}`)
+    logMemory(file.entry)
+    return pauseLine
   }
 
   await flush()
