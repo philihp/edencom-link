@@ -53,6 +53,7 @@
     "universe-structures": "node src/jobs/universeStructures.js",
     "sde-mirror": "node src/jobs/sdeMirror.js",
     "esf-data": "node src/jobs/esfData.js",
+    "sheet-csv": "node src/jobs/sheetCsv.js",
     "connect": "node src/connect.js",
     "db:new": "supabase migration new",
     "db:push": "supabase db push",

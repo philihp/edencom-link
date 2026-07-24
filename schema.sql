@@ -109,6 +109,7 @@ drop table if exists public.esi_etag             cascade;
 drop table if exists public.innominate_throttle  cascade;
 drop table if exists public.innominate_appraisal cascade;
 drop table if exists public.esf_data             cascade;
+drop table if exists public.sheet_csv            cascade;
 drop table if exists public.impersonation_log    cascade;
 drop table if exists public.token                cascade;
 drop table if exists public.registration         cascade;
@@ -2792,6 +2793,25 @@ alter table public.esf_data enable row level security;
 create policy "Everyone reads esf data" on public.esf_data for select to anon, authenticated using (true);
 grant select on public.esf_data to anon, authenticated;
 grant all    on public.esf_data to service_role;
+
+-- The industry-planning spreadsheet's static CSVs (StaticInputs / StaticOutputs /
+-- invention / types, in both twines and miros label modes), derived from the
+-- sde_* mirror by the sde-mirror workflow's encodeSheets step (src/jobs/sheetCsv.js
+-- -> encodeSheetCsv() in src/buildSheetCsv.js) after each SDE build, and served at
+-- /sheets/[file] for Google Sheets =IMPORTDATA(). `data` is the CSV text itself
+-- (no base64: CSV is already text, unlike esf_data's binary protobufs). Public
+-- read (SDE-derived, no player data, identical for every caller); writes are
+-- service-role only (the workflow).
+create table public.sheet_csv (
+  name text primary key,
+  data text not null,
+  sde_build bigint not null,
+  updated_at timestamptz not null default now()
+);
+alter table public.sheet_csv enable row level security;
+create policy "Everyone reads sheet csv" on public.sheet_csv for select to anon, authenticated using (true);
+grant select on public.sheet_csv to anon, authenticated;
+grant all    on public.sheet_csv to service_role;
 
 -- Trigram indexes backing the ILIKE '%…%' in sde_search_type/sde_search_system.
 create index sde_types_name_trgm on public.sde_types
