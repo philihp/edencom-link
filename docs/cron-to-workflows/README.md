@@ -48,8 +48,8 @@ the workflow shape used by `sde-mirror`:
 |---|---|---|
 | `runDirectCronJob` (inline) | ~~`industry-systems`~~, ~~`universe-structures`~~, ~~`corp-structures`~~, ~~`corp-wallet-journal`~~, ~~`corp-blueprints`~~ (all migrated — `runDirectCronJob` now unused, deleted in phase 5) | Whole job inside the cron route's single 60s invocation |
 | `dispatchAccountCronJob` (1 queue msg) | ~~`universe-names`~~, ~~`character-directory`~~ (migrated; was `character-affiliations`) | Queue consumer runs the batch, records the whole-job heartbeat |
-| `fanOutPerCharacterCronJob` (1 msg/char) | `character-orders`, `character-assets`, `character-blueprints`, `character-mercenary-dens`, `character-wallet-transactions`, `character-industry-jobs` | Queue consumer runs per character |
-| `fanOutPerCharacterAnyScopeCronJob` | `character-status` | Same, any-of-scopes token selection |
+| `fanOutPerCharacterCronJob` (1 msg/char) | ~~`character-orders`~~, ~~`character-assets`~~, ~~`character-blueprints`~~, ~~`character-mercenary-dens`~~, ~~`character-wallet-transactions`~~, ~~`character-industry-jobs`~~ (all migrated in phase 3) | Queue consumer runs per character |
+| `fanOutPerCharacterAnyScopeCronJob` | ~~`character-status`~~ (migrated in phase 3) | Same, any-of-scopes token selection |
 | `fanOutPerCorporationCronJob` (1 msg/corp) | `corp-assets`, `corp-industry-jobs`, `corp-wallet-transactions` | Queue consumer runs per corp |
 | `start()` a workflow | `sde-mirror` | Already a workflow — **done, not in scope** |
 
@@ -117,7 +117,7 @@ migration PR only swaps the scheduled trigger.
 |---|---|---|---|
 | [01-direct-jobs.md](01-direct-jobs.md) | `industry-systems` ✅, `universe-structures` ✅, `corp-structures` ✅, `corp-wallet-journal` ✅, `corp-blueprints` ✅ | inline → single-step workflow | ✅ **Done** — all 5 migrated; `runDirectCronJob` now unused (deleted in phase 5) |
 | [02-account-jobs.md](02-account-jobs.md) | `universe-names` ✅, `character-directory` ✅ (was `character-affiliations`) | 1 queue msg → single-step workflow | ✅ **Done** |
-| [03-per-character.md](03-per-character.md) | `character-wallet-transactions` ✅, `character-orders` ✅, `character-industry-jobs` ✅, `character-status` ✅, `character-mercenary-dens` ✅, `character-blueprints`, `character-assets` | per-char queue fan-out → fan-out workflow | 🚧 In progress — through `character-mercenary-dens`; `character-blueprints`, `character-assets` remain |
+| [03-per-character.md](03-per-character.md) | `character-wallet-transactions` ✅, `character-orders` ✅, `character-industry-jobs` ✅, `character-status` ✅, `character-mercenary-dens` ✅, `character-blueprints` ✅, `character-assets` ✅ | per-char queue fan-out → fan-out workflow | ✅ **Done** — all 7 migrated |
 | [04-per-corporation.md](04-per-corporation.md) | `corp-wallet-transactions`, `corp-industry-jobs`, `corp-assets` | per-corp queue fan-out → fan-out workflow | — |
 | [05-contract.md](05-contract.md) | — | retire dead cron helpers, decide the on-demand queue path, retire the `character-implants` pilot | — |
 

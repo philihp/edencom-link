@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-import { fanOutPerCharacterCronJob, requireCronSecret } from '@/utils/cron'
+import { requireCronSecret } from '@/utils/cron'
 
-const SCOPE = 'esi-characters.read_blueprints.v1'
-
-// Vercel Cron replacement for the old `character-blueprints.yml` GitHub Action. Fans out
-// one Vercel queue message per scoped character, mirroring the on-demand "Refresh ESI"
-// flow, so this stays within the function duration limit regardless of account size.
+// Vercel Cron trigger for character-blueprints. Formerly fanned out one queue
+// message per scoped character (fanOutPerCharacterCronJob); it now start()s the
+// character-blueprints Vercel Workflow (src/workflows/characterBlueprints.ts),
+// which enumerates the scoped characters itself and runs one step per character
+// across a few lanes. Only the scheduled path moves — the on-demand "Refresh
+// ESI" flow still enqueues this job via the queue.
 export const runtime = 'nodejs'
 export const maxDuration = 60
 
@@ -14,7 +15,10 @@ export async function GET(request: NextRequest) {
   const denied = requireCronSecret(request)
   if (denied) return denied
 
-  const dispatched = await fanOutPerCharacterCronJob('character-blueprints', SCOPE)
+  const { start } = await import('workflow/api')
+  const { characterBlueprintsWorkflow } = await import('@/workflows/characterBlueprints')
+  const run = await start(characterBlueprintsWorkflow, [])
+  console.log(`[cron/character-blueprints] started workflow run=${run.runId}`)
 
-  return NextResponse.json({ ok: true, dispatched })
+  return NextResponse.json({ ok: true, runId: run.runId })
 }
