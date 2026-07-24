@@ -112,21 +112,23 @@ port:
 ## Phases
 
 Each phase is an independently-shippable PR, smallest-first, matching the
-`docs/cron-to-workflows/` playbook:
+`docs/cron-to-workflows/` playbook. **All landed** — the build side is live;
+what remains is the sheet cutover (point the workbook's tabs at the URLs, see
+doc 04).
 
-1. **[01-port-generator.md](01-port-generator.md)** — `src/buildSheetCsv.js`:
+1. **[01-port-generator.md](01-port-generator.md)** — ✅ `src/buildSheetCsv.js`:
    the pure transform, mirror-fed, CLI-verifiable, parity-checked against the
    Python's output on the same SDE build.
-2. **[02-table-and-job.md](02-table-and-job.md)** — `sheet_csv` table
+2. **[02-table-and-job.md](02-table-and-job.md)** — ✅ `sheet_csv` table
    (migration + `schema.sql`), `src/jobs/sheetCsv.js` (`runSheetCsv()`,
    `pnpm run sheet-csv`), and the unscheduled bootstrap route
    `/api/cron/sheet-csv`.
-3. **[03-workflow-step.md](03-workflow-step.md)** — the `encodeSheets` tail
+3. **[03-workflow-step.md](03-workflow-step.md)** — ✅ the `encodeSheets` tail
    step in `src/workflows/sdeMirror.ts`, gated on the `types` + `blueprints`
    stems draining.
-4. **[04-serve-route.md](04-serve-route.md)** — the public `/sheets/[file]`
-   route with ESF-style caching, plus docs/CLAUDE.md updates and the sheet
-   cutover checklist.
+4. **[04-serve-route.md](04-serve-route.md)** — ✅ the public `/sheets/[file]`
+   route with ESF-style caching, plus docs/CLAUDE.md updates. (The sheet
+   cutover checklist there is the one remaining manual step.)
 
 ## Decisions taken (revisit if wrong)
 

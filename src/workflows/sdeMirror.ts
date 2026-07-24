@@ -97,6 +97,17 @@ async function encodeEsf(build: number): Promise<void> {
   await runEsfData({ build, force: true })
 }
 
+// Re-encode the industry spreadsheet's static CSVs into the sheet_csv table from
+// the freshly-mirrored SDE. Its own step (own duration budget + retries), and
+// like encodeEsf only reached on a non-skipped run, so force: true re-encodes to
+// match the re-ingest. Reads only sde_types + sde_blueprints, so it starts as
+// soon as those two files have landed (see SHEET_INPUT_STEMS).
+async function encodeSheets(build: number): Promise<void> {
+  'use step'
+  const { runSheetCsv } = await import('@/jobs/sheetCsv.js')
+  await runSheetCsv({ build, force: true })
+}
+
 // Ingest fan-out sizing: how many per-file slice chains run concurrently.
 // Each file writes its own sde_<stem> table, so concurrent lanes share no rows
 // and each file's stale-row sweep stays self-contained; the cap is only about
@@ -116,6 +127,10 @@ const ESF_INPUT_STEMS = [
   'dogma_effects',
   'type_dogma',
 ]
+
+// The sde_* stems encodeSheets() reads (buildSheets in src/buildSheetCsv.js) —
+// it can start as soon as these two files have landed.
+const SHEET_INPUT_STEMS = ['types', 'blueprints']
 
 // Plain loops rather than the jobs' usual ramda/forEachSequential: the
 // orchestrator body is compiled by the workflow directive and should stay
@@ -175,12 +190,15 @@ export async function sdeMirrorWorkflow() {
   const afterStems = (stems: string[]) => Promise.all(stems.map((stem) => drained.get(stem) ?? allDrained))
 
   // Tail steps overlap the remaining ingest: station-name resolution needs
-  // only sde_npc_stations, and the esf_data re-encode (forced — it re-writes
-  // every night alongside the full re-ingest) needs only its 7 input tables.
+  // only sde_npc_stations, the esf_data re-encode needs only its 7 input
+  // tables, and the sheet_csv re-encode needs only sde_types + sde_blueprints.
+  // All are forced — a non-skipped run always re-does the full ingest, and the
+  // derived encodes re-write to match.
   const stations = afterStems(['npc_stations']).then(() => stationNames())
   const esf = afterStems(ESF_INPUT_STEMS).then(() => encodeEsf(plan.build))
+  const sheets = afterStems(SHEET_INPUT_STEMS).then(() => encodeSheets(plan.build))
 
-  await Promise.all([allDrained, stations, esf])
+  await Promise.all([allDrained, stations, esf, sheets])
   // Last, once every table has landed: refresh the derived views, stamp the
   // build completed with this run's commit, and close the heartbeat planRun()
   // opened.
