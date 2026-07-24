@@ -233,6 +233,16 @@ export const characterImplants = (access_token, characterID) =>
     label: `implants ${characterID}`,
   })
 
+// The character's trained skills — { skills: [{ skill_id, active_skill_level,
+// trained_skill_level, skillpoints_in_skill }], total_sp, unallocated_sp }.
+// active_skill_level is the level currently in effect (what an omega/alpha clone
+// can actually use); trained_skill_level is what's been trained regardless.
+export const characterSkills = (access_token, characterID) =>
+  esiJson(`/characters/${characterID}/skills/`, {
+    access_token,
+    label: `skills ${characterID}`,
+  })
+
 // The ship the character is currently in — { ship_item_id, ship_name,
 // ship_type_id }. This is the item_id of whichever ship the character is
 // presently sitting in, docked or not, distinguishing it from any other ship

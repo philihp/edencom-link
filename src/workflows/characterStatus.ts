@@ -27,17 +27,18 @@ import { map, reduce, splitEvery, transpose } from 'ramda'
 
 import { enumerateCharacters } from './lib'
 
-// The five ESI scopes character-status fronts (wallet, location, implants,
-// clones, ship). Keep in sync with SCOPES in src/jobs/characterStatus.js and the
-// hardcoded list the cron route used to pass. The lane count: four keeps a big
-// account polite to ESI's error-rate limits (the queue already ran per-character
-// pulls concurrently, so this is nothing new).
+// The six ESI scopes character-status fronts (wallet, location, implants,
+// clones, ship, skills). Keep in sync with SCOPES in src/jobs/characterStatus.js
+// and the hardcoded list the cron route used to pass. The lane count: four keeps
+// a big account polite to ESI's error-rate limits (the queue already ran
+// per-character pulls concurrently, so this is nothing new).
 const SCOPES = [
   'esi-wallet.read_character_wallet.v1',
   'esi-location.read_location.v1',
   'esi-clones.read_implants.v1',
   'esi-clones.read_clones.v1',
   'esi-location.read_ship_type.v1',
+  'esi-skills.read_skills.v1',
 ]
 const LANES = 4
 

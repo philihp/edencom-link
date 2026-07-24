@@ -11,11 +11,6 @@ import { requiredScopes } from './scopes'
 import { getEnabledScopes } from './userScopes'
 import styles from './character.module.css'
 
-// A character can train up to 11 slots per activity family (1 base + two
-// rank-5 skills), so each bubble line shows 11 slots and fills one per
-// active job of that family.
-const SLOT_COUNT = 11
-
 type SlotFamily = 'manufacturing' | 'research' | 'reaction'
 
 const SLOT_ROWS: { family: SlotFamily; label: string }[] = [
@@ -36,21 +31,53 @@ const ACTIVITY_FAMILY: Record<number, SlotFamily> = {
   9: 'reaction',
 }
 
-const emptySlotCounts = (): Record<SlotFamily, number> => ({ manufacturing: 0, research: 0, reaction: 0 })
+// The two skills that raise each family's parallel-job slot count. Every
+// character has 1 slot for free; each skill adds one slot per level (max 5),
+// so the ceiling is 1 + 5 + 5 = 11. active_skill_level (not trained) is what's
+// actually usable, matching what the game grants.
+const SLOT_SKILLS: { skillId: number; family: SlotFamily; name: string }[] = [
+  { skillId: 3387, family: 'manufacturing', name: 'Mass Production' },
+  { skillId: 24625, family: 'manufacturing', name: 'Advanced Mass Production' },
+  { skillId: 3406, family: 'research', name: 'Laboratory Operation' },
+  { skillId: 24624, family: 'research', name: 'Advanced Laboratory Operation' },
+  { skillId: 45748, family: 'reaction', name: 'Mass Reactions' },
+  { skillId: 45749, family: 'reaction', name: 'Advanced Mass Reactions' },
+]
+const SLOT_SKILL_IDS = SLOT_SKILLS.map((s) => s.skillId)
+const SKILL_FAMILY: Record<number, SlotFamily> = Object.fromEntries(SLOT_SKILLS.map((s) => [s.skillId, s.family]))
 
-const JobSlots = ({ counts }: { counts: Record<SlotFamily, number> }) => (
+// running: jobs still building; finished: jobs whose timer elapsed but that
+// still hold their slot until delivered (shown pulsing).
+type FamilyCount = { running: number; finished: number }
+type SlotCounts = Record<SlotFamily, FamilyCount>
+type SlotMax = Record<SlotFamily, number>
+
+const emptyCounts = (): SlotCounts => ({
+  manufacturing: { running: 0, finished: 0 },
+  research: { running: 0, finished: 0 },
+  reaction: { running: 0, finished: 0 },
+})
+// One slot per family before any skill is trained.
+const baseSlotMax = (): SlotMax => ({ manufacturing: 1, research: 1, reaction: 1 })
+
+const JobSlots = ({ counts, max }: { counts: SlotCounts; max: SlotMax }) => (
   <div className={styles.slots}>
     {SLOT_ROWS.map(({ family, label }) => {
-      const active = counts[family]
+      const { running, finished } = counts[family]
+      // Never hide a job: if skill data lags behind reality, widen the row to
+      // fit every occupied slot rather than clip it.
+      const slotCount = Math.max(max[family], running + finished)
       return (
         <div
           key={family}
           className={`${styles.slotRow} ${styles[family]}`}
-          title={`${label}: ${active} active job${active === 1 ? '' : 's'}`}
+          title={`${label}: ${running} running, ${finished} ready of ${max[family]} slot${max[family] === 1 ? '' : 's'}`}
         >
-          {range(0, SLOT_COUNT).map((i) => (
-            <span key={i} className={i < active ? `${styles.slot} ${styles.slotFilled}` : styles.slot} />
-          ))}
+          {range(0, slotCount).map((i) => {
+            if (i < running) return <span key={i} className={`${styles.slot} ${styles.slotFilled}`} />
+            if (i < running + finished) return <span key={i} className={`${styles.slot} ${styles.slotReady}`} />
+            return <span key={i} className={styles.slot} />
+          })}
         </div>
       )
     })}
@@ -136,22 +163,47 @@ const CharacterPage = async () => {
     })
   )
 
+  // Jobs that still hold a slot: running (status 'active') or ready to deliver
+  // (status 'ready'). A job whose timer elapsed but that ESI still reports as
+  // 'active' is treated as ready too, so the pulsing "deliver me" state doesn't
+  // wait on ESI flipping the status.
+  const nowMs = Date.now()
   const { data: industryJobs } = await supabase
     .from('character_industry_job')
-    .select('character_id, activity_id')
-    .eq('status', 'active')
+    .select('character_id, activity_id, status, end_date')
+    .in('status', ['active', 'ready'])
   const jobSlotCounts = reduce(
     (acc, j) => {
       const family = ACTIVITY_FAMILY[Number(j.activity_id)]
       if (family) {
-        const counts = acc.get(j.character_id as string) ?? emptySlotCounts()
-        counts[family] += 1
+        const counts = acc.get(j.character_id as string) ?? emptyCounts()
+        const finished = j.status === 'ready' || new Date(j.end_date as string).getTime() <= nowMs
+        counts[family][finished ? 'finished' : 'running'] += 1
         acc.set(j.character_id as string, counts)
       }
       return acc
     },
-    new Map<string, Record<SlotFamily, number>>(),
+    new Map<string, SlotCounts>(),
     industryJobs ?? []
+  )
+
+  // Per-character slot ceilings, derived from the two skills behind each family.
+  const { data: skillRows } = await supabase
+    .from('character_skill')
+    .select('character_id, skill_id, active_skill_level')
+    .in('skill_id', SLOT_SKILL_IDS)
+  const slotMax = reduce(
+    (acc, r) => {
+      const family = SKILL_FAMILY[Number(r.skill_id)]
+      if (family) {
+        const max = acc.get(r.character_id as string) ?? baseSlotMax()
+        max[family] += Number(r.active_skill_level) || 0
+        acc.set(r.character_id as string, max)
+      }
+      return acc
+    },
+    new Map<string, SlotMax>(),
+    skillRows ?? []
   )
 
   // If the player has turned off every optional ESI scope, characters they add
@@ -186,6 +238,7 @@ const CharacterPage = async () => {
             )}
             <div className={styles.body}>
               <div className={styles.name}>{c.name}</div>
+              <JobSlots counts={jobSlotCounts.get(c.id) ?? emptyCounts()} max={slotMax.get(c.id) ?? baseSlotMax()} />
               <div className={styles.meta}>
                 <span className={styles.metaLabel}>ISK:</span>
                 {latestBalance.has(c.id) ? formatBisk(latestBalance.get(c.id)!) : '—'}
@@ -222,7 +275,6 @@ const CharacterPage = async () => {
                   </ul>
                 </div>
               )}
-              <JobSlots counts={jobSlotCounts.get(c.id) ?? emptySlotCounts()} />
             </div>
           </li>
         ))}
