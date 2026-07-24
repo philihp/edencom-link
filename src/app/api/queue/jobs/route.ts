@@ -165,18 +165,6 @@ export const POST = handleCallback(async (message: Msg) => {
     return
   }
 
-  // character-skills runs as a Vercel Workflow too (src/workflows/characterSkills.ts).
-  // Like character-implants it's covered on the schedule by character-status; this
-  // standalone path is for manual/backfill runs and is in no dispatchRefresh list,
-  // so tracked refresh_task semantics don't apply.
-  if (job === 'character-skills') {
-    const { start } = await import('workflow/api')
-    const { characterSkillsWorkflow } = await import('@/workflows/characterSkills')
-    const run = await start(characterSkillsWorkflow, [ids])
-    console.log(`[queue/jobs] started workflow run=${run.runId} job=${job}`)
-    return
-  }
-
   try {
     const entry = JOBS[job]
     if (!entry) throw new Error(`unknown job: ${String(job)}`)
