@@ -4,6 +4,11 @@
   font-size: 12px;
 }
 
+.corpses {
+  margin: 0;
+  font-size: 12px;
+}
+
 .header {
   display: flex;
   align-items: center;

@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { Suspense } from 'react'
 import { map, reduce } from 'ramda'
@@ -73,19 +74,30 @@ const Locations = async () => {
   // to us and corp rows to corps we have a registered character in). The
   // "last refreshed" heartbeat doesn't depend on any of this, so it's fetched
   // in the same batch instead of after everything else resolves.
-  const [{ data: characterSummary }, { data: corpSummary }, owners, { data: lastRun }] = await Promise.all([
-    supabase.rpc('character_asset_location_summary'),
-    supabase.rpc('corp_asset_location_summary'),
-    fetchOwners(),
-    supabase
-      .from('heartbeat')
-      .select('ended_at, run_url')
-      .eq('job', 'character-assets')
-      .not('ended_at', 'is', null)
-      .order('ended_at', { ascending: false })
-      .limit(1)
-      .maybeSingle(),
-  ])
+  const [{ data: characterSummary }, { data: corpSummary }, owners, { data: lastRun }, { data: mainCharacter }] =
+    await Promise.all([
+      supabase.rpc('character_asset_location_summary'),
+      supabase.rpc('corp_asset_location_summary'),
+      fetchOwners(),
+      supabase
+        .from('heartbeat')
+        .select('ended_at, run_url')
+        .eq('job', 'character-assets')
+        .not('ended_at', 'is', null)
+        .order('ended_at', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      // The corpses share page is keyed on a character id; link the signed-in
+      // user to their own (their main character's), like the header used to.
+      supabase
+        .from('registration')
+        .select('character_id')
+        .order('is_main', { ascending: false })
+        .order('created_at', { ascending: true })
+        .limit(1)
+        .maybeSingle(),
+    ])
+  const mainCharacterId = mainCharacter?.character_id ?? null
 
   const summary: SummaryRow[] = [
     ...map(
@@ -125,6 +137,11 @@ const Locations = async () => {
 
   return (
     <>
+      {mainCharacterId != null && (
+        <p className={styles.corpses}>
+          <Link href={`/corpses/${mainCharacterId}`}>View frozen corpses</Link>
+        </p>
+      )}
       <AssetSearchForm />
       <AssetsTable locations={locations} owners={owners} />
       <p className={styles.lastRun}>
