@@ -238,7 +238,12 @@ const CharacterPage = async () => {
             )}
             <div className={styles.body}>
               <div className={styles.name}>{c.name}</div>
-              <JobSlots counts={jobSlotCounts.get(c.id) ?? emptyCounts()} max={slotMax.get(c.id) ?? baseSlotMax()} />
+              {/* Only show the job-slot bubbles for characters who have shared their
+                  skills — slotMax has an entry only when character_skill rows exist,
+                  so without the scope we don't guess a capacity, we show nothing. */}
+              {slotMax.has(c.id) && (
+                <JobSlots counts={jobSlotCounts.get(c.id) ?? emptyCounts()} max={slotMax.get(c.id)!} />
+              )}
               <div className={styles.meta}>
                 <span className={styles.metaLabel}>ISK:</span>
                 {latestBalance.has(c.id) ? formatBisk(latestBalance.get(c.id)!) : '—'}
