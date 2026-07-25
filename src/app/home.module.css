@@ -1,19 +1,32 @@
-.wrap {
-  margin: 24px auto;
+/*
+ * Landing page for signed-out visitors and a launchpad for signed-in ones.
+ * Built entirely from the theme's custom properties, so the marketing surface
+ * inherits dark mode and the warm palette along with the rest of the app.
+ */
+
+.page {
+  max-width: 1040px;
+  margin: 0 auto;
 }
 
-.welcome {
+/* Hero ------------------------------------------------------------------- */
+
+.hero {
+  margin-top: 28px;
+  padding: 44px 36px 40px;
+  text-align: center;
   border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--paper-raised);
-  padding: 18px 20px;
+  border-radius: calc(var(--radius) * 2);
+  background: radial-gradient(120% 140% at 50% 0%, var(--accent-tint) 0%, var(--paper-raised) 62%);
 }
 
-.title {
+.eyebrow {
   margin: 0;
-  font-size: 15px;
+  font-size: 11px;
   font-weight: 600;
-  color: var(--ink);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
 }
 
 .spark {
@@ -21,44 +34,266 @@
   margin-right: 8px;
 }
 
-.tip {
-  margin: 12px 0 0;
+.headline {
+  margin: 14px auto 0;
+  max-width: 18ch;
+  font-family: var(--serif);
+  font-size: 44px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  color: var(--ink);
+}
+
+.sub {
+  margin: 18px auto 0;
+  max-width: 62ch;
+  font-size: 15px;
+  line-height: 1.65;
   color: var(--ink-soft);
-  font-size: 13px;
 }
 
-.version {
-  margin: 12px 0 0;
-  color: var(--ink-faint);
-  font-size: 11px;
-}
-
-.prompt {
+.actions {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 22px auto 0;
-  padding: 12px 16px;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 26px;
+}
+
+.primary,
+.secondary {
+  padding: 10px 20px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 600;
+  border: 1px solid transparent;
+  transition:
+    background 0.12s ease,
+    border-color 0.12s ease,
+    transform 0.04s ease;
+}
+
+.primary,
+.primary:visited {
+  color: var(--paper-raised);
+  background: var(--accent);
+  border-color: var(--accent-strong);
+}
+
+.primary:hover {
+  background: var(--accent-strong);
+  text-decoration: none;
+}
+
+.secondary,
+.secondary:visited {
+  color: var(--ink);
+  background: var(--paper-raised);
+  border-color: var(--line);
+}
+
+.secondary:hover {
+  border-color: var(--accent);
+  text-decoration: none;
+}
+
+.primary:active,
+.secondary:active {
+  transform: translateY(1px);
+}
+
+.microcopy {
+  margin: 18px 0 0;
+  font-size: 12px;
+  color: var(--ink-faint);
+}
+
+/* Stat strip ------------------------------------------------------------- */
+
+.stats {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  margin-top: 14px;
+}
+
+.stat {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 16px 18px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  background: var(--paper-raised);
+}
+
+.statValue {
+  font-family: var(--mono);
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--accent);
+}
+
+.statLabel {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--ink-soft);
+}
+
+/* Sections --------------------------------------------------------------- */
+
+.section {
+  margin-top: 52px;
+}
+
+.sectionTitle {
+  margin: 8px 0 0;
+  font-family: var(--serif);
+  font-size: 26px;
+  font-weight: 500;
+  letter-spacing: -0.015em;
+  color: var(--ink);
+}
+
+/* Capability cards ------------------------------------------------------- */
+
+.cards {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  margin-top: 22px;
+}
+
+.card {
+  padding: 20px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--paper-raised);
-  color: var(--ink-faint);
+  transition:
+    border-color 0.12s ease,
+    transform 0.12s ease;
 }
 
-.caret {
-  color: var(--accent);
+.card:hover {
+  border-color: var(--accent);
+  transform: translateY(-2px);
+}
+
+.cardLabel {
+  margin: 0;
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--accent-tint);
+  color: var(--accent-strong);
+  font-size: 10px;
   font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
-.hints {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 18px;
-  margin: 14px auto 0;
-  color: var(--ink-faint);
-  font-size: 12px;
+.cardTitle {
+  margin: 12px 0 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink);
 }
 
-.hints a {
+.cardBody {
+  margin: 8px 0 0;
+  font-size: 13px;
+  line-height: 1.6;
   color: var(--ink-soft);
+}
+
+/* How it works ----------------------------------------------------------- */
+
+.steps {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  margin: 22px 0 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: step;
+}
+
+.step {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.stepNumber {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--paper-raised);
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--accent);
+}
+
+.stepTitle {
+  margin: 3px 0 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.stepBody {
+  margin: 6px 0 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--ink-soft);
+}
+
+/* Closing call to action ------------------------------------------------- */
+
+.closing {
+  margin: 56px 0 8px;
+  padding: 38px 30px;
+  text-align: center;
+  border: 1px solid var(--line);
+  border-radius: calc(var(--radius) * 2);
+  background: var(--accent-tint);
+}
+
+.closingTitle {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 26px;
+  font-weight: 500;
+  letter-spacing: -0.015em;
+  color: var(--ink);
+}
+
+.closingBody {
+  margin: 12px auto 0;
+  max-width: 54ch;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--ink-soft);
+}
+
+@media (max-width: 640px) {
+  .hero {
+    padding: 32px 20px;
+  }
+
+  .headline {
+    font-size: 32px;
+    max-width: none;
+  }
+
+  .sectionTitle,
+  .closingTitle {
+    font-size: 22px;
+  }
 }
