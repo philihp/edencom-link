@@ -40,11 +40,30 @@ export const getSdeTypes = (typeIDs: Iterable<number>): Promise<Record<number, S
     })
   })
 
-export const getSdeType = async (typeID: number): Promise<SdeType | null> => (await getSdeTypes([typeID]))[typeID] ?? null
+export const getSdeType = async (typeID: number): Promise<SdeType | null> =>
+  (await getSdeTypes([typeID]))[typeID] ?? null
 
 export const getSdeTypeNames = async (typeIDs: Iterable<number>): Promise<Record<number, string>> => {
   const types = await getSdeTypes(typeIDs)
   return Object.fromEntries(Object.entries(types).map(([id, t]) => [id, t.name]))
+}
+
+// Every published type in the given groups. Uncached (a handful of call sites,
+// each a user action), and small by construction — the callers pass specific
+// groups, not whole categories. Used to turn a structure "kind" into the hull
+// type ids a corp_structure query can filter on in SQL.
+export const getSdeTypesInGroups = async (groupIDs: Iterable<number>): Promise<SdeType[]> => {
+  const ids = [...groupIDs]
+  if (ids.length === 0) return []
+  const { data, error } = await sdeSupabase()
+    .from('sde_published_type')
+    .select('type_id, name, group_id, category_id')
+    .in('group_id', ids)
+  if (error) {
+    console.error(`[sdeTypes] group lookup failed: ${error.message}`)
+    return []
+  }
+  return (data ?? []).map((r) => rowToType(r as TypeRow))
 }
 
 // Search results now carry the category id (from the view's group→category

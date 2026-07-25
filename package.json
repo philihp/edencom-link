@@ -64,7 +64,9 @@
     "ping": "node src/ping-db.js",
     "prepare": "husky",
     "pretty": "prettier --write src/",
-    "start": "next start"
+    "start": "next start",
+    "test": "node --test \"test/**/*.test.ts\"",
+    "test:sql": "psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f test/sql/blueprint_search.sql"
   },
   "prettier": "@philihp/prettier-config",
   "devDependencies": {
