@@ -4,14 +4,15 @@
 // corp_structure is a small table with the solar system, hull type and owner
 // already on the row, so those filters are ordinary PostgREST predicates — no
 // RPC needed, but they still travel to Postgres rather than being applied to a
-// drained result set. Like blueprintQuery.ts this module imports nothing, so
-// the filter wiring and row shaping are unit-testable without a Supabase
-// client (see test/).
+// drained result set. Like blueprintQuery.ts this module pulls in no I/O — only
+// ts-pattern — so the filter wiring and row shaping are unit-testable without a
+// Supabase client (see test/).
+import { match } from 'ts-pattern'
 
 // EVE's Upwell hull groups (stable SDE group ids). Engineering complexes carry
 // a 1% manufacturing material role bonus, refineries a 1% reaction one, and
-// citadels neither — the same classification tools.ts already uses to decide
-// whether a structure's role bonus applies to a given activity.
+// citadels neither — tools.ts imports these to decide whether a structure's
+// role bonus applies to a given activity, so the ids live here only.
 export const ENGINEERING_COMPLEX_GROUP = 1404
 export const REFINERY_GROUP = 1406
 export const CITADEL_GROUP = 1657
@@ -19,13 +20,11 @@ export const CITADEL_GROUP = 1657
 export type StructureClass = 'citadel' | 'engineering_complex' | 'refinery'
 
 export const classForGroupId = (groupId: number | null | undefined): StructureClass | null =>
-  groupId === CITADEL_GROUP
-    ? 'citadel'
-    : groupId === ENGINEERING_COMPLEX_GROUP
-      ? 'engineering_complex'
-      : groupId === REFINERY_GROUP
-        ? 'refinery'
-        : null
+  match(groupId)
+    .with(CITADEL_GROUP, (): StructureClass => 'citadel')
+    .with(ENGINEERING_COMPLEX_GROUP, (): StructureClass => 'engineering_complex')
+    .with(REFINERY_GROUP, (): StructureClass => 'refinery')
+    .otherwise(() => null)
 
 // The subset of the PostgREST query builder these filters need, typed
 // structurally so a test can pass a recorder in place of a live builder. The
