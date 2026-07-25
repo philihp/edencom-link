@@ -493,7 +493,6 @@ as $$
 $$;
 
 grant execute on function public.character_asset_snapshot_at(uuid[], timestamptz) to service_role;
-grant execute on function public.character_asset_snapshot_at(uuid[], timestamptz) to authenticated;
 
 -- ── character_blueprint_over_time ─────────────────────────────────────────
 -- ESI /characters/{id}/blueprints/, written by the character-blueprints job.
@@ -945,7 +944,6 @@ as $$
 $$;
 
 grant execute on function public.character_orders(uuid[], timestamptz) to service_role;
-grant execute on function public.character_orders(uuid[], timestamptz) to authenticated;
 
 -- ── character_industry_job_over_time ──────────────────────────────────────
 -- ESI /characters/{id}/industry/jobs/ (include_completed), written by the
@@ -1085,7 +1083,6 @@ as $$
 $$;
 
 grant execute on function public.character_industry_jobs(uuid[], boolean, timestamptz) to service_role;
-grant execute on function public.character_industry_jobs(uuid[], boolean, timestamptz) to authenticated;
 
 -- ── character_location ────────────────────────────────────────────────────
 -- ESI /characters/{id}/location/, written by the character-location job. Live
@@ -2708,7 +2705,6 @@ as $$
 $$;
 
 grant execute on function public.corp_industry_jobs(uuid[], boolean, timestamptz) to service_role;
-grant execute on function public.corp_industry_jobs(uuid[], boolean, timestamptz) to authenticated;
 
 -- ── universe_name ─────────────────────────────────────────────────────────
 -- ESI /universe/names/, written by the universe-names job: cache of resolved
