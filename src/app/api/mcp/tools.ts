@@ -845,7 +845,7 @@ export const registerTools = (server: McpServer): void => {
     {
       title: 'List structures',
       description:
-        'The Upwell structures the user\'s corporations own and monitor — hull type, solar system, state, fuel expiry, online services, fitted rigs, and the derived material-efficiency bonus. Answers "which structures are in 27-HP0", "what runs out of fuel this week", or "where should I build this". Each row\'s structure_id is what blueprint_for_product takes as structure_id, so this explains why a material requirement came out at 18 instead of 20 — but me_bonus is a best case: its rig half assumes the fitted ME rig covers whatever you are building. A rig only bonuses products in the groups its filter covers, so blueprint_for_product (and rigs_for_blueprint) apply that per-product test and may come out lower.',
+        'The Upwell structures the user\'s corporations own and monitor — hull type and class, solar system and security, state, fuel expiry, online and offline services, and fitted rigs. Answers "which structures are in 27-HP0", "what runs out of fuel this week", or "what rigs are on the Athanor". Each row\'s structure_id is what blueprint_for_product and blueprints_using_material take as structure_id: pass it there to get a material bill costed for this structure, since what a fitted rig is worth depends on what you are building (use rigs_for_blueprint to check a rig covers a product).',
       annotations: { readOnlyHint: true },
       inputSchema: {
         system: z.string().optional().describe('Only structures in this solar system, e.g. "27-HP0"'),
@@ -929,8 +929,7 @@ export const registerTools = (server: McpServer): void => {
           systemName: (systemId) => systemNames[systemId] ?? null,
           security: (systemId) => {
             const security = systems[systemId]?.security ?? null
-            const { sec, band } = securityMultiplier(security)
-            return { multiplier: sec, band, display: security != null ? formatSecurity(security) : null }
+            return security != null ? formatSecurity(security) : null
           },
           fuelExpires: (structureId) => fuelByStructure.get(structureId) ?? null,
           rigs: (structureId) =>

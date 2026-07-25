@@ -206,13 +206,23 @@ type StructureRow = {
   state?: string
   services?: string[]
   rigs?: string[]         // from corp_structure_rig
-  me_bonus?: number       // derived: role bonus × rig × security multiplier
 }
 ```
 
-`me_bonus` is the payoff — it's what `blueprint_for_product` already derives
-internally from `structure_id`. Exposing it lets the agent explain *why* a
-material requirement came out at 18 instead of 20.
+**`me_bonus` was specified here, built, and then removed — don't add it back.**
+The idea was that it explains *why* a material requirement came out at 18
+instead of 20. It can't: a rig only bonuses products in the groups its filter
+covers (`src/app/blueprint/rigs.ts`), so there is no single material bonus for a
+structure independent of what is being built. A structure carrying only an
+Equipment Manufacturing rig has an `me_bonus` of zero for a ship and 2.4% for a
+module, and the field cannot say which. It was also a second hand-rolled copy of
+arithmetic that belongs to `eve-industry`'s `cost()`.
+
+The rigs *are* the fact worth returning, and this tool returns them. To explain a
+material requirement, pass the row's `structure_id` to `blueprint_for_product` or
+`blueprints_using_material`: those know the product, apply the per-product rig
+test, and report which rig was used and which were skipped. `rigs_for_blueprint`
+answers the applicability question on its own.
 
 ---
 
