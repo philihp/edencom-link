@@ -1,10 +1,13 @@
 # Phase 3: the per-character jobs → fan-out workflows
 
-The seven scheduled per-character jobs, whose cron routes today fan out one
-queue message per scoped character (`fanOutPerCharacterCronJob`, or the
-any-scope variant for `character-status`). After this phase, each cron
-route `start()`s a workflow that enumerates the characters itself and runs
-**one step per character**.
+**Status: ✅ done — all seven migrated.**
+
+The seven scheduled per-character jobs, whose cron routes used to fan out
+one queue message per scoped character (`fanOutPerCharacterCronJob`, or the
+any-scope variant for `character-status`). Each cron route now `start()`s a
+workflow that enumerates the characters itself and runs **one step per
+character**. Both fan-out helpers are unused on the scheduled path and get
+deleted in phase 5; the on-demand "Refresh ESI" queue path is unchanged.
 
 ## Why third
 
