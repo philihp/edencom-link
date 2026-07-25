@@ -9,17 +9,14 @@ import test from 'node:test'
 
 import {
   applyStructureFilters,
-  bestRigBonus,
   CITADEL_GROUP,
   classForGroupId,
-  computeMeBonus,
   corporationIdsFor,
   ENGINEERING_COMPLEX_GROUP,
   escapeLike,
   formatStructure,
   matchesServices,
   REFINERY_GROUP,
-  rigBonusFromName,
   type StructureRow,
 } from '../src/app/api/mcp/structureQuery.ts'
 
@@ -44,9 +41,6 @@ const recorder = () => {
   return { calls, query }
 }
 
-const HIGHSEC = { multiplier: 1, band: 'highsec', display: '0.9' }
-const NULLSEC = { multiplier: 2.1, band: 'nullsec', display: '-0.1' }
-
 const row = (over: Partial<StructureRow> = {}): StructureRow => ({
   structure_id: 1050603051889,
   corporation_id: 98000001,
@@ -68,7 +62,7 @@ const lookups = {
   hullName: (id: number) => (id === 35827 ? 'Sotiyo' : `Type #${id}`),
   hullGroupId: (id: number) => (id === 35827 ? ENGINEERING_COMPLEX_GROUP : CITADEL_GROUP),
   systemName: (id: number) => (id === 30000832 ? '27-HP0' : null),
-  security: () => NULLSEC,
+  security: () => '-0.1',
   fuelExpires: (id: string) => (id === '1050603051889' ? '2026-08-01T00:00:00Z' : null),
   rigs: () => ['Standup M-Set Equipment Manufacturing Material Efficiency II'],
 }
@@ -160,7 +154,7 @@ test('no services filter matches everything, including a structure with none', (
   assert.equal(matchesServices(row({ services: null }), ['manufacturing']), false)
 })
 
-// ── hull class and ME bonus ───────────────────────────────────────────────
+// ── hull class ────────────────────────────────────────────────────────────
 test('hull groups map to their Upwell class', () => {
   assert.equal(classForGroupId(CITADEL_GROUP), 'citadel')
   assert.equal(classForGroupId(ENGINEERING_COMPLEX_GROUP), 'engineering_complex')
@@ -169,40 +163,8 @@ test('hull groups map to their Upwell class', () => {
   assert.equal(classForGroupId(null), null)
 })
 
-test('rig tier comes from the name suffix, and the strongest ME rig wins', () => {
-  assert.equal(rigBonusFromName('Standup M-Set Material Efficiency II'), 0.024)
-  assert.equal(rigBonusFromName('Standup M-Set Material Efficiency I'), 0.02)
-  assert.equal(bestRigBonus(['Standup M-Set X Material Efficiency I', 'Standup M-Set Y Material Efficiency II']), 0.024)
-  // A rig that isn't an ME rig contributes nothing.
-  assert.equal(bestRigBonus(['Standup M-Set Time Efficiency II']), 0)
-  assert.equal(bestRigBonus([]), 0)
-})
-
-test('me_bonus composes the role, rig and security multipliers', () => {
-  // Engineering complex (1% role) + T2 ME rig (2.4%) in nullsec (×2.1):
-  //   1 - (1 - 0.01) × (1 - 0.024 × 2.1) = 1 - 0.99 × 0.9496 = 0.059896
-  const bonus = computeMeBonus(ENGINEERING_COMPLEX_GROUP, 0.024, NULLSEC)
-  assert.equal(bonus.activity, 'manufacturing')
-  assert.equal(bonus.role_bonus, 0.01)
-  assert.equal(bonus.security_multiplier, 2.1)
-  assert.equal(bonus.total_reduction, 0.059896)
-})
-
-test("a refinery's role bonus applies to reactions, a citadel's to nothing", () => {
-  assert.equal(computeMeBonus(REFINERY_GROUP, 0, HIGHSEC).activity, 'reaction')
-  assert.equal(computeMeBonus(REFINERY_GROUP, 0, HIGHSEC).role_bonus, 0.01)
-  const citadel = computeMeBonus(CITADEL_GROUP, 0, HIGHSEC)
-  assert.equal(citadel.role_bonus, 0)
-  assert.equal(citadel.total_reduction, 0)
-})
-
-test('security scales the rig bonus but never the role bonus', () => {
-  assert.equal(computeMeBonus(CITADEL_GROUP, 0.02, HIGHSEC).total_reduction, 0.02)
-  assert.equal(computeMeBonus(CITADEL_GROUP, 0.02, NULLSEC).total_reduction, 0.042)
-})
-
 // ── row shaping ───────────────────────────────────────────────────────────
-test('a structure row reports its id, hull, system, fuel, rigs, services and bonus', () => {
+test('a structure row reports its id, hull, system, fuel, rigs and services', () => {
   const out = formatStructure(row(), lookups)
   assert.deepEqual(out, {
     structure_id: '1050603051889',
@@ -217,16 +179,21 @@ test('a structure row reports its id, hull, system, fuel, rigs, services and bon
     services: ['Manufacturing (Standard)'],
     offline_services: ['Research'],
     rigs: ['Standup M-Set Equipment Manufacturing Material Efficiency II'],
-    me_bonus: {
-      activity: 'manufacturing',
-      role_bonus: 0.01,
-      rig_bonus: 0.024,
-      security_multiplier: 2.1,
-      security_band: 'nullsec',
-      total_reduction: 0.059896,
-    },
     last_seen_at: '2026-07-25T09:17:00Z',
   })
+})
+
+// A structure row reports the rigs and stops there. What a rig is worth depends
+// on the product (its filter only covers certain groups), and the arithmetic
+// belongs to eve-industry's cost(), reached through blueprint_for_product — so
+// no derived material-bonus field may reappear here.
+test('a structure row derives no material bonus of its own', () => {
+  const out = formatStructure(row(), lookups)
+  assert.deepEqual(
+    Object.keys(out).filter((k) => /bonus|reduction|efficiency/i.test(k)),
+    []
+  )
+  assert.deepEqual(out.rigs, ['Standup M-Set Equipment Manufacturing Material Efficiency II'])
 })
 
 test('a structure with every service online reports no offline_services key', () => {

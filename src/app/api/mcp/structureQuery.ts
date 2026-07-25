@@ -78,61 +78,12 @@ export type StructureRow = {
   last_seen_at: string
 }
 
-// The material-efficiency picture blueprint_for_product derives internally from
-// a structure_id. Exposing it is the point of this tool: it lets the agent
-// explain why a material requirement came out at 18 instead of 20 without a
-// second round trip.
-export type MeBonus = {
-  activity: 'manufacturing' | 'reaction'
-  role_bonus: number
-  rig_bonus: number
-  security_multiplier: number
-  security_band: string
-  // Combined material reduction as a fraction, e.g. 0.0604 for a 6.04% saving.
-  total_reduction: number
-}
-
-// A refinery's role bonus applies to reactions; every other Upwell hull that
-// has a role bonus applies it to manufacturing. cost() composes the three
-// reductions multiplicatively:  (1 - role) × (1 - rig × security).
-export const computeMeBonus = (
-  groupId: number | null,
-  rigBonus: number,
-  security: { multiplier: number; band: string }
-): MeBonus => {
-  const activity = groupId === REFINERY_GROUP ? 'reaction' : 'manufacturing'
-  const roleBonus = groupId === ENGINEERING_COMPLEX_GROUP || groupId === REFINERY_GROUP ? 0.01 : 0
-  const totalReduction = 1 - (1 - roleBonus) * (1 - rigBonus * security.multiplier)
-  return {
-    activity,
-    role_bonus: roleBonus,
-    rig_bonus: rigBonus,
-    security_multiplier: security.multiplier,
-    security_band: security.band,
-    // Six places is well past what any material count can resolve, and keeps
-    // the float noise out of the response.
-    total_reduction: Number(totalReduction.toFixed(6)),
-  }
-}
-
-// Tier of a Standup material-efficiency rig from its name: the "… II" variant
-// is T2 (2.4% base), the "… I" variant T1 (2.0%). Mirrors tools.ts.
-export const rigBonusFromName = (name: string): number => (/\bII$/.test(name.trim()) ? 0.024 : 0.02)
-
-// The strongest ME rig fitted; structures rarely carry more than one relevant
-// rig, and cost() takes a single knob.
-export const bestRigBonus = (rigNames: string[]): number =>
-  rigNames
-    .filter((n) => /Material Efficiency/i.test(n))
-    .map(rigBonusFromName)
-    .reduce((best, b) => Math.max(best, b), 0)
-
 export type StructureLookups = {
   ownerName: (corporationId: string) => string
   hullName: (typeId: number) => string
   hullGroupId: (typeId: number) => number | null
   systemName: (systemId: number) => string | null
-  security: (systemId: number) => { multiplier: number; band: string; display: string | null }
+  security: (systemId: number) => string | null
   fuelExpires: (structureId: string) => string | null
   rigs: (structureId: string) => string[]
 }
@@ -144,7 +95,6 @@ export const formatStructure = (row: StructureRow, lookups: StructureLookups): R
   const services = row.services ?? []
   const groupId = lookups.hullGroupId(typeId)
   const rigs = lookups.rigs(structureId)
-  const security = lookups.security(systemId)
   return {
     // The id blueprint_for_product takes as structure_id, so a listing chains
     // straight into the industry tools without the caller guessing ids.
@@ -154,7 +104,7 @@ export const formatStructure = (row: StructureRow, lookups: StructureLookups): R
     type: lookups.hullName(typeId),
     class: classForGroupId(groupId),
     system: lookups.systemName(systemId),
-    security: security.display,
+    security: lookups.security(systemId),
     state: row.state,
     fuel_expires: lookups.fuelExpires(structureId),
     ...(row.unanchors_at != null && { unanchors_at: row.unanchors_at }),
@@ -162,8 +112,13 @@ export const formatStructure = (row: StructureRow, lookups: StructureLookups): R
     ...(services.some((s) => s.state !== 'online') && {
       offline_services: services.filter((s) => s.state !== 'online').map((s) => s.name),
     }),
+    // The rigs are the raw fact; the material bonus they produce is not
+    // computable here. It depends on what is being built (a rig only covers the
+    // product groups its filter names), and where it is computed at all, it is
+    // eve-industry's cost() that does it — see blueprint_for_product. A
+    // me_bonus field here could only ever be a guess dressed as a number, and a
+    // second hand-rolled copy of that library's math.
     rigs,
-    me_bonus: computeMeBonus(groupId, bestRigBonus(rigs), security),
     last_seen_at: row.last_seen_at,
   }
 }
