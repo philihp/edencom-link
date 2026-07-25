@@ -121,8 +121,8 @@ New secrets (Vercel env vars + `.env.example`), introduced in stage 02:
   reinforcement.
 - Role mentions in the ping (`@dens` etc.) via `allowed_mentions` — needs
   per-channel config for which role to ping.
-- Notifications for dens *shared to my corp* (the
-  `character_mercenary_den_share` table), not just my own dens.
+- Notifications for dens *shared by corp/alliance mates* (everything the
+  `mercenary_den_visible_registrations()` helper returns), not just my own dens.
 - Notifications from the enemy-den intel corkboard (user-submitted
   reinforcements, `enemyDenIntel.tsx`).
 - Other notification sources riding the same outbox: industry-job

@@ -3,17 +3,16 @@
 import { revalidatePath } from 'next/cache'
 
 import { createClient } from '@/utils/supabase/server'
-import { createServiceClient } from '@/utils/supabase/service'
 
-// Reconcile which corporations the caller shares their Mercenary Den data
-// with — both their own deployed dens and any enemy-den intel they report
-// (mercenary_den_enemy_intel gates visibility off this same preference). One
-// row per (character, chosen corp), independent of whether that character has
-// a den deployed right now. character_mercenary_den_share is RLS-free for
-// writes (authenticated has no insert/update/delete grant), so writes go
-// through the service role — scoped here to corporations the caller actually
-// owns a character in. Returns { error } on failure.
-export const setSharedCorps = async (corpIds: number[]): Promise<{ error?: string }> => {
+// Turn the caller's Mercenary Den sharing on or off. Sharing is with the
+// corporations and alliances the caller's own characters belong to, and it's on
+// by default — so the stored state is the *exception*: a
+// mercenary_den_share_opt_out row means "don't share", and no row means shared.
+// This covers both their deployed dens and any enemy-den intel they report
+// (mercenary_den_enemy_intel resolves visibility through the same preference).
+// RLS lets a user insert/delete only their own row, so this runs on the cookie
+// session client rather than the service role. Returns { error } on failure.
+export const setDenSharing = async (enabled: boolean): Promise<{ error?: string }> => {
   const supabase = await createClient()
 
   const {
@@ -23,39 +22,18 @@ export const setSharedCorps = async (corpIds: number[]): Promise<{ error?: strin
     return { error: 'Not signed in' }
   }
 
-  const service = createServiceClient()
-
-  // The caller's characters and the corps they belong to — they can only share
-  // to corporations one of their own characters is in.
-  const { data: regs } = await service.from('registration').select('id, corporation_id').eq('user_id', user.id)
-  const registrationIds = (regs ?? []).map((r) => r.id)
-  if (registrationIds.length === 0) return {}
-
-  const ownCorps = new Set(
-    (regs ?? [])
-      .map((r) => r.corporation_id)
-      .filter((c): c is number => c != null)
-      .map(Number)
-  )
-  const corps = [...new Set(corpIds.map(Number))].filter((c) => ownCorps.has(c))
-
-  // Replace this user's shares wholesale: clear their existing rows, then insert
-  // the desired (character × chosen corp) set.
-  const { error: delError } = await service
-    .from('character_mercenary_den_share')
-    .delete()
-    .in('character_id', registrationIds)
-  if (delError) {
-    return { error: delError.message }
-  }
-
-  if (corps.length > 0) {
-    const rows = registrationIds.flatMap((character_id) =>
-      corps.map((corporation_id) => ({ character_id, corporation_id }))
-    )
-    const { error: insError } = await service.from('character_mercenary_den_share').insert(rows)
-    if (insError) {
-      return { error: insError.message }
+  if (enabled) {
+    const { error } = await supabase.from('mercenary_den_share_opt_out').delete().eq('user_id', user.id)
+    if (error) {
+      return { error: error.message }
+    }
+  } else {
+    // Plain insert rather than upsert: there's no update policy on the table (a
+    // row carries no state beyond its existence), so re-opting-out when the row
+    // already exists is a no-op, not an error.
+    const { error } = await supabase.from('mercenary_den_share_opt_out').insert({ user_id: user.id })
+    if (error && error.code !== '23505') {
+      return { error: error.message }
     }
   }
 
