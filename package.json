@@ -84,6 +84,6 @@
     "prettier": "3.9.6",
     "supabase": "2.109.1",
     "typescript": "6.0.3",
-    "typescript-eslint": "8.64.0"
+    "typescript-eslint": "8.65.0"
   }
 }
