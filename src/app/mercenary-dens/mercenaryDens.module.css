@@ -14,32 +14,37 @@
   margin-top: 4pt;
 }
 
-/* Corp-sharing picker in the page header. */
-.shareCorps {
+/* Alliance-sharing picker in the page header. */
+.share {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
   gap: 3pt;
 }
 
-.shareCorpsLabel {
+.shareLabel {
   font-size: 9pt;
   color: var(--ink-soft);
 }
 
-.shareCorpsList {
+.shareList {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 4pt 12pt;
 }
 
-.shareCorp {
+.shareToggle {
   display: flex;
   align-items: center;
   gap: 6pt;
   cursor: pointer;
   white-space: nowrap;
+}
+
+.shareAudience {
+  font-family: var(--serif);
+  color: var(--ink);
 }
 
 .shareStatus {

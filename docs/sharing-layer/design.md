@@ -16,7 +16,7 @@ alternatives (public `user_id`, bloom filters).
 
 | Data | Mechanism today | Shape |
 |---|---|---|
-| Mercenary dens | `character_mercenary_den_share` | All-or-nothing per (character → corporation); no per-den rows, no alliance audience. Also gates `mercenary_den_enemy_intel` visibility, via the `user_shares_dens_with_caller` / `mercenary_den_owner_names` SECURITY DEFINER helpers (to be deleted). |
+| Mercenary dens | `character_mercenary_den_share` | Opt-in, all-or-nothing per (character → **alliance**); no per-den rows. Corporation audiences were migrated to their alliance. Also gates `mercenary_den_enemy_intel` visibility (re-keyed to `reporter_id`). **Already on the target model**: the SECURITY DEFINER helpers are gone, so the policies are plain invoker-rights joins via `my_alliance_ids()` / `mercenary_den_shared_with_caller()`, with owner names off the `character_directory`. |
 | Structures | Hard-coded RLS policy on `corp_structure` | Alliance-mates read the core table unconditionally (dynamic via `corporation.alliance_id`); no opt-out. Fuel already split into `corp_structure_status` (own-corp only). |
 | Assets | `shared_asset_token` | Public per-item token links, resolved server-side via the service role; no anon RLS. |
 
@@ -253,8 +253,19 @@ needed public identity.
 
 ### Stage B — Mercenary dens
 
-New-shape `character_mercenary_den_share` (replacing the current table
-in place):
+> **Mostly done.** `character_mercenary_den_share` was migrated in place from a
+> per-corporation audience to a per-**alliance** one (each existing row rewritten
+> to its corporation's alliance; rows aimed at an alliance-less corp dropped, as
+> that audience no longer exists in the model). Shipped with it: the
+> definer-helper deletion, the invoker-rights `my_alliance_ids()` and
+> `mercenary_den_shared_with_caller()` helpers, owner names off the
+> `character_directory`, writes moved from the service role onto plain RLS, and
+> the enemy-intel `reporter_id` re-key and backfill — all as described below.
+>
+> Still open below: per-den scope (`den_id`), audiences beyond alliance, tokens
+> and expiry, and the orphan-share affordance.
+
+New-shape `character_mercenary_den_share`:
 
 ```sql
 character_id  uuid not null references registration(id) on delete cascade,  -- grantor: the den-owning character
@@ -262,35 +273,37 @@ den_id        bigint,                    -- scope: one den (null = all of this c
 audience / audience_corporation_id / token / created_at / expires_at
 ```
 
-- **Migration is 1:1**: today's rows are already per (character, corp) — each
-  becomes `(character_id, den_id = null, audience = 'corporation',
-  audience_corporation_id = corporation_id)`.
+- **Migration is 1:1** — *done*: each (character, corporation) row became
+  (character, that corporation's alliance), collapsing duplicates where two
+  corporations shared an alliance.
 - **Policies rewritten** as plain joins (pattern above) on
-  `character_mercenary_den_over_time` and `character_mercenary_den_status`.
-- **Delete the definer helpers** `mercenary_den_owner_names` and
-  `user_shares_dens_with_caller` (from migration `20260720050000`): shared-den
-  owner names now come from the public `character_directory`
-  (`character_directory.registration_id = den.character_id`), and intel visibility is
-  re-keyed (next point).
-- **Enemy intel created and owned by the main character**:
+  `character_mercenary_den_over_time` and `character_mercenary_den_status` —
+  *done*.
+- **Delete the definer helpers** — *done*: `mercenary_den_owner_names` and
+  `user_shares_dens_with_caller` (from migration `20260720050000`) are gone.
+  Shared-den owner names come from the public `character_directory`
+  (`character_directory.registration_id = den.character_id`), and intel
+  visibility is re-keyed (next point).
+- **Enemy intel created and owned by the main character** — *done*:
   `mercenary_den_enemy_intel` gains `reporter_id uuid references
   registration(id) on delete set null`, set on insert to the submitting
   user's **main** registration (already the name the UI attributes reports
   to). Ownership moves with it: the read-own / insert / soft-delete policies
   re-key to "`reporter_id` is one of my registrations," and cross-user
-  visibility becomes "a share row of `reporter_id` matches the viewer" — a
-  plain join. The denormalized `reported_by` name can then come from the
-  `character_directory` instead of being stored per row. Backfill: match
+  visibility becomes "`reporter_id`'s directory entry matches the viewer" — a
+  plain join. (The denormalized `reported_by` name could later come from the
+  `character_directory` instead of being stored per row; still stored today.)
+  Backfill: match
   `created_by`'s registration whose `name = reported_by`, else that user's
   main. `created_by` remains only as audit metadata and the ownership
   fallback for rows orphaned by a character unlink (`reporter_id` nulled) —
   those stay visible and deletable to their submitter, invisible to everyone
   else.
-- **UI** (`shareCorps.tsx`): per-character grantor means the picker persists
-  one row per (registered character × chosen target). Targets: each of the
-  caller's corporations, plus (new) each corp's **alliance**. Orphaned shares
-  (grantor character no longer owns any matching den) listed with a delete
-  affordance.
+- **UI** (`shareAlliance.tsx`): today a checkbox per alliance the caller has a
+  character in, written across all their registrations at once. Per-den scope and
+  non-alliance audiences would extend it to a per-character × per-target grid.
+  Orphaned shares (grantor character no longer owns any matching den) listed with
+  a delete affordance — not built.
 
 ### Stage C — `character-roles` extract
 
@@ -389,7 +402,7 @@ migration under `supabase/migrations/`.
 |---|---|---|---|
 | 1 | — | This design revision | Done in this PR. |
 | 2 | A | `character_directory` table + `character-directory` extract job | **Done.** New table per "Identity split" (PK `character_id` bigint; **no `user_id`**; nullable unique `registration_id`). Job resolves via `POST /characters/affiliation/` (bulk, no auth — the response already carries `alliance_id` per character, so no per-id corp/alliance GET is needed) and backfills corp/alliance names from bulk `POST /universe/names/`; `alliance.name`/`corporation.name` relaxed to nullable so an id is recorded even when its name lookup lags. **Subsumed and retired `character-affiliations`** (same source endpoint): took over its 11:41 daily slot, queue key, `ACCOUNT_JOBS` entry, cron route, and duties (upsert `character_affiliation`, refresh `registration.corporation_id`); the `character_affiliation` table stays (still read by `resolveNames`/structure pages). Also finally populates `corporation.alliance_id`, which the *existing* `corp_structure` alliance policy already depends on. Directory covers registered + universe_name-cached characters; extending to other seen ids (e.g. `corp_industry_job.installer_id`) is a later nicety. |
-| 3 | B | Den shares on the new model + shared helpers | `my_corporation_ids` / `my_alliance_ids` / `share_audience_matches` (invoker; land here since this is their first consumer). Rebuild `character_mercenary_den_share` (1:1 migration), rewrite den/status policies as plain joins, delete both definer helpers, move enemy-intel creation/ownership to the main character (`reporter_id` + backfill; `created_by` demoted to audit/orphan fallback), rework the picker (per-character rows, alliance targets, orphan list). `/mercenary-dens` owner-name resolution switches to the `character_directory`. Depends on PR 2. |
+| 3 | B | Den shares on the new model + shared helpers | **Largely done.** `character_mercenary_den_share` was migrated in place from a per-corporation to a per-alliance audience (1:1, collapsing duplicates; rows aimed at an alliance-less corp dropped). `my_alliance_ids` and `mercenary_den_shared_with_caller` landed as invoker helpers, den/status policies are plain joins, both definer helpers are deleted, writes moved off the service role onto RLS, and enemy intel is re-keyed to `reporter_id` (backfilled; `created_by` demoted to audit/orphan fallback). `/mercenary-dens` owner-name resolution now goes through the `character_directory`. Remaining: `my_corporation_ids` / `share_audience_matches` (land with the first consumer that needs a non-alliance audience), per-den scope, tokens/expiry, and the orphan list. Depended on PR 2. |
 | 4 | C | `character-roles` extract + `is_director()` | Independent of PR 3; must precede PR 5. Scope opt-in UI + refresh-matrix row like any per-character job. |
 | 5 | D | `corp_structure_share` + seeded alliance default + policy cutover | Seed rows for every existing corp in the migration itself (cutover parity), `structure_share_seeded_at` for seed-once, Director-gated writes, opt-out UI on `/structure`. Depends on PRs 2 (alliance resolution), 3 (helpers), 4 (Director). |
 | 6 | E | `character_asset_share` + `shared_asset_token` migration + containment helper | Tokens preserved so existing URLs keep working. Resolve the RLS recursion question flagged in Stage E before merging. Depends on PR 3 (helpers). |

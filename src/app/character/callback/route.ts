@@ -11,13 +11,7 @@ import { sso } from '../sso'
 
 const upsertCharacter =
   (supabase: SupabaseClient) =>
-  async (columns: {
-    user_id: string
-    owner: string
-    name: string
-    character_id: number
-    corporation_id?: number
-  }) => {
+  async (columns: { user_id: string; owner: string; name: string; character_id: number; corporation_id?: number }) => {
     const response = await supabase.from('registration').upsert(columns, { onConflict: 'user_id, owner' }).select()
     if (response.error) throw new Error(`upsert character failed: ${JSON.stringify(response.error)}`)
     if (!response.data?.[0]?.id) throw new Error(`upsert character returned no row: ${JSON.stringify(response)}`)

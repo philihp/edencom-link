@@ -4,21 +4,21 @@ import { getSdePlanets } from '@/sdePlanets'
 import { getSdeTypeNames } from '@/sdeTypes'
 import { createClient } from '@/utils/supabase/server'
 
-import { fetchOwners } from '../owners'
 import { Countdown } from './countdown'
 import CopyDiscordPing from './copyDiscordPing'
 import { STAGING, TEMPERATE_PLANETS } from './data'
 import { formatDuration, formatUtc } from './duration'
 import EnemyDenIntel, { type EnemyDenIntelRow } from './enemyDenIntel'
-import ShareCorps from './shareCorps'
+import ShareAlliance from './shareAlliance'
 import { Topology, type NodeColor } from './topology'
 import styles from './mercenaryDens.module.css'
 
 export const dynamic = 'force-dynamic'
 
-// A den we can see in the DB — our own, plus dens shared to one of our corps
+// A den we can see in the DB — our own, plus dens shared to one of our alliances
 // (RLS on character_mercenary_den only ever surfaces those). So every DB den is
-// "ours" for colouring purposes; external dens come only from the hand-kept intel.
+// "ours" for colouring purposes; external dens come only from the hand-kept
+// intel.
 type DenRow = {
   character_id: string
   den_id: number
@@ -65,12 +65,10 @@ const MercenaryDensPage = async () => {
     redirect('/')
   }
 
-  // The caller's characters + corporations (share targets, and to label/scope own
-  // dens) and which corps their dens are currently shared with.
-  const { corporations } = await fetchOwners(supabase)
+  // The caller's characters, to label/scope their own dens.
   const { data: myRegs } = await supabase
     .from('registration')
-    .select('id, name, character_id, is_main')
+    .select('id, name, character_id, corporation_id, is_main')
     .order('is_main', { ascending: false })
   const ownRegById = new Map(
     (myRegs ?? []).map((r) => [
@@ -78,37 +76,69 @@ const MercenaryDensPage = async () => {
       { name: r.name as string, characterId: r.character_id != null ? String(r.character_id) : null },
     ])
   )
+
+  // The alliances the caller has a character in — the audiences they can share
+  // with, and everything the picker offers (usually just the one). Resolved
+  // registration → corporation → alliance; both directory tables are
+  // world-readable, and this mirrors the my_alliance_ids() SQL helper the
+  // sharing policies use.
+  const ownCorpIds = [...new Set((myRegs ?? []).map((r) => r.corporation_id).filter((c): c is number => c != null))]
+  const { data: myCorps } = ownCorpIds.length
+    ? await supabase.from('corporation').select('corporation_id, alliance_id').in('corporation_id', ownCorpIds)
+    : { data: [] }
+  const allianceIds = [...new Set((myCorps ?? []).map((c) => c.alliance_id).filter((a): a is number => a != null))]
+  const { data: myAlliances } = allianceIds.length
+    ? await supabase.from('alliance').select('alliance_id, name').in('alliance_id', allianceIds)
+    : { data: [] }
+  const alliances = (myAlliances ?? []).map((a) => ({
+    id: String(a.alliance_id),
+    name: a.name ?? `Alliance #${a.alliance_id}`,
+  }))
+
+  // Which of those the caller currently shares with. Sharing is opt-in — no rows
+  // means shared with nobody — and the rows are per registration, while the UI
+  // is one choice for the whole account, so an alliance counts as ticked when
+  // any of the caller's characters shares with it (which is how the action
+  // writes them: all characters at once).
   const registrationIds = [...ownRegById.keys()]
   const { data: shares } = registrationIds.length
-    ? await supabase.from('character_mercenary_den_share').select('corporation_id').in('character_id', registrationIds)
+    ? await supabase.from('character_mercenary_den_share').select('alliance_id').in('character_id', registrationIds)
     : { data: [] }
-  const sharedCorpIds = [...new Set((shares ?? []).map((s) => String(s.corporation_id)))]
+  const sharedAllianceIds = [...new Set((shares ?? []).map((s) => String(s.alliance_id)))]
 
-  // Every mercenary den we can see (own + shared to our corps), each enriched
-  // with its latest observed status (the view left-joins it).
+  // Every mercenary den we can see (own + shared to one of our alliances), each
+  // enriched with its latest observed status (the view left-joins it).
   const { data: denData } = await supabase.from('character_mercenary_den').select('*')
   const dens = (denData ?? []) as DenRow[]
 
   // Resolve owner identity for dens we can see but don't own (shared to one of
-  // our corps). Their registration is hidden from us by RLS, so a
-  // security-definer RPC returns just the public EVE name + id for own +
-  // shared-to-us registrations — without it a shared den shows only "Corpmate".
+  // our alliances). Their registration is hidden from us by RLS, but
+  // character_directory carries the public half of the same identity — name and
+  // EVE character id, keyed by registration and deliberately free of user_id —
+  // and is world-readable, so this is a plain join rather than a definer bridge.
+  // Without it a shared den would show only "Corpmate".
   const denOwnerById = new Map(ownRegById)
   const foreignOwnerIds = [...new Set(dens.map((d) => d.character_id))].filter((id) => !denOwnerById.has(id))
   if (foreignOwnerIds.length) {
-    const { data: owners } = await supabase.rpc('mercenary_den_owner_names', { reg_ids: foreignOwnerIds })
-    for (const o of (owners ?? []) as { id: string; name: string; character_id: number | null }[]) {
-      denOwnerById.set(o.id, { name: o.name, characterId: o.character_id != null ? String(o.character_id) : null })
+    const { data: owners } = await supabase
+      .from('character_directory')
+      .select('registration_id, name, character_id')
+      .in('registration_id', foreignOwnerIds)
+    for (const o of (owners ?? []) as { registration_id: string; name: string; character_id: number | null }[]) {
+      denOwnerById.set(o.registration_id, {
+        name: o.name,
+        characterId: o.character_id != null ? String(o.character_id) : null,
+      })
     }
   }
 
   // Hand-submitted enemy-den sightings — a submitter always sees their own, and
-  // sees others' reports exactly when that submitter shares their Mercenary Den
-  // data with one of the caller's corps (mercenary_den_enemy_intel's RLS
-  // piggybacks on character_mercenary_den_share). Soonest reinforcement timer
-  // first. Only rows whose reinforcement timer is still in the future or expired
-  // less than an hour ago are shown (long-stale and undated rows drop off), and
-  // soft-deleted rows (deleted_at set) are hidden.
+  // sees others' reports exactly when that submitter's dens are visible to them
+  // (mercenary_den_enemy_intel's RLS resolves through the same share rows as
+  // real dens). Soonest reinforcement timer first. Only rows
+  // whose reinforcement timer is still in the future or expired less than an
+  // hour ago are shown (long-stale and undated rows drop off), and soft-deleted
+  // rows (deleted_at set) are hidden.
   const reinforcementCutoff = new Date(Date.now() - 60 * 60 * 1000).toISOString()
   const { data: intelData } = await supabase
     .from('mercenary_den_enemy_intel')
@@ -213,7 +243,7 @@ const MercenaryDensPage = async () => {
     <>
       <div className={styles.pageHeader}>
         <h1>Mercenary Dens</h1>
-        <ShareCorps corporations={corporations} sharedCorpIds={sharedCorpIds} />
+        <ShareAlliance alliances={alliances} sharedAllianceIds={sharedAllianceIds} />
       </div>
       <p className={styles.subtitle}>
         Systems immediately accessible from our staging system, <span className={styles.system}>{STAGING}</span>.
