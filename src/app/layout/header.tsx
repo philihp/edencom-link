@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { createClient } from '@/utils/supabase/server'
 import { Freshness } from '../Freshness'
+import { CharacterName } from '../names'
 import styles from './header.module.css'
 
 const Header = async () => {
@@ -46,7 +47,11 @@ const Header = async () => {
           <Link href="/" className={styles.brand}>
             Edencom Link
           </Link>
-          {displayName && <span className={styles.user}>{displayName}</span>}
+          {displayName && (
+            <span className={styles.user}>
+              <CharacterName name={displayName} />
+            </span>
+          )}
           {user && (
             <span className={styles.refresh}>
               <Freshness at={lastRefreshedAt} prefix="Refreshed" never="never refreshed" />
