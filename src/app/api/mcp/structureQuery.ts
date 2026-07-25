@@ -164,6 +164,15 @@ export const formatStructure = (row: StructureRow, lookups: StructureLookups): R
     }),
     rigs,
     me_bonus: computeMeBonus(groupId, bestRigBonus(rigs), security),
+    // A rig only bonuses products its filter covers (an Equipment rig does
+    // nothing for a ship build), and that can't be decided without knowing what
+    // is being built — so the rig half of me_bonus is a best case. The tools
+    // that do know the product apply the real test; say so rather than letting
+    // the number read as settled.
+    ...(bestRigBonus(rigs) > 0 && {
+      me_bonus_assumes_applicable_rig:
+        "rig_bonus assumes a fitted ME rig covers what you're building. Use rigs_for_blueprint, or pass this structure_id to blueprint_for_product, to apply the real per-product test.",
+    }),
     last_seen_at: row.last_seen_at,
   }
 }

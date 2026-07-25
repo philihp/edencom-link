@@ -225,8 +225,21 @@ test('a structure row reports its id, hull, system, fuel, rigs, services and bon
       security_band: 'nullsec',
       total_reduction: 0.059896,
     },
+    me_bonus_assumes_applicable_rig:
+      "rig_bonus assumes a fitted ME rig covers what you're building. Use rigs_for_blueprint, or pass this structure_id to blueprint_for_product, to apply the real per-product test.",
     last_seen_at: '2026-07-25T09:17:00Z',
   })
+})
+
+// The fixture's rig is an *Equipment* Manufacturing rig, which bonuses nothing
+// about a ship build — exactly why me_bonus can't be read as settled without a
+// product. A structure with no ME rig has no such caveat to make.
+test('the applicable-rig caveat appears only when a rig contributed to me_bonus', () => {
+  const withRig = formatStructure(row(), { ...lookups, rigs: () => ['Standup M-Set Ship Manufacturing Material Efficiency II'] })
+  assert.ok('me_bonus_assumes_applicable_rig' in withRig)
+  const noRig = formatStructure(row(), { ...lookups, rigs: () => [] })
+  assert.ok(!('me_bonus_assumes_applicable_rig' in noRig))
+  assert.equal((noRig.me_bonus as { rig_bonus: number }).rig_bonus, 0)
 })
 
 test('a structure with every service online reports no offline_services key', () => {

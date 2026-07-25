@@ -845,7 +845,7 @@ export const registerTools = (server: McpServer): void => {
     {
       title: 'List structures',
       description:
-        'The Upwell structures the user\'s corporations own and monitor — hull type, solar system, state, fuel expiry, online services, fitted rigs, and the derived material-efficiency bonus. Answers "which structures are in 27-HP0", "what runs out of fuel this week", or "where should I build this". Each row\'s structure_id is what blueprint_for_product takes as structure_id, and me_bonus is the same bonus that tool derives internally — so this explains why a material requirement came out at 18 instead of 20.',
+        'The Upwell structures the user\'s corporations own and monitor — hull type, solar system, state, fuel expiry, online services, fitted rigs, and the derived material-efficiency bonus. Answers "which structures are in 27-HP0", "what runs out of fuel this week", or "where should I build this". Each row\'s structure_id is what blueprint_for_product takes as structure_id, so this explains why a material requirement came out at 18 instead of 20 — but me_bonus is a best case: its rig half assumes the fitted ME rig covers whatever you are building. A rig only bonuses products in the groups its filter covers, so blueprint_for_product (and rigs_for_blueprint) apply that per-product test and may come out lower.',
       annotations: { readOnlyHint: true },
       inputSchema: {
         system: z.string().optional().describe('Only structures in this solar system, e.g. "27-HP0"'),

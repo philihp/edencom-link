@@ -11,6 +11,10 @@
 -- definer`), so RLS on the underlying *_over_time tables still scopes rows to
 -- the caller's own characters/corps. The character_ids argument only narrows
 -- further. service_role keeps its existing grant.
+--
+-- Timestamped 01:00:00 rather than 00:00:00 because 20260725000000 is already
+-- taken by blueprint_search.sql on main; two files sharing a version collide in
+-- the migration history table, which keys on the version, not the filename.
 grant execute on function public.character_asset_snapshot_at(uuid[], timestamptz) to authenticated;
 grant execute on function public.character_orders(uuid[], timestamptz) to authenticated;
 grant execute on function public.character_industry_jobs(uuid[], boolean, timestamptz) to authenticated;

@@ -9,7 +9,7 @@ import { z } from 'zod'
 
 import { resolveLocations, type LocationRef } from '@/app/resolveLocations'
 import { getSdePlanets } from '@/sdePlanets'
-import { getSdeSystem, searchSdeSystems } from '@/sdeSystems'
+import { searchSdeSystems } from '@/sdeSystems'
 import { getSdeTypeNames } from '@/sdeTypes'
 import { createBearerClient } from '@/utils/supabase/bearer'
 
@@ -126,6 +126,7 @@ export const registerEstateTools = (server: McpServer): void => {
       title: 'Browse assets by location',
       description:
         'Walk the user\'s hangars by place instead of by item name: with no arguments, every station, structure, and system where they hold assets, with stack counts; with a location, the items sitting directly in it. Answers "what do I have in Jita" or "what\'s in that container". Use search_assets when you know the item name and want to find where it is.',
+      annotations: { readOnlyHint: true },
       inputSchema: {
         location: z
           .string()
@@ -261,135 +262,12 @@ export const registerEstateTools = (server: McpServer): void => {
   )
 
   server.registerTool(
-    'list_structures',
-    {
-      title: 'List structures',
-      description:
-        'The Upwell structures the user\'s corporations own or monitor: hull type, system, state, fuel expiry, fitted service modules, and fitted rigs. Answers "which structures run out of fuel this week" or "what rigs are on the Athanor". Also the way to find a structure_id to pass to blueprint_for_product / blueprints_using_material.',
-      inputSchema: {
-        structure: z.string().optional().describe('Only structures whose name matches this substring'),
-        fuel_expiring_within_days: z
-          .number()
-          .int()
-          .min(1)
-          .max(365)
-          .optional()
-          .describe(
-            'Only structures whose fuel runs out within this many days (structures with no known fuel timer are excluded)'
-          ),
-      },
-    },
-    async ({ structure, fuel_expiring_within_days }, extra) => {
-      const supabase = clientFor(extra)
-      if (!supabase) return textResult('Missing bearer token.')
-
-      type StructureRow = {
-        structure_id: number | string
-        corporation_id: number | string
-        type_id: number | string
-        system_id: number | string
-        name: string | null
-        state: string | null
-        unanchors_at: string | null
-        services: Array<{ name: string; state: string }> | null
-      }
-      const { data: structureRows } = await supabase
-        .from('corp_structure')
-        .select('structure_id, corporation_id, type_id, system_id, name, state, unanchors_at, services')
-        .order('structure_id', { ascending: true })
-
-      const all = (structureRows ?? []) as StructureRow[]
-      const needle = structure?.trim().toLowerCase()
-      const list = needle ? all.filter((s) => (s.name ?? '').toLowerCase().includes(needle)) : all
-      if (list.length === 0) {
-        return textResult(
-          needle
-            ? `No monitored structure matched "${structure}".`
-            : 'No structures visible. A director character with the Structures scope needs to be linked for the corp-structures job to see them.'
-        )
-      }
-
-      const structureIds = list.map((s) => Number(s.structure_id))
-      // Fuel timers live in corp_structure_status (own-corp only): RLS returns a
-      // row only for structures the caller's corp owns, so an alliance-mate's
-      // structure visible via corp_structure simply has no fuel here.
-      const [{ data: statusRows }, { data: rigRows }] = await Promise.all([
-        supabase.from('corp_structure_status').select('structure_id, fuel_expires').in('structure_id', structureIds),
-        supabase
-          .from('corp_structure_rig')
-          .select('structure_id, location_flag, type_id')
-          .in('structure_id', structureIds)
-          .order('location_flag', { ascending: true }),
-      ])
-      const fuelByStructure = new Map(
-        ((statusRows ?? []) as Array<{ structure_id: number | string; fuel_expires: string | null }>).map((r) => [
-          String(r.structure_id),
-          r.fuel_expires,
-        ])
-      )
-
-      const rigList = (rigRows ?? []) as Array<{ structure_id: number | string; type_id: number | string }>
-      const typeNames = await getSdeTypeNames([
-        ...list.map((s) => Number(s.type_id)),
-        ...rigList.map((r) => Number(r.type_id)),
-      ])
-      const rigsByStructure = new Map<string, Array<{ typeId: number; name: string }>>()
-      rigList.forEach((r) => {
-        const key = String(r.structure_id)
-        const entry = rigsByStructure.get(key) ?? []
-        entry.push({ typeId: Number(r.type_id), name: typeNames[Number(r.type_id)] ?? `Type #${r.type_id}` })
-        rigsByStructure.set(key, entry)
-      })
-
-      const systems = await Promise.all(list.map((s) => getSdeSystem(Number(s.system_id))))
-      const corpNames = await fetchOwnerContext(supabase)
-
-      const cutoff =
-        fuel_expiring_within_days != null ? Date.now() + fuel_expiring_within_days * 24 * 60 * 60 * 1000 : null
-
-      const rows = list
-        .map((s, i) => {
-          const fuelExpires = fuelByStructure.get(String(s.structure_id)) ?? null
-          return {
-            structure: s.name ?? `Structure #${s.structure_id}`,
-            // The id industry jobs report as station_id/facility_id, and the one
-            // the blueprint tools' structure_id parameter takes.
-            structure_id: String(s.structure_id),
-            owner: corpNames.nameById.get(String(s.corporation_id)) ?? String(s.corporation_id),
-            hull: typeNames[Number(s.type_id)] ?? `Type #${s.type_id}`,
-            system: systems[i]?.name ?? `System #${s.system_id}`,
-            security: systems[i]?.security ?? null,
-            state: s.state,
-            fuel_expires: fuelExpires,
-            ...(s.unanchors_at != null && { unanchors_at: s.unanchors_at }),
-            services: (s.services ?? []).map((svc) => svc.name),
-            rigs: (rigsByStructure.get(String(s.structure_id)) ?? []).map((r) => r.name),
-          }
-        })
-        .filter((r) => cutoff == null || (r.fuel_expires != null && new Date(r.fuel_expires).getTime() <= cutoff))
-        .sort((a, b) => {
-          // Soonest fuel expiry first (unknown last), then by name.
-          const at = a.fuel_expires ? new Date(a.fuel_expires).getTime() : Infinity
-          const bt = b.fuel_expires ? new Date(b.fuel_expires).getTime() : Infinity
-          return at - bt || a.structure.localeCompare(b.structure)
-        })
-
-      return textResult({
-        total_structures: rows.length,
-        ...(cutoff != null && { fuel_expiring_within_days }),
-        structures: rows,
-        note: 'Pass a structure_id to blueprint_for_product or blueprints_using_material to price a build in that structure.',
-        data_refreshed: await dataFreshness(supabase, ['corp-structures', 'corp-assets']),
-      })
-    }
-  )
-
-  server.registerTool(
     'wallet_summary',
     {
       title: 'Wallet summary',
       description:
         'Current ISK balances for the user\'s characters and their corporations\' wallet divisions, plus a breakdown of corp wallet activity by entry type over a recent window. Answers "how much ISK do I have" or "where did the corp wallet go this month". Use search_transactions for individual market trades.',
+      annotations: { readOnlyHint: true },
       inputSchema: {
         days: z
           .number()
@@ -501,6 +379,7 @@ export const registerEstateTools = (server: McpServer): void => {
       title: 'List mercenary dens',
       description:
         'The Mercenary Dens the user\'s characters have deployed, each on its planet, with its current state, development and anarchy levels, infomorph count, and reinforcement timer. Answers "which dens are reinforced" or "when do my timers come out".',
+      annotations: { readOnlyHint: true },
       inputSchema: {
         reinforced_only: z
           .boolean()
