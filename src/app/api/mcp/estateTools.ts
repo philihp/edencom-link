@@ -1,0 +1,592 @@
+// MCP tools over what the user *has* and what state it's in: hangars browsed by
+// location rather than by item name, monitored Upwell structures (and their fuel
+// clocks), wallet balances, and deployed Mercenary Dens. Same rules as tools.ts —
+// every query runs on the caller's bearer-token client so RLS scopes results,
+// the DB is the only source, and nothing here calls ESI.
+import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js'
+import { z } from 'zod'
+
+import { resolveLocations, type LocationRef } from '@/app/resolveLocations'
+import { getSdePlanets } from '@/sdePlanets'
+import { getSdeSystem, searchSdeSystems } from '@/sdeSystems'
+import { getSdeTypeNames } from '@/sdeTypes'
+import { createBearerClient } from '@/utils/supabase/bearer'
+
+import {
+  dataFreshness,
+  fetchAllRows,
+  fetchOwnerContext,
+  resolveOwnerFilter,
+  textResult,
+  type OwnerContext,
+} from './lib'
+
+const MAX_ROWS = 200
+
+type SupabaseClient = ReturnType<typeof createBearerClient>
+
+const clientFor = (extra: { authInfo?: AuthInfo }): SupabaseClient | null =>
+  extra.authInfo?.token ? createBearerClient(extra.authInfo.token) : null
+
+const capNote = (total: number, shown: number, what: string): string | undefined =>
+  total > shown ? `Showing the first ${shown} of ${total} ${what}; counts and totals cover everything.` : undefined
+
+// ── assets by location ────────────────────────────────────────────────────
+
+// One root location the caller holds assets in, with per-owner stack counts —
+// the same rollup /asset builds from the two *_asset_location_summary() RPCs
+// (which do the location-chain walk in Postgres so a big hangar doesn't page
+// into Node).
+type LocationBucket = { root: LocationRef; counts: Map<string, number> }
+
+const fetchLocationBuckets = async (supabase: SupabaseClient): Promise<LocationBucket[]> => {
+  type SummaryRow = { location_id: number | string; location_type: string | null; stacks: number | string }
+  const [{ data: characterSummary }, { data: corpSummary }] = await Promise.all([
+    supabase.rpc('character_asset_location_summary'),
+    supabase.rpc('corp_asset_location_summary'),
+  ])
+  const rows = [
+    ...((characterSummary ?? []) as Array<SummaryRow & { character_id: string }>).map((r) => ({
+      ...r,
+      ownerId: r.character_id,
+    })),
+    ...((corpSummary ?? []) as Array<SummaryRow & { corporation_id: number | string }>).map((r) => ({
+      ...r,
+      ownerId: String(r.corporation_id),
+    })),
+  ]
+
+  const byLocation = new Map<string, LocationBucket>()
+  rows.forEach((row) => {
+    const id = String(row.location_id)
+    const entry = byLocation.get(id) ?? { root: { id, type: row.location_type }, counts: new Map<string, number>() }
+    entry.counts.set(row.ownerId, (entry.counts.get(row.ownerId) ?? 0) + Number(row.stacks))
+    byLocation.set(id, entry)
+  })
+  return [...byLocation.values()]
+}
+
+// The items sitting directly in one location (not nested deeper), from both the
+// character and corp hangars, each with the size of its own subtree.
+const fetchLocationContents = async (supabase: SupabaseClient, locationId: string, owners: OwnerContext) => {
+  type AssetRow = {
+    item_id: number | string
+    type_id: number | string
+    location_flag: string | null
+    quantity: number | string | null
+    is_singleton: boolean | null
+  }
+  const COLUMNS = 'item_id, type_id, location_flag, quantity, is_singleton'
+  const [{ data: characterRows }, { data: corpRows }, { data: characterContents }, { data: corpContents }] =
+    await Promise.all([
+      supabase.from('character_asset').select(`${COLUMNS}, character_id, name`).eq('location_id', locationId),
+      supabase.from('corp_asset').select(`${COLUMNS}, corporation_id`).eq('location_id', locationId),
+      supabase.rpc('character_asset_location_contents', { parent: locationId }),
+      supabase.rpc('corp_asset_location_contents', { parent: locationId }),
+    ])
+
+  // An item lives in exactly one of the two tables, so the counts can't collide.
+  const contentsByItem = new Map(
+    [
+      ...((characterContents ?? []) as Array<{ item_id: number | string; contents: number | string }>),
+      ...((corpContents ?? []) as Array<{ item_id: number | string; contents: number | string }>),
+    ].map((r) => [String(r.item_id), Number(r.contents)])
+  )
+
+  return [
+    ...((characterRows ?? []) as Array<AssetRow & { character_id: string; name: string | null }>).map((r) => ({
+      ...r,
+      ownerId: r.character_id,
+    })),
+    ...((corpRows ?? []) as Array<AssetRow & { corporation_id: number | string }>).map((r) => ({
+      ...r,
+      name: null as string | null,
+      ownerId: String(r.corporation_id),
+    })),
+  ].map((r) => ({
+    itemId: String(r.item_id),
+    typeId: Number(r.type_id),
+    customName: r.name,
+    // Singletons (assembled ships, containers, …) report a null/1 quantity.
+    quantity: r.is_singleton ? 1 : Number(r.quantity ?? 1),
+    flag: r.location_flag,
+    ownerId: r.ownerId,
+    owner: owners.nameById.get(r.ownerId) ?? r.ownerId,
+    contents: contentsByItem.get(String(r.item_id)) ?? 0,
+  }))
+}
+
+// ── tools ─────────────────────────────────────────────────────────────────
+
+export const registerEstateTools = (server: McpServer): void => {
+  server.registerTool(
+    'browse_assets',
+    {
+      title: 'Browse assets by location',
+      description:
+        'Walk the user\'s hangars by place instead of by item name: with no arguments, every station, structure, and system where they hold assets, with stack counts; with a location, the items sitting directly in it. Answers "what do I have in Jita" or "what\'s in that container". Use search_assets when you know the item name and want to find where it is.',
+      inputSchema: {
+        location: z
+          .string()
+          .optional()
+          .describe(
+            'The place to list the contents of — a station/structure/system name substring, or a raw id (which also works for drilling into one of your own containers or ships). Omit to list every location instead.'
+          ),
+        system: z
+          .string()
+          .optional()
+          .describe('When listing locations, only those in this solar system, e.g. "EKPB-3"'),
+        owner: z.string().optional().describe('Only stacks owned by this character or corporation (name substring)'),
+      },
+    },
+    async ({ location, system, owner }, extra) => {
+      const supabase = clientFor(extra)
+      if (!supabase) return textResult('Missing bearer token.')
+
+      const owners = await fetchOwnerContext(supabase)
+      const ownerFilter = resolveOwnerFilter(owner, owners)
+      if (!ownerFilter.ok) return textResult(ownerFilter.message)
+
+      const buckets = await fetchLocationBuckets(supabase)
+      const { nameFor, systemFor } = await resolveLocations(
+        buckets.map((b) => b.root),
+        supabase
+      )
+
+      const described = buckets.map((b) => {
+        const floating = b.root.type === 'solar_system'
+        return {
+          id: b.root.id,
+          name: nameFor(b.root),
+          system: systemFor(b.root) ?? (floating ? nameFor(b.root) : null),
+          counts: b.counts,
+        }
+      })
+
+      // Drill into one location. A raw id is taken as-is (that's the only way to
+      // reach a container or ship, which the location summary never lists — it
+      // only reports root places); a name matches against the resolved places.
+      const query = location?.trim()
+      if (query) {
+        const numeric = /^\d+$/.test(query)
+        let targetId = numeric ? query : null
+        let targetName = numeric ? (described.find((d) => d.id === query)?.name ?? `Location #${query}`) : null
+
+        if (!numeric) {
+          const needle = query.toLowerCase()
+          const matches = described.filter((d) => (d.name ?? '').toLowerCase().includes(needle))
+          if (matches.length === 0) {
+            return textResult(
+              `No location you hold assets in matched "${query}". Call browse_assets with no arguments to see the list, or pass a raw id to drill into a container.`
+            )
+          }
+          if (matches.length > 1) {
+            const exact = matches.find((d) => (d.name ?? '').toLowerCase() === needle)
+            if (!exact) {
+              return textResult({
+                ambiguous: query,
+                matched: matches.map((d) => ({ id: d.id, name: d.name, system: d.system })),
+                note: 'Several locations matched; call again with a more specific name or one of these ids.',
+              })
+            }
+            targetId = exact.id
+            targetName = exact.name
+          } else {
+            targetId = matches[0].id
+            targetName = matches[0].name
+          }
+        }
+
+        const items = (await fetchLocationContents(supabase, targetId!, owners)).filter(
+          (i) => ownerFilter.ownerIds == null || ownerFilter.ownerIds.has(i.ownerId)
+        )
+        const typeNames = await getSdeTypeNames(items.map((i) => i.typeId))
+        const sorted = items.sort(
+          (a, b) => b.contents - a.contents || (typeNames[a.typeId] ?? '').localeCompare(typeNames[b.typeId] ?? '')
+        )
+        const shown = sorted.slice(0, MAX_ROWS)
+        return textResult({
+          location: targetName,
+          location_id: targetId,
+          total_stacks: sorted.length,
+          items: shown.map((i) => ({
+            item: typeNames[i.typeId] ?? `Type #${i.typeId}`,
+            quantity: i.quantity,
+            owner: i.owner,
+            hangar: i.flag,
+            ...(i.customName != null && { custom_name: i.customName }),
+            // A stack holding items is a container or ship; its id drills in.
+            ...(i.contents > 0 && { contains_items: i.contents, drill_in_with_id: i.itemId }),
+          })),
+          ...(capNote(sorted.length, shown.length, 'stacks') && {
+            note: capNote(sorted.length, shown.length, 'stacks'),
+          }),
+          data_refreshed: await dataFreshness(supabase, ['character-assets', 'corp-assets']),
+        })
+      }
+
+      // Otherwise: the whole list of places, most stacks first.
+      const systemMatch = system?.trim() ? ((await searchSdeSystems(system, 1))[0]?.name ?? system.trim()) : null
+      const systemFilter = systemMatch != null ? systemMatch.toLowerCase() : null
+
+      const locations = described
+        .map((d) => {
+          const counts = [...d.counts].filter(([id]) => ownerFilter.ownerIds == null || ownerFilter.ownerIds.has(id))
+          return {
+            id: d.id,
+            name: d.name,
+            system: d.system,
+            stacks: counts.reduce((sum, [, n]) => sum + n, 0),
+            by_owner: Object.fromEntries(counts.map(([id, n]) => [owners.nameById.get(id) ?? id, n])),
+          }
+        })
+        .filter((d) => d.stacks > 0)
+        .filter((d) => systemFilter == null || (d.system ?? '').toLowerCase() === systemFilter)
+        .sort((a, b) => b.stacks - a.stacks || (a.name ?? '').localeCompare(b.name ?? ''))
+
+      const shown = locations.slice(0, MAX_ROWS)
+      return textResult({
+        ...(systemFilter != null && { system_filter: systemMatch }),
+        total_locations: locations.length,
+        total_stacks: locations.reduce((sum, l) => sum + l.stacks, 0),
+        locations: shown,
+        note: 'Pass a location name (or one of these ids) to list what is in it.',
+        ...(capNote(locations.length, shown.length, 'locations') && {
+          cap_note: capNote(locations.length, shown.length, 'locations'),
+        }),
+        data_refreshed: await dataFreshness(supabase, ['character-assets', 'corp-assets']),
+      })
+    }
+  )
+
+  server.registerTool(
+    'list_structures',
+    {
+      title: 'List structures',
+      description:
+        'The Upwell structures the user\'s corporations own or monitor: hull type, system, state, fuel expiry, fitted service modules, and fitted rigs. Answers "which structures run out of fuel this week" or "what rigs are on the Athanor". Also the way to find a structure_id to pass to blueprint_for_product / blueprints_using_material.',
+      inputSchema: {
+        structure: z.string().optional().describe('Only structures whose name matches this substring'),
+        fuel_expiring_within_days: z
+          .number()
+          .int()
+          .min(1)
+          .max(365)
+          .optional()
+          .describe(
+            'Only structures whose fuel runs out within this many days (structures with no known fuel timer are excluded)'
+          ),
+      },
+    },
+    async ({ structure, fuel_expiring_within_days }, extra) => {
+      const supabase = clientFor(extra)
+      if (!supabase) return textResult('Missing bearer token.')
+
+      type StructureRow = {
+        structure_id: number | string
+        corporation_id: number | string
+        type_id: number | string
+        system_id: number | string
+        name: string | null
+        state: string | null
+        unanchors_at: string | null
+        services: Array<{ name: string; state: string }> | null
+      }
+      const { data: structureRows } = await supabase
+        .from('corp_structure')
+        .select('structure_id, corporation_id, type_id, system_id, name, state, unanchors_at, services')
+        .order('structure_id', { ascending: true })
+
+      const all = (structureRows ?? []) as StructureRow[]
+      const needle = structure?.trim().toLowerCase()
+      const list = needle ? all.filter((s) => (s.name ?? '').toLowerCase().includes(needle)) : all
+      if (list.length === 0) {
+        return textResult(
+          needle
+            ? `No monitored structure matched "${structure}".`
+            : 'No structures visible. A director character with the Structures scope needs to be linked for the corp-structures job to see them.'
+        )
+      }
+
+      const structureIds = list.map((s) => Number(s.structure_id))
+      // Fuel timers live in corp_structure_status (own-corp only): RLS returns a
+      // row only for structures the caller's corp owns, so an alliance-mate's
+      // structure visible via corp_structure simply has no fuel here.
+      const [{ data: statusRows }, { data: rigRows }] = await Promise.all([
+        supabase.from('corp_structure_status').select('structure_id, fuel_expires').in('structure_id', structureIds),
+        supabase
+          .from('corp_structure_rig')
+          .select('structure_id, location_flag, type_id')
+          .in('structure_id', structureIds)
+          .order('location_flag', { ascending: true }),
+      ])
+      const fuelByStructure = new Map(
+        ((statusRows ?? []) as Array<{ structure_id: number | string; fuel_expires: string | null }>).map((r) => [
+          String(r.structure_id),
+          r.fuel_expires,
+        ])
+      )
+
+      const rigList = (rigRows ?? []) as Array<{ structure_id: number | string; type_id: number | string }>
+      const typeNames = await getSdeTypeNames([
+        ...list.map((s) => Number(s.type_id)),
+        ...rigList.map((r) => Number(r.type_id)),
+      ])
+      const rigsByStructure = new Map<string, Array<{ typeId: number; name: string }>>()
+      rigList.forEach((r) => {
+        const key = String(r.structure_id)
+        const entry = rigsByStructure.get(key) ?? []
+        entry.push({ typeId: Number(r.type_id), name: typeNames[Number(r.type_id)] ?? `Type #${r.type_id}` })
+        rigsByStructure.set(key, entry)
+      })
+
+      const systems = await Promise.all(list.map((s) => getSdeSystem(Number(s.system_id))))
+      const corpNames = await fetchOwnerContext(supabase)
+
+      const cutoff =
+        fuel_expiring_within_days != null ? Date.now() + fuel_expiring_within_days * 24 * 60 * 60 * 1000 : null
+
+      const rows = list
+        .map((s, i) => {
+          const fuelExpires = fuelByStructure.get(String(s.structure_id)) ?? null
+          return {
+            structure: s.name ?? `Structure #${s.structure_id}`,
+            // The id industry jobs report as station_id/facility_id, and the one
+            // the blueprint tools' structure_id parameter takes.
+            structure_id: String(s.structure_id),
+            owner: corpNames.nameById.get(String(s.corporation_id)) ?? String(s.corporation_id),
+            hull: typeNames[Number(s.type_id)] ?? `Type #${s.type_id}`,
+            system: systems[i]?.name ?? `System #${s.system_id}`,
+            security: systems[i]?.security ?? null,
+            state: s.state,
+            fuel_expires: fuelExpires,
+            ...(s.unanchors_at != null && { unanchors_at: s.unanchors_at }),
+            services: (s.services ?? []).map((svc) => svc.name),
+            rigs: (rigsByStructure.get(String(s.structure_id)) ?? []).map((r) => r.name),
+          }
+        })
+        .filter((r) => cutoff == null || (r.fuel_expires != null && new Date(r.fuel_expires).getTime() <= cutoff))
+        .sort((a, b) => {
+          // Soonest fuel expiry first (unknown last), then by name.
+          const at = a.fuel_expires ? new Date(a.fuel_expires).getTime() : Infinity
+          const bt = b.fuel_expires ? new Date(b.fuel_expires).getTime() : Infinity
+          return at - bt || a.structure.localeCompare(b.structure)
+        })
+
+      return textResult({
+        total_structures: rows.length,
+        ...(cutoff != null && { fuel_expiring_within_days }),
+        structures: rows,
+        note: 'Pass a structure_id to blueprint_for_product or blueprints_using_material to price a build in that structure.',
+        data_refreshed: await dataFreshness(supabase, ['corp-structures', 'corp-assets']),
+      })
+    }
+  )
+
+  server.registerTool(
+    'wallet_summary',
+    {
+      title: 'Wallet summary',
+      description:
+        'Current ISK balances for the user\'s characters and their corporations\' wallet divisions, plus a breakdown of corp wallet activity by entry type over a recent window. Answers "how much ISK do I have" or "where did the corp wallet go this month". Use search_transactions for individual market trades.',
+      inputSchema: {
+        days: z
+          .number()
+          .int()
+          .min(1)
+          .max(365)
+          .optional()
+          .describe('Window for the corporation wallet-journal breakdown, in days (default 30)'),
+      },
+    },
+    async ({ days }, extra) => {
+      const supabase = clientFor(extra)
+      if (!supabase) return textResult('Missing bearer token.')
+
+      const owners = await fetchOwnerContext(supabase)
+      const windowDays = days ?? 30
+      const since = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000).toISOString()
+
+      // character_wallet is append-only (one row per extract run), so the latest
+      // balance is a per-character limit(1) rather than a scan of all history.
+      const balances = await Promise.all(
+        owners.characterIds.map(async (characterId) => {
+          const { data } = await supabase
+            .from('character_wallet')
+            .select('balance, recorded_at')
+            .eq('character_id', characterId)
+            .order('recorded_at', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+          return {
+            character: owners.nameById.get(characterId) ?? characterId,
+            balance: data?.balance != null ? Number(data.balance) : null,
+            recorded_at: data?.recorded_at ?? null,
+          }
+        })
+      )
+
+      // Corp division balances: each journal entry carries the running balance
+      // after it, so the newest entry per (corporation, division) is current.
+      const { data: recentJournal } = await supabase
+        .from('corp_wallet_journal')
+        .select('corporation_id, division, balance, date')
+        .order('date', { ascending: false })
+        .limit(500)
+      const divisionBalances = new Map<
+        string,
+        { corporation: string; division: number; balance: number; as_of: string }
+      >()
+      ;(
+        (recentJournal ?? []) as Array<{
+          corporation_id: number | string
+          division: number
+          balance: number | string | null
+          date: string
+        }>
+      ).forEach((r) => {
+        const key = `${r.corporation_id}:${r.division}`
+        if (divisionBalances.has(key) || r.balance == null) return
+        divisionBalances.set(key, {
+          corporation: owners.nameById.get(String(r.corporation_id)) ?? String(r.corporation_id),
+          division: r.division,
+          balance: Number(r.balance),
+          as_of: r.date,
+        })
+      })
+
+      // Where the corp wallet moved over the window, by entry type.
+      const journal = await fetchAllRows<{ ref_type: string; amount: number | string | null }>((from, to) =>
+        supabase
+          .from('corp_wallet_journal')
+          .select('ref_type, amount')
+          .gte('date', since)
+          .order('date', { ascending: false })
+          .range(from, to)
+      )
+      const byRefType = new Map<string, { entries: number; total: number }>()
+      journal.forEach((r) => {
+        const entry = byRefType.get(r.ref_type) ?? { entries: 0, total: 0 }
+        entry.entries += 1
+        entry.total += Number(r.amount ?? 0)
+        byRefType.set(r.ref_type, entry)
+      })
+      const movements = [...byRefType]
+        .map(([ref_type, v]) => ({ ref_type, ...v }))
+        .sort((a, b) => Math.abs(b.total) - Math.abs(a.total))
+
+      const characterTotal = balances.reduce((sum, b) => sum + (b.balance ?? 0), 0)
+      const corpTotal = [...divisionBalances.values()].reduce((sum, d) => sum + d.balance, 0)
+
+      return textResult({
+        characters: balances.sort((a, b) => (b.balance ?? 0) - (a.balance ?? 0)),
+        total_character_isk: characterTotal,
+        corporation_divisions: [...divisionBalances.values()].sort(
+          (a, b) => a.corporation.localeCompare(b.corporation) || a.division - b.division
+        ),
+        total_corporation_isk: corpTotal,
+        window_days: windowDays,
+        corporation_movements_by_type: movements,
+        corporation_net_over_window: movements.reduce((sum, m) => sum + m.total, 0),
+        note: 'Corporation division balances come from the newest wallet-journal entry per division, so a division with no recent entries may be stale.',
+        data_refreshed: await dataFreshness(supabase, ['character-status', 'corp-wallet-journal']),
+      })
+    }
+  )
+
+  server.registerTool(
+    'list_mercenary_dens',
+    {
+      title: 'List mercenary dens',
+      description:
+        'The Mercenary Dens the user\'s characters have deployed, each on its planet, with its current state, development and anarchy levels, infomorph count, and reinforcement timer. Answers "which dens are reinforced" or "when do my timers come out".',
+      inputSchema: {
+        reinforced_only: z
+          .boolean()
+          .optional()
+          .describe('Only dens with a reinforcement timer still in the future (default false)'),
+      },
+    },
+    async ({ reinforced_only }, extra) => {
+      const supabase = clientFor(extra)
+      if (!supabase) return textResult('Missing bearer token.')
+
+      type DenRow = {
+        character_id: string
+        den_id: number | string
+        planet_id: number | string
+        type_id: number | string | null
+        state: string | null
+        development_level: string | null
+        development_amount: number | string | null
+        anarchy_level: string | null
+        anarchy_amount: number | string | null
+        infomorphs: number | string | null
+        reinforcement_end: string | null
+        status_observed_at: string | null
+      }
+      const [{ data: denRows }, owners] = await Promise.all([
+        supabase
+          .from('character_mercenary_den')
+          .select(
+            'character_id, den_id, planet_id, type_id, state, development_level, development_amount, anarchy_level, anarchy_amount, infomorphs, reinforcement_end, status_observed_at'
+          ),
+        fetchOwnerContext(supabase),
+      ])
+
+      const dens = (denRows ?? []) as DenRow[]
+      if (dens.length === 0) {
+        return textResult({
+          total_dens: 0,
+          dens: [],
+          note: 'No mercenary dens found. A character with the Mercenary Dens scope needs to be linked, or none are deployed.',
+          data_refreshed: await dataFreshness(supabase, ['character-mercenary-dens']),
+        })
+      }
+
+      // Planet ids resolve through the nightly SDE mirror to "<system> <roman>",
+      // the same key /mercenary-dens uses.
+      const planets = await getSdePlanets(dens.map((d) => Number(d.planet_id)))
+      const typeNames = await getSdeTypeNames(dens.flatMap((d) => (d.type_id != null ? [Number(d.type_id)] : [])))
+
+      const now = Date.now()
+      const rows = dens
+        .map((d) => {
+          const planet = planets[Number(d.planet_id)]
+          const reinforced = d.reinforcement_end != null && new Date(d.reinforcement_end).getTime() > now
+          return {
+            planet: planet?.name ?? `Planet #${d.planet_id}`,
+            system: planet?.systemName ?? null,
+            owner: owners.nameById.get(d.character_id) ?? d.character_id,
+            ...(d.type_id != null && { type: typeNames[Number(d.type_id)] ?? `Type #${d.type_id}` }),
+            state: d.state,
+            reinforced,
+            reinforcement_end: d.reinforcement_end,
+            development: d.development_level,
+            development_amount: d.development_amount == null ? null : Number(d.development_amount),
+            anarchy: d.anarchy_level,
+            anarchy_amount: d.anarchy_amount == null ? null : Number(d.anarchy_amount),
+            infomorphs: d.infomorphs == null ? null : Number(d.infomorphs),
+            // The den's volatile state is an observation, not a live read — it's
+            // as old as the last extract run that saw it.
+            status_observed_at: d.status_observed_at,
+          }
+        })
+        .filter((r) => !reinforced_only || r.reinforced)
+        .sort((a, b) => {
+          // Reinforced dens first, soonest timer leading.
+          const at = a.reinforcement_end ? new Date(a.reinforcement_end).getTime() : Infinity
+          const bt = b.reinforcement_end ? new Date(b.reinforcement_end).getTime() : Infinity
+          return at - bt || a.planet.localeCompare(b.planet)
+        })
+
+      return textResult({
+        total_dens: rows.length,
+        reinforced_dens: rows.filter((r) => r.reinforced).length,
+        dens: rows,
+        data_refreshed: await dataFreshness(supabase, ['character-mercenary-dens']),
+      })
+    }
+  )
+}

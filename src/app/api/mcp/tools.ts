@@ -18,6 +18,7 @@ import {
 import { prop, uniqBy } from 'ramda'
 import { z } from 'zod'
 
+import { rigAppliesToProduct } from '@/app/blueprint/rigs'
 import { ACTIVITY_NAMES } from '@/app/industry/jobFields'
 import { appraise, MARKETS, type AppraisalItemInput, type Market } from '@/innominate'
 import { resolveLocations, type LocationRef } from '@/app/resolveLocations'
@@ -31,6 +32,7 @@ import {
 } from '@/sdeBlueprints'
 import { formatSecurity, getSdeSystem, getSdeSystemNames, getSdeSystems, searchSdeSystems } from '@/sdeSystems'
 import { getSdeType, getSdeTypeNames, getSdeTypes, searchSdeTypesAll } from '@/sdeTypes'
+import { AT_PARAM_ERROR, parseAtParam } from '@/utils/atParam'
 import { createBearerClient } from '@/utils/supabase/bearer'
 
 import {
@@ -64,6 +66,15 @@ import {
 // Keep individual responses readable — totals/summaries always cover the full
 // result set, only the itemized list is capped.
 const MAX_ROWS = 200
+
+// The time-travel knob on the tools whose tables keep SCD-2 history. Parsed by
+// the same parseAtParam the Sheets endpoints' `at=` uses, so partial dates work.
+const AS_OF_SHAPE = z
+  .string()
+  .optional()
+  .describe(
+    'Reconstruct the snapshot as it stood at this UTC moment instead of now. ISO 8601, partial dates allowed ("2026-06", "2026-06-01", "2026-06-01T12:00:00Z").'
+  )
 
 type SupabaseClient = ReturnType<typeof createBearerClient>
 
@@ -219,33 +230,31 @@ const securityMultiplier = (rawSecurity: number | null): { sec: SecBonus; band: 
 // is T2 (2.4% base), the "… I" variant T1 (2.0%).
 const rigBonusFromName = (name: string): RigBonus => (/\bII$/.test(name.trim()) ? 0.024 : 0.02)
 
-export type StructureBonuses = {
-  ok: true
-  bonuses: Bonuses
-  resolved: {
-    structure: string
-    system: string | null
-    security_band: string
-    hull: string
-    role_bonus_applies: boolean
-    rig: string | null
-    rig_note?: string
-  }
-}
-export type StructureLookupError = { ok: false; message: string }
+// The product a bill is being computed for. A rig only discounts a build whose
+// product falls in the group/category the rig's filter covers, so applicability
+// is decided per product, not per structure.
+export type ProductRef = { groupID: number; categoryID: number } | null
 
-// Derive the material-efficiency bonuses for a blueprint made in one of the
-// caller's monitored structures. RLS on corp_structure / corp_structure_rig
-// scopes the lookup to structures the caller can actually see, so an id they
-// don't monitor simply reads as "not found". The rig bonus is applied by tier
-// but NOT gated on the rig's product category — its full name is reported so
-// the caller can see, e.g., that a "Component" rig was used (matching the
-// single-knob model of the eve-industry library).
-const resolveStructureBonuses = async (
-  supabase: SupabaseClient,
-  structureId: string,
-  activityID: number
-): Promise<StructureBonuses | StructureLookupError> => {
+// One monitored structure's fixed facts, loaded once per tool call: the hull
+// (whose group decides the role bonus), the system security that scales rigs,
+// and every material-efficiency rig fitted. Which of those rigs actually
+// applies varies per product, so the list is kept whole here and filtered later.
+type StructureContext = {
+  name: string
+  hullName: string
+  hullGroup: number | undefined
+  systemName: string | null
+  securityBand: string
+  sec: SecBonus
+  meRigs: Array<{ typeID: number; name: string; bonus: RigBonus }>
+}
+
+type StructureLoad = { ok: true; ctx: StructureContext } | { ok: false; message: string }
+
+// Load a structure the caller monitors. RLS on corp_structure /
+// corp_structure_rig scopes the lookup to structures they can actually see, so
+// an id they don't monitor simply reads as "not found".
+const loadStructure = async (supabase: SupabaseClient, structureId: string): Promise<StructureLoad> => {
   const { data: structure } = await supabase
     .from('corp_structure')
     .select('structure_id, type_id, system_id, name')
@@ -259,51 +268,94 @@ const resolveStructureBonuses = async (
   const rigTypeIds = ((rigRows ?? []) as Array<{ type_id: number | string }>).map((r) => Number(r.type_id))
 
   const hullType = await getSdeType(Number(structure.type_id))
-  const hullGroup = hullType?.groupID
-  const roleApplies =
-    (hullGroup === ENGINEERING_COMPLEX_GROUP && activityID === MANUFACTURING) ||
-    (hullGroup === REFINERY_GROUP && activityID === REACTION)
-
   const system = await getSdeSystem(Number(structure.system_id))
   const { sec, band } = securityMultiplier(system?.security ?? null)
 
-  // Pick the strongest material-efficiency rig fitted (structures rarely carry
-  // more than one that's relevant); report every ME rig name for transparency.
   const rigNames = await getSdeTypeNames(rigTypeIds)
   const meRigs = rigTypeIds
-    .map((id) => rigNames[id])
-    .filter((n): n is string => typeof n === 'string' && /Material Efficiency/i.test(n))
-  const bestRig = meRigs.map((n) => ({ name: n, bonus: rigBonusFromName(n) })).sort((a, b) => b.bonus - a.bonus)[0]
+    .filter((id) => typeof rigNames[id] === 'string' && /Material Efficiency/i.test(rigNames[id]))
+    .map((id) => ({ typeID: id, name: rigNames[id], bonus: rigBonusFromName(rigNames[id]) }))
 
   return {
     ok: true,
-    bonuses: {
-      structure: (roleApplies ? 0.01 : 0) as StructureBonus,
-      rig: (bestRig?.bonus ?? 0) as RigBonus,
+    ctx: {
+      name: (structure.name as string) ?? `Structure #${structureId}`,
+      hullName: hullType?.name ?? `Type #${structure.type_id}`,
+      hullGroup: hullType?.groupID,
+      systemName: system?.name ?? null,
+      securityBand: band,
       sec,
-    },
-    resolved: {
-      structure: (structure.name as string) ?? `Structure #${structureId}`,
-      system: system?.name ?? null,
-      security_band: band,
-      hull: hullType?.name ?? `Type #${structure.type_id}`,
-      role_bonus_applies: roleApplies,
-      rig: bestRig?.name ?? null,
-      ...(meRigs.length > 1 && { rig_note: `Multiple ME rigs fitted; used the strongest. All: ${meRigs.join(', ')}.` }),
+      meRigs,
     },
   }
 }
 
-// Resolve the effective bonuses for a blueprint, honoring structure_id (which
-// overrides the manual structure/rig/security fields) when present.
-type ResolvedModifiers =
-  { ok: true; costParams: Omit<ModifierParams, 'base'>; echo: Record<string, unknown> } | { ok: false; message: string }
-
-const resolveModifiers = async (
-  m: ModifierArgs,
+// The bonuses this structure gives one specific build. The rig is chosen from
+// only those fitted rigs whose filter covers the product's group/category
+// (a Standup Ship Manufacturing rig must not discount a component build), and
+// the ones skipped for that reason are reported so the caller can see why the
+// number is lower than the rig list suggests.
+const structureBonusesFor = (
+  ctx: StructureContext,
   activityID: number,
-  extra: { authInfo?: AuthInfo }
-): Promise<ResolvedModifiers> => {
+  product: ProductRef
+): { bonuses: Bonuses; resolved: Record<string, unknown> } => {
+  const roleApplies =
+    (ctx.hullGroup === ENGINEERING_COMPLEX_GROUP && activityID === MANUFACTURING) ||
+    (ctx.hullGroup === REFINERY_GROUP && activityID === REACTION)
+
+  const applicable = product
+    ? ctx.meRigs.filter((r) => rigAppliesToProduct(r.typeID, product.groupID, product.categoryID))
+    : ctx.meRigs
+  const applicableIds = new Set(applicable.map((r) => r.typeID))
+  const skipped = ctx.meRigs.filter((r) => !applicableIds.has(r.typeID))
+  const best = [...applicable].sort((a, b) => b.bonus - a.bonus)[0]
+
+  return {
+    bonuses: {
+      structure: (roleApplies ? 0.01 : 0) as StructureBonus,
+      rig: (best?.bonus ?? 0) as RigBonus,
+      sec: ctx.sec,
+    },
+    resolved: {
+      structure: ctx.name,
+      system: ctx.systemName,
+      security_band: ctx.securityBand,
+      hull: ctx.hullName,
+      role_bonus_applies: roleApplies,
+      rig: best?.name ?? null,
+      ...(skipped.length > 0 && {
+        rigs_not_applicable: skipped.map((r) => r.name),
+        rig_note: `${skipped.length} fitted ME rig(s) don't cover this product's group and were ignored.`,
+      }),
+      ...(applicable.length > 1 && {
+        rig_note: `Multiple applicable ME rigs fitted; used the strongest. All: ${applicable
+          .map((r) => r.name)
+          .join(', ')}.`,
+      }),
+      ...(product == null &&
+        ctx.meRigs.length > 0 && { rig_note: "Product unknown, so rig applicability wasn't checked." }),
+    },
+  }
+}
+
+// Resolve the effective bonuses for a build, honoring structure_id (which
+// overrides the manual structure/rig/security fields) when present. The
+// structure is loaded once; the returned resolver is called per (activity,
+// product) pair, since a listing tool prices many different products against
+// the same structure.
+type ModifierResolver = (
+  activityID: number,
+  product: ProductRef
+) => { costParams: Omit<ModifierParams, 'base'>; echo: Record<string, unknown> }
+
+// `resolve` answers one product; `summary` describes the inputs that hold
+// across every product (for a listing tool, where naming a single rig at the
+// top level would be a lie — each row reports the rig actually applied to it).
+type BuiltModifiers =
+  { ok: true; resolve: ModifierResolver; summary: Record<string, unknown> } | { ok: false; message: string }
+
+const buildModifiers = async (m: ModifierArgs, extra: { authInfo?: AuthInfo }): Promise<BuiltModifiers> => {
   const base = {
     runs: m.runs ?? 1,
     material_efficiency: m.material_efficiency ?? 0,
@@ -311,24 +363,36 @@ const resolveModifiers = async (
   if (m.structure_id) {
     const supabase = clientFor(extra)
     if (!supabase) return { ok: false, message: 'Missing bearer token.' }
-    const s = await resolveStructureBonuses(supabase, m.structure_id, activityID)
-    if (!s.ok) return s
+    const loaded = await loadStructure(supabase, m.structure_id)
+    if (!loaded.ok) return loaded
+    const { ctx } = loaded
     return {
       ok: true,
-      costParams: toCostParams(m, s.bonuses),
-      echo: { ...base, from_structure: s.resolved },
+      resolve: (activityID, product) => {
+        const { bonuses, resolved } = structureBonusesFor(ctx, activityID, product)
+        return { costParams: toCostParams(m, bonuses), echo: { ...base, from_structure: resolved } }
+      },
+      summary: {
+        ...base,
+        from_structure: {
+          structure: ctx.name,
+          system: ctx.systemName,
+          security_band: ctx.securityBand,
+          hull: ctx.hullName,
+          me_rigs_fitted: ctx.meRigs.map((r) => r.name),
+          rig: 'varies by product — see rig_applied on each row',
+        },
+      },
     }
   }
-  return {
-    ok: true,
-    costParams: toCostParams(m, manualBonuses(m)),
-    echo: {
-      ...base,
-      structure: m.structure ?? 'none',
-      rig: m.rig ?? 'none',
-      security: m.security ?? 'highsec',
-    },
+  const costParams = toCostParams(m, manualBonuses(m))
+  const echo = {
+    ...base,
+    structure: m.structure ?? 'none',
+    rig: m.rig ?? 'none',
+    security: m.security ?? 'highsec',
   }
+  return { ok: true, resolve: () => ({ costParams, echo }), summary: echo }
 }
 
 // Apply resolved cost params to a blueprint's per-run material bill, returning
@@ -468,23 +532,30 @@ export const registerTools = (server: McpServer): void => {
     {
       title: 'List clones',
       description:
-        'The user\'s characters with their current location, active implants, jump-clone locations (each with its implants), and when each character can next clone jump. Answers questions like "where is my nearest clone to Jita" or "which clone has my Genolution set".',
+        'The user\'s characters with their current location, the ship they\'re currently in, active implants, jump-clone locations (each with its implants), and when each character can next clone jump. Answers questions like "where is my nearest clone to Jita", "what am I flying", or "which clone has my Genolution set".',
       inputSchema: {},
     },
     async (_args, extra) => {
       const supabase = clientFor(extra)
       if (!supabase) return textResult('Missing bearer token.')
 
-      const [{ data: cloneRows }, { data: implantRows }, { data: locationRows }, { data: stateRows }, owners] =
-        await Promise.all([
-          supabase
-            .from('character_clone')
-            .select('character_id, jump_clone_id, is_home, location_id, location_type, name, implants, system_id'),
-          supabase.from('character_implant').select('character_id, type_ids'),
-          supabase.from('character_location').select('character_id, solar_system_id, station_id, structure_id'),
-          supabase.from('character_clone_state').select('character_id, last_clone_jump_date'),
-          fetchOwnerContext(supabase),
-        ])
+      const [
+        { data: cloneRows },
+        { data: implantRows },
+        { data: locationRows },
+        { data: stateRows },
+        { data: shipRows },
+        owners,
+      ] = await Promise.all([
+        supabase
+          .from('character_clone')
+          .select('character_id, jump_clone_id, is_home, location_id, location_type, name, implants, system_id'),
+        supabase.from('character_implant').select('character_id, type_ids'),
+        supabase.from('character_location').select('character_id, solar_system_id, station_id, structure_id'),
+        supabase.from('character_clone_state').select('character_id, last_clone_jump_date'),
+        supabase.from('character_ship').select('character_id, ship_item_id, ship_type_id, ship_name'),
+        fetchOwnerContext(supabase),
+      ])
 
       type CloneRow = {
         character_id: string
@@ -520,11 +591,20 @@ export const registerTools = (server: McpServer): void => {
       ]
       const systemNames = await resolveSystemNames(supabase, systemIds)
 
+      type ShipRow = {
+        character_id: string
+        ship_item_id: number | string
+        ship_type_id: number | string
+        ship_name: string | null
+      }
+      const ships = (shipRows ?? []) as ShipRow[]
+
+      // One bulk SDE lookup covers implants (clone + active) and hulls.
       const implantTypeIds = [
         ...clones.flatMap((c) => c.implants ?? []),
         ...((implantRows ?? []) as Array<{ type_ids: number[] }>).flatMap((r) => r.type_ids ?? []),
       ].map(Number)
-      const implantNames = await getSdeTypeNames(implantTypeIds)
+      const implantNames = await getSdeTypeNames([...implantTypeIds, ...ships.map((s) => Number(s.ship_type_id))])
 
       const implantsByCharacter = new Map(
         ((implantRows ?? []) as Array<{ character_id: string; type_ids: number[] }>).map((r) => [
@@ -539,6 +619,20 @@ export const registerTools = (server: McpServer): void => {
         ])
       )
       const locationByCharacter = new Map(locations.map((l) => [l.character_id, l]))
+      // The hull the character is sitting in right now, docked or not — named
+      // by its player-assigned name plus type when they differ (cf. /character).
+      const shipByCharacter = new Map(
+        ships.map((s) => {
+          const hull = typeName(implantNames, s.ship_type_id)
+          return [
+            s.character_id,
+            {
+              item_id: String(s.ship_item_id),
+              ship: s.ship_name && s.ship_name !== hull ? `${s.ship_name} (${hull})` : hull,
+            },
+          ]
+        })
+      )
 
       const characters = owners.characterIds.map((characterId) => {
         const location = locationByCharacter.get(characterId)
@@ -558,6 +652,7 @@ export const registerTools = (server: McpServer): void => {
                     : null,
               }
             : null,
+          current_ship: shipByCharacter.get(characterId) ?? null,
           active_implants: implantsByCharacter.get(characterId) ?? [],
           next_clone_jump_available_at: nextJump,
           clones: clones
@@ -864,22 +959,27 @@ export const registerTools = (server: McpServer): void => {
     {
       title: 'List industry jobs',
       description:
-        'Manufacturing, research, invention, copying, and reaction jobs across the user\'s characters and corporations. Defaults to active jobs; pass a status ("ready", "delivered", …) or "all" for history. Answers "what\'s building right now" or "when does my research finish".',
+        'Manufacturing, research, invention, copying, and reaction jobs across the user\'s characters and corporations. Defaults to active jobs; pass a status ("ready", "delivered", …) or "all" for history. Answers "what\'s building right now" or "when does my research finish". Pass as_of to see the jobs as they stood at a past moment (e.g. what was running last Tuesday).',
       inputSchema: {
         status: z
           .enum(['active', 'ready', 'paused', 'delivered', 'cancelled', 'reverted', 'all'])
           .optional()
           .describe('Job status to show (default "active")'),
         owner: z.string().optional().describe('Only jobs for this character or corporation (name substring)'),
+        as_of: AS_OF_SHAPE,
       },
     },
-    async ({ status, owner }, extra) => {
+    async ({ status, owner, as_of }, extra) => {
       const supabase = clientFor(extra)
       if (!supabase) return textResult('Missing bearer token.')
 
       const owners = await fetchOwnerContext(supabase)
       const ownerFilter = resolveOwnerFilter(owner, owners)
       if (!ownerFilter.ok) return textResult(ownerFilter.message)
+
+      const at = parseAtParam(as_of)
+      if (!at.ok) return textResult(AT_PARAM_ERROR)
+      const timeTravel = (as_of ?? '').trim() !== ''
 
       const wantedStatus = status ?? 'active'
       type JobRow = {
@@ -900,30 +1000,78 @@ export const registerTools = (server: McpServer): void => {
       }
       const COLUMNS =
         'job_id, installer_id, activity_id, blueprint_type_id, product_type_id, runs, cost, probability, status, start_date, end_date, station_id, facility_id, successful_runs'
-      const [characterJobs, corpJobs] = await Promise.all([
-        fetchAllRows<JobRow & { character_id: string }>((from, to) => {
-          let q = supabase.from('character_industry_job').select(`${COLUMNS}, character_id`)
-          if (wantedStatus !== 'all') q = q.eq('status', wantedStatus)
-          return q.order('end_date', { ascending: true }).range(from, to)
-        }),
-        fetchAllRows<JobRow & { corporation_id: number | string }>((from, to) => {
-          let q = supabase.from('corp_industry_job').select(`${COLUMNS}, corporation_id`)
-          if (wantedStatus !== 'all') q = q.eq('status', wantedStatus)
-          return q.order('end_date', { ascending: true }).range(from, to)
-        }),
-      ])
+      // Owner-filtered character ids, so the character-side query (live or
+      // historical) never fetches owners the caller filtered out. Corp rows
+      // can't be pre-filtered this way — the corp function maps characters to
+      // their corporations — so those are filtered by corporation_id below.
+      const wantedCharacterIds =
+        ownerFilter.ownerIds == null
+          ? owners.characterIds
+          : owners.characterIds.filter((id) => ownerFilter.ownerIds!.has(id))
+      const corpWanted = (corporationId: number | string) =>
+        ownerFilter.ownerIds == null || ownerFilter.ownerIds.has(String(corporationId))
+
+      // Every job normalized to one shape, since the historical path returns
+      // the owner's name where the live path returns an id to look up.
+      type NormalizedJob = JobRow & { ownerLabel: string }
+
+      let characterJobs: NormalizedJob[]
+      let corpJobs: NormalizedJob[]
+
+      if (timeTravel) {
+        // The SCD-2 functions take include_delivered rather than a status, so
+        // ask for the superset and narrow to the wanted status here.
+        const includeDelivered = !['active', 'ready', 'paused'].includes(wantedStatus)
+        const [{ data: chr, error: chrError }, { data: corp, error: corpError }] = await Promise.all([
+          supabase.rpc('character_industry_jobs', {
+            character_ids: wantedCharacterIds,
+            include_delivered: includeDelivered,
+            as_of: at.iso,
+          }),
+          supabase.rpc('corp_industry_jobs', {
+            character_ids: owners.characterIds,
+            include_delivered: includeDelivered,
+            as_of: at.iso,
+          }),
+        ])
+        const failure = chrError ?? corpError
+        if (failure) return textResult(`Couldn't read the job history: ${failure.message}`)
+
+        const ofWantedStatus = (row: { status: string }) => wantedStatus === 'all' || row.status === wantedStatus
+        characterJobs = ((chr ?? []) as Array<JobRow & { character_name: string | null }>)
+          .filter(ofWantedStatus)
+          .map((j) => ({ ...j, ownerLabel: j.character_name ?? '—' }))
+        corpJobs = ((corp ?? []) as Array<JobRow & { corporation_id: number | string }>)
+          .filter((j) => ofWantedStatus(j) && corpWanted(j.corporation_id))
+          .map((j) => ({ ...j, ownerLabel: owners.nameById.get(String(j.corporation_id)) ?? String(j.corporation_id) }))
+      } else {
+        const wantedCharacterIdSet = new Set(wantedCharacterIds)
+        const [chr, corp] = await Promise.all([
+          fetchAllRows<JobRow & { character_id: string }>((from, to) => {
+            let q = supabase.from('character_industry_job').select(`${COLUMNS}, character_id`)
+            if (wantedStatus !== 'all') q = q.eq('status', wantedStatus)
+            return q.order('end_date', { ascending: true }).range(from, to)
+          }),
+          fetchAllRows<JobRow & { corporation_id: number | string }>((from, to) => {
+            let q = supabase.from('corp_industry_job').select(`${COLUMNS}, corporation_id`)
+            if (wantedStatus !== 'all') q = q.eq('status', wantedStatus)
+            return q.order('end_date', { ascending: true }).range(from, to)
+          }),
+        ])
+        characterJobs = chr
+          .filter((j) => wantedCharacterIdSet.has(j.character_id))
+          .map((j) => ({ ...j, ownerLabel: owners.nameById.get(j.character_id) ?? j.character_id }))
+        corpJobs = corp
+          .filter((j) => corpWanted(j.corporation_id))
+          .map((j) => ({ ...j, ownerLabel: owners.nameById.get(String(j.corporation_id)) ?? String(j.corporation_id) }))
+      }
 
       // A corp job installed by one of our own characters shows up in both
       // extracts under the same job_id; the corp row wins (cf. /industry).
       const corpJobIds = new Set(corpJobs.map((j) => String(j.job_id)))
-      const rows = [
-        ...characterJobs
-          .filter((j) => !corpJobIds.has(String(j.job_id)))
-          .map((j) => ({ ...j, ownerId: j.character_id })),
-        ...corpJobs.map((j) => ({ ...j, ownerId: String(j.corporation_id) })),
-      ]
-        .filter((j) => ownerFilter.ownerIds == null || ownerFilter.ownerIds.has(j.ownerId))
-        .sort((a, b) => new Date(a.end_date).getTime() - new Date(b.end_date).getTime())
+      const rows = [...characterJobs.filter((j) => !corpJobIds.has(String(j.job_id))), ...corpJobs].sort(
+        (a, b) => new Date(a.end_date).getTime() - new Date(b.end_date).getTime()
+      )
 
       const typeNames = await getSdeTypeNames(
         rows.flatMap((j) => [
@@ -950,6 +1098,7 @@ export const registerTools = (server: McpServer): void => {
       const shown = rows.slice(0, MAX_ROWS)
       return textResult({
         status: wantedStatus,
+        ...(timeTravel && { as_of: at.iso }),
         total_jobs: rows.length,
         jobs: shown.map((j) => {
           const ref = guessLocationRef(j.station_id ?? j.facility_id)
@@ -961,7 +1110,7 @@ export const registerTools = (server: McpServer): void => {
             status: j.status,
             start_date: j.start_date,
             end_date: j.end_date,
-            owner: owners.nameById.get(j.ownerId) ?? j.ownerId,
+            owner: j.ownerLabel,
             ...(installerNames[Number(j.installer_id)] != null && {
               installer: installerNames[Number(j.installer_id)],
             }),
@@ -982,12 +1131,13 @@ export const registerTools = (server: McpServer): void => {
     {
       title: 'List market orders',
       description:
-        'The user\'s open market orders (buys and sells) across all characters, with price, remaining volume, location, and expiry. Answers "what am I selling" or "do I still have that buy order up".',
+        'The user\'s open market orders (buys and sells) across all characters, with price, remaining volume, location, and expiry. Answers "what am I selling" or "do I still have that buy order up". Pass as_of to see the orders that were open at some past moment instead — reconstructed from SCD-2 history, so a since-filled order reappears.',
       inputSchema: {
         item: z.string().optional().describe('Only orders for items matching this name substring'),
+        as_of: AS_OF_SHAPE,
       },
     },
-    async ({ item }, extra) => {
+    async ({ item, as_of }, extra) => {
       const supabase = clientFor(extra)
       if (!supabase) return textResult('Missing bearer token.')
 
@@ -995,23 +1145,84 @@ export const registerTools = (server: McpServer): void => {
       if (!filter.ok) return textResult(filter.message)
       const typeIds = filter.matches?.map((m) => m.typeID) ?? null
 
-      type OrderRow = {
-        order_id: number | string
-        character_id: string
-        type_id: number | string
-        location_id: number | string
-        is_buy: boolean
-        is_corporation: boolean
-        price: number | string
-        volume_total: number | string
-        volume_remain: number | string
-        min_volume: number | string | null
-        escrow: number | string | null
-        duration: number
+      const at = parseAtParam(as_of)
+      if (!at.ok) return textResult(AT_PARAM_ERROR)
+      const timeTravel = (as_of ?? '').trim() !== ''
+
+      const owners = await fetchOwnerContext(supabase)
+
+      // Live orders come from the is_current view; a past snapshot is rebuilt
+      // by the character_orders() SCD-2 function, whose rows carry the owner's
+      // name directly (and name is_buy differently). Both normalize to one shape.
+      type NormalizedOrder = {
+        typeId: number
+        owner: string
+        isBuy: boolean
+        isCorporation: boolean
+        price: number
+        volumeRemain: number
+        volumeTotal: number
+        minVolume: number | null
+        escrow: number | null
+        locationId: number | string
         issued: string
+        duration: number
       }
-      const [orders, owners] = await Promise.all([
-        fetchAllRows<OrderRow>((from, to) => {
+
+      let orders: NormalizedOrder[]
+      if (timeTravel) {
+        const { data, error } = await supabase.rpc('character_orders', {
+          character_ids: owners.characterIds,
+          as_of: at.iso,
+        })
+        if (error) return textResult(`Couldn't read the order history: ${error.message}`)
+        type SnapshotRow = {
+          type_id: number | string
+          character_name: string | null
+          is_buy_order: boolean
+          is_corporation: boolean
+          price: number | string
+          volume_remain: number | string
+          volume_total: number | string
+          min_volume: number | string | null
+          escrow: number | string | null
+          location_id: number | string
+          issued: string
+          duration: number
+        }
+        orders = ((data ?? []) as SnapshotRow[])
+          .filter((o) => typeIds == null || typeIds.includes(Number(o.type_id)))
+          .map((o) => ({
+            typeId: Number(o.type_id),
+            owner: o.character_name ?? '—',
+            isBuy: o.is_buy_order,
+            isCorporation: o.is_corporation,
+            price: Number(o.price),
+            volumeRemain: Number(o.volume_remain),
+            volumeTotal: Number(o.volume_total),
+            minVolume: o.min_volume == null ? null : Number(o.min_volume),
+            escrow: o.escrow == null ? null : Number(o.escrow),
+            locationId: o.location_id,
+            issued: o.issued,
+            duration: o.duration,
+          }))
+      } else {
+        type OrderRow = {
+          order_id: number | string
+          character_id: string
+          type_id: number | string
+          location_id: number | string
+          is_buy: boolean
+          is_corporation: boolean
+          price: number | string
+          volume_total: number | string
+          volume_remain: number | string
+          min_volume: number | string | null
+          escrow: number | string | null
+          duration: number
+          issued: string
+        }
+        const rows = await fetchAllRows<OrderRow>((from, to) => {
           const q = supabase
             .from('character_order')
             .select(
@@ -1020,40 +1231,54 @@ export const registerTools = (server: McpServer): void => {
             .order('issued', { ascending: false })
             .range(from, to)
           return typeIds ? q.in('type_id', typeIds) : q
-        }),
-        fetchOwnerContext(supabase),
-      ])
+        })
+        orders = rows.map((o) => ({
+          typeId: Number(o.type_id),
+          owner: owners.nameById.get(o.character_id) ?? o.character_id,
+          isBuy: o.is_buy,
+          isCorporation: o.is_corporation,
+          price: Number(o.price),
+          volumeRemain: Number(o.volume_remain),
+          volumeTotal: Number(o.volume_total),
+          minVolume: o.min_volume == null ? null : Number(o.min_volume),
+          escrow: o.escrow == null ? null : Number(o.escrow),
+          locationId: o.location_id,
+          issued: o.issued,
+          duration: o.duration,
+        }))
+      }
 
-      const typeNames = await getSdeTypeNames(orders.map((o) => Number(o.type_id)))
+      const typeNames = await getSdeTypeNames(orders.map((o) => o.typeId))
       const locationRefs = uniqBy(
         prop('id'),
-        orders.map((o) => guessLocationRef(o.location_id)).filter((r): r is LocationRef => r != null)
+        orders.map((o) => guessLocationRef(o.locationId)).filter((r): r is LocationRef => r != null)
       )
       const { nameFor } = await resolveLocations(locationRefs, supabase)
 
-      const sells = orders.filter((o) => !o.is_buy)
-      const buys = orders.filter((o) => o.is_buy)
+      const sells = orders.filter((o) => !o.isBuy)
+      const buys = orders.filter((o) => o.isBuy)
       const shown = orders.slice(0, MAX_ROWS)
       return textResult({
+        ...(timeTravel && { as_of: at.iso }),
         total_orders: orders.length,
         sell_orders: sells.length,
-        sell_value_remaining: sells.reduce((sum, o) => sum + Number(o.price) * Number(o.volume_remain), 0),
+        sell_value_remaining: sells.reduce((sum, o) => sum + o.price * o.volumeRemain, 0),
         buy_orders: buys.length,
-        buy_escrow: buys.reduce((sum, o) => sum + Number(o.escrow ?? 0), 0),
+        buy_escrow: buys.reduce((sum, o) => sum + (o.escrow ?? 0), 0),
         orders: shown.map((o) => {
-          const ref = guessLocationRef(o.location_id)
+          const ref = guessLocationRef(o.locationId)
           return {
-            item: typeName(typeNames, o.type_id),
-            side: o.is_buy ? 'buy' : 'sell',
-            price: Number(o.price),
-            volume_remain: Number(o.volume_remain),
-            volume_total: Number(o.volume_total),
-            owner: owners.nameById.get(o.character_id) ?? o.character_id,
-            ...(o.is_corporation && { corporation_order: true }),
+            item: typeName(typeNames, o.typeId),
+            side: o.isBuy ? 'buy' : 'sell',
+            price: o.price,
+            volume_remain: o.volumeRemain,
+            volume_total: o.volumeTotal,
+            owner: o.owner,
+            ...(o.isCorporation && { corporation_order: true }),
             location: ref ? nameFor(ref) : null,
             issued: o.issued,
             expires: new Date(new Date(o.issued).getTime() + o.duration * 24 * 60 * 60 * 1000).toISOString(),
-            ...(o.min_volume != null && Number(o.min_volume) > 1 && { min_volume: Number(o.min_volume) }),
+            ...(o.minVolume != null && o.minVolume > 1 && { min_volume: o.minVolume }),
           }
         }),
         ...(capNote(orders.length, shown.length, 'orders') && { note: capNote(orders.length, shown.length, 'orders') }),
@@ -1195,8 +1420,15 @@ export const registerTools = (server: McpServer): void => {
         )
       }
 
-      const mods = await resolveModifiers(modifiers, bp.activityID, extra)
+      const mods = await buildModifiers(modifiers, extra)
       if (!mods.ok) return textResult(mods.message)
+
+      // A rig only discounts a build whose product its filter covers, so the
+      // product's group/category decides which fitted rig (if any) applies.
+      const productType = await getSdeType(bp.productTypeID)
+      const productRef: ProductRef =
+        productType != null ? { groupID: productType.groupID, categoryID: productType.categoryID ?? -1 } : null
+      const { costParams, echo } = mods.resolve(bp.activityID, productRef)
 
       const names = await getSdeTypeNames([
         bp.blueprintTypeID,
@@ -1211,8 +1443,8 @@ export const registerTools = (server: McpServer): void => {
         activity: activityName(bp.activityID),
         produces_per_run: bp.productQuantity,
         produces_total: bp.productQuantity * runs,
-        modifiers: mods.echo,
-        materials: modifiedMaterials(bp, mods.costParams, names),
+        modifiers: echo,
+        materials: modifiedMaterials(bp, costParams, names),
       })
     }
   )
@@ -1241,36 +1473,39 @@ export const registerTools = (server: McpServer): void => {
         )
       }
 
-      // A structure's bonuses depend on the activity, which varies per row
-      // here (manufacturing vs reaction). Resolve the structure once against
-      // each activity present so a reaction row gets the refinery role bonus
-      // and a manufacturing row the engineering-complex one.
-      const activities = [...new Set(blueprints.map((bp) => bp.activityID))]
-      const byActivity = new Map<number, Omit<ModifierParams, 'base'>>()
-      let echo: Record<string, unknown> | null = null
-      for (const activityID of activities) {
-        const mods = await resolveModifiers(modifiers, activityID, extra)
-        if (!mods.ok) return textResult(mods.message)
-        byActivity.set(activityID, mods.costParams)
-        echo = mods.echo
-      }
+      const mods = await buildModifiers(modifiers, extra)
+      if (!mods.ok) return textResult(mods.message)
 
       const names = await getSdeTypeNames([
         resolved.typeID,
         ...blueprints.flatMap((bp) => [bp.blueprintTypeID, bp.productTypeID]),
       ])
       const shown = blueprints.slice(0, MAX_ROWS)
+      // Bonuses vary per row twice over: by activity (a reaction gets the
+      // refinery role bonus, manufacturing the engineering-complex one) and by
+      // product (a fitted rig only covers certain groups). One bulk SDE lookup
+      // feeds the per-row product refs.
+      const productTypes = await getSdeTypes(shown.map((bp) => bp.productTypeID))
       const rows = shown.map((bp) => {
+        const productType = productTypes[bp.productTypeID]
+        const productRef: ProductRef =
+          productType != null ? { groupID: productType.groupID, categoryID: productType.categoryID ?? -1 } : null
+        const resolvedMods = mods.resolve(bp.activityID, productRef)
         // Adjust only this material's line; each blueprint's other inputs are
         // irrelevant to "how much of X does it take".
         const base = bp.materials.find((mat) => mat.typeID === resolved.typeID)?.quantity ?? 0
-        const [quantityRequired] = cost({ base: [base], ...byActivity.get(bp.activityID)! })
+        const [quantityRequired] = cost({ base: [base], ...resolvedMods.costParams })
+        // Per-row bonuses differ once a structure gates rigs by product, so the
+        // shared inputs go in the top-level summary and each row reports the
+        // rig actually applied to it.
+        const appliedRig = (resolvedMods.echo.from_structure as { rig?: string | null } | undefined)?.rig
         return {
           product: names[bp.productTypeID] ?? `Type #${bp.productTypeID}`,
           blueprint: names[bp.blueprintTypeID] ?? `Type #${bp.blueprintTypeID}`,
           activity: activityName(bp.activityID),
           quantity_per_run: base,
           quantity_required: quantityRequired,
+          ...(appliedRig !== undefined && { rig_applied: appliedRig }),
         }
       })
 
@@ -1278,7 +1513,7 @@ export const registerTools = (server: McpServer): void => {
         material: resolved.name,
         ...(resolved.alsoMatched.length && { note: `Interpreted "${material}" as ${resolved.name}.` }),
         total_blueprints: blueprints.length,
-        modifiers: echo,
+        modifiers: mods.summary,
         blueprints: rows,
         ...(capNote(blueprints.length, shown.length, 'blueprints') && {
           cap_note: capNote(blueprints.length, shown.length, 'blueprints'),

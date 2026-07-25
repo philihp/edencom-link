@@ -6,11 +6,15 @@
 import { createMcpHandler, withMcpAuth } from 'mcp-handler'
 
 import { verifySupabaseToken } from './auth'
+import { registerEstateTools } from './estateTools'
+import { registerIndustryTools } from './industryTools'
 import { registerTools } from './tools'
 
 const handler = createMcpHandler(
   (server) => {
     registerTools(server)
+    registerEstateTools(server)
+    registerIndustryTools(server)
   },
   { serverInfo: { name: 'edencom-link', version: '1.0.0' } },
   // No Redis in this deployment, so the (spec-deprecated) SSE transport stays

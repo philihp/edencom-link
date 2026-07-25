@@ -154,6 +154,15 @@ All functions take `(accessToken, id, ...)` unless noted. Returns raw ESI respon
 - `resolveAssetStationNames()` — resolve+cache NPC station names (location_type 'station' in assets) into `universe_name`
 - `resolveAssetSystemNames()` — resolve+cache solar system names for assets floating directly in space (location_type 'solar_system') into `universe_name`
 
+### `src/app/blueprint/rigs.ts` — which Upwell rigs bonus which products
+- `rigsForProduct(groupID, categoryID)` — every rig type id whose material modifier's filter covers a product in this group/category
+- `rigAppliesToProduct(rigTypeID, groupID, categoryID)` — the per-rig test
+- Both read the vendored eveship.fit modifier tables under `[typeID]/` (`filtersUsed` + `rigsForFilter`). Rigs whose material modifier carries no `filterID` aren't listed by either (long-standing `/blueprint/[typeID]` behaviour). Consumers: that page, the MCP `rigs_for_blueprint` tool, and the `structure_id` bonus resolver in `src/app/api/mcp/tools.ts`
+
+### `src/app/industry/jobSlots.ts` — industry job-slot families and ceilings
+- `ACTIVITY_FAMILY` (ESI activity_id → manufacturing/research/reaction), `SLOT_SKILLS`/`SLOT_SKILL_IDS`/`SKILL_FAMILY`/`SKILL_NAME` (the six slot skills; 1 free slot + 1 per active level, ceiling 11), `baseSlotMax()`/`emptyCounts()`, `SLOT_FAMILIES`
+- Shared by the `/character` slot bubbles and the MCP `list_job_slots` tool so the two can't drift
+
 ### `src/utils/apiToken.ts`
 - `resolvePlayer(token: string)` — look up `user_settings.api_token` for Sheets API endpoints; returns `{ ok: true, supabase, characterIds }` or `{ ok: false, status, error }`
 

@@ -1,10 +1,7 @@
-import { flatten, map, uniq } from 'ramda'
-
 import { Name } from '../../names'
 import { fetchTypeNames } from '../../typeNames'
 import { fetchType, resolveProductTypeID } from '../api'
-import { filtersUsed } from './filters'
-import { rigsForFilter } from './modifiers'
+import { rigsForProduct } from '../rigs'
 
 type BlueprintTypeParams = {
   params: Promise<{ typeID: string }>
@@ -35,9 +32,7 @@ const BlueprintType = async ({ params }: BlueprintTypeParams) => {
   }
 
   const categoryID = product.categoryID ?? -1
-  const rigTypeIDs = uniq(
-    flatten(map((filterID) => rigsForFilter(filterID) ?? [], filtersUsed(product.groupID, categoryID)))
-  ).map(Number)
+  const rigTypeIDs = rigsForProduct(product.groupID, categoryID)
 
   const rigNames = await fetchTypeNames(rigTypeIDs)
   const sortedRigs = rigTypeIDs
