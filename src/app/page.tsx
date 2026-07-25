@@ -2,29 +2,6 @@ import Link from 'next/link'
 import { createClient } from '@/utils/supabase/server'
 import styles from './home.module.css'
 
-// The tour of the app, shown to everyone: signed-in visitors get working links,
-// signed-out ones get the same list as a description of what an account buys.
-const FEATURES = [
-  { href: '/character/', name: '/characters', blurb: 'Where each pilot is, their clones, implants and jump timer.' },
-  { href: '/asset', name: '/asset', blurb: 'Every hangar, container and ship, searchable across all of them.' },
-  { href: '/market', name: '/market', blurb: 'Open orders and trade history, character and corporation together.' },
-  {
-    href: '/industry',
-    name: '/industry',
-    blurb: 'Jobs in flight, free slots per pilot, and the cost indexes you watch.',
-  },
-  {
-    href: '/blueprint',
-    name: '/blueprint',
-    blurb: 'Research state, material bills, and which rigs actually bonus a build.',
-  },
-  {
-    href: '/structure',
-    name: '/structure',
-    blurb: 'Upwell structures with their fuel clocks, services and fitted rigs.',
-  },
-]
-
 const Home = async () => {
   const supabase = await createClient()
   const {
@@ -39,36 +16,76 @@ const Home = async () => {
           Welcome to Edencom Link
         </p>
         <p className={styles.lede}>
-          A quiet ledger for your corner of New Eden. Link your characters once and scheduled jobs pull their assets,
-          wallets, orders, blueprints, industry and structures out of ESI for you — keeping every change as history, so
-          you can see not just what you have, but what changed while you were docked.
+          Link your characters once and scheduled jobs pull their assets, wallets, orders, blueprints, industry and
+          structures out of ESI on your behalf — every change kept as history rather than overwritten. What that buys
+          you is the part the client can&rsquo;t do: handing someone exactly one slice of it.
         </p>
       </section>
 
-      <ul className={styles.features}>
-        {FEATURES.map(({ href, name, blurb }) => (
-          <li key={href} className={styles.feature}>
-            {user ? (
-              <Link href={href} className={styles.name}>
-                {name}
-              </Link>
-            ) : (
-              <span className={styles.name}>{name}</span>
-            )}
-            <span className={styles.blurb}>{blurb}</span>
-          </li>
-        ))}
-      </ul>
+      <h2 className={styles.heading}>Cut it thinner than the game lets you</h2>
+      <dl className={styles.capabilities}>
+        <div>
+          <dt>Share one ship, not your hangar</dt>
+          <dd>
+            Mint a public link to a single fitted ship — the fit wheel, its cargo, where it&rsquo;s parked. A buyer or a
+            fleetmate opens it without an account and sees that ship and nothing else. Revoke it when the deal closes.
+          </dd>
+        </div>
+
+        <div>
+          <dt>Show dens to one alliance</dt>
+          <dd>
+            Mercenary den sharing is opt-in per alliance: pick which of yours can see your dens and the hostile-den map
+            you&rsquo;ve been keeping. Everyone else — the rest of your corp included, if you want it that way — sees
+            nothing.
+          </dd>
+        </div>
+
+        <div>
+          <dt>Hand out a corpse collection</dt>
+          <dd>
+            Your trophies get a public page of their own, no login on either end, with anything you picked up in the
+            last two days badged as new.
+          </dd>
+        </div>
+
+        <div>
+          <dt>Let an assistant ask on your behalf</dt>
+          <dd>
+            An MCP server at <code>/api/mcp</code>, authorized over OAuth, so Claude can answer &ldquo;which blueprints
+            are worth researching&rdquo; or &ldquo;what&rsquo;s sitting in my Jita hangar&rdquo; against exactly the
+            data your account can see — never more.
+          </dd>
+        </div>
+
+        <div>
+          <dt>Feed a spreadsheet</dt>
+          <dd>
+            CSV endpoints built for <code>=IMPORTDATA()</code> and keyed to a personal token, several of which take an{' '}
+            <code>at=</code> timestamp — so a sheet can pull last Tuesday&rsquo;s hangar instead of today&rsquo;s.
+          </dd>
+        </div>
+
+        <div>
+          <dt>Ask what changed</dt>
+          <dd>
+            Assets, orders, jobs and blueprints are versioned, not replaced. &ldquo;When did that stack move?&rdquo; and
+            &ldquo;what did I own before downtime?&rdquo; both have answers.
+          </dd>
+        </div>
+      </dl>
 
       <p className={styles.note}>
-        Pages read from the database rather than calling ESI live, so everything is dated and nothing rate-limits you.
-        The same data leaves by three other doors: CSV endpoints for Google Sheets, share links for a single ship or
-        hangar, and an MCP server your AI assistant can query directly.
+        You decide how much to hand over in the first place: adding a character asks EVE for one permission at a time,
+        and the features you skip are simply the ones you don&rsquo;t get. Pages then read from that stored copy rather
+        than calling ESI live, so everything is stamped with when it landed.{' '}
+        {user ? <Link href="/settings/grants">Review your grants</Link> : null}
       </p>
 
       {user ? (
         <p className={styles.cta}>
-          <Link href="/character/">Add or refresh a character</Link> to keep the extracts flowing.
+          <Link href="/character/">Add or refresh a character</Link> to keep the extracts flowing, or start from{' '}
+          <Link href="/asset">your hangars</Link>.
         </p>
       ) : (
         <p className={styles.cta}>

@@ -28,40 +28,40 @@
   font-size: 13px;
 }
 
-.features {
-  margin: 18px 0 0;
-  padding: 0;
-  list-style: none;
-  display: grid;
-  gap: 10px 24px;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+.heading {
+  margin: 26px 0 0;
+  font-size: 14px;
+  color: var(--ink);
 }
 
-.feature {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
+/*
+ * The capability list: each term is the thing you can do, each definition is
+ * why it isn't otherwise possible. Two columns once there's room, so the six
+ * of them read as a set rather than a scroll.
+ */
+.capabilities {
+  margin: 12px 0 0;
+  display: grid;
+  gap: 16px 28px;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+}
+
+.capabilities dt {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.capabilities dd {
+  margin: 4px 0 0;
+  max-width: 58ch;
+  color: var(--ink-soft);
   font-size: 13px;
 }
 
-.name {
-  flex: none;
-  width: 92px;
-  font-family: var(--mono);
+.capabilities code {
   font-size: 12px;
   color: var(--ink-faint);
-}
-
-a.name {
-  color: var(--link);
-}
-
-a.name:visited {
-  color: var(--link-visited);
-}
-
-.blurb {
-  color: var(--ink-soft);
 }
 
 .note {
