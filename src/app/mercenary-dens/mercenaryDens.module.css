@@ -14,7 +14,7 @@
   margin-top: 4pt;
 }
 
-/* Alliance-sharing opt-out toggle in the page header. */
+/* Alliance-sharing picker in the page header. */
 .share {
   display: flex;
   flex-direction: column;
@@ -22,14 +22,24 @@
   gap: 3pt;
 }
 
+.shareLabel {
+  font-size: 9pt;
+  color: var(--ink-soft);
+}
+
+.shareList {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4pt 12pt;
+}
+
 .shareToggle {
   display: flex;
   align-items: center;
   gap: 6pt;
   cursor: pointer;
-  font-size: 9pt;
-  color: var(--ink-soft);
-  text-align: right;
+  white-space: nowrap;
 }
 
 .shareAudience {

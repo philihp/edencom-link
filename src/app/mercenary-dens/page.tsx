@@ -15,10 +15,10 @@ import styles from './mercenaryDens.module.css'
 
 export const dynamic = 'force-dynamic'
 
-// A den we can see in the DB — our own, plus dens shared by pilots in one of our
-// corporations or alliances (RLS on character_mercenary_den only ever surfaces
-// those). So every DB den is "ours" for colouring purposes; external dens come
-// only from the hand-kept intel.
+// A den we can see in the DB — our own, plus dens shared to one of our alliances
+// (RLS on character_mercenary_den only ever surfaces those). So every DB den is
+// "ours" for colouring purposes; external dens come only from the hand-kept
+// intel.
 type DenRow = {
   character_id: string
   den_id: number
@@ -77,45 +77,42 @@ const MercenaryDensPage = async () => {
     ])
   )
 
-  // Who the caller's den data reaches. The audience isn't configurable — it's
-  // every pilot sharing a corporation or alliance with one of their characters
-  // (see mercenary_den_visible_registrations in schema.sql) — so this is purely
-  // a label: the alliance(s) their corps belong to, falling back to the corp
-  // names for an alliance-less corp. Both directory tables are world-readable.
+  // The alliances the caller has a character in — the audiences they can share
+  // with, and everything the picker offers (usually just the one). Resolved
+  // registration → corporation → alliance; both directory tables are
+  // world-readable, and this mirrors the my_alliance_ids() SQL helper the
+  // sharing policies use.
   const ownCorpIds = [...new Set((myRegs ?? []).map((r) => r.corporation_id).filter((c): c is number => c != null))]
   const { data: myCorps } = ownCorpIds.length
-    ? await supabase.from('corporation').select('corporation_id, name, alliance_id').in('corporation_id', ownCorpIds)
+    ? await supabase.from('corporation').select('corporation_id, alliance_id').in('corporation_id', ownCorpIds)
     : { data: [] }
   const allianceIds = [...new Set((myCorps ?? []).map((c) => c.alliance_id).filter((a): a is number => a != null))]
   const { data: myAlliances } = allianceIds.length
     ? await supabase.from('alliance').select('alliance_id, name').in('alliance_id', allianceIds)
     : { data: [] }
-  const audienceNames = allianceIds.length
-    ? (myAlliances ?? []).map((a) => a.name ?? `alliance ${a.alliance_id}`)
-    : (myCorps ?? []).map((c) => c.name ?? `corp ${c.corporation_id}`)
-  const audience = (myRegs ?? []).length ? audienceNames.join(', ') || 'my alliance' : null
+  const alliances = (myAlliances ?? []).map((a) => ({
+    id: String(a.alliance_id),
+    name: a.name ?? `Alliance #${a.alliance_id}`,
+  }))
 
-  // Sharing is on unless the caller has opted out — the table stores only the
-  // exceptions, so a row means "not shared". It's keyed per registration (the
-  // sharing policies join through character_directory, which has no user_id),
-  // while the UI is one all-or-nothing switch: any opted-out character reads as
-  // "not sharing", so a partial state can only ever err toward private.
+  // Which of those the caller currently shares with. Sharing is opt-in — no rows
+  // means shared with nobody — and the rows are per registration, while the UI
+  // is one choice for the whole account, so an alliance counts as ticked when
+  // any of the caller's characters shares with it (which is how the action
+  // writes them: all characters at once).
   const registrationIds = [...ownRegById.keys()]
-  const { count: optOutCount } = registrationIds.length
-    ? await supabase
-        .from('mercenary_den_share_opt_out')
-        .select('registration_id', { count: 'exact', head: true })
-        .in('registration_id', registrationIds)
-    : { count: 0 }
-  const sharing = !optOutCount
+  const { data: shares } = registrationIds.length
+    ? await supabase.from('character_mercenary_den_share').select('alliance_id').in('character_id', registrationIds)
+    : { data: [] }
+  const sharedAllianceIds = [...new Set((shares ?? []).map((s) => String(s.alliance_id)))]
 
-  // Every mercenary den we can see (own + shared by corp/alliance mates), each enriched
-  // with its latest observed status (the view left-joins it).
+  // Every mercenary den we can see (own + shared to one of our alliances), each
+  // enriched with its latest observed status (the view left-joins it).
   const { data: denData } = await supabase.from('character_mercenary_den').select('*')
   const dens = (denData ?? []) as DenRow[]
 
-  // Resolve owner identity for dens we can see but don't own (shared by a
-  // corp/alliance mate). Their registration is hidden from us by RLS, but
+  // Resolve owner identity for dens we can see but don't own (shared to one of
+  // our alliances). Their registration is hidden from us by RLS, but
   // character_directory carries the public half of the same identity — name and
   // EVE character id, keyed by registration and deliberately free of user_id —
   // and is world-readable, so this is a plain join rather than a definer bridge.
@@ -137,8 +134,8 @@ const MercenaryDensPage = async () => {
 
   // Hand-submitted enemy-den sightings — a submitter always sees their own, and
   // sees others' reports exactly when that submitter's dens are visible to them
-  // (mercenary_den_enemy_intel's RLS resolves through the same corp/alliance
-  // sharing rule as real dens). Soonest reinforcement timer first. Only rows
+  // (mercenary_den_enemy_intel's RLS resolves through the same share rows as
+  // real dens). Soonest reinforcement timer first. Only rows
   // whose reinforcement timer is still in the future or expired less than an
   // hour ago are shown (long-stale and undated rows drop off), and soft-deleted
   // rows (deleted_at set) are hidden.
@@ -246,7 +243,7 @@ const MercenaryDensPage = async () => {
     <>
       <div className={styles.pageHeader}>
         <h1>Mercenary Dens</h1>
-        <ShareAlliance audience={audience} shared={sharing} />
+        <ShareAlliance alliances={alliances} sharedAllianceIds={sharedAllianceIds} />
       </div>
       <p className={styles.subtitle}>
         Systems immediately accessible from our staging system, <span className={styles.system}>{STAGING}</span>.

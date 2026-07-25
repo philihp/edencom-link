@@ -1,103 +1,78 @@
--- Mercenary Den sharing: per-corporation opt-in → alliance-wide, on by default.
+-- Mercenary Den sharing: per-corporation → per-alliance.
 --
--- Sharing used to be an explicit per-corporation opt-in: a row in
--- character_mercenary_den_share meant "this character's owner shares their den
--- data (and their enemy-den intel) with that corporation", and with no rows a
--- user shared with nobody. Everyone who wanted sharing wanted it with their
--- whole alliance, and the picker was a step people forgot — so dens sat
--- invisible to exactly the fleet that needed to see them.
+-- Sharing stays an explicit opt-in — a row in character_mercenary_den_share
+-- means "this character's owner shares their den data (and their enemy-den
+-- intel) with that audience", and with no rows a user shares with nobody. What
+-- changes is the audience: corporation becomes alliance. Everyone who wanted
+-- sharing wanted it with their whole alliance, so picking corporations meant
+-- either ticking every corp in the coalition or leaving fleetmates unable to see
+-- dens they were expected to defend.
 --
--- The audience is now derived rather than configured: a user's dens and intel
--- are visible to anyone whose characters share a corporation or an alliance
--- with one of theirs, and sharing is ON unless the owner explicitly opts out.
--- Corporation is honoured alongside alliance so an alliance-less corp still
--- shares internally rather than the feature silently doing nothing.
+-- Existing shares are carried over rather than dropped: each (character,
+-- corporation) row becomes (character, that corporation's alliance). Rows whose
+-- shared-to corporation has no alliance have no audience to migrate to and are
+-- removed — nothing else could preserve their intent, since the corporation is
+-- no longer an audience the model can express.
 --
--- The old opt-in rows describe a preference that no longer exists (and
--- preserving them would mean defaulting almost everyone to "not shared", the
--- opposite of the intent), so character_mercenary_den_share is dropped rather
--- than migrated.
---
--- Everything here runs on INVOKER rights. The corp/alliance match reads the
--- world-readable character_directory (docs/sharing-layer/design.md's "identity
--- split": public identity keyed by registration_id, carrying no user_id) rather
--- than public.registration, which RLS would hide — so the SECURITY DEFINER
--- bridges added in 20260720050000 are dropped here instead of being rewritten.
+-- Everything here runs on INVOKER rights. The share row names its own audience,
+-- so the policies are plain joins against the alliances the caller has a
+-- character in; owner identity comes from the world-readable character_directory
+-- (docs/sharing-layer/design.md's "identity split": public identity keyed by
+-- registration_id, carrying no user_id). That's what lets the SECURITY DEFINER
+-- bridges added in 20260720050000 be dropped here rather than rewritten.
 
--- Dropped before the table they read.
 drop policy if exists "Corpmates read shared mercenary dens" on public.character_mercenary_den_over_time;
 drop policy if exists "Corpmates read shared enemy den intel" on public.mercenary_den_enemy_intel;
+drop policy if exists "Corpmates read shares to their corps" on public.character_mercenary_den_share;
 drop function if exists public.mercenary_den_owner_names(uuid[]);
 drop function if exists public.user_shares_dens_with_caller(uuid);
 
--- ── mercenary_den_share_opt_out ──────────────────────────────────────────────
--- The inverse of the old share table: one row = "this registration's dens are
--- NOT shared". Absence means shared, which is what makes the new default on
--- without backfilling a row per account.
---
--- Keyed by registration rather than by auth user for two reasons: the sharing
--- policies join through character_directory, which is keyed by registration and
--- deliberately carries no user_id; and it matches the per-character grantor
--- keying the sharing layer uses elsewhere. The UI still writes it as one
--- all-or-nothing choice (every one of the user's registrations at once).
---
--- Deliberately bare — registration_id and nothing else. A created_at would let
--- anyone watching this world-readable table correlate a user's alts by the
--- timestamp they were opted out together, which is exactly what the identity
--- split exists to prevent.
-create table if not exists public.mercenary_den_share_opt_out (
-  registration_id uuid primary key references public.registration(id) on delete cascade
-);
+-- ── character_mercenary_den_share: corporation → alliance ────────────────────
+alter table public.character_mercenary_den_share
+  add column if not exists alliance_id bigint;
 
-alter table public.mercenary_den_share_opt_out enable row level security;
+-- Carry every existing share over to the alliance of the corporation it pointed
+-- at.
+update public.character_mercenary_den_share sh
+set alliance_id = c.alliance_id
+from public.corporation c
+where c.corporation_id = sh.corporation_id
+  and c.alliance_id is not null
+  and sh.alliance_id is null;
 
--- World-readable to authenticated users: the sharing policies below run as the
--- querying user and must be able to see *other* people's opt-outs to honour
--- them. All this exposes is "this character doesn't share its dens".
-create policy "Authenticated read den share opt-outs"
-  on public.mercenary_den_share_opt_out
-  for select
-  to authenticated
-  using (true);
+-- Shares aimed at a corporation with no alliance (or at a corporation the
+-- directory has never seen) can't be expressed in the new model.
+delete from public.character_mercenary_den_share where alliance_id is null;
 
--- Writes are limited to the caller's own registrations.
-create policy "Users set own den share opt-out"
-  on public.mercenary_den_share_opt_out
-  for insert
-  to authenticated
-  with check (
-    registration_id in (select id from public.registration where user_id = (select auth.uid()))
-  );
+-- Two of a user's characters could have been shared to different corporations in
+-- the same alliance; those collapse to one row.
+delete from public.character_mercenary_den_share a
+  using public.character_mercenary_den_share b
+  where a.character_id = b.character_id
+    and a.alliance_id = b.alliance_id
+    and a.ctid < b.ctid;
 
-create policy "Users clear own den share opt-out"
-  on public.mercenary_den_share_opt_out
-  for delete
-  to authenticated
-  using (
-    registration_id in (select id from public.registration where user_id = (select auth.uid()))
-  );
+alter table public.character_mercenary_den_share drop constraint if exists character_mercenary_den_share_pkey;
+drop index if exists public.character_mercenary_den_share_corporation_id_idx;
 
-grant select, insert, delete on public.mercenary_den_share_opt_out to authenticated;
-grant all                    on public.mercenary_den_share_opt_out to service_role;
+alter table public.character_mercenary_den_share
+  drop column if exists corporation_id,
+  alter column alliance_id set not null,
+  add primary key (character_id, alliance_id);
+
+create index if not exists character_mercenary_den_share_alliance_id_idx
+  on public.character_mercenary_den_share (alliance_id);
 
 -- ── Audience helpers (INVOKER rights) ────────────────────────────────────────
 -- Plain stable SQL functions, not SECURITY DEFINER: they read only what the
 -- caller may already read — their own registrations (registration RLS exposes
--- exactly those) and the world-readable corporation/character_directory
--- tables. They exist to keep the policies below readable, not to widen access.
+-- exactly those), the world-readable corporation table, and share rows the
+-- policies below already expose. They exist to keep those policies readable, not
+-- to widen access. Defined before the policies that call them, since a policy
+-- expression is parsed and validated at creation time.
 
--- The corporations the caller has a character in.
-create or replace function public.my_corporation_ids()
-returns setof bigint
-language sql
-stable
-as $$
-  select r.corporation_id
-  from public.registration r
-  where r.user_id = (select auth.uid()) and r.corporation_id is not null;
-$$;
-
--- The alliances those corporations belong to.
+-- The alliances the caller has a character in — the audiences they can share
+-- with, and the ones the picker offers.
 create or replace function public.my_alliance_ids()
 returns setof bigint
 language sql
@@ -109,11 +84,10 @@ as $$
   where r.user_id = (select auth.uid()) and c.alliance_id is not null;
 $$;
 
--- True when the given registration shares its Mercenary Den data with the
--- caller: its public directory entry sits in one of the caller's corporations
--- or alliances, and its owner hasn't opted out. The single definition of the
--- audience — the den policy, the enemy-intel policy and the UI all go through
--- it, so they can't drift apart.
+-- True when the given registration shares its Mercenary Den data with an
+-- alliance the caller has a character in. The single definition of the
+-- audience — the den policy and the enemy-intel policy both go through it, so
+-- they can't drift apart.
 create or replace function public.mercenary_den_shared_with_caller(reg_id uuid)
 returns boolean
 language sql
@@ -121,26 +95,66 @@ stable
 as $$
   select exists (
     select 1
-    from public.character_directory d
-    where d.registration_id = reg_id
-      and (
-        d.corporation_id in (select public.my_corporation_ids())
-        or d.alliance_id in (select public.my_alliance_ids())
-      )
-      and not exists (
-        select 1 from public.mercenary_den_share_opt_out o where o.registration_id = reg_id
-      )
+    from public.character_mercenary_den_share sh
+    where sh.character_id = reg_id
+      and sh.alliance_id in (select public.my_alliance_ids())
   );
 $$;
 
-grant execute on function public.my_corporation_ids() to authenticated;
 grant execute on function public.my_alliance_ids() to authenticated;
 grant execute on function public.mercenary_den_shared_with_caller(uuid) to authenticated;
 
+-- ── character_mercenary_den_share policies ───────────────────────────────────
+-- Writes used to be service-role only (the picker went through the service
+-- client). The audience is now something the caller can be checked against
+-- directly, so they move to plain RLS on the caller's own registrations.
+drop policy if exists "Users read own den shares" on public.character_mercenary_den_share;
+
+-- Members read the share rows aimed at their alliances. This is also what keeps
+-- the den/intel policies below working: their subquery over this table runs as
+-- the querying user, and the only rows it needs are exactly the ones this policy
+-- exposes.
+create policy "Alliance members read shares to their alliances"
+  on public.character_mercenary_den_share
+  for select
+  to authenticated
+  using (alliance_id in (select public.my_alliance_ids()));
+
+-- Owners always read their own share rows (this drives the picker's checked
+-- state), even if the sharing character has since left that alliance — without
+-- this, such a stale share would turn invisible to the very user who created it.
+-- Permissive: OR'd with the alliance policy above.
+create policy "Users read own den shares"
+  on public.character_mercenary_den_share
+  for select
+  to authenticated
+  using (
+    character_id in (select id from public.registration where user_id = (select auth.uid()))
+  );
+
+create policy "Users create own den shares"
+  on public.character_mercenary_den_share
+  for insert
+  to authenticated
+  with check (
+    character_id in (select id from public.registration where user_id = (select auth.uid()))
+  );
+
+create policy "Users remove own den shares"
+  on public.character_mercenary_den_share
+  for delete
+  to authenticated
+  using (
+    character_id in (select id from public.registration where user_id = (select auth.uid()))
+  );
+
+grant select, insert, delete on public.character_mercenary_den_share to authenticated;
+grant all                    on public.character_mercenary_den_share to service_role;
+
 -- ── Den policy ───────────────────────────────────────────────────────────────
--- Additive/permissive, OR'd with "Users read own mercenary dens" (which stays
--- as the owner's own path, independent of the directory). The status table's
--- policy reads through this table, so it widens along with it.
+-- Additive/permissive, OR'd with "Users read own mercenary dens" (which stays as
+-- the owner's own path, independent of any share row). The status table's policy
+-- reads through this table, so it widens along with it.
 create policy "Alliance members read shared mercenary dens"
   on public.character_mercenary_den_over_time
   for select
@@ -149,15 +163,14 @@ create policy "Alliance members read shared mercenary dens"
 
 -- ── Enemy intel: own it by character, not by auth user ───────────────────────
 -- The corkboard was keyed only by created_by (an auth.users id), which no
--- invoker-rights policy can resolve to a corporation or alliance — mapping it
--- to characters needs public.registration, which RLS hides from everyone but
--- the owner. That's what forced the SECURITY DEFINER bridge. Attributing a
--- report to the reporting *character* instead lets the same
--- character_directory join that gates real dens gate intel too.
+-- invoker-rights policy can match against a share row — mapping it to characters
+-- needs public.registration, which RLS hides from everyone but the owner. That's
+-- what forced the SECURITY DEFINER bridge. Attributing a report to the reporting
+-- *character* instead lets the same share rows that gate real dens gate intel.
 --
 -- created_by stays as audit metadata and as the ownership fallback for rows
--- orphaned when a character is unlinked (reporter_id nulled): those stay
--- visible and deletable to their submitter, and invisible to everyone else.
+-- orphaned when a character is unlinked (reporter_id nulled): those stay visible
+-- and deletable to their submitter, and invisible to everyone else.
 alter table public.mercenary_den_enemy_intel
   add column if not exists reporter_id uuid references public.registration(id) on delete set null;
 
@@ -231,5 +244,3 @@ create policy "Authenticated soft-delete own enemy den intel"
     reporter_id in (select id from public.registration where user_id = (select auth.uid()))
     or (reporter_id is null and created_by = (select auth.uid()))
   );
-
-drop table if exists public.character_mercenary_den_share cascade;

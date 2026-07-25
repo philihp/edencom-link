@@ -44,35 +44,6 @@ const ensureMainCharacter = (supabase: SupabaseClient) => async (user_id: string
   if (updateError) throw new Error(`mark main character failed: ${JSON.stringify(updateError)}`)
 }
 
-// Mercenary Den sharing is on by default and stored as per-registration
-// exceptions (mercenary_den_share_opt_out), so a freshly linked character starts
-// out shared — even for a user who has already opted out. Carry their existing
-// choice over to the new registration. Best-effort: a failure here must not
-// block registration, but it's logged rather than swallowed, since the failure
-// mode is a character sharing when its owner asked not to.
-const inheritDenSharingOptOut = (supabase: SupabaseClient) => async (user_id: string, registration_id: string) => {
-  const { data: siblings } = await supabase
-    .from('registration')
-    .select('id')
-    .eq('user_id', user_id)
-    .neq('id', registration_id)
-  const siblingIds = (siblings ?? []).map((r) => r.id)
-  if (siblingIds.length === 0) return
-
-  const { count } = await supabase
-    .from('mercenary_den_share_opt_out')
-    .select('registration_id', { count: 'exact', head: true })
-    .in('registration_id', siblingIds)
-  if (!count) return
-
-  const { error } = await supabase
-    .from('mercenary_den_share_opt_out')
-    .upsert({ registration_id }, { onConflict: 'registration_id', ignoreDuplicates: true })
-  if (error) {
-    console.warn(`/character/callback: den share opt-out not carried to ${registration_id}: ${error.message}`)
-  }
-}
-
 const upsertToken =
   (supabase: SupabaseClient) =>
   async (columns: {
@@ -130,7 +101,6 @@ export const GET = async (request: NextRequest) => {
     ...(corporation_id != null ? { corporation_id } : {}),
   })
   await ensureMainCharacter(supabase)(user_id)
-  await inheritDenSharingOptOut(supabase)(user_id, character_id)
   await upsertToken(supabase)({
     user_id,
     character_id,
