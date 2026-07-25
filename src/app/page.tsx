@@ -2,6 +2,56 @@ import Link from 'next/link'
 import { createClient } from '@/utils/supabase/server'
 import styles from './home.module.css'
 
+// The capability pitch: each card names something the game client can't do,
+// because it can't hold history or hand out a slice of your account.
+const CAPABILITIES = [
+  {
+    label: 'Sharing',
+    title: 'Share one ship, not your hangar',
+    body: 'Mint a public link to a single fitted ship — the fit wheel, its cargo, where it is parked. A buyer or a fleetmate opens it without an account, sees that ship and nothing else, and the link dies when you revoke it.',
+  },
+  {
+    label: 'Intel',
+    title: 'Show dens to one alliance',
+    body: 'Mercenary den sharing is opt-in per alliance. Pick which of yours can see your dens and the hostile-den map you keep — everyone else, corpmates included, sees nothing.',
+  },
+  {
+    label: 'Public pages',
+    title: 'Hand out a corpse collection',
+    body: 'Your trophies get a page of their own that needs no login on either end, with anything you picked up in the last two days badged as new.',
+  },
+  {
+    label: 'MCP',
+    title: 'Let an assistant answer for you',
+    body: 'An OAuth-authorized MCP server, so Claude can field “which blueprints are worth researching” or “what is sitting in my Jita hangar” against exactly the data your account can see — never more.',
+  },
+  {
+    label: 'Exports',
+    title: 'Feed a spreadsheet',
+    body: 'CSV endpoints built for =IMPORTDATA() and keyed to a personal token, several of which take an at= timestamp — so a sheet can pull last Tuesday’s hangar instead of today’s.',
+  },
+  {
+    label: 'History',
+    title: 'Ask what changed',
+    body: 'Assets, orders, jobs and blueprints are versioned rather than replaced. “When did that stack move?” and “what did I own before downtime?” both have answers.',
+  },
+]
+
+const STEPS = [
+  {
+    title: 'Link a character',
+    body: 'EVE SSO asks for one permission at a time. Grant what you want; the features you skip are simply the ones you do not get.',
+  },
+  {
+    title: 'Let the extracts run',
+    body: 'Scheduled jobs pull each endpoint into storage and keep every version. Nothing here writes to your account, ever.',
+  },
+  {
+    title: 'Read it, slice it, query it',
+    body: 'Browse the pages, hand out a link to exactly one thing, pipe it into Sheets, or point an AI assistant at it.',
+  },
+]
+
 const Home = async () => {
   const supabase = await createClient()
   const {
@@ -9,90 +59,118 @@ const Home = async () => {
   } = await supabase.auth.getUser()
 
   return (
-    <main className={styles.wrap}>
-      <section className={styles.welcome}>
-        <p className={styles.title}>
+    <main className={styles.page}>
+      <section className={styles.hero}>
+        <p className={styles.eyebrow}>
           <span className={styles.spark}>✻</span>
-          Welcome to Edencom Link
+          EVE Online · assets, industry &amp; intel
         </p>
-        <p className={styles.lede}>
-          Link your characters once and scheduled jobs pull their assets, wallets, orders, blueprints, industry and
-          structures out of ESI on your behalf — every change kept as history rather than overwritten. What that buys
-          you is the part the client can&rsquo;t do: handing someone exactly one slice of it.
+        <h1 className={styles.headline}>Your empire, extracted — and sliceable.</h1>
+        <p className={styles.sub}>
+          Edencom Link keeps a versioned copy of what your characters and corporations own, earn, build and hold space
+          with. Then it lets you hand out exactly one piece of it — a single ship, one alliance&rsquo;s worth of den
+          intel, a spreadsheet, an AI assistant&rsquo;s question — without opening the rest.
         </p>
+        <div className={styles.actions}>
+          {user ? (
+            <>
+              <Link href="/asset" className={styles.primary}>
+                Open your hangars
+              </Link>
+              <Link href="/character/" className={styles.secondary}>
+                Add a character
+              </Link>
+            </>
+          ) : (
+            <>
+              <Link href="/account/register" className={styles.primary}>
+                Redeem an invite
+              </Link>
+              <Link href="/account/login" className={styles.secondary}>
+                Log in
+              </Link>
+            </>
+          )}
+        </div>
+        <p className={styles.microcopy}>Invite-only · read-only ESI access · you choose the scopes</p>
       </section>
 
-      <h2 className={styles.heading}>Cut it thinner than the game lets you</h2>
-      <dl className={styles.capabilities}>
-        <div>
-          <dt>Share one ship, not your hangar</dt>
-          <dd>
-            Mint a public link to a single fitted ship — the fit wheel, its cargo, where it&rsquo;s parked. A buyer or a
-            fleetmate opens it without an account and sees that ship and nothing else. Revoke it when the deal closes.
-          </dd>
+      <section className={styles.stats}>
+        <div className={styles.stat}>
+          <span className={styles.statValue}>18</span>
+          <span className={styles.statLabel}>scheduled extracts keeping your copy current</span>
         </div>
-
-        <div>
-          <dt>Show dens to one alliance</dt>
-          <dd>
-            Mercenary den sharing is opt-in per alliance: pick which of yours can see your dens and the hostile-den map
-            you&rsquo;ve been keeping. Everyone else — the rest of your corp included, if you want it that way — sees
-            nothing.
-          </dd>
+        <div className={styles.stat}>
+          <span className={styles.statValue}>6h</span>
+          <span className={styles.statLabel}>between passes, or refresh any of them on demand</span>
         </div>
-
-        <div>
-          <dt>Hand out a corpse collection</dt>
-          <dd>
-            Your trophies get a public page of their own, no login on either end, with anything you picked up in the
-            last two days badged as new.
-          </dd>
+        <div className={styles.stat}>
+          <span className={styles.statValue}>0</span>
+          <span className={styles.statLabel}>writes back to your account — it only ever reads</span>
         </div>
+      </section>
 
-        <div>
-          <dt>Let an assistant ask on your behalf</dt>
-          <dd>
-            An MCP server at <code>/api/mcp</code>, authorized over OAuth, so Claude can answer &ldquo;which blueprints
-            are worth researching&rdquo; or &ldquo;what&rsquo;s sitting in my Jita hangar&rdquo; against exactly the
-            data your account can see — never more.
-          </dd>
+      <section className={styles.section}>
+        <p className={styles.eyebrow}>Capabilities</p>
+        <h2 className={styles.sectionTitle}>Cut it thinner than the game lets you</h2>
+        <div className={styles.cards}>
+          {CAPABILITIES.map(({ label, title, body }) => (
+            <article key={title} className={styles.card}>
+              <p className={styles.cardLabel}>{label}</p>
+              <h3 className={styles.cardTitle}>{title}</h3>
+              <p className={styles.cardBody}>{body}</p>
+            </article>
+          ))}
         </div>
+      </section>
 
-        <div>
-          <dt>Feed a spreadsheet</dt>
-          <dd>
-            CSV endpoints built for <code>=IMPORTDATA()</code> and keyed to a personal token, several of which take an{' '}
-            <code>at=</code> timestamp — so a sheet can pull last Tuesday&rsquo;s hangar instead of today&rsquo;s.
-          </dd>
-        </div>
+      <section className={styles.section}>
+        <p className={styles.eyebrow}>How it works</p>
+        <h2 className={styles.sectionTitle}>Three steps, then it runs itself</h2>
+        <ol className={styles.steps}>
+          {STEPS.map(({ title, body }, index) => (
+            <li key={title} className={styles.step}>
+              <span className={styles.stepNumber}>{index + 1}</span>
+              <div>
+                <p className={styles.stepTitle}>{title}</p>
+                <p className={styles.stepBody}>{body}</p>
+              </div>
+            </li>
+          ))}
+        </ol>
+      </section>
 
-        <div>
-          <dt>Ask what changed</dt>
-          <dd>
-            Assets, orders, jobs and blueprints are versioned, not replaced. &ldquo;When did that stack move?&rdquo; and
-            &ldquo;what did I own before downtime?&rdquo; both have answers.
-          </dd>
-        </div>
-      </dl>
-
-      <p className={styles.note}>
-        You decide how much to hand over in the first place: adding a character asks EVE for one permission at a time,
-        and the features you skip are simply the ones you don&rsquo;t get. Pages then read from that stored copy rather
-        than calling ESI live, so everything is stamped with when it landed.{' '}
-        {user ? <Link href="/settings/grants">Review your grants</Link> : null}
-      </p>
-
-      {user ? (
-        <p className={styles.cta}>
-          <Link href="/character/">Add or refresh a character</Link> to keep the extracts flowing, or start from{' '}
-          <Link href="/asset">your hangars</Link>.
+      <section className={styles.closing}>
+        <h2 className={styles.closingTitle}>
+          {user ? 'Everything is where you left it.' : 'Bring your own invite code.'}
+        </h2>
+        <p className={styles.closingBody}>
+          {user
+            ? 'Your extracts are running. Check what landed recently, or grant a scope you skipped the first time.'
+            : 'This is a small outfit, so accounts are handed out by invite. If you have a code, it takes about a minute to link your first character.'}
         </p>
-      ) : (
-        <p className={styles.cta}>
-          <Link href="/account/login">Log in</Link> to pick up where you left off, or{' '}
-          <Link href="/account/register">register</Link> with an invite code — this is a small, invite-only outfit.
-        </p>
-      )}
+        <div className={styles.actions}>
+          {user ? (
+            <>
+              <Link href="/character/refresh" className={styles.primary}>
+                See what is fresh
+              </Link>
+              <Link href="/settings/grants" className={styles.secondary}>
+                Review your grants
+              </Link>
+            </>
+          ) : (
+            <>
+              <Link href="/account/register" className={styles.primary}>
+                Redeem an invite
+              </Link>
+              <Link href="/account/login" className={styles.secondary}>
+                Log in
+              </Link>
+            </>
+          )}
+        </div>
+      </section>
     </main>
   )
 }
