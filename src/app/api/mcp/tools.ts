@@ -30,24 +30,25 @@ import {
   type Blueprint,
 } from '@/sdeBlueprints'
 import { formatSecurity, getSdeSystem, getSdeSystemNames, getSdeSystems, searchSdeSystems } from '@/sdeSystems'
-import { getSdeType, getSdeTypeNames, getSdeTypes, getSdeTypesInGroups, searchSdeTypesAll } from '@/sdeTypes'
+import { getSdeType, getSdeTypeNames, getSdeTypes, searchSdeTypesAll } from '@/sdeTypes'
 import { createBearerClient } from '@/utils/supabase/bearer'
 
 import {
   buildBlueprintParams,
+  DEFAULT_LIMIT as DEFAULT_BLUEPRINT_LIMIT,
   EMPTY_BLUEPRINT_PAYLOAD,
   formatBlueprintRows,
-  isGrouped,
-  type BlueprintDetailRow,
+  MAX_LIMIT as MAX_BLUEPRINT_LIMIT,
+  truncationNote,
   type BlueprintSearchPayload,
 } from './blueprintQuery'
 import {
   applyStructureFilters,
   corporationIdsFor,
-  formatStructure,
+  escapeLike,
   type FilterableQuery,
-  groupIdForKind,
-  STRUCTURE_KINDS,
+  formatStructure,
+  matchesServices,
   type StructureRow,
 } from './structureQuery'
 import {
@@ -94,6 +95,27 @@ const resolveOneSystem = async (system: string | undefined): Promise<SystemMatch
   const [best] = await searchSdeSystems(trimmed, 1)
   if (!best) return { ok: false, message: `No solar system matched "${trimmed}".` }
   return { ok: true, system: { systemID: best.systemID, name: best.name } }
+}
+
+// Resolve a fuzzy structure name to the ids a blueprint's location_id can
+// carry. universe_structure holds every player structure the app has resolved a
+// name for, so the match happens there and only ids travel into the query.
+type StructureMatch = { ok: true; structureIds: number[] | null; name: string | null } | { ok: false; message: string }
+
+const resolveStructures = async (supabase: SupabaseClient, structure: string | undefined): Promise<StructureMatch> => {
+  const trimmed = (structure ?? '').trim()
+  if (trimmed === '') return { ok: true, structureIds: null, name: null }
+  const { data } = await supabase
+    .from('universe_structure')
+    .select('structure_id, name')
+    .ilike('name', `%${escapeLike(trimmed)}%`)
+  const matches = (data ?? []) as Array<{ structure_id: number | string; name: string | null }>
+  if (matches.length === 0) return { ok: false, message: `No known structure matched "${trimmed}".` }
+  return {
+    ok: true,
+    structureIds: matches.map((m) => Number(m.structure_id)),
+    name: matches.length === 1 ? (matches[0].name ?? trimmed) : `${trimmed} (${matches.length} structures)`,
+  }
 }
 
 const capNote = (total: number, shown: number, what: string): string | undefined =>
@@ -564,7 +586,8 @@ export const registerTools = (server: McpServer): void => {
     {
       title: 'List blueprints',
       description:
-        'The user\'s character- and corporation-owned blueprints with ME/TE research levels, remaining runs (for copies), and location. Filter by name — searching by product works too ("naglfar" matches "Naglfar Blueprint") — by owner, by solar system, by original vs copy, or by a minimum ME/TE research level. Set group to "type" to collapse every stack of the same blueprint into one row ("which blueprints do we own, and what is the best-researched copy of each").',
+        'The user\'s character- and corporation-owned blueprints with ME/TE research levels, remaining runs (for copies), and location. Filter by name — searching by product works too ("naglfar" matches "Naglfar Blueprint") — by owner, by solar system or structure, by original vs copy, and by research level. NOTE: below_me and below_te are OR\'d when both are given, i.e. "short of either target", which is how "which blueprints are not at ME/TE 10/20 yet" is actually asked. Set researchable to exclude reaction formulas, which can never be researched and otherwise flood any research-backlog result at 0/0. Set group to "type" to collapse identical (blueprint, ME, TE) stacks into one counted row, or "type_location" to keep those split per location.',
+      annotations: { readOnlyHint: true },
       inputSchema: {
         item: z.string().optional().describe('Blueprint (or product) name substring, e.g. "naglfar", "fuel block"'),
         owner: z
@@ -575,35 +598,58 @@ export const registerTools = (server: McpServer): void => {
           .string()
           .optional()
           .describe(
-            'Only blueprints in this solar system, e.g. "EKPB-3". Blueprints stowed inside a container or ship have no resolvable system and are excluded when this is set.'
+            'Only blueprints in this solar system, e.g. "27-HP0". Blueprints stowed inside a container or ship resolve to no system and are excluded when this is set.'
+          ),
+        structure: z
+          .string()
+          .optional()
+          .describe(
+            'Only blueprints in this structure (substring of its resolved name, e.g. "HDUMP - T1 Research"). Matches blueprints sitting directly in the structure; ones inside a container within it are not matched.'
           ),
         kind: z
-          .enum(['original', 'copy'])
+          .enum(['original', 'copy', 'all'])
           .optional()
-          .describe('Only blueprint originals (BPOs) or only copies (BPCs); default both'),
-        min_me: z
+          .describe('Originals (BPOs), copies (BPCs), or both (default "all")'),
+        below_me: z
           .number()
           .int()
           .min(0)
           .max(10)
           .optional()
-          .describe('Only blueprints researched to at least this material-efficiency level (0–10)'),
-        min_te: z
+          .describe('Only blueprints whose material efficiency is BELOW this level, e.g. 10 for "not yet ME 10"'),
+        below_te: z
           .number()
           .int()
           .min(0)
           .max(20)
           .optional()
-          .describe('Only blueprints researched to at least this time-efficiency level (0–20)'),
-        group: z
-          .enum(['none', 'type'])
+          .describe(
+            "Only blueprints whose time efficiency is BELOW this level. When below_me is also given the two are OR'd: rows short of EITHER target are returned."
+          ),
+        researchable: z
+          .boolean()
           .optional()
           .describe(
-            'How to group the result: "none" (default) lists every stack; "type" collapses stacks of the same blueprint into one row with totals and the best ME/TE held'
+            'Exclude types that cannot be researched at all (reaction formulas). They permanently report ME/TE 0/0, so leaving them in floods any "still needs research" question.'
+          ),
+        group: z
+          .enum(['none', 'type', 'type_location'])
+          .optional()
+          .describe(
+            'How to group: "none" (default) lists every stack; "type" collapses identical (blueprint, ME, TE) stacks into one row with a count; "type_location" does the same but keeps locations apart'
+          ),
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(MAX_BLUEPRINT_LIMIT)
+          .optional()
+          .describe(
+            `Maximum rows to itemize (default ${DEFAULT_BLUEPRINT_LIMIT}, max ${MAX_BLUEPRINT_LIMIT}). Totals always cover the whole filtered set.`
           ),
       },
     },
-    async ({ item, owner, system, kind, min_me, min_te, group }, extra) => {
+    async ({ item, owner, system, structure, kind, below_me, below_te, researchable, group, limit }, extra) => {
       const supabase = clientFor(extra)
       if (!supabase) return textResult('Missing bearer token.')
 
@@ -618,19 +664,26 @@ export const registerTools = (server: McpServer): void => {
       const systemMatch = await resolveOneSystem(system)
       if (!systemMatch.ok) return textResult(systemMatch.message)
 
-      // Every filter, the character/corp union, the by-type collapse, and the
-      // display cap happen inside blueprint_search(); the totals it returns
-      // cover the whole filtered set, so only the capped rows cross the wire.
+      // A structure name resolves through universe_structure to the ids a
+      // blueprint's location_id can carry, so the filter itself stays in SQL.
+      const structureMatch = await resolveStructures(supabase, structure)
+      if (!structureMatch.ok) return textResult(structureMatch.message)
+
+      // Every filter, the character/corp union, the collapse and the limit
+      // happen inside blueprint_search(); the totals it returns cover the whole
+      // filtered set, so only the capped rows cross the wire.
       const params = buildBlueprintParams(
         {
           typeIds,
           systemIds: systemMatch.system ? [systemMatch.system.systemID] : null,
+          structureIds: structureMatch.structureIds,
           ownerIds: ownerFilter.ownerIds,
           kind,
-          minMe: min_me,
-          minTe: min_te,
+          belowMe: below_me,
+          belowTe: below_te,
+          researchable,
           group,
-          rowLimit: MAX_ROWS,
+          limit,
         },
         owners
       )
@@ -639,17 +692,17 @@ export const registerTools = (server: McpServer): void => {
       if (error) return textResult(`Blueprint lookup failed: ${error.message}`)
       const payload = (data ?? EMPTY_BLUEPRINT_PAYLOAD) as BlueprintSearchPayload
 
-      // Only the capped detail rows need location/system display names.
-      const detail = isGrouped(payload) ? [] : (payload.rows as BlueprintDetailRow[])
+      // Only the capped rows need location/system display names.
+      const shownRows = payload.rows as Array<{ location_id: number | null; system_id: number | null }>
       const locationRefs = uniqBy(
         prop('id'),
-        detail.map((r) => guessLocationRef(r.location_id)).filter((r): r is LocationRef => r != null)
+        shownRows.map((r) => guessLocationRef(r.location_id)).filter((r): r is LocationRef => r != null)
       )
       const [{ nameFor }, systemNames] = await Promise.all([
         resolveLocations(locationRefs, supabase),
         resolveSystemNames(
           supabase,
-          detail.flatMap((r) => (r.system_id != null ? [Number(r.system_id)] : []))
+          shownRows.flatMap((r) => (r.system_id != null ? [Number(r.system_id)] : []))
         ),
       ])
 
@@ -662,19 +715,31 @@ export const registerTools = (server: McpServer): void => {
         },
       })
 
+      const applied = {
+        ...(item != null && { item }),
+        ...(owner != null && { owner }),
+        ...(systemMatch.system && { system: systemMatch.system.name }),
+        ...(structureMatch.name != null && { structure: structureMatch.name }),
+        ...(kind != null && { kind }),
+        ...(below_me != null && { below_me }),
+        ...(below_te != null && { below_te }),
+        ...(researchable === true && { researchable }),
+        ...(group != null && { group }),
+      }
+
       return textResult({
-        ...(systemMatch.system && { system_filter: systemMatch.system.name }),
-        ...(kind && { kind_filter: kind }),
-        ...(min_me != null && { min_material_efficiency: min_me }),
-        ...(min_te != null && { min_time_efficiency: min_te }),
+        filters: applied,
         group: payload.group,
         total_blueprints: payload.total_stacks,
         total_quantity: payload.total_quantity,
         originals: payload.originals,
         copies: payload.copies,
         distinct_types: payload.distinct_types,
+        ...(payload.total_groups != null && { total_groups: payload.total_groups }),
         blueprints: rows,
-        ...(capNote(total, rows.length, unit) && { note: capNote(total, rows.length, unit) }),
+        ...(truncationNote(total, rows.length, unit, applied, params.row_limit) && {
+          note: truncationNote(total, rows.length, unit, applied, params.row_limit),
+        }),
         data_refreshed: await dataFreshness(supabase, ['character-blueprints', 'corp-blueprints']),
       })
     }
@@ -685,19 +750,21 @@ export const registerTools = (server: McpServer): void => {
     {
       title: 'List structures',
       description:
-        'The Upwell structures the user\'s corporations own and monitor — hull, solar system, state, fuel expiry, and which services are online or offline. Answers "which structures run out of fuel this week", "what refineries do we have", or "what is in EKPB-3". Each row\'s structure_id is what blueprint_for_product takes as structure_id to price a build in that structure.',
+        'The Upwell structures the user\'s corporations own and monitor — hull type, solar system, state, fuel expiry, online services, fitted rigs, and the derived material-efficiency bonus. Answers "which structures are in 27-HP0", "what runs out of fuel this week", or "where should I build this". Each row\'s structure_id is what blueprint_for_product takes as structure_id, and me_bonus is the same bonus that tool derives internally — so this explains why a material requirement came out at 18 instead of 20.',
+      annotations: { readOnlyHint: true },
       inputSchema: {
-        system: z.string().optional().describe('Only structures in this solar system, e.g. "EKPB-3"'),
-        kind: z
-          .enum(STRUCTURE_KINDS)
+        system: z.string().optional().describe('Only structures in this solar system, e.g. "27-HP0"'),
+        name: z.string().optional().describe('Only structures whose name contains this substring, e.g. "T1 Research"'),
+        owner: z.string().optional().describe('Only structures owned by this corporation (name substring)'),
+        services: z
+          .array(z.string())
           .optional()
           .describe(
-            'Only this hull class: citadel (Astrahus/Fortizar/Keepstar), engineering_complex (Raitaru/Azbel/Sotiyo), or refinery (Athanor/Tatara)'
+            'Only structures with all of these services online (case-insensitive substrings, e.g. ["manufacturing"])'
           ),
-        owner: z.string().optional().describe('Only structures owned by this corporation (name substring)'),
       },
     },
-    async ({ system, kind, owner }, extra) => {
+    async ({ system, name, owner, services }, extra) => {
       const supabase = clientFor(extra)
       if (!supabase) return textResult('Missing bearer token.')
 
@@ -708,43 +775,51 @@ export const registerTools = (server: McpServer): void => {
       const systemMatch = await resolveOneSystem(system)
       if (!systemMatch.ok) return textResult(systemMatch.message)
 
-      // A hull class is a set of SDE groups; resolve it to the type ids that
-      // corp_structure.type_id actually holds so the filter is an `in` on the
-      // query rather than a post-fetch predicate.
-      const kindTypeIds = kind ? (await getSdeTypesInGroups([groupIdForKind(kind)])).map((t) => t.typeID) : null
-
       const COLUMNS =
         'structure_id, corporation_id, type_id, system_id, name, state, unanchors_at, services, last_seen_at'
-      const rows = await fetchAllRows<StructureRow>((from, to) => {
+      const found = await fetchAllRows<StructureRow>((from, to) => {
         // Cast rather than assigned: structurally checking PostgrestFilterBuilder's
-        // generic .eq/.in signatures against FilterableQuery's narrow ones tips tsc
-        // past its instantiation-depth limit (TS2589).
+        // generic signatures against FilterableQuery's narrow ones tips tsc past
+        // its instantiation-depth limit (TS2589).
         const base = supabase.from('corp_structure').select(COLUMNS) as unknown as FilterableQuery
         return applyStructureFilters(base, {
           systemId: systemMatch.system?.systemID ?? null,
-          typeIds: kindTypeIds,
+          name,
           corporationIds: corporationIdsFor(ownerFilter.ownerIds, owners.corporationIds),
         })
           .order('system_id')
           .order('structure_id')
           .range(from, to)
       })
+      const rows = found.filter((s) => matchesServices(s, services))
 
       const structureIds = rows.map((s) => String(s.structure_id))
-      const { data: statusRows } = structureIds.length
-        ? await supabase
-            .from('corp_structure_status')
-            .select('structure_id, fuel_expires')
-            .in('structure_id', structureIds)
-        : { data: [] }
+      const [{ data: statusRows }, { data: rigRows }] = structureIds.length
+        ? await Promise.all([
+            supabase
+              .from('corp_structure_status')
+              .select('structure_id, fuel_expires')
+              .in('structure_id', structureIds),
+            supabase.from('corp_structure_rig').select('structure_id, type_id').in('structure_id', structureIds),
+          ])
+        : [{ data: [] }, { data: [] }]
+
       const fuelByStructure = new Map(
         ((statusRows ?? []) as Array<{ structure_id: number | string; fuel_expires: string | null }>).map((r) => [
           String(r.structure_id),
           r.fuel_expires,
         ])
       )
+      const rigTypeIdsByStructure = (
+        (rigRows ?? []) as Array<{ structure_id: number | string; type_id: number | string }>
+      ).reduce((acc, r) => {
+        const key = String(r.structure_id)
+        acc.set(key, [...(acc.get(key) ?? []), Number(r.type_id)])
+        return acc
+      }, new Map<string, number[]>())
 
       const hullTypes = await getSdeTypes(rows.map((s) => Number(s.type_id)))
+      const rigNames = await getSdeTypeNames([...rigTypeIdsByStructure.values()].flat())
       const systems = await getSdeSystems(rows.map((s) => Number(s.system_id)))
       const systemNames = await resolveSystemNames(
         supabase,
@@ -757,14 +832,24 @@ export const registerTools = (server: McpServer): void => {
           hullName: (typeId) => hullTypes[typeId]?.name ?? `Type #${typeId}`,
           hullGroupId: (typeId) => hullTypes[typeId]?.groupID ?? null,
           systemName: (systemId) => systemNames[systemId] ?? null,
-          security: (systemId) => (systems[systemId] != null ? formatSecurity(systems[systemId].security) : null),
+          security: (systemId) => {
+            const security = systems[systemId]?.security ?? null
+            const { sec, band } = securityMultiplier(security)
+            return { multiplier: sec, band, display: security != null ? formatSecurity(security) : null }
+          },
           fuelExpires: (structureId) => fuelByStructure.get(structureId) ?? null,
+          rigs: (structureId) =>
+            (rigTypeIdsByStructure.get(structureId) ?? []).map((id) => rigNames[id] ?? `Type #${id}`),
         })
       )
 
       return textResult({
-        ...(systemMatch.system && { system_filter: systemMatch.system.name }),
-        ...(kind && { kind_filter: kind }),
+        filters: {
+          ...(systemMatch.system && { system: systemMatch.system.name }),
+          ...(name != null && { name }),
+          ...(owner != null && { owner }),
+          ...(services != null && services.length > 0 && { services }),
+        },
         total_structures: rows.length,
         structures: shown,
         ...(capNote(rows.length, shown.length, 'structures') && {
@@ -774,7 +859,6 @@ export const registerTools = (server: McpServer): void => {
       })
     }
   )
-
   server.registerTool(
     'list_industry_jobs',
     {
