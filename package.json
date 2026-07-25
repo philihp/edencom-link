@@ -11,7 +11,7 @@
     "@modelcontextprotocol/sdk": "1.29.0",
     "@philihp/eve-sso": "2.1.0",
     "@supabase/ssr": "0.12.3",
-    "@supabase/supabase-js": "2.110.7",
+    "@supabase/supabase-js": "2.110.8",
     "@vercel/analytics": "2.0.1",
     "@vercel/queue": "^0.4.0",
     "@vercel/speed-insights": "2.0.0",
