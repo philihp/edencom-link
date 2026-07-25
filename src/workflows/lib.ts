@@ -53,3 +53,22 @@ export async function enumerateCharacters(scopes: string[]): Promise<number[]> {
   const { selectCharacterIdsWithScopes } = await import('@/supabase.js')
   return (await selectCharacterIdsWithScopes(scopes)) as number[]
 }
+
+// Step: build the exact per-corp fan-out set fanOutPerCorporationCronJob
+// (src/utils/cron.ts) sends today — one group per corporation plus a singleton
+// group per character whose corporation isn't resolved yet — so the
+// per-corporation fan-out workflows (phase 4) can run one step per group. Each
+// group is the ordered character-id list forEachCorporation (src/jobs/lib.js)
+// dedupes to a single handler call and falls back through on an in-game-role
+// failure (a token can carry the OAuth scope without the director/accountant
+// role the endpoint separately requires). Keeping every corp's characters in one
+// group is the whole point: two concurrent reconciles of the same corp once
+// corrupted the SCD-2 data, so a corp is never split across steps. The ids are
+// registration uuids (token.character_id → registration.id), i.e. JS strings —
+// safe to serialize as a step result.
+export async function enumerateCorporations(scope: string): Promise<string[][]> {
+  'use step'
+  const { groupCharacterIdsByCorporation } = await import('@/supabase.js')
+  const { byCorp, unresolved } = await groupCharacterIdsByCorporation([scope])
+  return [...byCorp.values(), ...unresolved.map((id: string) => [id])]
+}
