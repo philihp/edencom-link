@@ -1,14 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-import { fanOutPerCorporationCronJob, requireCronSecret } from '@/utils/cron'
+import { requireCronSecret } from '@/utils/cron'
 
-const SCOPE = 'esi-assets.read_corporation_assets.v1'
-
-// Vercel Cron replacement for the old `corp-assets.yml` GitHub Action. Fans out one
-// Vercel queue message per corporation (deduped across its scoped characters — see
-// fanOutPerCorporationCronJob), so this stays within the function duration limit
-// regardless of account size without risking two concurrent reconciles racing for
-// the same corp.
+// Vercel Cron trigger for corp-assets. Formerly fanned out one queue message per
+// corporation (fanOutPerCorporationCronJob); it now start()s the corp-assets
+// Vercel Workflow (src/workflows/corpAssets.ts), which groups the scoped
+// characters by corporation itself and runs one step per corp across a couple of
+// lanes. Only the scheduled path moves — the on-demand "Refresh ESI" flow still
+// enqueues one message per corp via the queue.
 export const runtime = 'nodejs'
 export const maxDuration = 60
 
@@ -16,7 +15,10 @@ export async function GET(request: NextRequest) {
   const denied = requireCronSecret(request)
   if (denied) return denied
 
-  const dispatched = await fanOutPerCorporationCronJob('corp-assets', SCOPE)
+  const { start } = await import('workflow/api')
+  const { corpAssetsWorkflow } = await import('@/workflows/corpAssets')
+  const run = await start(corpAssetsWorkflow, [])
+  console.log(`[cron/corp-assets] started workflow run=${run.runId}`)
 
-  return NextResponse.json({ ok: true, dispatched })
+  return NextResponse.json({ ok: true, runId: run.runId })
 }
