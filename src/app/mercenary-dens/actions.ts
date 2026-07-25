@@ -10,8 +10,13 @@ import { createClient } from '@/utils/supabase/server'
 // mercenary_den_share_opt_out row means "don't share", and no row means shared.
 // This covers both their deployed dens and any enemy-den intel they report
 // (mercenary_den_enemy_intel resolves visibility through the same preference).
-// RLS lets a user insert/delete only their own row, so this runs on the cookie
-// session client rather than the service role. Returns { error } on failure.
+//
+// The table is keyed per registration, because the RLS policies that honour it
+// join through character_directory, which is keyed the same way and carries no
+// user_id. The UI is still one all-or-nothing switch, so this writes or clears a
+// row for every one of the caller's characters at once. RLS restricts both to
+// the caller's own registrations, so this runs on the cookie session client
+// rather than the service role. Returns { error } on failure.
 export const setDenSharing = async (enabled: boolean): Promise<{ error?: string }> => {
   const supabase = await createClient()
 
@@ -22,17 +27,29 @@ export const setDenSharing = async (enabled: boolean): Promise<{ error?: string 
     return { error: 'Not signed in' }
   }
 
+  // RLS already scopes registration to the caller; the filter is belt-and-braces
+  // so a policy change can't silently widen what this writes.
+  const { data: regs, error: regError } = await supabase.from('registration').select('id').eq('user_id', user.id)
+  if (regError) {
+    return { error: regError.message }
+  }
+  const registrationIds = (regs ?? []).map((r) => r.id as string)
+  if (registrationIds.length === 0) return {}
+
   if (enabled) {
-    const { error } = await supabase.from('mercenary_den_share_opt_out').delete().eq('user_id', user.id)
+    const { error } = await supabase.from('mercenary_den_share_opt_out').delete().in('registration_id', registrationIds)
     if (error) {
       return { error: error.message }
     }
   } else {
-    // Plain insert rather than upsert: there's no update policy on the table (a
-    // row carries no state beyond its existence), so re-opting-out when the row
-    // already exists is a no-op, not an error.
-    const { error } = await supabase.from('mercenary_den_share_opt_out').insert({ user_id: user.id })
-    if (error && error.code !== '23505') {
+    // ON CONFLICT DO NOTHING rather than a real upsert: the row carries no state
+    // beyond its existence (and the table has no update policy), so re-opting-out
+    // a character that's already opted out is a no-op, not an error.
+    const { error } = await supabase.from('mercenary_den_share_opt_out').upsert(
+      registrationIds.map((registration_id) => ({ registration_id })),
+      { onConflict: 'registration_id', ignoreDuplicates: true }
+    )
+    if (error) {
       return { error: error.message }
     }
   }
@@ -69,18 +86,21 @@ export const addEnemyDenIntel = async (input: EnemyDenIntelInput): Promise<{ err
     return { error: 'System and planet are required' }
   }
 
-  // reported_by is always the caller's main character (falling back to any
+  // The report is attributed to the caller's main character (falling back to any
   // registered character) — derived server-side, never client-supplied, so it
-  // can't be spoofed. RLS lets the user read their own registrations.
+  // can't be spoofed. RLS lets the user read their own registrations. reporter_id
+  // is what carries ownership *and* audience: the sharing policy resolves it
+  // through character_directory to a corporation/alliance, which an auth user id
+  // alone can't do. reported_by stays as the denormalized display name.
   const { data: mainReg } = await supabase
     .from('registration')
-    .select('name')
+    .select('id, name')
     .eq('user_id', user.id)
     .order('is_main', { ascending: false })
     .limit(1)
     .maybeSingle()
   const reportedBy = mainReg?.name?.trim()
-  if (!reportedBy) {
+  if (!mainReg?.id || !reportedBy) {
     return { error: 'Register a character before reporting sightings' }
   }
 
@@ -107,6 +127,7 @@ export const addEnemyDenIntel = async (input: EnemyDenIntelInput): Promise<{ err
     reinforcement_end: reinforcementEnd,
     notes: input.notes.trim() || null,
     reported_by: reportedBy,
+    reporter_id: mainReg.id,
     created_by: user.id,
   })
   if (error) {

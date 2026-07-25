@@ -96,9 +96,18 @@ const MercenaryDensPage = async () => {
   const audience = (myRegs ?? []).length ? audienceNames.join(', ') || 'my alliance' : null
 
   // Sharing is on unless the caller has opted out — the table stores only the
-  // exceptions, so a row means "not shared" (RLS shows them only their own).
-  const { data: optOut } = await supabase.from('mercenary_den_share_opt_out').select('user_id').maybeSingle()
-  const sharing = !optOut
+  // exceptions, so a row means "not shared". It's keyed per registration (the
+  // sharing policies join through character_directory, which has no user_id),
+  // while the UI is one all-or-nothing switch: any opted-out character reads as
+  // "not sharing", so a partial state can only ever err toward private.
+  const registrationIds = [...ownRegById.keys()]
+  const { count: optOutCount } = registrationIds.length
+    ? await supabase
+        .from('mercenary_den_share_opt_out')
+        .select('registration_id', { count: 'exact', head: true })
+        .in('registration_id', registrationIds)
+    : { count: 0 }
+  const sharing = !optOutCount
 
   // Every mercenary den we can see (own + shared by corp/alliance mates), each enriched
   // with its latest observed status (the view left-joins it).
@@ -106,15 +115,23 @@ const MercenaryDensPage = async () => {
   const dens = (denData ?? []) as DenRow[]
 
   // Resolve owner identity for dens we can see but don't own (shared by a
-  // corp/alliance mate). Their registration is hidden from us by RLS, so a
-  // security-definer RPC returns just the public EVE name + id for own +
-  // shared-to-us registrations — without it a shared den shows only "Corpmate".
+  // corp/alliance mate). Their registration is hidden from us by RLS, but
+  // character_directory carries the public half of the same identity — name and
+  // EVE character id, keyed by registration and deliberately free of user_id —
+  // and is world-readable, so this is a plain join rather than a definer bridge.
+  // Without it a shared den would show only "Corpmate".
   const denOwnerById = new Map(ownRegById)
   const foreignOwnerIds = [...new Set(dens.map((d) => d.character_id))].filter((id) => !denOwnerById.has(id))
   if (foreignOwnerIds.length) {
-    const { data: owners } = await supabase.rpc('mercenary_den_owner_names', { reg_ids: foreignOwnerIds })
-    for (const o of (owners ?? []) as { id: string; name: string; character_id: number | null }[]) {
-      denOwnerById.set(o.id, { name: o.name, characterId: o.character_id != null ? String(o.character_id) : null })
+    const { data: owners } = await supabase
+      .from('character_directory')
+      .select('registration_id, name, character_id')
+      .in('registration_id', foreignOwnerIds)
+    for (const o of (owners ?? []) as { registration_id: string; name: string; character_id: number | null }[]) {
+      denOwnerById.set(o.registration_id, {
+        name: o.name,
+        characterId: o.character_id != null ? String(o.character_id) : null,
+      })
     }
   }
 
