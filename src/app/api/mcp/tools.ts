@@ -416,6 +416,7 @@ export const registerTools = (server: McpServer): void => {
       title: 'Search assets',
       description:
         'Find items across all of the user\'s character and corporation hangars by item name. Answers questions like "where is my Avatar" or "how many fuel blocks do I have in EKPB-3". The item name is a case-insensitive substring match against EVE item types; optionally narrow to one solar system. Blueprints are excluded unless include_blueprints is set (use list_blueprints for those).',
+      annotations: { readOnlyHint: true, openWorldHint: false },
       inputSchema: {
         item: z.string().min(1).describe('Item name or substring, e.g. "nitrogen fuel block", "avatar", "tritanium"'),
         system: z.string().optional().describe('Only include items in this solar system, e.g. "EKPB-3"'),
@@ -533,6 +534,7 @@ export const registerTools = (server: McpServer): void => {
       title: 'List clones',
       description:
         'The user\'s characters with their current location, the ship they\'re currently in, active implants, jump-clone locations (each with its implants), and when each character can next clone jump. Answers questions like "where is my nearest clone to Jita", "what am I flying", or "which clone has my Genolution set".',
+      annotations: { readOnlyHint: true, openWorldHint: false },
       inputSchema: {},
     },
     async (_args, extra) => {
@@ -682,7 +684,7 @@ export const registerTools = (server: McpServer): void => {
       title: 'List blueprints',
       description:
         'The user\'s character- and corporation-owned blueprints with ME/TE research levels, remaining runs (for copies), and location. Filter by name — searching by product works too ("naglfar" matches "Naglfar Blueprint") — by owner, by solar system or structure, by original vs copy, and by research level. NOTE: below_me and below_te are OR\'d when both are given, i.e. "short of either target", which is how "which blueprints are not at ME/TE 10/20 yet" is actually asked. Set researchable to exclude reaction formulas, which can never be researched and otherwise flood any research-backlog result at 0/0. Set group to "type" to collapse identical (blueprint, ME, TE) stacks into one counted row, or "type_location" to keep those split per location.',
-      annotations: { readOnlyHint: true },
+      annotations: { readOnlyHint: true, openWorldHint: false },
       inputSchema: {
         item: z.string().optional().describe('Blueprint (or product) name substring, e.g. "naglfar", "fuel block"'),
         owner: z
@@ -846,7 +848,7 @@ export const registerTools = (server: McpServer): void => {
       title: 'List structures',
       description:
         'The Upwell structures the user\'s corporations own and monitor — hull type and class, solar system and security, state, fuel expiry, online and offline services, and fitted rigs. Answers "which structures are in 27-HP0", "what runs out of fuel this week", or "what rigs are on the Athanor". Each row\'s structure_id is what blueprint_for_product and blueprints_using_material take as structure_id: pass it there to get a material bill costed for this structure, since what a fitted rig is worth depends on what you are building (use rigs_for_blueprint to check a rig covers a product).',
-      annotations: { readOnlyHint: true },
+      annotations: { readOnlyHint: true, openWorldHint: false },
       inputSchema: {
         system: z.string().optional().describe('Only structures in this solar system, e.g. "27-HP0"'),
         name: z.string().optional().describe('Only structures whose name contains this substring, e.g. "T1 Research"'),
@@ -959,6 +961,7 @@ export const registerTools = (server: McpServer): void => {
       title: 'List industry jobs',
       description:
         'Manufacturing, research, invention, copying, and reaction jobs across the user\'s characters and corporations. Defaults to active jobs; pass a status ("ready", "delivered", …) or "all" for history. Answers "what\'s building right now" or "when does my research finish". Pass as_of to see the jobs as they stood at a past moment (e.g. what was running last Tuesday).',
+      annotations: { readOnlyHint: true, openWorldHint: false },
       inputSchema: {
         status: z
           .enum(['active', 'ready', 'paused', 'delivered', 'cancelled', 'reverted', 'all'])
@@ -1131,6 +1134,7 @@ export const registerTools = (server: McpServer): void => {
       title: 'List market orders',
       description:
         'The user\'s open market orders (buys and sells) across all characters, with price, remaining volume, location, and expiry. Answers "what am I selling" or "do I still have that buy order up". Pass as_of to see the orders that were open at some past moment instead — reconstructed from SCD-2 history, so a since-filled order reappears.',
+      annotations: { readOnlyHint: true, openWorldHint: false },
       inputSchema: {
         item: z.string().optional().describe('Only orders for items matching this name substring'),
         as_of: AS_OF_SHAPE,
@@ -1292,6 +1296,7 @@ export const registerTools = (server: McpServer): void => {
       title: 'Search market transactions',
       description:
         'Past market buys and sells across the user\'s characters and corporations (most recent first). Answers "what did I pay for PLEX last month" or "how much have I sold this week". Corp-division trades made by the user\'s characters are included once, under the corporation.',
+      annotations: { readOnlyHint: true, openWorldHint: false },
       inputSchema: {
         item: z.string().optional().describe('Only trades of items matching this name substring'),
         days: z.number().int().min(1).max(365).optional().describe('Lookback window in days (default 30)'),
@@ -1401,6 +1406,7 @@ export const registerTools = (server: McpServer): void => {
       title: 'Blueprint for a product',
       description:
         'Given something you want to build, return the blueprint that produces it (manufacturing or reaction) and its material bill — from static game data, independent of what you own. The bill is adjusted for the material-efficiency modifiers you pass: blueprint ME, an engineering-complex/refinery role bonus, a material-efficiency rig, and the system security that scales the rig.',
+      annotations: { readOnlyHint: true, openWorldHint: false },
       inputSchema: {
         product: z.string().min(1).describe('The item you want to build, e.g. "Nightmare", "Nitrogen Fuel Block"'),
         ...MODIFIER_SHAPE,
@@ -1454,6 +1460,7 @@ export const registerTools = (server: McpServer): void => {
       title: 'Blueprints using a material',
       description:
         'Given an input material, return every blueprint (manufacturing or reaction) that consumes it — from static game data. Each entry shows how much of this material that blueprint needs after the material-efficiency modifiers you pass (blueprint ME, structure role bonus, rig, and the security that scales the rig).',
+      annotations: { readOnlyHint: true, openWorldHint: false },
       inputSchema: {
         material: z.string().min(1).describe('The input material, e.g. "Tritanium", "Fernite Carbide"'),
         ...MODIFIER_SHAPE,
@@ -1527,6 +1534,7 @@ export const registerTools = (server: McpServer): void => {
       title: 'Appraise items',
       description:
         'Estimate the ISK market value of a batch of items via the innomin.at appraisal service (Jita by default). Answers "what\'s 3 Rifters and 100k Tritanium worth" or follows up a search_assets result with prices. Item names are matched fuzzily against EVE types. Prices are live market data, not the user\'s own orders.',
+      annotations: { readOnlyHint: true, openWorldHint: true },
       inputSchema: {
         items: z
           .array(

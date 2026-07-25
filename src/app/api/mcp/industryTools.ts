@@ -62,7 +62,7 @@ export const registerIndustryTools = (server: McpServer): void => {
       title: 'Industry cost indices',
       description:
         'Manufacturing, research, copying, invention, and reaction cost indices for solar systems — the multiplier that sets a job\'s installation fee. Answers "where is manufacturing cheapest right now" or "what is the reaction index in this system". With no system named, covers every system the user holds a structure in or watches on the /indexes page.',
-      annotations: { readOnlyHint: true },
+      annotations: { readOnlyHint: true, openWorldHint: false },
       inputSchema: {
         system: z
           .string()
@@ -150,7 +150,7 @@ export const registerIndustryTools = (server: McpServer): void => {
       title: 'List industry job slots',
       description:
         'Per character, how many manufacturing, research, and reaction job slots are occupied and how many are free — the actionable half that list_industry_jobs leaves out. Slot ceilings come from the trained slot skills (Mass Production, Laboratory Operation, Mass Reactions and their Advanced variants). Answers "who can start another job" or "how many research slots do I have spare".',
-      annotations: { readOnlyHint: true },
+      annotations: { readOnlyHint: true, openWorldHint: false },
       inputSchema: {
         free_only: z.boolean().optional().describe('Only characters with at least one free slot (default false)'),
       },
@@ -250,7 +250,7 @@ export const registerIndustryTools = (server: McpServer): void => {
       title: 'Rigs that bonus a blueprint',
       description:
         'Which Upwell structure rigs give a material bonus to building a given item — a rig only affects products in the groups its filter covers, so a Ship Manufacturing rig does nothing for components. Answers "which rig helps me build Nitrogen Fuel Blocks". Pass a structure_id to see which of those rigs is actually fitted there; that is the same test blueprint_for_product applies when pricing a build in a structure.',
-      annotations: { readOnlyHint: true },
+      annotations: { readOnlyHint: true, openWorldHint: false },
       inputSchema: {
         item: z
           .string()

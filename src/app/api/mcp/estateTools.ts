@@ -126,7 +126,7 @@ export const registerEstateTools = (server: McpServer): void => {
       title: 'Browse assets by location',
       description:
         'Walk the user\'s hangars by place instead of by item name: with no arguments, every station, structure, and system where they hold assets, with stack counts; with a location, the items sitting directly in it. Answers "what do I have in Jita" or "what\'s in that container". Use search_assets when you know the item name and want to find where it is.',
-      annotations: { readOnlyHint: true },
+      annotations: { readOnlyHint: true, openWorldHint: false },
       inputSchema: {
         location: z
           .string()
@@ -267,7 +267,7 @@ export const registerEstateTools = (server: McpServer): void => {
       title: 'Wallet summary',
       description:
         'Current ISK balances for the user\'s characters and their corporations\' wallet divisions, plus a breakdown of corp wallet activity by entry type over a recent window. Answers "how much ISK do I have" or "where did the corp wallet go this month". Use search_transactions for individual market trades.',
-      annotations: { readOnlyHint: true },
+      annotations: { readOnlyHint: true, openWorldHint: false },
       inputSchema: {
         days: z
           .number()
@@ -379,7 +379,7 @@ export const registerEstateTools = (server: McpServer): void => {
       title: 'List mercenary dens',
       description:
         'The Mercenary Dens the user\'s characters have deployed, each on its planet, with its current state, development and anarchy levels, infomorph count, and reinforcement timer. Answers "which dens are reinforced" or "when do my timers come out".',
-      annotations: { readOnlyHint: true },
+      annotations: { readOnlyHint: true, openWorldHint: false },
       inputSchema: {
         reinforced_only: z
           .boolean()
