@@ -16,6 +16,7 @@ import {
   type StructureBonus,
 } from 'eve-industry'
 import { prop, uniqBy } from 'ramda'
+import { match } from 'ts-pattern'
 import { z } from 'zod'
 
 import { rigAppliesToProduct } from '@/app/blueprint/rigs'
@@ -47,10 +48,12 @@ import {
 import {
   applyStructureFilters,
   corporationIdsFor,
+  ENGINEERING_COMPLEX_GROUP,
   escapeLike,
   type FilterableQuery,
   formatStructure,
   matchesServices,
+  REFINERY_GROUP,
   type StructureRow,
 } from './structureQuery'
 import {
@@ -191,15 +194,32 @@ type ModifierArgs = {
   structure_id?: string
 }
 
+// The exact multipliers eve-industry's cost() expects, per its README's table.
+// The library exports only cost() itself, so mapping game state onto these
+// values stays our job — but the values are written once, here, rather than
+// inline at each of the two paths (explicit tool args, and a resolved structure)
+// that has to produce them.
+const ROLE_BONUS = { none: 0, upwell: 0.01 } as const
+const RIG_BONUS = { none: 0, t1: 0.02, t2: 0.024 } as const
+const SEC_MULTIPLIER = { highsec: 1, lowsec: 1.9, nullsec: 2.1 } as const
+
 // The three material-reduction bonuses eve-industry's cost() takes, already
 // mapped to its literal-union types. The casts are safe: the enum-backed
 // inputs (and the structure resolver) only ever produce valid members.
 type Bonuses = { structure: StructureBonus; rig: RigBonus; sec: SecBonus }
 
 const manualBonuses = (m: ModifierArgs): Bonuses => ({
-  structure: (m.structure === 'engineering_complex' ? 0.01 : 0) as StructureBonus,
-  rig: (m.rig === 't2' ? 0.024 : m.rig === 't1' ? 0.02 : 0) as RigBonus,
-  sec: (m.security === 'nullsec' ? 2.1 : m.security === 'lowsec' ? 1.9 : 1) as SecBonus,
+  structure: match(m.structure)
+    .with('engineering_complex', () => ROLE_BONUS.upwell)
+    .otherwise(() => ROLE_BONUS.none) as StructureBonus,
+  rig: match(m.rig)
+    .with('t2', () => RIG_BONUS.t2)
+    .with('t1', () => RIG_BONUS.t1)
+    .otherwise(() => RIG_BONUS.none) as RigBonus,
+  sec: match(m.security)
+    .with('nullsec', () => SEC_MULTIPLIER.nullsec)
+    .with('lowsec', () => SEC_MULTIPLIER.lowsec)
+    .otherwise(() => SEC_MULTIPLIER.highsec) as SecBonus,
 })
 
 // eve-industry cost() params: material reduction is
@@ -210,25 +230,20 @@ const toCostParams = (m: ModifierArgs, bonuses: Bonuses): Omit<ModifierParams, '
   ...bonuses,
 })
 
-// EVE Upwell structure hull groups (stable SDE group ids). Engineering
-// complexes carry a 1% manufacturing material role bonus; refineries a 1%
-// reaction material role bonus. Citadels give neither.
-const ENGINEERING_COMPLEX_GROUP = 1404
-const REFINERY_GROUP = 1406
-
 // Round the raw SDE security to EVE's displayed band → the rig security
-// multiplier eve-industry expects (highsec ×1, lowsec ×1.9, null/WH ×2.1).
+// multiplier eve-industry expects. Range comparisons, so not a ts-pattern match.
 const securityMultiplier = (rawSecurity: number | null): { sec: SecBonus; band: string } => {
-  if (rawSecurity == null) return { sec: 2.1, band: 'nullsec/wormhole' } // WH & unknown systems aren't in the SDE k-space set
+  // WH & unknown systems aren't in the SDE k-space set.
+  if (rawSecurity == null) return { sec: SEC_MULTIPLIER.nullsec, band: 'nullsec/wormhole' }
   const rounded = Math.round(rawSecurity * 10) / 10
-  if (rounded >= 0.5) return { sec: 1, band: 'highsec' }
-  if (rounded > 0) return { sec: 1.9, band: 'lowsec' }
-  return { sec: 2.1, band: 'nullsec' }
+  if (rounded >= 0.5) return { sec: SEC_MULTIPLIER.highsec, band: 'highsec' }
+  if (rounded > 0) return { sec: SEC_MULTIPLIER.lowsec, band: 'lowsec' }
+  return { sec: SEC_MULTIPLIER.nullsec, band: 'nullsec' }
 }
 
 // Tier of a Standup material-efficiency rig from its name: the "… II" variant
-// is T2 (2.4% base), the "… I" variant T1 (2.0%).
-const rigBonusFromName = (name: string): RigBonus => (/\bII$/.test(name.trim()) ? 0.024 : 0.02)
+// is T2, the "… I" variant T1.
+const rigBonusFromName = (name: string): RigBonus => (/\bII$/.test(name.trim()) ? RIG_BONUS.t2 : RIG_BONUS.t1)
 
 // The product a bill is being computed for. A rig only discounts a build whose
 // product falls in the group/category the rig's filter covers, so applicability
@@ -313,7 +328,7 @@ const structureBonusesFor = (
 
   return {
     bonuses: {
-      structure: (roleApplies ? 0.01 : 0) as StructureBonus,
+      structure: (roleApplies ? ROLE_BONUS.upwell : ROLE_BONUS.none) as StructureBonus,
       rig: (best?.bonus ?? 0) as RigBonus,
       sec: ctx.sec,
     },

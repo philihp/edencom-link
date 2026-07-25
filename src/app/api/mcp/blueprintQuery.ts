@@ -7,8 +7,11 @@
 // supabase/migrations/20260725000000_blueprint_search.sql. This module is the
 // pure seam on either side of that call: it turns tool arguments into RPC
 // parameters, and the RPC's json payload into the tool's response rows. It
-// deliberately imports nothing, so the behaviour below is unit-testable without
-// a database or a Supabase client (see test/).
+// deliberately pulls in no I/O — only ramda and ts-pattern — so the behaviour
+// below is unit-testable without a database or a Supabase client (see test/).
+import { filter, join, map } from 'ramda'
+import { match } from 'ts-pattern'
+
 export type BlueprintKind = 'original' | 'copy' | 'all'
 export type BlueprintGroup = 'none' | 'type' | 'type_location'
 
@@ -177,22 +180,29 @@ const groupRow = (r: BlueprintGroupRow, lookups: BlueprintLookups) => ({
 })
 
 // The rows the tool reports, plus the total they were capped out of — a grouped
-// result counts groups, an ungrouped one counts stacks.
+// result counts groups, an ungrouped one counts stacks. Matched on group_mode
+// exhaustively rather than through isGrouped() plus a nested ternary: the three
+// modes each name their own unit, and .exhaustive() means a fourth BlueprintGroup
+// member fails the build here instead of silently reporting "blueprint groups".
 export const formatBlueprintRows = (
   payload: BlueprintSearchPayload,
   lookups: BlueprintLookups
-): { rows: Array<Record<string, unknown>>; total: number; unit: string } =>
-  isGrouped(payload)
-    ? {
-        rows: (payload.rows as BlueprintGroupRow[]).map((r) => groupRow(r, lookups)),
-        total: payload.total_groups ?? payload.rows.length,
-        unit: payload.group === 'type_location' ? 'blueprint/location groups' : 'blueprint groups',
-      }
-    : {
-        rows: (payload.rows as BlueprintDetailRow[]).map((r) => detailRow(r, lookups)),
-        total: payload.total_stacks,
-        unit: 'blueprints',
-      }
+): { rows: Array<Record<string, unknown>>; total: number; unit: string } => {
+  const asGroups = (unit: string) => ({
+    rows: (payload.rows as BlueprintGroupRow[]).map((r) => groupRow(r, lookups)),
+    total: payload.total_groups ?? payload.rows.length,
+    unit,
+  })
+  return match(payload.group)
+    .with('type_location', () => asGroups('blueprint/location groups'))
+    .with('type', () => asGroups('blueprint groups'))
+    .with('none', () => ({
+      rows: (payload.rows as BlueprintDetailRow[]).map((r) => detailRow(r, lookups)),
+      total: payload.total_stacks,
+      unit: 'blueprints',
+    }))
+    .exhaustive()
+}
 
 // A truncation note that says what was filtered and what to narrow next — the
 // old note ("Showing the first 200 of 10968 blueprints") gave the agent nothing
@@ -218,11 +228,20 @@ const SUGGESTIONS: Array<{ key: keyof AppliedFilters; hint: string }> = [
   { key: 'researchable', hint: 'researchable to drop reaction formulas' },
 ]
 
+// A filter counts as applied when it is present and, for the boolean flags, true.
+type FilterPair = [key: string, value: unknown]
+
+const isSet = (value: unknown): boolean => value != null && value !== false
+
+// Object.entries rather than ramda's toPairs: every AppliedFilters property is
+// optional, which makes @types/ramda infer each pair as `[K, V] | undefined` and
+// breaks the destructuring below. The filter and map themselves are ramda's.
 export const describeFilters = (applied: AppliedFilters): string => {
-  const parts = Object.entries(applied)
-    .filter(([, v]) => v != null && v !== false)
-    .map(([k, v]) => `${k}=${v}`)
-  return parts.length === 0 ? 'no filters' : parts.join(', ')
+  const parts = map(
+    ([key, value]: FilterPair) => `${key}=${value}`,
+    filter(([, value]: FilterPair) => isSet(value), Object.entries(applied))
+  )
+  return parts.length === 0 ? 'no filters' : join(', ', parts)
 }
 
 export const truncationNote = (
