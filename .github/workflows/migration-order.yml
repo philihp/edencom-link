@@ -5,6 +5,8 @@ on:
     paths:
       - 'supabase/migrations/**'
       - '.github/scripts/check-migrations.mjs'
+      - '.github/scripts/package.json'
+      - '.github/scripts/pnpm-lock.yaml'
       - '.github/workflows/migration-order.yml'
 
 jobs:
@@ -21,10 +23,16 @@ jobs:
         with:
           node-version: 24.x
           cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
-      # The checker itself is one file, but it leans on ramda like the rest of
-      # the repo, so it needs node_modules.
-      - run: pnpm install --frozen-lockfile
+          cache-dependency-path: .github/scripts/pnpm-lock.yaml
+      # The checker leans on ramda like the rest of the repo, but it installs
+      # from .github/scripts/package.json rather than the app's — one
+      # dependency-free package instead of 600. --ignore-workspace is what keeps
+      # pnpm from walking up to the root workspace and installing those instead.
+      # Beyond being ~1s, this keeps a guard that gates every migration PR from
+      # going red over the app's dependency churn: a freshly published release
+      # in the root lockfile trips pnpm's minimumReleaseAge policy for a day,
+      # and that has nothing to do with whether a migration is numbered right.
+      - run: pnpm install --dir .github/scripts --ignore-workspace --frozen-lockfile
       - name: Check migration numbering
         run: node .github/scripts/check-migrations.mjs "origin/$BASE_REF"
         env:
