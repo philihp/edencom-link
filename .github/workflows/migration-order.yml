@@ -1,0 +1,22 @@
+name: Migration order
+
+on:
+  pull_request:
+    paths:
+      - 'supabase/migrations/**'
+      - '.github/scripts/check-migrations.mjs'
+      - '.github/workflows/migration-order.yml'
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          # The check compares this branch's migrations against the base
+          # branch's, so it needs both — not just the PR's merge commit.
+          fetch-depth: 0
+      - name: Check migration numbering
+        run: node .github/scripts/check-migrations.mjs "origin/$BASE_REF"
+        env:
+          BASE_REF: ${{ github.base_ref }}
