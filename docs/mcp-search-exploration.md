@@ -1,5 +1,23 @@
 # MCP search & exploration endpoints (plan)
 
+> **Status:** PR 1 (DB views) shipped. The **planet slice** of PRs 2–3 shipped
+> next, out of the table's order, because the ask that motivated it was narrow
+> — "how do I turn 40099763 into Q-UVY6 II through MCP?", which nothing
+> answered. That delivered `getSystemPlanets`/`getRegionPlanets` in
+> `src/sdePlanets.ts`, the new `src/sdeRegions.ts`, and `exploreTools.ts` with
+> `list_planets` (which also took `planet_ids` — an id-resolver mode this plan
+> didn't have, since a raw den `planet_id` was the original ask). Still open:
+> `sdeGroups.ts`, the type-taxonomy tools (`get_type`, `list_item_groups`,
+> `list_types`), `explore_region`, the blueprint tools' `type_id` params, and
+> all of PR 4.
+>
+> Two decisions worth carrying forward, both settled while building the planet
+> slice: `escapeLike` now lives in `src/utils/escapeLike.ts` (a loader must not
+> import from the MCP layer; `structureQuery.ts` re-exports it), and the
+> "`fetchAllRows` home" open question below resolved as **neither** — the
+> loader pages tail-recursively per CLAUDE.md's pagination pattern, which
+> `fetchAllRows`'s `for` loop predates.
+
 Add static-game-data exploration to the MCP server, and let asset search cut by
 item taxonomy instead of only by name. Four user-facing additions:
 
@@ -137,6 +155,11 @@ Extend `src/sdePlanets.ts`:
   `getTypesInGroups([7])`. No hardcoded planet-type list: CCP's names
   (`Planet (Lava)`, `Planet (Temperate)`, …) are the source of truth, and new
   planet types (Shattered, Scorched) just work.
+  *As shipped:* this split in two rather than landing in the loader — the
+  fetch (`getSdeTypesInGroups([PLANET_GROUP_ID])`, a function `sdeTypes.ts`
+  already had) stays in the tool, and the matching is the pure, unit-tested
+  `matchPlanetTypes` in `planetQuery.ts`. Keeping the loader free of it is what
+  lets `pnpm test` cover the matching without a Supabase client.
 
 ## MCP tools (PRs 3–4)
 
@@ -188,7 +211,14 @@ round trip through names.
   response comfortably; keep a defensive cap + note anyway.
 - Fuzzy misses list a few near matches, mirroring the owner-filter error shape.
 
-**`list_planets`** — planet composition.
+**`list_planets`** — planet composition. **Shipped**, with one addition to the
+spec below: a third `planet_ids` mode that resolves raw planet ids to names
+(the `40099763` → `Q-UVY6 II` ask — `getSdePlanets` already did this for
+`/mercenary-dens`, but no MCP tool exposed it). System mode reports the whole
+system's composition and lets `planet_type` narrow only the itemized list, so
+one call answers both "does it have temperate planets" and "what else is here";
+region mode filters at the fetch, so its per-system breakdown covers the asked-
+about types only.
 - Input: `system` **or** `region` (fuzzy names, exactly one), optional
   `planet_type` (fuzzy, resolved via `resolvePlanetType`).
 - System mode: resolve via `searchSdeSystems`, return

@@ -18,6 +18,13 @@ export const MAX_TYPES = 100
 // Asset search excludes these by default, mirroring /asset/search.
 export const BLUEPRINT_CATEGORY_ID = 9
 
+// Keep individual responses readable — totals/summaries always cover the full
+// result set, only the itemized list is capped.
+export const MAX_ROWS = 200
+
+export const capNote = (total: number, shown: number, what: string): string | undefined =>
+  total > shown ? `Showing the first ${shown} of ${total} ${what}; counts and totals cover everything.` : undefined
+
 // MCP tool results are text content blocks; every tool returns either a plain
 // message or a JSON payload the model can read directly.
 export type ToolResult = { content: Array<{ type: 'text'; text: string }> }
@@ -38,9 +45,7 @@ export const resolveTypeFilter = async (
   const trimmed = (query ?? '').trim()
   if (trimmed === '') return { ok: true, matches: null }
   const allMatches = await searchSdeTypesAll(trimmed)
-  const matches = includeBlueprints
-    ? allMatches
-    : allMatches.filter((m) => m.categoryID !== BLUEPRINT_CATEGORY_ID)
+  const matches = includeBlueprints ? allMatches : allMatches.filter((m) => m.categoryID !== BLUEPRINT_CATEGORY_ID)
   if (matches.length === 0) {
     const blueprintsOnlyMatched = !includeBlueprints && allMatches.length > 0
     return {
