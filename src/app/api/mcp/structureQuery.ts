@@ -9,6 +9,10 @@
 // Supabase client (see test/).
 import { match } from 'ts-pattern'
 
+// Relative + .ts, like rigs.ts: this module is unit-tested by `pnpm test`,
+// which runs Node's stripped-types loader with no path-alias resolution.
+import { escapeLike } from '../../../utils/escapeLike.ts'
+
 // EVE's Upwell hull groups (stable SDE group ids). Engineering complexes carry
 // a 1% manufacturing material role bonus, refineries a 1% reaction one, and
 // citadels neither — tools.ts imports these to decide whether a structure's
@@ -49,9 +53,10 @@ export type StructureFilters = {
 export const corporationIdsFor = (ownerIds: Set<string> | null, corporationIds: string[]): number[] | null =>
   ownerIds == null ? null : corporationIds.filter((id) => ownerIds.has(id)).map(Number)
 
-// PostgREST passes the pattern through to SQL LIKE, so a user-supplied % or _
-// would otherwise widen the match rather than being matched literally.
-export const escapeLike = (value: string): string => value.replace(/[\\%_]/g, (c) => `\\${c}`)
+// Re-exported so this module stays the one import site for the structure
+// filters; the implementation moved to src/utils/ once the SDE loaders needed
+// it too (a loader importing from the MCP layer would invert the layering).
+export { escapeLike }
 
 // Push the resolved filters into the query. Returns `any` for the same TS2589
 // reason as above — the caller chains .order()/.range() onto the result.

@@ -57,18 +57,16 @@ import {
   type StructureRow,
 } from './structureQuery'
 import {
+  capNote,
   dataFreshness,
   fetchAllRows,
   fetchOwnerContext,
   guessLocationRef,
+  MAX_ROWS,
   resolveOwnerFilter,
   resolveTypeFilter,
   textResult,
 } from './lib'
-
-// Keep individual responses readable — totals/summaries always cover the full
-// result set, only the itemized list is capped.
-const MAX_ROWS = 200
 
 // The time-travel knob on the tools whose tables keep SCD-2 history. Parsed by
 // the same parseAtParam the Sheets endpoints' `at=` uses, so partial dates work.
@@ -131,9 +129,6 @@ const resolveStructures = async (supabase: SupabaseClient, structure: string | u
     name: matches.length === 1 ? (matches[0].name ?? trimmed) : `${trimmed} (${matches.length} structures)`,
   }
 }
-
-const capNote = (total: number, shown: number, what: string): string | undefined =>
-  total > shown ? `Showing the first ${shown} of ${total} ${what}; counts and totals cover everything.` : undefined
 
 // Resolve a fuzzy item name to the single best-matching SDE type (highest
 // coverage rank), surfacing the runner-up names so the model can correct a
