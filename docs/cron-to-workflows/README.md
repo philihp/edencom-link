@@ -127,10 +127,13 @@ PR. Phase 3's first PR likewise migrates only `character-wallet-transactions`
 to establish the fan-out pattern. Update the Status column (and CLAUDE.md's
 Extract jobs section) as PRs land.
 
-Related plan: [docs/workflow-jobs-page.md](../workflow-jobs-page.md)
-(a `/workflow` dashboard page that grows as jobs migrate). If that page
-exists by the time a job migrates, the migration PR adds the job to its
-registry per that doc's rules; if not, nothing blocks on it.
+Related plan: [docs/jobs-page.md](../jobs-page.md) (the `/jobs` dashboard
+that replaces `/character/refresh`). It is sequenced **after** this plan:
+phase 5 settles the on-demand refresh path that every button on that page
+goes down, so the page waits for phase 5 rather than the other way around.
+(It supersedes the old `workflow-jobs-page.md`, which framed the page as a
+scoreboard for this migration — a premise that expired when phase 4 left
+every scheduled job running as a workflow.)
 
 ## Verification (every PR)
 
