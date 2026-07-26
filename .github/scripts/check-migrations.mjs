@@ -1,6 +1,6 @@
 // Guards the one thing about supabase/migrations that can't be fixed after the
 // fact: a PR that adds a migration numbered at or before one that has already
-// merged. The Supabase CLI tracks applied migrations by version (the 14-digit
+// merged. The Supabase CLI identifies a migration by its version (the 14-digit
 // filename prefix), so a back-dated file lands in a different order in each
 // environment — and "fixing" it by renaming the file afterwards only relocates
 // the mismatch, since the migration history table matches by filename, not
@@ -19,6 +19,28 @@
 
 import { execFileSync } from 'node:child_process'
 
+import {
+  ascend,
+  chain,
+  difference,
+  endsWith,
+  filter,
+  forEach,
+  groupBy,
+  identity,
+  isEmpty,
+  join,
+  keys,
+  last,
+  map,
+  pipe,
+  replace,
+  sort,
+  split,
+  toPairs,
+  uniq,
+} from 'ramda'
+
 export const MIGRATION_DIR = 'supabase/migrations'
 
 // Supabase names migrations <14-digit UTC timestamp>_<name>.sql; `db:new`
@@ -27,17 +49,16 @@ const MIGRATION_NAME = /^(\d{14})_.*\.sql$/
 
 const versionOf = (file) => file.match(MIGRATION_NAME)?.[1] ?? null
 
-const uniqueSorted = (files) => [...new Set(files)].sort()
+const ascending = sort(ascend(identity))
+const normalize = pipe(uniq, ascending)
 
-// version -> the file(s) carrying it, for naming what a new migration collides
-// with. Ties exist on main already (two PRs merging with the same timestamp);
-// they're harmless in hindsight, so they're reported, never enforced against.
-const versionIndex = (files) =>
-  files.reduce((acc, file) => {
-    const version = versionOf(file)
-    if (version) acc.set(version, [...(acc.get(version) ?? []), file])
-    return acc
-  }, new Map())
+// version -> the file(s) carrying it, skipping anything unparseable. Ties exist
+// on main already (two PRs merging with the same timestamp); they're harmless
+// in hindsight, so they're named when something new collides with them but
+// never enforced against retroactively.
+const byVersion = pipe(filter(versionOf), groupBy(versionOf))
+
+const latestVersion = pipe(keys, ascending, last)
 
 /**
  * Pure comparison seam. Takes migration filenames (basenames, no directory) as
@@ -51,68 +72,65 @@ const versionIndex = (files) =>
  *   rebased doesn't read as having deleted whatever merged in the meantime.
  */
 export const checkMigrations = ({ baseFiles, headFiles, forkFiles = baseFiles }) => {
-  const base = uniqueSorted(baseFiles)
-  const head = uniqueSorted(headFiles)
-  const fork = uniqueSorted(forkFiles)
-  const headSet = new Set(head)
-  const errors = []
+  const base = normalize(baseFiles)
+  const head = normalize(headFiles)
+  const fork = normalize(forkFiles)
+
+  const merged = byVersion(base)
+  const latest = latestVersion(merged) ?? null
+  const added = difference(head, fork)
 
   // Rule 2 first: a rename shows up as both a removal and an addition, and
   // naming the removal is the more useful half of that diagnosis.
-  for (const file of fork.filter((file) => !headSet.has(file))) {
-    errors.push(
+  const removals = map(
+    (file) =>
       `${file} was renamed or deleted, but it already exists on the base branch. A migration's ` +
-        `filename is its identity to every database that has already applied it — restore the ` +
-        `file and add a new migration instead.`
-    )
-  }
+      `filename is its identity to every database that has already applied it — restore the ` +
+      `file and add a new migration instead.`,
+    difference(fork, head)
+  )
 
-  const baseVersions = versionIndex(base)
-  const latest = [...baseVersions.keys()].sort().at(-1) ?? null
-
-  const forkSet = new Set(fork)
-  const added = head.filter((file) => !forkSet.has(file))
-  const seen = new Map()
-
-  for (const file of added) {
+  const misnumbered = chain((file) => {
     const version = versionOf(file)
-    if (!version) {
-      errors.push(
+    if (!version)
+      return [
         `${file} is not named <14-digit timestamp>_<name>.sql, so the Supabase CLI can't derive a ` +
-          `version from it. Use \`pnpm run db:new <name>\` to scaffold migrations.`
-      )
-      continue
-    }
-
-    const collision = baseVersions.get(version)
-    if (collision) {
-      errors.push(
-        `${file} reuses version ${version}, already taken by ${collision.join(', ')} on the base ` +
-          `branch. Renumber it above ${latest}.`
-      )
-    } else if (latest && version <= latest) {
-      errors.push(
+          `version from it. Use \`pnpm run db:new <name>\` to scaffold migrations.`,
+      ]
+    if (merged[version])
+      return [
+        `${file} reuses version ${version}, already taken by ${join(', ', merged[version])} on the ` +
+          `base branch. Renumber it above ${latest}.`,
+      ]
+    if (latest && version <= latest)
+      return [
         `${file} is numbered ${version}, at or before the latest migration already merged ` +
-          `(${baseVersions.get(latest).join(', ')}). Renumber it above ${latest} — it hasn't been ` +
-          `applied anywhere yet, so renaming your own new file is safe.`
-      )
-    }
+          `(${join(', ', merged[latest])}). Renumber it above ${latest} — it hasn't been applied ` +
+          `anywhere yet, so renaming your own new file is safe.`,
+      ]
+    return []
+  }, added)
 
-    const twin = seen.get(version)
-    if (twin) errors.push(`${file} and ${twin} are both added by this PR with version ${version}.`)
-    seen.set(version, file)
-  }
+  // Two migrations added by the same PR can't share a version either: the CLI
+  // would see one version for two files, whichever order they merge in.
+  const twins = pipe(
+    byVersion,
+    toPairs,
+    filter(([, files]) => files.length > 1),
+    map(([version, files]) => `${join(' and ', files)} are added by this PR with version ${version}.`)
+  )(added)
 
-  return errors
+  return [...removals, ...misnumbered, ...twins]
 }
 
 const git = (...args) => execFileSync('git', args, { encoding: 'utf8' })
 
-const migrationsAt = (ref) =>
-  git('ls-tree', '-r', '--name-only', ref, '--', MIGRATION_DIR)
-    .split('\n')
-    .filter((path) => path.endsWith('.sql'))
-    .map((path) => path.slice(MIGRATION_DIR.length + 1))
+const migrationsAt = pipe(
+  (ref) => git('ls-tree', '-r', '--name-only', ref, '--', MIGRATION_DIR),
+  split('\n'),
+  filter(endsWith('.sql')),
+  map(replace(`${MIGRATION_DIR}/`, ''))
+)
 
 const main = () => {
   const baseRef = process.argv[2] ?? process.env.BASE_REF ?? 'origin/main'
@@ -128,16 +146,16 @@ const main = () => {
     forkFiles: migrationsAt(forkPoint),
   })
 
-  if (errors.length === 0) {
+  if (isEmpty(errors)) {
     console.log(`No migration problems against ${baseRef}.`)
     return
   }
 
-  for (const error of errors) {
+  forEach((error) => {
     // GitHub Actions renders ::error as an annotation on the run.
     console.log(`::error::${error}`)
     console.error(`✗ ${error}`)
-  }
+  }, errors)
   process.exitCode = 1
 }
 

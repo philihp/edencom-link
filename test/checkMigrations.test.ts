@@ -49,7 +49,7 @@ test('two migrations added by the same PR may not share a version', () => {
     headFiles: [...MERGED, '20260726000000_a.sql', '20260726000000_b.sql'],
   })
   assert.equal(errors.length, 1)
-  assert.match(errors[0], /both added by this PR/)
+  assert.match(errors[0], /added by this PR with version 20260726000000/)
 })
 
 test('several migrations added in one PR are fine as long as each sorts after the merged ones', () => {

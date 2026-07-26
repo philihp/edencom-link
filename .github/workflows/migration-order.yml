@@ -16,6 +16,15 @@ jobs:
           # The check compares this branch's migrations against the base
           # branch's, so it needs both — not just the PR's merge commit.
           fetch-depth: 0
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24.x
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      # The checker itself is one file, but it leans on ramda like the rest of
+      # the repo, so it needs node_modules.
+      - run: pnpm install --frozen-lockfile
       - name: Check migration numbering
         run: node .github/scripts/check-migrations.mjs "origin/$BASE_REF"
         env:
