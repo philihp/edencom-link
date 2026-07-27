@@ -1,0 +1,140 @@
+/* Styles for the /jobs stub (docs/jobs-page.md). Deliberately close to
+   refresh.module.css — this page replaces /character/refresh, and the retro
+   table look should carry over unchanged. */
+
+.table {
+  border-collapse: collapse;
+  margin: 1rem 0;
+  width: 100%;
+  max-width: 60rem;
+}
+
+.table th,
+.table td {
+  border: 1px solid var(--border, #444);
+  padding: 0.35rem 0.75rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+.table th {
+  white-space: nowrap;
+}
+
+/* The job name under its short label: character-wallet-transactions is what the
+   heartbeat, the queue message and the cron path all call it, so it's worth
+   showing even though the label is what you read. */
+.jobName {
+  display: block;
+  font-family: var(--mono, monospace);
+  font-size: 0.75em;
+  color: var(--ink-faint, #888);
+  /* An open expansion widens its own column; without this the Job column gives
+     up its width and the hyphenated job names wrap to three lines. */
+  white-space: nowrap;
+}
+
+.lagging {
+  color: #d8a800;
+}
+
+.cell {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.status {
+  white-space: nowrap;
+}
+
+.status[data-status='running'] {
+  color: #d8a800;
+}
+
+.status[data-status='queued'] {
+  color: #888;
+}
+
+.status[data-status='failed'],
+.status[data-status='error'] {
+  color: #ff4040;
+}
+
+.status[data-status='idle'] {
+  color: var(--ink-faint, #888);
+}
+
+.status[data-status='done'] {
+  color: #40a040;
+}
+
+.nextRun {
+  white-space: nowrap;
+}
+
+.overdue {
+  color: #ff4040;
+  white-space: nowrap;
+}
+
+.manual,
+.tokenNote {
+  color: var(--ink-faint, #888);
+  font-style: italic;
+  white-space: nowrap;
+}
+
+/* The per-entity expansion inside the Characters/Corporations cell. Collapsed
+   by default so the page reads as one row per job; open it to get the old
+   matrix column back. */
+.breakdown summary {
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.breakdownList {
+  list-style: none;
+  margin: 0.4rem 0 0.1rem;
+  padding: 0;
+  font-size: 0.9em;
+}
+
+.breakdownList li {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  padding: 0.15rem 0;
+  white-space: nowrap;
+}
+
+.breakdownName {
+  min-width: 11rem;
+}
+
+.breakdownRunsAs {
+  color: var(--ink-faint, #888);
+  min-width: 11rem;
+}
+
+.refreshButton {
+  font: inherit;
+  font-size: 0.8em;
+  padding: 0 0.5em;
+  cursor: pointer;
+}
+
+.stubBanner {
+  border: 1px dashed var(--border, #444);
+  padding: 0.5rem 0.75rem;
+  margin: 1rem 0;
+  color: var(--ink-faint, #888);
+  font-size: 0.9em;
+  max-width: 60rem;
+}
+
+.errorText {
+  color: #ff4040;
+  font-size: 0.9em;
+}

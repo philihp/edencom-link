@@ -25,7 +25,7 @@ status tracking. Two coherent end states:
 
 **(a) Keep the queue for on-demand** — zero further work. Cost: every job
 permanently has two execution paths, the consumer's `JOBS` registry and
-its 60s cap live forever, and the [`/workflow` page plan](../workflow-jobs-page.md)'s
+its 60s cap live forever, and the [`/jobs` page plan](../jobs-page.md)'s
 "one home per job" rule never quite lands (a job would be a workflow on
 schedule but a queue job on demand).
 
@@ -73,10 +73,11 @@ The pilot did its job. With the fan-out pattern landed:
   *the* shape).
 - Mark every row of this plan's README table done; note the end state at
   the top.
-- If the [`/workflow` page](../workflow-jobs-page.md) has been built, its
-  registry should now list every extract job and `/character/refresh`'s
-  scope per that plan's move rule; if it hasn't, its "initial content"
-  section needs updating to reflect that everything is a workflow now.
+- The [`/jobs` page](../jobs-page.md) is sequenced after this phase and
+  reads whatever on-demand path §2 settles on, so nothing here blocks on
+  it. Once §2 lands, re-read that plan's "Status semantics" section — it
+  describes `refresh_task` transitions that (b) would move into a workflow
+  step.
 
 ## Verification
 
