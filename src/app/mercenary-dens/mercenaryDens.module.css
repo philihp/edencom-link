@@ -1,8 +1,9 @@
+/* Title, then the sharing picker beneath it — both flush left. */
 .pageHeader {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12pt;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6pt;
 }
 
 .pageHeader h1 {
@@ -18,7 +19,7 @@
 .share {
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
+  align-items: flex-start;
   gap: 3pt;
 }
 
@@ -30,7 +31,6 @@
 .shareList {
   display: flex;
   flex-wrap: wrap;
-  justify-content: flex-end;
   gap: 4pt 12pt;
 }
 

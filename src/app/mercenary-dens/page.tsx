@@ -1,12 +1,11 @@
 import { redirect } from 'next/navigation'
 
 import { getSdePlanets } from '@/sdePlanets'
-import { getSdeTypeNames } from '@/sdeTypes'
 import { createClient } from '@/utils/supabase/server'
 
 import { Countdown } from './countdown'
 import CopyDiscordPing from './copyDiscordPing'
-import { STAGING, TEMPERATE_PLANETS } from './data'
+import { TEMPERATE_PLANETS } from './data'
 import { formatDuration, formatUtc } from './duration'
 import EnemyDenIntel, { type EnemyDenIntelRow } from './enemyDenIntel'
 import ShareAlliance from './shareAlliance'
@@ -21,9 +20,7 @@ export const dynamic = 'force-dynamic'
 // intel.
 type DenRow = {
   character_id: string
-  den_id: number
   planet_id: number
-  type_id: number | null
   state: string | null
   development_level: string | null
   development_amount: number | null
@@ -31,8 +28,6 @@ type DenRow = {
   anarchy_amount: number | null
   infomorphs: number | null
   reinforcement_end: string | null
-  skyhook_id: number | null
-  skyhook_corporation_id: number | null
   status_observed_at: string | null
 }
 
@@ -40,7 +35,7 @@ type MergedRow = {
   system: string
   planet: string // roman numeral
   intel?: { owner: string; alliance: string | null; reinforced: boolean }
-  den?: DenRow & { ownerLabel: string; ownerCharacterId: string | null; typeName: string | null }
+  den?: DenRow & { ownerLabel: string; ownerCharacterId: string | null }
 }
 
 const isReinforced = (row: MergedRow): boolean =>
@@ -163,7 +158,6 @@ const MercenaryDensPage = async () => {
   // Computed on the server so the client's initial state matches (no hydration
   // mismatch) — the value is a plain string the client edits.
   const defaultReinforcementEnd = `${new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10)}T`
-  const typeNames = await getSdeTypeNames(dens.map((d) => d.type_id).filter((t): t is number => t != null))
 
   // Merge the hand-maintained temperate-planet intel with our real dens, keyed by
   // system + roman numeral. A den's planet_id is resolved to (system, roman) via
@@ -188,10 +182,9 @@ const MercenaryDensPage = async () => {
       ownerLabel: ownReg?.name ?? 'Corpmate',
       // The EVE character id, shown in parens after the owner. Resolvable for
       // the caller's own characters and for shared dens' owners (via the
-      // security-definer RPC above); "Corpmate" only survives if resolution
-      // somehow fails.
+      // character_directory lookup above); "Corpmate" only survives if
+      // resolution somehow fails.
       ownerCharacterId: ownReg?.characterId ?? null,
-      typeName: den.type_id != null ? (typeNames[den.type_id] ?? null) : null,
     }
     const k = key(system, roman)
     const existing = rowsByKey.get(k)
@@ -245,9 +238,6 @@ const MercenaryDensPage = async () => {
         <h1>Mercenary Dens</h1>
         <ShareAlliance alliances={alliances} sharedAllianceIds={sharedAllianceIds} />
       </div>
-      <p className={styles.subtitle}>
-        Systems immediately accessible from our staging system, <span className={styles.system}>{STAGING}</span>.
-      </p>
 
       <Topology nodeColors={nodeColors} enemyIntel={enemyIntelSystems} />
 
@@ -258,15 +248,12 @@ const MercenaryDensPage = async () => {
             <tr>
               <th>System</th>
               <th>Planet</th>
-              <th>Den ID</th>
               <th>Owner</th>
-              <th>Type</th>
               <th>State</th>
               <th>Development</th>
               <th>Anarchy</th>
               <th>Infomorphs</th>
               <th>Reinforced</th>
-              <th>Skyhook</th>
               <th>Observed At</th>
             </tr>
           </thead>
@@ -279,13 +266,11 @@ const MercenaryDensPage = async () => {
                 <tr key={`${row.system}-${row.planet}-${i}`} className={color ? styles[`row_${color}`] : undefined}>
                   <td className={styles.system}>{row.system}</td>
                   <td className={styles.planet}>{row.planet || dash}</td>
-                  <td className={styles.planet}>{den ? den.den_id : dash}</td>
                   <td>
                     {owner ?? dash}
                     {den?.ownerCharacterId ? <span className={styles.alliance}> ({den.ownerCharacterId})</span> : null}
                     {row.intel?.alliance ? <span className={styles.alliance}> [{row.intel.alliance}]</span> : null}
                   </td>
-                  <td>{den?.typeName ?? dash}</td>
                   <td>{den?.state ?? dash}</td>
                   <td>{den ? evolution(den.development_level, den.development_amount) : dash}</td>
                   <td>{den ? evolution(den.anarchy_level, den.anarchy_amount) : dash}</td>
@@ -320,7 +305,6 @@ const MercenaryDensPage = async () => {
                       dash
                     )}
                   </td>
-                  <td>{den?.skyhook_corporation_id ? `corp ${den.skyhook_corporation_id}` : dash}</td>
                   <td>
                     {den?.status_observed_at ? (
                       <>
