@@ -1,12 +1,15 @@
 // MCP tools over what the user *has* and what state it's in: hangars browsed by
 // location rather than by item name, monitored Upwell structures (and their fuel
-// clocks), wallet balances, and deployed Mercenary Dens. Same rules as tools.ts —
+// clocks), wallet balances, deployed Mercenary Dens, and the ship fittings their
+// characters have saved in the game. Same rules as tools.ts —
 // every query runs on the caller's bearer-token client so RLS scopes results,
 // the DB is the only source, and nothing here calls ESI.
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js'
+import { ascend, groupBy, sortWith } from 'ramda'
 import { z } from 'zod'
 
+import { flagSortKey, groupForFlag, type FittingItem, type FittingRow } from '@/app/fitting/fit'
 import { resolveLocations, type LocationRef } from '@/app/resolveLocations'
 import { getSdePlanets } from '@/sdePlanets'
 import { searchSdeSystems } from '@/sdeSystems'
@@ -18,6 +21,7 @@ import {
   fetchAllRows,
   fetchOwnerContext,
   resolveOwnerFilter,
+  resolveTypeFilter,
   textResult,
   type OwnerContext,
 } from './lib'
@@ -465,6 +469,121 @@ export const registerEstateTools = (server: McpServer): void => {
         reinforced_dens: rows.filter((r) => r.reinforced).length,
         dens: rows,
         data_refreshed: await dataFreshness(supabase, ['character-mercenary-dens']),
+      })
+    }
+  )
+
+  server.registerTool(
+    'list_fittings',
+    {
+      title: 'List saved ship fittings',
+      description:
+        'The ship fittings the user\'s characters have saved in the game, with the hull each is for and who saved it. Filter by hull, by fit name, by owner, or by a module the fit uses — "what Hurricane fits do I have", "which of my fits use a Damage Control II". Set include_items to get each fit\'s full module list by slot. Note: EVE\'s API exposes only each pilot\'s *personal* fittings — corporation and alliance doctrine folders are not available, so a doctrine fit appears here only if one of their characters saved a copy.',
+      annotations: { readOnlyHint: true, openWorldHint: false },
+      inputSchema: {
+        ship: z.string().optional().describe('Only fits for hulls matching this name substring, e.g. "Hurricane"'),
+        name: z
+          .string()
+          .optional()
+          .describe('Only fits whose own name or description matches this substring, e.g. "doctrine"'),
+        owner: z.string().optional().describe('Only fits saved by this character (name substring)'),
+        module: z
+          .string()
+          .optional()
+          .describe('Only fits that use a module/charge/drone matching this item-name substring'),
+        include_items: z
+          .boolean()
+          .optional()
+          .describe("Include each fit's full module list, grouped by slot (default false — the listing stays compact)"),
+      },
+    },
+    async ({ ship, name, owner, module, include_items }, extra) => {
+      const supabase = clientFor(extra)
+      if (!supabase) return textResult('Missing bearer token.')
+
+      const [{ data: fittingRows }, owners] = await Promise.all([
+        supabase.from('character_fitting').select('character_id, fitting_id, name, description, ship_type_id, items'),
+        fetchOwnerContext(supabase),
+      ])
+
+      const fittings = (fittingRows ?? []) as FittingRow[]
+      const freshness = await dataFreshness(supabase, ['character-fittings'])
+      if (fittings.length === 0) {
+        return textResult({
+          total_fittings: 0,
+          fittings: [],
+          note: 'No saved fittings found. A character needs to be linked with the esi-fittings.read_fittings.v1 scope, and the character-fittings extract needs to have run for it.',
+          data_refreshed: freshness,
+        })
+      }
+
+      const ownerFilter = resolveOwnerFilter(owner, owners)
+      if (!ownerFilter.ok) return textResult(ownerFilter.message)
+
+      // A `module` filter resolves through the SDE search (a module name is an
+      // item name like any other), then matches on type id. The hull filter
+      // instead matches the *resolved* hull names of the fits themselves —
+      // that set is a handful of types, so it needs no search and can't trip
+      // the "too many matches" guard a broad substring would.
+      const moduleFilter = await resolveTypeFilter(module)
+      if (!moduleFilter.ok) return textResult(moduleFilter.message)
+      const moduleTypeIds = moduleFilter.matches ? new Set(moduleFilter.matches.map((m) => m.typeID)) : null
+
+      const typeNames = await getSdeTypeNames([
+        ...fittings.map((f) => Number(f.ship_type_id)),
+        ...fittings.flatMap((f) => (f.items ?? []).map((i) => Number(i.type_id))),
+      ])
+      const hullOf = (f: FittingRow) => typeNames[Number(f.ship_type_id)] ?? `Type #${f.ship_type_id}`
+
+      const shipNeedle = (ship ?? '').trim().toLowerCase()
+      const nameNeedle = (name ?? '').trim().toLowerCase()
+
+      const matched = fittings.filter((f) => {
+        if (ownerFilter.ownerIds && !ownerFilter.ownerIds.has(f.character_id)) return false
+        if (shipNeedle && !hullOf(f).toLowerCase().includes(shipNeedle)) return false
+        if (nameNeedle && !`${f.name ?? ''} ${f.description ?? ''}`.toLowerCase().includes(nameNeedle)) return false
+        if (moduleTypeIds && !(f.items ?? []).some((i) => moduleTypeIds.has(Number(i.type_id)))) return false
+        return true
+      })
+
+      // Hull first, then fit name — the order /fitting lists them in.
+      const sorted = sortWith<FittingRow>([ascend(hullOf), ascend((f) => (f.name ?? '').toLowerCase())], matched)
+
+      // The module list, grouped by slot family the way the fitting window
+      // shows it. Same helpers the /fitting detail page uses, so the two can't
+      // disagree about what counts as a rig or a bay.
+      const itemsOf = (f: FittingRow) => {
+        const ordered = sortWith<FittingItem>(
+          [ascend((i) => flagSortKey(i.flag)), ascend((i) => i.flag), ascend((i) => Number(i.type_id))],
+          f.items ?? []
+        )
+        return Object.entries(groupBy((i: FittingItem) => groupForFlag(i.flag), ordered)).map(([slot, items]) => ({
+          slot,
+          items: (items ?? []).map((i) => ({
+            item: typeNames[Number(i.type_id)] ?? `Type #${i.type_id}`,
+            quantity: Number(i.quantity ?? 1),
+          })),
+        }))
+      }
+
+      const shown = sorted.slice(0, MAX_ROWS)
+      const rows = shown.map((f) => ({
+        ship: hullOf(f),
+        name: f.name || `Fitting #${f.fitting_id}`,
+        ...(f.description ? { description: f.description } : {}),
+        owner: owners.nameById.get(f.character_id) ?? f.character_id,
+        item_count: (f.items ?? []).length,
+        // Enough to address the fit on the site: /fitting/<character_id>/<fitting_id>.
+        fitting_id: Number(f.fitting_id),
+        character_id: f.character_id,
+        ...(include_items ? { slots: itemsOf(f) } : {}),
+      }))
+
+      return textResult({
+        total_fittings: sorted.length,
+        fittings: rows,
+        note: capNote(sorted.length, rows.length, 'fittings'),
+        data_refreshed: freshness,
       })
     }
   )
