@@ -85,6 +85,8 @@ const Header = async () => {
               <span className={styles.sep}>|</span>
               <Link href="/blueprint">blueprint</Link>
               <span className={styles.sep}>|</span>
+              <Link href="/fitting">fittings</Link>
+              <span className={styles.sep}>|</span>
               <Link href="/structure">structures</Link>
               <span className={styles.sep}>|</span>
               <Link href="/account/settings">settings</Link>
