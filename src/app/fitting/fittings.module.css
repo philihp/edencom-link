@@ -1,7 +1,8 @@
 /*
- * The fitting library as a responsive tile grid, matching the structures page
- * (src/app/structure/structures.module.css) — two per row on phones, packing in
- * more columns as the viewport grows.
+ * The fitting library as a ship chart: one row per hull class, one column per
+ * empire ship line plus Faction (see shipMatrix.ts). The table scrolls inside
+ * its own wrapper on narrow screens rather than reflowing — a matrix only
+ * reads as a matrix when the columns stay side by side.
  */
 
 .intro {
@@ -13,61 +14,76 @@
   color: var(--ink-faint);
 }
 
-.grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 12px;
-  list-style: none;
-  padding: 0;
+.matrixScroll {
+  overflow-x: auto;
   margin: 16px 0;
 }
 
-@media (min-width: 640px) {
-  .grid {
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  }
+.matrix {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 12px;
 }
 
-.tile {
+.matrix th {
+  font-size: 11px;
+  color: var(--ink-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 600;
+  text-align: left;
+  padding: 6px 10px;
+}
+
+/* The row-label column hugs its content so the fit columns share the width. */
+.classHeader {
+  white-space: nowrap;
+  vertical-align: top;
+}
+
+.cell {
+  border: 1px solid var(--line);
+  background: var(--paper-raised);
+  padding: 8px 10px;
+  vertical-align: top;
+  min-width: 130px;
+}
+
+.cellEmpty {
+  color: var(--ink-faint);
+}
+
+.cellFits {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 14px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--paper-raised);
-  transition: border-color 0.12s ease;
-  min-width: 0;
+  gap: 6px;
+  list-style: none;
+  padding: 0;
+  margin: 0;
 }
 
-.tile:hover {
-  border-color: var(--accent);
-}
-
-.head {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-}
-
-.name {
+.fitLink {
+  display: block;
   font-family: var(--serif);
-  font-size: 16px;
-  font-weight: 600;
-  line-height: 1.25;
   color: var(--ink) !important;
   overflow-wrap: anywhere;
 }
 
-.name:hover {
+.fitLink:hover {
   color: var(--accent) !important;
   text-decoration: none;
 }
 
-/* The hull the fit is for — the thing a player scans the list by. */
-.hull {
-  margin: 0;
-  font-size: 13px;
+/* The hull under each fit name — the disambiguator when a cell mixes hulls. */
+.fitHull {
+  display: block;
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+/* ── Detail page ─────────────────────────────────────────────────────────── */
+
+.meta {
   color: var(--ink-soft);
 }
 
@@ -78,37 +94,6 @@
   color: var(--ink-faint);
   overflow-wrap: anywhere;
   white-space: pre-line;
-}
-
-.fields {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 5px 12px;
-  margin: 0;
-  font-size: 12px;
-}
-
-.label {
-  color: var(--ink-faint);
-  white-space: nowrap;
-}
-
-.value {
-  margin: 0;
-  text-align: right;
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.num {
-  font-family: var(--mono);
-  font-variant-numeric: tabular-nums;
-}
-
-/* ── Detail page ─────────────────────────────────────────────────────────── */
-
-.meta {
-  color: var(--ink-soft);
 }
 
 /* The module list under the fitting wheel: one titled block per slot family,

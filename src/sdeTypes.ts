@@ -11,9 +11,30 @@
 import { bulkLookup, createByIdCache } from './sdeCache'
 import { sdeSupabase } from './utils/supabase/sde'
 
-export type SdeType = { typeID: number; name: string; groupID: number; categoryID: number | null }
+// groupName/raceID/metaGroupID ride along from the view (raceID and
+// metaGroupID added by migration 20260728120000_sde_type_race_meta): race is
+// which empire's ship line a hull belongs to, metaGroup its tech/faction tier.
+// Both are null for the many types the SDE doesn't stamp (metaGroupID is
+// absent on plain T1 types). First consumer is the /fitting ship matrix.
+export type SdeType = {
+  typeID: number
+  name: string
+  groupID: number
+  categoryID: number | null
+  groupName: string | null
+  raceID: number | null
+  metaGroupID: number | null
+}
 
-type TypeRow = { type_id: number; name: string; group_id: number; category_id: number | null }
+type TypeRow = {
+  type_id: number
+  name: string
+  group_id: number
+  category_id: number | null
+  group_name: string | null
+  race_id: number | null
+  meta_group_id: number | null
+}
 
 const cache = createByIdCache<SdeType>()
 
@@ -22,14 +43,16 @@ const rowToType = (r: TypeRow): SdeType => ({
   name: r.name,
   groupID: r.group_id,
   categoryID: r.category_id,
+  groupName: r.group_name,
+  raceID: r.race_id == null ? null : Number(r.race_id),
+  metaGroupID: r.meta_group_id == null ? null : Number(r.meta_group_id),
 })
+
+const TYPE_COLUMNS = 'type_id, name, group_id, category_id, group_name, race_id, meta_group_id'
 
 export const getSdeTypes = (typeIDs: Iterable<number>): Promise<Record<number, SdeType>> =>
   bulkLookup(cache, typeIDs, async (chunk) => {
-    const { data, error } = await sdeSupabase()
-      .from('sde_published_type')
-      .select('type_id, name, group_id, category_id')
-      .in('type_id', chunk)
+    const { data, error } = await sdeSupabase().from('sde_published_type').select(TYPE_COLUMNS).in('type_id', chunk)
     if (error) {
       console.error(`[sdeTypes] lookup failed: ${error.message}`)
       return []
@@ -55,10 +78,7 @@ export const getSdeTypeNames = async (typeIDs: Iterable<number>): Promise<Record
 export const getSdeTypesInGroups = async (groupIDs: Iterable<number>): Promise<SdeType[]> => {
   const ids = [...groupIDs]
   if (ids.length === 0) return []
-  const { data, error } = await sdeSupabase()
-    .from('sde_published_type')
-    .select('type_id, name, group_id, category_id')
-    .in('group_id', ids)
+  const { data, error } = await sdeSupabase().from('sde_published_type').select(TYPE_COLUMNS).in('group_id', ids)
   if (error) {
     console.error(`[sdeTypes] group lookup failed: ${error.message}`)
     return []
