@@ -53,6 +53,10 @@ The schema below is therefore built with an `owner_scope` column
 endpoint, ingesting it is a new job writing a new `owner_scope` value into the
 same table, plus a filter on the page — not a migration of everything.
 
+A follow-up plan now exists for going beyond read-only entirely:
+[`fitting-paging.md`](fitting-paging.md) — using the write scope to page fits
+between the game's 500-slot saved list and an unbounded library here.
+
 A second, cheaper approximation is available later if wanted: reuse the
 alliance-sharing pattern already built for mercenary dens
 (`character_mercenary_den_share`, `my_alliance_ids()`) so a player can opt into

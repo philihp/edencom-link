@@ -3146,7 +3146,8 @@ create index sde_map_solar_systems_name_trgm on public.sde_map_solar_systems
 
 -- Published, named types with their group/category — mirrors buildSde.js's
 -- buildTypes() cut. group_name/category_name added for the MCP exploration
--- tools (migration 20260723000000_sde_taxonomy_views).
+-- tools (migration 20260723000000_sde_taxonomy_views); race_id/meta_group_id
+-- for the /fitting ship matrix (migration 20260728120000_sde_type_race_meta).
 create view public.sde_published_type
 with (security_invoker = true) as
 select
@@ -3155,7 +3156,9 @@ select
   (t.data ->> 'groupID')::bigint as group_id,
   (g.data ->> 'categoryID')::bigint as category_id,
   g.data -> 'name' ->> 'en' as group_name,
-  c.data -> 'name' ->> 'en' as category_name
+  c.data -> 'name' ->> 'en' as category_name,
+  (t.data ->> 'raceID')::bigint as race_id,
+  (t.data ->> 'metaGroupID')::bigint as meta_group_id
 from public.sde_types t
 left join public.sde_groups g on g._key = (t.data ->> 'groupID')::bigint
 left join public.sde_categories c on c._key = (g.data ->> 'categoryID')::bigint

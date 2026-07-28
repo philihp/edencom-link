@@ -1,16 +1,17 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
-import { ascend, sortWith } from 'ramda'
 
+import { getSdeTypes } from '@/sdeTypes'
 import { createClient } from '@/utils/supabase/server'
-import { Name } from '../names'
-import { fetchTypeNames } from '../typeNames'
 import type { FittingRow } from './fit'
+import { buildMatrix, RACE_COLUMNS } from './shipMatrix'
 import styles from './fittings.module.css'
 
-// Every saved fitting the signed-in player can see. RLS on
-// character_fitting_over_time scopes the view to the caller's own
-// registrations, so this select needs no owner filter of its own.
+// Every saved fitting the signed-in player can see, laid out the way ship
+// charts are: one row per hull class (Frigate → Battleship → Capital), one
+// column per empire ship line plus Faction — see shipMatrix.ts for the
+// bucketing. RLS on character_fitting_over_time scopes the view to the
+// caller's own registrations, so this select needs no owner filter of its own.
 //
 // These are the fittings each character has saved *personally* in the game
 // client: ESI has no corporation or alliance fittings endpoint, so a doctrine
@@ -29,18 +30,10 @@ const FittingPage = async () => {
     .returns<FittingRow[]>()
   const rows = fittings ?? []
 
-  // Hull names from the SDE mirror, and character names for the owner column.
-  const [typeNames, { data: registrations }] = await Promise.all([
-    fetchTypeNames(rows.map((f) => Number(f.ship_type_id))),
-    supabase.from('registration').select('id, name'),
-  ])
-  const characterName = new Map((registrations ?? []).map((r) => [r.id, r.name as string | null]))
-
-  const hullOf = (row: FittingRow) => typeNames[Number(row.ship_type_id)] ?? `#${row.ship_type_id}`
-
-  // Hull first, then the fit's own name — the order a player thinks of their
-  // fittings in, and stable enough that the list doesn't reshuffle between runs.
-  const sorted = sortWith<FittingRow>([ascend(hullOf), ascend((f) => (f.name ?? '').toLowerCase())], rows)
+  // One bulk SDE lookup carries everything the matrix buckets by: hull name,
+  // group (→ class row), race and meta group (→ column).
+  const types = await getSdeTypes(rows.map((f) => Number(f.ship_type_id)))
+  const matrix = buildMatrix(rows, types)
 
   return (
     <>
@@ -51,39 +44,54 @@ const FittingPage = async () => {
         has saved their own copy of it.
       </p>
 
-      {sorted.length === 0 ? (
+      {matrix.length === 0 ? (
         <p className={styles.empty}>
           No fittings yet. Add a character with the <code>esi-fittings.read_fittings.v1</code> scope on the{' '}
           <Link href="/account/settings">settings page</Link>, then refresh from{' '}
           <Link href="/character/refresh">the refresh page</Link>.
         </p>
       ) : (
-        <ul className={styles.grid}>
-          {sorted.map((fit) => {
-            const moduleCount = (fit.items ?? []).length
-            return (
-              <li key={`${fit.character_id}:${fit.fitting_id}`} className={styles.tile}>
-                <div className={styles.head}>
-                  <Link href={`/fitting/${fit.character_id}/${fit.fitting_id}`} className={styles.name}>
-                    {fit.name || `Fitting #${fit.fitting_id}`}
-                  </Link>
-                </div>
-                <p className={styles.hull}>
-                  <Name name={hullOf(fit)} />
-                </p>
-                {fit.description ? <p className={styles.description}>{fit.description}</p> : null}
-                <dl className={styles.fields}>
-                  <dt className={styles.label}>Saved by</dt>
-                  <dd className={styles.value}>
-                    <Name name={characterName.get(fit.character_id) ?? null} />
-                  </dd>
-                  <dt className={styles.label}>Items</dt>
-                  <dd className={`${styles.value} ${styles.num}`}>{moduleCount}</dd>
-                </dl>
-              </li>
-            )
-          })}
-        </ul>
+        <div className={styles.matrixScroll}>
+          <table className={styles.matrix}>
+            <thead>
+              <tr>
+                <th className={styles.classHeader} scope="col" aria-label="Ship class" />
+                {RACE_COLUMNS.map((race) => (
+                  <th key={race} scope="col">
+                    {race}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {matrix.map((row) => (
+                <tr key={row.shipClass}>
+                  <th className={styles.classHeader} scope="row">
+                    {row.shipClass}
+                  </th>
+                  {RACE_COLUMNS.map((race) => (
+                    <td key={race} className={styles.cell}>
+                      {row.cells[race].length === 0 ? (
+                        <span className={styles.cellEmpty}>—</span>
+                      ) : (
+                        <ul className={styles.cellFits}>
+                          {row.cells[race].map((f) => (
+                            <li key={`${f.characterId}:${f.fittingId}`}>
+                              <Link href={`/fitting/${f.characterId}/${f.fittingId}`} className={styles.fitLink}>
+                                {f.name}
+                              </Link>
+                              <span className={styles.fitHull}>{f.hull}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </>
   )
