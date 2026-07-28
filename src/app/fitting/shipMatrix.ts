@@ -96,15 +96,12 @@ const CLASS_BY_GROUP: Record<string, (typeof CLASS_ROWS)[number]> = {
 export const classForGroupName = (groupName: string | null | undefined): string =>
   (groupName && CLASS_BY_GROUP[groupName]) || groupName || 'Unknown'
 
-// What the page feeds in: one fit from any source — a character's own saved
-// fit or a corp/alliance fit published on the site — reduced to what placement
-// needs (the hull) and what the cell renders (a link, a name, and a badge for
-// the non-personal sources).
+// What the page feeds in: one saved fit, reduced to what placement needs (the
+// hull) and what the cell renders (a link and a name).
 export type MatrixEntry = {
   href: string
   name: string
   shipTypeId: number
-  badge?: string
 }
 
 // One fit placed in the matrix, with everything the cell renders.
@@ -112,7 +109,6 @@ export type MatrixFit = {
   href: string
   name: string
   hull: string
-  badge?: string
 }
 
 export type MatrixRow = { shipClass: string; cells: Record<RaceColumn, MatrixFit[]> }
@@ -131,7 +127,6 @@ export const buildMatrix = (entries: MatrixEntry[], typeById: Record<number, Sde
         href: e.href,
         name: e.name,
         hull: type?.name ?? `#${e.shipTypeId}`,
-        ...(e.badge ? { badge: e.badge } : {}),
       },
     }
   })

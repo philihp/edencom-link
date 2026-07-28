@@ -57,38 +57,23 @@ A follow-up plan now exists for going beyond read-only entirely:
 [`fitting-paging.md`](fitting-paging.md) — using the write scope to page fits
 between the game's 500-slot saved list and an unbounded library here.
 
-**Shipped follow-up: site-authored corp/alliance fittings.** Since the in-game
-Corp and Alliance folders can't be read, `/fitting` now carries its own: a
-member publishes a saved personal fit as a corporation or alliance fitting
-(the `shared_fitting` table — a snapshot copy, deliberately not a live link),
-and everyone with a character in that corp/alliance sees it under the
-Personal / Corp / Alliance checkboxes. This is a separate table rather than
-`owner_scope` rows in `character_fitting_over_time`, because the extract's
-reconciler closes any current row missing from the ESI snapshot — a
-site-authored row there would be swept as "deleted in game" on the next run.
-The `owner_scope` column remains reserved for a real ESI corp/alliance
-endpoint, should one ever ship.
-
-**Shipped follow-up: one URL shape for every fitting.** Personal and
-published fittings originally lived at different route shapes
-(`/fitting/[characterId]/[fittingId]` vs. `/fitting/shared/[sharedId]`).
-They now share a single `/fitting/[fittingId]`: the param is an opaque
-token, either a shared fit's uuid verbatim or `${characterId}_${fittingId}`
-for a personal one (`_` never appears in a uuid's canonical form or in a
-numeric `fitting_id`, so the two are unambiguous to tell apart —
-`parseFittingRouteParam` in `fit.ts` does the split, `personalFittingRoute`/
-`sharedFittingRoute` build the encoded href). A shared fit's page also gains
-a "Shared from `<name>`" badge with the publisher's portrait, floating at the
-top right — the ESI image server (`images.evetech.net/characters/<id>/portrait`)
-needs the publisher's EVE character id, which comes from `character_directory`
-alongside their name.
-
-A second, cheaper approximation is available later if wanted: reuse the
-alliance-sharing pattern already built for mercenary dens
-(`character_mercenary_den_share`, `my_alliance_ids()`) so a player can opt into
-publishing their fittings to their alliance. That turns "the doctrine fits my
-FC has saved" into something the whole alliance can read. It is deliberately
-**out of scope** for these three PRs — get the data in and visible first.
+**Shipped follow-up: per-fit public share links.** A fit's own page
+(`/fitting/[characterId]/[fittingId]`) carries a "Share this fit" control
+that mints a `character_fitting_share` row — `token text primary key`,
+`(character_id, fitting_id)` — and rewrites the browser's own address bar to
+`?token=…`, exactly what gets handed to someone else. Visiting that URL with
+the token needs no login: it resolves anonymously through the service-role
+client (`src/app/fitting/access.ts`), mirroring `shared_asset_token`'s
+`/ship/[itemId]?token=…` pattern precisely, down to the token being minted
+with `randomBytes(16).toString('hex')` and owned/revoked under the same RLS
+shape. The share points at the fit's live `(character_id, fitting_id)` pair
+rather than a copy — an edit in the client is visible through an outstanding
+link too, and there's nothing to keep in sync. (An earlier version of this
+follow-up published fits into corp/alliance audiences via a `shared_fitting`
+snapshot-copy table with its own route shape; that was replaced by the
+simpler per-fit link before it shipped.) The `owner_scope` column on
+`character_fitting_over_time` remains reserved for a real ESI corp/alliance
+endpoint, should CCP ever ship one.
 
 ---
 
@@ -177,11 +162,9 @@ just be a stale copy of the SDE mirror.
   scoping), grouped by ship with the hull name and icon, the fit's name and
   description, the owning character, and a module count. Sorted by ship name,
   then fit name. A header nav link next to `blueprint`.
-- `/fitting/[characterId]/[fittingId]` — the detail page (superseded by a
-  unified `/fitting/[fittingId]` route once corp/alliance fittings shipped;
-  see the follow-up note below). `fitting_id` is only unique per character
-  (ESI numbers them from 1 per pilot), so the route carried the registration
-  uuid too rather than pretending the id was global.
+- `/fitting/[characterId]/[fittingId]` — the detail page. `fitting_id` is only
+  unique per character (ESI numbers them from 1 per pilot), so the route
+  carries the registration uuid too rather than pretending the id is global.
 - The detail page renders `ShipFitViewDynamic` — the same `ssr:false` wrapper
   `/ship/[itemId]` uses, which is what keeps the dogma-engine WASM and the
   eveship.fit data payload out of every other route's bundle. Its `esiFit`

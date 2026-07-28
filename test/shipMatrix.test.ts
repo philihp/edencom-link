@@ -33,11 +33,10 @@ const type = (
   metaGroupID,
 })
 
-const fit = (fittingId: number, shipTypeId: number, name: string, badge?: string): MatrixEntry => ({
+const fit = (fittingId: number, shipTypeId: number, name: string): MatrixEntry => ({
   href: `/fitting/reg-1/${fittingId}`,
   name,
   shipTypeId,
-  ...(badge ? { badge } : {}),
 })
 
 // Punisher (Amarr T1), Sacrilege (Amarr T2 HAC), Gila (Guristas — carries a
@@ -94,16 +93,6 @@ test('buildMatrix places fits in the right cells and sorts by hull then name', (
   // Every declared column exists on every row, even when empty.
   RACE_COLUMNS.forEach((col) => assert.ok(Array.isArray(cruiser.cells[col])))
   assert.equal(cruiser.cells.Minmatar.length, 0)
-})
-
-test('buildMatrix carries the source badge through to the cell', () => {
-  const rows = buildMatrix([fit(1, 597, 'Doctrine Punisher', 'Corp'), fit(2, 597, 'My Punisher')], TYPES)
-  const frigate = rows.find((r) => r.shipClass === 'Frigate')
-  assert.ok(frigate)
-  assert.deepEqual(
-    frigate.cells.Amarr.map((f) => f.badge),
-    ['Corp', undefined]
-  )
 })
 
 test('buildMatrix survives a type the SDE lookup missed', () => {

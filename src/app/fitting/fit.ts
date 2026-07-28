@@ -18,9 +18,17 @@ export type FittingRow = {
   items: FittingItem[] | null
 }
 
+// The one URL every fitting lives at, whether the viewer owns it or is
+// following a character_fitting_share link (?token=… appended separately —
+// see shareControls.tsx). fitting_id is only unique per character (ESI
+// numbers them from 1 per pilot), so the route carries the registration uuid
+// too rather than pretending the id is global.
+export const fittingRoute = (characterId: string, fittingId: number | string): string =>
+  `/fitting/${characterId}/${fittingId}`
+
 // Shapes a stored fitting into the ESI-fitting-JSON shape @eveshipfit/react's
-// useImportEsiFitting() hook expects — nearly a pass-through, since the tables
-// (character_fitting and shared_fitting alike) store ESI's own field names.
+// useImportEsiFitting() hook expects — nearly a pass-through, since the table
+// stores ESI's own field names.
 //
 // The one difference: ESI's *fitting* items carry no item_id (unlike the
 // hangar-asset rows /ship/[itemId] feeds through the same hook), while the
@@ -75,33 +83,4 @@ export const groupForFlag = (flag: string): string =>
 export const flagSortKey = (flag: string): number => {
   const index = FLAG_ORDER.findIndex((prefix) => flag.startsWith(prefix))
   return index === -1 ? FLAG_ORDER.length : index
-}
-
-// Every fitting on the site — personal or published — lives at one URL shape,
-// /fitting/[fittingId], so a link never has to know which kind it's pointing
-// at. The two sources don't share an id space, though: a shared_fitting row
-// has a globally unique uuid, but ESI numbers personal fittings per pilot (a
-// bigint that's only unique *within* one character — every character has a
-// fitting 1), so a bare fitting_id can't address one on its own.
-//
-// The route param is therefore an opaque token: a shared fit's id verbatim
-// (already a uuid), or `${characterId}_${fittingId}` for a personal one.
-// `_` never appears in a uuid's canonical hex-and-hyphen form or in a numeric
-// fitting_id, so splitting on the last `_` is unambiguous — a param with no
-// `_` is a shared uuid, one with an `_` is a personal fit's composite id.
-export const personalFittingRoute = (characterId: string, fittingId: number | string): string =>
-  `/fitting/${characterId}_${fittingId}`
-
-export const sharedFittingRoute = (sharedId: string): string => `/fitting/${sharedId}`
-
-export type FittingRouteParam =
-  { kind: 'personal'; characterId: string; fittingId: string } | { kind: 'shared'; sharedId: string }
-
-export const parseFittingRouteParam = (param: string): FittingRouteParam | null => {
-  const at = param.lastIndexOf('_')
-  if (at === -1) return { kind: 'shared', sharedId: param }
-  const characterId = param.slice(0, at)
-  const fittingId = param.slice(at + 1)
-  if (!characterId || !/^\d+$/.test(fittingId)) return null
-  return { kind: 'personal', characterId, fittingId }
 }

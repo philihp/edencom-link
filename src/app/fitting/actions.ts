@@ -1,88 +1,77 @@
 'use server'
 
-import { revalidatePath } from 'next/cache'
-import { redirect } from 'next/navigation'
+import { randomBytes } from 'node:crypto'
 
 import { createClient } from '@/utils/supabase/server'
-import { sharedFittingRoute, type FittingRow } from './fit'
 
-// Publish one of the caller's saved fits as a corporation or alliance fitting
-// (a snapshot copy into shared_fitting — see the table's comment in
-// schema.sql). Everything runs on the cookie client: RLS proves the fit is
-// theirs to read, and the shared_fitting insert policy proves the target is
-// the publishing character's own current corp/alliance — this action adds no
-// authority of its own.
-export const publishFitting = async (
+// Mint (or return the existing) share token for one of the caller's own
+// fittings — the secret in a /fitting/[characterId]/[fittingId]?token=… link
+// that lets anyone view that fit without logging in. Mirrors
+// src/app/ship/[itemId]/actions.ts's createShareToken/revokeShareToken.
+// Ownership is proven by the fit being visible through RLS on
+// character_fitting; the insert is additionally enforced by
+// character_fitting_share's own with-check policy. Returns { token } or
+// { error }.
+export const createFittingShareToken = async (
   characterId: string,
-  fittingId: string,
-  audience: 'corporation' | 'alliance'
-): Promise<void> => {
+  fittingId: string
+): Promise<{ token?: string; error?: string }> => {
   const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-  if (!user) redirect('/')
+
+  const { data: auth, error: userError } = await supabase.auth.getUser()
+  if (userError || !auth?.user) {
+    return { error: 'Not signed in' }
+  }
 
   const { data: fit } = await supabase
     .from('character_fitting')
-    .select('character_id, fitting_id, name, description, ship_type_id, items')
+    .select('character_id')
     .eq('character_id', characterId)
     .eq('fitting_id', fittingId)
-    .maybeSingle<FittingRow>()
-  if (!fit) throw new Error('fitting not found')
-
-  // The audience ids come from the publishing character's current membership.
-  const { data: registration } = await supabase
-    .from('registration')
-    .select('corporation_id')
-    .eq('id', characterId)
-    .maybeSingle<{ corporation_id: number | null }>()
-  const corporationId = registration?.corporation_id ?? null
-  if (corporationId == null) throw new Error('character has no known corporation yet')
-
-  let allianceId: number | null = null
-  if (audience === 'alliance') {
-    const { data: corporation } = await supabase
-      .from('corporation')
-      .select('alliance_id')
-      .eq('corporation_id', corporationId)
-      .maybeSingle<{ alliance_id: number | null }>()
-    allianceId = corporation?.alliance_id ?? null
-    if (allianceId == null) throw new Error('corporation is not in an alliance')
+    .maybeSingle()
+  if (!fit) {
+    return { error: 'Not your fitting' }
   }
 
-  const { data: inserted, error } = await supabase
-    .from('shared_fitting')
-    .insert({
-      audience,
-      corporation_id: audience === 'corporation' ? corporationId : null,
-      alliance_id: audience === 'alliance' ? allianceId : null,
-      name: fit.name || `Fitting #${fit.fitting_id}`,
-      description: fit.description,
-      ship_type_id: fit.ship_type_id,
-      items: fit.items ?? [],
-      created_by: characterId,
-    })
-    .select('id')
-    .single<{ id: string }>()
-  if (error) throw error
+  const { data: existing } = await supabase
+    .from('character_fitting_share')
+    .select('token')
+    .eq('character_id', characterId)
+    .eq('fitting_id', fittingId)
+    .maybeSingle<{ token: string }>()
+  if (existing) {
+    return { token: existing.token }
+  }
 
-  revalidatePath('/fitting')
-  redirect(sharedFittingRoute(inserted.id))
+  const token = randomBytes(16).toString('hex')
+  const { error } = await supabase.from('character_fitting_share').insert({
+    token,
+    character_id: characterId,
+    fitting_id: fittingId,
+  })
+  if (error) {
+    return { error: error.message }
+  }
+  return { token }
 }
 
-// Take a published fit back down. The delete policy limits this to fits the
-// caller's own characters published; the eq() is just the row address.
-export const unpublishFitting = async (sharedId: string): Promise<void> => {
+// Revoke the caller's share for this fit — the link dies immediately. RLS
+// scopes the delete to the caller's own rows.
+export const revokeFittingShareToken = async (characterId: string, fittingId: string): Promise<{ error?: string }> => {
   const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-  if (!user) redirect('/')
 
-  const { error } = await supabase.from('shared_fitting').delete().eq('id', sharedId)
-  if (error) throw error
+  const { data: auth, error: userError } = await supabase.auth.getUser()
+  if (userError || !auth?.user) {
+    return { error: 'Not signed in' }
+  }
 
-  revalidatePath('/fitting')
-  redirect('/fitting')
+  const { error } = await supabase
+    .from('character_fitting_share')
+    .delete()
+    .eq('character_id', characterId)
+    .eq('fitting_id', fittingId)
+  if (error) {
+    return { error: error.message }
+  }
+  return {}
 }

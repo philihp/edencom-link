@@ -14,28 +14,6 @@
   color: var(--ink-faint);
 }
 
-/* The Personal / Corp / Alliance source checkboxes. */
-.scopeToggles {
-  display: flex;
-  gap: 16px;
-  border: 0;
-  padding: 0;
-  margin: 12px 0 0;
-  font-size: 12px;
-  color: var(--ink-soft);
-}
-
-.scopeToggles[data-pending] {
-  opacity: 0.6;
-}
-
-.scopeToggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  cursor: pointer;
-}
-
 .matrixScroll {
   overflow-x: auto;
   margin: 16px 0;
@@ -103,26 +81,26 @@
   color: var(--ink-faint);
 }
 
-/* Corp/Alliance source tag beside the hull on published doctrine fits. */
-.fitBadge {
-  margin-left: 6px;
-  padding: 0 5px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+/* ── Detail page ─────────────────────────────────────────────────────────── */
+
+.meta {
   color: var(--ink-soft);
 }
 
-/* Publish / unpublish controls on the detail pages. */
-.publishRow {
+/* Share-link controls (mint / copy / revoke) on the owner's view of a fit. */
+.shareRow {
   display: flex;
+  align-items: center;
   gap: 8px;
   margin: 10px 0;
+  font-size: 12px;
 }
 
-.publishButton {
+.shareLink {
+  overflow-wrap: anywhere;
+}
+
+.shareButton {
   font-size: 12px;
   padding: 4px 10px;
   border: 1px solid var(--line);
@@ -132,26 +110,21 @@
   cursor: pointer;
 }
 
-.publishButton:hover {
+.shareButton:hover {
   border-color: var(--accent);
   color: var(--ink);
 }
 
-/* ── Detail page ─────────────────────────────────────────────────────────── */
-
-.meta {
-  color: var(--ink-soft);
-}
-
-/* Wraps a shared-fitting page so the "Shared from" badge below can float
- * relative to it rather than the page body. */
+/* Wraps a shared-by-link fitting page so the "Shared by" badge below can
+ * float relative to it rather than the page body. */
 .sharedPage {
   position: relative;
 }
 
-/* The publisher credit, hugging the top-right corner like the character-list
- * portraits (src/app/character/character.module.css) — the same "who is
- * this" placement idiom, reused for "who shared this". */
+/* The owner credit on a fit opened via a share link, hugging the top-right
+ * corner like the character-list portraits
+ * (src/app/character/character.module.css) — the same "who is this" idiom,
+ * reused for "whose fit is this". */
 .sharedFrom {
   position: absolute;
   top: 0;

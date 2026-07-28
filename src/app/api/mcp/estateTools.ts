@@ -9,7 +9,7 @@ import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js'
 import { ascend, groupBy, sortWith } from 'ramda'
 import { z } from 'zod'
 
-import { flagSortKey, groupForFlag, personalFittingRoute, type FittingItem, type FittingRow } from '@/app/fitting/fit'
+import { fittingRoute, flagSortKey, groupForFlag, type FittingItem, type FittingRow } from '@/app/fitting/fit'
 import { resolveLocations, type LocationRef } from '@/app/resolveLocations'
 import { getSdePlanets } from '@/sdePlanets'
 import { searchSdeSystems } from '@/sdeSystems'
@@ -573,7 +573,7 @@ export const registerEstateTools = (server: McpServer): void => {
         ...(f.description ? { description: f.description } : {}),
         owner: owners.nameById.get(f.character_id) ?? f.character_id,
         item_count: (f.items ?? []).length,
-        url: personalFittingRoute(f.character_id, f.fitting_id),
+        url: fittingRoute(f.character_id, f.fitting_id),
         ...(include_items ? { slots: itemsOf(f) } : {}),
       }))
 

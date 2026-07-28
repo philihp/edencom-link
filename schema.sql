@@ -92,7 +92,7 @@ drop view  if exists public.character_ship              cascade;
 drop table if exists public.character_ship_over_time    cascade;
 drop view  if exists public.character_fitting            cascade;
 drop table if exists public.character_fitting_over_time  cascade;
-drop table if exists public.shared_fitting               cascade;
+drop table if exists public.character_fitting_share      cascade;
 -- Pre-existing gap: character_mercenary_den never had a drop statement (added
 -- via migration), so re-running this file failed on it. Now an SCD table +
 -- current-snapshot view, with status/share siblings.
@@ -1335,6 +1335,48 @@ grant select on public.character_fitting_over_time to authenticated;
 grant select on public.character_fitting           to authenticated;
 grant all    on public.character_fitting_over_time to service_role;
 
+-- ── character_fitting_share ───────────────────────────────────────────────
+-- Public share links for one saved fitting, mirroring shared_asset_token (the
+-- /ship/[itemId]?token=… pattern): token text primary key, minted by the
+-- owner, resolved anonymously via the service-role client. Anyone who has the
+-- URL can view the fit without signing in; the fit itself is never copied —
+-- this points at the live (character_id, fitting_id) pair, not a snapshot, so
+-- an edit in the client is visible through the link too.
+--
+-- (character_id, fitting_id) rather than character_fitting_over_time's own
+-- surrogate `id`: that id is an SCD *version* stamp and changes every time the
+-- fit is edited in the client, so a share pinned to it would silently break on
+-- the next edit. (character_id, fitting_id) is the fit's durable identity —
+-- the same pair /fitting/[characterId]/[fittingId] addresses it by — so the
+-- share and the URL agree for the fit's whole lifetime.
+create table public.character_fitting_share (
+  token text primary key,
+  character_id uuid not null references public.registration(id) on delete cascade,
+  fitting_id bigint not null,
+  created_at timestamptz not null default now(),
+  unique (character_id, fitting_id)
+);
+create index character_fitting_share_character_id_idx on public.character_fitting_share (character_id);
+
+alter table public.character_fitting_share enable row level security;
+create policy "Users manage own fitting share tokens"
+  on public.character_fitting_share
+  for all
+  to authenticated
+  using (
+    character_id in (
+      select id from public.registration where user_id = (select auth.uid())
+    )
+  )
+  with check (
+    character_id in (
+      select id from public.registration where user_id = (select auth.uid())
+    )
+  );
+
+grant select, insert, update, delete on public.character_fitting_share to authenticated;
+grant all on public.character_fitting_share to service_role;
+
 -- ── character_mercenary_den (SCD type 2) ──────────────────────────────────
 -- A character's deployed Mercenary Dens, from the compatibility-date ESI
 -- endpoints /characters/{id}/structures/mercenary-dens (+ per-den detail). Only
@@ -1895,93 +1937,6 @@ create policy "Everyone reads corporations"
 
 grant select on public.corporation to anon, authenticated;
 grant all    on public.corporation to service_role;
-
--- ── shared_fitting ────────────────────────────────────────────────────────
--- Corporation / alliance fittings, authored on the site. ESI exposes only a
--- character's personal fittings (docs/fittings.md), so the in-game Corp and
--- Alliance doctrine folders can't be extracted — instead a member publishes a
--- saved personal fit *as* a corp or alliance fitting here, and everyone with a
--- character in that corp/alliance sees it on /fitting under the Corp/Alliance
--- checkboxes.
---
--- Its own table rather than owner_scope rows in character_fitting_over_time:
--- that table is the extract's SCD mirror of what ESI reports, and its
--- reconciler closes any current row missing from the ESI snapshot — a
--- site-authored row would be swept as "deleted in game" on the next run. A
--- published fit is a snapshot copy, deliberately not a live link to the
--- personal fit it came from. Audience membership follows the mercenary-den
--- sharing model (invoker-rights policies): corp membership from the caller's
--- own registrations, alliance membership via my_alliance_ids(). NOTE: the
--- insert policy joins public.corporation and the select policy calls
--- my_alliance_ids(), so this section must stay after both.
-create table public.shared_fitting (
-  id uuid primary key default gen_random_uuid(),
-  audience text not null check (audience in ('corporation', 'alliance')),
-  corporation_id bigint,
-  alliance_id bigint,
-  name text not null,
-  description text,
-  ship_type_id bigint not null,
-  items jsonb not null default '[]'::jsonb,
-  -- The publishing character. set null on unlink so the doctrine outlives the
-  -- publisher's registration (only the service role can remove it then).
-  created_by uuid references public.registration(id) on delete set null,
-  created_at timestamptz not null default now(),
-  check ((audience = 'corporation') = (corporation_id is not null)),
-  check ((audience = 'alliance') = (alliance_id is not null))
-);
-create index shared_fitting_corporation_id_idx on public.shared_fitting (corporation_id);
-create index shared_fitting_alliance_id_idx on public.shared_fitting (alliance_id);
-
-alter table public.shared_fitting enable row level security;
-
-create policy "Members read corp fittings"
-  on public.shared_fitting
-  for select
-  to authenticated
-  using (
-    (
-      audience = 'corporation'
-      and corporation_id in (
-        select corporation_id from public.registration
-        where user_id = (select auth.uid()) and corporation_id is not null
-      )
-    )
-    or (audience = 'alliance' and alliance_id in (select public.my_alliance_ids()))
-  );
-
--- Publishing: the publisher must be one of the caller's own registrations, and
--- the target must be that character's *current* corp (or its alliance).
-create policy "Members publish fittings to their corp or alliance"
-  on public.shared_fitting
-  for insert
-  to authenticated
-  with check (
-    exists (
-      select 1
-      from public.registration r
-      left join public.corporation c on c.corporation_id = r.corporation_id
-      where r.id = created_by
-        and r.user_id = (select auth.uid())
-        and (
-          (audience = 'corporation' and shared_fitting.corporation_id = r.corporation_id)
-          or (audience = 'alliance' and shared_fitting.alliance_id = c.alliance_id)
-        )
-    )
-  );
-
-create policy "Publishers delete own shared fittings"
-  on public.shared_fitting
-  for delete
-  to authenticated
-  using (
-    created_by in (
-      select id from public.registration where user_id = (select auth.uid())
-    )
-  );
-
-grant select, insert, delete on public.shared_fitting to authenticated;
-grant all on public.shared_fitting to service_role;
 
 -- ── character (directory) ─────────────────────────────────────────────────
 -- World-readable directory of EVE characters: public identity only (name,
