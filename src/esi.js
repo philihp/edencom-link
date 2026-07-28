@@ -122,6 +122,21 @@ export const orders = (access_token, characterID, ifNoneMatch) =>
     label: `orders ${characterID}`,
   })
 
+// A character's saved ship fittings. Not paginated — ESI returns the whole
+// library in one response — so it qualifies for a conditional GET; returns
+// { status, json, etag }. See esiConditionalJson.
+//
+// ESI exposes only *personal* fittings: there is no corporation or alliance
+// fittings endpoint, and the response carries no folder discriminator, so a
+// doctrine fit copied to personal is indistinguishable from any other. See
+// docs/fittings.md.
+export const fittings = (access_token, characterID, ifNoneMatch) =>
+  esiConditionalJson(`/characters/${characterID}/fittings/`, {
+    access_token,
+    ifNoneMatch,
+    label: `fittings ${characterID}`,
+  })
+
 export const character = (access_token, characterID) =>
   esiJson(`/characters/${characterID}/`, {
     access_token,

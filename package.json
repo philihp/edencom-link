@@ -36,6 +36,7 @@
     "character-wallet-transactions": "node src/jobs/characterWalletTransactions.js",
     "character-industry-jobs": "node src/jobs/characterIndustryJobs.js",
     "character-mercenary-dens": "node src/jobs/characterMercenaryDens.js",
+    "character-fittings": "node src/jobs/characterFittings.js",
     "character-location": "node src/jobs/characterLocation.js",
     "character-clones": "node src/jobs/characterClones.js",
     "character-implants": "node src/jobs/characterImplants.js",

@@ -90,6 +90,8 @@ drop view  if exists public.character_skill            cascade;
 drop table if exists public.character_skill_over_time  cascade;
 drop view  if exists public.character_ship              cascade;
 drop table if exists public.character_ship_over_time    cascade;
+drop view  if exists public.character_fitting            cascade;
+drop table if exists public.character_fitting_over_time  cascade;
 -- Pre-existing gap: character_mercenary_den never had a drop statement (added
 -- via migration), so re-running this file failed on it. Now an SCD table +
 -- current-snapshot view, with status/share siblings.
@@ -1271,6 +1273,66 @@ create view public.character_ship with (security_invoker = on) as
 grant select on public.character_ship_over_time to authenticated;
 grant select on public.character_ship           to authenticated;
 grant all    on public.character_ship_over_time to service_role;
+
+-- ── character_fitting_over_time (SCD type 2) ──────────────────────────────
+-- ESI /characters/{id}/fittings/, written by the character-fittings job: the
+-- ship fittings a character has saved in the game client. ESI returns the whole
+-- library in one response, reconciled here like every other full-snapshot
+-- endpoint — one open (is_current) row per (character, fitting), valid_until
+-- bumped when the fit is unchanged, a new version opened when it's edited (a
+-- fit is edited in place in the client: same fitting_id, different modules), and
+-- the open row closed when the fit is deleted. The character_fitting view is the
+-- live snapshot.
+--
+-- owner_scope is 'character' for every row today. ESI exposes only a character's
+-- *personal* fittings — there is no corporation or alliance fittings endpoint,
+-- and the response carries no folder discriminator, so a doctrine fit copied to
+-- personal is indistinguishable from any other (see docs/fittings.md). The
+-- column exists so that if CCP ever ships one, ingesting it writes a different
+-- value into this table rather than needing a new one.
+--
+-- items is the fit's module list as jsonb ([{ type_id, flag, quantity }],
+-- normalized and slot-sorted by the job so an unchanged fit compares equal): a
+-- small blob that is always read whole and never joined against, exactly like
+-- character_clone_over_time.implants. Module *names* are deliberately not stored
+-- — the page resolves them through the sde_* loaders at render time rather than
+-- keeping a stale copy of the SDE mirror.
+create table public.character_fitting_over_time (
+  id bigint generated always as identity primary key,
+  character_id uuid not null references public.registration(id) on delete cascade,
+  owner_scope text not null default 'character',
+  fitting_id bigint not null,
+  name text,
+  description text,
+  ship_type_id bigint not null,
+  items jsonb not null default '[]'::jsonb,
+  is_current boolean not null default true,
+  valid_from timestamptz not null default now(),
+  valid_until timestamptz not null default now()
+);
+create index character_fitting_over_time_character_id_idx
+  on public.character_fitting_over_time (character_id);
+-- At most one live row per fit; also the collision guard the reconcile relies on.
+create unique index character_fitting_over_time_current_idx
+  on public.character_fitting_over_time (character_id, fitting_id) where is_current;
+
+alter table public.character_fitting_over_time enable row level security;
+create policy "Users read own fittings"
+  on public.character_fitting_over_time
+  for select
+  to authenticated
+  using (
+    character_id in (
+      select id from public.registration where user_id = (select auth.uid())
+    )
+  );
+
+create view public.character_fitting with (security_invoker = on) as
+  select * from public.character_fitting_over_time where is_current;
+
+grant select on public.character_fitting_over_time to authenticated;
+grant select on public.character_fitting           to authenticated;
+grant all    on public.character_fitting_over_time to service_role;
 
 -- ── character_mercenary_den (SCD type 2) ──────────────────────────────────
 -- A character's deployed Mercenary Dens, from the compatibility-date ESI
