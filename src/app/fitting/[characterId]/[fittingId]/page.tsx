@@ -1,12 +1,13 @@
 import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
-import { ascend, groupBy, sortWith } from 'ramda'
 
 import { createClient } from '@/utils/supabase/server'
 import { ShipFitViewDynamic } from '../../../ship/[itemId]/shipFitViewDynamic'
 import { Name } from '../../../names'
 import { fetchTypeNames } from '../../../typeNames'
-import { flagSortKey, groupForFlag, toEsiFit, type FittingItem, type FittingRow } from '../../fit'
+import { publishFitting } from '../../actions'
+import { toEsiFit, type FittingItem, type FittingRow } from '../../fit'
+import { SlotGroups } from '../../slotGroups'
 import styles from '../../fittings.module.css'
 
 // One saved fitting, rendered in the eveship.fit wheel.
@@ -34,29 +35,29 @@ const FittingDetailPage = async ({ params }: { params: Promise<{ characterId: st
 
   const items: FittingItem[] = fit.items ?? []
 
-  // One bulk SDE lookup covers the hull and every fitted type.
+  // One bulk SDE lookup covers the hull and every fitted type. The owning
+  // registration's corp (and its alliance, via the world-readable corporation
+  // row) decides which publish targets exist.
   const [typeNames, { data: registration }] = await Promise.all([
     fetchTypeNames([Number(fit.ship_type_id), ...items.map((i) => Number(i.type_id))]),
-    supabase.from('registration').select('name').eq('id', characterId).maybeSingle<{ name: string }>(),
+    supabase
+      .from('registration')
+      .select('name, corporation_id')
+      .eq('id', characterId)
+      .maybeSingle<{ name: string; corporation_id: number | null }>(),
   ])
   const hull = typeNames[Number(fit.ship_type_id)] ?? `#${fit.ship_type_id}`
 
-  // Group the module list by slot family for the text listing under the wheel:
-  // readable while the viewer's WASM loads, and the only place the bays are
-  // itemized. Sorted by slot order, then by the flag itself so HiSlot0 precedes
-  // HiSlot1 within a group.
-  const ordered = sortWith<FittingItem>(
-    [ascend((i) => flagSortKey(i.flag)), ascend((i) => i.flag), ascend((i) => Number(i.type_id))],
-    items
-  )
-  // groupBy inserts each key the first time it's seen, and the keys here are
-  // non-numeric strings, so Object.entries hands them back in slot order —
-  // `ordered` was already sorted that way. The filter is only to narrow away
-  // groupBy's `| undefined` value type.
-  const grouped = groupBy((i: FittingItem) => groupForFlag(i.flag), ordered)
-  const groups = Object.entries(grouped).filter(
-    (entry): entry is [string, FittingItem[]] => (entry[1]?.length ?? 0) > 0
-  )
+  const { data: corporation } = registration?.corporation_id
+    ? await supabase
+        .from('corporation')
+        .select('name, alliance_id')
+        .eq('corporation_id', registration.corporation_id)
+        .maybeSingle<{ name: string | null; alliance_id: number | null }>()
+    : { data: null }
+
+  const publishToCorp = publishFitting.bind(null, characterId, fittingId, 'corporation')
+  const publishToAlliance = publishFitting.bind(null, characterId, fittingId, 'alliance')
 
   return (
     <>
@@ -69,23 +70,29 @@ const FittingDetailPage = async ({ params }: { params: Promise<{ characterId: st
       </p>
       {fit.description ? <p className={styles.description}>{fit.description}</p> : null}
 
+      {registration?.corporation_id != null ? (
+        // Publishing copies this fit into the site's corp/alliance doctrine
+        // list (shared_fitting) — a snapshot, not a live link; the in-game
+        // fitting folders aren't touched (ESI has no write path we use).
+        <div className={styles.publishRow}>
+          <form action={publishToCorp}>
+            <button type="submit" className={styles.publishButton}>
+              Publish to corp{corporation?.name ? ` (${corporation.name})` : ''}
+            </button>
+          </form>
+          {corporation?.alliance_id != null ? (
+            <form action={publishToAlliance}>
+              <button type="submit" className={styles.publishButton}>
+                Publish to alliance
+              </button>
+            </form>
+          ) : null}
+        </div>
+      ) : null}
+
       <ShipFitViewDynamic esiFit={toEsiFit(fit)} />
 
-      <ul className={styles.slots}>
-        {groups.map(([label, groupItems]) => (
-          <li key={label} className={styles.slotGroup}>
-            <span className={styles.slotLabel}>{label}</span>
-            <ul className={styles.slotItems}>
-              {groupItems.map((item, index) => (
-                <li key={`${item.flag}:${item.type_id}:${index}`} className={styles.slotItem}>
-                  <span className={styles.slotItemName}>{typeNames[Number(item.type_id)] ?? `#${item.type_id}`}</span>
-                  {item.quantity > 1 ? <span className={styles.slotItemQuantity}>×{item.quantity}</span> : null}
-                </li>
-              ))}
-            </ul>
-          </li>
-        ))}
-      </ul>
+      <SlotGroups items={items} typeNames={typeNames} />
     </>
   )
 }

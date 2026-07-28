@@ -57,6 +57,18 @@ A follow-up plan now exists for going beyond read-only entirely:
 [`fitting-paging.md`](fitting-paging.md) — using the write scope to page fits
 between the game's 500-slot saved list and an unbounded library here.
 
+**Shipped follow-up: site-authored corp/alliance fittings.** Since the in-game
+Corp and Alliance folders can't be read, `/fitting` now carries its own: a
+member publishes a saved personal fit as a corporation or alliance fitting
+(the `shared_fitting` table — a snapshot copy, deliberately not a live link),
+and everyone with a character in that corp/alliance sees it under the
+Personal / Corp / Alliance checkboxes. This is a separate table rather than
+`owner_scope` rows in `character_fitting_over_time`, because the extract's
+reconciler closes any current row missing from the ESI snapshot — a
+site-authored row there would be swept as "deleted in game" on the next run.
+The `owner_scope` column remains reserved for a real ESI corp/alliance
+endpoint, should one ever ship.
+
 A second, cheaper approximation is available later if wanted: reuse the
 alliance-sharing pattern already built for mercenary dens
 (`character_mercenary_den_share`, `my_alliance_ids()`) so a player can opt into

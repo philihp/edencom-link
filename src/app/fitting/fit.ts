@@ -19,15 +19,15 @@ export type FittingRow = {
 }
 
 // Shapes a stored fitting into the ESI-fitting-JSON shape @eveshipfit/react's
-// useImportEsiFitting() hook expects — nearly a pass-through, since the table
-// stores ESI's own field names.
+// useImportEsiFitting() hook expects — nearly a pass-through, since the tables
+// (character_fitting and shared_fitting alike) store ESI's own field names.
 //
 // The one difference: ESI's *fitting* items carry no item_id (unlike the
 // hangar-asset rows /ship/[itemId] feeds through the same hook), while the
 // viewer's EsiFit type requires one. The array index stands in. It's only an
 // identity key for the viewer's own slot bookkeeping — it never leaves the
 // browser and is never persisted.
-export const toEsiFit = (row: FittingRow): EsiFit => ({
+export const toEsiFit = (row: Pick<FittingRow, 'name' | 'description' | 'ship_type_id' | 'items'>): EsiFit => ({
   name: row.name ?? '',
   description: row.description ?? '',
   ship_type_id: Number(row.ship_type_id),
