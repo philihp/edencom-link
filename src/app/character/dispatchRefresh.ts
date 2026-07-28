@@ -13,6 +13,7 @@ export const PER_CHARACTER_JOBS = [
   'character-wallet-transactions',
   'character-industry-jobs',
   'character-mercenary-dens',
+  'character-fittings',
   'character-status',
 ] as const
 

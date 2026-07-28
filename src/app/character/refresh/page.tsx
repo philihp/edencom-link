@@ -22,6 +22,7 @@ const CHARACTER_JOBS = [
   ['character-wallet-transactions', 'transactions'],
   ['character-industry-jobs', 'industry'],
   ['character-mercenary-dens', 'dens'],
+  ['character-fittings', 'fittings'],
   // Combined live-state job: wallet, location, implants, and clones in one pull
   // (see src/jobs/characterStatus.js).
   ['character-status', 'status'],

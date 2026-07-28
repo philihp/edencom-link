@@ -44,6 +44,10 @@ const JOBS = {
     characterIds: true,
     load: async () => (await import('@/jobs/characterMercenaryDens.js')).runCharacterMercenaryDens,
   },
+  'character-fittings': {
+    characterIds: true,
+    load: async () => (await import('@/jobs/characterFittings.js')).runCharacterFittings,
+  },
   'character-location': {
     characterIds: true,
     load: async () => (await import('@/jobs/characterLocation.js')).runCharacterLocation,
