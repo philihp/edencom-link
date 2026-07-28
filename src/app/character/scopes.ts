@@ -107,7 +107,8 @@ export const esiScopes: EsiScope[] = [
     scope: 'esi-skills.read_skills.v1',
     name: 'Character skills',
     why: 'Reads this character’s trained skill levels, used to show how many parallel manufacturing, research, and reaction jobs they can run.',
-    without: 'this character’s industry job-slot capacity will fall back to the untrained minimum of one slot per activity.',
+    without:
+      'this character’s industry job-slot capacity will fall back to the untrained minimum of one slot per activity.',
   },
   {
     scope: 'esi-location.read_ship_type.v1',
@@ -121,6 +122,12 @@ export const esiScopes: EsiScope[] = [
     name: 'Mercenary dens',
     why: 'Tracks the Mercenary Dens this character has deployed — each den’s development and anarchy levels, running state, and reinforcement timer.',
     without: 'this character’s mercenary dens and their status will not be tracked.',
+  },
+  {
+    scope: 'esi-fittings.read_fittings.v1',
+    name: 'Saved fittings',
+    why: 'Lists the ship fittings this character has saved in the game, so they can be browsed and opened in the fitting viewer. Read-only — fittings are never created, edited or deleted in game.',
+    without: 'this character’s saved fittings will not be listed.',
   },
   {
     scope: 'esi-universe.read_structures.v1',
