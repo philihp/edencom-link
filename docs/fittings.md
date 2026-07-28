@@ -69,6 +69,20 @@ site-authored row there would be swept as "deleted in game" on the next run.
 The `owner_scope` column remains reserved for a real ESI corp/alliance
 endpoint, should one ever ship.
 
+**Shipped follow-up: one URL shape for every fitting.** Personal and
+published fittings originally lived at different route shapes
+(`/fitting/[characterId]/[fittingId]` vs. `/fitting/shared/[sharedId]`).
+They now share a single `/fitting/[fittingId]`: the param is an opaque
+token, either a shared fit's uuid verbatim or `${characterId}_${fittingId}`
+for a personal one (`_` never appears in a uuid's canonical form or in a
+numeric `fitting_id`, so the two are unambiguous to tell apart —
+`parseFittingRouteParam` in `fit.ts` does the split, `personalFittingRoute`/
+`sharedFittingRoute` build the encoded href). A shared fit's page also gains
+a "Shared from `<name>`" badge with the publisher's portrait, floating at the
+top right — the ESI image server (`images.evetech.net/characters/<id>/portrait`)
+needs the publisher's EVE character id, which comes from `character_directory`
+alongside their name.
+
 A second, cheaper approximation is available later if wanted: reuse the
 alliance-sharing pattern already built for mercenary dens
 (`character_mercenary_den_share`, `my_alliance_ids()`) so a player can opt into
@@ -163,9 +177,11 @@ just be a stale copy of the SDE mirror.
   scoping), grouped by ship with the hull name and icon, the fit's name and
   description, the owning character, and a module count. Sorted by ship name,
   then fit name. A header nav link next to `blueprint`.
-- `/fitting/[characterId]/[fittingId]` — the detail page. `fitting_id` is only
-  unique per character (ESI numbers them from 1 per pilot), so the route
-  carries the registration uuid too rather than pretending the id is global.
+- `/fitting/[characterId]/[fittingId]` — the detail page (superseded by a
+  unified `/fitting/[fittingId]` route once corp/alliance fittings shipped;
+  see the follow-up note below). `fitting_id` is only unique per character
+  (ESI numbers them from 1 per pilot), so the route carried the registration
+  uuid too rather than pretending the id was global.
 - The detail page renders `ShipFitViewDynamic` — the same `ssr:false` wrapper
   `/ship/[itemId]` uses, which is what keeps the dogma-engine WASM and the
   eveship.fit data payload out of every other route's bundle. Its `esiFit`

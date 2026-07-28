@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation'
 
 import { getSdeTypes } from '@/sdeTypes'
 import { createClient } from '@/utils/supabase/server'
-import type { FittingRow } from './fit'
+import { personalFittingRoute, sharedFittingRoute, type FittingRow } from './fit'
 import { ScopeToggles } from './scopeToggles'
 import { buildMatrix, RACE_COLUMNS, type MatrixEntry } from './shipMatrix'
 import styles from './fittings.module.css'
@@ -59,12 +59,12 @@ const FittingPage = async ({ searchParams }: { searchParams: Promise<Record<stri
 
   const entries: MatrixEntry[] = [
     ...(personal ?? []).map((f) => ({
-      href: `/fitting/${f.character_id}/${f.fitting_id}`,
+      href: personalFittingRoute(f.character_id, f.fitting_id),
       name: f.name || `Fitting #${f.fitting_id}`,
       shipTypeId: Number(f.ship_type_id),
     })),
     ...(shared ?? []).map((f) => ({
-      href: `/fitting/shared/${f.id}`,
+      href: sharedFittingRoute(f.id),
       name: f.name,
       shipTypeId: Number(f.ship_type_id),
       badge: f.audience === 'corporation' ? 'Corp' : 'Alliance',

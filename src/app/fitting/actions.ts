@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 
 import { createClient } from '@/utils/supabase/server'
-import type { FittingRow } from './fit'
+import { sharedFittingRoute, type FittingRow } from './fit'
 
 // Publish one of the caller's saved fits as a corporation or alliance fitting
 // (a snapshot copy into shared_fitting — see the table's comment in
@@ -68,7 +68,7 @@ export const publishFitting = async (
   if (error) throw error
 
   revalidatePath('/fitting')
-  redirect(`/fitting/shared/${inserted.id}`)
+  redirect(sharedFittingRoute(inserted.id))
 }
 
 // Take a published fit back down. The delete policy limits this to fits the

@@ -143,6 +143,42 @@
   color: var(--ink-soft);
 }
 
+/* Wraps a shared-fitting page so the "Shared from" badge below can float
+ * relative to it rather than the page body. */
+.sharedPage {
+  position: relative;
+}
+
+/* The publisher credit, hugging the top-right corner like the character-list
+ * portraits (src/app/character/character.module.css) — the same "who is
+ * this" placement idiom, reused for "who shared this". */
+.sharedFrom {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px 4px 4px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--paper-raised);
+}
+
+.sharedFromAvatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--line-soft);
+  flex-shrink: 0;
+}
+
+.sharedFromLabel {
+  font-size: 12px;
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+
 /* The in-game description field, which players use for doctrine notes. */
 .description {
   margin: 0;
