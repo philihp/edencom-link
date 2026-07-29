@@ -97,11 +97,13 @@ export const classForGroupName = (groupName: string | null | undefined): string 
   (groupName && CLASS_BY_GROUP[groupName]) || groupName || 'Unknown'
 
 // What the page feeds in: one saved fit, reduced to what placement needs (the
-// hull) and what the cell renders (a link and a name).
+// hull) and what the cell renders (a link, a name, and — for a fit a
+// corp/alliance share widened into view, not the caller's own — who saved it).
 export type MatrixEntry = {
   href: string
   name: string
   shipTypeId: number
+  owner?: string
 }
 
 // One fit placed in the matrix, with everything the cell renders.
@@ -109,6 +111,7 @@ export type MatrixFit = {
   href: string
   name: string
   hull: string
+  owner?: string
 }
 
 export type MatrixRow = { shipClass: string; cells: Record<RaceColumn, MatrixFit[]> }
@@ -127,6 +130,7 @@ export const buildMatrix = (entries: MatrixEntry[], typeById: Record<number, Sde
         href: e.href,
         name: e.name,
         hull: type?.name ?? `#${e.shipTypeId}`,
+        ...(e.owner ? { owner: e.owner } : {}),
       },
     }
   })

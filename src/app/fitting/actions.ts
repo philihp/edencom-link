@@ -4,18 +4,26 @@ import { randomBytes } from 'node:crypto'
 
 import { createClient } from '@/utils/supabase/server'
 
-// Mint (or return the existing) share token for one of the caller's own
-// fittings — the secret in a /fitting/[characterId]/[fittingId]?token=… link
-// that lets anyone view that fit without logging in. Mirrors
-// src/app/ship/[itemId]/actions.ts's createShareToken/revokeShareToken.
+export type ShareLevel = 'corporation' | 'alliance' | 'public'
+export type ShareRow = { id: string; level: ShareLevel; token: string | null }
+
+// Create a share for one of the caller's own fittings, at the given level.
 // Ownership is proven by the fit being visible through RLS on
-// character_fitting; the insert is additionally enforced by
-// character_fitting_share's own with-check policy. Returns { token } or
-// { error }.
-export const createFittingShareToken = async (
+// character_fitting; character_fitting_share's own with-check policy
+// additionally enforces the insert is under one of the caller's own
+// registrations.
+//
+// 'corporation'/'alliance' shares gate on live membership at read time (see
+// the widening policy on character_fitting_over_time in schema.sql), so one
+// row per level is enough — repeat clicks find and return the existing row
+// rather than piling up duplicates. 'public' shares are the opposite: each
+// call mints a brand new token, since the whole point is handing out several
+// independently revocable links.
+export const createFittingShare = async (
   characterId: string,
-  fittingId: string
-): Promise<{ token?: string; error?: string }> => {
+  fittingId: string,
+  level: ShareLevel
+): Promise<{ share?: ShareRow; error?: string }> => {
   const supabase = await createClient()
 
   const { data: auth, error: userError } = await supabase.auth.getUser()
@@ -33,31 +41,33 @@ export const createFittingShareToken = async (
     return { error: 'Not your fitting' }
   }
 
-  const { data: existing } = await supabase
-    .from('character_fitting_share')
-    .select('token')
-    .eq('character_id', characterId)
-    .eq('fitting_id', fittingId)
-    .maybeSingle<{ token: string }>()
-  if (existing) {
-    return { token: existing.token }
+  if (level !== 'public') {
+    const { data: existing } = await supabase
+      .from('character_fitting_share')
+      .select('id, level, token')
+      .eq('character_id', characterId)
+      .eq('fitting_id', fittingId)
+      .eq('level', level)
+      .maybeSingle<ShareRow>()
+    if (existing) return { share: existing }
   }
 
-  const token = randomBytes(16).toString('hex')
-  const { error } = await supabase.from('character_fitting_share').insert({
-    token,
-    character_id: characterId,
-    fitting_id: fittingId,
-  })
+  const token = level === 'public' ? randomBytes(16).toString('hex') : null
+  const { data: inserted, error } = await supabase
+    .from('character_fitting_share')
+    .insert({ character_id: characterId, fitting_id: fittingId, level, token })
+    .select('id, level, token')
+    .single<ShareRow>()
   if (error) {
     return { error: error.message }
   }
-  return { token }
+  return { share: inserted }
 }
 
-// Revoke the caller's share for this fit — the link dies immediately. RLS
-// scopes the delete to the caller's own rows.
-export const revokeFittingShareToken = async (characterId: string, fittingId: string): Promise<{ error?: string }> => {
+// Revoke one share by id — RLS scopes the delete to the caller's own rows, so
+// this is just the row address; a public link dies immediately, a
+// corp/alliance share stops widening visibility on the next query.
+export const revokeFittingShare = async (shareId: string): Promise<{ error?: string }> => {
   const supabase = await createClient()
 
   const { data: auth, error: userError } = await supabase.auth.getUser()
@@ -65,11 +75,7 @@ export const revokeFittingShareToken = async (characterId: string, fittingId: st
     return { error: 'Not signed in' }
   }
 
-  const { error } = await supabase
-    .from('character_fitting_share')
-    .delete()
-    .eq('character_id', characterId)
-    .eq('fitting_id', fittingId)
+  const { error } = await supabase.from('character_fitting_share').delete().eq('id', shareId)
   if (error) {
     return { error: error.message }
   }

@@ -57,21 +57,33 @@ A follow-up plan now exists for going beyond read-only entirely:
 [`fitting-paging.md`](fitting-paging.md) — using the write scope to page fits
 between the game's 500-slot saved list and an unbounded library here.
 
-**Shipped follow-up: per-fit public share links.** A fit's own page
-(`/fitting/[characterId]/[fittingId]`) carries a "Share this fit" control
-that mints a `character_fitting_share` row — `token text primary key`,
-`(character_id, fitting_id)` — and rewrites the browser's own address bar to
-`?token=…`, exactly what gets handed to someone else. Visiting that URL with
-the token needs no login: it resolves anonymously through the service-role
-client (`src/app/fitting/access.ts`), mirroring `shared_asset_token`'s
-`/ship/[itemId]?token=…` pattern precisely, down to the token being minted
-with `randomBytes(16).toString('hex')` and owned/revoked under the same RLS
-shape. The share points at the fit's live `(character_id, fitting_id)` pair
-rather than a copy — an edit in the client is visible through an outstanding
-link too, and there's nothing to keep in sync. (An earlier version of this
-follow-up published fits into corp/alliance audiences via a `shared_fitting`
-snapshot-copy table with its own route shape; that was replaced by the
-simpler per-fit link before it shipped.) The `owner_scope` column on
+**Shipped follow-up: per-fit sharing, at three levels.** A fit's own page
+(`/fitting/[characterId]/[fittingId]`) carries share controls backed by
+`character_fitting_share`, one row per `(character_id, fitting_id, level)`
+share and no uniqueness beyond that — a player can hold several at once (a
+corp share plus a couple of public links handed to different people), each
+independently revocable:
+
+- **`corporation`** / **`alliance`** — no token. A second, additive RLS
+  policy on `character_fitting_over_time` (Postgres ORs permissive policies
+  for the same role) makes the fit readable to whoever currently shares that
+  corp/alliance with the owner, resolved live off `registration`/`corporation`
+  at query time rather than frozen at share time — the same philosophy
+  `my_alliance_ids()` already uses for mercenary-den sharing. A mate just
+  opens the bare URL while signed in; membership alone is the gate.
+- **`public`** — mints a token and rewrites the browser's own address bar to
+  `?token=…`, exactly what gets handed to someone else. Visiting that URL
+  with the token needs no login: it resolves anonymously through the
+  service-role client (`src/app/fitting/access.ts`), mirroring
+  `shared_asset_token`'s `/ship/[itemId]?token=…` pattern precisely, down to
+  the token being minted with `randomBytes(16).toString('hex')`.
+
+Every level points at the fit's live `(character_id, fitting_id)` pair rather
+than a copy — an edit in the client is visible through any outstanding share,
+and there's nothing to keep in sync. (An earlier version of this follow-up
+published fits into corp/alliance audiences via a separate `shared_fitting`
+snapshot-copy table with its own route shape; that was replaced by
+`character_fitting_share` before it shipped.) The `owner_scope` column on
 `character_fitting_over_time` remains reserved for a real ESI corp/alliance
 endpoint, should CCP ever ship one.
 

@@ -1,83 +1,122 @@
 'use client'
 
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useState, useTransition } from 'react'
 
-import { createFittingShareToken, revokeFittingShareToken } from './actions'
+import { createFittingShare, revokeFittingShare, type ShareLevel, type ShareRow } from './actions'
 import styles from './fittings.module.css'
 
 type ShareControlsProps = {
   characterId: string
   fittingId: string
-  // The caller's existing share token for this fit, if one was already minted.
-  initialToken: string | null
+  initialShares: ShareRow[]
 }
 
-// Share-link controls for a fit the signed-in user owns: mint a public
-// /fitting/[characterId]/[fittingId]?token=… link anyone can open without
-// signing in, copy it, revoke it. Mirrors src/app/ship/[itemId]/shareControls.tsx,
-// with one addition: minting/revoking also rewrites the browser's own address
-// bar (router.replace, no navigation) to add/drop the token — the owner's own
-// tab ends up showing exactly the link they'd hand to someone else.
-export const ShareControls = ({ characterId, fittingId, initialToken }: ShareControlsProps) => {
+// Share controls for a fit the signed-in user owns, at all three levels
+// character_fitting_share supports:
+//
+//   - corporation / alliance: a toggle each. No token — visibility is gated
+//     live by RLS on character_fitting_over_time (see schema.sql), so there's
+//     at most one row per level and nothing to copy; the button just reads
+//     "shared" once the row exists.
+//   - public: a list, since a player can hand out several independently
+//     revocable links (no uniqueness on the row). Minting one rewrites the
+//     owner's own address bar to /fitting/[characterId]/[fittingId]?token=…
+//     via router.replace — the owner's tab ends up showing exactly the link
+//     they'd copy to hand to someone else. Revoking the token currently in
+//     the URL clears it back to the bare path.
+export const ShareControls = ({ characterId, fittingId, initialShares }: ShareControlsProps) => {
   const router = useRouter()
-  const [token, setToken] = useState(initialToken)
-  const [copied, setCopied] = useState(false)
+  const searchParams = useSearchParams()
+  const [shares, setShares] = useState(initialShares)
+  const [copiedId, setCopiedId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
 
   const path = `/fitting/${characterId}/${fittingId}`
-  const shareUrl = token ? `${typeof window === 'undefined' ? '' : window.location.origin}${path}?token=${token}` : null
+  const currentToken = searchParams.get('token')
 
-  const share = () =>
+  const corpShare = shares.find((s) => s.level === 'corporation')
+  const allianceShare = shares.find((s) => s.level === 'alliance')
+  const publicShares = shares.filter((s) => s.level === 'public')
+
+  const share = (level: ShareLevel) =>
     startTransition(async () => {
       setError(null)
-      const result = await createFittingShareToken(characterId, fittingId)
+      const result = await createFittingShare(characterId, fittingId, level)
+      if (result.error || !result.share) {
+        setError(result.error ?? 'Could not create share')
+        return
+      }
+      setShares((prev) => [...prev, result.share as ShareRow])
+      if (level === 'public' && result.share.token) {
+        router.replace(`${path}?token=${result.share.token}`, { scroll: false })
+      }
+    })
+
+  const revoke = (row: ShareRow) =>
+    startTransition(async () => {
+      setError(null)
+      const result = await revokeFittingShare(row.id)
       if (result.error) {
         setError(result.error)
         return
       }
-      setToken(result.token ?? null)
-      if (result.token) router.replace(`${path}?token=${result.token}`, { scroll: false })
+      setShares((prev) => prev.filter((s) => s.id !== row.id))
+      if (row.token && row.token === currentToken) router.replace(path, { scroll: false })
     })
 
-  const revoke = () =>
-    startTransition(async () => {
-      setError(null)
-      const result = await revokeFittingShareToken(characterId, fittingId)
-      if (result.error) {
-        setError(result.error)
-        return
-      }
-      setToken(null)
-      setCopied(false)
-      router.replace(path, { scroll: false })
-    })
-
-  const copy = async () => {
-    if (!shareUrl) return
-    await navigator.clipboard.writeText(shareUrl)
-    setCopied(true)
+  const copy = async (row: ShareRow) => {
+    if (!row.token) return
+    await navigator.clipboard.writeText(
+      `${typeof window === 'undefined' ? '' : window.location.origin}${path}?token=${row.token}`
+    )
+    setCopiedId(row.id)
   }
 
   return (
-    <p className={styles.shareRow}>
-      {shareUrl ? (
-        <>
-          <code className={styles.shareLink}>{shareUrl}</code>
-          <button type="button" className={styles.shareButton} onClick={copy} disabled={pending}>
-            {copied ? 'copied' : 'copy'}
-          </button>
-          <button type="button" className={styles.shareButton} onClick={revoke} disabled={pending}>
-            revoke
-          </button>
-        </>
-      ) : (
-        <button type="button" className={styles.shareButton} onClick={share} disabled={pending}>
-          Share this fit
+    <div className={styles.shareControls}>
+      <div className={styles.shareRow}>
+        <button
+          type="button"
+          className={styles.shareButton}
+          onClick={() => (corpShare ? revoke(corpShare) : share('corporation'))}
+          disabled={pending}
+        >
+          {corpShare ? 'Shared with corporation ✕' : 'Share with corporation'}
         </button>
-      )}
-      {error ? <span> {error}</span> : null}
-    </p>
+        <button
+          type="button"
+          className={styles.shareButton}
+          onClick={() => (allianceShare ? revoke(allianceShare) : share('alliance'))}
+          disabled={pending}
+        >
+          {allianceShare ? 'Shared with alliance ✕' : 'Share with alliance'}
+        </button>
+        <button type="button" className={styles.shareButton} onClick={() => share('public')} disabled={pending}>
+          + New public link
+        </button>
+        {error ? <span> {error}</span> : null}
+      </div>
+
+      {publicShares.length > 0 ? (
+        <ul className={styles.shareList}>
+          {publicShares.map((row) => (
+            <li key={row.id} className={styles.shareListItem}>
+              <code className={styles.shareLink}>
+                {typeof window === 'undefined' ? '' : window.location.origin}
+                {path}?token={row.token}
+              </code>
+              <button type="button" className={styles.shareButton} onClick={() => copy(row)} disabled={pending}>
+                {copiedId === row.id ? 'copied' : 'copy'}
+              </button>
+              <button type="button" className={styles.shareButton} onClick={() => revoke(row)} disabled={pending}>
+                revoke
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
   )
 }

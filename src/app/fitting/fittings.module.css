@@ -81,18 +81,53 @@
   color: var(--ink-faint);
 }
 
+/* Who saved a fit shared in from a corp/alliance mate — absent on the
+ * caller's own fits. */
+.fitOwner {
+  display: block;
+  font-size: 11px;
+  color: var(--ink-faint);
+  font-style: italic;
+}
+
 /* ── Detail page ─────────────────────────────────────────────────────────── */
 
 .meta {
   color: var(--ink-soft);
 }
 
-/* Share-link controls (mint / copy / revoke) on the owner's view of a fit. */
+/* Share controls (corp/alliance toggles + public link list) on the owner's
+ * view of a fit. */
+.shareControls {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 10px 0;
+}
+
 .shareRow {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
-  margin: 10px 0;
+  font-size: 12px;
+}
+
+/* One public link per row: the URL, then copy/revoke. */
+.shareList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.shareListItem {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
   font-size: 12px;
 }
 
