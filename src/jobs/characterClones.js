@@ -201,12 +201,12 @@ export const syncCharacterClones = async ({ access_token, characterID, registrat
 
   const { error: stateErr } = await sudoSupabase.from('character_clone_state').upsert(
     {
-      character_id: registration_id,
+      registration_id,
       last_clone_jump_date: payload.last_clone_jump_date ?? null,
       last_station_change_date: payload.last_station_change_date ?? null,
       recorded_at: new Date().toISOString(),
     },
-    { onConflict: 'character_id' }
+    { onConflict: 'registration_id' }
   )
   if (stateErr) throw stateErr
 

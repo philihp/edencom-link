@@ -57,7 +57,9 @@ export const dynamic = 'force-dynamic'
 type Task = {
   id: string
   job: string
-  character_id: string | null
+  // refresh_task's owner column; heartbeat's (Beat below) is still
+  // character_id — see docs/registration-id-rename.md.
+  registration_id: string | null
   status: string
   error: string | null
 }
@@ -140,7 +142,7 @@ const RefreshPage = async () => {
   const taskFloor = new Date(Date.now() - 10 * 60_000).toISOString()
   const { data: tasksData } = await supabase
     .from('refresh_task')
-    .select('id, job, character_id, status, error')
+    .select('id, job, registration_id, status, error')
     .gte('created_at', taskFloor)
     .order('created_at', { ascending: true })
   const tasks = (tasksData ?? []) as Task[]
@@ -180,8 +182,9 @@ const RefreshPage = async () => {
   const corpJobNames = new Set<string>(CORP_JOBS.map(([job]) => job))
   const taskByCell = reduce(
     (acc, t) => {
-      const corpId = corpJobNames.has(t.job) && t.character_id != null ? corporationOf.get(t.character_id) : null
-      return acc.set(`${t.job}:${corpId ?? t.character_id ?? ''}`, t)
+      const corpId =
+        corpJobNames.has(t.job) && t.registration_id != null ? corporationOf.get(t.registration_id) : null
+      return acc.set(`${t.job}:${corpId ?? t.registration_id ?? ''}`, t)
     },
     new Map<string, Task>(),
     tasks

@@ -789,11 +789,11 @@ grant execute on function public.latest_heartbeats() to authenticated;
 -- balance row appended per character per run.
 create table public.character_wallet (
   id uuid primary key default gen_random_uuid(),
-  character_id uuid not null references public.registration(id) on delete cascade,
+  registration_id uuid not null references public.registration(id) on delete cascade,
   balance numeric(20, 2) not null,
   recorded_at timestamptz not null default now()
 );
-create index character_wallet_character_id_recorded_at_idx on public.character_wallet (character_id, recorded_at desc);
+create index character_wallet_registration_id_recorded_at_idx on public.character_wallet (registration_id, recorded_at desc);
 
 alter table public.character_wallet enable row level security;
 create policy "Users read own wallets"
@@ -801,7 +801,7 @@ create policy "Users read own wallets"
   for select
   to authenticated
   using (
-    character_id in (
+    registration_id in (
       select id from public.registration where user_id = (select auth.uid())
     )
   );
@@ -814,7 +814,7 @@ grant all    on public.character_wallet to service_role;
 -- character-wallet-transactions job.
 create table public.character_wallet_transaction (
   transaction_id bigint primary key,
-  character_id uuid not null references public.registration(id) on delete cascade,
+  registration_id uuid not null references public.registration(id) on delete cascade,
   date timestamptz not null,
   type_id bigint not null,
   quantity bigint not null,
@@ -826,7 +826,7 @@ create table public.character_wallet_transaction (
   journal_ref_id bigint not null,
   seen_at timestamptz not null default now()
 );
-create index character_wallet_transaction_character_id_date_idx on public.character_wallet_transaction (character_id, date desc);
+create index character_wallet_transaction_registration_id_date_idx on public.character_wallet_transaction (registration_id, date desc);
 
 alter table public.character_wallet_transaction enable row level security;
 create policy "Users read own transactions"
@@ -834,7 +834,7 @@ create policy "Users read own transactions"
   for select
   to authenticated
   using (
-    character_id in (
+    registration_id in (
       select id from public.registration where user_id = (select auth.uid())
     )
   );
@@ -1098,7 +1098,7 @@ grant execute on function public.character_industry_jobs(uuid[], boolean, timest
 -- current-state data — ESI only ever reports "where is the character right
 -- now" — so this is a single upserted row per character, not a history table.
 create table public.character_location (
-  character_id uuid primary key references public.registration(id) on delete cascade,
+  registration_id uuid primary key references public.registration(id) on delete cascade,
   solar_system_id bigint not null,
   station_id bigint,
   structure_id bigint,
@@ -1111,7 +1111,7 @@ create policy "Users read own location"
   for select
   to authenticated
   using (
-    character_id in (
+    registration_id in (
       select id from public.registration where user_id = (select auth.uid())
     )
   );
@@ -1173,7 +1173,7 @@ grant all    on public.character_clone_over_time to service_role;
 -- presently occupies. Live current-state data, like character_location — a
 -- single upserted row per character rather than a history table.
 create table public.character_implant (
-  character_id uuid primary key references public.registration(id) on delete cascade,
+  registration_id uuid primary key references public.registration(id) on delete cascade,
   type_ids bigint[] not null default '{}',
   recorded_at timestamptz not null default now()
 );
@@ -1184,7 +1184,7 @@ create policy "Users read own implants"
   for select
   to authenticated
   using (
-    character_id in (
+    registration_id in (
       select id from public.registration where user_id = (select auth.uid())
     )
   );
@@ -1790,7 +1790,7 @@ grant all                    on public.mercenary_den_enemy_intel to service_role
 -- last_clone_jump_date + 24h (conservative; Infomorph Synchronizing shortens
 -- it, but reading the skill would need the esi-skills.read_skills.v1 scope).
 create table public.character_clone_state (
-  character_id uuid primary key references public.registration(id) on delete cascade,
+  registration_id uuid primary key references public.registration(id) on delete cascade,
   last_clone_jump_date timestamptz,
   last_station_change_date timestamptz,
   recorded_at timestamptz not null default now()
@@ -1802,7 +1802,7 @@ create policy "Users read own clone state"
   for select
   to authenticated
   using (
-    character_id in (
+    registration_id in (
       select id from public.registration where user_id = (select auth.uid())
     )
   );
@@ -2178,7 +2178,7 @@ grant all    on public.corp_wallet_journal to service_role;
 -- scanner wins attribution). Corp transactions have no is_personal flag.
 create table public.corp_wallet_transaction (
   transaction_id bigint primary key,
-  character_id uuid not null references public.registration(id) on delete cascade,
+  registration_id uuid not null references public.registration(id) on delete cascade,
   corporation_id bigint not null,
   division smallint not null,
   date timestamptz not null,
@@ -2191,7 +2191,7 @@ create table public.corp_wallet_transaction (
   journal_ref_id bigint not null,
   seen_at timestamptz not null default now()
 );
-create index corp_wallet_transaction_character_id_date_idx on public.corp_wallet_transaction (character_id, date desc);
+create index corp_wallet_transaction_registration_id_date_idx on public.corp_wallet_transaction (registration_id, date desc);
 
 alter table public.corp_wallet_transaction enable row level security;
 create policy "Users read own corp transactions"
@@ -2199,7 +2199,7 @@ create policy "Users read own corp transactions"
   for select
   to authenticated
   using (
-    character_id in (
+    registration_id in (
       select id from public.registration where user_id = (select auth.uid())
     )
   );
@@ -3143,7 +3143,7 @@ create table public.refresh_task (
   batch_id uuid not null,
   user_id uuid not null references auth.users(id) on delete cascade,
   job text not null,
-  character_id uuid references public.registration(id) on delete cascade,
+  registration_id uuid references public.registration(id) on delete cascade,
   character_name text,
   status text not null default 'pending',
   started_at timestamptz,

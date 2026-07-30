@@ -30,7 +30,7 @@ export const runCorpWalletTransactions = ({ characterIds } = {}) =>
           }
           const rows = txns.map((t) => ({
             transaction_id: t.transaction_id,
-            character_id: registration_id,
+            registration_id,
             corporation_id,
             division,
             date: t.date,

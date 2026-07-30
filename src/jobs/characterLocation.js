@@ -13,13 +13,13 @@ export const syncCharacterLocation = async ({ access_token, characterID, registr
   const location = await characterLocation(access_token, characterID)
   const { error } = await sudoSupabase.from('character_location').upsert(
     {
-      character_id: registration_id,
+      registration_id,
       solar_system_id: location.solar_system_id,
       station_id: location.station_id ?? null,
       structure_id: location.structure_id ?? null,
       recorded_at: new Date().toISOString(),
     },
-    { onConflict: 'character_id' }
+    { onConflict: 'registration_id' }
   )
   if (error) throw error
   console.log(`[${TAG}] ${ctx}: solar_system_id=${location.solar_system_id}`)

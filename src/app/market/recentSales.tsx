@@ -11,7 +11,7 @@ export type Sale = {
   transaction_id: string | number
   // Personal sales carry the owning character; corp sales have no character and
   // carry a corporation_id instead.
-  character_id: string | null
+  registration_id: string | null
   corporation_id?: number | string | null
   date: string
   type_id: number | string
@@ -65,7 +65,7 @@ export const RecentSales = ({ now, sales, characters, corpNames, typeNamesPromis
   )
 
   const sellerLabel = (s: Sale): string | null => {
-    if (s.character_id) return characterName[s.character_id] ?? null
+    if (s.registration_id) return characterName[s.registration_id] ?? null
     if (s.corporation_id != null) return corpName(Number(s.corporation_id))
     return null
   }
@@ -84,7 +84,7 @@ export const RecentSales = ({ now, sales, characters, corpNames, typeNamesPromis
   const matchesSeller = (s: Sale) => {
     if (sellerId === ALL_SELLERS) return true
     if (sellerId.startsWith(CORP_PREFIX)) return String(s.corporation_id ?? '') === sellerId.slice(CORP_PREFIX.length)
-    return s.character_id === sellerId
+    return s.registration_id === sellerId
   }
 
   const filtered = sales.filter(

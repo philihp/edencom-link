@@ -14,11 +14,11 @@ export const syncCharacterImplants = async ({ access_token, characterID, registr
   const typeIds = await characterImplants(access_token, characterID)
   const { error } = await sudoSupabase.from('character_implant').upsert(
     {
-      character_id: registration_id,
+      registration_id,
       type_ids: typeIds ?? [],
       recorded_at: new Date().toISOString(),
     },
-    { onConflict: 'character_id' }
+    { onConflict: 'registration_id' }
   )
   if (error) throw error
   console.log(`[${TAG}] ${ctx}: ${(typeIds ?? []).length} implant(s)`)

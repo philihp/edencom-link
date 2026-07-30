@@ -126,7 +126,7 @@ export const dispatchRefresh = async (userId: string, characters: Character[]): 
         batch_id: batchId,
         user_id: userId,
         job,
-        character_id: c.id,
+        registration_id: c.id,
         character_name: c.name,
       }))
     ),
@@ -135,7 +135,7 @@ export const dispatchRefresh = async (userId: string, characters: Character[]): 
         batch_id: batchId,
         user_id: userId,
         job,
-        character_id: c.id,
+        registration_id: c.id,
         character_name: c.name,
       }))
     ),
@@ -143,7 +143,7 @@ export const dispatchRefresh = async (userId: string, characters: Character[]): 
       batch_id: batchId,
       user_id: userId,
       job,
-      character_id: null,
+      registration_id: null,
       character_name: null,
     })),
   ]
@@ -151,7 +151,7 @@ export const dispatchRefresh = async (userId: string, characters: Character[]): 
   const { data: inserted, error } = await sudoSupabase
     .from('refresh_task')
     .insert(tasks)
-    .select('id, job, character_id')
+    .select('id, job, registration_id')
   if (error) {
     throw error
   }
@@ -159,13 +159,13 @@ export const dispatchRefresh = async (userId: string, characters: Character[]): 
   // A corp-scoped task's message carries every scoped character for its
   // corporation (see corpGroupsByJob above); every other task's message
   // carries just its own single character (or none, for the account-wide jobs).
-  const characterIdsForTask = (t: { job: string; character_id: string | null }): string[] | undefined => {
-    if (t.character_id == null) return undefined
+  const characterIdsForTask = (t: { job: string; registration_id: string | null }): string[] | undefined => {
+    if (t.registration_id == null) return undefined
     const byCorp = corpGroupsByJob.get(t.job)
-    if (!byCorp) return [t.character_id]
-    const corporationId = corporationById.get(t.character_id)
-    if (corporationId == null) return [t.character_id]
-    return byCorp.get(corporationId) ?? [t.character_id]
+    if (!byCorp) return [t.registration_id]
+    const corporationId = corporationById.get(t.registration_id)
+    if (corporationId == null) return [t.registration_id]
+    return byCorp.get(corporationId) ?? [t.registration_id]
   }
 
   const { send } = await import('@/utils/queue')
@@ -213,7 +213,7 @@ export const dispatchSingleJob = async (userId: string, job: string, character: 
       batch_id: randomUUID(),
       user_id: userId,
       job,
-      character_id: character?.id ?? null,
+      registration_id: character?.id ?? null,
       character_name: character?.name ?? null,
     })
     .select('id')
