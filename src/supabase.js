@@ -111,7 +111,7 @@ export const upsertCharacter = async (columns) => {
 export const upsertToken = async (columns) => {
   const response = await supabase
     .from('token')
-    .upsert(columns, { onConflict: ['character_id'] })
+    .upsert(columns, { onConflict: ['registration_id'] })
     .select()
   if (response.error) console.error(response.error)
   return response.data?.[0]?.id
@@ -138,9 +138,9 @@ export const selectCharacters = async (columns, owner) => {
 export const selectCharacterIdsWithScopes = async (scopes) => {
   const perScope = await Promise.all(
     map(async (scope) => {
-      const { data, error } = await sudoSupabase.from('token').select('character_id').contains('scope', [scope])
+      const { data, error } = await sudoSupabase.from('token').select('registration_id').contains('scope', [scope])
       if (error) throw error
-      return pluck('character_id', data ?? [])
+      return pluck('registration_id', data ?? [])
     }, scopes)
   )
   return [...new Set(unnest(perScope))]
@@ -182,11 +182,11 @@ export const groupCharacterIdsByCorporation = async (scopes) => {
   return { byCorp, unresolved }
 }
 
-export const selectToken = async (character_id, scope = []) => {
+export const selectToken = async (registration_id, scope = []) => {
   const response = await supabase
     .from('token')
     .select('refresh_token, scope')
-    .eq('character_id', character_id)
+    .eq('registration_id', registration_id)
     .contains('scope', [scope].flat())
     .order('expires_at', { ascending: true })
   return response
