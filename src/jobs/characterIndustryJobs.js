@@ -29,18 +29,18 @@ const signature = (j) =>
 // with a long job history doesn't silently truncate the "current" set.
 const PAGE = 1000
 
-const fetchCurrentRows = async (character_id, cols, from = 0) => {
+const fetchCurrentRows = async (registration_id, cols, from = 0) => {
   const { data, error } = await sudoSupabase
     .from('character_industry_job_over_time')
     .select(cols)
-    .eq('character_id', character_id)
+    .eq('character_id', registration_id)
     .eq('is_current', true)
     .order('id', { ascending: true })
     .range(from, from + PAGE - 1)
   if (error) throw error
   const page = data ?? []
   if (page.length < PAGE) return page
-  return [...page, ...(await fetchCurrentRows(character_id, cols, from + PAGE))]
+  return [...page, ...(await fetchCurrentRows(registration_id, cols, from + PAGE))]
 }
 
 // Reconcile freshly fetched jobs against the character's current (open) rows in
@@ -51,9 +51,9 @@ const fetchCurrentRows = async (character_id, cols, from = 0) => {
 // include_completed's window) is NOT closed — its terminal row stays is_current
 // so the character_industry_job view keeps every job the endpoint ever
 // reported, matching the old plain table (which never swept completed jobs).
-const reconcile = async (character_id, fetched) => {
+const reconcile = async (registration_id, fetched) => {
   const cols = 'id, job_id, status, pause_date, completed_date, completed_character_id, successful_runs'
-  const current = await fetchCurrentRows(character_id, cols)
+  const current = await fetchCurrentRows(registration_id, cols)
 
   const currentByJob = new Map(current.map((c) => [Number(c.job_id), c]))
   // ESI could report the same job twice if the set shifts mid-response;
@@ -75,7 +75,7 @@ const reconcile = async (character_id, fetched) => {
         // valid_from is left to its `default now()` so it marks this version's debut.
         acc.inserts.push({
           job_id: j.job_id,
-          character_id,
+          character_id: registration_id,
           installer_id: j.installer_id,
           facility_id: j.facility_id,
           station_id: j.station_id ?? null,
@@ -135,41 +135,45 @@ const reconcile = async (character_id, fetched) => {
 // is unchanged since last run (nothing started or completed), so the whole
 // reconcile is skipped.
 export const runCharacterIndustryJobs = ({ characterIds } = {}) =>
-  forEachCharacter(TAG, { scope: SCOPE, characterIds }, async ({ access_token, characterID, character_id, name }) => {
-    const cacheKey = `${TAG}:${character_id}`
-    const priorEtag = await getEsiEtag(cacheKey)
-    const t0 = Date.now()
-    const { status, json: jobs, etag } = await industryJobs(access_token, characterID, priorEtag)
-    const durationMs = Date.now() - t0
-    if (status === 304) {
+  forEachCharacter(
+    TAG,
+    { scope: SCOPE, characterIds },
+    async ({ access_token, characterID, registration_id, name }) => {
+      const cacheKey = `${TAG}:${registration_id}`
+      const priorEtag = await getEsiEtag(cacheKey)
+      const t0 = Date.now()
+      const { status, json: jobs, etag } = await industryJobs(access_token, characterID, priorEtag)
+      const durationMs = Date.now() - t0
+      if (status === 304) {
+        recordEsiConditional({
+          job: TAG,
+          characterId: registration_id,
+          characterName: name,
+          outcome: 'not_modified',
+          conditional: true,
+          durationMs,
+        })
+        console.log(`[${TAG}] ${name} ${registration_id} (${characterID}): not modified`)
+        return
+      }
+
+      const { touched, opened, closed } = await reconcile(registration_id, jobs)
+
+      // Store the ETag only after the reconcile committed (see characterOrders.js).
+      await putEsiEtag(cacheKey, etag)
       recordEsiConditional({
         job: TAG,
-        characterId: character_id,
+        characterId: registration_id,
         characterName: name,
-        outcome: 'not_modified',
-        conditional: true,
+        outcome: 'modified',
+        conditional: priorEtag != null,
+        rows: jobs.length,
         durationMs,
       })
-      console.log(`[${TAG}] ${name} ${character_id} (${characterID}): not modified`)
-      return
+      console.log(
+        `[${TAG}] ${name} ${registration_id} (${characterID}): ${jobs.length} jobs; ${touched} unchanged, ${opened} opened, ${closed} closed`
+      )
     }
-
-    const { touched, opened, closed } = await reconcile(character_id, jobs)
-
-    // Store the ETag only after the reconcile committed (see characterOrders.js).
-    await putEsiEtag(cacheKey, etag)
-    recordEsiConditional({
-      job: TAG,
-      characterId: character_id,
-      characterName: name,
-      outcome: 'modified',
-      conditional: priorEtag != null,
-      rows: jobs.length,
-      durationMs,
-    })
-    console.log(
-      `[${TAG}] ${name} ${character_id} (${characterID}): ${jobs.length} jobs; ${touched} unchanged, ${opened} opened, ${closed} closed`
-    )
-  })
+  )
 
 cli(import.meta.url, TAG, runCharacterIndustryJobs)

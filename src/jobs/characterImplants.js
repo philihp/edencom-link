@@ -10,11 +10,11 @@ export const SCOPE = 'esi-clones.read_implants.v1'
 // current-state data, like character-location — a plain upsert rather than
 // an SCD reconcile. Exported so the combined character-status job
 // (characterStatus.js) can reuse this per-character pull.
-export const syncCharacterImplants = async ({ access_token, characterID, character_id, ctx }) => {
+export const syncCharacterImplants = async ({ access_token, characterID, registration_id, ctx }) => {
   const typeIds = await characterImplants(access_token, characterID)
   const { error } = await sudoSupabase.from('character_implant').upsert(
     {
-      character_id,
+      character_id: registration_id,
       type_ids: typeIds ?? [],
       recorded_at: new Date().toISOString(),
     },

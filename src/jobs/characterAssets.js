@@ -56,7 +56,7 @@ const fetchNames = async (access_token, characterID, fetched) => {
 // holding every current row's full 10 columns just multiplied peak memory.
 const PAGE = 1000
 
-const fetchCurrentByItem = async (character_id) => {
+const fetchCurrentByItem = async (registration_id) => {
   const cols =
     'id, item_id, type_id, location_id, location_flag, location_type, quantity, is_singleton, is_blueprint_copy, name'
   const byItem = new Map()
@@ -64,7 +64,7 @@ const fetchCurrentByItem = async (character_id) => {
     const { data, error } = await sudoSupabase
       .from('character_asset_over_time')
       .select(cols)
-      .eq('character_id', character_id)
+      .eq('character_id', registration_id)
       .eq('is_current', true)
       .order('id', { ascending: true })
       .range(from, from + PAGE - 1)
@@ -82,8 +82,8 @@ const fetchCurrentByItem = async (character_id) => {
 // their old row closed and a new one inserted, and vanished items are closed.
 // `names` is the player-assigned-name Map from fetchNames, applied here per
 // item instead of pre-merged onto a full copy of the fetched array.
-const reconcile = async (character_id, fetched, names) => {
-  const currentByItem = await fetchCurrentByItem(character_id)
+const reconcile = async (registration_id, fetched, names) => {
+  const currentByItem = await fetchCurrentByItem(registration_id)
 
   // ESI can return the same item twice across pages if assets shift mid-fetch;
   // collapse to one entry per item so we never queue two inserts for it.
@@ -108,7 +108,7 @@ const reconcile = async (character_id, fetched, names) => {
         // valid_from is left to its `default now()` so it marks this version's debut.
         acc.inserts.push({
           item_id: a.item_id,
-          character_id,
+          character_id: registration_id,
           type_id: a.type_id,
           location_id: a.location_id ?? null,
           location_flag: a.location_flag ?? null,
@@ -157,11 +157,11 @@ const reconcile = async (character_id, fetched, names) => {
 }
 
 export const runCharacterAssets = ({ characterIds } = {}) =>
-  forEachCharacter(TAG, { scope: SCOPE, characterIds }, async ({ access_token, characterID, character_id, ctx }) => {
+  forEachCharacter(TAG, { scope: SCOPE, characterIds }, async ({ access_token, characterID, registration_id, ctx }) => {
     const t0 = Date.now()
     const fetched = await fetchAllPages((page) => assets(access_token, characterID, page))
     const names = await fetchNames(access_token, characterID, fetched)
-    const { touched, opened, closed } = await reconcile(character_id, fetched, names)
+    const { touched, opened, closed } = await reconcile(registration_id, fetched, names)
 
     const dt = Date.now() - t0
     console.log(
