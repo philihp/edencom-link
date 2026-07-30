@@ -9,7 +9,7 @@ const WALLET_DIVISIONS = [1, 2, 3, 4, 5, 6, 7]
 
 // GET /corporations/{id}/wallets/{division}/transactions/ → corp_wallet_transaction.
 // Pulls market transactions from every wallet division, tagged with
-// `character_id` — the registration whose token scanned them — so RLS only shows
+// `registration_id` — the registration whose token scanned them — so RLS only shows
 // each row to that character's owner. The market page unions these with the
 // per-character character_wallet_transaction rows. transaction_id is globally
 // unique in EVE, so the upsert dedupes across divisions and re-scans (first
@@ -19,7 +19,7 @@ export const runCorpWalletTransactions = ({ characterIds } = {}) =>
   forEachCorporation(
     TAG,
     { scope: SCOPE, characterIds },
-    async ({ access_token, corporation_id, character_id, ctx }) => {
+    async ({ access_token, corporation_id, registration_id, ctx }) => {
       let failures = 0
       await forEachSequential(WALLET_DIVISIONS, async (division) => {
         try {
@@ -30,7 +30,7 @@ export const runCorpWalletTransactions = ({ characterIds } = {}) =>
           }
           const rows = txns.map((t) => ({
             transaction_id: t.transaction_id,
-            character_id,
+            character_id: registration_id,
             corporation_id,
             division,
             date: t.date,

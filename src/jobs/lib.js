@@ -83,10 +83,7 @@ const runTokenLoop = async (tag, tokens, { characterName, characterUserId, heart
         handler({
           access_token,
           characterID,
-          // Still `character_id` on the handler side even though the column is
-          // now registration_id: renaming this field means touching every
-          // extract job, which is step 2 of docs/registration-id-rename.md.
-          character_id: tokenRow.registration_id,
+          registration_id: tokenRow.registration_id,
           userId,
           name,
           ctx,
@@ -105,8 +102,8 @@ const runTokenLoop = async (tag, tokens, { characterName, characterUserId, heart
 }
 
 // Iterate the tokens that carry `scope`, calling handler once per token with
-// { access_token, characterID, character_id, userId, name, ctx, scopes }.
-// `characterID` is the EVE character id from the token; `character_id` is the
+// { access_token, characterID, registration_id, userId, name, ctx, scopes }.
+// `characterID` is the EVE character id from the token; `registration_id` is the
 // registration uuid. Each call is wrapped in a start/end heartbeat attributed
 // to that character (job/character_id/user_id), unless `heartbeat: false` — set
 // by forEachCorporation, which records its own corp-attributed heartbeat instead
@@ -156,7 +153,7 @@ export const forEachCharacterAnyScope = async (tag, { scopes, characterIds, hear
 }
 
 // Iterate the corporations reachable through tokens carrying `scope`, calling
-// handler once per corporation with { access_token, corporation_id, character_id,
+// handler once per corporation with { access_token, corporation_id, registration_id,
 // ctx }. Two characters in the same corp resolve to one handler call per run —
 // unless the first one's call fails (most commonly a character that carries the
 // OAuth scope but lacks the in-game role — director, accountant, etc — the corp
@@ -173,7 +170,7 @@ export const forEachCorporation = async (tag, { scope, characterIds }, handler) 
   await forEachCharacter(
     tag,
     { scope, characterIds, heartbeat: false },
-    async ({ access_token, characterID, character_id, userId, ctx }) => {
+    async ({ access_token, characterID, registration_id, userId, ctx }) => {
       const info = await fetchCharacter(access_token, characterID)
       const corporation_id = info?.corporation_id
       if (!corporation_id) {
@@ -183,7 +180,7 @@ export const forEachCorporation = async (tag, { scope, characterIds }, handler) 
       const { error: charUpdateErr } = await sudoSupabase
         .from('registration')
         .update({ corporation_id })
-        .eq('id', character_id)
+        .eq('id', registration_id)
       if (charUpdateErr) {
         console.error(`[${tag}] ${ctx}: registration.corporation_id update failed: ${charUpdateErr.message}`)
       }
@@ -191,8 +188,8 @@ export const forEachCorporation = async (tag, { scope, characterIds }, handler) 
         console.log(`[${tag}] ${ctx}: corp ${corporation_id} already pulled this run, skipping`)
         return
       }
-      await withHeartbeat(tag, { characterId: character_id, corporationId: corporation_id, userId }, () =>
-        handler({ access_token, corporation_id, character_id, ctx })
+      await withHeartbeat(tag, { characterId: registration_id, corporationId: corporation_id, userId }, () =>
+        handler({ access_token, corporation_id, registration_id, ctx })
       )
       // Only mark the corp as handled once the pull actually succeeds.
       seenCorps.add(corporation_id)

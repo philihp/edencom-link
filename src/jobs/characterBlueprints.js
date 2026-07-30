@@ -31,27 +31,27 @@ const signature = (b) =>
 // with thousands of blueprints doesn't silently truncate the "current" set.
 const PAGE = 1000
 
-const fetchCurrentRows = async (character_id, cols, from = 0) => {
+const fetchCurrentRows = async (registration_id, cols, from = 0) => {
   const { data, error } = await sudoSupabase
     .from('character_blueprint_over_time')
     .select(cols)
-    .eq('character_id', character_id)
+    .eq('character_id', registration_id)
     .eq('is_current', true)
     .order('id', { ascending: true })
     .range(from, from + PAGE - 1)
   if (error) throw error
   const page = data ?? []
   if (page.length < PAGE) return page
-  return [...page, ...(await fetchCurrentRows(character_id, cols, from + PAGE))]
+  return [...page, ...(await fetchCurrentRows(registration_id, cols, from + PAGE))]
 }
 
 // Reconcile freshly fetched blueprints against the character's current (open)
 // rows: unchanged blueprints get their valid_until extended, changed ones
 // have their old row closed and a new one inserted, and vanished ones
 // (scrapped, transferred away, converted) are closed.
-const reconcile = async (character_id, fetched) => {
+const reconcile = async (registration_id, fetched) => {
   const cols = 'id, item_id, type_id, location_id, location_flag, quantity, material_efficiency, time_efficiency, runs'
-  const current = await fetchCurrentRows(character_id, cols)
+  const current = await fetchCurrentRows(registration_id, cols)
 
   const currentByItem = new Map(current.map((c) => [Number(c.item_id), c]))
   // ESI can return the same item twice across pages if blueprints shift
@@ -75,7 +75,7 @@ const reconcile = async (character_id, fetched) => {
         // valid_from is left to its `default now()` so it marks this version's debut.
         acc.inserts.push({
           item_id: b.item_id,
-          character_id,
+          character_id: registration_id,
           type_id: b.type_id,
           location_id: b.location_id ?? null,
           location_flag: b.location_flag ?? null,
@@ -124,10 +124,10 @@ const reconcile = async (character_id, fetched) => {
 }
 
 export const runCharacterBlueprints = ({ characterIds } = {}) =>
-  forEachCharacter(TAG, { scope: SCOPE, characterIds }, async ({ access_token, characterID, character_id, ctx }) => {
+  forEachCharacter(TAG, { scope: SCOPE, characterIds }, async ({ access_token, characterID, registration_id, ctx }) => {
     const t0 = Date.now()
     const fetched = await fetchAllPages((page) => blueprints(access_token, characterID, page))
-    const { touched, opened, closed } = await reconcile(character_id, fetched)
+    const { touched, opened, closed } = await reconcile(registration_id, fetched)
 
     const dt = Date.now() - t0
     console.log(

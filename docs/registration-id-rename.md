@@ -101,10 +101,10 @@ Return columns (`character_id uuid`): `character_asset_location_summary`,
 
 ### JavaScript / TypeScript — 4 modules
 
-- **`src/jobs/lib.js`** — the `characterID` / `character_id` pair described
-  above, plus the `characterIds` option (registration uuids) on
-  `forEachCharacter` / `forEachCharacterAnyScope` / `forEachCorporation`. Every
-  extract job inherits the naming into its locals.
+- **`src/jobs/lib.js`** — ~~the `characterID` / `character_id` pair~~ (done);
+  the `characterIds` option (registration uuids) on `forEachCharacter` /
+  `forEachCharacterAnyScope` / `forEachCorporation` remains, and shares its
+  name with three unrelated contracts — see step 2.
 - **`src/supabase.js`** — `recordHeartbeat(opts.characterId)`,
   `selectCharacterIdsWithScopes()` (returns uuids), `selectToken(character_id)`,
   `upsertToken`'s `onConflict: ['character_id']`.
@@ -157,12 +157,22 @@ Smallest blast radius first, and ordered so each step makes the next easier.
    constraint and indexes by itself, with no view or function to recreate. It
    also touched `src/app/character/callback/route.ts`, `src/refresh.js` and
    `src/jobs/universeStructures.js`, which the original sketch here missed.
-2. **`src/jobs/lib.js`'s handler contract.** Rename the handler field to
-   `registration_id` and the option to `registrationIds`, then sweep the extract
-   jobs. This is the step that actually retires the `characterID` /
-   `character_id` collision, and it's pure JS — no migration, no deploy-ordering
-   risk. (`characterFittings.js` already aliases it locally; that alias goes
-   away here.)
+2. ~~**`src/jobs/lib.js`'s handler contract.**~~ **Field done.** The handler
+   argument is now `registration_id`, swept through all 14 job modules and both
+   `sync*` helper signatures — which retires the `characterID` /
+   `character_id` collision. Note the intermediate state it leaves: where a job
+   writes that value into a column still called `character_id`, the payload is
+   now an explicit `character_id: registration_id` rather than shorthand. That
+   reads awkwardly on purpose, and each one disappears as step 4 renames its
+   table.
+
+   The **`characterIds` option** was deliberately left alone. It looked like
+   part of the same rename, but `characterIds` turns out to name three other
+   unrelated contracts too — `OwnerContext.characterIds` in the MCP layer,
+   `resolvePlayer`'s return in `src/utils/apiToken.ts`, and the `character_ids`
+   RPC parameter — spanning ~55 files. Renaming only lib.js's would leave the
+   name meaning two things at once. It belongs with those, as its own step.
+
 3. **Infrastructure tables** — `heartbeat`, `refresh_task`. Small, and
    `heartbeat` also drags `latest_heartbeats()`'s return column, so it's a good
    dry run of the function-recreation dance.

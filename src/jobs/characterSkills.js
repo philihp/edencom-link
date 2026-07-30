@@ -23,26 +23,26 @@ const signature = (s) => JSON.stringify([Number(s.active_skill_level) || 0, Numb
 // with hundreds of skills doesn't silently truncate the "current" set.
 const PAGE = 1000
 
-const fetchCurrentRows = async (character_id, from = 0) => {
+const fetchCurrentRows = async (registration_id, from = 0) => {
   const { data, error } = await sudoSupabase
     .from('character_skill_over_time')
     .select('id, skill_id, active_skill_level, trained_skill_level')
-    .eq('character_id', character_id)
+    .eq('character_id', registration_id)
     .eq('is_current', true)
     .order('id', { ascending: true })
     .range(from, from + PAGE - 1)
   if (error) throw error
   const page = data ?? []
   if (page.length < PAGE) return page
-  return [...page, ...(await fetchCurrentRows(character_id, from + PAGE))]
+  return [...page, ...(await fetchCurrentRows(registration_id, from + PAGE))]
 }
 
 // Reconcile freshly fetched skills against the character's current (open) rows:
 // unchanged skills get their valid_until extended, changed ones have their old
 // row closed and a new one inserted. Nothing is closed for vanishing — a
 // character never loses a skill.
-const reconcile = async (character_id, fetched) => {
-  const current = await fetchCurrentRows(character_id)
+const reconcile = async (registration_id, fetched) => {
+  const current = await fetchCurrentRows(registration_id)
   const currentBySkill = new Map(current.map((c) => [Number(c.skill_id), c]))
   const fetchedBySkill = new Map(fetched.map((s) => [Number(s.skill_id), s]))
 
@@ -60,7 +60,7 @@ const reconcile = async (character_id, fetched) => {
         if (cur) acc.closeIds.push(cur.id)
         // valid_from is left to its `default now()` so it marks this version's debut.
         acc.inserts.push({
-          character_id,
+          character_id: registration_id,
           skill_id: s.skill_id,
           active_skill_level: s.active_skill_level ?? 0,
           trained_skill_level: s.trained_skill_level ?? 0,
@@ -93,9 +93,9 @@ const reconcile = async (character_id, fetched) => {
   return { touched: touchIds.length, opened: inserts.length, closed: closeIds.length }
 }
 
-export const syncCharacterSkills = async ({ access_token, characterID, character_id, ctx }) => {
+export const syncCharacterSkills = async ({ access_token, characterID, registration_id, ctx }) => {
   const { skills } = await characterSkills(access_token, characterID)
-  const { touched, opened, closed } = await reconcile(character_id, skills ?? [])
+  const { touched, opened, closed } = await reconcile(registration_id, skills ?? [])
   console.log(
     `[${TAG}] ${ctx}: ${(skills ?? []).length} skill(s); ${touched} unchanged, ${opened} opened, ${closed} closed`
   )

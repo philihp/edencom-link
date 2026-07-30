@@ -77,11 +77,11 @@ export const makeSystemResolver = () => {
   }
 }
 
-const fetchCurrentRows = async (character_id) => {
+const fetchCurrentRows = async (registration_id) => {
   const { data, error } = await sudoSupabase
     .from('character_clone_over_time')
     .select('id, jump_clone_id, is_home, location_id, location_type, name, implants, system_id')
-    .eq('character_id', character_id)
+    .eq('character_id', registration_id)
     .eq('is_current', true)
   if (error) throw error
   return data ?? []
@@ -92,8 +92,8 @@ const fetchCurrentRows = async (character_id) => {
 // backfilled if resolution newly succeeded), a changed clone has its old row
 // closed and a new one inserted, and a clone that's gone (jump clone
 // destroyed/consumed) is closed.
-const reconcile = async (character_id, fetchedClones) => {
-  const current = await fetchCurrentRows(character_id)
+const reconcile = async (registration_id, fetchedClones) => {
+  const current = await fetchCurrentRows(registration_id)
   const currentByKey = new Map(map((c) => [cloneKey(c), c], current))
   const fetchedByKey = new Map(map((c) => [cloneKey(c), c], fetchedClones))
 
@@ -111,7 +111,7 @@ const reconcile = async (character_id, fetchedClones) => {
       } else {
         if (cur) acc.closeIds.push(cur.id)
         acc.inserts.push({
-          character_id,
+          character_id: registration_id,
           jump_clone_id: c.is_home ? null : c.jump_clone_id,
           is_home: !!c.is_home,
           location_id: c.location_id,
@@ -171,7 +171,7 @@ const reconcile = async (character_id, fetchedClones) => {
 // makeSystemResolver) so a whole run's clones — which cluster in the same few
 // stations/structures — resolve each location once. Exported so the combined
 // character-status job (characterStatus.js) can reuse it with a shared resolver.
-export const syncCharacterClones = async ({ access_token, characterID, character_id, ctx }, resolveSystem) => {
+export const syncCharacterClones = async ({ access_token, characterID, registration_id, ctx }, resolveSystem) => {
   const payload = await characterClones(access_token, characterID)
   const home = payload.home_location
     ? [
@@ -201,7 +201,7 @@ export const syncCharacterClones = async ({ access_token, characterID, character
 
   const { error: stateErr } = await sudoSupabase.from('character_clone_state').upsert(
     {
-      character_id,
+      character_id: registration_id,
       last_clone_jump_date: payload.last_clone_jump_date ?? null,
       last_station_change_date: payload.last_station_change_date ?? null,
       recorded_at: new Date().toISOString(),
@@ -210,7 +210,7 @@ export const syncCharacterClones = async ({ access_token, characterID, character
   )
   if (stateErr) throw stateErr
 
-  const { touched, opened, closed } = await reconcile(character_id, clones)
+  const { touched, opened, closed } = await reconcile(registration_id, clones)
   console.log(`[${TAG}] ${ctx}: ${touched} unchanged, ${opened} opened, ${closed} closed`)
 }
 

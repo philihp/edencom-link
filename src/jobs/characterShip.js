@@ -18,11 +18,11 @@ export const SCOPE = 'esi-location.read_ship_type.v1'
 // row's ship_name is updated in place (like the clones job backfilling
 // system_id), so the history reads as one stint per ship, not per name.
 
-const fetchCurrentRow = async (character_id) => {
+const fetchCurrentRow = async (registration_id) => {
   const { data, error } = await sudoSupabase
     .from('character_ship_over_time')
     .select('id, ship_item_id, ship_type_id, ship_name')
-    .eq('character_id', character_id)
+    .eq('character_id', registration_id)
     .eq('is_current', true)
     .maybeSingle()
   if (error) throw error
@@ -33,8 +33,8 @@ const fetchCurrentRow = async (character_id) => {
 // row: the same ship extends valid_until (refreshing ship_name in place if
 // it was renamed); a different ship closes the old row (if any) and opens a
 // new one.
-const reconcile = async (character_id, fetchedShip) => {
-  const current = await fetchCurrentRow(character_id)
+const reconcile = async (registration_id, fetchedShip) => {
+  const current = await fetchCurrentRow(registration_id)
   const now = new Date().toISOString()
 
   if (current && Number(current.ship_item_id) === Number(fetchedShip.ship_item_id)) {
@@ -55,7 +55,7 @@ const reconcile = async (character_id, fetchedShip) => {
     if (error) throw error
   }
   const { error } = await sudoSupabase.from('character_ship_over_time').insert({
-    character_id,
+    character_id: registration_id,
     ship_item_id: fetchedShip.ship_item_id,
     ship_type_id: fetchedShip.ship_type_id,
     ship_name: fetchedShip.ship_name ?? null,
@@ -67,9 +67,9 @@ const reconcile = async (character_id, fetchedShip) => {
 
 // Exported so the combined character-status job (characterStatus.js) can
 // reuse this per-character pull.
-export const syncCharacterShip = async ({ access_token, characterID, character_id, ctx }) => {
+export const syncCharacterShip = async ({ access_token, characterID, registration_id, ctx }) => {
   const ship = await characterShip(access_token, characterID)
-  const changed = await reconcile(character_id, ship)
+  const changed = await reconcile(registration_id, ship)
   console.log(`[${TAG}] ${ctx}: ship_item_id=${ship.ship_item_id}${changed ? ' (changed)' : ''}`)
 }
 

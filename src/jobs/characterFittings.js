@@ -130,7 +130,7 @@ export const runCharacterFittings = ({ characterIds } = {}) =>
   forEachCharacter(
     TAG,
     { scope: SCOPE, characterIds },
-    async ({ access_token, characterID, character_id: registration_id, name }) => {
+    async ({ access_token, characterID, registration_id, name }) => {
       const cacheKey = `${TAG}:${registration_id}`
       const priorEtag = await getEsiEtag(cacheKey)
       const t0 = Date.now()
