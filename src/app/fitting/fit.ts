@@ -10,7 +10,7 @@ export type FittingItem = {
 }
 
 export type FittingRow = {
-  character_id: string
+  registration_id: string
   fitting_id: number | string
   name: string | null
   description: string | null
@@ -21,8 +21,12 @@ export type FittingRow = {
 // The one URL every fitting lives at, whether the viewer owns it or sees it
 // through a character_fitting_share row. fitting_id is only unique per
 // character (ESI numbers them from 1 per pilot), so the route carries the
-// registration uuid too rather than pretending the id is global.
-export const fittingRoute = (characterId: string, fittingId: number | string): string =>
+// owner too rather than pretending the id is global.
+//
+// The owner is identified by their EVE numeric character id — not the
+// registration uuid the tables key on, which is an internal surrogate. The
+// two are translated at the route boundary by resolveCharacter.ts.
+export const fittingRoute = (characterId: number | string, fittingId: number | string): string =>
   `/fitting/${characterId}/${fittingId}`
 
 // Shapes a stored fitting into the ESI-fitting-JSON shape @eveshipfit/react's

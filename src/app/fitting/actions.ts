@@ -18,7 +18,7 @@ export type ShareRow = { id: string; level: ShareLevel }
 // up duplicates. No token is minted for any level; anonymous share links are
 // a future design (the table's token column is a placeholder for it).
 export const createFittingShare = async (
-  characterId: string,
+  registrationId: string,
   fittingId: string,
   level: ShareLevel
 ): Promise<{ share?: ShareRow; error?: string }> => {
@@ -31,8 +31,8 @@ export const createFittingShare = async (
 
   const { data: fit } = await supabase
     .from('character_fitting')
-    .select('character_id')
-    .eq('character_id', characterId)
+    .select('registration_id')
+    .eq('registration_id', registrationId)
     .eq('fitting_id', fittingId)
     .maybeSingle()
   if (!fit) {
@@ -42,7 +42,7 @@ export const createFittingShare = async (
   const { data: existing } = await supabase
     .from('character_fitting_share')
     .select('id, level')
-    .eq('character_id', characterId)
+    .eq('registration_id', registrationId)
     .eq('fitting_id', fittingId)
     .eq('level', level)
     .maybeSingle<ShareRow>()
@@ -50,7 +50,7 @@ export const createFittingShare = async (
 
   const { data: inserted, error } = await supabase
     .from('character_fitting_share')
-    .insert({ character_id: characterId, fitting_id: fittingId, level })
+    .insert({ registration_id: registrationId, fitting_id: fittingId, level })
     .select('id, level')
     .single<ShareRow>()
   if (error) {

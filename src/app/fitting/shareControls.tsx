@@ -6,7 +6,10 @@ import { createFittingShare, revokeFittingShare, type ShareLevel, type ShareRow 
 import styles from './fittings.module.css'
 
 type ShareControlsProps = {
-  characterId: string
+  // The owner's registration uuid, which is what character_fitting_share keys
+  // on — not the EVE character id in the page's URL (resolveCharacter.ts
+  // translates between them).
+  registrationId: string
   fittingId: string
   initialShares: ShareRow[]
 }
@@ -25,7 +28,7 @@ const LEVELS: Array<{ level: ShareLevel; on: string; off: string }> = [
 // level, so each button just flips its row on and off. (Anonymous no-login
 // share links are a future design; the table's token column is a placeholder
 // for it.)
-export const ShareControls = ({ characterId, fittingId, initialShares }: ShareControlsProps) => {
+export const ShareControls = ({ registrationId, fittingId, initialShares }: ShareControlsProps) => {
   const [shares, setShares] = useState(initialShares)
   const [error, setError] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
@@ -33,7 +36,7 @@ export const ShareControls = ({ characterId, fittingId, initialShares }: ShareCo
   const share = (level: ShareLevel) =>
     startTransition(async () => {
       setError(null)
-      const result = await createFittingShare(characterId, fittingId, level)
+      const result = await createFittingShare(registrationId, fittingId, level)
       if (result.error || !result.share) {
         setError(result.error ?? 'Could not create share')
         return

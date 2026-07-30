@@ -8,8 +8,9 @@ import { OWNER_STORAGE_KEY } from './filterKey'
 import { buildMatrix, RACE_COLUMNS, type MatrixEntry } from './shipMatrix'
 import styles from './fittings.module.css'
 
-// A fit plus the id of whoever saved it, so the owner filter can select on
-// identity rather than the display name two pilots could share.
+// A fit plus the EVE character id of whoever saved it, so the owner filter
+// selects on identity rather than a display name two pilots could share. The
+// same id the fit's own href is built from.
 export type FittingEntry = MatrixEntry & { ownerId: string }
 
 type FittingMatrixProps = {

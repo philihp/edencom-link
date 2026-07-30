@@ -10,6 +10,7 @@ import { ascend, groupBy, sortWith } from 'ramda'
 import { z } from 'zod'
 
 import { fittingRoute, flagSortKey, groupForFlag, type FittingItem, type FittingRow } from '@/app/fitting/fit'
+import { fetchFittingOwners } from '@/app/fitting/resolveCharacter'
 import { resolveLocations, type LocationRef } from '@/app/resolveLocations'
 import { getSdePlanets } from '@/sdePlanets'
 import { searchSdeSystems } from '@/sdeSystems'
@@ -502,7 +503,9 @@ export const registerEstateTools = (server: McpServer): void => {
       if (!supabase) return textResult('Missing bearer token.')
 
       const [{ data: fittingRows }, owners] = await Promise.all([
-        supabase.from('character_fitting').select('character_id, fitting_id, name, description, ship_type_id, items'),
+        supabase
+          .from('character_fitting')
+          .select('registration_id, fitting_id, name, description, ship_type_id, items'),
         fetchOwnerContext(supabase),
       ])
 
@@ -519,22 +522,14 @@ export const registerEstateTools = (server: McpServer): void => {
 
       // character_fitting's RLS also surfaces fits shared through
       // character_fitting_share (by a corp/alliance mate, or by anyone at the
-      // public level — see schema.sql) — characters outside the caller's own
-      // owner context. Their display names come from the world-readable
-      // character_directory instead, the same source the /fitting page uses
-      // for a shared-in fit's "owner" label.
-      const ownedCharacterIds = new Set(owners.characterIds)
-      const sharedInIds = [...new Set(fittings.map((f) => f.character_id).filter((id) => !ownedCharacterIds.has(id)))]
-      const { data: directory } =
-        sharedInIds.length > 0
-          ? await supabase
-              .from('character_directory')
-              .select('registration_id, name')
-              .in('registration_id', sharedInIds)
-          : { data: [] as Array<{ registration_id: string; name: string | null }> }
+      // public level — see schema.sql) — registrations outside the caller's
+      // own owner context, which fetchOwnerContext can't name. The same
+      // resolver the /fitting page uses covers both, and carries the EVE
+      // character id each fit's url is addressed by.
+      const fittingOwners = await fetchFittingOwners(supabase, [...new Set(fittings.map((f) => f.registration_id))])
       const nameById = new Map(owners.nameById)
-      ;(directory ?? []).forEach((d) => {
-        if (d.name) nameById.set(d.registration_id, d.name)
+      fittingOwners.forEach((o, registrationId) => {
+        if (o.name) nameById.set(registrationId, o.name)
       })
       const ownersWithShared: OwnerContext = { ...owners, nameById }
 
@@ -560,7 +555,7 @@ export const registerEstateTools = (server: McpServer): void => {
       const nameNeedle = (name ?? '').trim().toLowerCase()
 
       const matched = fittings.filter((f) => {
-        if (ownerFilter.ownerIds && !ownerFilter.ownerIds.has(f.character_id)) return false
+        if (ownerFilter.ownerIds && !ownerFilter.ownerIds.has(f.registration_id)) return false
         if (shipNeedle && !hullOf(f).toLowerCase().includes(shipNeedle)) return false
         if (nameNeedle && !`${f.name ?? ''} ${f.description ?? ''}`.toLowerCase().includes(nameNeedle)) return false
         if (moduleTypeIds && !(f.items ?? []).some((i) => moduleTypeIds.has(Number(i.type_id)))) return false
@@ -592,9 +587,12 @@ export const registerEstateTools = (server: McpServer): void => {
         ship: hullOf(f),
         name: f.name || `Fitting #${f.fitting_id}`,
         ...(f.description ? { description: f.description } : {}),
-        owner: nameById.get(f.character_id) ?? f.character_id,
+        owner: nameById.get(f.registration_id) ?? f.registration_id,
         item_count: (f.items ?? []).length,
-        url: fittingRoute(f.character_id, f.fitting_id),
+        // Addressed by the owner's EVE character id, like every fitting link.
+        ...(fittingOwners.get(f.registration_id)
+          ? { url: fittingRoute(fittingOwners.get(f.registration_id)!.characterId, f.fitting_id) }
+          : {}),
         ...(include_items ? { slots: itemsOf(f) } : {}),
       }))
 
