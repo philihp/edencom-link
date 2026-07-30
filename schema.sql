@@ -1337,12 +1337,12 @@ grant all    on public.character_fitting_over_time to service_role;
 
 -- ── character_fitting_share ───────────────────────────────────────────────
 -- Shares for one saved fitting, at one of three levels: 'corporation' or
--- 'alliance' widen read access on character_fitting_over_time itself (see the
--- policy near the corporation table below, since it depends on
--- my_alliance_ids()) to whoever currently shares that corp/alliance with the
--- owner — no token needed, resolved live off registration/corporation at read
--- time, the same "not frozen at share time" philosophy the mercenary-den
--- alliance sharing uses. 'public' instead mints a token — the secret in a
+-- 'alliance' widen read access on character_fitting_over_time itself (see
+-- fitting_shared_with_caller() and the policies after character_directory
+-- below, which they depend on) to whoever currently shares that corp/alliance
+-- with the owner — no token needed, resolved live off the world-readable
+-- character_directory at read time, the same "not frozen at share time"
+-- philosophy the mercenary-den alliance sharing uses. 'public' instead mints a token — the secret in a
 -- /fitting/[characterId]/[fittingId]?token=… link (mirroring
 -- shared_asset_token's /ship/[itemId]?token=… pattern) that lets anyone view
 -- the fit without signing in, resolved anonymously via the service-role
@@ -1956,47 +1956,6 @@ create policy "Everyone reads corporations"
 grant select on public.corporation to anon, authenticated;
 grant all    on public.corporation to service_role;
 
--- ── character_fitting_over_time: corp/alliance share widening ────────────
--- A second, additive SELECT policy (Postgres ORs multiple permissive policies
--- for the same role) layered on top of "Users read own fittings": a fit with
--- a 'corporation' or 'alliance' character_fitting_share row becomes readable
--- to whoever currently shares that corp/alliance with the *owner* — resolved
--- live off registration/corporation at query time, not frozen at share time,
--- same as my_alliance_ids() itself. Placed here (not beside
--- character_fitting_over_time's own table definition) because it needs both
--- public.corporation and public.my_alliance_ids() to already exist for the
--- policy expression to parse.
-create policy "Corp/alliance members read shared fittings"
-  on public.character_fitting_over_time
-  for select
-  to authenticated
-  using (
-    exists (
-      select 1
-      from public.character_fitting_share s
-      join public.registration owner on owner.id = s.character_id
-      where s.character_id = character_fitting_over_time.character_id
-        and s.fitting_id = character_fitting_over_time.fitting_id
-        and (
-          (
-            s.level = 'corporation'
-            and owner.corporation_id in (
-              select corporation_id from public.registration
-              where user_id = (select auth.uid()) and corporation_id is not null
-            )
-          )
-          or (
-            s.level = 'alliance'
-            and exists (
-              select 1 from public.corporation c
-              where c.corporation_id = owner.corporation_id
-                and c.alliance_id in (select public.my_alliance_ids())
-            )
-          )
-        )
-    )
-  );
-
 -- ── character (directory) ─────────────────────────────────────────────────
 -- World-readable directory of EVE characters: public identity only (name,
 -- corporation, alliance) plus the registration uuid the extract tables key
@@ -2032,6 +1991,98 @@ create policy "Everyone reads the character directory"
 
 grant select on public.character_directory to anon, authenticated;
 grant all    on public.character_directory to service_role;
+
+-- ── character_fitting_share: audience + widening policies ─────────────────
+-- Placed after character_directory (not beside the share table) because these
+-- expressions reference it, and a policy expression or function called by one
+-- is parsed against the catalog at creation time.
+--
+-- Everything here runs as the QUERYING user — no SECURITY DEFINER — so every
+-- table referenced inside a policy is filtered by its own RLS. That shapes the
+-- whole design, the same way it shaped the mercenary-den layer: the owner's
+-- corp/alliance must come from the world-readable character_directory (a
+-- registration join would come up empty for anyone but the owner), and the
+-- audience must be able to read the share rows aimed at them, or the widening
+-- policy's probe of the share table would see nothing.
+
+-- Members of the audience read the corp/alliance share rows aimed at them —
+-- character_mercenary_den_share's "Alliance members read shares to their
+-- alliances", adapted to a per-fit share whose audience is derived from the
+-- owner's live affiliation rather than stored on the row. Load-bearing for
+-- fitting_shared_with_caller() below, which sees exactly the rows this policy
+-- (OR'd with "Users manage own fitting shares") exposes. public-level rows are
+-- deliberately not exposed: the token is the only key to those, resolved by
+-- the service-role client (src/app/fitting/access.ts).
+create policy "Corp/alliance members read fitting shares aimed at them"
+  on public.character_fitting_share
+  for select
+  to authenticated
+  using (
+    exists (
+      select 1
+      from public.character_directory owner
+      where owner.registration_id = character_fitting_share.character_id
+        and (
+          (
+            character_fitting_share.level = 'corporation'
+            and owner.corporation_id in (
+              select corporation_id from public.registration
+              where user_id = (select auth.uid()) and corporation_id is not null
+            )
+          )
+          or (
+            character_fitting_share.level = 'alliance'
+            and owner.alliance_id in (select public.my_alliance_ids())
+          )
+        )
+    )
+  );
+
+-- True when the given fit carries a corp/alliance share whose audience the
+-- caller currently belongs to — mercenary_den_shared_with_caller's shape, on
+-- invoker rights: it reads only what the caller may already read (share rows
+-- via the policy above, the world-readable character_directory, their own
+-- registrations). An owner with no character_directory row yet (the
+-- character-directory job runs daily) resolves to false until the next pass,
+-- same as the den layer.
+create or replace function public.fitting_shared_with_caller(owner_id uuid, fit_id bigint)
+returns boolean
+language sql
+stable
+as $$
+  select exists (
+    select 1
+    from public.character_fitting_share s
+    join public.character_directory owner on owner.registration_id = s.character_id
+    where s.character_id = owner_id
+      and s.fitting_id = fit_id
+      and (
+        (
+          s.level = 'corporation'
+          and owner.corporation_id in (
+            select corporation_id from public.registration
+            where user_id = (select auth.uid()) and corporation_id is not null
+          )
+        )
+        or (s.level = 'alliance' and owner.alliance_id in (select public.my_alliance_ids()))
+      )
+  );
+$$;
+
+grant execute on function public.fitting_shared_with_caller(uuid, bigint) to authenticated;
+
+-- The widening itself: a second, additive SELECT policy (Postgres ORs
+-- permissive policies for the same role) layered on top of "Users read own
+-- fittings", inherited by the security_invoker character_fitting view. An
+-- earlier version inlined this with the owner's affiliation joined from
+-- registration and no audience policy on the share table — both RLS-filtered
+-- as the querying user, so for the corp/alliance mate the subquery always came
+-- up empty and the policy never matched anything.
+create policy "Corp/alliance members read shared fittings"
+  on public.character_fitting_over_time
+  for select
+  to authenticated
+  using (public.fitting_shared_with_caller(character_id, fitting_id));
 
 -- ── corp_wallet_journal ───────────────────────────────────────────────────
 -- ESI /corporations/{id}/wallets/{division}/journal/, written by the
