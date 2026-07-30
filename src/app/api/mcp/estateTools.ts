@@ -9,7 +9,7 @@ import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js'
 import { ascend, groupBy, sortWith } from 'ramda'
 import { z } from 'zod'
 
-import { flagSortKey, groupForFlag, type FittingItem, type FittingRow } from '@/app/fitting/fit'
+import { fittingRoute, flagSortKey, groupForFlag, type FittingItem, type FittingRow } from '@/app/fitting/fit'
 import { resolveLocations, type LocationRef } from '@/app/resolveLocations'
 import { getSdePlanets } from '@/sdePlanets'
 import { searchSdeSystems } from '@/sdeSystems'
@@ -478,7 +478,7 @@ export const registerEstateTools = (server: McpServer): void => {
     {
       title: 'List saved ship fittings',
       description:
-        'The ship fittings the user\'s characters have saved in the game, with the hull each is for and who saved it. Filter by hull, by fit name, by owner, or by a module the fit uses — "what Hurricane fits do I have", "which of my fits use a Damage Control II". Set include_items to get each fit\'s full module list by slot. Note: EVE\'s API exposes only each pilot\'s *personal* fittings — corporation and alliance doctrine folders are not available, so a doctrine fit appears here only if one of their characters saved a copy.',
+        "The ship fittings the user's characters have saved in the game, plus any other players have shared with them (with their corporation or alliance, or with everyone), with the hull each is for and who saved it. Filter by hull, by fit name, by owner, or by a module the fit uses — \"what Hurricane fits do I have\", \"which of my fits use a Damage Control II\". Set include_items to get each fit's full module list by slot. Note: EVE's API exposes only each pilot's *personal* fittings — corporation and alliance doctrine folders are not available, so a doctrine fit appears here only if one of their characters saved a copy and shared it (see the share controls on a fit's own page).",
       annotations: { readOnlyHint: true, openWorldHint: false },
       inputSchema: {
         ship: z.string().optional().describe('Only fits for hulls matching this name substring, e.g. "Hurricane"'),
@@ -517,7 +517,28 @@ export const registerEstateTools = (server: McpServer): void => {
         })
       }
 
-      const ownerFilter = resolveOwnerFilter(owner, owners)
+      // character_fitting's RLS also surfaces fits shared through
+      // character_fitting_share (by a corp/alliance mate, or by anyone at the
+      // public level — see schema.sql) — characters outside the caller's own
+      // owner context. Their display names come from the world-readable
+      // character_directory instead, the same source the /fitting page uses
+      // for a shared-in fit's "owner" label.
+      const ownedCharacterIds = new Set(owners.characterIds)
+      const sharedInIds = [...new Set(fittings.map((f) => f.character_id).filter((id) => !ownedCharacterIds.has(id)))]
+      const { data: directory } =
+        sharedInIds.length > 0
+          ? await supabase
+              .from('character_directory')
+              .select('registration_id, name')
+              .in('registration_id', sharedInIds)
+          : { data: [] as Array<{ registration_id: string; name: string | null }> }
+      const nameById = new Map(owners.nameById)
+      ;(directory ?? []).forEach((d) => {
+        if (d.name) nameById.set(d.registration_id, d.name)
+      })
+      const ownersWithShared: OwnerContext = { ...owners, nameById }
+
+      const ownerFilter = resolveOwnerFilter(owner, ownersWithShared)
       if (!ownerFilter.ok) return textResult(ownerFilter.message)
 
       // A `module` filter resolves through the SDE search (a module name is an
@@ -571,11 +592,9 @@ export const registerEstateTools = (server: McpServer): void => {
         ship: hullOf(f),
         name: f.name || `Fitting #${f.fitting_id}`,
         ...(f.description ? { description: f.description } : {}),
-        owner: owners.nameById.get(f.character_id) ?? f.character_id,
+        owner: nameById.get(f.character_id) ?? f.character_id,
         item_count: (f.items ?? []).length,
-        // Enough to address the fit on the site: /fitting/<character_id>/<fitting_id>.
-        fitting_id: Number(f.fitting_id),
-        character_id: f.character_id,
+        url: fittingRoute(f.character_id, f.fitting_id),
         ...(include_items ? { slots: itemsOf(f) } : {}),
       }))
 

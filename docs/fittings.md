@@ -57,12 +57,39 @@ A follow-up plan now exists for going beyond read-only entirely:
 [`fitting-paging.md`](fitting-paging.md) — using the write scope to page fits
 between the game's 500-slot saved list and an unbounded library here.
 
-A second, cheaper approximation is available later if wanted: reuse the
-alliance-sharing pattern already built for mercenary dens
-(`character_mercenary_den_share`, `my_alliance_ids()`) so a player can opt into
-publishing their fittings to their alliance. That turns "the doctrine fits my
-FC has saved" into something the whole alliance can read. It is deliberately
-**out of scope** for these three PRs — get the data in and visible first.
+**Shipped follow-up: per-fit sharing, at three levels.** A fit's own page
+(`/fitting/[characterId]/[fittingId]`) carries share controls backed by
+`character_fitting_share`, one row per `(character_id, fitting_id, level)`
+share — a toggle each for `corporation`, `alliance`, and `public`, each
+independently revocable. No level carries a secret and there is no anonymous
+no-login view: every share widens read access through RLS on
+`character_fitting_over_time` itself, via a second, additive SELECT policy
+(Postgres ORs permissive policies for the same role) that calls
+`fitting_shared_with_caller()` — an invoker-rights helper shaped like
+`mercenary_den_shared_with_caller()`, taking the `(character_id, fitting_id)`
+pair that is a fit's durable key. `corporation`/`alliance` open the fit to
+whoever currently shares that corp/alliance with the owner; `public` opens it
+to any signed-in user. Because RLS applies inside policy subqueries too, the
+owner's affiliation resolves through the world-readable `character_directory`
+(never `registration`, whose RLS hides other users' rows), the caller's own
+memberships come from `my_corporation_ids()`/`my_alliance_ids()`, and a
+companion policy on `character_fitting_share` lets audience members read the
+share rows aimed at them — without it the widening policy's probe of the
+share table would see nothing. Membership is resolved live at query time
+rather than frozen at share time; the viewer just opens the bare URL while
+signed in.
+
+Every level points at the fit's live `(character_id, fitting_id)` pair rather
+than a copy — an edit in the client is visible through any outstanding share,
+and there's nothing to keep in sync. (An earlier version of this follow-up
+published fits into corp/alliance audiences via a separate `shared_fitting`
+snapshot-copy table with its own route shape; a later draft minted
+`shared_asset_token`-style `?token=…` links for anonymous public viewing.
+Both were replaced before shipping — the anonymous-link idea is parked for a
+future rethink, and the share table's unused `token` column is the
+placeholder for it.) The `owner_scope` column on
+`character_fitting_over_time` remains reserved for a real ESI corp/alliance
+endpoint, should CCP ever ship one.
 
 ---
 

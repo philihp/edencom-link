@@ -81,10 +81,82 @@
   color: var(--ink-faint);
 }
 
+/* Who saved a fit shared in from a corp/alliance mate — absent on the
+ * caller's own fits. */
+.fitOwner {
+  display: block;
+  font-size: 11px;
+  color: var(--ink-faint);
+  font-style: italic;
+}
+
 /* ── Detail page ─────────────────────────────────────────────────────────── */
 
 .meta {
   color: var(--ink-soft);
+}
+
+/* Share controls on the owner's view of a fit: one toggle button per share
+ * level. */
+.shareRow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 10px 0;
+  font-size: 12px;
+}
+
+.shareButton {
+  font-size: 12px;
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--paper-raised);
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+
+.shareButton:hover {
+  border-color: var(--accent);
+  color: var(--ink);
+}
+
+/* Wraps a shared fitting page (a non-owner's view) so the "Shared by" badge
+ * below can float relative to it rather than the page body. */
+.sharedPage {
+  position: relative;
+}
+
+/* The owner credit on a fit opened through a share, hugging the top-right
+ * corner like the character-list portraits
+ * (src/app/character/character.module.css) — the same "who is this" idiom,
+ * reused for "whose fit is this". */
+.sharedFrom {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px 4px 4px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--paper-raised);
+}
+
+.sharedFromAvatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--line-soft);
+  flex-shrink: 0;
+}
+
+.sharedFromLabel {
+  font-size: 12px;
+  color: var(--ink-soft);
+  white-space: nowrap;
 }
 
 /* The in-game description field, which players use for doctrine notes. */

@@ -18,6 +18,13 @@ export type FittingRow = {
   items: FittingItem[] | null
 }
 
+// The one URL every fitting lives at, whether the viewer owns it or sees it
+// through a character_fitting_share row. fitting_id is only unique per
+// character (ESI numbers them from 1 per pilot), so the route carries the
+// registration uuid too rather than pretending the id is global.
+export const fittingRoute = (characterId: string, fittingId: number | string): string =>
+  `/fitting/${characterId}/${fittingId}`
+
 // Shapes a stored fitting into the ESI-fitting-JSON shape @eveshipfit/react's
 // useImportEsiFitting() hook expects — nearly a pass-through, since the table
 // stores ESI's own field names.
@@ -27,7 +34,7 @@ export type FittingRow = {
 // viewer's EsiFit type requires one. The array index stands in. It's only an
 // identity key for the viewer's own slot bookkeeping — it never leaves the
 // browser and is never persisted.
-export const toEsiFit = (row: FittingRow): EsiFit => ({
+export const toEsiFit = (row: Pick<FittingRow, 'name' | 'description' | 'ship_type_id' | 'items'>): EsiFit => ({
   name: row.name ?? '',
   description: row.description ?? '',
   ship_type_id: Number(row.ship_type_id),

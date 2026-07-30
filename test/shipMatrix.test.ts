@@ -9,8 +9,13 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import type { SdeType } from '../src/sdeTypes.ts'
-import type { FittingRow } from '../src/app/fitting/fit.ts'
-import { buildMatrix, classForGroupName, columnForType, RACE_COLUMNS } from '../src/app/fitting/shipMatrix.ts'
+import {
+  buildMatrix,
+  classForGroupName,
+  columnForType,
+  RACE_COLUMNS,
+  type MatrixEntry,
+} from '../src/app/fitting/shipMatrix.ts'
 
 const type = (
   typeID: number,
@@ -28,13 +33,11 @@ const type = (
   metaGroupID,
 })
 
-const fit = (fittingId: number, shipTypeId: number, name: string): FittingRow => ({
-  character_id: 'reg-1',
-  fitting_id: fittingId,
+const fit = (fittingId: number, shipTypeId: number, name: string, owner?: string): MatrixEntry => ({
+  href: `/fitting/reg-1/${fittingId}`,
   name,
-  description: null,
-  ship_type_id: shipTypeId,
-  items: [{ type_id: 2048, flag: 'LoSlot0', quantity: 1 }],
+  shipTypeId,
+  ...(owner ? { owner } : {}),
 })
 
 // Punisher (Amarr T1), Sacrilege (Amarr T2 HAC), Gila (Guristas — carries a
@@ -91,6 +94,16 @@ test('buildMatrix places fits in the right cells and sorts by hull then name', (
   // Every declared column exists on every row, even when empty.
   RACE_COLUMNS.forEach((col) => assert.ok(Array.isArray(cruiser.cells[col])))
   assert.equal(cruiser.cells.Minmatar.length, 0)
+})
+
+test('buildMatrix carries the owner through to the placed fit, omitting it for the caller’s own', () => {
+  const rows = buildMatrix([fit(1, 597, 'Doctrine Punisher', 'Quuixote'), fit(2, 597, 'My Punisher')], TYPES)
+  const frigate = rows.find((r) => r.shipClass === 'Frigate')
+  assert.ok(frigate)
+  assert.deepEqual(
+    frigate.cells.Amarr.map((f) => f.owner),
+    ['Quuixote', undefined]
+  )
 })
 
 test('buildMatrix survives a type the SDE lookup missed', () => {
