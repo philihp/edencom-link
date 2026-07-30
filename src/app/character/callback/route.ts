@@ -48,14 +48,14 @@ const upsertToken =
   (supabase: SupabaseClient) =>
   async (columns: {
     user_id: string
-    character_id: string
+    registration_id: string
     access_token: string
     refresh_token: string
     issued_at: string
     expires_at: string
     scope: string[]
   }) => {
-    const response = await supabase.from('token').upsert(columns, { onConflict: 'character_id' }).select()
+    const response = await supabase.from('token').upsert(columns, { onConflict: 'registration_id' }).select()
     if (response.error) throw new Error(`upsert token failed: ${JSON.stringify(response.error)}`)
     if (!response.data?.[0]?.id) throw new Error(`upsert token returned no row: ${JSON.stringify(response)}`)
     return response.data[0].id
@@ -93,7 +93,10 @@ export const GET = async (request: NextRequest) => {
     console.warn(`/character/callback: corp lookup failed for ${eve_character_id}: ${(e as Error)?.message}`)
   }
 
-  const character_id = await upsertCharacter(supabase)({
+  // upsertCharacter returns registration.id — a uuid — not an EVE id. The
+  // `character_id` column it writes is registration's own, which really is the
+  // EVE numeric id.
+  const registration_id = await upsertCharacter(supabase)({
     user_id,
     owner,
     name,
@@ -103,7 +106,7 @@ export const GET = async (request: NextRequest) => {
   await ensureMainCharacter(supabase)(user_id)
   await upsertToken(supabase)({
     user_id,
-    character_id,
+    registration_id,
     access_token,
     refresh_token,
     issued_at,
@@ -114,7 +117,7 @@ export const GET = async (request: NextRequest) => {
   // Pull this character's ESI data right away so it's populated by the time the
   // user looks, and drop them on the refresh page to watch it land (it shows
   // the just-dispatched tasks without needing the batch id).
-  await dispatchRefresh(user_id, [{ id: character_id, name }])
+  await dispatchRefresh(user_id, [{ id: registration_id, name }])
 
   const redirectTo = request.nextUrl.clone()
   redirectTo.pathname = '/character/refresh'

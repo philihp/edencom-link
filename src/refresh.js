@@ -17,10 +17,10 @@ const scopes = [
   'esi-markets.read_character_orders.v1',
 ]
 
-const accessToken = async (character_id) => {
+const accessToken = async (registration_id) => {
   // get the oldest refresh token that has all of the scopes we need, refresh that so we get a new unexpired
   // access_token (it's probably expired, but even if it isn't, shouldn't hurt to do it anyway
-  const token = await selectToken(character_id, scopes)
+  const token = await selectToken(registration_id, scopes)
   const old_token = token?.data[0]?.refresh_token
   const {
     access_token,
@@ -29,7 +29,7 @@ const accessToken = async (character_id) => {
   } = await sso.getAccessToken(old_token, true)
   const characterID = sub.split(':')[2]
   await upsertToken({
-    character_id,
+    registration_id,
     access_token,
     refresh_token,
     issued_at: new Date(iat * 1000).toISOString(),

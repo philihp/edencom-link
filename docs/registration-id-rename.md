@@ -54,14 +54,14 @@ for everything below.
 
 ## Inventory
 
-### Table columns — 19
+### Table columns — 19 (1 done, 18 remaining)
 
 All declared `character_id uuid not null references public.registration(id)`
 (a couple are nullable or `primary key`, otherwise identical):
 
 | Table                               | Notes                                                                |
 | ----------------------------------- | -------------------------------------------------------------------- |
-| `token`                             | **Start here** — see the staging plan                                |
+| ~~`token`~~                         | **Done** — renamed in the step-1 PR                                  |
 | `character_asset_over_time`         |                                                                      |
 | `character_blueprint_over_time`     |                                                                      |
 | `character_wallet`                  |                                                                      |
@@ -152,10 +152,11 @@ Also worth knowing:
 
 Smallest blast radius first, and ordered so each step makes the next easier.
 
-1. **`token`.** One column, one table, no view over it, and only
-   `src/supabase.js` + `src/jobs/lib.js` read it. It's also what
-   `forEachCharacter` selects to build the handler argument, so renaming it is
-   what unlocks step 2.
+1. ~~**`token`.**~~ **Done.** One column, one table, no view over it, and its
+   RLS policy gates on `user_id` — so the rename carried its FK, unique
+   constraint and indexes by itself, with no view or function to recreate. It
+   also touched `src/app/character/callback/route.ts`, `src/refresh.js` and
+   `src/jobs/universeStructures.js`, which the original sketch here missed.
 2. **`src/jobs/lib.js`'s handler contract.** Rename the handler field to
    `registration_id` and the option to `registrationIds`, then sweep the extract
    jobs. This is the step that actually retires the `characterID` /

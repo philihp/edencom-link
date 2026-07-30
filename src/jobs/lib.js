@@ -69,9 +69,9 @@ const loadCharacterMaps = async (tag) => {
 // failing token is logged and skipped so one bad token never aborts the rest.
 const runTokenLoop = async (tag, tokens, { characterName, characterUserId, heartbeat }, hasScope, handler) => {
   await forEachSequential(tokens ?? [], async (tokenRow) => {
-    const name = characterName.get(tokenRow.character_id) ?? '?'
-    const userId = characterUserId.get(tokenRow.character_id) ?? null
-    const ctx = `character=${name} (${tokenRow.character_id}) token=${tokenRow.id}`
+    const name = characterName.get(tokenRow.registration_id) ?? '?'
+    const userId = characterUserId.get(tokenRow.registration_id) ?? null
+    const ctx = `character=${name} (${tokenRow.registration_id}) token=${tokenRow.id}`
     const t0 = Date.now()
     try {
       const { access_token, characterID, scope: freshScope } = await refreshAccessToken(tokenRow)
@@ -83,14 +83,17 @@ const runTokenLoop = async (tag, tokens, { characterName, characterUserId, heart
         handler({
           access_token,
           characterID,
-          character_id: tokenRow.character_id,
+          // Still `character_id` on the handler side even though the column is
+          // now registration_id: renaming this field means touching every
+          // extract job, which is step 2 of docs/registration-id-rename.md.
+          character_id: tokenRow.registration_id,
           userId,
           name,
           ctx,
           scopes: freshScope,
         })
       if (heartbeat) {
-        await withHeartbeat(tag, { characterId: tokenRow.character_id, userId }, run)
+        await withHeartbeat(tag, { characterId: tokenRow.registration_id, userId }, run)
       } else {
         await run()
       }
@@ -112,8 +115,8 @@ const runTokenLoop = async (tag, tokens, { characterName, characterUserId, heart
 export const forEachCharacter = async (tag, { scope, characterIds, heartbeat = true }, handler) => {
   const { characterName, characterUserId } = await loadCharacterMaps(tag)
 
-  let tokenQuery = sudoSupabase.from('token').select('id, character_id, refresh_token').contains('scope', [scope])
-  if (characterIds) tokenQuery = tokenQuery.in('character_id', characterIds)
+  let tokenQuery = sudoSupabase.from('token').select('id, registration_id, refresh_token').contains('scope', [scope])
+  if (characterIds) tokenQuery = tokenQuery.in('registration_id', characterIds)
   const { data: tokens, error } = await tokenQuery
   if (error) {
     console.error(`[${tag}] token lookup failed:`, error)
@@ -133,8 +136,8 @@ export const forEachCharacter = async (tag, { scope, characterIds, heartbeat = t
 export const forEachCharacterAnyScope = async (tag, { scopes, characterIds, heartbeat = true }, handler) => {
   const { characterName, characterUserId } = await loadCharacterMaps(tag)
 
-  let tokenQuery = sudoSupabase.from('token').select('id, character_id, refresh_token').overlaps('scope', scopes)
-  if (characterIds) tokenQuery = tokenQuery.in('character_id', characterIds)
+  let tokenQuery = sudoSupabase.from('token').select('id, registration_id, refresh_token').overlaps('scope', scopes)
+  if (characterIds) tokenQuery = tokenQuery.in('registration_id', characterIds)
   const { data: tokens, error } = await tokenQuery
   if (error) {
     console.error(`[${tag}] token lookup failed:`, error)

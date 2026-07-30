@@ -187,10 +187,16 @@ grant all                            on public.registration to service_role;
 
 -- ── token ─────────────────────────────────────────────────────────────────
 -- EVE SSO OAuth tokens, one row per character (refreshed before each fetch).
+--
+-- The owner column is `registration_id`, holding registration(id) — it was
+-- called character_id until the rename in docs/registration-id-rename.md, the
+-- first step of that cleanup. It matters more here than elsewhere because
+-- forEachCharacter (src/jobs/lib.js) reads this table to build the argument
+-- object every extract job destructures, so the name propagates from here.
 create table public.token (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
-  character_id uuid not null references public.registration(id) on delete cascade,
+  registration_id uuid not null references public.registration(id) on delete cascade,
   access_token text not null,
   refresh_token text not null,
   issued_at timestamptz not null,
@@ -198,9 +204,9 @@ create table public.token (
   scope text[] not null default '{}',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  unique (character_id)
+  unique (registration_id)
 );
-create index token_character_id_idx on public.token (character_id);
+create index token_registration_id_idx on public.token (registration_id);
 create index token_user_id_idx on public.token (user_id);
 
 alter table public.token enable row level security;

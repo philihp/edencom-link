@@ -45,7 +45,7 @@ const fetchAssetLocationRows = async (from = 0) => {
 export const runUniverseStructures = async () => {
   const { data: tokens, error } = await sudoSupabase
     .from('token')
-    .select('id, character_id, refresh_token')
+    .select('id, registration_id, refresh_token')
     .contains('scope', [SCOPE])
   if (error) throw error
 
