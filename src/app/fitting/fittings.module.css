@@ -5,6 +5,23 @@
  * reads as a matrix when the columns stay side by side.
  */
 
+/* Title beside the owner filter, matching the assets index header. */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12pt;
+}
+
+.header h1 {
+  margin: 0;
+}
+
+.filter {
+  font-size: 10pt;
+  color: var(--ink-soft);
+}
+
 .intro {
   color: var(--ink-soft);
   max-width: 62ch;
