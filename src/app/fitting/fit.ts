@@ -18,11 +18,10 @@ export type FittingRow = {
   items: FittingItem[] | null
 }
 
-// The one URL every fitting lives at, whether the viewer owns it or is
-// following a character_fitting_share link (?token=… appended separately —
-// see shareControls.tsx). fitting_id is only unique per character (ESI
-// numbers them from 1 per pilot), so the route carries the registration uuid
-// too rather than pretending the id is global.
+// The one URL every fitting lives at, whether the viewer owns it or sees it
+// through a character_fitting_share row. fitting_id is only unique per
+// character (ESI numbers them from 1 per pilot), so the route carries the
+// registration uuid too rather than pretending the id is global.
 export const fittingRoute = (characterId: string, fittingId: number | string): string =>
   `/fitting/${characterId}/${fittingId}`
 

@@ -96,43 +96,15 @@
   color: var(--ink-soft);
 }
 
-/* Share controls (corp/alliance toggles + public link list) on the owner's
- * view of a fit. */
-.shareControls {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin: 10px 0;
-}
-
+/* Share controls on the owner's view of a fit: one toggle button per share
+ * level. */
 .shareRow {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;
+  margin: 10px 0;
   font-size: 12px;
-}
-
-/* One public link per row: the URL, then copy/revoke. */
-.shareList {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  list-style: none;
-  padding: 0;
-  margin: 0;
-}
-
-.shareListItem {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  font-size: 12px;
-}
-
-.shareLink {
-  overflow-wrap: anywhere;
 }
 
 .shareButton {
@@ -150,13 +122,13 @@
   color: var(--ink);
 }
 
-/* Wraps a shared-by-link fitting page so the "Shared by" badge below can
- * float relative to it rather than the page body. */
+/* Wraps a shared fitting page (a non-owner's view) so the "Shared by" badge
+ * below can float relative to it rather than the page body. */
 .sharedPage {
   position: relative;
 }
 
-/* The owner credit on a fit opened via a share link, hugging the top-right
+/* The owner credit on a fit opened through a share, hugging the top-right
  * corner like the character-list portraits
  * (src/app/character/character.module.css) — the same "who is this" idiom,
  * reused for "whose fit is this". */

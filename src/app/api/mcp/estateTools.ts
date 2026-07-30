@@ -478,7 +478,7 @@ export const registerEstateTools = (server: McpServer): void => {
     {
       title: 'List saved ship fittings',
       description:
-        "The ship fittings the user's characters have saved in the game, plus any a corp- or alliance-mate has shared with them, with the hull each is for and who saved it. Filter by hull, by fit name, by owner, or by a module the fit uses — \"what Hurricane fits do I have\", \"which of my fits use a Damage Control II\". Set include_items to get each fit's full module list by slot. Note: EVE's API exposes only each pilot's *personal* fittings — corporation and alliance doctrine folders are not available, so a doctrine fit appears here only if one of their characters saved a copy and shared it (see the share controls on a fit's own page).",
+        "The ship fittings the user's characters have saved in the game, plus any other players have shared with them (with their corporation or alliance, or with everyone), with the hull each is for and who saved it. Filter by hull, by fit name, by owner, or by a module the fit uses — \"what Hurricane fits do I have\", \"which of my fits use a Damage Control II\". Set include_items to get each fit's full module list by slot. Note: EVE's API exposes only each pilot's *personal* fittings — corporation and alliance doctrine folders are not available, so a doctrine fit appears here only if one of their characters saved a copy and shared it (see the share controls on a fit's own page).",
       annotations: { readOnlyHint: true, openWorldHint: false },
       inputSchema: {
         ship: z.string().optional().describe('Only fits for hulls matching this name substring, e.g. "Hurricane"'),
@@ -517,11 +517,12 @@ export const registerEstateTools = (server: McpServer): void => {
         })
       }
 
-      // character_fitting's RLS also surfaces fits a corp/alliance mate shared
-      // (see character_fitting_share in schema.sql) — characters outside the
-      // caller's own owner context. Their display names come from the
-      // world-readable character_directory instead, the same source the
-      // /fitting page uses for a shared-in fit's "owner" label.
+      // character_fitting's RLS also surfaces fits shared through
+      // character_fitting_share (by a corp/alliance mate, or by anyone at the
+      // public level — see schema.sql) — characters outside the caller's own
+      // owner context. Their display names come from the world-readable
+      // character_directory instead, the same source the /fitting page uses
+      // for a shared-in fit's "owner" label.
       const ownedCharacterIds = new Set(owners.characterIds)
       const sharedInIds = [...new Set(fittings.map((f) => f.character_id).filter((id) => !ownedCharacterIds.has(id)))]
       const { data: directory } =

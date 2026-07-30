@@ -13,11 +13,12 @@ import styles from './fittings.module.css'
 // bucketing.
 //
 // RLS on character_fitting_over_time scopes this to more than just the
-// caller's own registrations now: a fit a corp- or alliance-mate shared (see
-// character_fitting_share in schema.sql) is visible here too, since it's the
-// same table and the same select. Entries not owned by one of the caller's
-// own characters carry an `owner` label so the matrix stays honest about
-// whose fit it's showing.
+// caller's own registrations now: a fit shared through
+// character_fitting_share (by a corp/alliance mate, or by anyone at the
+// public level — see schema.sql) is visible here too, since it's the same
+// table and the same select. Entries not owned by one of the caller's own
+// characters carry an `owner` label so the matrix stays honest about whose
+// fit it's showing.
 const FittingPage = async () => {
   const supabase = await createClient()
   const {
@@ -64,9 +65,10 @@ const FittingPage = async () => {
     <>
       <h1>Fittings</h1>
       <p className={styles.intro}>
-        Ship fittings saved in the game by your characters, plus any a corp- or alliance-mate has shared with you.
-        EVE&rsquo;s API only exposes each pilot&rsquo;s <em>personal</em> fittings, so a doctrine fit only shows up here
-        if someone saved their own copy of it and shared that copy — see the share controls on a fit&rsquo;s own page.
+        Ship fittings saved in the game by your characters, plus any another player has shared with you — with your
+        corporation or alliance, or with everyone. EVE&rsquo;s API only exposes each pilot&rsquo;s <em>personal</em>{' '}
+        fittings, so a doctrine fit only shows up here if someone saved their own copy of it and shared that copy — see
+        the share controls on a fit&rsquo;s own page.
       </p>
 
       {matrix.length === 0 ? (

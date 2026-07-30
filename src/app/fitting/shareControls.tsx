@@ -1,6 +1,5 @@
 'use client'
 
-import { useRouter, useSearchParams } from 'next/navigation'
 import { useState, useTransition } from 'react'
 
 import { createFittingShare, revokeFittingShare, type ShareLevel, type ShareRow } from './actions'
@@ -12,33 +11,24 @@ type ShareControlsProps = {
   initialShares: ShareRow[]
 }
 
-// Share controls for a fit the signed-in user owns, at all three levels
-// character_fitting_share supports:
-//
-//   - corporation / alliance: a toggle each. No token — visibility is gated
-//     live by RLS on character_fitting_over_time (see schema.sql), so there's
-//     at most one row per level and nothing to copy; the button just reads
-//     "shared" once the row exists.
-//   - public: a list, since a player can hand out several independently
-//     revocable links (no uniqueness on the row). Minting one rewrites the
-//     owner's own address bar to /fitting/[characterId]/[fittingId]?token=…
-//     via router.replace — the owner's tab ends up showing exactly the link
-//     they'd copy to hand to someone else. Revoking the token currently in
-//     the URL clears it back to the bare path.
+const LEVELS: Array<{ level: ShareLevel; on: string; off: string }> = [
+  { level: 'corporation', on: 'Shared with corporation ✕', off: 'Share with corporation' },
+  { level: 'alliance', on: 'Shared with alliance ✕', off: 'Share with alliance' },
+  { level: 'public', on: 'Shared with everyone ✕', off: 'Share with everyone' },
+]
+
+// Share controls for a fit the signed-in user owns: one toggle per
+// character_fitting_share level. No token and nothing to copy at any level —
+// visibility is gated live by RLS on character_fitting_over_time (see
+// schema.sql): corp/alliance shares open the fit to current mates, a public
+// share to any signed-in user, all at this same URL. At most one row per
+// level, so each button just flips its row on and off. (Anonymous no-login
+// share links are a future design; the table's token column is a placeholder
+// for it.)
 export const ShareControls = ({ characterId, fittingId, initialShares }: ShareControlsProps) => {
-  const router = useRouter()
-  const searchParams = useSearchParams()
   const [shares, setShares] = useState(initialShares)
-  const [copiedId, setCopiedId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
-
-  const path = `/fitting/${characterId}/${fittingId}`
-  const currentToken = searchParams.get('token')
-
-  const corpShare = shares.find((s) => s.level === 'corporation')
-  const allianceShare = shares.find((s) => s.level === 'alliance')
-  const publicShares = shares.filter((s) => s.level === 'public')
 
   const share = (level: ShareLevel) =>
     startTransition(async () => {
@@ -49,9 +39,6 @@ export const ShareControls = ({ characterId, fittingId, initialShares }: ShareCo
         return
       }
       setShares((prev) => [...prev, result.share as ShareRow])
-      if (level === 'public' && result.share.token) {
-        router.replace(`${path}?token=${result.share.token}`, { scroll: false })
-      }
     })
 
   const revoke = (row: ShareRow) =>
@@ -63,60 +50,25 @@ export const ShareControls = ({ characterId, fittingId, initialShares }: ShareCo
         return
       }
       setShares((prev) => prev.filter((s) => s.id !== row.id))
-      if (row.token && row.token === currentToken) router.replace(path, { scroll: false })
     })
 
-  const copy = async (row: ShareRow) => {
-    if (!row.token) return
-    await navigator.clipboard.writeText(
-      `${typeof window === 'undefined' ? '' : window.location.origin}${path}?token=${row.token}`
-    )
-    setCopiedId(row.id)
-  }
-
   return (
-    <div className={styles.shareControls}>
-      <div className={styles.shareRow}>
-        <button
-          type="button"
-          className={styles.shareButton}
-          onClick={() => (corpShare ? revoke(corpShare) : share('corporation'))}
-          disabled={pending}
-        >
-          {corpShare ? 'Shared with corporation ✕' : 'Share with corporation'}
-        </button>
-        <button
-          type="button"
-          className={styles.shareButton}
-          onClick={() => (allianceShare ? revoke(allianceShare) : share('alliance'))}
-          disabled={pending}
-        >
-          {allianceShare ? 'Shared with alliance ✕' : 'Share with alliance'}
-        </button>
-        <button type="button" className={styles.shareButton} onClick={() => share('public')} disabled={pending}>
-          + New public link
-        </button>
-        {error ? <span> {error}</span> : null}
-      </div>
-
-      {publicShares.length > 0 ? (
-        <ul className={styles.shareList}>
-          {publicShares.map((row) => (
-            <li key={row.id} className={styles.shareListItem}>
-              <code className={styles.shareLink}>
-                {typeof window === 'undefined' ? '' : window.location.origin}
-                {path}?token={row.token}
-              </code>
-              <button type="button" className={styles.shareButton} onClick={() => copy(row)} disabled={pending}>
-                {copiedId === row.id ? 'copied' : 'copy'}
-              </button>
-              <button type="button" className={styles.shareButton} onClick={() => revoke(row)} disabled={pending}>
-                revoke
-              </button>
-            </li>
-          ))}
-        </ul>
-      ) : null}
+    <div className={styles.shareRow}>
+      {LEVELS.map(({ level, on, off }) => {
+        const existing = shares.find((s) => s.level === level)
+        return (
+          <button
+            key={level}
+            type="button"
+            className={styles.shareButton}
+            onClick={() => (existing ? revoke(existing) : share(level))}
+            disabled={pending}
+          >
+            {existing ? on : off}
+          </button>
+        )
+      })}
+      {error ? <span> {error}</span> : null}
     </div>
   )
 }
