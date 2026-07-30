@@ -1371,23 +1371,44 @@ create table public.character_fitting_share (
 create index character_fitting_share_fitting_idx on public.character_fitting_share (character_id, fitting_id);
 
 alter table public.character_fitting_share enable row level security;
-create policy "Users manage own fitting shares"
+
+-- Per-command owner policies, the character_mercenary_den_share layout —
+-- deliberately not one FOR ALL policy, so what each command allows is
+-- explicit. Only SELECT is ever widened beyond the owner (the audience policy
+-- after character_directory below); INSERT and DELETE stay owner-only, so a
+-- share can never be created or removed on behalf of a character the caller
+-- holds no registration for. There is no UPDATE path at all (no policy, no
+-- grant): a share row is immutable, toggled into and out of existence.
+
+-- Owners always read their own share rows (drives the share toggles' checked
+-- state), even for a level whose audience they've since left. Permissive:
+-- OR'd with the audience policy below.
+create policy "Users read own fitting shares"
   on public.character_fitting_share
-  for all
+  for select
   to authenticated
   using (
-    character_id in (
-      select id from public.registration where user_id = (select auth.uid())
-    )
-  )
-  with check (
-    character_id in (
-      select id from public.registration where user_id = (select auth.uid())
-    )
+    character_id in (select id from public.registration where user_id = (select auth.uid()))
   );
 
-grant select, insert, update, delete on public.character_fitting_share to authenticated;
-grant all on public.character_fitting_share to service_role;
+create policy "Users create own fitting shares"
+  on public.character_fitting_share
+  for insert
+  to authenticated
+  with check (
+    character_id in (select id from public.registration where user_id = (select auth.uid()))
+  );
+
+create policy "Users remove own fitting shares"
+  on public.character_fitting_share
+  for delete
+  to authenticated
+  using (
+    character_id in (select id from public.registration where user_id = (select auth.uid()))
+  );
+
+grant select, insert, delete on public.character_fitting_share to authenticated;
+grant all                    on public.character_fitting_share to service_role;
 
 -- ── character_mercenary_den (SCD type 2) ──────────────────────────────────
 -- A character's deployed Mercenary Dens, from the compatibility-date ESI
@@ -2018,7 +2039,9 @@ grant all    on public.character_directory to service_role;
 -- owner's live affiliation rather than stored on the row (or, for 'public',
 -- is simply every signed-in user). Load-bearing for
 -- fitting_shared_with_caller() below, which sees exactly the rows this policy
--- (OR'd with "Users manage own fitting shares") exposes.
+-- (OR'd with "Users read own fitting shares") exposes. SELECT is the only
+-- command this widens — inserts and deletes stay owner-only (see the
+-- per-command policies at the table).
 create policy "Audience reads fitting shares aimed at them"
   on public.character_fitting_share
   for select
