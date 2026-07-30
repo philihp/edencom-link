@@ -2,10 +2,10 @@ import { redirect } from 'next/navigation'
 
 import { getSdeTypes } from '@/sdeTypes'
 import { createClient } from '@/utils/supabase/server'
-import { fetchOwners } from '../owners'
 import type { Owner } from '../ownerFilter'
 import { fittingRoute, type FittingRow } from './fit'
 import { FittingMatrix, type FittingEntry } from './fittingMatrix'
+import { fetchFittingOwners } from './resolveCharacter'
 
 // Every saved fitting the signed-in player can see, laid out the way ship
 // charts are: one row per hull class (Frigate → Battleship → Capital), one
@@ -25,59 +25,54 @@ const FittingPage = async () => {
   } = await supabase.auth.getUser()
   if (!user) redirect('/')
 
-  const [{ data: fittings }, owners] = await Promise.all([
-    supabase
-      .from('character_fitting')
-      .select('character_id, fitting_id, name, description, ship_type_id, items')
-      .returns<FittingRow[]>(),
-    // Every registration the caller owns, so a character with no saved fits
-    // still appears in the filter — the assets owner select behaves the same.
-    // Corporations are ignored: ESI has no corp fittings endpoint, so every
-    // row here is character-owned (docs/fittings.md).
-    fetchOwners(),
-  ])
+  const { data: fittings } = await supabase
+    .from('character_fitting')
+    .select('registration_id, fitting_id, name, description, ship_type_id, items')
+    .returns<FittingRow[]>()
   const rows = fittings ?? []
-  const ownIds = new Set(owners.characters.map((c) => c.id))
 
-  // character_directory names only the fits shared in from elsewhere need —
-  // the world-readable registration_id → name lookup (see
-  // docs/sharing-layer/design.md), fetched just for those character_ids.
-  const sharedInCharacterIds = [...new Set(rows.filter((f) => !ownIds.has(f.character_id)).map((f) => f.character_id))]
-  const { data: directory } =
-    sharedInCharacterIds.length > 0
-      ? await supabase
-          .from('character_directory')
-          .select('registration_id, name')
-          .in('registration_id', sharedInCharacterIds)
-      : { data: [] as Array<{ registration_id: string; name: string | null }> }
-  const ownerNameById = new Map((directory ?? []).map((d) => [d.registration_id, d.name]))
-  const nameOf = (characterId: string) => ownerNameById.get(characterId) ?? 'unknown'
+  // Every owner behind a visible fit, resolved to the EVE character id the
+  // route addresses them by (see resolveCharacter.ts). Own registrations come
+  // back too, so the filter can list a character that has saved no fits yet.
+  const owners = await fetchFittingOwners(supabase, [...new Set(rows.map((f) => f.registration_id))])
 
-  const entries: FittingEntry[] = rows.map((f) => ({
-    href: fittingRoute(f.character_id, f.fitting_id),
-    name: f.name || `Fitting #${f.fitting_id}`,
-    shipTypeId: Number(f.ship_type_id),
-    ownerId: f.character_id,
-    ...(ownIds.has(f.character_id) ? {} : { owner: nameOf(f.character_id) }),
-  }))
+  const entries: FittingEntry[] = rows.flatMap((f) => {
+    const owner = owners.get(f.registration_id)
+    // An owner we can't name an EVE id for has no addressable URL; in practice
+    // unreachable, since a fit only exists once the extract has run for them.
+    if (!owner) return []
+    return [
+      {
+        href: fittingRoute(owner.characterId, f.fitting_id),
+        name: f.name || `Fitting #${f.fitting_id}`,
+        shipTypeId: Number(f.ship_type_id),
+        ownerId: owner.characterId,
+        ...(owner.isOwn ? {} : { owner: owner.name ?? 'unknown' }),
+      },
+    ]
+  })
 
-  // Only the shared-in characters actually holding a visible fit — unlike the
-  // caller's own, there's no roster to list them from.
-  const sharedCharacters: Owner[] = sharedInCharacterIds
-    .map((id) => ({ id, name: nameOf(id) }))
-    .sort((a, b) => a.name.localeCompare(b.name))
+  const toFilterOwner = (o: { characterId: string; name: string | null }): Owner => ({
+    id: o.characterId,
+    name: o.name ?? `Character #${o.characterId}`,
+  })
+  const byName = (a: Owner, b: Owner) => a.name.localeCompare(b.name)
+  const all = [...owners.values()]
+  const ownCharacters = all
+    .filter((o) => o.isOwn)
+    .map(toFilterOwner)
+    .sort(byName)
+  const sharedCharacters = all
+    .filter((o) => !o.isOwn)
+    .map(toFilterOwner)
+    .sort(byName)
 
   // One bulk SDE lookup carries everything the matrix buckets by: hull name,
   // group (→ class row), race and meta group (→ column).
   const types = await getSdeTypes(entries.map((e) => e.shipTypeId))
 
   return (
-    <FittingMatrix
-      entries={entries}
-      types={types}
-      ownCharacters={owners.characters}
-      sharedCharacters={sharedCharacters}
-    />
+    <FittingMatrix entries={entries} types={types} ownCharacters={ownCharacters} sharedCharacters={sharedCharacters} />
   )
 }
 

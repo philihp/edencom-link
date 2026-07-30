@@ -59,15 +59,15 @@ between the game's 500-slot saved list and an unbounded library here.
 
 **Shipped follow-up: per-fit sharing, at three levels.** A fit's own page
 (`/fitting/[characterId]/[fittingId]`) carries share controls backed by
-`character_fitting_share`, one row per `(character_id, fitting_id, level)`
+`character_fitting_share`, one row per `(registration_id, fitting_id, level)`
 share — a toggle each for `corporation`, `alliance`, and `public`, each
 independently revocable. No level carries a secret and there is no anonymous
 no-login view: every share widens read access through RLS on
 `character_fitting_over_time` itself, via a second, additive SELECT policy
 (Postgres ORs permissive policies for the same role) that calls
 `fitting_shared_with_caller()` — an invoker-rights helper shaped like
-`mercenary_den_shared_with_caller()`, taking the `(character_id, fitting_id)`
-pair that is a fit's durable key. `corporation`/`alliance` open the fit to
+`mercenary_den_shared_with_caller()`, taking the `(registration_id,
+fitting_id)` pair that is a fit's durable key. `corporation`/`alliance` open the fit to
 whoever currently shares that corp/alliance with the owner; `public` opens it
 to any signed-in user. Because RLS applies inside policy subqueries too, the
 owner's affiliation resolves through the world-readable `character_directory`
@@ -79,7 +79,7 @@ share table would see nothing. Membership is resolved live at query time
 rather than frozen at share time; the viewer just opens the bare URL while
 signed in.
 
-Every level points at the fit's live `(character_id, fitting_id)` pair rather
+Every level points at the fit's live `(registration_id, fitting_id)` pair rather
 than a copy — an edit in the client is visible through any outstanding share,
 and there's nothing to keep in sync. (An earlier version of this follow-up
 published fits into corp/alliance audiences via a separate `shared_fitting`
@@ -122,7 +122,7 @@ what it was.
 ```
 character_fitting_over_time
   id            bigint identity pk
-  character_id  uuid → registration(id) on delete cascade
+  registration_id uuid → registration(id) on delete cascade
   owner_scope   text not null default 'character'   -- see the ESI note above
   fitting_id    bigint not null
   name          text
@@ -132,12 +132,12 @@ character_fitting_over_time
   is_current    boolean, valid_from timestamptz, valid_until timestamptz
 ```
 
-- Unique partial index on `(character_id, fitting_id) where is_current` — one
+- Unique partial index on `(registration_id, fitting_id) where is_current` — one
   live row per fit, and the collision guard the reconcile relies on.
 - `items` stays jsonb rather than a child table: a fit is a small, opaque blob
   that is always read whole and never joined against, exactly like
   `character_clone_over_time.implants`.
-- RLS: `character_id in (select id from registration where user_id = auth.uid())`,
+- RLS: `registration_id in (select id from registration where user_id = auth.uid())`,
   the same policy every `character_*` table carries. A `character_fitting` view
   (`security_invoker`) exposes the `is_current` snapshot.
 - Written to `schema.sql` (the from-scratch reset) **and** a new
@@ -180,7 +180,9 @@ just be a stale copy of the SDE mirror.
   then fit name. A header nav link next to `blueprint`.
 - `/fitting/[characterId]/[fittingId]` — the detail page. `fitting_id` is only
   unique per character (ESI numbers them from 1 per pilot), so the route
-  carries the registration uuid too rather than pretending the id is global.
+  carries the owner too rather than pretending the id is global — as their EVE
+  numeric character id, translated to the registration uuid the tables key on
+  by `src/app/fitting/resolveCharacter.ts`.
 - The detail page renders `ShipFitViewDynamic` — the same `ssr:false` wrapper
   `/ship/[itemId]` uses, which is what keeps the dogma-engine WASM and the
   eveship.fit data payload out of every other route's bundle. Its `esiFit`

@@ -8,8 +8,10 @@ import test from 'node:test'
 import { fittingRoute } from '../src/app/fitting/fit.ts'
 
 test('fittingRoute builds the two-segment path', () => {
-  const characterId = '3fa85f64-5717-4562-b3fc-2c963f66afa6'
-  assert.equal(fittingRoute(characterId, 42), `/fitting/${characterId}/42`)
-  // fitting_id can arrive as a string (PostgREST bigint) or a number.
-  assert.equal(fittingRoute(characterId, '42'), `/fitting/${characterId}/42`)
+  // The first segment is the owner's EVE numeric character id, never the
+  // registration uuid the fitting tables key on — resolveCharacter.ts
+  // translates between the two at the route boundary.
+  assert.equal(fittingRoute(2117551513, 42), '/fitting/2117551513/42')
+  // Both ids can arrive as strings (PostgREST renders bigint that way).
+  assert.equal(fittingRoute('2117551513', '42'), '/fitting/2117551513/42')
 })

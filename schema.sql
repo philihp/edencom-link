@@ -1298,9 +1298,16 @@ grant all    on public.character_ship_over_time to service_role;
 -- character_clone_over_time.implants. Module *names* are deliberately not stored
 -- — the page resolves them through the sde_* loaders at render time rather than
 -- keeping a stale copy of the SDE mirror.
+--
+-- The owner column is `registration_id`, not `character_id`: it holds
+-- registration(id), a uuid. The sibling character_* extract tables call the
+-- same thing character_id, which is a long-standing misnomer (see the id
+-- naming note in CLAUDE.md) — these two fitting tables are named correctly so
+-- `character_id` can keep meaning the EVE numeric id everywhere it appears,
+-- including the /fitting/[characterId]/[fittingId] route.
 create table public.character_fitting_over_time (
   id bigint generated always as identity primary key,
-  character_id uuid not null references public.registration(id) on delete cascade,
+  registration_id uuid not null references public.registration(id) on delete cascade,
   owner_scope text not null default 'character',
   fitting_id bigint not null,
   name text,
@@ -1311,11 +1318,11 @@ create table public.character_fitting_over_time (
   valid_from timestamptz not null default now(),
   valid_until timestamptz not null default now()
 );
-create index character_fitting_over_time_character_id_idx
-  on public.character_fitting_over_time (character_id);
+create index character_fitting_over_time_registration_id_idx
+  on public.character_fitting_over_time (registration_id);
 -- At most one live row per fit; also the collision guard the reconcile relies on.
 create unique index character_fitting_over_time_current_idx
-  on public.character_fitting_over_time (character_id, fitting_id) where is_current;
+  on public.character_fitting_over_time (registration_id, fitting_id) where is_current;
 
 alter table public.character_fitting_over_time enable row level security;
 create policy "Users read own fittings"
@@ -1323,7 +1330,7 @@ create policy "Users read own fittings"
   for select
   to authenticated
   using (
-    character_id in (
+    registration_id in (
       select id from public.registration where user_id = (select auth.uid())
     )
   );
@@ -1348,18 +1355,19 @@ grant all    on public.character_fitting_over_time to service_role;
 -- — an edit in the client is visible through any outstanding share, and
 -- there's nothing to keep in sync.
 --
--- No uniqueness on (character_id, fitting_id): a player can hold one share
+-- No uniqueness on (registration_id, fitting_id): a player can hold one share
 -- per level for the same fit at once, each independently revocable.
 --
--- (character_id, fitting_id) rather than character_fitting_over_time's own
+-- (registration_id, fitting_id) rather than character_fitting_over_time's own
 -- surrogate `id`: that id is an SCD *version* stamp and changes every time the
 -- fit is edited in the client, so a share pinned to it would silently break on
--- the next edit. (character_id, fitting_id) is the fit's durable identity —
--- the same pair /fitting/[characterId]/[fittingId] addresses it by — so a
--- share and the URL agree for the fit's whole lifetime.
+-- the next edit. (registration_id, fitting_id) is the fit's durable identity.
+-- The /fitting/[characterId]/[fittingId] route addresses the same fit by the
+-- owner's EVE character id instead, translated to this registration uuid at
+-- the route boundary (src/app/fitting/resolveCharacter.ts).
 create table public.character_fitting_share (
   id uuid primary key default gen_random_uuid(),
-  character_id uuid not null references public.registration(id) on delete cascade,
+  registration_id uuid not null references public.registration(id) on delete cascade,
   fitting_id bigint not null,
   level text not null check (level in ('corporation', 'alliance', 'public')),
   -- Placeholder for a future anonymous-share-link design (a shared_asset_token
@@ -1368,7 +1376,7 @@ create table public.character_fitting_share (
   token text,
   created_at timestamptz not null default now()
 );
-create index character_fitting_share_fitting_idx on public.character_fitting_share (character_id, fitting_id);
+create index character_fitting_share_fitting_idx on public.character_fitting_share (registration_id, fitting_id);
 
 alter table public.character_fitting_share enable row level security;
 
@@ -1376,8 +1384,8 @@ alter table public.character_fitting_share enable row level security;
 -- deliberately not one FOR ALL policy, so what each command allows is
 -- explicit. Only SELECT is ever widened beyond the owner (the audience policy
 -- after character_directory below); INSERT and DELETE stay owner-only, so a
--- share can never be created or removed on behalf of a character the caller
--- holds no registration for. There is no UPDATE path at all (no policy, no
+-- share can never be created or removed on behalf of a registration the
+-- caller does not own. There is no UPDATE path at all (no policy, no
 -- grant): a share row is immutable, toggled into and out of existence.
 
 -- Owners always read their own share rows (drives the share toggles' checked
@@ -1388,7 +1396,7 @@ create policy "Users read own fitting shares"
   for select
   to authenticated
   using (
-    character_id in (select id from public.registration where user_id = (select auth.uid()))
+    registration_id in (select id from public.registration where user_id = (select auth.uid()))
   );
 
 create policy "Users create own fitting shares"
@@ -1396,7 +1404,7 @@ create policy "Users create own fitting shares"
   for insert
   to authenticated
   with check (
-    character_id in (select id from public.registration where user_id = (select auth.uid()))
+    registration_id in (select id from public.registration where user_id = (select auth.uid()))
   );
 
 create policy "Users remove own fitting shares"
@@ -1404,7 +1412,7 @@ create policy "Users remove own fitting shares"
   for delete
   to authenticated
   using (
-    character_id in (select id from public.registration where user_id = (select auth.uid()))
+    registration_id in (select id from public.registration where user_id = (select auth.uid()))
   );
 
 grant select, insert, delete on public.character_fitting_share to authenticated;
@@ -2051,7 +2059,7 @@ create policy "Audience reads fitting shares aimed at them"
     or exists (
       select 1
       from public.character_directory owner
-      where owner.registration_id = character_fitting_share.character_id
+      where owner.registration_id = character_fitting_share.registration_id
         and (
           (
             character_fitting_share.level = 'corporation'
@@ -2071,14 +2079,14 @@ create policy "Audience reads fitting shares aimed at them"
 -- reads only what the caller may already read (share rows via the policy
 -- above, the world-readable character_directory, their own registrations via
 -- my_corporation_ids()/my_alliance_ids()). The parameters are named after the
--- (character_id, fitting_id) pair that is a fit's durable key — which is why
--- the body qualifies them with the function name: both joined tables carry a
--- character_id column of their own, and in a SQL function body an unqualified
--- name that matches a column resolves to the column. The directory join is a
--- LEFT join so an owner with no character_directory row yet (the
+-- (registration_id, fitting_id) pair that is a fit's durable key — which is
+-- why the body qualifies them with the function name: the joined tables carry
+-- columns of the same names, and in a SQL function body an unqualified name
+-- that matches a column resolves to the column. The directory join is a LEFT
+-- join so an owner with no character_directory row yet (the
 -- character-directory job runs daily) blocks only the membership levels, not
 -- 'public'.
-create or replace function public.fitting_shared_with_caller(character_id uuid, fitting_id bigint)
+create or replace function public.fitting_shared_with_caller(registration_id uuid, fitting_id bigint)
 returns boolean
 language sql
 stable
@@ -2086,8 +2094,8 @@ as $$
   select exists (
     select 1
     from public.character_fitting_share s
-    left join public.character_directory owner on owner.registration_id = s.character_id
-    where s.character_id = fitting_shared_with_caller.character_id
+    left join public.character_directory owner on owner.registration_id = s.registration_id
+    where s.registration_id = fitting_shared_with_caller.registration_id
       and s.fitting_id = fitting_shared_with_caller.fitting_id
       and (
         s.level = 'public'
@@ -2110,7 +2118,7 @@ create policy "Audience reads shared fittings"
   on public.character_fitting_over_time
   for select
   to authenticated
-  using (public.fitting_shared_with_caller(character_id, fitting_id));
+  using (public.fitting_shared_with_caller(registration_id, fitting_id));
 
 -- ── corp_wallet_journal ───────────────────────────────────────────────────
 -- ESI /corporations/{id}/wallets/{division}/journal/, written by the

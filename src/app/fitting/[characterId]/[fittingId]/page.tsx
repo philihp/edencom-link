@@ -7,22 +7,26 @@ import { Name } from '../../../names'
 import { fetchTypeNames } from '../../../typeNames'
 import type { ShareRow } from '../../actions'
 import { toEsiFit, type FittingItem, type FittingRow } from '../../fit'
+import { resolveFittingOwner } from '../../resolveCharacter'
 import { ShareControls } from '../../shareControls'
 import { SlotGroups } from '../../slotGroups'
 import styles from '../../fittings.module.css'
 
 // One saved fitting, rendered in the eveship.fit wheel.
 //
-// The route carries the owning registration's uuid as well as the fitting id
+// The route carries the owner's EVE character id as well as the fitting id
 // because ESI numbers fittings per pilot (every character has a fitting 1), so
-// the id alone identifies nothing. RLS still does the access control — a uuid
-// belonging to another account matches no row, *unless* a
-// character_fitting_share row widens it to the caller (see schema.sql's
-// "Audience reads shared fittings" policy: corp/alliance shares to current
-// mates, public shares to any signed-in user), which is why the same query
-// below can return a fit for someone other than its owner. There is no
-// anonymous view: every visitor signs in, and a non-owner gets the read-only
-// shared rendering below.
+// the id alone identifies nothing. The tables key on the owner's registration
+// uuid instead, so the character id is translated to one here
+// (resolveCharacter.ts) before anything is read.
+//
+// RLS still does the access control: a registration belonging to another
+// account matches no fitting row, *unless* a character_fitting_share row
+// widens it to the caller (see schema.sql's "Audience reads shared fittings"
+// policy — corp/alliance shares to current mates, public shares to any
+// signed-in user), which is why the query below can return a fit for someone
+// other than its owner. There is no anonymous view: every visitor signs in,
+// and a non-owner gets the read-only rendering.
 const FittingDetailPage = async ({ params }: { params: Promise<{ characterId: string; fittingId: string }> }) => {
   const { characterId, fittingId } = await params
 
@@ -32,38 +36,31 @@ const FittingDetailPage = async ({ params }: { params: Promise<{ characterId: st
   } = await supabase.auth.getUser()
   if (!user) redirect('/')
 
+  const owner = await resolveFittingOwner(supabase, characterId)
+  if (!owner) notFound()
+
   const { data: fit } = await supabase
     .from('character_fitting')
-    .select('character_id, fitting_id, name, description, ship_type_id, items')
-    .eq('character_id', characterId)
+    .select('registration_id, fitting_id, name, description, ship_type_id, items')
+    .eq('registration_id', owner.registrationId)
     .eq('fitting_id', fittingId)
     .maybeSingle<FittingRow>()
   if (!fit) notFound()
 
   const items: FittingItem[] = fit.items ?? []
-
-  // RLS on `registration` only ever returns the caller's own rows, so a
-  // non-null result here is an RLS-native ownership proof — anyone who reached
-  // this page through the widened character_fitting policy gets null and falls
-  // into the read-only branch below.
-  const [typeNames, { data: owned }, { data: directory }] = await Promise.all([
-    fetchTypeNames([Number(fit.ship_type_id), ...items.map((i) => Number(i.type_id))]),
-    supabase.from('registration').select('id').eq('id', characterId).maybeSingle(),
-    supabase
-      .from('character_directory')
-      .select('name, character_id')
-      .eq('registration_id', characterId)
-      .maybeSingle<{ name: string | null; character_id: number | string | null }>(),
-  ])
+  const typeNames = await fetchTypeNames([Number(fit.ship_type_id), ...items.map((i) => Number(i.type_id))])
   const hull = typeNames[Number(fit.ship_type_id)] ?? `#${fit.ship_type_id}`
-  const isOwner = owned != null
+
+  // resolveFittingOwner set this from `registration`, which RLS scopes to the
+  // caller's own rows — so it's an RLS-native ownership proof, not a guess.
+  const isOwner = owner.isOwn
 
   let shares: ShareRow[] = []
   if (isOwner) {
     const { data } = await supabase
       .from('character_fitting_share')
       .select('id, level')
-      .eq('character_id', characterId)
+      .eq('registration_id', owner.registrationId)
       .eq('fitting_id', fittingId)
       .returns<ShareRow[]>()
     shares = data ?? []
@@ -73,17 +70,13 @@ const FittingDetailPage = async ({ params }: { params: Promise<{ characterId: st
     <div className={isOwner ? undefined : styles.sharedPage}>
       {isOwner ? null : (
         <div className={styles.sharedFrom}>
-          {directory?.character_id ? (
-            <img
-              className={styles.sharedFromAvatar}
-              src={`https://images.evetech.net/characters/${directory.character_id}/portrait?size=64`}
-              alt=""
-            />
-          ) : (
-            <div className={styles.sharedFromAvatar} aria-hidden="true" />
-          )}
+          <img
+            className={styles.sharedFromAvatar}
+            src={`https://images.evetech.net/characters/${owner.characterId}/portrait?size=64`}
+            alt=""
+          />
           <span className={styles.sharedFromLabel}>
-            Shared by <Name name={directory?.name ?? null} />
+            Shared by <Name name={owner.name} />
           </span>
         </div>
       )}
@@ -94,7 +87,7 @@ const FittingDetailPage = async ({ params }: { params: Promise<{ characterId: st
       <h1 className="serif">{fit.name || `Fitting #${fit.fitting_id}`}</h1>
       {isOwner ? (
         <p className={styles.meta}>
-          <Name name={hull} /> — saved by <Name name={directory?.name ?? null} />
+          <Name name={hull} /> — saved by <Name name={owner.name} />
         </p>
       ) : (
         <p className={styles.meta}>
@@ -103,7 +96,9 @@ const FittingDetailPage = async ({ params }: { params: Promise<{ characterId: st
       )}
       {fit.description ? <p className={styles.description}>{fit.description}</p> : null}
 
-      {isOwner ? <ShareControls characterId={characterId} fittingId={fittingId} initialShares={shares} /> : null}
+      {isOwner ? (
+        <ShareControls registrationId={owner.registrationId} fittingId={fittingId} initialShares={shares} />
+      ) : null}
 
       <ShipFitViewDynamic esiFit={toEsiFit(fit)} />
 

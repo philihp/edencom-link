@@ -35,18 +35,18 @@ const signature = (f) =>
 // with a big fitting library doesn't silently truncate the "current" set.
 const PAGE = 1000
 
-const fetchCurrentRows = async (character_id, cols, from = 0) => {
+const fetchCurrentRows = async (registration_id, cols, from = 0) => {
   const { data, error } = await sudoSupabase
     .from('character_fitting_over_time')
     .select(cols)
-    .eq('character_id', character_id)
+    .eq('registration_id', registration_id)
     .eq('is_current', true)
     .order('id', { ascending: true })
     .range(from, from + PAGE - 1)
   if (error) throw error
   const page = data ?? []
   if (page.length < PAGE) return page
-  return [...page, ...(await fetchCurrentRows(character_id, cols, from + PAGE))]
+  return [...page, ...(await fetchCurrentRows(registration_id, cols, from + PAGE))]
 }
 
 // Reconcile freshly fetched fittings against the character's current (open)
@@ -55,9 +55,9 @@ const fetchCurrentRows = async (character_id, cols, from = 0) => {
 // edited ones close their old row and open a new one, and fits that vanished
 // (deleted in the client) are closed. The character_fitting view of is_current
 // rows then holds exactly the fits the character has saved right now.
-const reconcile = async (character_id, fetched) => {
+const reconcile = async (registration_id, fetched) => {
   const cols = 'id, fitting_id, name, description, ship_type_id, items'
-  const current = await fetchCurrentRows(character_id, cols)
+  const current = await fetchCurrentRows(registration_id, cols)
 
   const currentByFitting = new Map(current.map((c) => [Number(c.fitting_id), c]))
   // ESI could report the same fit twice if the library shifts mid-response;
@@ -79,7 +79,7 @@ const reconcile = async (character_id, fetched) => {
         if (cur) acc.closeIds.push(cur.id)
         // valid_from is left to its `default now()` so it marks this version's debut.
         acc.inserts.push({
-          character_id,
+          registration_id,
           owner_scope: OWNER_SCOPE,
           fitting_id: f.fitting_id,
           name: f.name ?? null,
@@ -127,42 +127,46 @@ const reconcile = async (character_id, fetched) => {
 // library changes far less often than assets or orders — so the whole
 // reconcile is skipped.
 export const runCharacterFittings = ({ characterIds } = {}) =>
-  forEachCharacter(TAG, { scope: SCOPE, characterIds }, async ({ access_token, characterID, character_id, name }) => {
-    const cacheKey = `${TAG}:${character_id}`
-    const priorEtag = await getEsiEtag(cacheKey)
-    const t0 = Date.now()
-    const { status, json: fetched, etag } = await fittings(access_token, characterID, priorEtag)
-    const durationMs = Date.now() - t0
-    if (status === 304) {
+  forEachCharacter(
+    TAG,
+    { scope: SCOPE, characterIds },
+    async ({ access_token, characterID, character_id: registration_id, name }) => {
+      const cacheKey = `${TAG}:${registration_id}`
+      const priorEtag = await getEsiEtag(cacheKey)
+      const t0 = Date.now()
+      const { status, json: fetched, etag } = await fittings(access_token, characterID, priorEtag)
+      const durationMs = Date.now() - t0
+      if (status === 304) {
+        recordEsiConditional({
+          job: TAG,
+          characterId: registration_id,
+          characterName: name,
+          outcome: 'not_modified',
+          conditional: true,
+          durationMs,
+        })
+        console.log(`[${TAG}] ${name} ${registration_id} (${characterID}): not modified`)
+        return
+      }
+
+      const { touched, opened, closed } = await reconcile(registration_id, fetched)
+
+      // Store the ETag only after the reconcile committed, so a mid-run failure
+      // never leaves us skipping a fetch whose data we didn't persist.
+      await putEsiEtag(cacheKey, etag)
       recordEsiConditional({
         job: TAG,
-        characterId: character_id,
+        characterId: registration_id,
         characterName: name,
-        outcome: 'not_modified',
-        conditional: true,
+        outcome: 'modified',
+        conditional: priorEtag != null,
+        rows: fetched.length,
         durationMs,
       })
-      console.log(`[${TAG}] ${name} ${character_id} (${characterID}): not modified`)
-      return
+      console.log(
+        `[${TAG}] ${name} ${registration_id} (${characterID}): ${fetched.length} fitting(s); ${touched} unchanged, ${opened} opened, ${closed} closed`
+      )
     }
-
-    const { touched, opened, closed } = await reconcile(character_id, fetched)
-
-    // Store the ETag only after the reconcile committed, so a mid-run failure
-    // never leaves us skipping a fetch whose data we didn't persist.
-    await putEsiEtag(cacheKey, etag)
-    recordEsiConditional({
-      job: TAG,
-      characterId: character_id,
-      characterName: name,
-      outcome: 'modified',
-      conditional: priorEtag != null,
-      rows: fetched.length,
-      durationMs,
-    })
-    console.log(
-      `[${TAG}] ${name} ${character_id} (${characterID}): ${fetched.length} fitting(s); ${touched} unchanged, ${opened} opened, ${closed} closed`
-    )
-  })
+  )
 
 cli(import.meta.url, TAG, runCharacterFittings)
