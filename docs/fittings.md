@@ -68,14 +68,17 @@ independently revocable:
   policy on `character_fitting_over_time` (Postgres ORs permissive policies
   for the same role) makes the fit readable to whoever currently shares that
   corp/alliance with the owner, via `fitting_shared_with_caller()` — an
-  invoker-rights helper shaped like `mercenary_den_shared_with_caller()`.
+  invoker-rights helper shaped like `mercenary_den_shared_with_caller()`,
+  taking the `(character_id, fitting_id)` pair that is a fit's durable key.
   Because RLS applies inside policy subqueries too, the owner's affiliation
   resolves through the world-readable `character_directory` (never
-  `registration`, whose RLS hides other users' rows), and a companion policy
-  on `character_fitting_share` lets audience members read the share rows
-  aimed at them — without it the widening policy's probe of the share table
-  would see nothing. Membership is resolved live at query time rather than
-  frozen at share time; a mate just opens the bare URL while signed in.
+  `registration`, whose RLS hides other users' rows), the caller's own
+  memberships come from `my_corporation_ids()`/`my_alliance_ids()`, and a
+  companion policy on `character_fitting_share` lets audience members read
+  the share rows aimed at them — without it the widening policy's probe of
+  the share table would see nothing. Membership is resolved live at query
+  time rather than frozen at share time; a mate just opens the bare URL
+  while signed in.
 - **`public`** — mints a token and rewrites the browser's own address bar to
   `?token=…`, exactly what gets handed to someone else. Visiting that URL
   with the token needs no login: it resolves anonymously through the

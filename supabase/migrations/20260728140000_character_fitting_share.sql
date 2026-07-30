@@ -67,6 +67,21 @@ grant all on public.character_fitting_share to service_role;
 -- audience must be able to read the share rows aimed at them, or the widening
 -- policy's probe of the share table would see nothing.
 
+-- The corporations the caller has a character in — the corp-level counterpart
+-- of my_alliance_ids() (20260722113000_mercenary_den_alliance_sharing), same
+-- invoker-rights shape, reading only the caller's own registration rows.
+create or replace function public.my_corporation_ids()
+returns setof bigint
+language sql
+stable
+as $$
+  select r.corporation_id
+  from public.registration r
+  where r.user_id = (select auth.uid()) and r.corporation_id is not null;
+$$;
+
+grant execute on function public.my_corporation_ids() to authenticated;
+
 -- Members of the audience read the corp/alliance share rows aimed at them —
 -- character_mercenary_den_share's "Alliance members read shares to their
 -- alliances", adapted to a per-fit share whose audience is derived from the
@@ -88,10 +103,7 @@ create policy "Corp/alliance members read fitting shares aimed at them"
         and (
           (
             character_fitting_share.level = 'corporation'
-            and owner.corporation_id in (
-              select corporation_id from public.registration
-              where user_id = (select auth.uid()) and corporation_id is not null
-            )
+            and owner.corporation_id in (select public.my_corporation_ids())
           )
           or (
             character_fitting_share.level = 'alliance'
@@ -105,10 +117,22 @@ create policy "Corp/alliance members read fitting shares aimed at them"
 -- caller currently belongs to — mercenary_den_shared_with_caller's shape, on
 -- invoker rights: it reads only what the caller may already read (share rows
 -- via the policy above, the world-readable character_directory, their own
--- registrations). An owner with no character_directory row yet (the
+-- registrations via my_corporation_ids()/my_alliance_ids()). The parameters
+-- are named after the (character_id, fitting_id) pair that is a fit's durable
+-- key — which is why the body qualifies them with the function name: both
+-- joined tables carry a character_id column of their own, and in a SQL
+-- function body an unqualified name that matches a column resolves to the
+-- column. An owner with no character_directory row yet (the
 -- character-directory job runs daily) resolves to false until the next pass,
 -- same as the den layer.
-create or replace function public.fitting_shared_with_caller(owner_id uuid, fit_id bigint)
+--
+-- The dependent policy is dropped before the function because create-or-
+-- replace cannot rename an existing function's parameters, so an environment
+-- that applied an earlier draft of this migration needs the old function
+-- dropped — and its dependent policy first.
+drop policy if exists "Corp/alliance members read shared fittings" on public.character_fitting_over_time;
+drop function if exists public.fitting_shared_with_caller(uuid, bigint);
+create function public.fitting_shared_with_caller(character_id uuid, fitting_id bigint)
 returns boolean
 language sql
 stable
@@ -117,16 +141,10 @@ as $$
     select 1
     from public.character_fitting_share s
     join public.character_directory owner on owner.registration_id = s.character_id
-    where s.character_id = owner_id
-      and s.fitting_id = fit_id
+    where s.character_id = fitting_shared_with_caller.character_id
+      and s.fitting_id = fitting_shared_with_caller.fitting_id
       and (
-        (
-          s.level = 'corporation'
-          and owner.corporation_id in (
-            select corporation_id from public.registration
-            where user_id = (select auth.uid()) and corporation_id is not null
-          )
-        )
+        (s.level = 'corporation' and owner.corporation_id in (select public.my_corporation_ids()))
         or (s.level = 'alliance' and owner.alliance_id in (select public.my_alliance_ids()))
       )
   );
@@ -140,8 +158,8 @@ grant execute on function public.fitting_shared_with_caller(uuid, bigint) to aut
 -- earlier version inlined this with the owner's affiliation joined from
 -- registration and no audience policy on the share table — both RLS-filtered
 -- as the querying user, so for the corp/alliance mate the subquery always came
--- up empty and the policy never matched anything.
-drop policy if exists "Corp/alliance members read shared fittings" on public.character_fitting_over_time;
+-- up empty and the policy never matched anything. (Dropped above, before the
+-- function it depends on.)
 create policy "Corp/alliance members read shared fittings"
   on public.character_fitting_over_time
   for select

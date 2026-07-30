@@ -1542,7 +1542,7 @@ create index character_mercenary_den_share_alliance_id_idx
 
 alter table public.character_mercenary_den_share enable row level security;
 
--- ── Den sharing audience helpers ─────────────────────────────────────────────
+-- ── Sharing audience helpers ─────────────────────────────────────────────────
 -- Plain stable SQL functions on INVOKER rights — deliberately NOT SECURITY
 -- DEFINER. They read only what the caller may already read: their own
 -- registrations (registration RLS exposes exactly those), the world-readable
@@ -1567,6 +1567,18 @@ as $$
   where r.user_id = (select auth.uid()) and c.alliance_id is not null;
 $$;
 
+-- The corporations the caller has a character in — the corp-level counterpart,
+-- used by the fitting-share policies (after character_directory below).
+create or replace function public.my_corporation_ids()
+returns setof bigint
+language sql
+stable
+as $$
+  select r.corporation_id
+  from public.registration r
+  where r.user_id = (select auth.uid()) and r.corporation_id is not null;
+$$;
+
 -- True when the given registration shares its Mercenary Den data with an
 -- alliance the caller has a character in. The single definition of the
 -- audience — the den policy and the enemy-intel policy both go through it, so
@@ -1585,6 +1597,7 @@ as $$
 $$;
 
 grant execute on function public.my_alliance_ids() to authenticated;
+grant execute on function public.my_corporation_ids() to authenticated;
 grant execute on function public.mercenary_den_shared_with_caller(uuid) to authenticated;
 
 -- Members read the share rows aimed at their alliances. This is also what keeps
@@ -2025,10 +2038,7 @@ create policy "Corp/alliance members read fitting shares aimed at them"
         and (
           (
             character_fitting_share.level = 'corporation'
-            and owner.corporation_id in (
-              select corporation_id from public.registration
-              where user_id = (select auth.uid()) and corporation_id is not null
-            )
+            and owner.corporation_id in (select public.my_corporation_ids())
           )
           or (
             character_fitting_share.level = 'alliance'
@@ -2042,10 +2052,15 @@ create policy "Corp/alliance members read fitting shares aimed at them"
 -- caller currently belongs to — mercenary_den_shared_with_caller's shape, on
 -- invoker rights: it reads only what the caller may already read (share rows
 -- via the policy above, the world-readable character_directory, their own
--- registrations). An owner with no character_directory row yet (the
+-- registrations via my_corporation_ids()/my_alliance_ids()). The parameters
+-- are named after the (character_id, fitting_id) pair that is a fit's durable
+-- key — which is why the body qualifies them with the function name: both
+-- joined tables carry a character_id column of their own, and in a SQL
+-- function body an unqualified name that matches a column resolves to the
+-- column. An owner with no character_directory row yet (the
 -- character-directory job runs daily) resolves to false until the next pass,
 -- same as the den layer.
-create or replace function public.fitting_shared_with_caller(owner_id uuid, fit_id bigint)
+create or replace function public.fitting_shared_with_caller(character_id uuid, fitting_id bigint)
 returns boolean
 language sql
 stable
@@ -2054,16 +2069,10 @@ as $$
     select 1
     from public.character_fitting_share s
     join public.character_directory owner on owner.registration_id = s.character_id
-    where s.character_id = owner_id
-      and s.fitting_id = fit_id
+    where s.character_id = fitting_shared_with_caller.character_id
+      and s.fitting_id = fitting_shared_with_caller.fitting_id
       and (
-        (
-          s.level = 'corporation'
-          and owner.corporation_id in (
-            select corporation_id from public.registration
-            where user_id = (select auth.uid()) and corporation_id is not null
-          )
-        )
+        (s.level = 'corporation' and owner.corporation_id in (select public.my_corporation_ids()))
         or (s.level = 'alliance' and owner.alliance_id in (select public.my_alliance_ids()))
       )
   );
