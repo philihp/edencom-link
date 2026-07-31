@@ -54,7 +54,7 @@ for everything below.
 
 ## Inventory
 
-### Table columns — 19 (16 done, 3 remaining)
+### Table columns — 19 (17 done, 2 remaining)
 
 All declared `character_id uuid not null references public.registration(id)`
 (a couple are nullable or `primary key`, otherwise identical):
@@ -63,7 +63,7 @@ All declared `character_id uuid not null references public.registration(id)`
 | --------------------------------------- | -------------------------------------------------------------------- |
 | ~~`token`~~                             | **Done** — renamed in the step-1 PR                                  |
 | `character_asset_over_time`             |                                                                      |
-| `character_blueprint_over_time`         |                                                                      |
+| ~~`character_blueprint_over_time`~~     |                                                                      |
 | ~~`character_wallet`~~                  |                                                                      |
 | ~~`character_wallet_transaction`~~      |                                                                      |
 | ~~`character_order_over_time`~~         |                                                                      |
@@ -86,7 +86,7 @@ All declared `character_id uuid not null references public.registration(id)`
 These `select *` from the tables above, so they republish whatever the base
 column is called and must be dropped/recreated as part of any rename:
 
-`character_asset`, `character_blueprint`, ~~`character_order`~~,
+`character_asset`, ~~`character_blueprint`~~, ~~`character_order`~~,
 ~~`character_industry_job`~~, ~~`character_clone`~~, ~~`character_skill`~~,
 ~~`character_ship`~~, ~~`character_mercenary_den`~~ (struck ones done in the
 step-5 tranches so far)
@@ -96,6 +96,8 @@ step-5 tranches so far)
 Parameters (`character_ids uuid[]`): `character_asset_snapshot_at`,
 `character_blueprints`, `character_orders`, `character_industry_jobs`,
 `corp_assets`, `corp_blueprints`, `blueprint_search`, `corp_industry_jobs`
+(all still pending — only the _parameters_ remain; their bodies have already
+been moved onto `registration_id` by the step-5 tranches)
 
 Return columns (`character_id uuid`): `character_asset_location_summary`,
 `character_asset_search`, ~~`latest_heartbeats`~~ (done)
@@ -288,8 +290,28 @@ REPLACE FUNCTION` can't rename a `RETURNS TABLE` column, since that's a
      `corp_industry_jobs()` reaches `registration` by `id = any(character_ids)`
      without naming this table's column, so the corp side was not entangled.
 
-   - `character_blueprint_over_time` / `character_blueprint`
-     (+ `character_blueprints()`)
+   - ~~`character_blueprint_over_time` / `character_blueprint`
+     (+ `character_blueprints()`)~~ **Done** — two firsts here. Its functions
+     read the **view**, not the `_over_time` table, so the view has to be
+     recreated _before_ them or their bodies bind against a view still
+     publishing the old name; the ordering in that migration is load-bearing.
+     And there are two of them: `character_blueprints()` plus the ~200-line
+     `blueprint_search()`.
+
+     Both were reproduced verbatim by extracting them from the edited
+     `schema.sql` rather than retyped, so a migrated database and a
+     from-scratch reset cannot disagree about a function that size.
+
+     `blueprint_search()` went into its **own** migration file, because
+     `test/sql/blueprint_search.sql` builds stand-in tables and then
+     `\i`-includes the migration defining that function — so it must live in a
+     file containing nothing but the function and its grant. That test's stub
+     table and its include line both needed updating, and it was run for real
+     against a throwaway Postgres to confirm: green after, and
+     `column b.character_id does not exist` when pointed back at the old
+     definition. Worth remembering that `pnpm test` alone would not have caught
+     this — `pnpm run test:sql` is a separate command needing a database.
+
    - `character_asset_over_time` / `character_asset` — **last**, the widest:
      three functions (`character_asset_location_summary`,
      `character_asset_search`, `character_asset_snapshot_at`), plus
