@@ -168,7 +168,7 @@ export const registerIndustryTools = (server: McpServer): void => {
           .in('status', ['active', 'ready']),
         supabase
           .from('character_skill')
-          .select('character_id, skill_id, active_skill_level')
+          .select('registration_id, skill_id, active_skill_level')
           .in('skill_id', SLOT_SKILL_IDS),
       ])
 
@@ -189,16 +189,16 @@ export const registerIndustryTools = (server: McpServer): void => {
 
       const maxes = new Map<string, SlotMax>()
       const skillLevels = new Map<string, Map<number, number>>()
-      ;((skillRows ?? []) as Array<{ character_id: string; skill_id: number; active_skill_level: number }>).forEach(
+      ;((skillRows ?? []) as Array<{ registration_id: string; skill_id: number; active_skill_level: number }>).forEach(
         (r) => {
           const family = SKILL_FAMILY[Number(r.skill_id)]
           if (!family) return
-          const max = maxes.get(r.character_id) ?? baseSlotMax()
+          const max = maxes.get(r.registration_id) ?? baseSlotMax()
           max[family] += Number(r.active_skill_level) || 0
-          maxes.set(r.character_id, max)
-          const levels = skillLevels.get(r.character_id) ?? new Map<number, number>()
+          maxes.set(r.registration_id, max)
+          const levels = skillLevels.get(r.registration_id) ?? new Map<number, number>()
           levels.set(Number(r.skill_id), Number(r.active_skill_level) || 0)
-          skillLevels.set(r.character_id, levels)
+          skillLevels.set(r.registration_id, levels)
         }
       )
 

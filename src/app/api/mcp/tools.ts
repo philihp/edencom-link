@@ -561,16 +561,16 @@ export const registerTools = (server: McpServer): void => {
       ] = await Promise.all([
         supabase
           .from('character_clone')
-          .select('character_id, jump_clone_id, is_home, location_id, location_type, name, implants, system_id'),
+          .select('registration_id, jump_clone_id, is_home, location_id, location_type, name, implants, system_id'),
         supabase.from('character_implant').select('registration_id, type_ids'),
         supabase.from('character_location').select('registration_id, solar_system_id, station_id, structure_id'),
         supabase.from('character_clone_state').select('registration_id, last_clone_jump_date'),
-        supabase.from('character_ship').select('character_id, ship_item_id, ship_type_id, ship_name'),
+        supabase.from('character_ship').select('registration_id, ship_item_id, ship_type_id, ship_name'),
         fetchOwnerContext(supabase),
       ])
 
       type CloneRow = {
-        character_id: string
+        registration_id: string
         jump_clone_id: number | string | null
         is_home: boolean
         location_id: number | string
@@ -604,7 +604,7 @@ export const registerTools = (server: McpServer): void => {
       const systemNames = await resolveSystemNames(supabase, systemIds)
 
       type ShipRow = {
-        character_id: string
+        registration_id: string
         ship_item_id: number | string
         ship_type_id: number | string
         ship_name: string | null
@@ -637,7 +637,7 @@ export const registerTools = (server: McpServer): void => {
         ships.map((s) => {
           const hull = typeName(implantNames, s.ship_type_id)
           return [
-            s.character_id,
+            s.registration_id,
             {
               item_id: String(s.ship_item_id),
               ship: s.ship_name && s.ship_name !== hull ? `${s.ship_name} (${hull})` : hull,
@@ -668,7 +668,7 @@ export const registerTools = (server: McpServer): void => {
           active_implants: implantsByCharacter.get(characterId) ?? [],
           next_clone_jump_available_at: nextJump,
           clones: clones
-            .filter((c) => c.character_id === characterId)
+            .filter((c) => c.registration_id === characterId)
             .map((c) => ({
               home: c.is_home,
               ...(c.name != null && { name: c.name }),

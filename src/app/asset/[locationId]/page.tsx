@@ -108,7 +108,7 @@ const AssetLocationPage = async ({
   // Still shown (it belongs here from the DB's point of view), but flagged so
   // the UI can tell it apart from a ship that's merely parked.
   let currentShipQuery = supabase.from('character_ship').select('ship_item_id')
-  if (characterScope) currentShipQuery = currentShipQuery.in('character_id', characterScope)
+  if (characterScope) currentShipQuery = currentShipQuery.in('registration_id', characterScope)
   const [{ data: characterChildren }, { data: corpChildren }, { data: currentShips }] = await Promise.all([
     characterQuery,
     corpQuery,

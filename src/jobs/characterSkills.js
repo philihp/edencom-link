@@ -27,7 +27,7 @@ const fetchCurrentRows = async (registration_id, from = 0) => {
   const { data, error } = await sudoSupabase
     .from('character_skill_over_time')
     .select('id, skill_id, active_skill_level, trained_skill_level')
-    .eq('character_id', registration_id)
+    .eq('registration_id', registration_id)
     .eq('is_current', true)
     .order('id', { ascending: true })
     .range(from, from + PAGE - 1)
@@ -60,7 +60,7 @@ const reconcile = async (registration_id, fetched) => {
         if (cur) acc.closeIds.push(cur.id)
         // valid_from is left to its `default now()` so it marks this version's debut.
         acc.inserts.push({
-          character_id: registration_id,
+          registration_id,
           skill_id: s.skill_id,
           active_skill_level: s.active_skill_level ?? 0,
           trained_skill_level: s.trained_skill_level ?? 0,

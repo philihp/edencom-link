@@ -22,7 +22,7 @@ const fetchCurrentRow = async (registration_id) => {
   const { data, error } = await sudoSupabase
     .from('character_ship_over_time')
     .select('id, ship_item_id, ship_type_id, ship_name')
-    .eq('character_id', registration_id)
+    .eq('registration_id', registration_id)
     .eq('is_current', true)
     .maybeSingle()
   if (error) throw error
@@ -55,7 +55,7 @@ const reconcile = async (registration_id, fetchedShip) => {
     if (error) throw error
   }
   const { error } = await sudoSupabase.from('character_ship_over_time').insert({
-    character_id: registration_id,
+    registration_id,
     ship_item_id: fetchedShip.ship_item_id,
     ship_type_id: fetchedShip.ship_type_id,
     ship_name: fetchedShip.ship_name ?? null,

@@ -54,7 +54,7 @@ for everything below.
 
 ## Inventory
 
-### Table columns — 19 (9 done, 10 remaining)
+### Table columns — 19 (12 done, 7 remaining)
 
 All declared `character_id uuid not null references public.registration(id)`
 (a couple are nullable or `primary key`, otherwise identical):
@@ -69,11 +69,11 @@ All declared `character_id uuid not null references public.registration(id)`
 | `character_order_over_time`         |                                                                      |
 | `character_industry_job_over_time`  |                                                                      |
 | ~~`character_location`~~            | PK                                                                   |
-| `character_clone_over_time`         |                                                                      |
+| ~~`character_clone_over_time`~~     |                                                                      |
 | ~~`character_clone_state`~~         | PK                                                                   |
 | ~~`character_implant`~~             | PK                                                                   |
-| `character_skill_over_time`         |                                                                      |
-| `character_ship_over_time`          |                                                                      |
+| ~~`character_skill_over_time`~~     |                                                                      |
+| ~~`character_ship_over_time`~~      |                                                                      |
 | `character_mercenary_den_over_time` |                                                                      |
 | `character_mercenary_den_status`    |                                                                      |
 | `character_mercenary_den_share`     | Already commented as a known wart in `schema.sql`                    |
@@ -87,8 +87,9 @@ These `select *` from the tables above, so they republish whatever the base
 column is called and must be dropped/recreated as part of any rename:
 
 `character_asset`, `character_blueprint`, `character_order`,
-`character_industry_job`, `character_clone`, `character_skill`,
-`character_ship`, `character_mercenary_den`
+`character_industry_job`, ~~`character_clone`~~, ~~`character_skill`~~,
+~~`character_ship`~~, `character_mercenary_den` (the three struck ones done
+in the first step-5 tranche)
 
 ### Function signatures — 11
 
@@ -210,9 +211,30 @@ REPLACE FUNCTION` can't rename a `RETURNS TABLE` column, since that's a
 5. **The SCD families**, each = table + its `is_current` view (dropped and
    recreated, since `select *` freezes the view's output column names) + the
    job that writes it. Smallest first:
-   - `character_ship_over_time` / `character_ship`
-   - `character_skill_over_time` / `character_skill`
-   - `character_clone_over_time` / `character_clone`
+   - ~~`character_ship_over_time` / `character_ship`~~ **Done**
+   - ~~`character_skill_over_time` / `character_skill`~~ **Done**
+   - ~~`character_clone_over_time` / `character_clone`~~ **Done**
+
+   Those three went in one migration, batched on the same reasoning as step 3:
+   their **only** dependent object is their own view, nothing in `schema.sql`
+   reads them otherwise, and the deploy window is per-PR rather than per table.
+   Measured rather than assumed — the check that decided the batch was grepping
+   `schema.sql` for every `from`/`join` against each table _and_ each view,
+   which is also what disqualified the rest of this list.
+
+   The migration asserts the recreated views both ways (no `character_id`
+   published, `registration_id` present), because a `select *` view that was
+   dropped and recreated against the wrong table is not visible in a diff —
+   the three differ only by name. Same instinct as step 4's generated-column
+   assertion.
+
+   Readers were updated by hand, not by script: `/character` and the MCP
+   `list_job_slots` both read a renamed family's rows a few lines from an
+   unrenamed one's (skills beside industry jobs), so a blanket replacement
+   would have silently renamed the wrong `character_id`. That's the mistake
+   from #752, and hand-editing is the mitigation.
+
+   Still to do here:
    - `character_mercenary_den_over_time` + `character_mercenary_den_status` /
      `character_mercenary_den` — do these two together, the view joins both
    - `character_order_over_time` / `character_order` (+ `character_orders()`)
