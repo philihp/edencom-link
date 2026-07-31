@@ -607,10 +607,10 @@ create table public.heartbeat (
   run_id bigint,
   run_attempt integer,
   run_url text,
-  character_id uuid references public.registration(id) on delete cascade,
+  registration_id uuid references public.registration(id) on delete cascade,
   corporation_id bigint,
   user_id uuid references auth.users(id) on delete cascade,
-  owner_key text generated always as (coalesce(character_id::text, '') || '|' || coalesce(corporation_id::text, '')) stored,
+  owner_key text generated always as (coalesce(registration_id::text, '') || '|' || coalesce(corporation_id::text, '')) stored,
   -- Which execution path recorded the run: 'vercel' (queue consumer),
   -- 'vercel-cron' (direct cron routes), 'vercel-workflow' (workflow steps),
   -- 'github' (Actions). Null for local CLI runs and the per-character/per-corp
@@ -628,7 +628,7 @@ create unique index heartbeat_run_idx on public.heartbeat (job, run_id, run_atte
 create index heartbeat_ran_at_idx on public.heartbeat (ran_at desc);
 -- Lets the UI find a job's most recent completion with an index scan.
 create index heartbeat_job_ended_at_idx on public.heartbeat (job, ended_at desc);
-create index heartbeat_character_id_idx on public.heartbeat (character_id);
+create index heartbeat_registration_id_idx on public.heartbeat (registration_id);
 create index heartbeat_corporation_id_idx on public.heartbeat (corporation_id);
 -- Lets the header's "Refreshed N minutes ago" indicator find a user's most
 -- recent completed extract with an index scan on every page render.
@@ -770,12 +770,12 @@ grant all on public.impersonation_log to service_role;
 -- SECURITY INVOKER (the default), so heartbeat's RLS scopes the rows to the
 -- caller: their own characters, their corps, and the shared account-wide jobs.
 create or replace function public.latest_heartbeats()
-returns table (job text, character_id uuid, corporation_id bigint, ended_at timestamptz)
+returns table (job text, registration_id uuid, corporation_id bigint, ended_at timestamptz)
 language sql
 stable
 as $$
   select distinct on (h.job, h.owner_key)
-    h.job, h.character_id, h.corporation_id, h.ended_at
+    h.job, h.registration_id, h.corporation_id, h.ended_at
   from public.heartbeat h
   where h.ended_at is not null
     and h.ended_at > now() - interval '30 days'

@@ -45,7 +45,7 @@ const githubRun = () => {
 // logging) on failure so callers can decide whether a failed heartbeat should
 // fail the whole step.
 //
-// opts.characterId/corporationId/userId attribute the row to the entity a
+// opts.registrationId/corporationId/userId attribute the row to the entity a
 // per-character or per-corp job ran for (see forEachCharacter/forEachCorporation
 // in src/jobs/lib.js, which pass these so a run's duration can later be broken
 // down per job/character-or-corp/user rather than just per whole job invocation).
@@ -73,7 +73,7 @@ export const recordHeartbeat = async (job, phase = 'end', opts = {}) => {
     run_id,
     run_attempt,
     run_url,
-    character_id: opts.characterId ?? null,
+    registration_id: opts.registrationId ?? null,
     corporation_id: opts.corporationId ?? null,
     user_id: opts.userId ?? null,
     // Execution-path provenance ('vercel' / 'vercel-cron' / 'vercel-workflow'

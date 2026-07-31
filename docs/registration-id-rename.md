@@ -54,7 +54,7 @@ for everything below.
 
 ## Inventory
 
-### Table columns — 19 (8 done, 11 remaining)
+### Table columns — 19 (9 done, 10 remaining)
 
 All declared `character_id uuid not null references public.registration(id)`
 (a couple are nullable or `primary key`, otherwise identical):
@@ -77,7 +77,7 @@ All declared `character_id uuid not null references public.registration(id)`
 | `character_mercenary_den_over_time` |                                                                      |
 | `character_mercenary_den_status`    |                                                                      |
 | `character_mercenary_den_share`     | Already commented as a known wart in `schema.sql`                    |
-| `heartbeat`                         | Not a `character_*` extract table                                    |
+| ~~`heartbeat`~~                     | Not a `character_*` extract table                                    |
 | ~~`refresh_task`~~                  | Not a `character_*` extract table                                    |
 | ~~`corp_wallet_transaction`~~       | A `corp_*` table; holds the registration whose token scanned the row |
 
@@ -97,7 +97,7 @@ Parameters (`character_ids uuid[]`): `character_asset_snapshot_at`,
 `corp_assets`, `corp_blueprints`, `blueprint_search`, `corp_industry_jobs`
 
 Return columns (`character_id uuid`): `character_asset_location_summary`,
-`character_asset_search`, `latest_heartbeats`
+`character_asset_search`, ~~`latest_heartbeats`~~ (done)
 
 ### JavaScript / TypeScript — 4 modules
 
@@ -105,9 +105,10 @@ Return columns (`character_id uuid`): `character_asset_location_summary`,
   the `characterIds` option (registration uuids) on `forEachCharacter` /
   `forEachCharacterAnyScope` / `forEachCorporation` remains, and shares its
   name with three unrelated contracts — see step 2.
-- **`src/supabase.js`** — `recordHeartbeat(opts.characterId)`,
-  `selectCharacterIdsWithScopes()` (returns uuids), `selectToken(character_id)`,
-  `upsertToken`'s `onConflict: ['character_id']`.
+- **`src/supabase.js`** — ~~`recordHeartbeat(opts.characterId)`~~ (done),
+  ~~`selectToken`~~ and ~~`upsertToken`~~ (done in step 1);
+  `selectCharacterIdsWithScopes()` still returns uuids under a
+  character-flavoured name — see step 8.
 - **`src/observability.js`** — `recordEsiConditional({ characterId })` emits a
   `character_id` metric field holding a uuid. Renaming changes the shape of
   metric lines already queried in Vercel Observability.
@@ -191,26 +192,20 @@ table.
 Everything remaining needs _something else recreated in a specific order_,
 which is exactly what makes it not part of the easy batch.
 
-4. **`heartbeat`.** Two dependent objects, one of them a category we haven't
-   exercised yet:
-   - `latest_heartbeats()` returns `character_id uuid` — a string-body SQL
-     function, so it must be dropped and recreated (see the mechanics section);
-     its readers are the `/character/refresh` matrix, the header freshness
-     indicator, `/asset`, `/structure`, `/jobs`, and MCP `dataFreshness`.
-   - `owner_key` is a **generated column** whose expression references
-     `character_id`:
-     ```sql
-     owner_key text generated always as (coalesce(character_id::text,'') || '|' || …) stored
-     ```
-     Generated expressions are stored as parse trees, so they _should_ follow a
-     rename the way policies do — but this is the first one in this codebase, so
-     verify rather than assume. `heartbeat_run_idx` is unique on
-     `(job, run_id, run_attempt, owner_key)`, so a silent break here corrupts
-     heartbeat pairing rather than erroring loudly.
+4. ~~**`heartbeat`.**~~ **Done.** Both dependent objects behaved as the
+   mechanics section predicts, and the interesting one is now settled: the
+   `owner_key` **generated column** expression _did_ follow the rename, like
+   policy expressions do. Rather than trust that, the migration asserts it in a
+   `DO` block against `pg_get_expr(pg_attrdef…)` and raises if the expression
+   still names the old column — because the failure mode was silent (start/end
+   heartbeat rows would stop pairing on `heartbeat_run_idx`, doubling instead
+   of erroring). Worth copying that assertion shape wherever a rename's
+   correctness can't be seen in the diff.
 
-   Also renames `recordHeartbeat(opts.characterId)` in `src/supabase.js`, and
-   note `/character/refresh` currently reads a renamed `refresh_task` beside an
-   unrenamed `heartbeat` — this step is what makes that page consistent again.
+   `latest_heartbeats()` had to be dropped rather than replaced: `CREATE OR
+REPLACE FUNCTION` can't rename a `RETURNS TABLE` column, since that's a
+   return-type change. No policy calls it (it's reached over RPC), so nothing
+   needed dropping ahead of it.
 
 5. **The SCD families**, each = table + its `is_current` view (dropped and
    recreated, since `select *` freezes the view's output column names) + the

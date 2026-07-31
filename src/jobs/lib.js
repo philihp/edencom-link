@@ -90,7 +90,7 @@ const runTokenLoop = async (tag, tokens, { characterName, characterUserId, heart
           scopes: freshScope,
         })
       if (heartbeat) {
-        await withHeartbeat(tag, { characterId: tokenRow.registration_id, userId }, run)
+        await withHeartbeat(tag, { registrationId: tokenRow.registration_id, userId }, run)
       } else {
         await run()
       }
@@ -188,7 +188,7 @@ export const forEachCorporation = async (tag, { scope, characterIds }, handler) 
         console.log(`[${tag}] ${ctx}: corp ${corporation_id} already pulled this run, skipping`)
         return
       }
-      await withHeartbeat(tag, { characterId: registration_id, corporationId: corporation_id, userId }, () =>
+      await withHeartbeat(tag, { registrationId: registration_id, corporationId: corporation_id, userId }, () =>
         handler({ access_token, corporation_id, registration_id, ctx })
       )
       // Only mark the corp as handled once the pull actually succeeds.
