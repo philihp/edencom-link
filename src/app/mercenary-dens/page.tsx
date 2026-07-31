@@ -235,6 +235,10 @@ const MercenaryDensPage = async () => {
   return (
     <>
       <div className={styles.pageHeader}>
+        {/* The header nav no longer carries this page — it's reached from /structure. */}
+        <a href="/structure" className={styles.backLink}>
+          &laquo; Structures
+        </a>
         <h1>Mercenary Dens</h1>
         <ShareAlliance alliances={alliances} sharedAllianceIds={sharedAllianceIds} />
       </div>

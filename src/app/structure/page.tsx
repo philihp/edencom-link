@@ -287,6 +287,10 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
           <WindowSelect days={windowDays} />
         </span>
       </div>
+      <p className={styles.pageLinks}>
+        <a href="/structure/revenue">Tax revenue events &raquo;</a>
+        <a href="/mercenary-dens">Mercenary dens &raquo;</a>
+      </p>
       {list.length > 0 ? (
         <>
           <ul className={styles.grid}>
@@ -438,9 +442,6 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
           hourly job can fetch them.
         </p>
       )}
-      <p className={styles.revenueLink}>
-        <a href="/structure/revenue">Tax revenue events &raquo;</a>
-      </p>
       <p className={styles.lastRun}>
         Structures last refreshed:{' '}
         {lastRun?.run_url ? (

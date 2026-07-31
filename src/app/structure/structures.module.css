@@ -310,8 +310,11 @@
   font-size: 12px;
 }
 
-.revenueLink {
-  margin: 16px 0 0;
+.pageLinks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 8px 0 16px;
   font-size: 13px;
 }
 

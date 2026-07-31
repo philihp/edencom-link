@@ -10,6 +10,10 @@
   margin: 0;
 }
 
+.backLink {
+  font-size: 13px;
+}
+
 .subtitle {
   color: var(--ink-soft);
   margin-top: 4pt;
