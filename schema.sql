@@ -33,6 +33,8 @@ drop function if exists public.corp_asset_location_contents(bigint)      cascade
 drop function if exists public.asset_ancestors(bigint)                   cascade;
 drop function if exists public.character_asset_search(bigint[])          cascade;
 drop function if exists public.corp_asset_search(bigint[])               cascade;
+drop function if exists public.character_asset_subtree_items(bigint)     cascade;
+drop function if exists public.corp_asset_subtree_items(bigint)          cascade;
 drop function if exists public.blueprint_search(bigint[], bigint[], bigint[], uuid[], bigint[], text, int, int, boolean, text, int) cascade;
 drop function if exists public.character_asset_snapshot_at(uuid[], timestamptz) cascade;
 drop function if exists public.character_industry_jobs(uuid[], boolean)             cascade;
@@ -361,6 +363,38 @@ as $$
   group by root_child;
 $$;
 
+-- appraisal (/asset/[locationId]): everything inside `parent` — a container or
+-- ship item id, or a bare location id (station, structure, solar system) —
+-- summed into one row per item type, ready to be priced. The parent itself is
+-- excluded, so a caller appraising an item adds its own (type_id, 1) line;
+-- appraising a bare location has nothing to add. Singletons (assembled ships,
+-- containers, fitted modules) count as 1 apiece, the same reading of a stack
+-- the asset pages and MCP tools use. Reports the raw contents: blueprint
+-- copies price like originals here, and callers that care drop them by type.
+-- Seeded from `parent` alone, so cost scales with the subtree rather than the
+-- hangar (cf. character_asset_search below).
+create or replace function public.character_asset_subtree_items(parent bigint)
+returns table (type_id bigint, quantity bigint)
+language sql
+stable
+as $$
+  with recursive descend as (
+    select a.item_id, a.type_id, a.quantity, a.is_singleton, 1 as depth
+    from public.character_asset a
+    where a.location_id = parent
+    union all
+    select c.item_id, c.type_id, c.quantity, c.is_singleton, d.depth + 1
+    from descend d
+    join public.character_asset c on c.location_id = d.item_id
+    where d.depth < 64
+  )
+  select
+    d.type_id,
+    sum(case when d.is_singleton then 1 else coalesce(d.quantity, 1) end)::bigint as quantity
+  from descend d
+  group by d.type_id;
+$$;
+
 -- item search (/asset/search): every current item whose type_id is in
 -- `type_ids`, with its root location and nested-item count. Seeded from just
 -- the matched items (rather than every asset, like the two functions above),
@@ -455,6 +489,7 @@ $$;
 grant execute on function public.character_asset_location_summary()        to authenticated;
 grant execute on function public.character_asset_location_contents(bigint) to authenticated;
 grant execute on function public.character_asset_search(bigint[])          to authenticated;
+grant execute on function public.character_asset_subtree_items(bigint)     to authenticated;
 
 -- /api/character/assets IMPORTDATA endpoint: the player's raw asset rows (one
 -- per item stack), with the owning character's name, as of `as_of`,
@@ -2335,6 +2370,31 @@ as $$
   group by root_child;
 $$;
 
+-- appraisal (/asset/[locationId]): mirrors character_asset_subtree_items()
+-- over corp assets — everything inside `parent`, summed to one row per item
+-- type, with the parent itself excluded.
+create or replace function public.corp_asset_subtree_items(parent bigint)
+returns table (type_id bigint, quantity bigint)
+language sql
+stable
+as $$
+  with recursive descend as (
+    select a.item_id, a.type_id, a.quantity, a.is_singleton, 1 as depth
+    from public.corp_asset a
+    where a.location_id = parent
+    union all
+    select c.item_id, c.type_id, c.quantity, c.is_singleton, d.depth + 1
+    from descend d
+    join public.corp_asset c on c.location_id = d.item_id
+    where d.depth < 64
+  )
+  select
+    d.type_id,
+    sum(case when d.is_singleton then 1 else coalesce(d.quantity, 1) end)::bigint as quantity
+  from descend d
+  group by d.type_id;
+$$;
+
 -- item search (/asset/search): mirrors character_asset_search() over corp
 -- assets, seeded from just the matched items.
 create or replace function public.corp_asset_search(type_ids bigint[])
@@ -2423,6 +2483,7 @@ $$;
 grant execute on function public.corp_asset_location_summary()        to authenticated;
 grant execute on function public.corp_asset_location_contents(bigint) to authenticated;
 grant execute on function public.corp_asset_search(bigint[])          to authenticated;
+grant execute on function public.corp_asset_subtree_items(bigint)     to authenticated;
 
 -- breadcrumb (/asset/[locationId], /ship/[itemId]): the materialized path of
 -- one item — the item itself, then each enclosing container outward, ordered
