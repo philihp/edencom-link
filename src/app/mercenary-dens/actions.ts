@@ -58,14 +58,14 @@ export const setSharedAlliances = async (allianceIds: number[]): Promise<{ error
   const { error: delError } = await supabase
     .from('character_mercenary_den_share')
     .delete()
-    .in('character_id', registrationIds)
+    .in('registration_id', registrationIds)
   if (delError) {
     return { error: delError.message }
   }
 
   if (alliances.length > 0) {
-    const rows = registrationIds.flatMap((character_id) =>
-      alliances.map((alliance_id) => ({ character_id, alliance_id }))
+    const rows = registrationIds.flatMap((registration_id) =>
+      alliances.map((alliance_id) => ({ registration_id, alliance_id }))
     )
     const { error: insError } = await supabase.from('character_mercenary_den_share').insert(rows)
     if (insError) {

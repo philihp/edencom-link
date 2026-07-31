@@ -1557,14 +1557,15 @@ grant all    on public.character_mercenary_den_over_time to service_role;
 -- user's reported sightings are visible to a viewer exactly when that user's own
 -- dens are.
 --
--- character_id is a registration uuid (the grantor character), not an EVE
--- character id — the name predates the sharing layer and is kept to avoid
--- churning a table that already exists in production.
+-- registration_id is the grantor character's registration uuid, not an EVE
+-- character id. It was called character_id until the step-6 rename in
+-- docs/registration-id-rename.md, which is the last of that cleanup's column
+-- renames.
 create table public.character_mercenary_den_share (
-  character_id uuid not null references public.registration(id) on delete cascade,
+  registration_id uuid not null references public.registration(id) on delete cascade,
   alliance_id bigint not null,
   created_at timestamptz not null default now(),
-  primary key (character_id, alliance_id)
+  primary key (registration_id, alliance_id)
 );
 create index character_mercenary_den_share_alliance_id_idx
   on public.character_mercenary_den_share (alliance_id);
@@ -1620,7 +1621,7 @@ as $$
   select exists (
     select 1
     from public.character_mercenary_den_share sh
-    where sh.character_id = reg_id
+    where sh.registration_id = reg_id
       and sh.alliance_id in (select public.my_alliance_ids())
   );
 $$;
@@ -1648,7 +1649,7 @@ create policy "Users read own den shares"
   for select
   to authenticated
   using (
-    character_id in (select id from public.registration where user_id = (select auth.uid()))
+    registration_id in (select id from public.registration where user_id = (select auth.uid()))
   );
 
 -- Writes are the caller's own registrations only. They used to be service-role
@@ -1659,7 +1660,7 @@ create policy "Users create own den shares"
   for insert
   to authenticated
   with check (
-    character_id in (select id from public.registration where user_id = (select auth.uid()))
+    registration_id in (select id from public.registration where user_id = (select auth.uid()))
   );
 
 create policy "Users remove own den shares"
@@ -1667,7 +1668,7 @@ create policy "Users remove own den shares"
   for delete
   to authenticated
   using (
-    character_id in (select id from public.registration where user_id = (select auth.uid()))
+    registration_id in (select id from public.registration where user_id = (select auth.uid()))
   );
 
 grant select, insert, delete on public.character_mercenary_den_share to authenticated;

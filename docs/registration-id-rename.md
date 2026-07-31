@@ -54,7 +54,7 @@ for everything below.
 
 ## Inventory
 
-### Table columns — 19 (18 done, 1 remaining)
+### Table columns — 19 (all done)
 
 All declared `character_id uuid not null references public.registration(id)`
 (a couple are nullable or `primary key`, otherwise identical):
@@ -76,7 +76,7 @@ All declared `character_id uuid not null references public.registration(id)`
 | ~~`character_ship_over_time`~~          |                                                                      |
 | ~~`character_mercenary_den_over_time`~~ |                                                                      |
 | ~~`character_mercenary_den_status`~~    |                                                                      |
-| `character_mercenary_den_share`         | Already commented as a known wart in `schema.sql`                    |
+| ~~`character_mercenary_den_share`~~     | Was the last one — step 6                                            |
 | ~~`heartbeat`~~                         | Not a `character_*` extract table                                    |
 | ~~`refresh_task`~~                      | Not a `character_*` extract table                                    |
 | ~~`corp_wallet_transaction`~~           | A `corp_*` table; holds the registration whose token scanned the row |
@@ -339,11 +339,27 @@ REPLACE FUNCTION` can't rename a `RETURNS TABLE` column, since that's a
 
 **Step 5 is complete.** All eight SCD families now use `registration_id`.
 
-6. **`character_mercenary_den_share`**, which drives
-   `mercenary_den_shared_with_caller()` and through it the RLS on both the den
-   table and `mercenary_den_enemy_intel`. Same shape as the fitting-share
-   rename in #749 — drop the policies, drop the function, rename, recreate in
-   reverse order.
+6. ~~**`character_mercenary_den_share`**~~ **Done** — the last column rename in
+   this cleanup. It turned out _not_ to need the #749 treatment: dropping the
+   policies and the function first is only necessary when the function's
+   **signature** changes, and here `mercenary_den_shared_with_caller(reg_id
+uuid) returns boolean` is untouched — only its body moves. So
+   `CREATE OR REPLACE` sufficed and the two policies calling it kept their
+   dependency intact.
+
+   The helper is the whole risk: it reads only this table, its body is
+   re-parsed at execution, and its next call is an RLS policy evaluation on
+   `character_mercenary_den_over_time` and `mercenary_den_enemy_intel`. A
+   visibility helper that throws doesn't degrade gracefully — every shared den
+   and every piece of enemy intel would error out of /mercenary-dens.
+
+   This migration was **run against a throwaway Postgres** rather than reasoned
+   about, which confirmed two things worth recording: the primary key and all
+   three owner policies (including the INSERT policy's `WITH CHECK`) are
+   rewritten by the rename automatically, and the guard genuinely fires —
+   a variant that renamed the column but skipped the helper aborted with
+   _"still references sh.character_id"_. Cheap to do, and the only way to know
+   an assertion works is to watch it fail.
 
 7. **Function parameters** (`character_ids uuid[]` on eight functions), in
    lockstep with their ~11 call sites in `src/app/api/**` and the MCP tools.
