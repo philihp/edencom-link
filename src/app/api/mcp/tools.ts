@@ -1222,7 +1222,7 @@ export const registerTools = (server: McpServer): void => {
       } else {
         type OrderRow = {
           order_id: number | string
-          character_id: string
+          registration_id: string
           type_id: number | string
           location_id: number | string
           is_buy: boolean
@@ -1239,7 +1239,7 @@ export const registerTools = (server: McpServer): void => {
           const q = supabase
             .from('character_order')
             .select(
-              'order_id, character_id, type_id, location_id, is_buy, is_corporation, price, volume_total, volume_remain, min_volume, escrow, duration, issued'
+              'order_id, registration_id, type_id, location_id, is_buy, is_corporation, price, volume_total, volume_remain, min_volume, escrow, duration, issued'
             )
             .order('issued', { ascending: false })
             .range(from, to)
@@ -1247,7 +1247,7 @@ export const registerTools = (server: McpServer): void => {
         })
         orders = rows.map((o) => ({
           typeId: Number(o.type_id),
-          owner: owners.nameById.get(o.character_id) ?? o.character_id,
+          owner: owners.nameById.get(o.registration_id) ?? o.registration_id,
           isBuy: o.is_buy,
           isCorporation: o.is_corporation,
           price: Number(o.price),
