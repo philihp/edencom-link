@@ -57,8 +57,6 @@ export const dynamic = 'force-dynamic'
 type Task = {
   id: string
   job: string
-  // refresh_task's owner column; heartbeat's (Beat below) is still
-  // character_id — see docs/registration-id-rename.md.
   registration_id: string | null
   status: string
   error: string | null
@@ -66,7 +64,7 @@ type Task = {
 
 type Beat = {
   job: string
-  character_id: string | null
+  registration_id: string | null
   corporation_id: number | null
   ended_at: string
 }
@@ -152,7 +150,7 @@ const RefreshPage = async () => {
   // latest_heartbeats returns one row per job per owner. Character- and
   // account-scoped rows are already unique per cell; corp rows can appear once
   // per character that has ever run the corp's pull, so keep the newest — its
-  // character_id is whose token the extract actually ran under last time.
+  // registration_id is whose token the extract actually ran under last time.
   const { charBeats, corpBeats, accountBeats, corpRunsAs } = reduce(
     (acc, b: Beat) => {
       if (b.corporation_id != null) {
@@ -161,8 +159,8 @@ const RefreshPage = async () => {
         if (!prev || prev.ended_at < b.ended_at) acc.corpBeats.set(key, b)
         const prevRun = acc.corpRunsAs.get(b.corporation_id)
         if (!prevRun || prevRun.ended_at < b.ended_at) acc.corpRunsAs.set(b.corporation_id, b)
-      } else if (b.character_id != null) {
-        acc.charBeats.set(`${b.job}:${b.character_id}`, b.ended_at)
+      } else if (b.registration_id != null) {
+        acc.charBeats.set(`${b.job}:${b.registration_id}`, b.ended_at)
       } else {
         acc.accountBeats.set(b.job, b.ended_at)
       }
@@ -278,7 +276,7 @@ const RefreshPage = async () => {
                 <tbody>
                   {[...corporations.entries()].map(([corporationId, members]) => {
                     const runsAs = corpRunsAs.get(corporationId)
-                    const owned = members.find((m) => m.id === runsAs?.character_id)
+                    const owned = members.find((m) => m.id === runsAs?.registration_id)
                     // Kick new pulls as the character the last one succeeded
                     // under when it's ours; the queue message carries the whole
                     // corp group either way, so this only picks the row's
