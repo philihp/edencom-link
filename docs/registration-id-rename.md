@@ -54,32 +54,32 @@ for everything below.
 
 ## Inventory
 
-### Table columns — 19 (12 done, 7 remaining)
+### Table columns — 19 (14 done, 5 remaining)
 
 All declared `character_id uuid not null references public.registration(id)`
 (a couple are nullable or `primary key`, otherwise identical):
 
-| Table                               | Notes                                                                |
-| ----------------------------------- | -------------------------------------------------------------------- |
-| ~~`token`~~                         | **Done** — renamed in the step-1 PR                                  |
-| `character_asset_over_time`         |                                                                      |
-| `character_blueprint_over_time`     |                                                                      |
-| ~~`character_wallet`~~              |                                                                      |
-| ~~`character_wallet_transaction`~~  |                                                                      |
-| `character_order_over_time`         |                                                                      |
-| `character_industry_job_over_time`  |                                                                      |
-| ~~`character_location`~~            | PK                                                                   |
-| ~~`character_clone_over_time`~~     |                                                                      |
-| ~~`character_clone_state`~~         | PK                                                                   |
-| ~~`character_implant`~~             | PK                                                                   |
-| ~~`character_skill_over_time`~~     |                                                                      |
-| ~~`character_ship_over_time`~~      |                                                                      |
-| `character_mercenary_den_over_time` |                                                                      |
-| `character_mercenary_den_status`    |                                                                      |
-| `character_mercenary_den_share`     | Already commented as a known wart in `schema.sql`                    |
-| ~~`heartbeat`~~                     | Not a `character_*` extract table                                    |
-| ~~`refresh_task`~~                  | Not a `character_*` extract table                                    |
-| ~~`corp_wallet_transaction`~~       | A `corp_*` table; holds the registration whose token scanned the row |
+| Table                                   | Notes                                                                |
+| --------------------------------------- | -------------------------------------------------------------------- |
+| ~~`token`~~                             | **Done** — renamed in the step-1 PR                                  |
+| `character_asset_over_time`             |                                                                      |
+| `character_blueprint_over_time`         |                                                                      |
+| ~~`character_wallet`~~                  |                                                                      |
+| ~~`character_wallet_transaction`~~      |                                                                      |
+| `character_order_over_time`             |                                                                      |
+| `character_industry_job_over_time`      |                                                                      |
+| ~~`character_location`~~                | PK                                                                   |
+| ~~`character_clone_over_time`~~         |                                                                      |
+| ~~`character_clone_state`~~             | PK                                                                   |
+| ~~`character_implant`~~                 | PK                                                                   |
+| ~~`character_skill_over_time`~~         |                                                                      |
+| ~~`character_ship_over_time`~~          |                                                                      |
+| ~~`character_mercenary_den_over_time`~~ |                                                                      |
+| ~~`character_mercenary_den_status`~~    |                                                                      |
+| `character_mercenary_den_share`         | Already commented as a known wart in `schema.sql`                    |
+| ~~`heartbeat`~~                         | Not a `character_*` extract table                                    |
+| ~~`refresh_task`~~                      | Not a `character_*` extract table                                    |
+| ~~`corp_wallet_transaction`~~           | A `corp_*` table; holds the registration whose token scanned the row |
 
 ### Views — 8
 
@@ -88,8 +88,8 @@ column is called and must be dropped/recreated as part of any rename:
 
 `character_asset`, `character_blueprint`, `character_order`,
 `character_industry_job`, ~~`character_clone`~~, ~~`character_skill`~~,
-~~`character_ship`~~, `character_mercenary_den` (the three struck ones done
-in the first step-5 tranche)
+~~`character_ship`~~, ~~`character_mercenary_den`~~ (struck ones done in the
+step-5 tranches so far)
 
 ### Function signatures — 11
 
@@ -235,8 +235,23 @@ REPLACE FUNCTION` can't rename a `RETURNS TABLE` column, since that's a
    from #752, and hand-editing is the mitigation.
 
    Still to do here:
-   - `character_mercenary_den_over_time` + `character_mercenary_den_status` /
-     `character_mercenary_den` — do these two together, the view joins both
+   - ~~`character_mercenary_den_over_time` + `character_mercenary_den_status` /
+     `character_mercenary_den`~~ **Done** — the two tables moved together
+     because the view joins both and the status table's RLS policy correlates
+     them on this very column. Two policies followed the rename untouched (the
+     status correlation, and the one passing the den's column into
+     `mercenary_den_shared_with_caller`), which is the parse-tree behaviour the
+     mechanics section describes. The view's `d.*` did not, so it was dropped
+     and recreated, and the migration asserts the result — including that the
+     lateral join still publishes all six status columns, since a lateral
+     correlated on the wrong column doesn't error, it just silently reports
+     every den as never-observed on a page whose whole job is showing which
+     dens are under attack.
+
+     `character_mercenary_den_share` was deliberately left alone; it's step 6,
+     and `mercenary_den_shared_with_caller()` reads only that table, so its
+     body stayed valid across this migration.
+
    - `character_order_over_time` / `character_order` (+ `character_orders()`)
    - `character_industry_job_over_time` / `character_industry_job`
      (+ `character_industry_jobs()`)
