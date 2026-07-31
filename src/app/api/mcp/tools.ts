@@ -1059,8 +1059,8 @@ export const registerTools = (server: McpServer): void => {
       } else {
         const wantedCharacterIdSet = new Set(wantedCharacterIds)
         const [chr, corp] = await Promise.all([
-          fetchAllRows<JobRow & { character_id: string }>((from, to) => {
-            let q = supabase.from('character_industry_job').select(`${COLUMNS}, character_id`)
+          fetchAllRows<JobRow & { registration_id: string }>((from, to) => {
+            let q = supabase.from('character_industry_job').select(`${COLUMNS}, registration_id`)
             if (wantedStatus !== 'all') q = q.eq('status', wantedStatus)
             return q.order('end_date', { ascending: true }).range(from, to)
           }),
@@ -1071,8 +1071,8 @@ export const registerTools = (server: McpServer): void => {
           }),
         ])
         characterJobs = chr
-          .filter((j) => wantedCharacterIdSet.has(j.character_id))
-          .map((j) => ({ ...j, ownerLabel: owners.nameById.get(j.character_id) ?? j.character_id }))
+          .filter((j) => wantedCharacterIdSet.has(j.registration_id))
+          .map((j) => ({ ...j, ownerLabel: owners.nameById.get(j.registration_id) ?? j.registration_id }))
         corpJobs = corp
           .filter((j) => corpWanted(j.corporation_id))
           .map((j) => ({ ...j, ownerLabel: owners.nameById.get(String(j.corporation_id)) ?? String(j.corporation_id) }))

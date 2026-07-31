@@ -36,7 +36,7 @@ type Structure = {
 
 type Job = {
   job_id: number | string
-  character_id: string
+  registration_id: string
   activity_id: number
   blueprint_type_id: number | string
   product_type_id: number | string | null
@@ -112,7 +112,7 @@ const StructurePage = async ({ params }: StructureParams) => {
   const { data: jobsData } = await supabase
     .from('character_industry_job')
     .select(
-      'job_id, character_id, activity_id, blueprint_type_id, product_type_id, runs, status, start_date, end_date, station_id, facility_id'
+      'job_id, registration_id, activity_id, blueprint_type_id, product_type_id, runs, status, start_date, end_date, station_id, facility_id'
     )
     .or(`station_id.eq.${structureId},facility_id.eq.${structureId}`)
     .eq('status', 'active')
@@ -273,7 +273,7 @@ const StructurePage = async ({ params }: StructureParams) => {
             {jobs.map((j) => (
               <tr key={`job-${j.job_id}`}>
                 <td>
-                  <CharacterName name={characterName[j.character_id]} />
+                  <CharacterName name={characterName[j.registration_id]} />
                 </td>
                 <td className="serif">{ACTIVITY_NAMES[j.activity_id] ?? `#${j.activity_id}`}</td>
                 <td>

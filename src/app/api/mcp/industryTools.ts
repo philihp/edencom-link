@@ -164,7 +164,7 @@ export const registerIndustryTools = (server: McpServer): void => {
         // Jobs holding a slot: running, or finished but not yet delivered.
         supabase
           .from('character_industry_job')
-          .select('character_id, activity_id, status, end_date')
+          .select('registration_id, activity_id, status, end_date')
           .in('status', ['active', 'ready']),
         supabase
           .from('character_skill')
@@ -175,16 +175,16 @@ export const registerIndustryTools = (server: McpServer): void => {
       const now = Date.now()
       const counts = new Map<string, SlotCounts>()
       ;(
-        (jobRows ?? []) as Array<{ character_id: string; activity_id: number; status: string; end_date: string }>
+        (jobRows ?? []) as Array<{ registration_id: string; activity_id: number; status: string; end_date: string }>
       ).forEach((j) => {
         const family = ACTIVITY_FAMILY[Number(j.activity_id)]
         if (!family) return
-        const entry = counts.get(j.character_id) ?? emptyCounts()
+        const entry = counts.get(j.registration_id) ?? emptyCounts()
         // A job whose timer elapsed still holds its slot until delivered, even
         // if ESI hasn't flipped its status yet (cf. /character).
         const finished = j.status === 'ready' || new Date(j.end_date).getTime() <= now
         entry[family][finished ? 'finished' : 'running'] += 1
-        counts.set(j.character_id, entry)
+        counts.set(j.registration_id, entry)
       })
 
       const maxes = new Map<string, SlotMax>()

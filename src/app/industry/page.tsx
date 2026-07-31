@@ -34,7 +34,7 @@ const IndustryPage = async () => {
   const [{ data: characterJobs }, { data: corpJobs }, owners] = await Promise.all([
     supabase
       .from('character_industry_job')
-      .select(`${JOB_COLUMNS}, character_id`)
+      .select(`${JOB_COLUMNS}, registration_id`)
       .eq('status', 'active')
       .order('end_date', { ascending: true }),
     supabase
@@ -52,9 +52,9 @@ const IndustryPage = async () => {
     ({ corporation_id, ...j }) => ({ ...j, owner_id: String(corporation_id) })
   )
   const corpJobIds = new Set(corpRows.map((j) => String(j.job_id)))
-  const characterRows: Job[] = ((characterJobs ?? []) as (JobColumns & { character_id: string })[])
+  const characterRows: Job[] = ((characterJobs ?? []) as (JobColumns & { registration_id: string })[])
     .filter((j) => !corpJobIds.has(String(j.job_id)))
-    .map(({ character_id, ...j }) => ({ ...j, owner_id: character_id }))
+    .map(({ registration_id, ...j }) => ({ ...j, owner_id: registration_id }))
   const jobRows: Job[] = [...characterRows, ...corpRows].sort(
     (a, b) => new Date(a.end_date).getTime() - new Date(b.end_date).getTime()
   )
