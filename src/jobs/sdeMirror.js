@@ -424,7 +424,9 @@ export const finalizeBuild = async (build, commit = currentCommitSha()) => {
 export const runSdeMirror = async ({ force = false } = {}) => {
   const { build, zipUrl, commit, skip } = await planMirror()
   if (!force && skip) {
-    console.log(`[sde-mirror] build ${build} already mirrored by commit ${commit} and fresh (< 7 days), skipping (--force to re-ingest)`)
+    console.log(
+      `[sde-mirror] build ${build} already mirrored by commit ${commit} and fresh (< 7 days), skipping (--force to re-ingest)`
+    )
     return { skipped: true, build }
   }
   await markBuildStarted(build)

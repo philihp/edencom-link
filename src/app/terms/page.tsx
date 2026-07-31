@@ -11,9 +11,7 @@ const TermsPage = () => (
     <h1>Terms of Service</h1>
     <p className={styles.updated}>Last updated: 19 July 2026</p>
 
-    <p>
-      Edencom Link is a personal, non-commercial hobby project, provided free of charge and &ldquo;as is.&rdquo;
-    </p>
+    <p>Edencom Link is a personal, non-commercial hobby project, provided free of charge and &ldquo;as is.&rdquo;</p>
 
     <ul>
       <li>

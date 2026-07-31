@@ -15,10 +15,7 @@
 async function runStep() {
   'use step'
   const { runJobWithHeartbeat } = await import('./lib')
-  await runJobWithHeartbeat(
-    'corp-blueprints',
-    async () => (await import('@/jobs/corpBlueprints.js')).runCorpBlueprints
-  )
+  await runJobWithHeartbeat('corp-blueprints', async () => (await import('@/jobs/corpBlueprints.js')).runCorpBlueprints)
 }
 
 export async function corpBlueprintsWorkflow() {

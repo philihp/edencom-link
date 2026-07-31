@@ -14,9 +14,7 @@ import styles from '../corpses.module.css'
 const CORPSE_TYPE_NAMES = new Set(['corpse', 'corpse male', 'corpse female'])
 
 const corpseTypeIds = async (): Promise<number[]> =>
-  (await searchSdeTypesAll('corpse'))
-    .filter((t) => CORPSE_TYPE_NAMES.has(t.name.toLowerCase()))
-    .map((t) => t.typeID)
+  (await searchSdeTypesAll('corpse')).filter((t) => CORPSE_TYPE_NAMES.has(t.name.toLowerCase())).map((t) => t.typeID)
 
 // A corpse first seen within this window is flagged "New!".
 const NEW_WINDOW_MS = 48 * 60 * 60 * 1000

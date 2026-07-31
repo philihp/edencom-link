@@ -74,10 +74,7 @@ const reconcile = async (registration_id, fetched) => {
   )
 
   await forEachSequential(splitEvery(200, touchIds), async (ids) => {
-    const { error } = await sudoSupabase
-      .from('character_skill_over_time')
-      .update({ valid_until: now })
-      .in('id', ids)
+    const { error } = await sudoSupabase.from('character_skill_over_time').update({ valid_until: now }).in('id', ids)
     if (error) throw error
   })
   // Close before inserting so the unique-current-per-skill index never collides.

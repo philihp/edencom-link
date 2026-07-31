@@ -13,10 +13,7 @@
 async function runStep() {
   'use step'
   const { runJobWithHeartbeat } = await import('./lib')
-  await runJobWithHeartbeat(
-    'corp-structures',
-    async () => (await import('@/jobs/corpStructures.js')).runCorpStructures
-  )
+  await runJobWithHeartbeat('corp-structures', async () => (await import('@/jobs/corpStructures.js')).runCorpStructures)
 }
 
 export async function corpStructuresWorkflow() {

@@ -84,13 +84,10 @@ export const runUniverseStructures = async () => {
     .eq('is_current', true)
     .eq('location_type', 'structure')
   if (clonesErr) throw clonesErr
-  forEach(
-    (r) => {
-      const id = Number(r.location_id)
-      if (Number.isFinite(id) && id >= STRUCTURE_ID_FLOOR) locationIds.add(id)
-    },
-    cloneRows ?? []
-  )
+  forEach((r) => {
+    const id = Number(r.location_id)
+    if (Number.isFinite(id) && id >= STRUCTURE_ID_FLOOR) locationIds.add(id)
+  }, cloneRows ?? [])
 
   const candidates = reject((id) => itemIds.has(id) || resolved.has(id), [...locationIds])
   console.log(`[${TAG}] ${candidates.length} candidate player structure(s) to resolve`)
