@@ -85,9 +85,7 @@ const PrivacyPage = () => (
         third-party application settings on CCP&rsquo;s side. Once revoked, we can no longer refresh tokens or pull new
         data for that character.
       </li>
-      <li>
-        To have your account and its stored data deleted, contact us (below) and we will remove it.
-      </li>
+      <li>To have your account and its stored data deleted, contact us (below) and we will remove it.</li>
       <li>Unlinking a Discord channel stops notifications to it and removes the stored channel link.</li>
     </ul>
 

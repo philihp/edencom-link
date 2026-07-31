@@ -180,8 +180,7 @@ const RefreshPage = async () => {
   const corpJobNames = new Set<string>(CORP_JOBS.map(([job]) => job))
   const taskByCell = reduce(
     (acc, t) => {
-      const corpId =
-        corpJobNames.has(t.job) && t.registration_id != null ? corporationOf.get(t.registration_id) : null
+      const corpId = corpJobNames.has(t.job) && t.registration_id != null ? corporationOf.get(t.registration_id) : null
       return acc.set(`${t.job}:${corpId ?? t.registration_id ?? ''}`, t)
     },
     new Map<string, Task>(),
@@ -213,9 +212,9 @@ const RefreshPage = async () => {
     <>
       <h1>Refresh ESI</h1>
       <p>
-        Extracts run on their own schedule (every 6 hours for most, daily for corp assets and the character directory); nothing
-        starts just by opening this page. A cell shows when its job last ran — green within 15 minutes, yellow within 6
-        hours, red beyond that — and stale cells can be refreshed one at a time.
+        Extracts run on their own schedule (every 6 hours for most, daily for corp assets and the character directory);
+        nothing starts just by opening this page. A cell shows when its job last ran — green within 15 minutes, yellow
+        within 6 hours, red beyond that — and stale cells can be refreshed one at a time.
       </p>
 
       {registrations.length === 0 ? (

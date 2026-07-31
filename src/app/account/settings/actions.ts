@@ -76,11 +76,7 @@ export const setMainCharacter = async (id: string): Promise<{ error?: string }> 
   if (!id) return { error: 'No character selected' }
 
   await supabase.from('registration').update({ is_main: false }).eq('user_id', user.id).eq('is_main', true)
-  const { error } = await supabase
-    .from('registration')
-    .update({ is_main: true })
-    .eq('id', id)
-    .eq('user_id', user.id)
+  const { error } = await supabase.from('registration').update({ is_main: true }).eq('id', id).eq('user_id', user.id)
   if (error) {
     return { error: error.message }
   }

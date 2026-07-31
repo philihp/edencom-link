@@ -92,9 +92,7 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
 
   const { data: structures } = await supabase
     .from('corp_structure')
-    .select(
-      'structure_id, corporation_id, type_id, system_id, name, state, unanchors_at, services, last_seen_at'
-    )
+    .select('structure_id, corporation_id, type_id, system_id, name, state, unanchors_at, services, last_seen_at')
     .order('corporation_id', { ascending: true })
     .order('structure_id', { ascending: true })
 
@@ -408,8 +406,8 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
           {unaccountedParties.length > 0 && (
             <p className={styles.unaccountedNote}>
               <em>
-                Unaccounted revenue comes from industry jobs started by players we can&rsquo;t see, so we can&rsquo;t tie
-                the tax back to one of our structures.
+                Unaccounted revenue comes from industry jobs started by players we can&rsquo;t see, so we can&rsquo;t
+                tie the tax back to one of our structures.
               </em>
             </p>
           )}

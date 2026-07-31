@@ -11,6 +11,8 @@
 // at import time is never used on this path.)
 import { writeFileSync } from 'node:fs'
 
+import { format, resolveConfig } from 'prettier'
+
 import { fetchLatestBuild, listEntries } from '../src/jobs/sdeMirror.js'
 
 const OUT = 'src/workflows/sdeIngestSteps.ts'
@@ -80,5 +82,15 @@ ${stems.map((stem) => `  ${stem}: ${fnName(stem)},`).join('\n')}
 }
 `
 
-writeFileSync(OUT, `${header}\n${fns}\n${mapBlock}`)
+// Run the output through prettier rather than trying to emit already-formatted
+// text by hand. Whether a step's signature fits on one line depends on how long
+// CCP's stem names happen to be, so hand-formatting here is guesswork that goes
+// stale the next time CCP ships a longer file name — which is exactly how this
+// file ended up as the repo's largest block of unformatted source.
+const source = await format(`${header}\n${fns}\n${mapBlock}`, {
+  ...(await resolveConfig(OUT)),
+  filepath: OUT,
+})
+
+writeFileSync(OUT, source)
 console.error(`wrote ${OUT} with ${stems.length} steps, build ${build}`)

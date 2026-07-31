@@ -74,17 +74,17 @@ export async function corpAssetsWorkflow() {
           syncCorporation(group).catch((err) => {
             console.error(`[corp-assets] corp group [${group.join(', ')}] failed:`, err)
             failures.push(group)
-          }),
+          })
         ),
       Promise.resolve(),
-      lane,
+      lane
     )
   await Promise.all(map(drainLane, lanes))
 
   if (failures.length > 0) {
     throw new AggregateError(
       map((group) => new Error(`corp group [${group.join(', ')}] failed`), failures),
-      `corp-assets: ${failures.length} corp step(s) failed`,
+      `corp-assets: ${failures.length} corp step(s) failed`
     )
   }
 }

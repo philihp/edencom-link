@@ -72,17 +72,17 @@ export async function characterOrdersWorkflow() {
           syncCharacter(id).catch((err) => {
             console.error(`[character-orders] character ${id} failed:`, err)
             failures.push(id)
-          }),
+          })
         ),
       Promise.resolve(),
-      lane,
+      lane
     )
   await Promise.all(map(drainLane, lanes))
 
   if (failures.length > 0) {
     throw new AggregateError(
       map((id) => new Error(`character ${id} failed`), failures),
-      `character-orders: ${failures.length} character step(s) failed`,
+      `character-orders: ${failures.length} character step(s) failed`
     )
   }
 }
