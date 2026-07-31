@@ -298,7 +298,7 @@ export const registerEstateTools = (server: McpServer): void => {
           const { data } = await supabase
             .from('character_wallet')
             .select('balance, recorded_at')
-            .eq('character_id', characterId)
+            .eq('registration_id', characterId)
             .order('recorded_at', { ascending: false })
             .limit(1)
             .maybeSingle()

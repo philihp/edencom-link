@@ -35,7 +35,7 @@ export const runCharacterWalletTransactions = ({ characterIds } = {}) =>
       if (txns.length > 0) {
         const rows = txns.map((t) => ({
           transaction_id: t.transaction_id,
-          character_id: registration_id,
+          registration_id,
           date: t.date,
           type_id: t.type_id,
           quantity: t.quantity,

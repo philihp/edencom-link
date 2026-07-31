@@ -54,7 +54,7 @@ for everything below.
 
 ## Inventory
 
-### Table columns — 19 (1 done, 18 remaining)
+### Table columns — 19 (8 done, 11 remaining)
 
 All declared `character_id uuid not null references public.registration(id)`
 (a couple are nullable or `primary key`, otherwise identical):
@@ -64,22 +64,22 @@ All declared `character_id uuid not null references public.registration(id)`
 | ~~`token`~~                         | **Done** — renamed in the step-1 PR                                  |
 | `character_asset_over_time`         |                                                                      |
 | `character_blueprint_over_time`     |                                                                      |
-| `character_wallet`                  |                                                                      |
-| `character_wallet_transaction`      |                                                                      |
+| ~~`character_wallet`~~              |                                                                      |
+| ~~`character_wallet_transaction`~~  |                                                                      |
 | `character_order_over_time`         |                                                                      |
 | `character_industry_job_over_time`  |                                                                      |
-| `character_location`                | PK                                                                   |
+| ~~`character_location`~~            | PK                                                                   |
 | `character_clone_over_time`         |                                                                      |
-| `character_clone_state`             | PK                                                                   |
-| `character_implant`                 | PK                                                                   |
+| ~~`character_clone_state`~~         | PK                                                                   |
+| ~~`character_implant`~~             | PK                                                                   |
 | `character_skill_over_time`         |                                                                      |
 | `character_ship_over_time`          |                                                                      |
 | `character_mercenary_den_over_time` |                                                                      |
 | `character_mercenary_den_status`    |                                                                      |
 | `character_mercenary_den_share`     | Already commented as a known wart in `schema.sql`                    |
 | `heartbeat`                         | Not a `character_*` extract table                                    |
-| `refresh_task`                      | Not a `character_*` extract table                                    |
-| `corp_wallet_transaction`           | A `corp_*` table; holds the registration whose token scanned the row |
+| ~~`refresh_task`~~                  | Not a `character_*` extract table                                    |
+| ~~`corp_wallet_transaction`~~       | A `corp_*` table; holds the registration whose token scanned the row |
 
 ### Views — 8
 
@@ -173,18 +173,81 @@ Smallest blast radius first, and ordered so each step makes the next easier.
    RPC parameter — spanning ~55 files. Renaming only lib.js's would leave the
    name meaning two things at once. It belongs with those, as its own step.
 
-3. **Infrastructure tables** — `heartbeat`, `refresh_task`. Small, and
-   `heartbeat` also drags `latest_heartbeats()`'s return column, so it's a good
-   dry run of the function-recreation dance.
-4. **Extract tables, one family at a time** — assets, then blueprints, then
-   orders/jobs, and so on. Each family is a table + its view + any function that
-   returns or filters on the column + the job that writes it. Keeping families
-   separate keeps each PR reviewable and each revert cheap.
-5. **Function parameters last**, in lockstep with their call sites, since
-   that's the one part with no backward compatibility at all.
-6. **`corp_wallet_transaction`** whenever convenient — it's isolated, but it
-   deserves a moment's thought about whether `registration_id` is even the right
-   name there, or whether the column wants to be `scanned_by_registration_id`.
+3. ~~**Infrastructure tables.**~~ **`refresh_task` done** (in the step-3 batch
+   below); `heartbeat` deferred — see step 4.
+
+**Step 3 (done): every table with no dependent object.** Seven tables —
+`character_wallet`, `character_wallet_transaction`, `character_implant`,
+`character_location`, `character_clone_state`, `corp_wallet_transaction`,
+`refresh_task` — renamed in one migration. Verified beforehand that no
+`create view` or `create function` in `schema.sql` references any of them, so
+the rename carried its policies and indexes by itself and nothing had to be
+recreated. Batching them was deliberate: each rename PR costs one window where
+the deployed code and the schema disagree, and that cost is per-PR, not per
+table.
+
+## What's left, hardest-last
+
+Everything remaining needs _something else recreated in a specific order_,
+which is exactly what makes it not part of the easy batch.
+
+4. **`heartbeat`.** Two dependent objects, one of them a category we haven't
+   exercised yet:
+   - `latest_heartbeats()` returns `character_id uuid` — a string-body SQL
+     function, so it must be dropped and recreated (see the mechanics section);
+     its readers are the `/character/refresh` matrix, the header freshness
+     indicator, `/asset`, `/structure`, `/jobs`, and MCP `dataFreshness`.
+   - `owner_key` is a **generated column** whose expression references
+     `character_id`:
+     ```sql
+     owner_key text generated always as (coalesce(character_id::text,'') || '|' || …) stored
+     ```
+     Generated expressions are stored as parse trees, so they _should_ follow a
+     rename the way policies do — but this is the first one in this codebase, so
+     verify rather than assume. `heartbeat_run_idx` is unique on
+     `(job, run_id, run_attempt, owner_key)`, so a silent break here corrupts
+     heartbeat pairing rather than erroring loudly.
+
+   Also renames `recordHeartbeat(opts.characterId)` in `src/supabase.js`, and
+   note `/character/refresh` currently reads a renamed `refresh_task` beside an
+   unrenamed `heartbeat` — this step is what makes that page consistent again.
+
+5. **The SCD families**, each = table + its `is_current` view (dropped and
+   recreated, since `select *` freezes the view's output column names) + the
+   job that writes it. Smallest first:
+   - `character_ship_over_time` / `character_ship`
+   - `character_skill_over_time` / `character_skill`
+   - `character_clone_over_time` / `character_clone`
+   - `character_mercenary_den_over_time` + `character_mercenary_den_status` /
+     `character_mercenary_den` — do these two together, the view joins both
+   - `character_order_over_time` / `character_order` (+ `character_orders()`)
+   - `character_industry_job_over_time` / `character_industry_job`
+     (+ `character_industry_jobs()`)
+   - `character_blueprint_over_time` / `character_blueprint`
+     (+ `character_blueprints()`)
+   - `character_asset_over_time` / `character_asset` — **last**, the widest:
+     three functions (`character_asset_location_summary`,
+     `character_asset_search`, `character_asset_snapshot_at`), plus
+     `asset_ancestors()` climbing the view
+
+6. **`character_mercenary_den_share`**, which drives
+   `mercenary_den_shared_with_caller()` and through it the RLS on both the den
+   table and `mercenary_den_enemy_intel`. Same shape as the fitting-share
+   rename in #749 — drop the policies, drop the function, rename, recreate in
+   reverse order.
+
+7. **Function parameters** (`character_ids uuid[]` on eight functions), in
+   lockstep with their ~11 call sites in `src/app/api/**` and the MCP tools.
+   supabase-js passes RPC arguments **by name**, so there is no backward
+   compatibility at all here: schema and callers must ship in the same commit.
+
+8. **The JS-only contracts** — the `characterIds` option on `forEachCharacter`,
+   `OwnerContext.characterIds`, `resolvePlayer`'s return, and
+   `recordEsiConditional`'s metric field. No migration, no deploy window, so
+   these can be interleaved anywhere. Do the three `characterIds` contracts
+   together, since they share the name. `src/observability.js` is the one thing
+   worth _not_ doing: renaming the metric field breaks continuity of any saved
+   Vercel Observability query for no correctness gain.
 
 `src/observability.js` can be left alone or done last: renaming the metric
 field breaks continuity of any saved Observability query, which is a cost with

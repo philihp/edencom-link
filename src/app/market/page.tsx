@@ -58,7 +58,7 @@ const MarketPage = async () => {
   const personal = await fetchAllRows<Sale>((from, to) =>
     supabase
       .from('character_wallet_transaction')
-      .select('transaction_id, character_id, date, type_id, quantity, unit_price, seen_at')
+      .select('transaction_id, registration_id, date, type_id, quantity, unit_price, seen_at')
       .eq('is_buy', false)
       .eq('is_personal', true)
       .gte('date', since)
@@ -78,7 +78,7 @@ const MarketPage = async () => {
 
   const corpSales: Sale[] = corpRows.map((r) => ({
     transaction_id: r.transaction_id,
-    character_id: null,
+    registration_id: null,
     corporation_id: r.corporation_id,
     date: r.date,
     type_id: r.type_id,

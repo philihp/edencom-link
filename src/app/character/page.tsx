@@ -63,20 +63,20 @@ const CharacterPage = async () => {
 
   const { data: wallets } = await supabase
     .from('character_wallet')
-    .select('character_id, balance, recorded_at')
+    .select('registration_id, balance, recorded_at')
     .order('recorded_at', { ascending: false })
 
   const latestBalance = reduce(
-    (acc, w) => (acc.has(w.character_id) ? acc : acc.set(w.character_id, w.balance)),
+    (acc, w) => (acc.has(w.registration_id) ? acc : acc.set(w.registration_id, w.balance)),
     new Map<string, string>(),
     wallets ?? []
   )
 
-  const { data: locations } = await supabase.from('character_location').select('character_id, solar_system_id')
+  const { data: locations } = await supabase.from('character_location').select('registration_id, solar_system_id')
   const systemNames = await fetchSystemNames((locations ?? []).map((l) => Number(l.solar_system_id)))
   const locationSystem = new Map(
     (locations ?? []).map((l) => [
-      l.character_id as string,
+      l.registration_id as string,
       systemNames[Number(l.solar_system_id)] ?? `System #${l.solar_system_id}`,
     ])
   )
@@ -104,11 +104,11 @@ const CharacterPage = async () => {
     ])
   )
 
-  const { data: implantRows } = await supabase.from('character_implant').select('character_id, type_ids')
+  const { data: implantRows } = await supabase.from('character_implant').select('registration_id, type_ids')
   const implantTypeNames = await fetchTypeNames((implantRows ?? []).flatMap((r) => (r.type_ids ?? []).map(Number)))
   const implantsByCharacter = new Map(
     (implantRows ?? []).map((r) => [
-      r.character_id as string,
+      r.registration_id as string,
       (r.type_ids ?? []).map((id: number) => implantTypeNames[id] ?? `Type #${id}`),
     ])
   )

@@ -562,9 +562,9 @@ export const registerTools = (server: McpServer): void => {
         supabase
           .from('character_clone')
           .select('character_id, jump_clone_id, is_home, location_id, location_type, name, implants, system_id'),
-        supabase.from('character_implant').select('character_id, type_ids'),
-        supabase.from('character_location').select('character_id, solar_system_id, station_id, structure_id'),
-        supabase.from('character_clone_state').select('character_id, last_clone_jump_date'),
+        supabase.from('character_implant').select('registration_id, type_ids'),
+        supabase.from('character_location').select('registration_id, solar_system_id, station_id, structure_id'),
+        supabase.from('character_clone_state').select('registration_id, last_clone_jump_date'),
         supabase.from('character_ship').select('character_id, ship_item_id, ship_type_id, ship_name'),
         fetchOwnerContext(supabase),
       ])
@@ -580,7 +580,7 @@ export const registerTools = (server: McpServer): void => {
         system_id: number | string | null
       }
       type LocationRow = {
-        character_id: string
+        registration_id: string
         solar_system_id: number | string
         station_id: number | string | null
         structure_id: number | string | null
@@ -619,18 +619,18 @@ export const registerTools = (server: McpServer): void => {
       const implantNames = await getSdeTypeNames([...implantTypeIds, ...ships.map((s) => Number(s.ship_type_id))])
 
       const implantsByCharacter = new Map(
-        ((implantRows ?? []) as Array<{ character_id: string; type_ids: number[] }>).map((r) => [
-          r.character_id,
+        ((implantRows ?? []) as Array<{ registration_id: string; type_ids: number[] }>).map((r) => [
+          r.registration_id,
           (r.type_ids ?? []).map((id) => typeName(implantNames, id)),
         ])
       )
       const jumpByCharacter = new Map(
-        ((stateRows ?? []) as Array<{ character_id: string; last_clone_jump_date: string | null }>).map((r) => [
-          r.character_id,
+        ((stateRows ?? []) as Array<{ registration_id: string; last_clone_jump_date: string | null }>).map((r) => [
+          r.registration_id,
           r.last_clone_jump_date,
         ])
       )
-      const locationByCharacter = new Map(locations.map((l) => [l.character_id, l]))
+      const locationByCharacter = new Map(locations.map((l) => [l.registration_id, l]))
       // The hull the character is sitting in right now, docked or not — named
       // by its player-assigned name plus type when they differ (cf. /character).
       const shipByCharacter = new Map(
@@ -1343,7 +1343,7 @@ export const registerTools = (server: McpServer): void => {
       // double-counting (cf. /market).
       let personalQuery = supabase
         .from('character_wallet_transaction')
-        .select(`${COLUMNS}, character_id`)
+        .select(`${COLUMNS}, registration_id`)
         .eq('is_personal', true)
         .gte('date', since)
       let corpQuery = supabase.from('corp_wallet_transaction').select(`${COLUMNS}, corporation_id`).gte('date', since)
@@ -1363,9 +1363,9 @@ export const registerTools = (server: McpServer): void => {
       ])
 
       const rows = [
-        ...((personalRows ?? []) as Array<TransactionRow & { character_id: string }>).map((r) => ({
+        ...((personalRows ?? []) as Array<TransactionRow & { registration_id: string }>).map((r) => ({
           ...r,
-          ownerId: r.character_id,
+          ownerId: r.registration_id,
         })),
         ...((corpRows ?? []) as Array<TransactionRow & { corporation_id: number | string }>).map((r) => ({
           ...r,
