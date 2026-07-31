@@ -25,7 +25,7 @@ begin;
 -- the real schema; RLS is irrelevant here (the function is security invoker, so
 -- scoping is the views' job, not this function's).
 create table public.character_blueprint (
-  item_id bigint, character_id uuid, type_id bigint, location_id bigint,
+  item_id bigint, registration_id uuid, type_id bigint, location_id bigint,
   location_flag text, quantity int, material_efficiency smallint, time_efficiency smallint, runs int
 );
 create table public.corp_blueprint (
@@ -65,8 +65,13 @@ insert into public.character_blueprint values
 insert into public.corp_blueprint values
   (5, 98000001, 1002, 60003760, 'CorpSAG1', -1, 10, 0, -1);
 
--- The function under test, defined against the fixtures above.
-\i supabase/migrations/20260725000000_blueprint_search.sql
+-- The function under test, defined against the fixtures above. Points at the
+-- newest migration that redefines blueprint_search, not the one that first
+-- introduced it: the owner column it reads was renamed character_id →
+-- registration_id, and the stand-in above matches the current schema. That
+-- migration deliberately contains nothing but the function and its grant, so
+-- including it here stays a one-line change each time the function moves.
+\i supabase/migrations/20260801030000_blueprint_search_registration_id.sql
 
 do $$
 declare

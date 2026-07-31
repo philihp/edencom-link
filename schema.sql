@@ -516,7 +516,7 @@ grant execute on function public.character_asset_snapshot_at(uuid[], timestamptz
 create table public.character_blueprint_over_time (
   id bigint generated always as identity primary key,
   item_id bigint not null,
-  character_id uuid not null references public.registration(id) on delete cascade,
+  registration_id uuid not null references public.registration(id) on delete cascade,
   type_id bigint not null,
   location_id bigint,
   location_flag text,
@@ -528,7 +528,7 @@ create table public.character_blueprint_over_time (
   valid_from timestamptz not null default now(),
   valid_until timestamptz not null default now()
 );
-create index character_blueprint_over_time_character_id_idx on public.character_blueprint_over_time (character_id);
+create index character_blueprint_over_time_registration_id_idx on public.character_blueprint_over_time (registration_id);
 -- At most one live row per item; also the conflict target the extract relies on.
 create unique index character_blueprint_over_time_current_item_idx on public.character_blueprint_over_time (item_id) where is_current;
 -- Time-travel lookups walking an item's version history.
@@ -540,7 +540,7 @@ create policy "Users read own blueprints"
   for select
   to authenticated
   using (
-    character_id in (
+    registration_id in (
       select id from public.registration where user_id = (select auth.uid())
     )
   );
@@ -585,9 +585,9 @@ as $$
     '[]'::json
   )
   from public.character_blueprint b
-  join public.registration r on r.id = b.character_id
+  join public.registration r on r.id = b.registration_id
   left join public.sde_published_type t on t.type_id = b.type_id
-  where b.character_id = any(character_ids);
+  where b.registration_id = any(character_ids);
 $$;
 
 grant execute on function public.character_blueprints(uuid[]) to service_role;
@@ -2641,7 +2641,7 @@ as $$
     -- normalised to a real item count here and nowhere else.
     select
       b.type_id::bigint                                    as type_id,
-      b.character_id::text                                 as owner_id,
+      b.registration_id::text                                 as owner_id,
       'character'::text                                    as owner_kind,
       b.location_id::bigint                                as location_id,
       b.location_flag                                      as location_flag,
@@ -2652,7 +2652,7 @@ as $$
       case when b.quantity > 0 then b.quantity else 1 end  as quantity
     from public.character_blueprint b
     where (type_ids is null or b.type_id = any(type_ids))
-      and (character_ids is null or b.character_id = any(character_ids))
+      and (character_ids is null or b.registration_id = any(character_ids))
     union all
     select
       b.type_id::bigint,
