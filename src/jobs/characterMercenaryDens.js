@@ -37,7 +37,7 @@ export const syncCharacterMercenaryDens = async ({ access_token, characterID, re
   const { data: currentRows, error: curErr } = await sudoSupabase
     .from('character_mercenary_den_over_time')
     .select('id, den_id, planet_id, type_id, skyhook_id, skyhook_corporation_id')
-    .eq('character_id', registration_id)
+    .eq('registration_id', registration_id)
     .eq('is_current', true)
   if (curErr) throw curErr
   const currentByDen = new Map((currentRows ?? []).map((r) => [Number(r.den_id), r]))
@@ -72,13 +72,13 @@ export const syncCharacterMercenaryDens = async ({ access_token, characterID, re
       // valid_from is left to its `default now()` so it marks this version's debut.
       const { error } = await sudoSupabase
         .from('character_mercenary_den_over_time')
-        .insert({ character_id: registration_id, den_id: den.id, ...config, valid_until: now })
+        .insert({ registration_id, den_id: den.id, ...config, valid_until: now })
       if (error) throw error
     }
 
     // Observed volatile state — appended as a new history row every run.
     const { error: statusError } = await sudoSupabase.from('character_mercenary_den_status').insert({
-      character_id: registration_id,
+      registration_id,
       den_id: den.id,
       state: detail.state ?? null,
       development_level: detail.evolution?.development?.level ?? null,

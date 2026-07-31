@@ -1438,7 +1438,7 @@ grant all                    on public.character_fitting_share to service_role;
 -- live snapshot.
 create table public.character_mercenary_den_over_time (
   id bigint generated always as identity primary key,
-  character_id uuid not null references public.registration(id) on delete cascade,
+  registration_id uuid not null references public.registration(id) on delete cascade,
   den_id bigint not null,
   planet_id bigint not null,
   type_id bigint,
@@ -1448,14 +1448,14 @@ create table public.character_mercenary_den_over_time (
   valid_from timestamptz not null default now(),
   valid_until timestamptz not null default now()
 );
-create index character_mercenary_den_over_time_character_id_idx
-  on public.character_mercenary_den_over_time (character_id);
+create index character_mercenary_den_over_time_registration_id_idx
+  on public.character_mercenary_den_over_time (registration_id);
 -- At most one live row per den; also the conflict target the extract relies on.
 create unique index character_mercenary_den_over_time_current_idx
-  on public.character_mercenary_den_over_time (character_id, den_id) where is_current;
+  on public.character_mercenary_den_over_time (registration_id, den_id) where is_current;
 -- Time-travel lookups walking a den's version history.
 create index character_mercenary_den_over_time_den_idx
-  on public.character_mercenary_den_over_time (character_id, den_id, valid_until desc);
+  on public.character_mercenary_den_over_time (registration_id, den_id, valid_until desc);
 
 alter table public.character_mercenary_den_over_time enable row level security;
 -- Base policy: a user reads their own characters' dens. The sharing policy that
@@ -1465,7 +1465,7 @@ create policy "Users read own mercenary dens"
   for select
   to authenticated
   using (
-    character_id in (
+    registration_id in (
       select id from public.registration where user_id = (select auth.uid())
     )
   );
@@ -1475,11 +1475,11 @@ create policy "Users read own mercenary dens"
 -- run inserts one row per den it sees, rather than mutating the den row — these
 -- values (development/anarchy evolution, stored infomorphs, running state, the
 -- reinforcement timer) change constantly. Identified by the logical den
--- (character_id, den_id); character_id cascades from registration (the den table
+-- (registration_id, den_id); registration_id cascades from registration (the den table
 -- is SCD, so there's no single den row to FK against).
 create table public.character_mercenary_den_status (
   id bigint generated always as identity primary key,
-  character_id uuid not null references public.registration(id) on delete cascade,
+  registration_id uuid not null references public.registration(id) on delete cascade,
   den_id bigint not null,
   state text,
   development_level text,
@@ -1491,7 +1491,7 @@ create table public.character_mercenary_den_status (
   observed_at timestamptz not null default now()
 );
 create index character_mercenary_den_status_den_idx
-  on public.character_mercenary_den_status (character_id, den_id, observed_at desc);
+  on public.character_mercenary_den_status (registration_id, den_id, observed_at desc);
 
 alter table public.character_mercenary_den_status enable row level security;
 -- A status row is readable exactly when its den is: the subquery over the SCD den
@@ -1504,7 +1504,7 @@ create policy "Read status for visible mercenary dens"
   using (
     exists (
       select 1 from public.character_mercenary_den_over_time d
-      where d.character_id = character_mercenary_den_status.character_id
+      where d.registration_id = character_mercenary_den_status.registration_id
         and d.den_id = character_mercenary_den_status.den_id
     )
   );
@@ -1533,7 +1533,7 @@ create view public.character_mercenary_den with (security_invoker = on) as
     select state, development_level, development_amount, anarchy_level, anarchy_amount,
            infomorphs, reinforcement_end, observed_at
     from public.character_mercenary_den_status s
-    where s.character_id = d.character_id and s.den_id = d.den_id
+    where s.registration_id = d.registration_id and s.den_id = d.den_id
     order by s.observed_at desc
     limit 1
   ) s on true
@@ -1681,7 +1681,7 @@ create policy "Alliance members read shared mercenary dens"
   on public.character_mercenary_den_over_time
   for select
   to authenticated
-  using (public.mercenary_den_shared_with_caller(character_id));
+  using (public.mercenary_den_shared_with_caller(registration_id));
 
 -- ── mercenary_den_enemy_intel ────────────────────────────────────────────────────
 -- Hand-submitted intel on enemy-owned Mercenary Dens seen reinforced. ESI has no

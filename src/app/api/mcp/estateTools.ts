@@ -397,7 +397,7 @@ export const registerEstateTools = (server: McpServer): void => {
       if (!supabase) return textResult('Missing bearer token.')
 
       type DenRow = {
-        character_id: string
+        registration_id: string
         den_id: number | string
         planet_id: number | string
         type_id: number | string | null
@@ -414,7 +414,7 @@ export const registerEstateTools = (server: McpServer): void => {
         supabase
           .from('character_mercenary_den')
           .select(
-            'character_id, den_id, planet_id, type_id, state, development_level, development_amount, anarchy_level, anarchy_amount, infomorphs, reinforcement_end, status_observed_at'
+            'registration_id, den_id, planet_id, type_id, state, development_level, development_amount, anarchy_level, anarchy_amount, infomorphs, reinforcement_end, status_observed_at'
           ),
         fetchOwnerContext(supabase),
       ])
@@ -442,7 +442,7 @@ export const registerEstateTools = (server: McpServer): void => {
           return {
             planet: planet?.name ?? `Planet #${d.planet_id}`,
             system: planet?.systemName ?? null,
-            owner: owners.nameById.get(d.character_id) ?? d.character_id,
+            owner: owners.nameById.get(d.registration_id) ?? d.registration_id,
             ...(d.type_id != null && { type: typeNames[Number(d.type_id)] ?? `Type #${d.type_id}` }),
             state: d.state,
             reinforced,

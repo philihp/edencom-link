@@ -19,7 +19,7 @@ export const dynamic = 'force-dynamic'
 // "ours" for colouring purposes; external dens come only from the hand-kept
 // intel.
 type DenRow = {
-  character_id: string
+  registration_id: string
   planet_id: number
   state: string | null
   development_level: string | null
@@ -113,7 +113,7 @@ const MercenaryDensPage = async () => {
   // and is world-readable, so this is a plain join rather than a definer bridge.
   // Without it a shared den would show only "Corpmate".
   const denOwnerById = new Map(ownRegById)
-  const foreignOwnerIds = [...new Set(dens.map((d) => d.character_id))].filter((id) => !denOwnerById.has(id))
+  const foreignOwnerIds = [...new Set(dens.map((d) => d.registration_id))].filter((id) => !denOwnerById.has(id))
   if (foreignOwnerIds.length) {
     const { data: owners } = await supabase
       .from('character_directory')
@@ -176,7 +176,7 @@ const MercenaryDensPage = async () => {
     const planet = planetsById[den.planet_id] ?? null
     const system = planet?.systemName ?? ''
     const roman = planet?.roman ?? ''
-    const ownReg = denOwnerById.get(den.character_id)
+    const ownReg = denOwnerById.get(den.registration_id)
     const enriched = {
       ...den,
       ownerLabel: ownReg?.name ?? 'Corpmate',
