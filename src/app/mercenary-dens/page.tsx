@@ -97,7 +97,7 @@ const MercenaryDensPage = async () => {
   // writes them: all characters at once).
   const registrationIds = [...ownRegById.keys()]
   const { data: shares } = registrationIds.length
-    ? await supabase.from('character_mercenary_den_share').select('alliance_id').in('character_id', registrationIds)
+    ? await supabase.from('character_mercenary_den_share').select('alliance_id').in('registration_id', registrationIds)
     : { data: [] }
   const sharedAllianceIds = [...new Set((shares ?? []).map((s) => String(s.alliance_id)))]
 
