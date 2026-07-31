@@ -54,7 +54,7 @@ for everything below.
 
 ## Inventory
 
-### Table columns — 19 (15 done, 4 remaining)
+### Table columns — 19 (16 done, 3 remaining)
 
 All declared `character_id uuid not null references public.registration(id)`
 (a couple are nullable or `primary key`, otherwise identical):
@@ -67,7 +67,7 @@ All declared `character_id uuid not null references public.registration(id)`
 | ~~`character_wallet`~~                  |                                                                      |
 | ~~`character_wallet_transaction`~~      |                                                                      |
 | ~~`character_order_over_time`~~         |                                                                      |
-| `character_industry_job_over_time`      |                                                                      |
+| ~~`character_industry_job_over_time`~~  |                                                                      |
 | ~~`character_location`~~                | PK                                                                   |
 | ~~`character_clone_over_time`~~         |                                                                      |
 | ~~`character_clone_state`~~             | PK                                                                   |
@@ -87,7 +87,7 @@ These `select *` from the tables above, so they republish whatever the base
 column is called and must be dropped/recreated as part of any rename:
 
 `character_asset`, `character_blueprint`, ~~`character_order`~~,
-`character_industry_job`, ~~`character_clone`~~, ~~`character_skill`~~,
+~~`character_industry_job`~~, ~~`character_clone`~~, ~~`character_skill`~~,
 ~~`character_ship`~~, ~~`character_mercenary_den`~~ (struck ones done in the
 step-5 tranches so far)
 
@@ -272,8 +272,22 @@ REPLACE FUNCTION` can't rename a `RETURNS TABLE` column, since that's a
      change. Only reading the rewritten lines back did. Check the function
      bodies by eye whenever a table rename touches one.
 
-   - `character_industry_job_over_time` / `character_industry_job`
-     (+ `character_industry_jobs()`)
+   - ~~`character_industry_job_over_time` / `character_industry_job`
+     (+ `character_industry_jobs()`)~~ **Done** — same shape as the order
+     rename, with one wrinkle: this table has a _second_ column with
+     `character_id` in its name, `completed_character_id`, and that one is a
+     genuine EVE numeric id (whoever delivered the job, who needn't be a linked
+     character). It is one of the few columns in the schema already correct
+     under this convention, so renaming it would move things backwards. Every
+     replacement was anchored to avoid it, and the migration asserts it
+     survived — a rename that swept it up wouldn't fail anywhere, the column
+     would just vanish from the view and the Sheets payload would quietly go
+     one column short.
+
+     `corp_industry_job_over_time` is keyed on `corporation_id` and
+     `corp_industry_jobs()` reaches `registration` by `id = any(character_ids)`
+     without naming this table's column, so the corp side was not entangled.
+
    - `character_blueprint_over_time` / `character_blueprint`
      (+ `character_blueprints()`)
    - `character_asset_over_time` / `character_asset` — **last**, the widest:

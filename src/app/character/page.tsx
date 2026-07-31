@@ -137,16 +137,16 @@ const CharacterPage = async () => {
   const nowMs = Date.now()
   const { data: industryJobs } = await supabase
     .from('character_industry_job')
-    .select('character_id, activity_id, status, end_date')
+    .select('registration_id, activity_id, status, end_date')
     .in('status', ['active', 'ready'])
   const jobSlotCounts = reduce(
     (acc, j) => {
       const family = ACTIVITY_FAMILY[Number(j.activity_id)]
       if (family) {
-        const counts = acc.get(j.character_id as string) ?? emptyCounts()
+        const counts = acc.get(j.registration_id as string) ?? emptyCounts()
         const finished = j.status === 'ready' || new Date(j.end_date as string).getTime() <= nowMs
         counts[family][finished ? 'finished' : 'running'] += 1
-        acc.set(j.character_id as string, counts)
+        acc.set(j.registration_id as string, counts)
       }
       return acc
     },
