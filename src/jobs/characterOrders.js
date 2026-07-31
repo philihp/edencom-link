@@ -31,7 +31,7 @@ const fetchCurrentRows = async (registration_id, cols, from = 0) => {
   const { data, error } = await sudoSupabase
     .from('character_order_over_time')
     .select(cols)
-    .eq('character_id', registration_id)
+    .eq('registration_id', registration_id)
     .eq('is_current', true)
     .order('id', { ascending: true })
     .range(from, from + PAGE - 1)
@@ -73,7 +73,7 @@ const reconcile = async (registration_id, fetched) => {
         // valid_from is left to its `default now()` so it marks this version's debut.
         acc.inserts.push({
           order_id: o.order_id,
-          character_id: registration_id,
+          registration_id,
           type_id: o.type_id,
           region_id: o.region_id,
           location_id: o.location_id,

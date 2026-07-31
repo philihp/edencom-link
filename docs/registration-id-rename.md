@@ -54,7 +54,7 @@ for everything below.
 
 ## Inventory
 
-### Table columns — 19 (14 done, 5 remaining)
+### Table columns — 19 (15 done, 4 remaining)
 
 All declared `character_id uuid not null references public.registration(id)`
 (a couple are nullable or `primary key`, otherwise identical):
@@ -66,7 +66,7 @@ All declared `character_id uuid not null references public.registration(id)`
 | `character_blueprint_over_time`         |                                                                      |
 | ~~`character_wallet`~~                  |                                                                      |
 | ~~`character_wallet_transaction`~~      |                                                                      |
-| `character_order_over_time`             |                                                                      |
+| ~~`character_order_over_time`~~         |                                                                      |
 | `character_industry_job_over_time`      |                                                                      |
 | ~~`character_location`~~                | PK                                                                   |
 | ~~`character_clone_over_time`~~         |                                                                      |
@@ -86,7 +86,7 @@ All declared `character_id uuid not null references public.registration(id)`
 These `select *` from the tables above, so they republish whatever the base
 column is called and must be dropped/recreated as part of any rename:
 
-`character_asset`, `character_blueprint`, `character_order`,
+`character_asset`, `character_blueprint`, ~~`character_order`~~,
 `character_industry_job`, ~~`character_clone`~~, ~~`character_skill`~~,
 ~~`character_ship`~~, ~~`character_mercenary_den`~~ (struck ones done in the
 step-5 tranches so far)
@@ -252,7 +252,26 @@ REPLACE FUNCTION` can't rename a `RETURNS TABLE` column, since that's a
      and `mercenary_den_shared_with_caller()` reads only that table, so its
      body stayed valid across this migration.
 
-   - `character_order_over_time` / `character_order` (+ `character_orders()`)
+   - ~~`character_order_over_time` / `character_order`
+     (+ `character_orders()`)~~ **Done** — the first family where a SQL
+     function moved with the table. `CREATE OR REPLACE` was enough for it,
+     unlike `latest_heartbeats()` in step 4: what forced a drop there was
+     renaming a `RETURNS TABLE` column (a return-type change), whereas this
+     one returns plain `json` and keeps its exact signature, so only the body
+     moved.
+
+     Its **parameter stays `character_ids`** — that's step 7, and it has to
+     ship in lockstep with every RPC call site. So the recreated body reads
+     `where o.registration_id = any(character_ids)`, both senses side by side,
+     the same deliberate awkwardness step 2 left in the job payloads.
+
+     Worth recording a near-miss: a line-wise `character_id → registration_id`
+     replacement over `schema.sql` also rewrote `any(character_ids)` into
+     `any(registration_ids)`, silently renaming the parameter and breaking
+     every caller. Per-line asserts don't catch it, because the line _did_
+     change. Only reading the rewritten lines back did. Check the function
+     bodies by eye whenever a table rename touches one.
+
    - `character_industry_job_over_time` / `character_industry_job`
      (+ `character_industry_jobs()`)
    - `character_blueprint_over_time` / `character_blueprint`

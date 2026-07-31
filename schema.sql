@@ -859,7 +859,7 @@ grant all    on public.character_wallet_transaction to service_role;
 create table public.character_order_over_time (
   id bigint generated always as identity primary key,
   order_id bigint not null,
-  character_id uuid not null references public.registration(id) on delete cascade,
+  registration_id uuid not null references public.registration(id) on delete cascade,
   type_id bigint not null,
   region_id bigint not null,
   location_id bigint not null,
@@ -877,7 +877,7 @@ create table public.character_order_over_time (
   valid_from timestamptz not null default now(),
   valid_until timestamptz not null default now()
 );
-create index character_order_over_time_character_id_idx on public.character_order_over_time (character_id);
+create index character_order_over_time_registration_id_idx on public.character_order_over_time (registration_id);
 -- At most one live row per order; also the conflict target the reconcile relies on.
 create unique index character_order_over_time_current_order_idx on public.character_order_over_time (order_id) where is_current;
 -- Time-travel lookups walking an order's version history.
@@ -889,7 +889,7 @@ create policy "Users read own orders"
   for select
   to authenticated
   using (
-    character_id in (
+    registration_id in (
       select id from public.registration where user_id = (select auth.uid())
     )
   );
@@ -945,9 +945,9 @@ as $$
     '[]'::json
   )
   from public.character_order_over_time o
-  join public.registration r on r.id = o.character_id
+  join public.registration r on r.id = o.registration_id
   left join public.sde_published_type t on t.type_id = o.type_id
-  where o.character_id = any(character_ids)
+  where o.registration_id = any(character_ids)
     and o.valid_from <= as_of
     and (o.is_current or o.valid_until >= as_of);
 $$;
