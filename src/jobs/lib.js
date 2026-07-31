@@ -65,7 +65,7 @@ const loadCharacterMaps = async (tag) => {
 // `hasScope(freshScope)`, and call `handler` with the token context (plus the
 // fresh scope list, so a handler covering several endpoints can pick which to
 // run per token). Each call is wrapped in a start/end heartbeat attributed to
-// that character (job/character_id/user_id), unless `heartbeat: false`. A
+// that character (job/registration_id/user_id), unless `heartbeat: false`. A
 // failing token is logged and skipped so one bad token never aborts the rest.
 const runTokenLoop = async (tag, tokens, { characterName, characterUserId, heartbeat }, hasScope, handler) => {
   await forEachSequential(tokens ?? [], async (tokenRow) => {
@@ -105,7 +105,7 @@ const runTokenLoop = async (tag, tokens, { characterName, characterUserId, heart
 // { access_token, characterID, registration_id, userId, name, ctx, scopes }.
 // `characterID` is the EVE character id from the token; `registration_id` is the
 // registration uuid. Each call is wrapped in a start/end heartbeat attributed
-// to that character (job/character_id/user_id), unless `heartbeat: false` — set
+// to that character (job/registration_id/user_id), unless `heartbeat: false` — set
 // by forEachCorporation, which records its own corp-attributed heartbeat instead
 // so a corp job doesn't get two rows (one bare-character, one per-corp) for
 // the same unit of work.

@@ -64,7 +64,7 @@ export async function enumerateCharacters(scopes: string[]): Promise<number[]> {
 // role the endpoint separately requires). Keeping every corp's characters in one
 // group is the whole point: two concurrent reconciles of the same corp once
 // corrupted the SCD-2 data, so a corp is never split across steps. The ids are
-// registration uuids (token.character_id → registration.id), i.e. JS strings —
+// registration uuids (token.registration_id → registration.id), i.e. JS strings —
 // safe to serialize as a step result.
 export async function enumerateCorporations(scope: string): Promise<string[][]> {
   'use step'

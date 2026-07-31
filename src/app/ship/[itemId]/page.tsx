@@ -21,7 +21,7 @@ type ShipRow = {
   location_id: number | string | null
   location_type: string | null
   name: string | null
-  character_id?: string
+  registration_id?: string
   corporation_id?: number | string
 }
 
@@ -32,7 +32,7 @@ type ChildRow = {
   quantity: number | string | null
   is_singleton: boolean | null
   name?: string | null
-  character_id?: string
+  registration_id?: string
   corporation_id?: number | string
 }
 
@@ -68,7 +68,7 @@ const ShipPage = async ({
   // The ship row, from whichever hangar owns it.
   const { data: characterSelf } = await supabase
     .from('character_asset')
-    .select('item_id, character_id, type_id, location_id, location_type, name')
+    .select('item_id, registration_id, type_id, location_id, location_type, name')
     .eq('item_id', itemId)
     .maybeSingle<ShipRow>()
   const { data: corpSelf } = characterSelf
@@ -86,7 +86,7 @@ const ShipPage = async ({
   const [{ data: characterChildren }, { data: corpChildren }] = await Promise.all([
     supabase
       .from('character_asset')
-      .select('item_id, character_id, type_id, location_flag, quantity, is_singleton, name')
+      .select('item_id, registration_id, type_id, location_flag, quantity, is_singleton, name')
       .eq('location_id', itemId),
     supabase
       .from('corp_asset')
@@ -111,11 +111,11 @@ const ShipPage = async ({
 
   // Owner: the holding character's name, or the corporation's cached name.
   let ownerName: string
-  if (characterSelf?.character_id) {
+  if (characterSelf?.registration_id) {
     const { data: registration } = await supabase
       .from('registration')
       .select('name')
-      .eq('id', characterSelf.character_id)
+      .eq('id', characterSelf.registration_id)
       .maybeSingle<{ name: string }>()
     ownerName = registration?.name ?? 'Unknown character'
   } else {
@@ -151,7 +151,7 @@ const ShipPage = async ({
       const contents = contentsByItem.get(String(c.item_id)) ?? 0
       return {
         itemId: String(c.item_id),
-        ownerId: c.character_id ?? String(c.corporation_id),
+        ownerId: c.registration_id ?? String(c.corporation_id),
         typeId: Number(c.type_id),
         name: c.name ?? null,
         quantity: c.quantity,
@@ -197,9 +197,9 @@ const SharedShipPage = async ({ itemId, token }: { itemId: string; token: string
   const supabase = createServiceClient()
   const { data: characterSelf } = await supabase
     .from('character_asset')
-    .select('item_id, character_id, type_id, name')
+    .select('item_id, registration_id, type_id, name')
     .eq('item_id', itemId)
-    .in('character_id', scope.characterIds)
+    .in('registration_id', scope.characterIds)
     .maybeSingle<ShipRow>()
   const { data: corpSelf } = characterSelf
     ? { data: null }
@@ -218,7 +218,7 @@ const SharedShipPage = async ({ itemId, token }: { itemId: string; token: string
       .from('character_asset')
       .select('item_id, type_id, location_flag, quantity, is_singleton, name')
       .eq('location_id', itemId)
-      .in('character_id', scope.characterIds),
+      .in('registration_id', scope.characterIds),
     supabase
       .from('corp_asset')
       .select('item_id, type_id, location_flag, quantity, is_singleton')
@@ -229,10 +229,10 @@ const SharedShipPage = async ({ itemId, token }: { itemId: string; token: string
 
   // Everything inside a ship belongs to whoever owns the ship, so the whole
   // cargo view carries a single owner.
-  const ownerId = characterSelf?.character_id ?? String(corpSelf?.corporation_id)
+  const ownerId = characterSelf?.registration_id ?? String(corpSelf?.corporation_id)
   let ownerName: string
-  if (characterSelf?.character_id) {
-    ownerName = scope.characterNames.get(characterSelf.character_id) ?? 'Unknown character'
+  if (characterSelf?.registration_id) {
+    ownerName = scope.characterNames.get(characterSelf.registration_id) ?? 'Unknown character'
   } else {
     const corporationId = Number(corpSelf?.corporation_id)
     const { data: corpName } = await supabase

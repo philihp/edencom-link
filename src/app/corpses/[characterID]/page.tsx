@@ -71,9 +71,9 @@ const CorpsesPage = async ({ params }: { params: Promise<{ characterID: string }
     .eq('user_id', owner.user_id)
     .returns<RegistrationRow[]>()
 
-  // The asset tables key on the registration row's uuid (character_asset.
-  // character_id → registration.id), not the EVE character id, so scope the
-  // corpse query by those uuids.
+  // The asset tables key on the registration row's uuid
+  // (character_asset.registration_id → registration.id), not the EVE character
+  // id, so scope the corpse query by those uuids.
   const registrationIds = (registrations ?? []).map((r) => r.id)
 
   // Label the account by its main character, falling back to the character in
@@ -91,7 +91,7 @@ const CorpsesPage = async ({ params }: { params: Promise<{ characterID: string }
       ? await service
           .from('character_asset')
           .select('item_id, type_id, name, valid_from')
-          .in('character_id', registrationIds)
+          .in('registration_id', registrationIds)
           .in('type_id', typeIds)
           .returns<CorpseRow[]>()
       : { data: [] as CorpseRow[] }

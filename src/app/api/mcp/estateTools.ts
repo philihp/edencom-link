@@ -52,9 +52,9 @@ const fetchLocationBuckets = async (supabase: SupabaseClient): Promise<LocationB
     supabase.rpc('corp_asset_location_summary'),
   ])
   const rows = [
-    ...((characterSummary ?? []) as Array<SummaryRow & { character_id: string }>).map((r) => ({
+    ...((characterSummary ?? []) as Array<SummaryRow & { registration_id: string }>).map((r) => ({
       ...r,
-      ownerId: r.character_id,
+      ownerId: r.registration_id,
     })),
     ...((corpSummary ?? []) as Array<SummaryRow & { corporation_id: number | string }>).map((r) => ({
       ...r,
@@ -85,7 +85,7 @@ const fetchLocationContents = async (supabase: SupabaseClient, locationId: strin
   const COLUMNS = 'item_id, type_id, location_flag, quantity, is_singleton'
   const [{ data: characterRows }, { data: corpRows }, { data: characterContents }, { data: corpContents }] =
     await Promise.all([
-      supabase.from('character_asset').select(`${COLUMNS}, character_id, name`).eq('location_id', locationId),
+      supabase.from('character_asset').select(`${COLUMNS}, registration_id, name`).eq('location_id', locationId),
       supabase.from('corp_asset').select(`${COLUMNS}, corporation_id`).eq('location_id', locationId),
       supabase.rpc('character_asset_location_contents', { parent: locationId }),
       supabase.rpc('corp_asset_location_contents', { parent: locationId }),
@@ -100,9 +100,9 @@ const fetchLocationContents = async (supabase: SupabaseClient, locationId: strin
   )
 
   return [
-    ...((characterRows ?? []) as Array<AssetRow & { character_id: string; name: string | null }>).map((r) => ({
+    ...((characterRows ?? []) as Array<AssetRow & { registration_id: string; name: string | null }>).map((r) => ({
       ...r,
-      ownerId: r.character_id,
+      ownerId: r.registration_id,
     })),
     ...((corpRows ?? []) as Array<AssetRow & { corporation_id: number | string }>).map((r) => ({
       ...r,

@@ -32,7 +32,7 @@ const SHIP_CATEGORY_ID = 6
 // convert at the API/system-lookup boundary (mirrors the assets index page).
 type CharacterAsset = {
   item_id: number | string
-  character_id: string
+  registration_id: string
   type_id: number | string
   location_id: number | string | null
   location_flag: string | null
@@ -43,11 +43,11 @@ type CharacterAsset = {
 }
 
 // Corp assets carry no player-assigned name column; owner is the corporation.
-type CorpAsset = Omit<CharacterAsset, 'character_id' | 'name'> & { corporation_id: number | string }
+type CorpAsset = Omit<CharacterAsset, 'registration_id' | 'name'> & { corporation_id: number | string }
 
 // Either source's row, normalized to whoever owns it: a character
 // (registration uuid) or a corporation (EVE corporation id).
-type Asset = Omit<CharacterAsset, 'character_id'> & { owner_id: string }
+type Asset = Omit<CharacterAsset, 'registration_id'> & { owner_id: string }
 
 type Structure = {
   structure_id: number | string
@@ -94,9 +94,11 @@ const AssetLocationPage = async ({
   // whole asset table no longer pages into Node.
   let characterQuery = supabase
     .from('character_asset')
-    .select('item_id, character_id, type_id, location_id, location_flag, location_type, quantity, is_singleton, name')
+    .select(
+      'item_id, registration_id, type_id, location_id, location_flag, location_type, quantity, is_singleton, name'
+    )
     .eq('location_id', locationId)
-  if (characterScope) characterQuery = characterQuery.in('character_id', characterScope)
+  if (characterScope) characterQuery = characterQuery.in('registration_id', characterScope)
   let corpQuery = supabase
     .from('corp_asset')
     .select('item_id, corporation_id, type_id, location_id, location_flag, location_type, quantity, is_singleton')
@@ -118,9 +120,9 @@ const AssetLocationPage = async ({
     ((currentShips ?? []) as { ship_item_id: number | string }[]).map((s) => String(s.ship_item_id))
   )
   const rootItems: Asset[] = [
-    ...((characterChildren ?? []) as CharacterAsset[]).map(({ character_id, ...a }) => ({
+    ...((characterChildren ?? []) as CharacterAsset[]).map(({ registration_id, ...a }) => ({
       ...a,
-      owner_id: character_id,
+      owner_id: registration_id,
     })),
     ...((corpChildren ?? []) as CorpAsset[]).map(({ corporation_id, ...a }) => ({
       ...a,
@@ -153,11 +155,13 @@ const AssetLocationPage = async ({
   // corp-owned. Resolve the heading and the "back" target accordingly.
   let selfQuery = supabase
     .from('character_asset')
-    .select('item_id, character_id, type_id, location_id, name')
+    .select('item_id, registration_id, type_id, location_id, name')
     .eq('item_id', locationId)
-  if (characterScope) selfQuery = selfQuery.in('character_id', characterScope)
+  if (characterScope) selfQuery = selfQuery.in('registration_id', characterScope)
   const { data: characterSelf } =
-    await selfQuery.maybeSingle<Pick<CharacterAsset, 'item_id' | 'character_id' | 'type_id' | 'location_id' | 'name'>>()
+    await selfQuery.maybeSingle<
+      Pick<CharacterAsset, 'item_id' | 'registration_id' | 'type_id' | 'location_id' | 'name'>
+    >()
   let corpSelfQuery = supabase
     .from('corp_asset')
     .select('item_id, corporation_id, type_id, location_id')
@@ -283,8 +287,8 @@ const AssetLocationPage = async ({
         supabase.rpc('corp_asset_location_summary'),
       ])
       const summary: SummaryRow[] = [
-        ...((characterSummary ?? []) as Array<Omit<SummaryRow, 'owner_id'> & { character_id: string }>).map(
-          ({ character_id, ...r }) => ({ ...r, owner_id: character_id })
+        ...((characterSummary ?? []) as Array<Omit<SummaryRow, 'owner_id'> & { registration_id: string }>).map(
+          ({ registration_id, ...r }) => ({ ...r, owner_id: registration_id })
         ),
         ...((corpSummary ?? []) as Array<Omit<SummaryRow, 'owner_id'> & { corporation_id: number | string }>).map(
           ({ corporation_id, ...r }) => ({ ...r, owner_id: String(corporation_id) })

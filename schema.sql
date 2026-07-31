@@ -231,7 +231,7 @@ grant all                            on public.token to service_role;
 create table public.character_asset_over_time (
   id bigint generated always as identity primary key,
   item_id bigint not null,
-  character_id uuid not null references public.registration(id) on delete cascade,
+  registration_id uuid not null references public.registration(id) on delete cascade,
   type_id bigint not null,
   location_id bigint,
   location_flag text,
@@ -246,7 +246,7 @@ create table public.character_asset_over_time (
   -- otherwise. Kept last to match the add-column migration's column order.
   name text
 );
-create index character_asset_over_time_character_id_idx on public.character_asset_over_time (character_id);
+create index character_asset_over_time_registration_id_idx on public.character_asset_over_time (registration_id);
 -- At most one live row per item; also the conflict target the extract relies on.
 create unique index character_asset_over_time_current_item_idx on public.character_asset_over_time (item_id) where is_current;
 -- Time-travel lookups walking an item's version history.
@@ -258,7 +258,7 @@ create policy "Users read own assets"
   for select
   to authenticated
   using (
-    character_id in (
+    registration_id in (
       select id from public.registration where user_id = (select auth.uid())
     )
   );
@@ -287,7 +287,7 @@ grant all    on public.character_asset_over_time to service_role;
 -- its location_id chain through items we also own until the parent isn't ours;
 -- that parent is the root.
 create or replace function public.character_asset_location_summary()
-returns table (location_id bigint, location_type text, character_id uuid, stacks bigint, station_name text, system_id bigint)
+returns table (location_id bigint, location_type text, registration_id uuid, stacks bigint, station_name text, system_id bigint)
 language sql
 stable
 as $$
@@ -308,7 +308,7 @@ as $$
   walk as (
     select
       a.item_id       as start_item,
-      a.character_id  as character_id,
+      a.registration_id  as registration_id,
       a.location_id   as location_id,
       a.location_type as location_type,
       1               as depth
@@ -316,7 +316,7 @@ as $$
     union all
     select
       w.start_item,
-      w.character_id,
+      w.registration_id,
       p.location_id,
       p.location_type,
       w.depth + 1
@@ -327,7 +327,7 @@ as $$
   select
     w.location_id,
     w.location_type,
-    w.character_id,
+    w.registration_id,
     count(*) as stacks,
     st.name as station_name,
     st.system_id
@@ -335,7 +335,7 @@ as $$
   left join public.sde_station st on st.station_id = w.location_id
   where w.location_id is not null
     and not exists (select 1 from parent_of o where o.item_id = w.location_id)
-  group by w.location_id, w.location_type, w.character_id, st.name, st.system_id;
+  group by w.location_id, w.location_type, w.registration_id, st.name, st.system_id;
 $$;
 
 -- per-location page (/asset/[locationId]): for each item sitting directly in
@@ -368,7 +368,7 @@ $$;
 create or replace function public.character_asset_search(type_ids bigint[])
 returns table (
   item_id bigint,
-  character_id uuid,
+  registration_id uuid,
   type_id bigint,
   quantity bigint,
   is_singleton boolean,
@@ -393,7 +393,7 @@ as $$
     order by item_id, is_current desc, valid_until desc
   ),
   matched as (
-    select a.item_id, a.character_id, a.type_id, a.quantity, a.is_singleton, a.name,
+    select a.item_id, a.registration_id, a.type_id, a.quantity, a.is_singleton, a.name,
            a.location_flag, a.location_id, a.location_type
     from public.character_asset a
     where a.type_id = any(type_ids)
@@ -429,7 +429,7 @@ as $$
   )
   select
     m.item_id,
-    m.character_id,
+    m.registration_id,
     m.type_id,
     m.quantity,
     m.is_singleton,
@@ -493,9 +493,9 @@ as $$
     '[]'::json
   )
   from public.character_asset_over_time a
-  join public.registration r on r.id = a.character_id
+  join public.registration r on r.id = a.registration_id
   left join public.sde_published_type t on t.type_id = a.type_id
-  where a.character_id = any(character_ids)
+  where a.registration_id = any(character_ids)
     and a.valid_from <= as_of
     and (a.is_current or a.valid_until >= as_of)
     and (not a.is_singleton or a.is_blueprint_copy);

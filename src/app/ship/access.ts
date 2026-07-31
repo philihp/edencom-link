@@ -9,7 +9,7 @@ import { createServiceClient } from '@/utils/supabase/service'
 
 export type ShareScope = {
   userId: string
-  // registration uuids (character_asset.character_id values) of the sharer
+  // registration uuids (character_asset.registration_id values) of the sharer
   characterIds: string[]
   // character name per registration uuid, for owner display
   characterNames: Map<string, string>

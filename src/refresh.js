@@ -52,8 +52,8 @@ const execute = async () => {
     console.error('no character found for owner')
     process.exit(1)
   }
-  const character_id = characters[0]
-  const [refresh_token, characterID] = await accessToken(character_id)
+  const registration_id = characters[0]
+  const [refresh_token, characterID] = await accessToken(registration_id)
 
   console.time(`all asst chunk`)
 
@@ -61,13 +61,13 @@ const execute = async () => {
   console.time(`asst chunk 1`)
   const [firstAssetPage, maxPages] = await assets(refresh_token, characterID, 1)
   console.timeEnd(`asst chunk 1`)
-  const firstAssets = firstAssetPage.map((a) => ({ ...a, character_id, is_blueprint_copy: !!a.is_blueprint_copy }))
+  const firstAssets = firstAssetPage.map((a) => ({ ...a, registration_id, is_blueprint_copy: !!a.is_blueprint_copy }))
   assetList.push(...firstAssets)
 
   await range(2, Number.parseInt(maxPages, 10) + 1).reduce(async (accum, page) => {
     console.time(`asst chunk ${page}`)
     const [assetPage] = await assets(refresh_token, characterID, page)
-    const newAssets = assetPage.map((a) => ({ ...a, character_id, is_blueprint_copy: !!a.is_blueprint_copy }))
+    const newAssets = assetPage.map((a) => ({ ...a, registration_id, is_blueprint_copy: !!a.is_blueprint_copy }))
     console.timeEnd(`asst chunk ${page}`)
     assetList.push(...newAssets)
     return accum
