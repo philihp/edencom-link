@@ -438,8 +438,9 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
           hourly job can fetch them.
         </p>
       )}
-      <p className={styles.revenueLink}>
+      <p className={styles.pageLinks}>
         <a href="/structure/revenue">Tax revenue events &raquo;</a>
+        <a href="/mercenary-dens">Mercenary dens &raquo;</a>
       </p>
       <p className={styles.lastRun}>
         Structures last refreshed:{' '}
