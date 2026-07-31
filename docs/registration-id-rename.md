@@ -54,7 +54,7 @@ for everything below.
 
 ## Inventory
 
-### Table columns — 19 (17 done, 2 remaining)
+### Table columns — 19 (18 done, 1 remaining)
 
 All declared `character_id uuid not null references public.registration(id)`
 (a couple are nullable or `primary key`, otherwise identical):
@@ -62,7 +62,7 @@ All declared `character_id uuid not null references public.registration(id)`
 | Table                                   | Notes                                                                |
 | --------------------------------------- | -------------------------------------------------------------------- |
 | ~~`token`~~                             | **Done** — renamed in the step-1 PR                                  |
-| `character_asset_over_time`             |                                                                      |
+| ~~`character_asset_over_time`~~         |                                                                      |
 | ~~`character_blueprint_over_time`~~     |                                                                      |
 | ~~`character_wallet`~~                  |                                                                      |
 | ~~`character_wallet_transaction`~~      |                                                                      |
@@ -86,7 +86,7 @@ All declared `character_id uuid not null references public.registration(id)`
 These `select *` from the tables above, so they republish whatever the base
 column is called and must be dropped/recreated as part of any rename:
 
-`character_asset`, ~~`character_blueprint`~~, ~~`character_order`~~,
+~~`character_asset`~~, ~~`character_blueprint`~~, ~~`character_order`~~,
 ~~`character_industry_job`~~, ~~`character_clone`~~, ~~`character_skill`~~,
 ~~`character_ship`~~, ~~`character_mercenary_den`~~ (struck ones done in the
 step-5 tranches so far)
@@ -99,8 +99,10 @@ Parameters (`character_ids uuid[]`): `character_asset_snapshot_at`,
 (all still pending — only the _parameters_ remain; their bodies have already
 been moved onto `registration_id` by the step-5 tranches)
 
-Return columns (`character_id uuid`): `character_asset_location_summary`,
-`character_asset_search`, ~~`latest_heartbeats`~~ (done)
+Return columns (`character_id uuid`): ~~`character_asset_location_summary`~~,
+~~`character_asset_search`~~, ~~`latest_heartbeats`~~ — **all done**. Each
+needed a DROP rather than CREATE OR REPLACE, since renaming a `RETURNS TABLE`
+column is a return-type change.
 
 ### JavaScript / TypeScript — 4 modules
 
@@ -312,10 +314,30 @@ REPLACE FUNCTION` can't rename a `RETURNS TABLE` column, since that's a
      definition. Worth remembering that `pnpm test` alone would not have caught
      this — `pnpm run test:sql` is a separate command needing a database.
 
-   - `character_asset_over_time` / `character_asset` — **last**, the widest:
-     three functions (`character_asset_location_summary`,
-     `character_asset_search`, `character_asset_snapshot_at`), plus
-     `asset_ancestors()` climbing the view
+   - ~~`character_asset_over_time` / `character_asset`~~ **Done** — the widest,
+     and deliberately last. The four functions split into two kinds:
+     `character_asset_location_summary()` and `character_asset_search()`
+     publish the column in their `RETURNS TABLE`, so both had to be **dropped**
+     and recreated (and re-granted — DROP discards the ACL, and both carry an
+     explicit grant); `character_asset_snapshot_at()` returns json, so
+     CREATE OR REPLACE sufficed.
+
+     Those two are the only renames in this entire cleanup that change a
+     contract JavaScript reads **by name**, so their callers moved in the same
+     commit — `/asset`, `/asset/search`, and the MCP `browse_assets` /
+     `search_assets` tools.
+
+     `character_asset_location_contents()` and `asset_ancestors()` read the
+     view but never name the owner column, so both were left completely alone —
+     verified by grep rather than assumed, `asset_ancestors()` being the one
+     recursive CTE in the schema and unpleasant to debug from a runtime error.
+
+     Three comments left stale by _earlier_ steps of this migration were fixed
+     here too (`src/jobs/lib.js`, the queue route, `src/workflows/lib.ts`, which
+     still described `token.character_id` after step 1 renamed it), plus the
+     `character_asset_share` sketch in docs/sharing-layer/design.md.
+
+**Step 5 is complete.** All eight SCD families now use `registration_id`.
 
 6. **`character_mercenary_den_share`**, which drives
    `mercenary_den_shared_with_caller()` and through it the RLS on both the den

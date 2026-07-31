@@ -452,7 +452,7 @@ export const registerTools = (server: McpServer): void => {
 
       type CharacterSearchRow = {
         item_id: number | string
-        character_id: string
+        registration_id: string
         type_id: number | string
         quantity: number | string | null
         is_singleton: boolean | null
@@ -462,10 +462,10 @@ export const registerTools = (server: McpServer): void => {
         root_location_type: string | null
         contents: number | string
       }
-      type CorpSearchRow = Omit<CharacterSearchRow, 'character_id' | 'name'> & { corporation_id: number | string }
+      type CorpSearchRow = Omit<CharacterSearchRow, 'registration_id' | 'name'> & { corporation_id: number | string }
 
       const rows = [
-        ...((characterRows ?? []) as CharacterSearchRow[]).map((r) => ({ ...r, ownerId: r.character_id })),
+        ...((characterRows ?? []) as CharacterSearchRow[]).map((r) => ({ ...r, ownerId: r.registration_id })),
         ...((corpRows ?? []) as CorpSearchRow[]).map((r) => ({ ...r, name: null, ownerId: String(r.corporation_id) })),
       ].map((r) => ({
         ownerId: r.ownerId,

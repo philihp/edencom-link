@@ -14,11 +14,11 @@ alternatives (public `user_id`, bloom filters).
 
 ## Current state (what this replaces)
 
-| Data | Mechanism today | Shape |
-|---|---|---|
-| Mercenary dens | `character_mercenary_den_share` | Opt-in, all-or-nothing per (character → **alliance**); no per-den rows. Corporation audiences were migrated to their alliance. Also gates `mercenary_den_enemy_intel` visibility (re-keyed to `reporter_id`). **Already on the target model**: the SECURITY DEFINER helpers are gone, so the policies are plain invoker-rights joins via `my_alliance_ids()` / `mercenary_den_shared_with_caller()`, with owner names off the `character_directory`. |
-| Structures | Hard-coded RLS policy on `corp_structure` | Alliance-mates read the core table unconditionally (dynamic via `corporation.alliance_id`); no opt-out. Fuel already split into `corp_structure_status` (own-corp only). |
-| Assets | `shared_asset_token` | Public per-item token links, resolved server-side via the service role; no anon RLS. |
+| Data           | Mechanism today                           | Shape                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| -------------- | ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Mercenary dens | `character_mercenary_den_share`           | Opt-in, all-or-nothing per (character → **alliance**); no per-den rows. Corporation audiences were migrated to their alliance. Also gates `mercenary_den_enemy_intel` visibility (re-keyed to `reporter_id`). **Already on the target model**: the SECURITY DEFINER helpers are gone, so the policies are plain invoker-rights joins via `my_alliance_ids()` / `mercenary_den_shared_with_caller()`, with owner names off the `character_directory`. |
+| Structures     | Hard-coded RLS policy on `corp_structure` | Alliance-mates read the core table unconditionally (dynamic via `corporation.alliance_id`); no opt-out. Fuel already split into `corp_structure_status` (own-corp only).                                                                                                                                                                                                                                                                             |
+| Assets         | `shared_asset_token`                      | Public per-item token links, resolved server-side via the service role; no anon RLS.                                                                                                                                                                                                                                                                                                                                                                 |
 
 ## Identity split: public directory vs. private binding
 
@@ -28,7 +28,7 @@ Today `registration` conflates two things with very different sensitivity:
   public information in EVE (ESI serves it unauthenticated); hiding it behind
   owner-only RLS is what forced the SECURITY DEFINER workarounds.
 - **The account binding** — which `user_id` a character belongs to, `is_main`.
-  This is the app's *only* real secret about identity: it maps alts to each
+  This is the app's _only_ real secret about identity: it maps alts to each
   other. It must never be readable across accounts.
 
 The split:
@@ -39,7 +39,7 @@ The split:
   `character_*` extract tables — "the character directory" throughout this doc):
   `character_id` (bigint PK), `name`, `corporation_id`, `alliance_id`,
   `registration_id` (nullable unique FK → `registration.id`, `on delete set
-  null`), `updated_at`. **No `user_id` — ever.** `registration_id` is included
+null`), `updated_at`. **No `user_id` — ever.** `registration_id` is included
   so rows in extract tables (which key owners by registration uuid) can be
   joined to a public name/corp/alliance without touching `registration`;
   exposing the uuid↔character mapping leaks nothing, because the uuid already
@@ -69,12 +69,12 @@ Every share row answers three questions:
   character's rows in this table").
 - **Audience** — who may see it. Four kinds:
 
-| `audience` | Target column | Resolution |
-|---|---|---|
-| `corporation` | `audience_corporation_id` | Static: viewer has a registration in that corp. |
-| `alliance` | `audience_corporation_id` | **Dynamic**: resolved at query time to that corp's *current* alliance via `corporation.alliance_id`. If the corp changes alliance, the share follows (lag = directory refresh cadence; accepted). Stored as a corp, never as an alliance id. |
-| `public` | — | True anon RLS: the underlying rows become selectable through the anon key. Enumerable by design. |
-| `link` | `token` | Unguessable token (16 random bytes hex, like `shared_asset_token`). **Not expressed in RLS at all** — resolved server-side via the service role, which then scopes queries to the grantor's rows (today's `/ship/[itemId]?token=` pattern, generalized). |
+| `audience`    | Target column             | Resolution                                                                                                                                                                                                                                               |
+| ------------- | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `corporation` | `audience_corporation_id` | Static: viewer has a registration in that corp.                                                                                                                                                                                                          |
+| `alliance`    | `audience_corporation_id` | **Dynamic**: resolved at query time to that corp's _current_ alliance via `corporation.alliance_id`. If the corp changes alliance, the share follows (lag = directory refresh cadence; accepted). Stored as a corp, never as an alliance id.             |
+| `public`      | —                         | True anon RLS: the underlying rows become selectable through the anon key. Enumerable by design.                                                                                                                                                         |
+| `link`        | `token`                   | Unguessable token (16 random bytes hex, like `shared_asset_token`). **Not expressed in RLS at all** — resolved server-side via the service role, which then scopes queries to the grantor's rows (today's `/ship/[itemId]?token=` pattern, generalized). |
 
 `public` and `link` are distinct audiences: `link` means "anyone with the URL,"
 `public` means "anyone at all, including direct anon-key queries."
@@ -84,7 +84,7 @@ Every share row answers three questions:
 A share is honored only while the granting character still owns the row: the
 RLS predicate is a plain equality join (`core.character_id =
 share.character_id`, or `core.corporation_id = share.corporation_id`). An item
-that moves to a *different* character — including another character on the
+that moves to a _different_ character — including another character on the
 same account — orphans the share: the row stays but grants nothing.
 
 Orphans are **surfaced, not resurrected**: the owner reads their own share
@@ -92,7 +92,7 @@ rows, so the UI lists shares that no longer match any current row ("this share
 points at nothing — re-share from the new character, or delete it"). No
 cleanup job, no silent transfer.
 
-A character *itself* changing EVE accounts is detectable, not just inferable:
+A character _itself_ changing EVE accounts is detectable, not just inferable:
 the SSO `owner` claim (CharacterOwnerHash, already stored as
 `registration.owner`) changes exactly when a character transfers. When a
 re-auth presents a hash that differs from the stored one, the app should
@@ -201,12 +201,12 @@ the attack users fear). Three designs were considered:
    needs its own definer function, each one a privilege-escalation surface to
    audit forever. The complexity exists only to preserve share-follows-alt.
 3. **Bloom filter over each account's character set** (investigated,
-   rejected): publish a structure anyone can *check* ("is X in this set?") but
-   not *enumerate*. Fails on three counts. (a) EVE character ids are a small,
+   rejected): publish a structure anyone can _check_ ("is X in this set?") but
+   not _enumerate_. Fails on three counts. (a) EVE character ids are a small,
    public, enumerable space (~tens of millions, listable via ESI) — an
    offline-checkable digest over a small input space is recoverable by brute
    force in seconds, the same reason hashed phone numbers are still PII.
-   (b) The *targeted* query is the actual attack: "is this suspected alt in
+   (b) The _targeted_ query is the actual attack: "is this suspected alt in
    Bob's set?" is one membership check, which any publicly checkable structure
    answers by construction — full-set recovery is irrelevant. (c) False
    positives can't save it: tuned high enough to bury bulk enumeration
@@ -221,7 +221,7 @@ the attack users fear). Three designs were considered:
    A variant using ESI's owner value as the filter key (unguessable, so no
    public enumeration) was also examined and fails twice over. First, the
    input doesn't exist: the SSO `owner` claim is the **CharacterOwnerHash**,
-   which identifies the (character → account) *binding*, not the account —
+   which identifies the (character → account) _binding_, not the account —
    alts on one account don't share it (our own `registration` table proves
    this: `unique (user_id, owner)` would collide on a user's second character
    otherwise), and ESI deliberately exposes no account identity anywhere. The
@@ -238,7 +238,7 @@ the attack users fear). Three designs were considered:
 Hence **per-character shares**: nobody ever needs to resolve an account's
 character set, so there is nothing to hide and nothing to bridge. The cost is
 that a share dies when its object changes hands — surfaced to the owner as an
-orphan (above). If users ever *want* their alts correlatable to a chosen
+orphan (above). If users ever _want_ their alts correlatable to a chosen
 audience, that's just another sharable object: an `account_share` row exposing
 the alt mapping itself, opt-in, same audience model — not an oracle.
 
@@ -248,7 +248,7 @@ the alt mapping itself, opt-in, same audience model — not an oracle.
 
 New `character_directory` table (shape above) + the extract job that populates
 it. See the PR plan for job details. `registration` keeps its current shape
-and policies; nothing moves off it in this stage except *reads* that only
+and policies; nothing moves off it in this stage except _reads_ that only
 needed public identity.
 
 ### Stage B — Mercenary dens
@@ -273,20 +273,20 @@ den_id        bigint,                    -- scope: one den (null = all of this c
 audience / audience_corporation_id / token / created_at / expires_at
 ```
 
-- **Migration is 1:1** — *done*: each (character, corporation) row became
+- **Migration is 1:1** — _done_: each (character, corporation) row became
   (character, that corporation's alliance), collapsing duplicates where two
   corporations shared an alliance.
 - **Policies rewritten** as plain joins (pattern above) on
   `character_mercenary_den_over_time` and `character_mercenary_den_status` —
-  *done*.
-- **Delete the definer helpers** — *done*: `mercenary_den_owner_names` and
+  _done_.
+- **Delete the definer helpers** — _done_: `mercenary_den_owner_names` and
   `user_shares_dens_with_caller` (from migration `20260720050000`) are gone.
   Shared-den owner names come from the public `character_directory`
   (`character_directory.registration_id = den.character_id`), and intel
   visibility is re-keyed (next point).
-- **Enemy intel created and owned by the main character** — *done*:
+- **Enemy intel created and owned by the main character** — _done_:
   `mercenary_den_enemy_intel` gains `reporter_id uuid references
-  registration(id) on delete set null`, set on insert to the submitting
+registration(id) on delete set null`, set on insert to the submitting
   user's **main** registration (already the name the UI attributes reports
   to). Ownership moves with it: the read-own / insert / soft-delete policies
   re-key to "`reporter_id` is one of my registrations," and cross-user
@@ -312,7 +312,7 @@ Director prerequisite for corp-owned shares: ESI
 standard per-character job, table `character_role (character_id uuid pk
 references registration(id) on delete cascade, roles text[], recorded_at)`,
 plus a plain (invoker) `is_director(corp_id)` helper — the caller reads their
-*own* registrations and roles, so no definer needed. Ships independently of
+_own_ registrations and roles, so no definer needed. Ships independently of
 any sharing behavior: scope opt-in on `/account/settings`, freshness row on
 `/character/refresh`.
 
@@ -322,7 +322,7 @@ any sharing behavior: scope opt-in on `/account/settings`, freshness row on
 `structure_id` (null = all corp structures), same audience columns.
 
 - **Seeded default**: migration inserts `(corporation_id, structure_id = null,
-  audience = 'alliance', audience_corporation_id = corporation_id)` for every
+audience = 'alliance', audience_corporation_id = corporation_id)` for every
   corp already in `corp_structure`, then the hard-coded "Alliance members read
   corp structures" policy is dropped and replaced by the share-driven one —
   behavior identical at cutover, but now visible and revocable.
@@ -337,8 +337,9 @@ any sharing behavior: scope opt-in on `/account/settings`, freshness row on
 
 ### Stage E — Character assets
 
-`character_asset_share`: grantor `character_id` (registration uuid — matches
-`character_asset_over_time.character_id` directly), subject `item_id` (null =
+`character_asset_share`: grantor `registration_id` (matches
+`character_asset_over_time.registration_id` directly — both are registration
+uuids; see docs/registration-id-rename.md), subject `item_id` (null =
 this character's whole hangar), `include_contents boolean not null default
 true` (sharing a container/ship shares what's inside it, recursively),
 audience columns.
@@ -356,7 +357,7 @@ audience columns.
   chain through current rows (the `asset_ancestors()` shape, depth-capped at
   16), and (3) matches shares on the item itself, an ancestor with
   `include_contents`, or the hangar wildcard. Because grantor and asset rows
-  share the same `character_id`, the climb stays within rows the *share*
+  share the same `character_id`, the climb stays within rows the _share_
   already implies visibility for — the helper can therefore be written
   invoker-rights against the share-table policies plus the core policy it
   serves, but **verify recursion behavior in the PR** (a policy whose helper
@@ -380,7 +381,7 @@ filter_type_ids bigint[],     filter_item_ids bigint[]
   filters that are non-null); all null = everything. Category/group resolve
   via `sde_published_type` inside the helper (SDE mirror is public-read, so
   this works for anon/link viewers too).
-- Filters constrain the *contents* reached through `include_contents`; the
+- Filters constrain the _contents_ reached through `include_contents`; the
   shared container itself stays visible.
 - Schema + helper + share-page enforcement first; filter-editing UI can follow.
 
@@ -398,16 +399,16 @@ One PR per row, in order. Each schema PR follows the repo's migration rule:
 edit `schema.sql` (full-reset truth) **and** add a non-destructive incremental
 migration under `supabase/migrations/`.
 
-| PR | Stage | Contents | Notes for the implementer |
-|---|---|---|---|
-| 1 | — | This design revision | Done in this PR. |
-| 2 | A | `character_directory` table + `character-directory` extract job | **Done.** New table per "Identity split" (PK `character_id` bigint; **no `user_id`**; nullable unique `registration_id`). Job resolves via `POST /characters/affiliation/` (bulk, no auth — the response already carries `alliance_id` per character, so no per-id corp/alliance GET is needed) and backfills corp/alliance names from bulk `POST /universe/names/`; `alliance.name`/`corporation.name` relaxed to nullable so an id is recorded even when its name lookup lags. **Subsumed and retired `character-affiliations`** (same source endpoint): took over its 11:41 daily slot, queue key, `ACCOUNT_JOBS` entry, cron route, and duties (upsert `character_affiliation`, refresh `registration.corporation_id`); the `character_affiliation` table stays (still read by `resolveNames`/structure pages). Also finally populates `corporation.alliance_id`, which the *existing* `corp_structure` alliance policy already depends on. Directory covers registered + universe_name-cached characters; extending to other seen ids (e.g. `corp_industry_job.installer_id`) is a later nicety. |
-| 3 | B | Den shares on the new model + shared helpers | **Largely done.** `character_mercenary_den_share` was migrated in place from a per-corporation to a per-alliance audience (1:1, collapsing duplicates; rows aimed at an alliance-less corp dropped). `my_alliance_ids` and `mercenary_den_shared_with_caller` landed as invoker helpers, den/status policies are plain joins, both definer helpers are deleted, writes moved off the service role onto RLS, and enemy intel is re-keyed to `reporter_id` (backfilled; `created_by` demoted to audit/orphan fallback). `/mercenary-dens` owner-name resolution now goes through the `character_directory`. Remaining: `my_corporation_ids` / `share_audience_matches` (land with the first consumer that needs a non-alliance audience), per-den scope, tokens/expiry, and the orphan list. Depended on PR 2. |
-| 4 | C | `character-roles` extract + `is_director()` | Independent of PR 3; must precede PR 5. Scope opt-in UI + refresh-matrix row like any per-character job. |
-| 5 | D | `corp_structure_share` + seeded alliance default + policy cutover | Seed rows for every existing corp in the migration itself (cutover parity), `structure_share_seeded_at` for seed-once, Director-gated writes, opt-out UI on `/structure`. Depends on PRs 2 (alliance resolution), 3 (helpers), 4 (Director). |
-| 6 | E | `character_asset_share` + `shared_asset_token` migration + containment helper | Tokens preserved so existing URLs keep working. Resolve the RLS recursion question flagged in Stage E before merging. Depends on PR 3 (helpers). |
-| 7 | F | Asset filter columns + filter evaluation | OR semantics across provided sets; SDE-resolved category/group. UI can trail. Depends on PR 6. |
-| 8 | — | (optional) `corp_asset_share` | Mirrors PRs 6–7 with corp grantor + Director gate. |
+| PR  | Stage | Contents                                                                      | Notes for the implementer                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| --- | ----- | ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | —     | This design revision                                                          | Done in this PR.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| 2   | A     | `character_directory` table + `character-directory` extract job               | **Done.** New table per "Identity split" (PK `character_id` bigint; **no `user_id`**; nullable unique `registration_id`). Job resolves via `POST /characters/affiliation/` (bulk, no auth — the response already carries `alliance_id` per character, so no per-id corp/alliance GET is needed) and backfills corp/alliance names from bulk `POST /universe/names/`; `alliance.name`/`corporation.name` relaxed to nullable so an id is recorded even when its name lookup lags. **Subsumed and retired `character-affiliations`** (same source endpoint): took over its 11:41 daily slot, queue key, `ACCOUNT_JOBS` entry, cron route, and duties (upsert `character_affiliation`, refresh `registration.corporation_id`); the `character_affiliation` table stays (still read by `resolveNames`/structure pages). Also finally populates `corporation.alliance_id`, which the _existing_ `corp_structure` alliance policy already depends on. Directory covers registered + universe_name-cached characters; extending to other seen ids (e.g. `corp_industry_job.installer_id`) is a later nicety. |
+| 3   | B     | Den shares on the new model + shared helpers                                  | **Largely done.** `character_mercenary_den_share` was migrated in place from a per-corporation to a per-alliance audience (1:1, collapsing duplicates; rows aimed at an alliance-less corp dropped). `my_alliance_ids` and `mercenary_den_shared_with_caller` landed as invoker helpers, den/status policies are plain joins, both definer helpers are deleted, writes moved off the service role onto RLS, and enemy intel is re-keyed to `reporter_id` (backfilled; `created_by` demoted to audit/orphan fallback). `/mercenary-dens` owner-name resolution now goes through the `character_directory`. Remaining: `my_corporation_ids` / `share_audience_matches` (land with the first consumer that needs a non-alliance audience), per-den scope, tokens/expiry, and the orphan list. Depended on PR 2.                                                                                                                                                                                                                                                                                          |
+| 4   | C     | `character-roles` extract + `is_director()`                                   | Independent of PR 3; must precede PR 5. Scope opt-in UI + refresh-matrix row like any per-character job.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| 5   | D     | `corp_structure_share` + seeded alliance default + policy cutover             | Seed rows for every existing corp in the migration itself (cutover parity), `structure_share_seeded_at` for seed-once, Director-gated writes, opt-out UI on `/structure`. Depends on PRs 2 (alliance resolution), 3 (helpers), 4 (Director).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| 6   | E     | `character_asset_share` + `shared_asset_token` migration + containment helper | Tokens preserved so existing URLs keep working. Resolve the RLS recursion question flagged in Stage E before merging. Depends on PR 3 (helpers).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| 7   | F     | Asset filter columns + filter evaluation                                      | OR semantics across provided sets; SDE-resolved category/group. UI can trail. Depends on PR 6.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| 8   | —     | (optional) `corp_asset_share`                                                 | Mirrors PRs 6–7 with corp grantor + Director gate.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 
 ## Non-goals / invariants
 

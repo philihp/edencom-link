@@ -36,7 +36,7 @@ const SHIP_CATEGORY_ID = 6
 
 type CharacterSearchRow = {
   item_id: number | string
-  character_id: string
+  registration_id: string
   type_id: number | string
   quantity: number | string | null
   is_singleton: boolean | null
@@ -54,7 +54,7 @@ type CharacterSearchRow = {
 }
 
 // Corp assets carry no player-assigned name column; owner is the corporation.
-type CorpSearchRow = Omit<CharacterSearchRow, 'character_id' | 'name' | 'parent_name'> & {
+type CorpSearchRow = Omit<CharacterSearchRow, 'registration_id' | 'name' | 'parent_name'> & {
   corporation_id: number | string
 }
 
@@ -158,7 +158,7 @@ const AssetSearchPage = async ({ searchParams }: { searchParams: Promise<{ q?: s
   const rows: SearchRow[] = [
     ...((characterRows ?? []) as CharacterSearchRow[]).map((r): SearchRow => ({
       itemId: String(r.item_id),
-      ownerId: r.character_id,
+      ownerId: r.registration_id,
       typeId: Number(r.type_id),
       name: r.name,
       quantity: r.quantity,

@@ -16,7 +16,7 @@ import { AssetsTable, type Location } from './assetsTable'
 type CharacterSummaryRow = {
   location_id: number | string
   location_type: string | null
-  character_id: string
+  registration_id: string
   stacks: number | string
 }
 
@@ -101,7 +101,7 @@ const Locations = async () => {
 
   const summary: SummaryRow[] = [
     ...map(
-      (row: CharacterSummaryRow): SummaryRow => ({ ...row, owner_id: row.character_id }),
+      (row: CharacterSummaryRow): SummaryRow => ({ ...row, owner_id: row.registration_id }),
       (characterSummary ?? []) as CharacterSummaryRow[]
     ),
     ...map(

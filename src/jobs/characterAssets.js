@@ -64,7 +64,7 @@ const fetchCurrentByItem = async (registration_id) => {
     const { data, error } = await sudoSupabase
       .from('character_asset_over_time')
       .select(cols)
-      .eq('character_id', registration_id)
+      .eq('registration_id', registration_id)
       .eq('is_current', true)
       .order('id', { ascending: true })
       .range(from, from + PAGE - 1)
@@ -108,7 +108,7 @@ const reconcile = async (registration_id, fetched, names) => {
         // valid_from is left to its `default now()` so it marks this version's debut.
         acc.inserts.push({
           item_id: a.item_id,
-          character_id: registration_id,
+          registration_id,
           type_id: a.type_id,
           location_id: a.location_id ?? null,
           location_flag: a.location_flag ?? null,
