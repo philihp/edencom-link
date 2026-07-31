@@ -81,7 +81,7 @@ const fetchCurrentRows = async (registration_id) => {
   const { data, error } = await sudoSupabase
     .from('character_clone_over_time')
     .select('id, jump_clone_id, is_home, location_id, location_type, name, implants, system_id')
-    .eq('character_id', registration_id)
+    .eq('registration_id', registration_id)
     .eq('is_current', true)
   if (error) throw error
   return data ?? []
@@ -111,7 +111,7 @@ const reconcile = async (registration_id, fetchedClones) => {
       } else {
         if (cur) acc.closeIds.push(cur.id)
         acc.inserts.push({
-          character_id: registration_id,
+          registration_id,
           jump_clone_id: c.is_home ? null : c.jump_clone_id,
           is_home: !!c.is_home,
           location_id: c.location_id,

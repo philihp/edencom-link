@@ -1128,7 +1128,7 @@ grant all    on public.character_location to service_role;
 -- rather than per item.
 create table public.character_clone_over_time (
   id bigint generated always as identity primary key,
-  character_id uuid not null references public.registration(id) on delete cascade,
+  registration_id uuid not null references public.registration(id) on delete cascade,
   jump_clone_id bigint,
   is_home boolean not null default false,
   location_id bigint not null,
@@ -1143,11 +1143,11 @@ create table public.character_clone_over_time (
   -- column order of migrated databases (the character_clone view is select *).
   system_id bigint
 );
-create index character_clone_over_time_character_id_idx on public.character_clone_over_time (character_id);
+create index character_clone_over_time_registration_id_idx on public.character_clone_over_time (registration_id);
 create unique index character_clone_over_time_current_jump_idx
-  on public.character_clone_over_time (character_id, jump_clone_id) where is_current and not is_home;
+  on public.character_clone_over_time (registration_id, jump_clone_id) where is_current and not is_home;
 create unique index character_clone_over_time_current_home_idx
-  on public.character_clone_over_time (character_id) where is_current and is_home;
+  on public.character_clone_over_time (registration_id) where is_current and is_home;
 
 alter table public.character_clone_over_time enable row level security;
 create policy "Users read own clones"
@@ -1155,7 +1155,7 @@ create policy "Users read own clones"
   for select
   to authenticated
   using (
-    character_id in (
+    registration_id in (
       select id from public.registration where user_id = (select auth.uid())
     )
   );
@@ -1206,7 +1206,7 @@ grant all    on public.character_implant to service_role;
 -- Production / Laboratory Operation / Mass Reactions skills per family).
 create table public.character_skill_over_time (
   id bigint generated always as identity primary key,
-  character_id uuid not null references public.registration(id) on delete cascade,
+  registration_id uuid not null references public.registration(id) on delete cascade,
   skill_id bigint not null,
   active_skill_level smallint not null default 0,
   trained_skill_level smallint not null default 0,
@@ -1214,9 +1214,9 @@ create table public.character_skill_over_time (
   valid_from timestamptz not null default now(),
   valid_until timestamptz not null default now()
 );
-create index character_skill_over_time_character_id_idx on public.character_skill_over_time (character_id);
+create index character_skill_over_time_registration_id_idx on public.character_skill_over_time (registration_id);
 create unique index character_skill_over_time_current_idx
-  on public.character_skill_over_time (character_id, skill_id) where is_current;
+  on public.character_skill_over_time (registration_id, skill_id) where is_current;
 
 alter table public.character_skill_over_time enable row level security;
 create policy "Users read own skills"
@@ -1224,7 +1224,7 @@ create policy "Users read own skills"
   for select
   to authenticated
   using (
-    character_id in (
+    registration_id in (
       select id from public.registration where user_id = (select auth.uid())
     )
   );
@@ -1251,7 +1251,7 @@ grant all    on public.character_skill_over_time to service_role;
 -- updates the open row's ship_name in place.
 create table public.character_ship_over_time (
   id bigint generated always as identity primary key,
-  character_id uuid not null references public.registration(id) on delete cascade,
+  registration_id uuid not null references public.registration(id) on delete cascade,
   ship_item_id bigint not null,
   ship_type_id bigint not null,
   ship_name text,
@@ -1259,9 +1259,9 @@ create table public.character_ship_over_time (
   valid_from timestamptz not null default now(),
   valid_until timestamptz not null default now()
 );
-create index character_ship_over_time_character_id_idx on public.character_ship_over_time (character_id);
+create index character_ship_over_time_registration_id_idx on public.character_ship_over_time (registration_id);
 create unique index character_ship_over_time_current_idx
-  on public.character_ship_over_time (character_id) where is_current;
+  on public.character_ship_over_time (registration_id) where is_current;
 
 alter table public.character_ship_over_time enable row level security;
 create policy "Users read own ship"
@@ -1269,7 +1269,7 @@ create policy "Users read own ship"
   for select
   to authenticated
   using (
-    character_id in (
+    registration_id in (
       select id from public.registration where user_id = (select auth.uid())
     )
   );

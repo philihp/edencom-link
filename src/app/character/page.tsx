@@ -81,14 +81,14 @@ const CharacterPage = async () => {
     ])
   )
 
-  const { data: clones } = await supabase.from('character_clone').select('character_id, system_id')
+  const { data: clones } = await supabase.from('character_clone').select('registration_id, system_id')
   const cloneSystemPaths = await fetchSystemPaths((clones ?? []).map((c) => Number(c.system_id)))
   const cloneSystemsByCharacter = reduce(
     (acc, c) => {
       const system =
         c.system_id != null ? (cloneSystemPaths[Number(c.system_id)] ?? `System #${c.system_id}`) : 'Unknown'
-      const existing = acc.get(c.character_id as string) ?? []
-      acc.set(c.character_id as string, uniq([...existing, system]))
+      const existing = acc.get(c.registration_id as string) ?? []
+      acc.set(c.registration_id as string, uniq([...existing, system]))
       return acc
     },
     new Map<string, string[]>(),
@@ -115,13 +115,13 @@ const CharacterPage = async () => {
 
   const { data: shipRows } = await supabase
     .from('character_ship')
-    .select('character_id, ship_item_id, ship_type_id, ship_name')
+    .select('registration_id, ship_item_id, ship_type_id, ship_name')
   const shipTypeNames = await fetchTypeNames((shipRows ?? []).map((r) => Number(r.ship_type_id)))
   const currentShip = new Map(
     (shipRows ?? []).map((r) => {
       const typeName = shipTypeNames[Number(r.ship_type_id)] ?? `Type #${r.ship_type_id}`
       return [
-        r.character_id as string,
+        r.registration_id as string,
         {
           itemId: String(r.ship_item_id),
           label: r.ship_name && r.ship_name !== typeName ? `${r.ship_name} (${typeName})` : typeName,
@@ -157,15 +157,15 @@ const CharacterPage = async () => {
   // Per-character slot ceilings, derived from the two skills behind each family.
   const { data: skillRows } = await supabase
     .from('character_skill')
-    .select('character_id, skill_id, active_skill_level')
+    .select('registration_id, skill_id, active_skill_level')
     .in('skill_id', SLOT_SKILL_IDS)
   const slotMax = reduce(
     (acc, r) => {
       const family = SKILL_FAMILY[Number(r.skill_id)]
       if (family) {
-        const max = acc.get(r.character_id as string) ?? baseSlotMax()
+        const max = acc.get(r.registration_id as string) ?? baseSlotMax()
         max[family] += Number(r.active_skill_level) || 0
-        acc.set(r.character_id as string, max)
+        acc.set(r.registration_id as string, max)
       }
       return acc
     },
