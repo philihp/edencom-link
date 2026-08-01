@@ -12,7 +12,9 @@ import { fetchStationNames, fetchStationSystems } from '../../stationNames'
 import { fetchSystemNames } from '../../systemNames'
 import { fetchTypeNames } from '../../typeNames'
 import type { Owners } from '../../ownerFilter'
+import styles from '../assets.module.css'
 import { type Location } from '../assetsTable'
+import { AppraiseButton } from './appraiseButton'
 import { LocationAssets, type ItemRow } from './locationAssets'
 import { SystemLocations } from './systemLocations'
 
@@ -372,7 +374,12 @@ const AssetLocationPage = async ({
   return (
     <>
       {!scope ? <AssetPath crumbs={crumbs} current={heading} /> : null}
-      <h1 className="serif">{heading}</h1>
+      <div className={styles.header}>
+        <h1 className="serif">{heading}</h1>
+        {/* Prices this whole place in one request — the same endpoint each row
+            uses, just aimed at the location instead of an item. */}
+        {!scope ? <AppraiseButton target={locationId} label="Appraise everything here" /> : null}
+      </div>
       {systemName && systemName !== heading ? (
         <p>
           System: <span className="serif">{systemName}</span>
@@ -387,12 +394,12 @@ const AssetLocationPage = async ({
           {rootItems.length > 0 ? (
             <>
               <h2 className="serif">In space</h2>
-              <LocationAssets rows={rows} owners={owners} typeNamesPromise={typeNamesPromise} />
+              <LocationAssets rows={rows} owners={owners} typeNamesPromise={typeNamesPromise} canAppraise={!scope} />
             </>
           ) : null}
         </>
       ) : (
-        <LocationAssets rows={rows} owners={owners} typeNamesPromise={typeNamesPromise} />
+        <LocationAssets rows={rows} owners={owners} typeNamesPromise={typeNamesPromise} canAppraise={!scope} />
       )}
     </>
   )

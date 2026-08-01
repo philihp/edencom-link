@@ -7,6 +7,7 @@ import retro from '../../retro.module.css'
 import { TypeName } from '../../typeName'
 import styles from '../assets.module.css'
 import { OWNER_STORAGE_KEY } from '../filterKey'
+import { AppraiseButton } from './appraiseButton'
 import { Quantity } from './quantity'
 
 export type ItemRow = {
@@ -33,9 +34,13 @@ type LocationAssetsProps = {
   rows: ItemRow[]
   owners: Owners
   typeNamesPromise: Promise<Record<number, string>>
+  // False on the anonymous share-token path, which has no session to authorize
+  // /api/appraisal with — the column is dropped entirely rather than rendering
+  // buttons that could only ever 401.
+  canAppraise: boolean
 }
 
-export const LocationAssets = ({ rows, owners, typeNamesPromise }: LocationAssetsProps) => {
+export const LocationAssets = ({ rows, owners, typeNamesPromise, canAppraise }: LocationAssetsProps) => {
   const [ownerId, setOwnerId] = useOwnerFilter(OWNER_STORAGE_KEY, owners)
 
   const filtered = rows.filter((r) => ownerId === ALL_OWNERS || r.ownerId === ownerId)
@@ -57,6 +62,7 @@ export const LocationAssets = ({ rows, owners, typeNamesPromise }: LocationAsset
               <th className={retro.num}>Quantity</th>
               <th>Hangar</th>
               <th className={retro.num}>Contents</th>
+              {canAppraise && <th className={retro.num}>Value</th>}
             </tr>
           </thead>
           <tbody>
@@ -77,13 +83,20 @@ export const LocationAssets = ({ rows, owners, typeNamesPromise }: LocationAsset
                 <td className={retro.num}>{row.isSingleton ? '—' : <Quantity value={row.quantity} />}</td>
                 <td>{row.flag ?? '—'}</td>
                 <td className={retro.num}>{row.contents > 0 ? row.contents : '—'}</td>
+                {canAppraise && (
+                  // A container or ship prices itself plus everything nested
+                  // inside it; a plain stack prices just itself.
+                  <td className={retro.num}>
+                    <AppraiseButton target={row.itemId} />
+                  </td>
+                )}
               </tr>
             ))}
             {filtered.length === 0 && (
               // Keep the table (and the owner dropdown in its header) rendered
               // so the filter can be changed back when an owner has nothing here.
               <tr>
-                <td colSpan={5}>No assets here for this owner.</td>
+                <td colSpan={canAppraise ? 6 : 5}>No assets here for this owner.</td>
               </tr>
             )}
           </tbody>

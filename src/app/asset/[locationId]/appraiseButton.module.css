@@ -1,0 +1,41 @@
+/*
+ * Appraise control: a quiet text button that swaps in place for the figures it
+ * fetches. Sized to sit inside a dense table cell without changing the row
+ * height, so a column of them doesn't make the table jump as answers arrive.
+ */
+.button {
+  font: inherit;
+  font-size: 10pt;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--ink-soft);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.button:hover {
+  color: var(--ink);
+}
+
+/* In-flight. Same footprint as the button it replaces. */
+.pending {
+  font-size: 10pt;
+  color: var(--ink-faint);
+}
+
+/* The answer. Tabular figures so stacked rows line up on the decimal. */
+.value {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  cursor: help;
+}
+
+/* Errors stay quiet and inline — no toast, no retry, per the design. */
+.error {
+  font-size: 10pt;
+  color: var(--ink-faint);
+  white-space: normal;
+}
