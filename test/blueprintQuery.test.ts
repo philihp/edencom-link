@@ -10,7 +10,7 @@
 // The SQL semantics those parameters drive (what `below_me` actually excludes,
 // how the collapse counts) are asserted against a real Postgres in
 // test/sql/blueprint_search.sql.
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import assert from 'node:assert/strict'
 import test from 'node:test'
@@ -101,20 +101,20 @@ test('a resolved structure travels to SQL as structure_ids', () => {
 
 test('owner scoping splits into the character and corporation id arrays', () => {
   const params = buildBlueprintParams({ ownerIds: new Set(['char-b']) }, OWNERS)
-  assert.deepEqual(params.character_ids, ['char-b'])
+  assert.deepEqual(params.registration_ids, ['char-b'])
   // Empty (not null) so the corp half of the union matches nothing.
   assert.deepEqual(params.corporation_ids, [])
 })
 
 test('a corporation-only owner filter excludes every character row', () => {
   const split = partitionOwnerIds(new Set(['98000002']), OWNERS)
-  assert.deepEqual(split.character_ids, [])
+  assert.deepEqual(split.registration_ids, [])
   assert.deepEqual(split.corporation_ids, [98000002])
 })
 
 test('no owner argument leaves both owner filters unset', () => {
   const params = buildBlueprintParams({}, OWNERS)
-  assert.equal(params.character_ids, null)
+  assert.equal(params.registration_ids, null)
   assert.equal(params.corporation_ids, null)
 })
 
@@ -279,14 +279,23 @@ test('an untruncated result gets no note', () => {
 // The RPC is called by name with a parameter object, so a rename on either side
 // fails silently at runtime (PostgREST reports "function does not exist").
 test('every parameter buildBlueprintParams emits is declared by blueprint_search()', () => {
-  const sql = readFileSync(
-    join(import.meta.dirname, '..', 'supabase', 'migrations', '20260725000000_blueprint_search.sql'),
-    'utf8'
-  )
-  const signature = sql.slice(
-    sql.indexOf('create or replace function public.blueprint_search('),
-    sql.indexOf('returns json')
-  )
+  // Find the newest migration that (re)defines blueprint_search rather than
+  // naming one: the function has been redefined twice by the registration_id
+  // rename, and each time a hardcoded path here would have gone on asserting
+  // against a superseded signature — or, once the definition changed from
+  // `create or replace` to `create`, stopped finding it at all.
+  const migrations = join(import.meta.dirname, '..', 'supabase', 'migrations')
+  const DEFINES = /create (?:or replace )?function public\.blueprint_search\(/
+  const newest = readdirSync(migrations)
+    .filter((f) => f.endsWith('.sql'))
+    .sort()
+    .reverse()
+    .find((f) => DEFINES.test(readFileSync(join(migrations, f), 'utf8')))
+  assert.ok(newest, 'no migration defines blueprint_search()')
+
+  const sql = readFileSync(join(migrations, newest), 'utf8')
+  const start = sql.search(DEFINES)
+  const signature = sql.slice(start, sql.indexOf('returns json', start))
   const params = buildBlueprintParams({ ownerIds: new Set(['char-a']) }, OWNERS)
   Object.keys(params).forEach((name) => {
     assert.match(signature, new RegExp(`\\b${name}\\b`), `blueprint_search() declares no "${name}" parameter`)

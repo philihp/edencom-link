@@ -79,7 +79,7 @@ export const GET = async (request: NextRequest): Promise<NextResponse> => {
   // keeps the field order for the sheet's columns and sidesteps PostgREST's
   // max-rows cap.
   const { data: rows, error: rowsError } = await player.supabase.rpc('corp_industry_jobs', {
-    character_ids: player.characterIds,
+    registration_ids: player.characterIds,
     include_delivered: includeDelivered,
     as_of: at.iso,
   })
