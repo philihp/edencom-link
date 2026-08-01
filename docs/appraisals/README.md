@@ -103,8 +103,20 @@ whole deployment.** Consequences baked into the designs:
 several lambda instances from bursting past 200/hour together, so on Vercel
 every `appraise()` call is funnelled through a Vercel queue (topic
 `innominate`, consumer at `/api/queue/innominate`) that drains at most **one
-request every 18 seconds** (= 200/hour) via an atomic Postgres leaky bucket
-(`innominate_try_acquire()`). `appraise()` keeps its synchronous contract: it
+request every 2 seconds** via an atomic Postgres leaky bucket
+(`innominate_try_acquire()`).
+
+That drain rate is deliberately **faster than the provider's 200/hour** (which
+is one per 18s, what it originally was). At 18s the throttle became the
+dominant cost of the feature once the asset viewer put an appraise button on
+every row: a handful of clicks queued for over a minute, and the later ones
+exhausted the poll budget without ever being sent. 2s serves a normal burst in
+a few seconds. The trade is that it permits up to 1800/hour, so sustained heavy
+use can spend the real budget in ~7 minutes and collect genuine 429s from
+innomin.at (surfaced to the user, never retried). Accepted at this
+deployment's traffic. If it starts biting, the answer isn't a slower drip but
+an hourly token bucket — burst freely, refuse once 200 have gone out in the
+trailing hour. `appraise()` keeps its synchronous contract: it
 upserts a `pending` row in `innominate_appraisal`, enqueues one message, and
 blocks polling that row (up to ~50s, under the MCP function's 60s limit) until
 the consumer fills in the result — which also serves as a shared 5-minute price
