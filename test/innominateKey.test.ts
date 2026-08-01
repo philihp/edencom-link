@@ -50,3 +50,15 @@ test('market and quantity are part of the identity', () => {
 test('the same request keys identically across calls', () => {
   assert.equal(requestKeyFor(items(40), 'jita'), requestKeyFor(items(40), 'jita'))
 })
+
+test('saving is part of the identity, so a cached unsaved result cannot satisfy a save', () => {
+  const base = items(5)
+  // The point: an unsaved appraisal carries no provider id to link to, so if it
+  // shared a key with a save request the arrow would have nothing to open.
+  assert.notEqual(requestKeyFor(base, 'jita', false), requestKeyFor(base, 'jita', true))
+  // Two saves of the same batch do share one entry — one upstream call, one
+  // stored record, one link — which is the wanted behaviour, not a collision.
+  assert.equal(requestKeyFor(base, 'jita', true), requestKeyFor(base, 'jita', true))
+  // Unsaved stays the default, so existing callers key exactly as before.
+  assert.equal(requestKeyFor(base, 'jita'), requestKeyFor(base, 'jita', false))
+})

@@ -42,10 +42,19 @@ our key.
     itself and echoes the resolved `item_id` back.
   - `market` — default `jita`. Available: `jita`, `amarr`, `rens`, `dodi`,
     `hek`, `ualx`, `cj6mt` (the last two are player nullsec markets).
-  - `save` — **always send `false`.** This is a hard requirement from the
-    repo owner: `save: false` makes the call side-effect free on the
-    provider's server (nothing stored, no appraisal id minted). Never expose
-    it as a parameter; hard-code it in the client.
+  - `save` — **`false` for every automatic appraisal**, which is the default
+    everywhere and what all but one code path sends. `save: false` keeps the
+    call side-effect free on the provider's server: nothing stored, no
+    appraisal id minted.
+
+    The single exception, added later at the repo owner's request, is the
+    asset viewer's "open this appraisal" arrow (doc 03): an explicit user
+    click that re-runs the same batch with `save: true` so the provider stores
+    it and mints an id to link to. It is opt-in per call, never a default,
+    and never set by the MCP tool or by merely displaying a price. Note this
+    is a change from the original hard rule of "always false, hard-code it" —
+    if the API-key terms ever require otherwise, this is the one call site to
+    revoke.
   - `comment` — irrelevant when not saving; omit.
 
 - **Response 200** (`AppraisalResponse`): `appraisals[]` (one entry per
@@ -78,6 +87,11 @@ our key.
     suggested names. Totals cover only the priced items.
   - `current_count` is the key's lifetime request counter (undocumented;
     don't rely on it).
+  - `appraisal_id` is present only when `save: true` — a short slug (e.g.
+    `2GeAakV`). A human opens it at **`https://innomin.at/a/<id>`** (the
+    provider's SPA route, not in the OpenAPI schema, confirmed against a real
+    saved appraisal); `GET /api/v1/appraisal/<id>/` returns it as JSON but
+    requires the API key, so it's no use as a shareable link.
 
 - **Errors:** `400` invalid request, `401` bad/missing key, `429` rate
   limited — all `{ "error": "…" }` JSON bodies.

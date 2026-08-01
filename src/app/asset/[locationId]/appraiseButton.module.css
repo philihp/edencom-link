@@ -25,12 +25,42 @@
   color: var(--ink-faint);
 }
 
-/* The answer. Tabular figures so stacked rows line up on the decimal. */
+/* The answer, plus the control that opens it on innomin.at. */
+.result {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6pt;
+  white-space: nowrap;
+}
+
+/* The figures. Tabular so stacked rows line up on the decimal. */
 .value {
   font-family: var(--mono);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   cursor: help;
+}
+
+/* Opens the saved appraisal. Quiet until hovered — it sits on every priced row,
+   so it shouldn't compete with the number it belongs to. */
+.open {
+  font: inherit;
+  font-size: 11pt;
+  line-height: 1;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--ink-faint);
+  cursor: pointer;
+}
+
+.open:hover {
+  color: var(--ink);
+}
+
+.open:disabled {
+  cursor: default;
+  opacity: 0.5;
 }
 
 /* Errors stay quiet and inline — no toast, no retry, per the design. */

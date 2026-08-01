@@ -52,6 +52,7 @@ const QUIET_SECONDS = 2
 export const AppraiseButton = ({ target, label = 'appraise' }: { target: string; label?: string }) => {
   const [state, setState] = useState<State>({ phase: 'idle' })
   const [waited, setWaited] = useState(0)
+  const [opening, setOpening] = useState<'idle' | 'saving' | 'failed'>('idle')
 
   useEffect(() => {
     if (state.phase !== 'loading') return
@@ -85,6 +86,43 @@ export const AppraiseButton = ({ target, label = 'appraise' }: { target: string;
     }
   }
 
+  // Re-run the same target with save: true, which makes innomin.at store the
+  // appraisal and hand back an id, then send the user to it. Unlike the price
+  // itself this leaves a record on their side, so it only ever happens on this
+  // explicit click — never as part of showing a number.
+  const openSaved = async () => {
+    // The tab has to be opened synchronously inside the click, or the browser
+    // treats the post-fetch navigation as an unsolicited pop-up and blocks it.
+    // It's parked on about:blank and pointed at the real URL once we have one.
+    // No 'noopener' here — that makes window.open return null, which would
+    // defeat the whole trick — so the opener reference is severed by hand.
+    const tab = window.open('about:blank', '_blank')
+    if (tab) tab.opener = null
+    setOpening('saving')
+    try {
+      const response = await fetch('/api/appraisal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ target, save: true }),
+      })
+      const body = await response.json().catch(() => null)
+      const url = typeof body?.appraisal_url === 'string' ? body.appraisal_url : null
+      if (!response.ok || !body?.ok || !url) {
+        tab?.close()
+        setOpening('failed')
+        return
+      }
+      // If the placeholder was blocked, try once more now that there's a real
+      // URL — some browsers allow it, and a blocked pop-up beats losing the save.
+      if (tab) tab.location.href = url
+      else window.open(url, '_blank', 'noopener,noreferrer')
+      setOpening('idle')
+    } catch {
+      tab?.close()
+      setOpening('failed')
+    }
+  }
+
   if (state.phase === 'loading') {
     return (
       <span
@@ -98,10 +136,28 @@ export const AppraiseButton = ({ target, label = 'appraise' }: { target: string;
   if (state.phase === 'error') return <span className={styles.error}>{state.message}</span>
   if (state.phase === 'done') {
     return (
-      <span className={styles.value} title={describe(state.value)}>
-        {formatPair(state.value.total_sell_value, state.value.total_buy_value)}
-        {/* Cheap honesty about staleness: this came from the 5-minute cache. */}
-        {state.value.cached ? '*' : ''}
+      <span className={styles.result}>
+        <span className={styles.value} title={describe(state.value)}>
+          {formatPair(state.value.total_sell_value, state.value.total_buy_value)}
+          {/* Cheap honesty about staleness: this came from the 5-minute cache. */}
+          {state.value.cached ? '*' : ''}
+        </span>
+        <button
+          type="button"
+          className={styles.open}
+          // Distinct from the price's own tooltip: this one costs a request and
+          // leaves a record on innomin.at, so say so before it's clicked.
+          title={
+            opening === 'failed'
+              ? 'Could not open the appraisal — allow pop-ups for this site, or try again.'
+              : 'Save this appraisal on innomin.at and open it in a new tab'
+          }
+          disabled={opening === 'saving'}
+          onClick={openSaved}
+          aria-label="Open this appraisal on innomin.at"
+        >
+          {opening === 'saving' ? '…' : '↗'}
+        </button>
       </span>
     )
   }
