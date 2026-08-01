@@ -71,7 +71,7 @@ insert into public.corp_blueprint values
 -- registration_id, and the stand-in above matches the current schema. That
 -- migration deliberately contains nothing but the function and its grant, so
 -- including it here stays a one-line change each time the function moves.
-\i supabase/migrations/20260801030000_blueprint_search_registration_id.sql
+\i supabase/migrations/20260801150000_blueprint_search_registration_ids.sql
 
 do $$
 declare

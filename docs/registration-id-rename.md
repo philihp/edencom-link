@@ -93,11 +93,10 @@ step-5 tranches so far)
 
 ### Function signatures — 11
 
-Parameters (`character_ids uuid[]`): `character_asset_snapshot_at`,
+Parameters (`character_ids uuid[]` → `registration_ids`): ~~`character_asset_snapshot_at`,
 `character_blueprints`, `character_orders`, `character_industry_jobs`,
-`corp_assets`, `corp_blueprints`, `blueprint_search`, `corp_industry_jobs`
-(all still pending — only the _parameters_ remain; their bodies have already
-been moved onto `registration_id` by the step-5 tranches)
+`corp_assets`, `corp_blueprints`, `blueprint_search`, `corp_industry_jobs`~~
+— **all done** in step 7.
 
 Return columns (`character_id uuid`): ~~`character_asset_location_summary`~~,
 ~~`character_asset_search`~~, ~~`latest_heartbeats`~~ — **all done**. Each
@@ -361,10 +360,34 @@ uuid) returns boolean` is untouched — only its body moves. So
    _"still references sh.character_id"_. Cheap to do, and the only way to know
    an assertion works is to watch it fail.
 
-7. **Function parameters** (`character_ids uuid[]` on eight functions), in
-   lockstep with their ~11 call sites in `src/app/api/**` and the MCP tools.
-   supabase-js passes RPC arguments **by name**, so there is no backward
-   compatibility at all here: schema and callers must ship in the same commit.
+7. ~~**Function parameters**~~ **Done.** The thing the sketch above missed:
+   **a parameter rename requires DROP, not CREATE OR REPLACE.** Postgres
+   refuses outright —
+
+   ```
+   ERROR:  cannot change name of input parameter "character_ids"
+   HINT:   Use DROP FUNCTION f(uuid[]) first.
+   ```
+
+   — which makes step 7 structurally unlike steps 5's tranches, where only
+   bodies moved. Confirmed against a real Postgres before writing anything.
+   Dropping was safe because none of the eight is called from a policy, and the
+   DROPs name the _old_ signature, which still resolves: a drop matches on
+   parameter **types**, and those don't change. Grants had to be re-applied.
+
+   The no-backward-compatibility warning held exactly as written, and it makes
+   this the one migration in the whole cleanup whose deploy window is a real
+   (if brief) outage rather than harmless skew — a stale deployment sending
+   `character_ids` gets "function does not exist" rather than a wrong answer.
+
+   Two tests turned out to pin the old names, and neither is run by
+   `pnpm test` alone finding them: `test/sql/blueprint_search.sql` (which
+   `\i`-includes the migration defining the function) and a JS↔SQL parity test
+   in `test/blueprintQuery.test.ts` that read a **hardcoded** migration path.
+   The parity test was rewritten to locate the newest migration defining
+   `blueprint_search` itself, so the next redefinition doesn't silently assert
+   against a superseded signature — and it was verified to still fail on a
+   deliberately wrong parameter name.
 
 8. **The JS-only contracts** — the `characterIds` option on `forEachCharacter`,
    `OwnerContext.characterIds`, `resolvePlayer`'s return, and

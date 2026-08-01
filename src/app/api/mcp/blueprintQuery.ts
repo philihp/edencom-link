@@ -26,7 +26,7 @@ export type BlueprintSearchParams = {
   type_ids: number[] | null
   system_ids: number[] | null
   structure_ids: number[] | null
-  character_ids: string[] | null
+  registration_ids: string[] | null
   corporation_ids: number[] | null
   kind_filter: BlueprintKind
   below_me: number | null
@@ -44,11 +44,11 @@ export type OwnerIds = { characterIds: string[]; corporationIds: string[] }
 export const partitionOwnerIds = (
   ownerIds: Set<string> | null,
   owners: OwnerIds
-): Pick<BlueprintSearchParams, 'character_ids' | 'corporation_ids'> =>
+): Pick<BlueprintSearchParams, 'registration_ids' | 'corporation_ids'> =>
   ownerIds == null
-    ? { character_ids: null, corporation_ids: null }
+    ? { registration_ids: null, corporation_ids: null }
     : {
-        character_ids: owners.characterIds.filter((id) => ownerIds.has(id)),
+        registration_ids: owners.characterIds.filter((id) => ownerIds.has(id)),
         corporation_ids: owners.corporationIds.filter((id) => ownerIds.has(id)).map(Number),
       }
 

@@ -43,7 +43,7 @@ export const GET = async (request: NextRequest): Promise<NextResponse> => {
   // which keeps the field order for the sheet's columns and sidesteps
   // PostgREST's max-rows cap.
   const { data: rows, error: rowsError } = await player.supabase.rpc('character_blueprints', {
-    character_ids: player.characterIds,
+    registration_ids: player.characterIds,
   })
   if (rowsError) {
     return NextResponse.json({ error: 'Query failed' }, { status: 500 })

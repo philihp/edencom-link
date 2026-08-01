@@ -504,7 +504,7 @@ grant execute on function public.character_asset_subtree_items(bigint)     to au
 -- columns come out in that exact order. Called with the service role over the
 -- caller's own registration ids, so it takes them as a parameter rather than
 -- leaning on RLS.
-create or replace function public.character_asset_snapshot_at(character_ids uuid[], as_of timestamptz)
+create or replace function public.character_asset_snapshot_at(registration_ids uuid[], as_of timestamptz)
 returns json
 language sql
 stable
@@ -530,7 +530,7 @@ as $$
   from public.character_asset_over_time a
   join public.registration r on r.id = a.registration_id
   left join public.sde_published_type t on t.type_id = a.type_id
-  where a.registration_id = any(character_ids)
+  where a.registration_id = any(registration_ids)
     and a.valid_from <= as_of
     and (a.is_current or a.valid_until >= as_of)
     and (not a.is_singleton or a.is_blueprint_copy);
@@ -596,7 +596,7 @@ grant all    on public.character_blueprint_over_time to service_role;
 -- PostgREST's max-rows cap. Live snapshot only (no time-travel `as_of`, unlike
 -- character_asset_snapshot_at) — a blueprint's current research level and
 -- location is what the sheet needs.
-create or replace function public.character_blueprints(character_ids uuid[])
+create or replace function public.character_blueprints(registration_ids uuid[])
 returns json
 language sql
 stable
@@ -622,7 +622,7 @@ as $$
   from public.character_blueprint b
   join public.registration r on r.id = b.registration_id
   left join public.sde_published_type t on t.type_id = b.type_id
-  where b.registration_id = any(character_ids);
+  where b.registration_id = any(registration_ids);
 $$;
 
 grant execute on function public.character_blueprints(uuid[]) to service_role;
@@ -950,7 +950,7 @@ grant all    on public.character_order_over_time to service_role;
 -- json array (json, not jsonb, so json_build_object's key order is preserved for
 -- the sheet's columns) and sidesteps PostgREST's max-rows cap. The stored
 -- `is_buy` flag is exposed as `is_buy_order` to match ESI's field name.
-create or replace function public.character_orders(character_ids uuid[], as_of timestamptz default now())
+create or replace function public.character_orders(registration_ids uuid[], as_of timestamptz default now())
 returns json
 language sql
 stable
@@ -982,7 +982,7 @@ as $$
   from public.character_order_over_time o
   join public.registration r on r.id = o.registration_id
   left join public.sde_published_type t on t.type_id = o.type_id
-  where o.registration_id = any(character_ids)
+  where o.registration_id = any(registration_ids)
     and o.valid_from <= as_of
     and (o.is_current or o.valid_until >= as_of);
 $$;
@@ -1070,7 +1070,7 @@ grant all    on public.character_industry_job_over_time to service_role;
 -- a job that is delivered now but was active at `as_of` shows as active. At the
 -- default now() this returns the is_current set, matching the
 -- character_industry_job view.
-create or replace function public.character_industry_jobs(character_ids uuid[], include_delivered boolean default false, as_of timestamptz default now())
+create or replace function public.character_industry_jobs(registration_ids uuid[], include_delivered boolean default false, as_of timestamptz default now())
 returns json
 language sql
 stable
@@ -1120,7 +1120,7 @@ as $$
     -- (11); everything else (manufacturing = 1 in both) lines up already.
     and bp.activity_id = case j.activity_id when 9 then 11 else j.activity_id end
     and bp.product_type_id = j.product_type_id
-  where j.registration_id = any(character_ids)
+  where j.registration_id = any(registration_ids)
     and j.valid_from <= as_of
     and (j.is_current or j.valid_until >= as_of)
     and (include_delivered or j.status not in ('delivered', 'cancelled', 'archived'));
@@ -2528,7 +2528,7 @@ grant execute on function public.asset_ancestors(bigint) to authenticated;
 -- shape for the per-character assets endpoint. Returns json (not jsonb) so
 -- json_build_object's key order is preserved for the sheet's columns, and a
 -- single scalar sidesteps PostgREST's max-rows cap.
-create or replace function public.corp_assets(character_ids uuid[])
+create or replace function public.corp_assets(registration_ids uuid[])
 returns json
 language sql
 stable
@@ -2555,7 +2555,7 @@ as $$
   left join public.sde_published_type t on t.type_id = a.type_id
   where a.corporation_id in (
     select corporation_id from public.registration
-    where id = any(character_ids) and corporation_id is not null
+    where id = any(registration_ids) and corporation_id is not null
   );
 $$;
 
@@ -2613,7 +2613,7 @@ grant all    on public.corp_blueprint_over_time to service_role;
 -- /api/corp/blueprints IMPORTDATA endpoint: the caller's corporation(s)
 -- current blueprint rows, mirroring corp_assets()'s shape for the
 -- per-corporation assets endpoint.
-create or replace function public.corp_blueprints(character_ids uuid[])
+create or replace function public.corp_blueprints(registration_ids uuid[])
 returns json
 language sql
 stable
@@ -2640,7 +2640,7 @@ as $$
   left join public.sde_published_type t on t.type_id = b.type_id
   where b.corporation_id in (
     select corporation_id from public.registration
-    where id = any(character_ids) and corporation_id is not null
+    where id = any(registration_ids) and corporation_id is not null
   );
 $$;
 
@@ -2671,7 +2671,7 @@ grant execute on function public.corp_blueprints(uuid[]) to service_role;
 --   type_ids          null = every type, else the resolved item-name matches
 --   system_ids        null = everywhere, else solar systems to scope to
 --   structure_ids     null = anywhere, else structures to scope to
---   character_ids     null = every character; '{}' excludes all character rows
+--   registration_ids  null = every character; '{}' excludes all character rows
 --   corporation_ids   null = every corporation; '{}' excludes all corp rows
 --   kind_filter       'all' (default) | 'original' | 'copy'
 --   below_me/below_te research floors, OR'd when both are given (see below)
@@ -2683,7 +2683,7 @@ create or replace function public.blueprint_search(
   type_ids bigint[] default null,
   system_ids bigint[] default null,
   structure_ids bigint[] default null,
-  character_ids uuid[] default null,
+  registration_ids uuid[] default null,
   corporation_ids bigint[] default null,
   kind_filter text default 'all',
   below_me int default null,
@@ -2714,7 +2714,7 @@ as $$
       case when b.quantity > 0 then b.quantity else 1 end  as quantity
     from public.character_blueprint b
     where (type_ids is null or b.type_id = any(type_ids))
-      and (character_ids is null or b.registration_id = any(character_ids))
+      and (registration_ids is null or b.registration_id = any(registration_ids))
     union all
     select
       b.type_id::bigint,
@@ -2965,7 +2965,7 @@ grant all    on public.corp_industry_job_over_time to service_role;
 -- max-rows cap.
 -- `as_of` (default now) time-travels through the SCD-2 history exactly like the
 -- per-character character_industry_jobs above.
-create or replace function public.corp_industry_jobs(character_ids uuid[], include_delivered boolean default false, as_of timestamptz default now())
+create or replace function public.corp_industry_jobs(registration_ids uuid[], include_delivered boolean default false, as_of timestamptz default now())
 returns json
 language sql
 stable
@@ -3016,7 +3016,7 @@ as $$
     and bp.product_type_id = j.product_type_id
   where j.corporation_id in (
     select corporation_id from public.registration
-    where id = any(character_ids) and corporation_id is not null
+    where id = any(registration_ids) and corporation_id is not null
   )
   and j.valid_from <= as_of
   and (j.is_current or j.valid_until >= as_of)

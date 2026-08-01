@@ -1036,12 +1036,12 @@ export const registerTools = (server: McpServer): void => {
         const includeDelivered = !['active', 'ready', 'paused'].includes(wantedStatus)
         const [{ data: chr, error: chrError }, { data: corp, error: corpError }] = await Promise.all([
           supabase.rpc('character_industry_jobs', {
-            character_ids: wantedCharacterIds,
+            registration_ids: wantedCharacterIds,
             include_delivered: includeDelivered,
             as_of: at.iso,
           }),
           supabase.rpc('corp_industry_jobs', {
-            character_ids: owners.characterIds,
+            registration_ids: owners.characterIds,
             include_delivered: includeDelivered,
             as_of: at.iso,
           }),
@@ -1185,7 +1185,7 @@ export const registerTools = (server: McpServer): void => {
       let orders: NormalizedOrder[]
       if (timeTravel) {
         const { data, error } = await supabase.rpc('character_orders', {
-          character_ids: owners.characterIds,
+          registration_ids: owners.characterIds,
           as_of: at.iso,
         })
         if (error) return textResult(`Couldn't read the order history: ${error.message}`)
