@@ -18,8 +18,7 @@
 // Supabase row until the consumer fills it in (or a ~50s budget elapses). Local
 // dev (no VERCEL) skips the queue and calls directly — a single developer isn't
 // a threat to the shared budget, and it keeps `pnpm run dev` working.
-import { sortBy } from 'ramda'
-
+import { requestKeyFor } from '@/innominateKey'
 import { send } from '@/utils/queue'
 import { createServiceClient } from '@/utils/supabase/service'
 
@@ -125,9 +124,10 @@ const CACHE_MAX_ENTRIES = 200
 const cache = new Map<string, { at: number; appraisal: Appraisal }>()
 
 // Key on market + the item list sorted by name, so batches that differ only in
-// input order hit the same entry. Doubles as the shared row's request_key.
-const cacheKey = (items: AppraisalItemInput[], market: Market): string =>
-  JSON.stringify({ market, items: sortBy((i) => i.name, items).map((i) => [i.name, i.quantity]) })
+// input order hit the same entry. Doubles as the shared row's request_key and
+// the queue's idempotency key, both of which cap the key's size — see
+// src/innominateKey.ts for why it's a digest and not the list itself.
+const cacheKey = requestKeyFor
 
 const cacheGet = (key: string): Appraisal | null => {
   const hit = cache.get(key)
@@ -290,7 +290,7 @@ const appraiseViaQueue = async (items: AppraisalItemInput[], market: Market, key
     // stale row. Concurrent producers for the same key share this one row and both
     // poll it. (A rare race can reset a just-finished 'done' row back to pending,
     // costing one extra throttled call — harmless given the low request volume.)
-    await supabase.from('innominate_appraisal').upsert(
+    const { error: upsertError } = await supabase.from('innominate_appraisal').upsert(
       {
         request_key: key,
         market,
@@ -302,6 +302,13 @@ const appraiseViaQueue = async (items: AppraisalItemInput[], market: Market, key
       },
       { onConflict: 'request_key' }
     )
+    // supabase-js returns write errors rather than throwing, so an unchecked
+    // upsert fails silently: the consumer then finds no row to fill in and the
+    // producer polls the full 50s budget before reporting a rate limit that was
+    // never the problem. Surface it instead of enqueueing work with no row.
+    if (upsertError) {
+      return { ok: false, kind: 'upstream', message: `Could not record the appraisal request: ${upsertError.message}` }
+    }
 
     const bucket = Math.floor(Date.now() / CACHE_TTL_MS)
     await send('innominate', { requestKey: key }, { idempotencyKey: `${key}:${bucket}` })
