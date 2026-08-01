@@ -73,7 +73,7 @@ export const syncCharacterShip = async ({ access_token, characterID, registratio
   console.log(`[${TAG}] ${ctx}: ship_item_id=${ship.ship_item_id}${changed ? ' (changed)' : ''}`)
 }
 
-export const runCharacterShip = ({ characterIds } = {}) =>
-  forEachCharacter(TAG, { scope: SCOPE, characterIds }, syncCharacterShip)
+export const runCharacterShip = ({ registrationIds } = {}) =>
+  forEachCharacter(TAG, { scope: SCOPE, registrationIds }, syncCharacterShip)
 
 cli(import.meta.url, TAG, runCharacterShip)

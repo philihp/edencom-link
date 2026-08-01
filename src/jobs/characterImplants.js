@@ -24,7 +24,7 @@ export const syncCharacterImplants = async ({ access_token, characterID, registr
   console.log(`[${TAG}] ${ctx}: ${(typeIds ?? []).length} implant(s)`)
 }
 
-export const runCharacterImplants = ({ characterIds } = {}) =>
-  forEachCharacter(TAG, { scope: SCOPE, characterIds }, syncCharacterImplants)
+export const runCharacterImplants = ({ registrationIds } = {}) =>
+  forEachCharacter(TAG, { scope: SCOPE, registrationIds }, syncCharacterImplants)
 
 cli(import.meta.url, TAG, runCharacterImplants)

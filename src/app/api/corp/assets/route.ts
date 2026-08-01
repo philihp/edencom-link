@@ -43,7 +43,7 @@ export const GET = async (request: NextRequest): Promise<NextResponse> => {
   // Built and returned as one json array by Postgres (corp_assets), which keeps
   // the field order for the sheet's columns and sidesteps PostgREST's max-rows cap.
   const { data: rows, error: rowsError } = await player.supabase.rpc('corp_assets', {
-    registration_ids: player.characterIds,
+    registration_ids: player.registrationIds,
   })
   if (rowsError) {
     return NextResponse.json({ error: 'Query failed' }, { status: 500 })

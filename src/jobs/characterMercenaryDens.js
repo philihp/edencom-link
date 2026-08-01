@@ -107,7 +107,7 @@ export const syncCharacterMercenaryDens = async ({ access_token, characterID, re
   console.log(`[${TAG}] ${name} ${registration_id} (${characterID}): ${listed.length} den(s)`)
 }
 
-export const runCharacterMercenaryDens = ({ characterIds } = {}) =>
-  forEachCharacter(TAG, { scope: SCOPE, characterIds }, syncCharacterMercenaryDens)
+export const runCharacterMercenaryDens = ({ registrationIds } = {}) =>
+  forEachCharacter(TAG, { scope: SCOPE, registrationIds }, syncCharacterMercenaryDens)
 
 cli(import.meta.url, TAG, runCharacterMercenaryDens)

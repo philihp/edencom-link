@@ -38,12 +38,12 @@ const LANES = 2
 // job module's top-level supabase/esi setup needs env vars absent at build
 // time). forEachCorporation still refreshes tokens, dedupes to one handler call
 // per corp, falls back through the group on a role failure, and records the
-// per-corp heartbeat pair — all unchanged. characterIds (registration uuids) is
+// per-corp heartbeat pair — all unchanged. registrationIds (registration uuids) is
 // the only thing crossing the step boundary, and serializable.
-async function syncCorporation(characterIds: string[]) {
+async function syncCorporation(registrationIds: string[]) {
   'use step'
   const { runCorpAssets } = await import('@/jobs/corpAssets.js')
-  await runCorpAssets({ characterIds })
+  await runCorpAssets({ registrationIds })
 }
 
 export async function corpAssetsWorkflow() {

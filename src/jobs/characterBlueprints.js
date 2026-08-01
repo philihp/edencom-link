@@ -123,16 +123,20 @@ const reconcile = async (registration_id, fetched) => {
   return { touched: touchIds.length, opened: inserts.length, closed: allCloseIds.length }
 }
 
-export const runCharacterBlueprints = ({ characterIds } = {}) =>
-  forEachCharacter(TAG, { scope: SCOPE, characterIds }, async ({ access_token, characterID, registration_id, ctx }) => {
-    const t0 = Date.now()
-    const fetched = await fetchAllPages((page) => blueprints(access_token, characterID, page))
-    const { touched, opened, closed } = await reconcile(registration_id, fetched)
+export const runCharacterBlueprints = ({ registrationIds } = {}) =>
+  forEachCharacter(
+    TAG,
+    { scope: SCOPE, registrationIds },
+    async ({ access_token, characterID, registration_id, ctx }) => {
+      const t0 = Date.now()
+      const fetched = await fetchAllPages((page) => blueprints(access_token, characterID, page))
+      const { touched, opened, closed } = await reconcile(registration_id, fetched)
 
-    const dt = Date.now() - t0
-    console.log(
-      `[${TAG}] ${ctx}: ${fetched.length} blueprint(s); ${touched} unchanged, ${opened} opened, ${closed} closed in ${dt}ms`
-    )
-  })
+      const dt = Date.now() - t0
+      console.log(
+        `[${TAG}] ${ctx}: ${fetched.length} blueprint(s); ${touched} unchanged, ${opened} opened, ${closed} closed in ${dt}ms`
+      )
+    }
+  )
 
 cli(import.meta.url, TAG, runCharacterBlueprints)

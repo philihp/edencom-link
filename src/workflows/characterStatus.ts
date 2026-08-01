@@ -6,7 +6,7 @@
 // Same fan-out shape as the three per-character jobs already migrated, with one
 // wrinkle: character-status fronts five endpoints with *different* scopes, so it
 // enumerates every character carrying *any* of them. enumerateCharacters passes
-// the scopes straight to selectCharacterIdsWithScopes, which unions them (array
+// the scopes straight to selectRegistrationIdsWithScopes, which unions them (array
 // overlap) — exactly what fanOutPerCharacterAnyScopeCronJob did. The job's
 // handler (forEachCharacterAnyScope) still runs only the endpoints each token is
 // authorized for.
@@ -51,7 +51,7 @@ const LANES = 4
 async function syncCharacter(characterId: number) {
   'use step'
   const { runCharacterStatus } = await import('@/jobs/characterStatus.js')
-  await runCharacterStatus({ characterIds: [characterId] })
+  await runCharacterStatus({ registrationIds: [characterId] })
 }
 
 export async function characterStatusWorkflow() {

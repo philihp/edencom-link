@@ -38,25 +38,25 @@ export const runDirectCronJob = async (job: string, run: () => Promise<unknown>)
 // many characters are registered, and records its own per-character
 // heartbeat (see forEachCharacter/forEachCorporation in src/jobs/lib.js).
 export const fanOutPerCharacterCronJob = async (job: string, scope: string) => {
-  const { selectCharacterIdsWithScopes } = await import('@/supabase.js')
+  const { selectRegistrationIdsWithScopes } = await import('@/supabase.js')
   const { send } = await import('@/utils/queue')
-  const characterIds = await selectCharacterIdsWithScopes([scope])
-  await Promise.all(characterIds.map((characterId) => send('jobs', { job, characterId })))
-  return characterIds.length
+  const registrationIds = await selectRegistrationIdsWithScopes([scope])
+  await Promise.all(registrationIds.map((characterId) => send('jobs', { job, characterId })))
+  return registrationIds.length
 }
 
 // Same fan-out as fanOutPerCharacterCronJob, but for a job that fronts several
 // endpoints with different scopes (character-status): enumerate every character
-// carrying *any* of `scopes` (selectCharacterIdsWithScopes already unions them)
+// carrying *any* of `scopes` (selectRegistrationIdsWithScopes already unions them)
 // and send one message each. The consumer's handler
 // (forEachCharacterAnyScope) then runs only the endpoints each token is
 // authorized for.
 export const fanOutPerCharacterAnyScopeCronJob = async (job: string, scopes: string[]) => {
-  const { selectCharacterIdsWithScopes } = await import('@/supabase.js')
+  const { selectRegistrationIdsWithScopes } = await import('@/supabase.js')
   const { send } = await import('@/utils/queue')
-  const characterIds = await selectCharacterIdsWithScopes(scopes)
-  await Promise.all(characterIds.map((characterId) => send('jobs', { job, characterId })))
-  return characterIds.length
+  const registrationIds = await selectRegistrationIdsWithScopes(scopes)
+  await Promise.all(registrationIds.map((characterId) => send('jobs', { job, characterId })))
+  return registrationIds.length
 }
 
 // For the corp-scoped extract jobs (corp-assets, corp-industry-jobs,
@@ -80,12 +80,12 @@ export const fanOutPerCharacterAnyScopeCronJob = async (job: string, scopes: str
 // character up front had no way to know which of them ESI would actually let
 // through.
 export const fanOutPerCorporationCronJob = async (job: string, scope: string) => {
-  const { groupCharacterIdsByCorporation } = await import('@/supabase.js')
+  const { groupRegistrationIdsByCorporation } = await import('@/supabase.js')
   const { send } = await import('@/utils/queue')
-  const { byCorp, unresolved } = await groupCharacterIdsByCorporation([scope])
+  const { byCorp, unresolved } = await groupRegistrationIdsByCorporation([scope])
 
   const groups = [...byCorp.values(), ...unresolved.map((id: string) => [id])]
-  await Promise.all(groups.map((characterIds) => send('jobs', { job, characterIds })))
+  await Promise.all(groups.map((registrationIds) => send('jobs', { job, registrationIds })))
   return groups.length
 }
 

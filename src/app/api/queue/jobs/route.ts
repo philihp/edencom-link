@@ -11,61 +11,61 @@ export const runtime = 'nodejs'
 // limit on one of those is a real risk to watch for via their heartbeat durations.
 
 // One extract job per ESI endpoint, named after that endpoint. The per-character
-// jobs accept { characterIds }; the account-wide ones (characterIds: false) do
+// jobs accept { registrationIds }; the account-wide ones (registrationIds: false) do
 // batch work over everything at once. Each entry imports lazily so loading the
 // route (and `next build`) never runs the job modules' top-level supabase
 // service-client setup, which needs env vars absent at build time.
 const JOBS = {
   'character-assets': {
-    characterIds: true,
+    registrationIds: true,
     load: async () => (await import('@/jobs/characterAssets.js')).runCharacterAssets,
   },
   'character-blueprints': {
-    characterIds: true,
+    registrationIds: true,
     load: async () => (await import('@/jobs/characterBlueprints.js')).runCharacterBlueprints,
   },
   'character-orders': {
-    characterIds: true,
+    registrationIds: true,
     load: async () => (await import('@/jobs/characterOrders.js')).runCharacterOrders,
   },
   'character-wallet': {
-    characterIds: true,
+    registrationIds: true,
     load: async () => (await import('@/jobs/characterWallet.js')).runCharacterWallet,
   },
   'character-wallet-transactions': {
-    characterIds: true,
+    registrationIds: true,
     load: async () => (await import('@/jobs/characterWalletTransactions.js')).runCharacterWalletTransactions,
   },
   'character-industry-jobs': {
-    characterIds: true,
+    registrationIds: true,
     load: async () => (await import('@/jobs/characterIndustryJobs.js')).runCharacterIndustryJobs,
   },
   'character-mercenary-dens': {
-    characterIds: true,
+    registrationIds: true,
     load: async () => (await import('@/jobs/characterMercenaryDens.js')).runCharacterMercenaryDens,
   },
   'character-fittings': {
-    characterIds: true,
+    registrationIds: true,
     load: async () => (await import('@/jobs/characterFittings.js')).runCharacterFittings,
   },
   'character-location': {
-    characterIds: true,
+    registrationIds: true,
     load: async () => (await import('@/jobs/characterLocation.js')).runCharacterLocation,
   },
   'character-clones': {
-    characterIds: true,
+    registrationIds: true,
     load: async () => (await import('@/jobs/characterClones.js')).runCharacterClones,
   },
   'character-implants': {
-    characterIds: true,
+    registrationIds: true,
     load: async () => (await import('@/jobs/characterImplants.js')).runCharacterImplants,
   },
   'character-ship': {
-    characterIds: true,
+    registrationIds: true,
     load: async () => (await import('@/jobs/characterShip.js')).runCharacterShip,
   },
   'character-skills': {
-    characterIds: true,
+    registrationIds: true,
     load: async () => (await import('@/jobs/characterSkills.js')).runCharacterSkills,
   },
   // Combined live-state job: runs character-wallet + character-location +
@@ -74,58 +74,58 @@ const JOBS = {
   // manual/backfill runs, but the cron and the /character/refresh UI dispatch
   // this one instead.
   'character-status': {
-    characterIds: true,
+    registrationIds: true,
     load: async () => (await import('@/jobs/characterStatus.js')).runCharacterStatus,
   },
   'corp-structures': {
-    characterIds: true,
+    registrationIds: true,
     load: async () => (await import('@/jobs/corpStructures.js')).runCorpStructures,
   },
   'corp-assets': {
-    characterIds: true,
+    registrationIds: true,
     load: async () => (await import('@/jobs/corpAssets.js')).runCorpAssets,
   },
   'corp-blueprints': {
-    characterIds: true,
+    registrationIds: true,
     load: async () => (await import('@/jobs/corpBlueprints.js')).runCorpBlueprints,
   },
   'corp-wallet-journal': {
-    characterIds: true,
+    registrationIds: true,
     load: async () => (await import('@/jobs/corpWalletJournal.js')).runCorpWalletJournal,
   },
   'corp-wallet-transactions': {
-    characterIds: true,
+    registrationIds: true,
     load: async () => (await import('@/jobs/corpWalletTransactions.js')).runCorpWalletTransactions,
   },
   'corp-industry-jobs': {
-    characterIds: true,
+    registrationIds: true,
     load: async () => (await import('@/jobs/corpIndustryJobs.js')).runCorpIndustryJobs,
   },
   'character-directory': {
-    characterIds: false,
+    registrationIds: false,
     load: async () => (await import('@/jobs/characterDirectory.js')).runCharacterDirectory,
   },
   'universe-names': {
-    characterIds: false,
+    registrationIds: false,
     load: async () => (await import('@/jobs/universeNames.js')).runUniverseNames,
   },
   'universe-structures': {
-    characterIds: false,
+    registrationIds: false,
     load: async () => (await import('@/jobs/universeStructures.js')).runUniverseStructures,
   },
   'industry-systems': {
-    characterIds: false,
+    registrationIds: false,
     load: async () => (await import('@/jobs/industrySystems.js')).runIndustrySystems,
   },
 } satisfies Record<
   string,
-  { characterIds: boolean; load: () => Promise<(opts?: { characterIds?: string[] }) => Promise<unknown>> }
+  { registrationIds: boolean; load: () => Promise<(opts?: { registrationIds?: string[] }) => Promise<unknown>> }
 >
 
 type JobName = keyof typeof JOBS
 
 // characterId is a registration uuid (per-character fan-out); absent runs the job
-// for everyone. characterIds carries more than one — used for the corp-scoped jobs,
+// for everyone. registrationIds carries more than one — used for the corp-scoped jobs,
 // where a single queue message covers every character known to carry the corp's
 // scope, so forEachCorporation (src/jobs/lib.js) can fall back to the next one if an
 // earlier character turns out to lack the in-game role the corp endpoint requires.
@@ -134,6 +134,12 @@ type JobName = keyof typeof JOBS
 type Msg = {
   job: JobName
   characterId?: string
+  registrationIds?: string[]
+  // Transitional: messages enqueued before the registrationIds rename carry the
+  // old key. Read for one deploy so a message already in the queue keeps its
+  // scoping — dropping it silently would widen the message to every character
+  // rather than error, and the job would just do more work than asked. Safe to
+  // delete once the queue has drained past this release.
   characterIds?: string[]
   taskId?: string
 }
@@ -151,9 +157,9 @@ const logMemoryUsage = async (job: string) => {
 // A thrown error fails the callback, so the Vercel queue retries the message
 // (per retryAfterSeconds in vercel.json).
 export const POST = handleCallback(async (message: Msg) => {
-  const { job, characterId, characterIds, taskId } = message
-  const ids = characterIds ?? (characterId != null ? [characterId] : undefined)
-  console.log(`[queue/jobs] consume job=${job} characterIds=${ids?.join(',') ?? '-'} taskId=${taskId ?? '-'}`)
+  const { job, characterId, registrationIds, characterIds, taskId } = message
+  const ids = registrationIds ?? characterIds ?? (characterId != null ? [characterId] : undefined)
+  console.log(`[queue/jobs] consume job=${job} registrationIds=${ids?.join(',') ?? '-'} taskId=${taskId ?? '-'}`)
 
   // Pilot: character-implants runs as a Vercel Workflow instead of inline, to
   // validate the queue → workflow chain before any other job migrates (see
@@ -175,8 +181,8 @@ export const POST = handleCallback(async (message: Msg) => {
 
     const runJob = async () => {
       const run = await entry.load()
-      if (entry.characterIds) {
-        await run(ids ? { characterIds: ids } : undefined)
+      if (entry.registrationIds) {
+        await run(ids ? { registrationIds: ids } : undefined)
         return
       }
       // Account-wide jobs consume a single whole-job message, so the consumer records

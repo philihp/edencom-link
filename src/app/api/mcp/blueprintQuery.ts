@@ -39,7 +39,7 @@ export type BlueprintSearchParams = {
 // Owner ids are registration uuids for characters and corporation ids for
 // corp-owned rows (the convention fetchOwnerContext uses), so a resolved owner
 // filter has to be split back into the two typed arrays the RPC takes.
-export type OwnerIds = { characterIds: string[]; corporationIds: string[] }
+export type OwnerIds = { registrationIds: string[]; corporationIds: string[] }
 
 export const partitionOwnerIds = (
   ownerIds: Set<string> | null,
@@ -48,7 +48,7 @@ export const partitionOwnerIds = (
   ownerIds == null
     ? { registration_ids: null, corporation_ids: null }
     : {
-        registration_ids: owners.characterIds.filter((id) => ownerIds.has(id)),
+        registration_ids: owners.registrationIds.filter((id) => ownerIds.has(id)),
         corporation_ids: owners.corporationIds.filter((id) => ownerIds.has(id)).map(Number),
       }
 

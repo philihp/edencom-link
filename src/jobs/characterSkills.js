@@ -98,7 +98,7 @@ export const syncCharacterSkills = async ({ access_token, characterID, registrat
   )
 }
 
-export const runCharacterSkills = ({ characterIds } = {}) =>
-  forEachCharacter(TAG, { scope: SCOPE, characterIds }, syncCharacterSkills)
+export const runCharacterSkills = ({ registrationIds } = {}) =>
+  forEachCharacter(TAG, { scope: SCOPE, registrationIds }, syncCharacterSkills)
 
 cli(import.meta.url, TAG, runCharacterSkills)

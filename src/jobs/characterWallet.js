@@ -16,7 +16,7 @@ export const syncCharacterWallet = async ({ access_token, characterID, registrat
   console.log(`[${TAG}] ${name} ${registration_id} (${characterID}): ${balance}`)
 }
 
-export const runCharacterWallet = ({ characterIds } = {}) =>
-  forEachCharacter(TAG, { scope: SCOPE, characterIds }, syncCharacterWallet)
+export const runCharacterWallet = ({ registrationIds } = {}) =>
+  forEachCharacter(TAG, { scope: SCOPE, registrationIds }, syncCharacterWallet)
 
 cli(import.meta.url, TAG, runCharacterWallet)

@@ -55,8 +55,8 @@ const fetchDivisionPage = async (access_token, corporation_id, division, cutoff,
 const fetchDivision = (access_token, corporation_id, division, cutoff) =>
   fetchDivisionPage(access_token, corporation_id, division, cutoff, 1)
 
-export const runCorpWalletJournal = ({ characterIds } = {}) =>
-  forEachCorporation(TAG, { scope: SCOPE, characterIds }, async ({ access_token, corporation_id, ctx }) => {
+export const runCorpWalletJournal = ({ registrationIds } = {}) =>
+  forEachCorporation(TAG, { scope: SCOPE, registrationIds }, async ({ access_token, corporation_id, ctx }) => {
     const cutoff = Date.now() - JOURNAL_LOOKBACK_MS
     let failures = 0
     await forEachSequential(WALLET_DIVISIONS, async (division) => {

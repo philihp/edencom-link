@@ -106,18 +106,16 @@ column is a return-type change.
 ### JavaScript / TypeScript — 4 modules
 
 - **`src/jobs/lib.js`** — ~~the `characterID` / `character_id` pair~~ (done);
-  the `characterIds` option (registration uuids) on `forEachCharacter` /
-  `forEachCharacterAnyScope` / `forEachCorporation` remains, and shares its
-  name with three unrelated contracts — see step 2.
+  ~~the `characterIds` option~~ (done in step 8).
 - **`src/supabase.js`** — ~~`recordHeartbeat(opts.characterId)`~~ (done),
   ~~`selectToken`~~ and ~~`upsertToken`~~ (done in step 1);
-  `selectCharacterIdsWithScopes()` still returns uuids under a
-  character-flavoured name — see step 8.
+  ~~`selectCharacterIdsWithScopes()`~~ (done in step 8, along with
+  `groupCharacterIdsByCorporation()`).
 - **`src/observability.js`** — `recordEsiConditional({ characterId })` emits a
   `character_id` metric field holding a uuid. Renaming changes the shape of
   metric lines already queried in Vercel Observability.
-- **`src/app/api/mcp/lib.ts`** — `OwnerContext.characterIds` is registration
-  uuids, and it's what `resolveOwnerFilter` matches on across every MCP tool.
+- **`src/app/api/mcp/lib.ts`** — ~~`OwnerContext.characterIds`~~ (done in
+  step 8).
 
 ## Migration mechanics: what a rename does and doesn't carry
 
@@ -389,13 +387,32 @@ uuid) returns boolean` is untouched — only its body moves. So
    against a superseded signature — and it was verified to still fail on a
    deliberately wrong parameter name.
 
-8. **The JS-only contracts** — the `characterIds` option on `forEachCharacter`,
-   `OwnerContext.characterIds`, `resolvePlayer`'s return, and
-   `recordEsiConditional`'s metric field. No migration, no deploy window, so
-   these can be interleaved anywhere. Do the three `characterIds` contracts
-   together, since they share the name. `src/observability.js` is the one thing
-   worth _not_ doing: renaming the metric field breaks continuity of any saved
-   Vercel Observability query for no correctness gain.
+8. ~~**The JS-only contracts**~~ **Done.** 175 identifier occurrences across 56
+   files — `characterIds` → `registrationIds`, plus
+   `selectCharacterIdsWithScopes` / `groupCharacterIdsByCorporation` and the
+   locals derived from them.
+
+   The **singular** `characterId` was surveyed and deliberately left alone. It
+   is genuinely mixed — `/fitting/[characterId]`, the portrait URLs,
+   `ownerCharacterId` and `mainCharacterId` are all real EVE ids, and
+   `initialCharacterId` is a third-party eveship.fit prop. Only the plural was
+   uniformly a registration uuid, which is what made a tree-wide rename safe;
+   sorting out the singular is its own survey, not a sweep.
+
+   One thing this step turned out to touch that "JS-only, no deploy window"
+   didn't cover: the **Vercel queue message shape**. `characterIds` is a wire
+   contract between `dispatchRefresh` and `/api/queue/jobs`, and a message
+   already in the queue at deploy time would lose its scoping — silently, since
+   an absent key means "run for everyone" rather than an error, so the job
+   would just do more work than asked. The consumer therefore reads the old key
+   as a fallback for one release; the comment there says when to delete it.
+
+   `src/observability.js` is deliberately untouched: renaming its metric field
+   breaks continuity of any saved Vercel Observability query for no correctness
+   gain.
+
+**The cleanup is complete.** All 19 columns, 8 views, 11 function signatures,
+and the JS contracts.
 
 `src/observability.js` can be left alone or done last: renaming the metric
 field breaks continuity of any saved Observability query, which is a cost with

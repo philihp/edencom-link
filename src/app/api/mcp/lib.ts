@@ -73,7 +73,7 @@ export const resolveTypeFilter = async (
 // corporation ids for corp-owned rows — the same convention the web pages use.
 export type OwnerContext = {
   nameById: Map<string, string>
-  characterIds: string[]
+  registrationIds: string[]
   corporationIds: string[]
 }
 
@@ -81,7 +81,7 @@ export const fetchOwnerContext = async (supabase: SupabaseClient): Promise<Owner
   const owners = await fetchOwners(supabase)
   return {
     nameById: new Map([...owners.characters, ...owners.corporations].map((o) => [o.id, o.name])),
-    characterIds: owners.characters.map((o) => o.id),
+    registrationIds: owners.characters.map((o) => o.id),
     corporationIds: owners.corporations.map((o) => o.id),
   }
 }

@@ -156,17 +156,21 @@ const reconcile = async (registration_id, fetched, names) => {
   return { touched: touchIds.length, opened: inserts.length, closed: allCloseIds.length }
 }
 
-export const runCharacterAssets = ({ characterIds } = {}) =>
-  forEachCharacter(TAG, { scope: SCOPE, characterIds }, async ({ access_token, characterID, registration_id, ctx }) => {
-    const t0 = Date.now()
-    const fetched = await fetchAllPages((page) => assets(access_token, characterID, page))
-    const names = await fetchNames(access_token, characterID, fetched)
-    const { touched, opened, closed } = await reconcile(registration_id, fetched, names)
+export const runCharacterAssets = ({ registrationIds } = {}) =>
+  forEachCharacter(
+    TAG,
+    { scope: SCOPE, registrationIds },
+    async ({ access_token, characterID, registration_id, ctx }) => {
+      const t0 = Date.now()
+      const fetched = await fetchAllPages((page) => assets(access_token, characterID, page))
+      const names = await fetchNames(access_token, characterID, fetched)
+      const { touched, opened, closed } = await reconcile(registration_id, fetched, names)
 
-    const dt = Date.now() - t0
-    console.log(
-      `[${TAG}] ${ctx}: ${fetched.length} asset(s); ${touched} unchanged, ${opened} opened, ${closed} closed in ${dt}ms`
-    )
-  })
+      const dt = Date.now() - t0
+      console.log(
+        `[${TAG}] ${ctx}: ${fetched.length} asset(s); ${touched} unchanged, ${opened} opened, ${closed} closed in ${dt}ms`
+      )
+    }
+  )
 
 cli(import.meta.url, TAG, runCharacterAssets)

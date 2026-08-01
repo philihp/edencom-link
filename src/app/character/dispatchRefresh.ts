@@ -110,12 +110,12 @@ export const dispatchRefresh = async (userId: string, characters: Character[]): 
   // For each corp-scoped job, group every account-wide character carrying its
   // scope by corporation, so the message sent for a corp's task isn't limited
   // to just the one representative character chosen above.
-  const { groupCharacterIdsByCorporation } = await import('@/supabase.js')
+  const { groupRegistrationIdsByCorporation } = await import('@/supabase.js')
   const corpGroupsByJob = new Map<string, Map<number, string[]>>()
   await Promise.all(
     PER_CORPORATION_JOBS.map(async ({ job, loadScope }) => {
       const scope = await loadScope()
-      const { byCorp } = await groupCharacterIdsByCorporation([scope])
+      const { byCorp } = await groupRegistrationIdsByCorporation([scope])
       corpGroupsByJob.set(job, byCorp)
     })
   )
@@ -159,7 +159,7 @@ export const dispatchRefresh = async (userId: string, characters: Character[]): 
   // A corp-scoped task's message carries every scoped character for its
   // corporation (see corpGroupsByJob above); every other task's message
   // carries just its own single character (or none, for the account-wide jobs).
-  const characterIdsForTask = (t: { job: string; registration_id: string | null }): string[] | undefined => {
+  const registrationIdsForTask = (t: { job: string; registration_id: string | null }): string[] | undefined => {
     if (t.registration_id == null) return undefined
     const byCorp = corpGroupsByJob.get(t.job)
     if (!byCorp) return [t.registration_id]
@@ -170,7 +170,7 @@ export const dispatchRefresh = async (userId: string, characters: Character[]): 
 
   const { send } = await import('@/utils/queue')
   const sent = await Promise.all(
-    (inserted ?? []).map((t) => send('jobs', { job: t.job, characterIds: characterIdsForTask(t), taskId: t.id }))
+    (inserted ?? []).map((t) => send('jobs', { job: t.job, registrationIds: registrationIdsForTask(t), taskId: t.id }))
   )
   console.log(
     `[dispatchRefresh] enqueued ${sent.length} jobs to topic "jobs" region=${process.env.QUEUE_REGION ?? 'sfo1'}`
@@ -187,9 +187,9 @@ export const dispatchRefresh = async (userId: string, characters: Character[]): 
 // representative lacks the in-game role the corp endpoint requires.
 export const dispatchSingleJob = async (userId: string, job: string, character: Character | null): Promise<void> => {
   // Imported lazily for the same build-time reason as dispatchRefresh above.
-  const { sudoSupabase, groupCharacterIdsByCorporation } = await import('@/supabase.js')
+  const { sudoSupabase, groupRegistrationIdsByCorporation } = await import('@/supabase.js')
 
-  const characterIdsForMessage = async (): Promise<string[] | undefined> => {
+  const registrationIdsForMessage = async (): Promise<string[] | undefined> => {
     if (!character) return undefined
     const corpJob = PER_CORPORATION_JOBS.find((j) => j.job === job)
     if (!corpJob) return [character.id]
@@ -202,10 +202,10 @@ export const dispatchSingleJob = async (userId: string, job: string, character: 
     const corporationId = registration?.corporation_id
     if (corporationId == null) return [character.id]
     const scope = await corpJob.loadScope()
-    const { byCorp } = await groupCharacterIdsByCorporation([scope])
+    const { byCorp } = await groupRegistrationIdsByCorporation([scope])
     return byCorp.get(corporationId) ?? [character.id]
   }
-  const characterIds = await characterIdsForMessage()
+  const registrationIds = await registrationIdsForMessage()
 
   const { data: inserted, error } = await sudoSupabase
     .from('refresh_task')
@@ -221,6 +221,6 @@ export const dispatchSingleJob = async (userId: string, job: string, character: 
   if (error) throw error
 
   const { send } = await import('@/utils/queue')
-  await send('jobs', { job, characterIds, taskId: inserted.id })
+  await send('jobs', { job, registrationIds, taskId: inserted.id })
   console.log(`[dispatchSingleJob] enqueued ${job} for ${character?.name ?? 'account'} taskId=${inserted.id}`)
 }

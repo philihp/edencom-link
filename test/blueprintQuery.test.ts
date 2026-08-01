@@ -28,7 +28,7 @@ import {
   type BlueprintSearchPayload,
 } from '../src/app/api/mcp/blueprintQuery.ts'
 
-const OWNERS = { characterIds: ['char-a', 'char-b'], corporationIds: ['98000001', '98000002'] }
+const OWNERS = { registrationIds: ['char-a', 'char-b'], corporationIds: ['98000001', '98000002'] }
 
 const lookups = {
   ownerName: (id: string) => `Owner ${id}`,

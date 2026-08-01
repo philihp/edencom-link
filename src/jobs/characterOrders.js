@@ -126,10 +126,10 @@ const reconcile = async (registration_id, fetched) => {
 // open-orders endpoint is a full snapshot, reconciled into versioned history.
 // Conditional: a 304 means the open-order set is byte-identical to last run —
 // nothing filled, expired or re-priced — so the whole reconcile is skipped.
-export const runCharacterOrders = ({ characterIds } = {}) =>
+export const runCharacterOrders = ({ registrationIds } = {}) =>
   forEachCharacter(
     TAG,
-    { scope: SCOPE, characterIds },
+    { scope: SCOPE, registrationIds },
     async ({ access_token, characterID, registration_id, name }) => {
       const cacheKey = `${TAG}:${registration_id}`
       const priorEtag = await getEsiEtag(cacheKey)

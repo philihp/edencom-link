@@ -139,9 +139,9 @@ All functions take `(accessToken, id, ...)` unless noted. Returns raw ESI respon
 
 ### `src/jobs/lib.js` — shared extract-job plumbing
 
-- `forEachCharacter(tag, { scope, characterIds, heartbeat = true }, handler)` — iterate tokens carrying an ESI scope, refresh each, call handler with `{ access_token, characterID, registration_id, userId, name, ctx, scopes }` (`scopes` is the token's fresh scope list). Wraps each call in a start/end `heartbeat` row attributed to that character (`registration_id`/`user_id`) unless `heartbeat: false` (forEachCorporation passes this to avoid a redundant row)
-- `forEachCharacterAnyScope(tag, { scopes, characterIds, heartbeat = true }, handler)` — like `forEachCharacter` but selects tokens carrying **any** of `scopes` (array overlap) rather than one required scope, for a job fronting several endpoints with different scopes (`character-status`); the handler reads `scopes` to run only the endpoints the token is authorized for
-- `forEachCorporation(tag, { scope, characterIds }, handler)` — same, deduped to one handler call per corporation; also keeps `registration.corporation_id` fresh (corp-table RLS keys off it). Wraps each call in its own start/end `heartbeat` row attributed to the corp and the character whose token authorized the pull (`corporation_id`/`registration_id`/`user_id`)
+- `forEachCharacter(tag, { scope, registrationIds, heartbeat = true }, handler)` — iterate tokens carrying an ESI scope, refresh each, call handler with `{ access_token, characterID, registration_id, userId, name, ctx, scopes }` (`scopes` is the token's fresh scope list). Wraps each call in a start/end `heartbeat` row attributed to that character (`registration_id`/`user_id`) unless `heartbeat: false` (forEachCorporation passes this to avoid a redundant row)
+- `forEachCharacterAnyScope(tag, { scopes, registrationIds, heartbeat = true }, handler)` — like `forEachCharacter` but selects tokens carrying **any** of `scopes` (array overlap) rather than one required scope, for a job fronting several endpoints with different scopes (`character-status`); the handler reads `scopes` to run only the endpoints the token is authorized for
+- `forEachCorporation(tag, { scope, registrationIds }, handler)` — same, deduped to one handler call per corporation; also keeps `registration.corporation_id` fresh (corp-table RLS keys off it). Wraps each call in its own start/end `heartbeat` row attributed to the corp and the character whose token authorized the pull (`corporation_id`/`registration_id`/`user_id`)
 - `fetchAllPages(fetchPage)` — drain an x-pages-paginated ESI endpoint
 - `forEachSequential(items, fn)` — the jobs' ramda-based stand-in for `for (const x of items) { await fn(x) }`; runs `fn` once per item in order, awaiting each before the next
 - `cli(import.meta.url, tag, run)` — self-run a job module when invoked directly as a CLI
@@ -156,8 +156,8 @@ All functions take `(accessToken, id, ...)` unless noted. Returns raw ESI respon
 - `upsertToken(characterId, accessToken, refreshToken, issuedAt, expiresAt, scope[])` — store OAuth tokens
 - `upsertAssets(characterId, assets[])` — asset upsert (legacy `refresh.js` utility)
 - `selectCharacters(columns, owner?)` — registration rows (given select-column list), optionally filtered by `owner`
-- `selectCharacterIdsWithScopes(scopes[])` — character IDs that have all listed ESI scopes
-- `groupCharacterIdsByCorporation(scopes)` — `{ byCorp, unresolved }`: scoped character ids grouped by corporation, for the per-corporation job fan-out
+- `selectRegistrationIdsWithScopes(scopes[])` — character IDs that have all listed ESI scopes
+- `groupRegistrationIdsByCorporation(scopes)` — `{ byCorp, unresolved }`: scoped character ids grouped by corporation, for the per-corporation job fan-out
 - `selectToken(characterId, scope?[])` — fetch stored token for a character, optionally requiring scopes
 - `getEsiEtag(cacheKey)` / `putEsiEtag(cacheKey, etag)` — read/store the last ESI ETag for a conditional-request cache key (`esi_etag` table); both are best-effort (a DB failure degrades to an unconditional fetch rather than throwing). Used by the single-request snapshot jobs (`character-orders`/`-wallet-transactions`/`-industry-jobs`/`-fittings`) to send `If-None-Match` and skip re-processing on a `304`
 
@@ -188,7 +188,7 @@ All functions take `(accessToken, id, ...)` unless noted. Returns raw ESI respon
 
 ### `src/utils/apiToken.ts`
 
-- `resolvePlayer(token: string)` — look up `user_settings.api_token` for Sheets API endpoints; returns `{ ok: true, supabase, characterIds }` or `{ ok: false, status, error }`
+- `resolvePlayer(token: string)` — look up `user_settings.api_token` for Sheets API endpoints; returns `{ ok: true, supabase, registrationIds }` or `{ ok: false, status, error }`
 
 ### `src/utils/csv.ts`
 
