@@ -1,12 +1,36 @@
-# Discord bot: reinforced-den notifications
+# Discord integration: sign-in + channel alerts
 
-Scope for making edencom.link double as a Discord application, so that when
-an extract run detects that one of a user's Mercenary Dens has been
-reinforced, a message is posted automatically to a Discord channel the user
-configured. Today this is manual: the `/mercenary-dens` page has a 📋 button
-(`src/app/mercenary-dens/copyDiscordPing.tsx`) that copies a Discord-ready
-ping the user pastes into their corp channel themselves. This project closes
-that loop.
+Scope for making edencom.link double as a Discord application. Two goals
+(rescoped 2026-08-01 — the project began as den-reinforcement pings only):
+
+1. **Discord as an auth method.** New users can create an account by
+   authenticating with Discord alone — no email/password required — and can
+   add email/password later. Existing email/password users can add Discord
+   to their account. (Supabase Auth's native Discord provider:
+   `signInWithOAuth` / `linkIdentity`; no hand-rolled OAuth client.)
+2. **A bot posting alerts to a Discord channel** the user configured, fed by
+   alert sources we build into the website over time. First sources:
+   Mercenary Den reinforcement (the original scope — today manual via the
+   `/mercenary-dens` 📋 button, `copyDiscordPing.tsx`) and low structure
+   fuel (promoted from the follow-ups list to stage 07).
+
+## Status (2026-08-01)
+
+- **Stage 01 — shipped.** `/privacy` and `/terms` are live
+  (`src/app/privacy/`, `src/app/terms/`), linked from the footer.
+- **Stage 02 — shipped.** The signed interactions endpoint is live at
+  `/api/discord/interactions` (`src/app/api/discord/lib.ts` does
+  dependency-free Ed25519 verification via `node:crypto`); PING→PONG works,
+  application commands get a placeholder ephemeral reply.
+  `DISCORD_APP_ID`/`DISCORD_PUBLIC_KEY`/`DISCORD_BOT_TOKEN` are in
+  `.env.example`, and interactions emit `recordDiscordInteraction`
+  observability metrics.
+- **Stage 03 — not started.** No `discord_link_code`/`discord_channel`
+  tables, no command router, no settings UI yet. Its "link codes, not
+  Discord OAuth" design predates goal 1 and is amended below: stage 06's
+  Discord identity becomes the primary account↔Discord binding, with link
+  codes kept as the fallback for users who haven't linked Discord.
+- **Stages 04–07 — not started.**
 
 This is a scoping document set, not an implementation spec. Each stage is
 one PR with its own milestone; do them **in order** (each builds on the
@@ -21,6 +45,12 @@ against the code as it stands then.
 | [03-account-linking.md](03-account-linking.md) | medium | Bot install flow, account↔Discord linking, channel configuration via `/edencom link` | A linked channel row appears in settings after running the slash command |
 | [04-reinforcement-detection.md](04-reinforcement-detection.md) | medium | Detect the unreinforced→reinforced transition at extract time; notification outbox table | A simulated reinforcement produces exactly one pending outbox row |
 | [05-notification-sender.md](05-notification-sender.md) | small | Cron sweep that posts pending notifications to the linked channel | End-to-end: reinforced den → message in the Discord channel |
+| [06-discord-sign-in.md](06-discord-sign-in.md) | medium | Discord as a Supabase Auth provider: sign in / sign up with Discord, link Discord to an email account, add email later | A Discord-only account exists and works; an email account shows a linked Discord identity in settings |
+| [07-structure-fuel-alerts.md](07-structure-fuel-alerts.md) | small | Low-fuel detection on the `corp-structures` extract, riding the stage-04 outbox and stage-05 sender | A structure crossing the fuel threshold produces exactly one channel message |
+
+Stage 06 is independent of 03–05 and can land any time after 02 (it wants
+the same Discord application, plus a second OAuth2 redirect for Supabase).
+Stage 07 depends on 04+05 (outbox + sender).
 
 Follow-ups (out of scope for all five stages) are collected at the bottom of
 this file.
@@ -126,7 +156,8 @@ New secrets (Vercel env vars + `.env.example`), introduced in stage 02:
 - Notifications from the enemy-den intel corkboard (user-submitted
   reinforcements, `enemyDenIntel.tsx`).
 - Other notification sources riding the same outbox: industry-job
-  completion (the ntfy plan), clone-jump cooldown, structure fuel.
+  completion (the ntfy plan), clone-jump cooldown. (Structure fuel was
+  promoted out of this list to stage 07.)
 - Incoming-webhook delivery as an alternative transport for users who don't
   want the bot in their server.
 - Discord App Directory listing / verification.
