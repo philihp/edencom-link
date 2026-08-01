@@ -1,7 +1,7 @@
 // The single module in the repo that talks to the Innominate Appraisal API
 // (https://innomin.at/api/docs/) — an Evepraisal-style ISK price service. Both
 // consumers (the appraise_items MCP tool now, the asset viewer in doc 03) go
-// through here so the save:false invariant, auth header, in-process cache, and
+// through here so the save default, auth header, in-process cache, and
 // rate-limit handling live in exactly one place. This is a deliberate, narrow
 // exception to the "UI/MCP read the DB, never call a third-party" rule: market
 // prices aren't in our DB at all, so we call innomin.at server-side at request
@@ -12,8 +12,8 @@
 // deployment, not per user or per lambda. In-process state can't enforce that —
 // separate serverless instances don't share memory — so on Vercel every call is
 // funnelled through a Vercel queue (topic "innominate", consumer at
-// /api/queue/innominate) that drains at most one request every 18 seconds
-// (= 200/hour) via an atomic Postgres leaky bucket. The MCP tool stays
+// /api/queue/innominate) that drains at most one request every 2 seconds via an
+// atomic Postgres leaky bucket (see THROTTLE_SECONDS). The MCP tool stays
 // synchronous: appraise() enqueues the request and BLOCKS polling a shared
 // Supabase row until the consumer fills it in (or a ~50s budget elapses). Local
 // dev (no VERCEL) skips the queue and calls directly — a single developer isn't
@@ -48,6 +48,10 @@ export type Appraisal = {
   marketStatus: string
   rateLimitRemaining: number | null // from x-ratelimit-remaining
   cached: boolean // true when served from the TTL cache
+  // Set only for a saved appraisal (save: true) — the id the provider minted,
+  // which appraisalUrl() turns into a shareable link. Null for the ordinary
+  // side-effect-free path, which stores nothing and mints nothing.
+  appraisalId: string | null
 }
 
 export type AppraisalError =
@@ -109,6 +113,7 @@ type RawAppraisal = {
   price_split?: number
   market?: string
   market_status?: string
+  appraisal_id?: string | null
 }
 
 const num = (v: number | null | undefined): number | null => (typeof v === 'number' ? v : null)
@@ -168,7 +173,7 @@ const cacheSet = (key: string, appraisal: Appraisal): void => {
 //
 // Actually hits innomin.at. Only ever called by the queue consumer (one call at
 // a time, throttled) — or directly by appraise() in local dev. Never throws.
-const callInnominate = async (items: AppraisalItemInput[], market: Market): Promise<AppraisalResult> => {
+const callInnominate = async (items: AppraisalItemInput[], market: Market, save: boolean): Promise<AppraisalResult> => {
   const apiKey = process.env.INNOMINATE_API_KEY
   if (!apiKey) {
     return { ok: false, kind: 'unconfigured', message: 'INNOMINATE_API_KEY is not set on this deployment.' }
@@ -183,10 +188,13 @@ const callInnominate = async (items: AppraisalItemInput[], market: Market): Prom
         'Content-Type': 'application/json',
         'User-Agent': USER_AGENT,
       },
-      // save: false is HARD-CODED (never a parameter, never configurable):
-      // it keeps the call side-effect-free on the provider's server — nothing
-      // stored, no appraisal id minted — per the API-key agreement.
-      body: JSON.stringify({ items, market, save: false }),
+      // `save` defaults to false everywhere and is only ever true for an
+      // explicit, user-initiated "save and open this appraisal" click. Every
+      // automatic appraisal — every row of the asset viewer, every MCP call —
+      // stays side-effect free on the provider's server: nothing stored, no id
+      // minted. Saving is the one case where the user is asking for a record to
+      // exist, so it is passed in rather than assumed.
+      body: JSON.stringify({ items, market, save }),
       signal: AbortSignal.timeout(TIMEOUT_MS),
     })
   } catch {
@@ -230,9 +238,16 @@ const callInnominate = async (items: AppraisalItemInput[], market: Market): Prom
     marketStatus: raw.market_status ?? '',
     rateLimitRemaining,
     cached: false,
+    // Present only when save was true; the provider mints nothing otherwise.
+    appraisalId: raw.appraisal_id ?? null,
   }
   return { ok: true, appraisal }
 }
+
+// Where a saved appraisal lives for a human. Not in the OpenAPI schema (which
+// only documents the key-authenticated GET /api/v1/appraisal/{id}/); this is the
+// provider's own SPA route, confirmed against a real saved appraisal.
+export const appraisalUrl = (appraisalId: string): string => `https://innomin.at/a/${appraisalId}`
 
 // ---- Shared DB row (throttle coordination + global cache) -----------------
 
@@ -241,6 +256,7 @@ type AppraisalRow = {
   request_key: string
   market: string
   items: AppraisalItemInput[]
+  save: boolean
   status: 'pending' | 'done' | 'error'
   result: Appraisal | null
   error: AppraisalError | null
@@ -250,7 +266,7 @@ type AppraisalRow = {
 const readAppraisalRow = async (supabase: ServiceClient, requestKey: string): Promise<AppraisalRow | null> => {
   const { data } = await supabase
     .from('innominate_appraisal')
-    .select('request_key, market, items, status, result, error, updated_at')
+    .select('request_key, market, items, save, status, result, error, updated_at')
     .eq('request_key', requestKey)
     .maybeSingle()
   return (data as AppraisalRow | null) ?? null
@@ -285,7 +301,12 @@ const pollForResult = async (supabase: ServiceClient, key: string, deadline: num
   return pollForResult(supabase, key, deadline)
 }
 
-const appraiseViaQueue = async (items: AppraisalItemInput[], market: Market, key: string): Promise<AppraisalResult> => {
+const appraiseViaQueue = async (
+  items: AppraisalItemInput[],
+  market: Market,
+  save: boolean,
+  key: string
+): Promise<AppraisalResult> => {
   // appraise() must never throw (the MCP tool relies on that), so a DB or queue
   // outage becomes a clean upstream error rather than a rejection.
   try {
@@ -310,6 +331,7 @@ const appraiseViaQueue = async (items: AppraisalItemInput[], market: Market, key
         request_key: key,
         market,
         items,
+        save,
         status: 'pending',
         result: null,
         error: null,
@@ -336,14 +358,22 @@ const appraiseViaQueue = async (items: AppraisalItemInput[], market: Market, key
 
 // ---- Public entry point ---------------------------------------------------
 
-export const appraise = async (items: AppraisalItemInput[], market: Market = 'jita'): Promise<AppraisalResult> => {
+// `save` is opt-in and only ever set by an explicit user action (the asset
+// viewer's "open this appraisal" arrow). It is part of the cache key, so a
+// previously cached unsaved result — which carries no appraisal id — can never
+// satisfy a save request.
+export const appraise = async (
+  items: AppraisalItemInput[],
+  market: Market = 'jita',
+  save = false
+): Promise<AppraisalResult> => {
   if (!process.env.INNOMINATE_API_KEY) {
     // No key → answer without any network/queue work, so local dev without the
     // key still works and the tool degrades gracefully in prod if it's unset.
     return { ok: false, kind: 'unconfigured', message: 'INNOMINATE_API_KEY is not set on this deployment.' }
   }
 
-  const key = cacheKey(items, market)
+  const key = cacheKey(items, market, save)
   const hit = cacheGet(key)
   if (hit) return { ok: true, appraisal: { ...hit, cached: true } }
 
@@ -351,12 +381,12 @@ export const appraise = async (items: AppraisalItemInput[], market: Market = 'ji
   // it calls directly (bypassing the shared-budget throttle); production routes
   // every call through the throttled queue.
   if (process.env.VERCEL !== '1') {
-    const result = await callInnominate(items, market)
+    const result = await callInnominate(items, market, save)
     if (result.ok) cacheSet(key, result.appraisal)
     return result
   }
 
-  return appraiseViaQueue(items, market, key)
+  return appraiseViaQueue(items, market, save, key)
 }
 
 // ---- Queue consumer entry point -------------------------------------------
@@ -392,7 +422,7 @@ export const runInnominateQueueMessage = async ({ requestKey }: InnominateQueueM
     throw new InnominateThrottleRetry(Math.max(1, Math.ceil(gate?.wait_seconds ?? THROTTLE_SECONDS)))
   }
 
-  const result = await callInnominate(row.items, row.market as Market)
+  const result = await callInnominate(row.items, row.market as Market, row.save ?? false)
   await supabase
     .from('innominate_appraisal')
     .update(

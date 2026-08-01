@@ -26,8 +26,21 @@ export type KeyItem = { name: string; quantity: number }
 // The canonical form the digest is taken over. Sorted by name so batches that
 // differ only in order share a key (and therefore a cache entry); quantities
 // included so a different amount is genuinely a different request.
-export const canonicalRequest = (items: KeyItem[], market: string): string =>
-  JSON.stringify({ market, items: sortBy((i: KeyItem) => i.name, items).map((i) => [i.name, i.quantity]) })
+//
+// `save` is part of the identity, not a modifier on it. A saved appraisal is
+// stored on the provider's side and comes back with an id to link to, so an
+// unsaved result — which has no id — must never satisfy a save request from the
+// cache. Two saves of the same items within the TTL do legitimately share an
+// entry, and returning the same stored appraisal is the wanted behaviour: one
+// upstream call, one stored record, one link.
+export const canonicalRequest = (items: KeyItem[], market: string, save = false): string =>
+  JSON.stringify({
+    market,
+    save,
+    items: sortBy((i: KeyItem) => i.name, items).map((i) => [i.name, i.quantity]),
+  })
 
-export const requestKeyFor = (items: KeyItem[], market: string): string =>
-  createHash('sha256').update(canonicalRequest(items, market)).digest('hex')
+export const requestKeyFor = (items: KeyItem[], market: string, save = false): string =>
+  createHash('sha256')
+    .update(canonicalRequest(items, market, save))
+    .digest('hex')

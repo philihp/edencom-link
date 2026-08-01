@@ -710,7 +710,7 @@ grant all on public.esi_etag to service_role;
 -- Global throttle for the innomin.at appraisal API (see src/innominate.ts). The
 -- provider allows 200 requests/hour for the whole deployment, so appraisals are
 -- funnelled through a Vercel queue (topic "innominate", consumer at
--- /api/queue/innominate) draining at most one request every 18 seconds across
+-- /api/queue/innominate) draining at most one request every 2 seconds across
 -- ALL lambda instances. Separate instances don't share memory, so the throttle
 -- timestamp and the pending/finished results live here. Internal service-role
 -- bookkeeping only: RLS on with no policy, so only the service role (the queue
@@ -724,15 +724,23 @@ insert into public.innominate_throttle (id) values (true) on conflict (id) do no
 alter table public.innominate_throttle enable row level security;
 grant all on public.innominate_throttle to service_role;
 
--- One row per distinct (market + sorted item list) request, keyed by request_key
--- (the same hash the in-process cache uses). The producer upserts a 'pending'
--- row and blocks polling it; the consumer flips it to 'done' (mapped Appraisal
--- in `result`) or 'error' ({ kind, message, retryAfterSeconds } in `error`). A
--- fresh 'done' row (< 5 min) doubles as the global price cache.
+-- One row per distinct (market + save + sorted item list) request, keyed by
+-- request_key (the hash the in-process cache uses — see src/innominateKey.ts).
+-- The producer upserts a 'pending' row and blocks polling it; the consumer
+-- flips it to 'done' (mapped Appraisal in `result`) or 'error' ({ kind,
+-- message, retryAfterSeconds } in `error`). A fresh 'done' row (< 5 min)
+-- doubles as the global price cache.
+--
+-- `save` is what the consumer passes to the provider. It is false for every
+-- automatic appraisal and true only for an explicit user-initiated save, which
+-- mints a shareable appraisal id on the provider's side. It's part of the
+-- request key too, so a cached unsaved result (which carries no id) can never
+-- satisfy a save request.
 create table public.innominate_appraisal (
   request_key  text primary key,
   market       text not null,
   items        jsonb not null,
+  save         boolean not null default false,
   status       text not null default 'pending' check (status in ('pending', 'done', 'error')),
   result       jsonb,
   error        jsonb,

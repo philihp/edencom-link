@@ -12,7 +12,7 @@
 import { forEach } from 'ramda'
 import { NextResponse } from 'next/server'
 
-import { appraise, MARKETS, type AppraisalItemInput, type Market } from '@/innominate'
+import { appraise, appraisalUrl, MARKETS, type AppraisalItemInput, type Market } from '@/innominate'
 import { getSdeTypes } from '@/sdeTypes'
 import { createClient } from '@/utils/supabase/server'
 import { BLUEPRINT_CATEGORY_ID } from '../mcp/lib'
@@ -42,13 +42,21 @@ export async function POST(request: Request) {
   const { data: auth, error: authError } = await supabase.auth.getUser()
   if (authError || !auth?.user) return fail(401, 'Sign in to appraise items.')
 
-  const body = (await request.json().catch(() => null)) as { target?: unknown; market?: unknown } | null
+  const body = (await request.json().catch(() => null)) as {
+    target?: unknown
+    market?: unknown
+    save?: unknown
+  } | null
   const target = typeof body?.target === 'string' ? body.target.trim() : ''
   // Ids are bigints kept as strings end to end; anything else can't be one.
   if (!/^\d+$/.test(target)) return fail(400, 'A numeric target id is required.')
   // Validated rather than passed through, so the UI can grow a market picker
   // later without this route changing.
   const market: Market = MARKETS.includes(body?.market as Market) ? (body?.market as Market) : 'jita'
+  // Opt-in, and only ever set by the viewer's explicit "open this appraisal"
+  // arrow. A saved appraisal is stored on the provider's side and gets an id we
+  // can link to; everything else here stays side-effect free over there.
+  const save = body?.save === true
 
   // The target is either one of the caller's own items (ship, container or plain
   // stack) or a bare place id — a station, structure or solar system. RLS
@@ -118,7 +126,7 @@ export async function POST(request: Request) {
     return fail(422, `Too many distinct item types here to appraise at once (${lines.size}, limit ${MAX_LINES}).`)
   }
 
-  const result = await appraise([...lines.values()], market)
+  const result = await appraise([...lines.values()], market, save)
   if (!result.ok) {
     if (result.kind === 'unconfigured') return fail(503, "Appraisals aren't configured on this deployment.")
     if (result.kind === 'rate_limited') {
@@ -141,6 +149,9 @@ export async function POST(request: Request) {
     price_split: appraisal.priceSplit,
     total_volume_m3: appraisal.totalVol,
     line_count: lines.size,
+    // Only a saved appraisal has somewhere to link to. Absent otherwise rather
+    // than null, so the client can just test for it.
+    ...(appraisal.appraisalId && { appraisal_url: appraisalUrl(appraisal.appraisalId) }),
     ...(skippedBlueprints > 0 && { skipped_blueprints: skippedBlueprints }),
     ...(unpriced.length > 0 && { unpriced }),
     ...(appraisal.cached && { cached: true }),
