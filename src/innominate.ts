@@ -65,8 +65,23 @@ const ENDPOINT = 'https://innomin.at/api/v1/appraise/'
 const USER_AGENT = 'edencom-link (philihp@gmail.com)'
 const TIMEOUT_MS = 10_000
 
-// The global rate: one request per 18 seconds = 200/hour, the provider's budget.
-const THROTTLE_SECONDS = 18
+// The global drain rate: one request every 2 seconds.
+//
+// Deliberately faster than the provider's documented 200/hour (which works out
+// to one per 18s, what this used to be). At 18s the throttle was the dominant
+// cost of using the feature: the asset viewer puts an appraise button on every
+// row, so a handful of clicks queued for a minute or more and the later ones
+// timed out against the poll budget having never been sent at all. Draining at
+// 2s serves a normal burst of clicks in a few seconds.
+//
+// The trade: this permits up to 1800/hour, so sustained heavy use can spend the
+// real 200/hour budget in ~7 minutes and start collecting genuine 429s from
+// innomin.at. That's an accepted risk at this deployment's traffic — a handful
+// of players clicking occasionally, with the 5-minute result cache absorbing
+// repeats — and a real 429 is surfaced to the user rather than retried. If it
+// starts biting, the fix isn't a slower drip but an hourly token bucket: burst
+// freely, then refuse once 200 have gone out in the trailing hour.
+const THROTTLE_SECONDS = 2
 // How long appraise() blocks polling the shared row before giving up — kept
 // under the MCP route's 60s function limit (src/app/api/mcp/route.ts).
 const POLL_BUDGET_MS = 50_000

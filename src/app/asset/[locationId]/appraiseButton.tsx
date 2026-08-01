@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import { formatBisk, formatIsk, formatKisk } from '../../isk'
 import styles from './appraiseButton.module.css'
@@ -39,13 +39,27 @@ const describe = (value: Appraised): string =>
     ...(value.cached ? ['cached'] : []),
   ].join(' · ')
 
+// Appraisals drain from one global queue, so a click can genuinely be waiting
+// its turn rather than working. Past a couple of seconds the wait is named and
+// counted — an ellipsis that sits there for half a minute reads as broken.
+const QUIET_SECONDS = 2
+
 // Appraise one target on demand: an item id (a stack, or a ship/container and
 // everything inside it) or a location id for the whole hangar. Deliberately
 // lazy and per-mount — pricing every row of a station on load would blow the
-// shared 200/hour budget in a single page view, and navigating away is meant to
+// shared hourly budget in a single page view, and navigating away is meant to
 // discard the answer rather than cache it client-side.
 export const AppraiseButton = ({ target, label = 'appraise' }: { target: string; label?: string }) => {
   const [state, setState] = useState<State>({ phase: 'idle' })
+  const [waited, setWaited] = useState(0)
+
+  useEffect(() => {
+    if (state.phase !== 'loading') return
+    const startedAt = Date.now()
+    setWaited(0)
+    const tick = setInterval(() => setWaited(Math.round((Date.now() - startedAt) / 1000)), 1000)
+    return () => clearInterval(tick)
+  }, [state.phase])
 
   const run = async () => {
     setState({ phase: 'loading' })
@@ -57,10 +71,12 @@ export const AppraiseButton = ({ target, label = 'appraise' }: { target: string;
       })
       const body = await response.json().catch(() => null)
       if (!response.ok || !body?.ok) {
-        // The route's own message is the useful one (it knows whether this was a
-        // rate limit, a blueprint-only container, or an upstream failure).
         const retry = typeof body?.retry_after_seconds === 'number' ? ` — retry in ${body.retry_after_seconds}s` : ''
-        setState({ phase: 'error', message: `${body?.error ?? 'appraisal unavailable'}${retry}` })
+        // A rate limit gets the short form: the route's sentence is written for
+        // the MCP tool and is far too long for a table cell. Everything else
+        // keeps the route's own message, which knows what actually went wrong.
+        const message = response.status === 429 ? `rate limited${retry}` : `${body?.error ?? 'appraisal unavailable'}`
+        setState({ phase: 'error', message })
         return
       }
       setState({ phase: 'done', value: body as Appraised })
@@ -69,7 +85,16 @@ export const AppraiseButton = ({ target, label = 'appraise' }: { target: string;
     }
   }
 
-  if (state.phase === 'loading') return <span className={styles.pending}>…</span>
+  if (state.phase === 'loading') {
+    return (
+      <span
+        className={styles.pending}
+        title="Appraisals share one queue across the whole site, so a burst of clicks waits its turn."
+      >
+        {waited <= QUIET_SECONDS ? '…' : `queued ${waited}s…`}
+      </span>
+    )
+  }
   if (state.phase === 'error') return <span className={styles.error}>{state.message}</span>
   if (state.phase === 'done') {
     return (

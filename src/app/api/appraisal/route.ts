@@ -17,6 +17,13 @@ import { getSdeTypes } from '@/sdeTypes'
 import { createClient } from '@/utils/supabase/server'
 import { BLUEPRINT_CATEGORY_ID } from '../mcp/lib'
 
+// appraise() blocks polling the shared row for up to 50s while the throttled
+// queue drains (POLL_BUDGET_MS in src/innominate.ts, which is sized against a
+// 60s function limit). Declare that limit rather than inheriting the platform
+// default, which every other long-running route here does too: without it, a
+// lowered default would silently truncate queued appraisals mid-poll.
+export const maxDuration = 60
+
 // One appraisal is always exactly one upstream request — the 200/hour budget is
 // deployment-wide, so looping per item is never an option. A hangar with more
 // distinct types than a single batch can carry is therefore refused outright
