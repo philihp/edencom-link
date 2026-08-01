@@ -126,10 +126,10 @@ const reconcile = async (registration_id, fetched) => {
 // added, edited or deleted since last run — the common case, since a fitting
 // library changes far less often than assets or orders — so the whole
 // reconcile is skipped.
-export const runCharacterFittings = ({ characterIds } = {}) =>
+export const runCharacterFittings = ({ registrationIds } = {}) =>
   forEachCharacter(
     TAG,
-    { scope: SCOPE, characterIds },
+    { scope: SCOPE, registrationIds },
     async ({ access_token, characterID, registration_id, name }) => {
       const cacheKey = `${TAG}:${registration_id}`
       const priorEtag = await getEsiEtag(cacheKey)

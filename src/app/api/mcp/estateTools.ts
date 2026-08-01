@@ -294,7 +294,7 @@ export const registerEstateTools = (server: McpServer): void => {
       // character_wallet is append-only (one row per extract run), so the latest
       // balance is a per-character limit(1) rather than a scan of all history.
       const balances = await Promise.all(
-        owners.characterIds.map(async (characterId) => {
+        owners.registrationIds.map(async (characterId) => {
           const { data } = await supabase
             .from('character_wallet')
             .select('balance, recorded_at')

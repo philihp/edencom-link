@@ -42,7 +42,7 @@ const LANES = 4
 async function syncCharacter(characterId: number) {
   'use step'
   const { runCharacterMercenaryDens } = await import('@/jobs/characterMercenaryDens.js')
-  await runCharacterMercenaryDens({ characterIds: [characterId] })
+  await runCharacterMercenaryDens({ registrationIds: [characterId] })
 }
 
 export async function characterMercenaryDensWorkflow() {

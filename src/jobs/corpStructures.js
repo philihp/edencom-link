@@ -7,8 +7,8 @@ const SCOPE = 'esi-corporations.read_structures.v1'
 
 // GET /corporations/{id}/structures/ → corp_structure. Upserts the corp's
 // Upwell structures (state, fuel, reinforcement windows, services).
-export const runCorpStructures = ({ characterIds } = {}) =>
-  forEachCorporation(TAG, { scope: SCOPE, characterIds }, async ({ access_token, corporation_id, ctx }) => {
+export const runCorpStructures = ({ registrationIds } = {}) =>
+  forEachCorporation(TAG, { scope: SCOPE, registrationIds }, async ({ access_token, corporation_id, ctx }) => {
     const t0 = Date.now()
     const all = await fetchAllPages((page) => corpStructures(access_token, corporation_id, page))
 

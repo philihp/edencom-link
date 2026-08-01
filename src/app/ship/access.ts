@@ -10,7 +10,7 @@ import { createServiceClient } from '@/utils/supabase/service'
 export type ShareScope = {
   userId: string
   // registration uuids (character_asset.registration_id values) of the sharer
-  characterIds: string[]
+  registrationIds: string[]
   // character name per registration uuid, for owner display
   characterNames: Map<string, string>
   // EVE corporation ids the sharer's characters belong to (corp_asset scope)
@@ -36,7 +36,7 @@ export const resolveShareToken = async (token: string, itemId: string): Promise<
 
   return {
     userId: share.user_id,
-    characterIds: rows.map((r) => r.id),
+    registrationIds: rows.map((r) => r.id),
     characterNames: new Map(rows.map((r) => [r.id, r.name])),
     corporationIds: [...new Set(rows.filter((r) => r.corporation_id != null).map((r) => Number(r.corporation_id)))],
   }

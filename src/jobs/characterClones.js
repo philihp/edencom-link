@@ -214,9 +214,9 @@ export const syncCharacterClones = async ({ access_token, characterID, registrat
   console.log(`[${TAG}] ${ctx}: ${touched} unchanged, ${opened} opened, ${closed} closed`)
 }
 
-export const runCharacterClones = ({ characterIds } = {}) => {
+export const runCharacterClones = ({ registrationIds } = {}) => {
   const resolveSystem = makeSystemResolver()
-  return forEachCharacter(TAG, { scope: SCOPE, characterIds }, (handlerCtx) =>
+  return forEachCharacter(TAG, { scope: SCOPE, registrationIds }, (handlerCtx) =>
     syncCharacterClones(handlerCtx, resolveSystem)
   )
 }

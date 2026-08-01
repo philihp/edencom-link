@@ -50,8 +50,8 @@ export async function runJobWithHeartbeat(job: string, load: () => Promise<() =>
 // JS number — safe to serialize as a step result.
 export async function enumerateCharacters(scopes: string[]): Promise<number[]> {
   'use step'
-  const { selectCharacterIdsWithScopes } = await import('@/supabase.js')
-  return (await selectCharacterIdsWithScopes(scopes)) as number[]
+  const { selectRegistrationIdsWithScopes } = await import('@/supabase.js')
+  return (await selectRegistrationIdsWithScopes(scopes)) as number[]
 }
 
 // Step: build the exact per-corp fan-out set fanOutPerCorporationCronJob
@@ -68,7 +68,7 @@ export async function enumerateCharacters(scopes: string[]): Promise<number[]> {
 // safe to serialize as a step result.
 export async function enumerateCorporations(scope: string): Promise<string[][]> {
   'use step'
-  const { groupCharacterIdsByCorporation } = await import('@/supabase.js')
-  const { byCorp, unresolved } = await groupCharacterIdsByCorporation([scope])
+  const { groupRegistrationIdsByCorporation } = await import('@/supabase.js')
+  const { byCorp, unresolved } = await groupRegistrationIdsByCorporation([scope])
   return [...byCorp.values(), ...unresolved.map((id: string) => [id])]
 }

@@ -26,7 +26,7 @@ const withHeartbeat = async (tag, owner, fn) => {
 
 // Shared plumbing for the per-endpoint extract jobs. Every job follows the same
 // shape: enumerate the tokens carrying the endpoint's ESI scope (optionally
-// narrowed to specific registrations by `characterIds`, e.g. a single character
+// narrowed to specific registrations by `registrationIds`, e.g. a single character
 // fanned out from the Vercel queue), refresh each token, and hand the fresh
 // access token to the job's handler. A failing character/corp is logged and
 // skipped so one bad token never aborts the rest of the run; a fatal lookup
@@ -109,11 +109,11 @@ const runTokenLoop = async (tag, tokens, { characterName, characterUserId, heart
 // by forEachCorporation, which records its own corp-attributed heartbeat instead
 // so a corp job doesn't get two rows (one bare-character, one per-corp) for
 // the same unit of work.
-export const forEachCharacter = async (tag, { scope, characterIds, heartbeat = true }, handler) => {
+export const forEachCharacter = async (tag, { scope, registrationIds, heartbeat = true }, handler) => {
   const { characterName, characterUserId } = await loadCharacterMaps(tag)
 
   let tokenQuery = sudoSupabase.from('token').select('id, registration_id, refresh_token').contains('scope', [scope])
-  if (characterIds) tokenQuery = tokenQuery.in('registration_id', characterIds)
+  if (registrationIds) tokenQuery = tokenQuery.in('registration_id', registrationIds)
   const { data: tokens, error } = await tokenQuery
   if (error) {
     console.error(`[${tag}] token lookup failed:`, error)
@@ -130,11 +130,11 @@ export const forEachCharacter = async (tag, { scope, characterIds, heartbeat = t
 // least one of `scopes` (Postgres array overlap), and passes the token's fresh
 // scope list to the handler as `scopes` so it can run only the endpoints that
 // token is actually authorized for. One heartbeat per character, under `tag`.
-export const forEachCharacterAnyScope = async (tag, { scopes, characterIds, heartbeat = true }, handler) => {
+export const forEachCharacterAnyScope = async (tag, { scopes, registrationIds, heartbeat = true }, handler) => {
   const { characterName, characterUserId } = await loadCharacterMaps(tag)
 
   let tokenQuery = sudoSupabase.from('token').select('id, registration_id, refresh_token').overlaps('scope', scopes)
-  if (characterIds) tokenQuery = tokenQuery.in('registration_id', characterIds)
+  if (registrationIds) tokenQuery = tokenQuery.in('registration_id', registrationIds)
   const { data: tokens, error } = await tokenQuery
   if (error) {
     console.error(`[${tag}] token lookup failed:`, error)
@@ -165,11 +165,11 @@ export const forEachCharacterAnyScope = async (tag, { scopes, characterIds, hear
 // the character whose token authorized the pull, so "which user" is derivable
 // too); the inner forEachCharacter's own per-character heartbeat is disabled to
 // avoid a redundant second row for the same unit of work.
-export const forEachCorporation = async (tag, { scope, characterIds }, handler) => {
+export const forEachCorporation = async (tag, { scope, registrationIds }, handler) => {
   const seenCorps = new Set()
   await forEachCharacter(
     tag,
-    { scope, characterIds, heartbeat: false },
+    { scope, registrationIds, heartbeat: false },
     async ({ access_token, characterID, registration_id, userId, ctx }) => {
       const info = await fetchCharacter(access_token, characterID)
       const corporation_id = info?.corporation_id

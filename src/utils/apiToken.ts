@@ -1,7 +1,7 @@
 import { createServiceClient } from '@/utils/supabase/service'
 
 type Resolved =
-  | { ok: true; supabase: ReturnType<typeof createServiceClient>; characterIds: string[] }
+  | { ok: true; supabase: ReturnType<typeof createServiceClient>; registrationIds: string[] }
   | { ok: false; status: number; error: string }
 
 // Resolve a per-user api_token (from the IMPORTDATA query string) to the owner's
@@ -35,5 +35,5 @@ export const resolvePlayer = async (token: string | undefined): Promise<Resolved
     return { ok: false, status: 500, error: 'Lookup failed' }
   }
 
-  return { ok: true, supabase, characterIds: (characters ?? []).map((c) => c.id) }
+  return { ok: true, supabase, registrationIds: (characters ?? []).map((c) => c.id) }
 }

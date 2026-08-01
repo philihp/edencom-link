@@ -199,7 +199,7 @@ const SharedShipPage = async ({ itemId, token }: { itemId: string; token: string
     .from('character_asset')
     .select('item_id, registration_id, type_id, name')
     .eq('item_id', itemId)
-    .in('registration_id', scope.characterIds)
+    .in('registration_id', scope.registrationIds)
     .maybeSingle<ShipRow>()
   const { data: corpSelf } = characterSelf
     ? { data: null }
@@ -218,7 +218,7 @@ const SharedShipPage = async ({ itemId, token }: { itemId: string; token: string
       .from('character_asset')
       .select('item_id, type_id, location_flag, quantity, is_singleton, name')
       .eq('location_id', itemId)
-      .in('registration_id', scope.characterIds),
+      .in('registration_id', scope.registrationIds),
     supabase
       .from('corp_asset')
       .select('item_id, type_id, location_flag, quantity, is_singleton')

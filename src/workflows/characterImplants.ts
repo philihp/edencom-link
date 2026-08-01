@@ -7,18 +7,18 @@
 // invocation with its own duration budget — the two things the queue consumer's
 // single 60s invocation can't offer.
 
-async function syncImplants(characterIds?: string[]) {
+async function syncImplants(registrationIds?: string[]) {
   'use step'
   // Lazy import, same reason as the consumer's JOBS registry: the job module's
   // top-level supabase/esi setup needs env vars absent at build time.
   const { runCharacterImplants } = await import('@/jobs/characterImplants.js')
-  await runCharacterImplants(characterIds ? { characterIds } : undefined)
+  await runCharacterImplants(registrationIds ? { registrationIds } : undefined)
 }
 
 // One run per queue message; the step gets Workflows' default bounded retries.
 // runCharacterImplants (forEachCharacter in src/jobs/lib.js) still does token
 // refresh, per-character heartbeats, and the character_implant upsert unchanged.
-export async function characterImplantsWorkflow(characterIds?: string[]) {
+export async function characterImplantsWorkflow(registrationIds?: string[]) {
   'use workflow'
-  await syncImplants(characterIds)
+  await syncImplants(registrationIds)
 }

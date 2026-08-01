@@ -135,7 +135,7 @@ export const selectCharacters = async (columns, owner) => {
 // Distinct registration ids that hold a token with ANY of the given ESI scopes.
 // The Vercel cron producers use this to enumerate the characters to fan out one
 // queue message per character. Throws on a lookup failure.
-export const selectCharacterIdsWithScopes = async (scopes) => {
+export const selectRegistrationIdsWithScopes = async (scopes) => {
   const perScope = await Promise.all(
     map(async (scope) => {
       const { data, error } = await sudoSupabase.from('token').select('registration_id').contains('scope', [scope])
@@ -157,14 +157,14 @@ export const selectCharacterIdsWithScopes = async (scopes) => {
 // needs the full group to fall back through if the first one it tries can't.
 // Sending two *separate* messages for the same corp instead would race two
 // concurrent reconciles against each other and corrupt the SCD-2 tables.
-export const groupCharacterIdsByCorporation = async (scopes) => {
-  const characterIds = await selectCharacterIdsWithScopes(scopes)
-  if (characterIds.length === 0) return { byCorp: new Map(), unresolved: [] }
+export const groupRegistrationIdsByCorporation = async (scopes) => {
+  const registrationIds = await selectRegistrationIdsWithScopes(scopes)
+  if (registrationIds.length === 0) return { byCorp: new Map(), unresolved: [] }
 
   const { data: registrations, error } = await sudoSupabase
     .from('registration')
     .select('id, corporation_id')
-    .in('id', characterIds)
+    .in('id', registrationIds)
   if (error) throw error
 
   const byCorp = new Map()

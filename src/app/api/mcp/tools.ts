@@ -646,7 +646,7 @@ export const registerTools = (server: McpServer): void => {
         })
       )
 
-      const characters = owners.characterIds.map((characterId) => {
+      const characters = owners.registrationIds.map((characterId) => {
         const location = locationByCharacter.get(characterId)
         const dockedId = location?.station_id ?? location?.structure_id
         const lastJump = jumpByCharacter.get(characterId)
@@ -1016,10 +1016,10 @@ export const registerTools = (server: McpServer): void => {
       // historical) never fetches owners the caller filtered out. Corp rows
       // can't be pre-filtered this way — the corp function maps characters to
       // their corporations — so those are filtered by corporation_id below.
-      const wantedCharacterIds =
+      const wantedRegistrationIds =
         ownerFilter.ownerIds == null
-          ? owners.characterIds
-          : owners.characterIds.filter((id) => ownerFilter.ownerIds!.has(id))
+          ? owners.registrationIds
+          : owners.registrationIds.filter((id) => ownerFilter.ownerIds!.has(id))
       const corpWanted = (corporationId: number | string) =>
         ownerFilter.ownerIds == null || ownerFilter.ownerIds.has(String(corporationId))
 
@@ -1036,12 +1036,12 @@ export const registerTools = (server: McpServer): void => {
         const includeDelivered = !['active', 'ready', 'paused'].includes(wantedStatus)
         const [{ data: chr, error: chrError }, { data: corp, error: corpError }] = await Promise.all([
           supabase.rpc('character_industry_jobs', {
-            registration_ids: wantedCharacterIds,
+            registration_ids: wantedRegistrationIds,
             include_delivered: includeDelivered,
             as_of: at.iso,
           }),
           supabase.rpc('corp_industry_jobs', {
-            registration_ids: owners.characterIds,
+            registration_ids: owners.registrationIds,
             include_delivered: includeDelivered,
             as_of: at.iso,
           }),
@@ -1057,7 +1057,7 @@ export const registerTools = (server: McpServer): void => {
           .filter((j) => ofWantedStatus(j) && corpWanted(j.corporation_id))
           .map((j) => ({ ...j, ownerLabel: owners.nameById.get(String(j.corporation_id)) ?? String(j.corporation_id) }))
       } else {
-        const wantedCharacterIdSet = new Set(wantedCharacterIds)
+        const wantedRegistrationIdSet = new Set(wantedRegistrationIds)
         const [chr, corp] = await Promise.all([
           fetchAllRows<JobRow & { registration_id: string }>((from, to) => {
             let q = supabase.from('character_industry_job').select(`${COLUMNS}, registration_id`)
@@ -1071,7 +1071,7 @@ export const registerTools = (server: McpServer): void => {
           }),
         ])
         characterJobs = chr
-          .filter((j) => wantedCharacterIdSet.has(j.registration_id))
+          .filter((j) => wantedRegistrationIdSet.has(j.registration_id))
           .map((j) => ({ ...j, ownerLabel: owners.nameById.get(j.registration_id) ?? j.registration_id }))
         corpJobs = corp
           .filter((j) => corpWanted(j.corporation_id))
@@ -1185,7 +1185,7 @@ export const registerTools = (server: McpServer): void => {
       let orders: NormalizedOrder[]
       if (timeTravel) {
         const { data, error } = await supabase.rpc('character_orders', {
-          registration_ids: owners.characterIds,
+          registration_ids: owners.registrationIds,
           as_of: at.iso,
         })
         if (error) return textResult(`Couldn't read the order history: ${error.message}`)

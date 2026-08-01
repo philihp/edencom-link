@@ -41,7 +41,7 @@ const LANES = 4
 async function syncCharacter(characterId: number) {
   'use step'
   const { runCharacterAssets } = await import('@/jobs/characterAssets.js')
-  await runCharacterAssets({ characterIds: [characterId] })
+  await runCharacterAssets({ registrationIds: [characterId] })
 }
 
 export async function characterAssetsWorkflow() {

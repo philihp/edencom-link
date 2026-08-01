@@ -15,10 +15,10 @@ const WALLET_DIVISIONS = [1, 2, 3, 4, 5, 6, 7]
 // unique in EVE, so the upsert dedupes across divisions and re-scans (first
 // scanner wins attribution). Each division is isolated: one division failing
 // (e.g. a permissions edge) doesn't abort the others.
-export const runCorpWalletTransactions = ({ characterIds } = {}) =>
+export const runCorpWalletTransactions = ({ registrationIds } = {}) =>
   forEachCorporation(
     TAG,
-    { scope: SCOPE, characterIds },
+    { scope: SCOPE, registrationIds },
     async ({ access_token, corporation_id, registration_id, ctx }) => {
       let failures = 0
       await forEachSequential(WALLET_DIVISIONS, async (division) => {

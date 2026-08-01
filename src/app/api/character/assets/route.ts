@@ -55,7 +55,7 @@ export const GET = async (request: NextRequest): Promise<NextResponse> => {
   // of this function is what kept the endpoint under Vercel's timeout, and a single
   // json scalar sidesteps PostgREST's max-rows cap.
   const { data: rows, error: rowsError } = await player.supabase.rpc('character_asset_snapshot_at', {
-    registration_ids: player.characterIds,
+    registration_ids: player.registrationIds,
     as_of: atIso,
   })
   if (rowsError) {

@@ -126,8 +126,8 @@ const reconcile = async (corporation_id, fetched) => {
   return { touched: touchIds.length, opened: inserts.length, closed: allCloseIds.length }
 }
 
-export const runCorpAssets = ({ characterIds } = {}) =>
-  forEachCorporation(TAG, { scope: SCOPE, characterIds }, async ({ access_token, corporation_id, ctx }) => {
+export const runCorpAssets = ({ registrationIds } = {}) =>
+  forEachCorporation(TAG, { scope: SCOPE, registrationIds }, async ({ access_token, corporation_id, ctx }) => {
     const t0 = Date.now()
 
     // Our structures double as asset location_ids; only keep rigs fitted to them.

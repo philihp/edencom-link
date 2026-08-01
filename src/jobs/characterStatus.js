@@ -26,7 +26,7 @@ const TAG = 'character-status'
 // UI merge into this job.
 export const SCOPES = [WALLET_SCOPE, LOCATION_SCOPE, IMPLANTS_SCOPE, CLONES_SCOPE, SHIP_SCOPE, SKILLS_SCOPE]
 
-export const runCharacterStatus = ({ characterIds } = {}) => {
+export const runCharacterStatus = ({ registrationIds } = {}) => {
   // One resolver memo for the whole run: clones across characters cluster in the
   // same few stations/structures, so each location resolves at most once.
   const resolveSystem = makeSystemResolver()
@@ -40,7 +40,7 @@ export const runCharacterStatus = ({ characterIds } = {}) => {
     { scope: SKILLS_SCOPE, label: 'skills', run: syncCharacterSkills },
   ]
 
-  return forEachCharacterAnyScope(TAG, { scopes: SCOPES, characterIds }, async (handlerCtx) => {
+  return forEachCharacterAnyScope(TAG, { scopes: SCOPES, registrationIds }, async (handlerCtx) => {
     const { scopes, ctx } = handlerCtx
     // Run each endpoint the token is authorized for, isolating failures so a
     // partial outage still records the parts that succeeded. The character's

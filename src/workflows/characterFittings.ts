@@ -33,7 +33,7 @@ const LANES = 4
 async function syncCharacter(characterId: number) {
   'use step'
   const { runCharacterFittings } = await import('@/jobs/characterFittings.js')
-  await runCharacterFittings({ characterIds: [characterId] })
+  await runCharacterFittings({ registrationIds: [characterId] })
 }
 
 export async function characterFittingsWorkflow() {

@@ -202,7 +202,7 @@ export const registerIndustryTools = (server: McpServer): void => {
         }
       )
 
-      const characters = owners.characterIds
+      const characters = owners.registrationIds
         .map((characterId) => {
           const used = counts.get(characterId) ?? emptyCounts()
           const max = maxes.get(characterId) ?? baseSlotMax()

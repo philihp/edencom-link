@@ -114,8 +114,8 @@ const reconcile = async (corporation_id, fetched) => {
   return { touched: touchIds.length, opened: inserts.length, closed: allCloseIds.length }
 }
 
-export const runCorpBlueprints = ({ characterIds } = {}) =>
-  forEachCorporation(TAG, { scope: SCOPE, characterIds }, async ({ access_token, corporation_id, ctx }) => {
+export const runCorpBlueprints = ({ registrationIds } = {}) =>
+  forEachCorporation(TAG, { scope: SCOPE, registrationIds }, async ({ access_token, corporation_id, ctx }) => {
     const t0 = Date.now()
     const fetched = await fetchAllPages((page) => corpBlueprints(access_token, corporation_id, page))
     const { touched, opened, closed } = await reconcile(corporation_id, fetched)

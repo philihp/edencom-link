@@ -10,10 +10,10 @@ const SCOPE = 'esi-wallet.read_character_wallet.v1'
 // transaction_id is globally unique in EVE, so the upsert dedupes re-fetches of
 // the same recent history. Conditional: a 304 means no new transactions since
 // last run, so the upsert is skipped.
-export const runCharacterWalletTransactions = ({ characterIds } = {}) =>
+export const runCharacterWalletTransactions = ({ registrationIds } = {}) =>
   forEachCharacter(
     TAG,
-    { scope: SCOPE, characterIds },
+    { scope: SCOPE, registrationIds },
     async ({ access_token, characterID, registration_id, name }) => {
       const cacheKey = `${TAG}:${registration_id}`
       const priorEtag = await getEsiEtag(cacheKey)

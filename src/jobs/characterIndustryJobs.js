@@ -134,10 +134,10 @@ const reconcile = async (registration_id, fetched) => {
 // status recorded too. Conditional: a 304 means the job list and every status
 // is unchanged since last run (nothing started or completed), so the whole
 // reconcile is skipped.
-export const runCharacterIndustryJobs = ({ characterIds } = {}) =>
+export const runCharacterIndustryJobs = ({ registrationIds } = {}) =>
   forEachCharacter(
     TAG,
-    { scope: SCOPE, characterIds },
+    { scope: SCOPE, registrationIds },
     async ({ access_token, characterID, registration_id, name }) => {
       const cacheKey = `${TAG}:${registration_id}`
       const priorEtag = await getEsiEtag(cacheKey)

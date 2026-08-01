@@ -87,7 +87,7 @@ const AssetLocationPage = async ({
 
   // In the token path every query must stay inside the sharer's scope; an
   // empty corp list still needs a filter that matches nothing.
-  const characterScope = scope?.characterIds ?? null
+  const characterScope = scope?.registrationIds ?? null
   const corpScope = scope ? (scope.corporationIds.length > 0 ? scope.corporationIds : [-1]) : null
 
   // Root-level assets at this location: ships, containers and loose stacks that

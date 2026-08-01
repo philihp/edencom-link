@@ -25,7 +25,7 @@ export const syncCharacterLocation = async ({ access_token, characterID, registr
   console.log(`[${TAG}] ${ctx}: solar_system_id=${location.solar_system_id}`)
 }
 
-export const runCharacterLocation = ({ characterIds } = {}) =>
-  forEachCharacter(TAG, { scope: SCOPE, characterIds }, syncCharacterLocation)
+export const runCharacterLocation = ({ registrationIds } = {}) =>
+  forEachCharacter(TAG, { scope: SCOPE, registrationIds }, syncCharacterLocation)
 
 cli(import.meta.url, TAG, runCharacterLocation)

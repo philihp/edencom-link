@@ -117,8 +117,8 @@ const reconcile = async (corporation_id, fetched) => {
 // GET /corporations/{id}/industry/jobs/ → corp_industry_job_over_time (SCD type
 // 2). Fetched with include_completed, so finished jobs get their terminal
 // status recorded too. installer_id is the character who started each job.
-export const runCorpIndustryJobs = ({ characterIds } = {}) =>
-  forEachCorporation(TAG, { scope: SCOPE, characterIds }, async ({ access_token, corporation_id, ctx }) => {
+export const runCorpIndustryJobs = ({ registrationIds } = {}) =>
+  forEachCorporation(TAG, { scope: SCOPE, registrationIds }, async ({ access_token, corporation_id, ctx }) => {
     const t0 = Date.now()
     const jobs = await fetchAllPages((page) => corpIndustryJobs(access_token, corporation_id, page))
     const { touched, opened, closed } = await reconcile(corporation_id, jobs)
