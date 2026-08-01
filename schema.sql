@@ -631,7 +631,7 @@ grant execute on function public.character_blueprints(uuid[]) to service_role;
 -- One row per scheduled-job run. Workflows write a 'start' step (stamps
 -- started_at) and an 'end' step (stamps ended_at), both keyed on the GitHub
 -- Actions run so they land on the same row. run_url links back to that run.
--- character_id/corporation_id/user_id attribute a run to the entity a
+-- registration_id/corporation_id/user_id attribute a run to the entity a
 -- per-character or per-corp job processed it for (null for whole-job/
 -- account-wide runs, e.g. universe-names); owner_key folds those two
 -- nullable columns into a single non-null discriminator so the start/end
@@ -2206,7 +2206,7 @@ grant all    on public.corp_wallet_journal to service_role;
 -- corp-wallet-transactions job. Market transactions (buys and sells) pulled
 -- from every corporation wallet division
 -- (esi-wallet.read_corporation_wallets.v1), unioned into the market page beside
--- the per-character character_wallet_transaction rows. `character_id` is the
+-- the per-character character_wallet_transaction rows. `registration_id` is the
 -- registration whose token scanned the row; RLS scopes reads to that
 -- character's owner, so a corp transaction is only visible to the player who
 -- pulled it (like personal transactions). transaction_id is globally unique in
