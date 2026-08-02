@@ -9,6 +9,7 @@ import { createClient } from '@/utils/supabase/server'
 import { fetchOwners } from '../../owners'
 import { resolveLocations, type LocationRef } from '../../resolveLocations'
 import retro from '../../retro.module.css'
+import { TypeIcon } from '../../typeIcon'
 import { TypeName } from '../../typeName'
 import { AssetSearchForm } from '../assetSearchForm'
 import { Quantity } from '../[locationId]/quantity'
@@ -266,6 +267,7 @@ const AssetSearchPage = async ({ searchParams }: { searchParams: Promise<{ q?: s
                   {row.root && !floating ? <Link href={`/asset/${row.root.id}`}>{stationName}</Link> : '—'}
                 </td>
                 <td>
+                  <TypeIcon id={row.typeId} />
                   {row.contents > 0 ? (
                     <Link href={`/asset/${row.itemId}`}>
                       <TypeName id={row.typeId} name={row.name} promise={typeNamesPromise} />
@@ -281,6 +283,9 @@ const AssetSearchPage = async ({ searchParams }: { searchParams: Promise<{ q?: s
                     if (shipLabel && row.parentId) {
                       return (
                         <>
+                          {/* The containing ship is an item too, so it gets its
+                              own hull icon rather than only the match's. */}
+                          {row.parentTypeId != null && <TypeIcon id={row.parentTypeId} />}
                           <Link className="serif" href={`/ship/${row.parentId}`}>
                             {shipLabel}
                           </Link>

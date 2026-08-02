@@ -1,0 +1,8 @@
+/* Inline item icon, sitting immediately before a type name. CCP's image server
+   returns square images, so the size comes from the element's width/height
+   attributes and only alignment/spacing lives here. */
+.icon {
+  vertical-align: middle;
+  margin-right: 6px;
+  flex: none;
+}
