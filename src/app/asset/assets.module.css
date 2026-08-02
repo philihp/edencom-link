@@ -98,6 +98,37 @@
   white-space: nowrap;
 }
 
+/* Item cell: the type icon and the name share one line, so a long name wraps
+   within itself rather than pushing the icon onto a line of its own. */
+.item {
+  display: flex;
+  align-items: center;
+}
+
+/* Column header doubling as a sort control. Inline-flex so the cell's own
+   text-align still places it (right, in the numeric columns). */
+.sortButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.sortButton:hover {
+  color: var(--ink);
+}
+
+.sortMarker {
+  display: inline-block;
+  width: 8px;
+  font-size: 8px;
+}
+
 .badge {
   margin-left: 8pt;
   padding: 1pt 6pt;
