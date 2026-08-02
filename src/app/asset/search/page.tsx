@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import { prop, uniqBy } from 'ramda'
 
 import { getSdeTypes, searchSdeTypesAll } from '@/sdeTypes'
+import { BLUEPRINT_CATEGORY_ID } from '@/utils/sdeCategories'
 import { createClient } from '@/utils/supabase/server'
 
 import { fetchOwners } from '../../owners'
@@ -24,12 +25,10 @@ const MAX_TYPES = 100
 // request rather than reused from module scope.
 const SHUFFLE_SEED = 20260704
 
-// EVE's SDE Blueprint category (covers BPOs/BPCs and reaction formulas alike —
-// anything named "<Product> Blueprint"/"<Product> Reaction Formula"). Assets
-// search excludes these by default since a blueprint search usually means the
-// player wants the manufacturable item, not its recipe; the "include
-// blueprints" checkbox opts back in.
-const BLUEPRINT_CATEGORY_ID = 9
+// The SDE Blueprint category (BPOs/BPCs and reaction formulas alike) comes from
+// utils/sdeCategories. Assets search excludes these by default since a blueprint
+// search usually means the player wants the manufacturable item, not its recipe;
+// the "include blueprints" checkbox opts back in.
 
 // invGroups.categoryID for the Ship category in CCP's SDE. A match whose
 // immediate parent is a ship (fitted module, drone, cargo) shows that ship.

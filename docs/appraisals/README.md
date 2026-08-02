@@ -12,6 +12,7 @@ implementation spec:
 | [01-mcp-appraise-tool.md](01-mcp-appraise-tool.md) | **Milestone 1** | The shared `src/innominate.ts` API client + an `appraise_items` MCP tool (batch appraisal by item name) | Independent; do first |
 | [02-asset-subtree-items.md](02-asset-subtree-items.md) | small | Postgres functions that aggregate a container/location subtree into `(type_id, quantity)` rows | Independent of 01 (pure DB); needed by 03 |
 | [03-asset-viewer-appraisal.md](03-asset-viewer-appraisal.md) | **Milestone 2** | Appraise buttons in the asset viewer: lazy-load the appraisal of one stack, or a container/ship and everything inside it | After 01 (client) **and** 02 (DB functions) |
+| [04-mcp-appraise-assets.md](04-mcp-appraise-assets.md) | small | The `appraise_assets` MCP tool: price a location, ship or container by reusing 03's walk | After 01–03; shipped |
 
 Future ideas deliberately **not** in scope (park them unless asked): a market
 picker in the UI (everything defaults to Jita), appraising a `/asset/search`

@@ -1,7 +1,7 @@
 // The single module in the repo that talks to the Innominate Appraisal API
-// (https://innomin.at/api/docs/) — an Evepraisal-style ISK price service. Both
-// consumers (the appraise_items MCP tool now, the asset viewer in doc 03) go
-// through here so the save default, auth header, in-process cache, and
+// (https://innomin.at/api/docs/) — an Evepraisal-style ISK price service. Every
+// consumer (the appraise_items and appraise_assets MCP tools, the asset viewer
+// in doc 03) goes through here so the save default, auth header, in-process cache, and
 // rate-limit handling live in exactly one place. This is a deliberate, narrow
 // exception to the "UI/MCP read the DB, never call a third-party" rule: market
 // prices aren't in our DB at all, so we call innomin.at server-side at request
