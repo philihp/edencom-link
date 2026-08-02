@@ -9,14 +9,17 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { fetchOwners } from '@/app/owners'
 import type { LocationRef } from '@/app/resolveLocations'
 import { searchSdeTypesAll, type SdeSearchResult } from '@/sdeTypes'
+import { BLUEPRINT_CATEGORY_ID } from '@/utils/sdeCategories'
 
 // Above this, the substring is too broad to be a useful item filter — same
 // threshold (and rationale) as /asset/search.
 export const MAX_TYPES = 100
 
 // EVE's SDE Blueprint category (BPOs/BPCs and reaction formulas alike).
-// Asset search excludes these by default, mirroring /asset/search.
-export const BLUEPRINT_CATEGORY_ID = 9
+// Asset search excludes these by default, mirroring /asset/search. Re-exported
+// from utils/ rather than declared here so the appraisal line builder — which is
+// unit-tested, and so must not import this module's I/O — shares the one id.
+export { BLUEPRINT_CATEGORY_ID }
 
 // Keep individual responses readable — totals/summaries always cover the full
 // result set, only the itemized list is capped.

@@ -4,14 +4,23 @@
 // characters have saved in the game. Same rules as tools.ts —
 // every query runs on the caller's bearer-token client so RLS scopes results,
 // the DB is the only source, and nothing here calls ESI.
+//
+// One tool leaves the deployment: appraise_assets prices what it finds against
+// innomin.at — the same narrow third-party exception appraise_items takes (see
+// docs/appraisals/README.md) — which is why it alone here carries
+// openWorldHint: true. It sends type names and quantities and nothing else; no
+// owner, character, corporation or location ever reaches the provider.
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js'
-import { ascend, groupBy, sortWith } from 'ramda'
+import { ascend, descend, groupBy, sortWith } from 'ramda'
 import { z } from 'zod'
 
+import { MAX_LINES } from '@/app/api/appraisal/assetLines'
+import { collectAssetLines } from '@/app/api/appraisal/collectAssetLines'
 import { fittingRoute, flagSortKey, groupForFlag, type FittingItem, type FittingRow } from '@/app/fitting/fit'
 import { fetchFittingOwners } from '@/app/fitting/resolveCharacter'
 import { resolveLocations, type LocationRef } from '@/app/resolveLocations'
+import { appraise, MARKETS, type Market } from '@/innominate'
 import { getSdePlanets } from '@/sdePlanets'
 import { searchSdeSystems } from '@/sdeSystems'
 import { getSdeTypeNames } from '@/sdeTypes'
@@ -28,6 +37,11 @@ import {
 } from './lib'
 
 const MAX_ROWS = 200
+
+// How many lines an appraisal itemizes when the caller didn't ask for all of
+// them — enough to say what the value is made of, short enough that pricing a
+// whole station stays a summary.
+const TOP_ITEMS = 10
 
 type SupabaseClient = ReturnType<typeof createBearerClient>
 
@@ -122,6 +136,47 @@ const fetchLocationContents = async (supabase: SupabaseClient, locationId: strin
   }))
 }
 
+// Every root place the caller holds assets in, named and placed. Shared by
+// browse_assets and appraise_assets, which both take a location the same way.
+type DescribedLocation = { id: string; name: string | null; system: string | null; counts: Map<string, number> }
+
+const describeLocations = async (supabase: SupabaseClient): Promise<DescribedLocation[]> => {
+  const buckets = await fetchLocationBuckets(supabase)
+  const { nameFor, systemFor } = await resolveLocations(
+    buckets.map((b) => b.root),
+    supabase
+  )
+  return buckets.map((b) => {
+    const floating = b.root.type === 'solar_system'
+    return {
+      id: b.root.id,
+      name: nameFor(b.root),
+      system: systemFor(b.root) ?? (floating ? nameFor(b.root) : null),
+      counts: b.counts,
+    }
+  })
+}
+
+// Resolve what the caller called a location to one id. A raw id is taken as-is
+// (that's the only way to reach a container or ship, which the location summary
+// never lists — it only reports root places); a name matches against the
+// resolved places, exact match winning over several substring hits. Failure
+// carries the candidates so each tool can word its own message.
+type LocationMatch =
+  { matched: true; id: string; name: string | null } | { matched: false; candidates: DescribedLocation[] }
+
+const matchLocation = (query: string, described: DescribedLocation[]): LocationMatch => {
+  if (/^\d+$/.test(query)) {
+    return { matched: true, id: query, name: described.find((d) => d.id === query)?.name ?? `Location #${query}` }
+  }
+  const needle = query.toLowerCase()
+  const matches = described.filter((d) => (d.name ?? '').toLowerCase().includes(needle))
+  if (matches.length === 0) return { matched: false, candidates: [] }
+  if (matches.length === 1) return { matched: true, id: matches[0].id, name: matches[0].name }
+  const exact = matches.find((d) => (d.name ?? '').toLowerCase() === needle)
+  return exact ? { matched: true, id: exact.id, name: exact.name } : { matched: false, candidates: matches }
+}
+
 // ── tools ─────────────────────────────────────────────────────────────────
 
 export const registerEstateTools = (server: McpServer): void => {
@@ -154,57 +209,27 @@ export const registerEstateTools = (server: McpServer): void => {
       const ownerFilter = resolveOwnerFilter(owner, owners)
       if (!ownerFilter.ok) return textResult(ownerFilter.message)
 
-      const buckets = await fetchLocationBuckets(supabase)
-      const { nameFor, systemFor } = await resolveLocations(
-        buckets.map((b) => b.root),
-        supabase
-      )
+      const described = await describeLocations(supabase)
 
-      const described = buckets.map((b) => {
-        const floating = b.root.type === 'solar_system'
-        return {
-          id: b.root.id,
-          name: nameFor(b.root),
-          system: systemFor(b.root) ?? (floating ? nameFor(b.root) : null),
-          counts: b.counts,
-        }
-      })
-
-      // Drill into one location. A raw id is taken as-is (that's the only way to
-      // reach a container or ship, which the location summary never lists — it
-      // only reports root places); a name matches against the resolved places.
+      // Drill into one location.
       const query = location?.trim()
       if (query) {
-        const numeric = /^\d+$/.test(query)
-        let targetId = numeric ? query : null
-        let targetName = numeric ? (described.find((d) => d.id === query)?.name ?? `Location #${query}`) : null
-
-        if (!numeric) {
-          const needle = query.toLowerCase()
-          const matches = described.filter((d) => (d.name ?? '').toLowerCase().includes(needle))
-          if (matches.length === 0) {
+        const match = matchLocation(query, described)
+        if (!match.matched) {
+          if (match.candidates.length === 0) {
             return textResult(
               `No location you hold assets in matched "${query}". Call browse_assets with no arguments to see the list, or pass a raw id to drill into a container.`
             )
           }
-          if (matches.length > 1) {
-            const exact = matches.find((d) => (d.name ?? '').toLowerCase() === needle)
-            if (!exact) {
-              return textResult({
-                ambiguous: query,
-                matched: matches.map((d) => ({ id: d.id, name: d.name, system: d.system })),
-                note: 'Several locations matched; call again with a more specific name or one of these ids.',
-              })
-            }
-            targetId = exact.id
-            targetName = exact.name
-          } else {
-            targetId = matches[0].id
-            targetName = matches[0].name
-          }
+          return textResult({
+            ambiguous: query,
+            matched: match.candidates.map((d) => ({ id: d.id, name: d.name, system: d.system })),
+            note: 'Several locations matched; call again with a more specific name or one of these ids.',
+          })
         }
+        const { id: targetId, name: targetName } = match
 
-        const items = (await fetchLocationContents(supabase, targetId!, owners)).filter(
+        const items = (await fetchLocationContents(supabase, targetId, owners)).filter(
           (i) => ownerFilter.ownerIds == null || ownerFilter.ownerIds.has(i.ownerId)
         )
         const typeNames = await getSdeTypeNames(items.map((i) => i.typeId))
@@ -261,6 +286,133 @@ export const registerEstateTools = (server: McpServer): void => {
         ...(capNote(locations.length, shown.length, 'locations') && {
           cap_note: capNote(locations.length, shown.length, 'locations'),
         }),
+        data_refreshed: await dataFreshness(supabase, ['character-assets', 'corp-assets']),
+      })
+    }
+  )
+
+  server.registerTool(
+    'appraise_assets',
+    {
+      title: 'Appraise a location or container',
+      description:
+        'Price everything the user actually holds in one place — a station, structure or system, or one ship/container drilled into by id — as a single ISK valuation via innomin.at (Jita by default). Answers "what is my Jita hangar worth" or "how much is this hauler and its cargo worth". Contents are counted recursively, so a container is priced with everything nested inside it. Use browse_assets first to find the place or the id; use appraise_items when you already know the item names and quantities and are not pricing a hangar.',
+      annotations: { readOnlyHint: true, openWorldHint: true },
+      inputSchema: {
+        location: z
+          .string()
+          .min(1)
+          .describe(
+            'What to price — a station/structure/system name substring, or a raw id (the only way to reach one of your own ships or containers; browse_assets reports it as drill_in_with_id)'
+          ),
+        market: z
+          .enum(MARKETS)
+          .optional()
+          .describe(
+            'Market hub to price against (default jita). Others: amarr, rens, dodi, hek, plus player markets ualx, cj6mt.'
+          ),
+        include_items: z
+          .boolean()
+          .optional()
+          .describe('Itemize every priced type rather than just the most valuable few (default false)'),
+      },
+    },
+    async ({ location, market, include_items }, extra) => {
+      const supabase = clientFor(extra)
+      if (!supabase) return textResult('Missing bearer token.')
+
+      const match = matchLocation(location.trim(), await describeLocations(supabase))
+      if (!match.matched) {
+        if (match.candidates.length === 0) {
+          return textResult(
+            `No location you hold assets in matched "${location}". Call browse_assets with no arguments to see the list, or pass a raw id to appraise a ship or container.`
+          )
+        }
+        return textResult({
+          ambiguous: location,
+          matched: match.candidates.map((d) => ({ id: d.id, name: d.name, system: d.system })),
+          note: 'Several locations matched; call again with a more specific name or one of these ids.',
+        })
+      }
+
+      // The same walk the asset viewer's appraise button does, so page and tool
+      // can't disagree about what is inside a container or what goes unpriced.
+      const { lines, skippedBlueprints, unnamed } = await collectAssetLines(supabase, match.id)
+      if (lines.length === 0) {
+        return textResult(
+          `Nothing at ${match.name ?? match.id} can be appraised.${
+            skippedBlueprints > 0
+              ? ` Its ${skippedBlueprints} blueprint types are never priced — an asset row can't tell an original from a worthless copy.`
+              : ''
+          }`
+        )
+      }
+      if (lines.length > MAX_LINES) {
+        return textResult(
+          `${match.name ?? match.id} holds ${lines.length} distinct item types — too many to appraise in one request (limit ${MAX_LINES}). Appraise a container or a specific ship inside it instead.`
+        )
+      }
+
+      // save is never set here: an MCP call is not a user asking the provider to
+      // store a record. Only the viewer's explicit "open this appraisal" arrow
+      // does that (docs/appraisals/README.md).
+      const result = await appraise(lines, (market ?? 'jita') as Market)
+      if (!result.ok) {
+        if (result.kind === 'unconfigured')
+          return textResult("Appraisals aren't configured on this deployment (missing INNOMINATE_API_KEY).")
+        if (result.kind === 'rate_limited')
+          return textResult(
+            `The appraisal service is rate limited.${
+              result.retryAfterSeconds != null ? ` Try again in ${result.retryAfterSeconds}s.` : ''
+            }`
+          )
+        return textResult(result.message)
+      }
+
+      const { appraisal } = result
+      const priced = sortWith(
+        [descend((i: (typeof appraisal.items)[number]) => i.totalSellPrice ?? 0)],
+        appraisal.items.filter((i) => i.error == null)
+      )
+      // A hangar's full itemization is mostly noise next to the total, so only
+      // the biggest lines come back unless asked. The totals always cover
+      // everything either way — they come from the batch, not from these rows.
+      const shown = priced.slice(0, include_items ? MAX_ROWS : TOP_ITEMS)
+      const unpriced = [...unnamed, ...appraisal.items.filter((i) => i.error != null).map((i) => i.name)]
+
+      return textResult({
+        location: match.name,
+        location_id: match.id,
+        market: appraisal.market,
+        total_sell_value: appraisal.totalSellValue,
+        total_buy_value: appraisal.totalBuyValue,
+        price_split: appraisal.priceSplit,
+        total_volume_m3: appraisal.totalVol,
+        line_count: lines.length,
+        items: shown.map((i) => ({
+          item: i.name,
+          quantity: i.quantity,
+          sell_price: i.sellPrice,
+          buy_price: i.buyPrice,
+          total_sell: i.totalSellPrice,
+          total_buy: i.totalBuyPrice,
+          volume_m3: i.totalItemVol,
+        })),
+        // Not capNote's wording: these are the most valuable lines, not the
+        // first ones, and saying "the first N" of a value-sorted list would
+        // misdescribe what was left out.
+        ...(priced.length > shown.length && {
+          cap_note: `Showing the ${shown.length} most valuable of ${priced.length} priced types; the totals cover all of them.${
+            include_items ? '' : ' Pass include_items to itemize the rest.'
+          }`,
+        }),
+        // Blueprints are skipped deliberately: an asset row can't tell an
+        // original from a worthless copy, so pricing them would be wrong more
+        // often than right.
+        ...(skippedBlueprints > 0 && { skipped_blueprints: skippedBlueprints }),
+        ...(unpriced.length > 0 && { unpriced }),
+        ...(appraisal.cached && { cached: true }),
+        ...(appraisal.rateLimitRemaining != null && { rate_limit_remaining: appraisal.rateLimitRemaining }),
         data_refreshed: await dataFreshness(supabase, ['character-assets', 'corp-assets']),
       })
     }
