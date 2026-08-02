@@ -10,6 +10,7 @@ import { resolveLocations, type LocationRef } from '../../resolveLocations'
 import { resolveShareToken } from '../../ship/access'
 import { fetchStationNames, fetchStationSystems } from '../../stationNames'
 import { fetchSystemNames } from '../../systemNames'
+import { TypeIcon } from '../../typeIcon'
 import { fetchTypeNames } from '../../typeNames'
 import type { Owners } from '../../ownerFilter'
 import styles from '../assets.module.css'
@@ -375,7 +376,12 @@ const AssetLocationPage = async ({
     <>
       {!scope ? <AssetPath crumbs={crumbs} current={heading} /> : null}
       <div className={styles.header}>
-        <h1 className="serif">{heading}</h1>
+        <h1 className="serif">
+          {/* A container drilled into is an item like any other, so it wears its
+              own icon; a station/structure/system has no type id to draw one from. */}
+          {self ? <TypeIcon id={Number(self.type_id)} size={32} /> : null}
+          {heading}
+        </h1>
         {/* Prices this whole place in one request — the same endpoint each row
             uses, just aimed at the location instead of an item. */}
         {!scope ? <AppraiseButton target={locationId} label="Appraise everything here" /> : null}

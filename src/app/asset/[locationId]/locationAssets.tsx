@@ -4,6 +4,7 @@ import Link from 'next/link'
 
 import { ALL_OWNERS, OwnerSelect, ownerNames, useOwnerFilter, type Owners } from '../../ownerFilter'
 import retro from '../../retro.module.css'
+import { TypeIcon } from '../../typeIcon'
 import { TypeName } from '../../typeName'
 import styles from '../assets.module.css'
 import { OWNER_STORAGE_KEY } from '../filterKey'
@@ -70,6 +71,9 @@ export const LocationAssets = ({ rows, owners, typeNamesPromise, canAppraise }: 
               <tr key={`item-${row.itemId}`}>
                 <td>{ownerMap.get(row.ownerId) ?? row.ownerId}</td>
                 <td>
+                  {/* The icon sits outside the link so a click always lands on
+                      the name, and it renders immediately (no name lookup). */}
+                  <TypeIcon id={row.typeId} />
                   {row.href ? (
                     // Ships open their own /ship page; containers drill into /asset.
                     <Link href={row.href}>

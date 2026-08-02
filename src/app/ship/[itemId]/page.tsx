@@ -4,6 +4,7 @@ import { getSdeType, getSdeTypes } from '@/sdeTypes'
 import { createClient } from '@/utils/supabase/server'
 import { createServiceClient } from '@/utils/supabase/service'
 import { AssetPath, fetchAssetPath } from '../../assetPath'
+import { TypeIcon } from '../../typeIcon'
 import { fetchTypeNames } from '../../typeNames'
 import { type ItemRow } from '../../asset/[locationId]/locationAssets'
 import { resolveShareToken } from '../access'
@@ -177,7 +178,10 @@ const ShipPage = async ({
   return (
     <>
       <AssetPath crumbs={crumbs} current={heading} />
-      <h1 className="serif">{heading}</h1>
+      <h1 className="serif">
+        <TypeIcon id={Number(self.type_id)} size={32} />
+        {heading}
+      </h1>
       <p>
         Owner: <span className="serif">{ownerName}</span>
       </p>
@@ -267,7 +271,10 @@ const SharedShipPage = async ({ itemId, token }: { itemId: string; token: string
 
   return (
     <>
-      <h1 className="serif">{heading}</h1>
+      <h1 className="serif">
+        <TypeIcon id={Number(self.type_id)} size={32} />
+        {heading}
+      </h1>
       <p>
         Owner: <span className="serif">{ownerName}</span>
       </p>
