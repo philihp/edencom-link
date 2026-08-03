@@ -10,7 +10,10 @@ export const metadata: Metadata = {
   // Stop mobile browsers from turning long numeric IDs into "tap to dial" links.
   formatDetection: { telephone: false },
   icons: {
-    icon: '/favicon.ico',
+    icon: [
+      { url: '/favicon.ico', sizes: '16x16 32x32 48x48' },
+      { url: '/favicon.svg', type: 'image/svg+xml' },
+    ],
     apple: '/apple-touch-icon.png',
     other: [
       {
