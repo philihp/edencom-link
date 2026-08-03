@@ -18,8 +18,8 @@
   color: var(--ink-soft);
 }
 
-/* Tiled corpse collection: item-icon tiles echoing the ship cargo/asset view
- * (see shipCargo.module.css), one tile per dead pilot. */
+/* Tiled corpse collection: item-icon tiles echoing the structures page's
+ * tile grid (see structures.module.css), one tile per dead pilot. */
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));

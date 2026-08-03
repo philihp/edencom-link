@@ -1,4 +1,21 @@
 /* Layout for the eveship.fit wheel + its statistics readout. */
+
+/*
+ * Reserved footprint for the whole viewer. It arrives in stages — the
+ * next/dynamic chunk, then six protobuf data files (EveDataProvider renders
+ * *nothing*, not even its children, until every one is decoded), then the
+ * WASM dogma engine — so the real content shows up seconds after first
+ * paint. The placeholder and the live viewer share this grid cell: the space
+ * is held from the start, and the swap fills the box in place instead of
+ * reflowing the module table below it.
+ */
+.viewport {
+  display: grid;
+}
+.viewport > * {
+  grid-area: 1 / 1;
+}
+
 .layout {
   display: flex;
   flex-wrap: wrap;
@@ -7,11 +24,13 @@
 }
 
 .wheel {
-  width: min(90vw, 42rem);
+  width: min(90vw, 28rem);
   aspect-ratio: 1;
   flex: 0 0 auto;
-  /* eveship.fit sizes the wheel's ring items relative to a 15px baseline. */
-  font-size: 15px;
+  /* eveship.fit's wheel internals are percentage-sized, so the diameter alone
+     scales them; the font baseline (15px at the 42rem this page used to draw
+     it at) is kept in ratio for anything that inherits it. */
+  font-size: 10px;
 }
 
 /*
@@ -29,6 +48,18 @@
   max-width: none;
 }
 
+/* The placeholder's wheel: the same box the live wheel lands in, drawn as an
+ * empty ring so the swap reads as the ring filling in. */
+.wheelPending {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed var(--line);
+  border-radius: 50%;
+  color: var(--ink-faint);
+  font-size: 12px;
+}
+
 .stats {
   flex: 1 1 18rem;
   min-width: 16rem;
@@ -44,6 +75,16 @@
   cursor: pointer;
   font-weight: 600;
 }
+
+/* Stand-in for the collapsed simulate <summary> line while the viewer loads,
+ * matching its geometry so content below doesn't nudge when the real one
+ * mounts. */
+.hardwareGhost {
+  margin: 1.5rem 0 0;
+  font-weight: 600;
+  color: var(--ink-faint);
+}
+
 .hardwareHint {
   font-size: 0.85rem;
   opacity: 0.75;

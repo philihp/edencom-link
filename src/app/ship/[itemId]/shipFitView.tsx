@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 
 import {
@@ -18,6 +18,7 @@ import {
 } from '@eveshipfit/react'
 import type { EsiFit } from '@eveshipfit/react'
 
+import { FitPlaceholder } from './fitPlaceholder'
 import styles from './shipFit.module.css'
 
 // eveship.fit computes fit statistics (and thus which module icons land on the
@@ -44,6 +45,19 @@ const ensureDefaultCharacter = () => {
   }
 }
 
+// Null-rendering sentinel that reports its own mount. Rendered beside the
+// wheel markup at the bottom of the provider tree, it first mounts in the
+// exact commit the wheel does — EveDataProvider withholds all its children
+// until the protobuf data is decoded, and FitFromEsi withholds its own until
+// the fit resolves against that data — so its effect is the "viewer is on
+// screen" signal that retires the placeholder stacked over it.
+const MarkReady = ({ onReady }: { onReady: () => void }) => {
+  useEffect(() => {
+    onReady()
+  }, [onReady])
+  return null
+}
+
 type FitFromEsiProps = {
   esiFit: EsiFit
   children: ReactNode
@@ -52,7 +66,8 @@ type FitFromEsiProps = {
 // useImportEsiFitting() needs EveDataProvider's type/dogma data loaded before
 // it can resolve slots/charges, so it returns null until then. Render nothing
 // until it does — CurrentFitProvider only reads its initialFit prop on first
-// mount, so it must not mount while the fit is still null.
+// mount, so it must not mount while the fit is still null. (The placeholder
+// covering this stage lives outside the provider tree, in ShipFitView.)
 const FitFromEsi = ({ esiFit, children }: FitFromEsiProps) => {
   const importEsiFitting = useImportEsiFitting()
   const fit = importEsiFitting(esiFit)
@@ -88,45 +103,59 @@ export const ShipFitView = ({ esiFit }: ShipFitViewProps) => {
   // child CurrentCharacterProvider reads localStorage in its own initializer.
   useState(ensureDefaultCharacter)
 
+  // The provider tree renders nothing at all until the protobuf data has
+  // loaded, so the placeholder holding its space has to live out here. Both
+  // occupy the same .viewport grid cell: the box never collapses, and the one
+  // commit where both exist (MarkReady's effect fires just after the wheel's
+  // first paint) overlaps them instead of double-stacking the page.
+  const [ready, setReady] = useState(false)
+  const markReady = useCallback(() => setReady(true), [])
+
   // /esf/ serves the .pb2 from the esf_data table (refreshed by the
   // sde-mirror workflow), not the build-time static /esf-data/ files —
   // see src/app/esf/[file]/route.ts.
   return (
-    <EveDataProvider dataUrl="/esf/">
-      <DogmaEngineProvider>
-        <DefaultCharactersProvider>
-          <CurrentCharacterProvider initialCharacterId={DEFAULT_CHARACTER_ID}>
-            <FitFromEsi esiFit={esiFit}>
-              <StatisticsProvider>
-                {/* FitManagerProvider must sit inside CurrentFit/Statistics/
-                    EveData (all above). It backs the drag-to-fit interactions:
-                    dragging a charge from HardwareListing onto a weapon slot
-                    calls setCharge, and the stats/wheel recompute live. */}
-                <FitManagerProvider>
-                  <div className={styles.layout}>
-                    <div className={styles.wheel}>
-                      <ShipFit withStats />
-                    </div>
-                    <div className={styles.stats}>
-                      <ShipStatistics />
-                    </div>
-                  </div>
-                  <details className={styles.hardware}>
-                    <summary>Load modules &amp; ammo (simulate)</summary>
-                    <p className={styles.hardwareHint}>
-                      Drag a charge onto a weapon slot to load ammo and see damage update. Changes here are a local
-                      simulation and are never saved back to the game.
-                    </p>
-                    <div className={styles.hardwareListing}>
-                      <HardwareListing />
-                    </div>
-                  </details>
-                </FitManagerProvider>
-              </StatisticsProvider>
-            </FitFromEsi>
-          </CurrentCharacterProvider>
-        </DefaultCharactersProvider>
-      </DogmaEngineProvider>
-    </EveDataProvider>
+    <div className={styles.viewport}>
+      {!ready && <FitPlaceholder />}
+      <div>
+        <EveDataProvider dataUrl="/esf/">
+          <DogmaEngineProvider>
+            <DefaultCharactersProvider>
+              <CurrentCharacterProvider initialCharacterId={DEFAULT_CHARACTER_ID}>
+                <FitFromEsi esiFit={esiFit}>
+                  <StatisticsProvider>
+                    {/* FitManagerProvider must sit inside CurrentFit/Statistics/
+                        EveData (all above). It backs the drag-to-fit interactions:
+                        dragging a charge from HardwareListing onto a weapon slot
+                        calls setCharge, and the stats/wheel recompute live. */}
+                    <FitManagerProvider>
+                      <MarkReady onReady={markReady} />
+                      <div className={styles.layout}>
+                        <div className={styles.wheel}>
+                          <ShipFit withStats />
+                        </div>
+                        <div className={styles.stats}>
+                          <ShipStatistics />
+                        </div>
+                      </div>
+                      <details className={styles.hardware}>
+                        <summary>Load modules &amp; ammo (simulate)</summary>
+                        <p className={styles.hardwareHint}>
+                          Drag a charge onto a weapon slot to load ammo and see damage update. Changes here are a local
+                          simulation and are never saved back to the game.
+                        </p>
+                        <div className={styles.hardwareListing}>
+                          <HardwareListing />
+                        </div>
+                      </details>
+                    </FitManagerProvider>
+                  </StatisticsProvider>
+                </FitFromEsi>
+              </CurrentCharacterProvider>
+            </DefaultCharactersProvider>
+          </DogmaEngineProvider>
+        </EveDataProvider>
+      </div>
+    </div>
   )
 }

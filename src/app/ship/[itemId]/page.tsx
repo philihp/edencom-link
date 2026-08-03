@@ -1,16 +1,19 @@
 import { notFound, redirect } from 'next/navigation'
+import { ascend, sortWith } from 'ramda'
 
 import { getSdeType, getSdeTypes } from '@/sdeTypes'
 import { createClient } from '@/utils/supabase/server'
 import { createServiceClient } from '@/utils/supabase/service'
 import { AssetPath, fetchAssetPath } from '../../assetPath'
+import { fetchOwners } from '../../owners'
+import type { Owners } from '../../ownerFilter'
 import { TypeIcon } from '../../typeIcon'
 import { fetchTypeNames } from '../../typeNames'
-import { type ItemRow } from '../../asset/[locationId]/locationAssets'
+import { flagSortKey } from '../../fitting/fit'
+import { LocationAssets, type ItemRow } from '../../asset/[locationId]/locationAssets'
 import { resolveShareToken } from '../access'
 import { toEsiFit } from './esfFit'
 import { ShareControls } from './shareControls'
-import { ShipCargo } from './shipCargo'
 import { ShipFitViewDynamic } from './shipFitViewDynamic'
 
 // invGroups.categoryID for the Ship category in CCP's SDE.
@@ -42,12 +45,25 @@ type ChildRow = {
 const isShipType = async (typeId: number | string): Promise<boolean> =>
   (await getSdeType(Number(typeId)))?.categoryID === SHIP_CATEGORY_ID
 
+// Fitting-window order for the module table: slot family first (high → mid →
+// low → rigs → bays, via the same flagSortKey the fitting pages use), the flag
+// string within a family (HiSlot0 before HiSlot1), then type id. This is the
+// server order the unsorted table shows, so the listing reads top-to-bottom
+// the way the ship does.
+const fittingOrder = sortWith<ItemRow>([
+  ascend((r) => flagSortKey(r.flag ?? '')),
+  ascend((r) => r.flag ?? ''),
+  ascend((r) => r.typeId),
+])
+
 // A ship's own page: the eveship.fit wheel + stats built from its fitted
-// modules, its cargo bays, owner and location. Reachable authenticated (RLS
-// scopes everything to the caller), or anonymously with a valid share token —
-// the token path uses the service-role client, so every query there is
-// explicitly filtered to the sharing user's characters/corps, and location is
-// deliberately omitted (a share link shouldn't broadcast where the ship is).
+// modules, a full module/cargo table in fitting order (the same sortable
+// LocationAssets table the asset browser uses), owner and location. Reachable
+// authenticated (RLS scopes everything to the caller), or anonymously with a
+// valid share token — the token path uses the service-role client, so every
+// query there is explicitly filtered to the sharing user's characters/corps,
+// and location is deliberately omitted (a share link shouldn't broadcast
+// where the ship is).
 const ShipPage = async ({
   params,
   searchParams,
@@ -96,7 +112,7 @@ const ShipPage = async ({
   ])
   const children = [...((characterChildren ?? []) as ChildRow[]), ...((corpChildren ?? []) as ChildRow[])]
 
-  // Nested-contents counts drive the drill-in links on cargo tiles.
+  // Nested-contents counts drive the drill-in links on container/ship rows.
   const [{ data: characterContents }, { data: corpContents }] = await Promise.all([
     supabase.rpc('character_asset_location_contents', { parent: itemId }),
     supabase.rpc('corp_asset_location_contents', { parent: itemId }),
@@ -147,8 +163,8 @@ const ShipPage = async ({
   )
 
   const typeNamesPromise = fetchTypeNames(children.map((c) => Number(c.type_id)))
-  const rows: ItemRow[] = children
-    .map((c) => {
+  const rows: ItemRow[] = fittingOrder(
+    children.map((c) => {
       const contents = contentsByItem.get(String(c.item_id)) ?? 0
       return {
         itemId: String(c.item_id),
@@ -167,13 +183,12 @@ const ShipPage = async ({
             : null,
       }
     })
-    .sort((a, b) => b.contents - a.contents || a.typeId - b.typeId)
+  )
 
-  const { data: share } = await supabase
-    .from('shared_asset_token')
-    .select('token')
-    .eq('item_id', itemId)
-    .maybeSingle<{ token: string }>()
+  const [{ data: share }, owners] = await Promise.all([
+    supabase.from('shared_asset_token').select('token').eq('item_id', itemId).maybeSingle<{ token: string }>(),
+    fetchOwners(),
+  ])
 
   return (
     <>
@@ -187,7 +202,7 @@ const ShipPage = async ({
       </p>
       <ShareControls itemId={itemId} initialToken={share?.token ?? null} />
       <ShipFitViewDynamic esiFit={toEsiFit(Number(self.type_id), self.name ?? null, rows)} />
-      <ShipCargo rows={rows} typeNamesPromise={typeNamesPromise} />
+      <LocationAssets rows={rows} owners={owners} typeNamesPromise={typeNamesPromise} canAppraise />
     </>
   )
 }
@@ -254,8 +269,8 @@ const SharedShipPage = async ({ itemId, token }: { itemId: string; token: string
   const typeNamesPromise = fetchTypeNames(children.map((c) => Number(c.type_id)))
   // Display-only in the shared view: no href (a nested container would need its
   // own share token to open), and contents is unused without drill-down links.
-  const rows: ItemRow[] = children
-    .map((c) => ({
+  const rows: ItemRow[] = fittingOrder(
+    children.map((c) => ({
       itemId: String(c.item_id),
       ownerId,
       typeId: Number(c.type_id),
@@ -267,7 +282,13 @@ const SharedShipPage = async ({ itemId, token }: { itemId: string; token: string
       isCurrentShip: false,
       href: null,
     }))
-    .sort((a, b) => a.typeId - b.typeId)
+  )
+
+  // The table's owner column/filter only ever sees the sharing owner — the
+  // anonymous viewer has no owner context of their own to offer.
+  const owners: Owners = characterSelf?.registration_id
+    ? { characters: [{ id: characterSelf.registration_id, name: ownerName }], corporations: [] }
+    : { characters: [], corporations: [{ id: String(corpSelf?.corporation_id), name: ownerName }] }
 
   return (
     <>
@@ -279,7 +300,7 @@ const SharedShipPage = async ({ itemId, token }: { itemId: string; token: string
         Owner: <span className="serif">{ownerName}</span>
       </p>
       <ShipFitViewDynamic esiFit={toEsiFit(Number(self.type_id), self.name ?? null, rows)} />
-      <ShipCargo rows={rows} typeNamesPromise={typeNamesPromise} />
+      <LocationAssets rows={rows} owners={owners} typeNamesPromise={typeNamesPromise} canAppraise={false} />
     </>
   )
 }
