@@ -10,8 +10,7 @@
 // docs/appraisals/README.md) — which is why it alone here carries
 // openWorldHint: true. It sends type names and quantities and nothing else; no
 // owner, character, corporation or location ever reaches the provider.
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
-import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js'
+import type { AuthInfo, McpServer } from '@modelcontextprotocol/server'
 import { ascend, descend, groupBy, sortWith } from 'ramda'
 import { z } from 'zod'
 
@@ -45,8 +44,10 @@ const TOP_ITEMS = 10
 
 type SupabaseClient = ReturnType<typeof createBearerClient>
 
-const clientFor = (extra: { authInfo?: AuthInfo }): SupabaseClient | null =>
-  extra.authInfo?.token ? createBearerClient(extra.authInfo.token) : null
+// mcp-handler 2.x hands tool callbacks the SDK's ServerContext, where a
+// verified token rides under 'http.authInfo' rather than 1.x's flat 'extra'.
+const clientFor = (ctx: { http?: { authInfo?: AuthInfo } }): SupabaseClient | null =>
+  ctx.http?.authInfo?.token ? createBearerClient(ctx.http.authInfo.token) : null
 
 const capNote = (total: number, shown: number, what: string): string | undefined =>
   total > shown ? `Showing the first ${shown} of ${total} ${what}; counts and totals cover everything.` : undefined
@@ -187,7 +188,7 @@ export const registerEstateTools = (server: McpServer): void => {
       description:
         'Walk the user\'s hangars by place instead of by item name: with no arguments, every station, structure, and system where they hold assets, with stack counts; with a location, the items sitting directly in it. Answers "what do I have in Jita" or "what\'s in that container". Use search_assets when you know the item name and want to find where it is.',
       annotations: { readOnlyHint: true, openWorldHint: false },
-      inputSchema: {
+      inputSchema: z.object({
         location: z
           .string()
           .optional()
@@ -199,10 +200,10 @@ export const registerEstateTools = (server: McpServer): void => {
           .optional()
           .describe('When listing locations, only those in this solar system, e.g. "EKPB-3"'),
         owner: z.string().optional().describe('Only stacks owned by this character or corporation (name substring)'),
-      },
+      }),
     },
-    async ({ location, system, owner }, extra) => {
-      const supabase = clientFor(extra)
+    async ({ location, system, owner }, ctx) => {
+      const supabase = clientFor(ctx)
       if (!supabase) return textResult('Missing bearer token.')
 
       const owners = await fetchOwnerContext(supabase)
@@ -298,7 +299,7 @@ export const registerEstateTools = (server: McpServer): void => {
       description:
         'Price everything the user actually holds in one place — a station, structure or system, or one ship/container drilled into by id — as a single ISK valuation via innomin.at (Jita by default). Answers "what is my Jita hangar worth" or "how much is this hauler and its cargo worth". Contents are counted recursively, so a container is priced with everything nested inside it. Use browse_assets first to find the place or the id; use appraise_items when you already know the item names and quantities and are not pricing a hangar.',
       annotations: { readOnlyHint: true, openWorldHint: true },
-      inputSchema: {
+      inputSchema: z.object({
         location: z
           .string()
           .min(1)
@@ -315,10 +316,10 @@ export const registerEstateTools = (server: McpServer): void => {
           .boolean()
           .optional()
           .describe('Itemize every priced type rather than just the most valuable few (default false)'),
-      },
+      }),
     },
-    async ({ location, market, include_items }, extra) => {
-      const supabase = clientFor(extra)
+    async ({ location, market, include_items }, ctx) => {
+      const supabase = clientFor(ctx)
       if (!supabase) return textResult('Missing bearer token.')
 
       const match = matchLocation(location.trim(), await describeLocations(supabase))
@@ -425,7 +426,7 @@ export const registerEstateTools = (server: McpServer): void => {
       description:
         'Current ISK balances for the user\'s characters and their corporations\' wallet divisions, plus a breakdown of corp wallet activity by entry type over a recent window. Answers "how much ISK do I have" or "where did the corp wallet go this month". Use search_transactions for individual market trades.',
       annotations: { readOnlyHint: true, openWorldHint: false },
-      inputSchema: {
+      inputSchema: z.object({
         days: z
           .number()
           .int()
@@ -433,10 +434,10 @@ export const registerEstateTools = (server: McpServer): void => {
           .max(365)
           .optional()
           .describe('Window for the corporation wallet-journal breakdown, in days (default 30)'),
-      },
+      }),
     },
-    async ({ days }, extra) => {
-      const supabase = clientFor(extra)
+    async ({ days }, ctx) => {
+      const supabase = clientFor(ctx)
       if (!supabase) return textResult('Missing bearer token.')
 
       const owners = await fetchOwnerContext(supabase)
@@ -537,15 +538,15 @@ export const registerEstateTools = (server: McpServer): void => {
       description:
         'The Mercenary Dens the user\'s characters have deployed, each on its planet, with its current state, development and anarchy levels, infomorph count, and reinforcement timer. Answers "which dens are reinforced" or "when do my timers come out".',
       annotations: { readOnlyHint: true, openWorldHint: false },
-      inputSchema: {
+      inputSchema: z.object({
         reinforced_only: z
           .boolean()
           .optional()
           .describe('Only dens with a reinforcement timer still in the future (default false)'),
-      },
+      }),
     },
-    async ({ reinforced_only }, extra) => {
-      const supabase = clientFor(extra)
+    async ({ reinforced_only }, ctx) => {
+      const supabase = clientFor(ctx)
       if (!supabase) return textResult('Missing bearer token.')
 
       type DenRow = {
@@ -633,7 +634,7 @@ export const registerEstateTools = (server: McpServer): void => {
       description:
         "The ship fittings the user's characters have saved in the game, plus any other players have shared with them (with their corporation or alliance, or with everyone), with the hull each is for and who saved it. Filter by hull, by fit name, by owner, or by a module the fit uses — \"what Hurricane fits do I have\", \"which of my fits use a Damage Control II\". Set include_items to get each fit's full module list by slot. Note: EVE's API exposes only each pilot's *personal* fittings — corporation and alliance doctrine folders are not available, so a doctrine fit appears here only if one of their characters saved a copy and shared it (see the share controls on a fit's own page).",
       annotations: { readOnlyHint: true, openWorldHint: false },
-      inputSchema: {
+      inputSchema: z.object({
         ship: z.string().optional().describe('Only fits for hulls matching this name substring, e.g. "Hurricane"'),
         name: z
           .string()
@@ -648,10 +649,10 @@ export const registerEstateTools = (server: McpServer): void => {
           .boolean()
           .optional()
           .describe("Include each fit's full module list, grouped by slot (default false — the listing stays compact)"),
-      },
+      }),
     },
-    async ({ ship, name, owner, module, include_items }, extra) => {
-      const supabase = clientFor(extra)
+    async ({ ship, name, owner, module, include_items }, ctx) => {
+      const supabase = clientFor(ctx)
       if (!supabase) return textResult('Missing bearer token.')
 
       const [{ data: fittingRows }, owners] = await Promise.all([
