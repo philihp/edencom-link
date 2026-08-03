@@ -3,8 +3,7 @@
 // slots per character, and which Upwell rigs actually bonus a given blueprint.
 // Same rules as tools.ts — RLS-scoped bearer client, DB and mirrored SDE only,
 // never ESI.
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
-import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js'
+import type { AuthInfo, McpServer } from '@modelcontextprotocol/server'
 import { z } from 'zod'
 
 import { fetchType, resolveProductTypeID } from '@/app/blueprint/api'
@@ -34,8 +33,10 @@ import { dataFreshness, fetchOwnerContext, textResult } from './lib'
 
 type SupabaseClient = ReturnType<typeof createBearerClient>
 
-const clientFor = (extra: { authInfo?: AuthInfo }): SupabaseClient | null =>
-  extra.authInfo?.token ? createBearerClient(extra.authInfo.token) : null
+// mcp-handler 2.x hands tool callbacks the SDK's ServerContext, where a
+// verified token rides under 'http.authInfo' rather than 1.x's flat 'extra'.
+const clientFor = (ctx: { http?: { authInfo?: AuthInfo } }): SupabaseClient | null =>
+  ctx.http?.authInfo?.token ? createBearerClient(ctx.http.authInfo.token) : null
 
 // The systems the caller has a reason to care about when they don't name one:
 // everywhere they hold a structure, plus everything on their /indexes watchlist.
@@ -63,7 +64,7 @@ export const registerIndustryTools = (server: McpServer): void => {
       description:
         'Manufacturing, research, copying, invention, and reaction cost indices for solar systems — the multiplier that sets a job\'s installation fee. Answers "where is manufacturing cheapest right now" or "what is the reaction index in this system". With no system named, covers every system the user holds a structure in or watches on the /indexes page.',
       annotations: { readOnlyHint: true, openWorldHint: false },
-      inputSchema: {
+      inputSchema: z.object({
         system: z
           .string()
           .optional()
@@ -81,10 +82,10 @@ export const registerIndustryTools = (server: McpServer): void => {
           ])
           .optional()
           .describe('Only this activity (default: all of them)'),
-      },
+      }),
     },
-    async ({ system, activity }, extra) => {
-      const supabase = clientFor(extra)
+    async ({ system, activity }, ctx) => {
+      const supabase = clientFor(ctx)
       if (!supabase) return textResult('Missing bearer token.')
 
       let systemIds: number[]
@@ -151,12 +152,12 @@ export const registerIndustryTools = (server: McpServer): void => {
       description:
         'Per character, how many manufacturing, research, and reaction job slots are occupied and how many are free — the actionable half that list_industry_jobs leaves out. Slot ceilings come from the trained slot skills (Mass Production, Laboratory Operation, Mass Reactions and their Advanced variants). Answers "who can start another job" or "how many research slots do I have spare".',
       annotations: { readOnlyHint: true, openWorldHint: false },
-      inputSchema: {
+      inputSchema: z.object({
         free_only: z.boolean().optional().describe('Only characters with at least one free slot (default false)'),
-      },
+      }),
     },
-    async ({ free_only }, extra) => {
-      const supabase = clientFor(extra)
+    async ({ free_only }, ctx) => {
+      const supabase = clientFor(ctx)
       if (!supabase) return textResult('Missing bearer token.')
 
       const owners = await fetchOwnerContext(supabase)
@@ -251,7 +252,7 @@ export const registerIndustryTools = (server: McpServer): void => {
       description:
         'Which Upwell structure rigs give a material bonus to building a given item — a rig only affects products in the groups its filter covers, so a Ship Manufacturing rig does nothing for components. Answers "which rig helps me build Nitrogen Fuel Blocks". Pass a structure_id to see which of those rigs is actually fitted there; that is the same test blueprint_for_product applies when pricing a build in a structure.',
       annotations: { readOnlyHint: true, openWorldHint: false },
-      inputSchema: {
+      inputSchema: z.object({
         item: z
           .string()
           .min(1)
@@ -260,9 +261,9 @@ export const registerIndustryTools = (server: McpServer): void => {
           .string()
           .optional()
           .describe('One of your monitored Upwell structures (from list_structures) to check the fitted rigs against'),
-      },
+      }),
     },
-    async ({ item, structure_id }, extra) => {
+    async ({ item, structure_id }, ctx) => {
       const matches = await searchSdeTypesAll(item.trim())
       if (matches.length === 0) return textResult(`No item type matched "${item}".`)
       const best = matches[0]
@@ -298,7 +299,7 @@ export const registerIndustryTools = (server: McpServer): void => {
       // Optionally intersect with what's actually bolted onto a structure.
       let fitted: { structure: string; applicable: string[]; other_rigs: string[] } | null = null
       if (structure_id) {
-        const supabase = clientFor(extra)
+        const supabase = clientFor(ctx)
         if (!supabase) return textResult('Missing bearer token.')
         const { data: structure } = await supabase
           .from('corp_structure')

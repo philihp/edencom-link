@@ -4,7 +4,7 @@
 // no data_refreshed stamp (there is nothing per-user to be stale). The whole
 // server still sits behind withMcpAuth, and the mirror is public-read anyway
 // (the same rows /esf/* and /sheets/* serve anonymously).
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import type { McpServer } from '@modelcontextprotocol/server'
 import { z } from 'zod'
 
 import { getRegionPlanets, getSdePlanets, getSystemPlanets, PLANET_GROUP_ID } from '@/sdePlanets'
@@ -43,7 +43,7 @@ export const registerExploreTools = (server: McpServer): void => {
       description:
         'Planets from static game data, in three modes. Give planet_ids to turn raw planet ids into names ("40099763" → "Q-UVY6 II", with its system, region and security) — mercenary den rows and other raw ids resolve here. Give system for one system\'s planets and its planet-type composition. Give region (optionally with planet_type) to find which systems carry a planet type — "which systems in Metropolis have temperate planets" for den siting, "where are the lava planets" for PI. Exactly one of the three. Coverage is known space; the SDE stores no planet name, so names are derived as "<system> <roman numeral>".',
       annotations: { readOnlyHint: true, openWorldHint: false },
-      inputSchema: {
+      inputSchema: z.object({
         planet_ids: z
           .array(z.number().int().positive())
           .min(1)
@@ -65,7 +65,7 @@ export const registerExploreTools = (server: McpServer): void => {
           .max(1000)
           .optional()
           .describe(`Region mode: how many systems to itemize (default ${MAX_ROWS}). Totals cover everything.`),
-      },
+      }),
     },
     async ({ planet_ids, system, region, planet_type, limit }): Promise<ToolResult> => {
       const modes = [

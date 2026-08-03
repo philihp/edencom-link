@@ -5,8 +5,7 @@
 // never calls ESI (see the data-flow rule in CLAUDE.md). Auth: withMcpAuth
 // (route.ts) verifies the caller's OAuth bearer token, and every query runs
 // on a client carrying that token, so RLS scopes results to the caller.
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
-import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js'
+import type { AuthInfo, McpServer } from '@modelcontextprotocol/server'
 import {
   cost,
   type BlueprintME,
@@ -79,8 +78,10 @@ const AS_OF_SHAPE = z
 
 type SupabaseClient = ReturnType<typeof createBearerClient>
 
-const clientFor = (extra: { authInfo?: AuthInfo }): SupabaseClient | null =>
-  extra.authInfo?.token ? createBearerClient(extra.authInfo.token) : null
+// mcp-handler 2.x hands tool callbacks the SDK's ServerContext, where a
+// verified token rides under 'http.authInfo' rather than 1.x's flat 'extra'.
+const clientFor = (ctx: { http?: { authInfo?: AuthInfo } }): SupabaseClient | null =>
+  ctx.http?.authInfo?.token ? createBearerClient(ctx.http.authInfo.token) : null
 
 // Solar-system names resolve from the nightly-mirrored SDE tables first (known
 // space), falling back to the universe_name cache for anything the SDE doesn't
@@ -365,13 +366,18 @@ type ModifierResolver = (
 type BuiltModifiers =
   { ok: true; resolve: ModifierResolver; summary: Record<string, unknown> } | { ok: false; message: string }
 
-const buildModifiers = async (m: ModifierArgs, extra: { authInfo?: AuthInfo }): Promise<BuiltModifiers> => {
+// `serverCtx` rather than `ctx`: the structure bonus context destructured out
+// of loadStructure() below already owns that name in this function.
+const buildModifiers = async (
+  m: ModifierArgs,
+  serverCtx: { http?: { authInfo?: AuthInfo } }
+): Promise<BuiltModifiers> => {
   const base = {
     runs: m.runs ?? 1,
     material_efficiency: m.material_efficiency ?? 0,
   }
   if (m.structure_id) {
-    const supabase = clientFor(extra)
+    const supabase = clientFor(serverCtx)
     if (!supabase) return { ok: false, message: 'Missing bearer token.' }
     const loaded = await loadStructure(supabase, m.structure_id)
     if (!loaded.ok) return loaded
@@ -427,14 +433,14 @@ export const registerTools = (server: McpServer): void => {
       description:
         'Find items across all of the user\'s character and corporation hangars by item name. Answers questions like "where is my Avatar" or "how many fuel blocks do I have in EKPB-3". The item name is a case-insensitive substring match against EVE item types; optionally narrow to one solar system. Blueprints are excluded unless include_blueprints is set (use list_blueprints for those).',
       annotations: { readOnlyHint: true, openWorldHint: false },
-      inputSchema: {
+      inputSchema: z.object({
         item: z.string().min(1).describe('Item name or substring, e.g. "nitrogen fuel block", "avatar", "tritanium"'),
         system: z.string().optional().describe('Only include items in this solar system, e.g. "EKPB-3"'),
         include_blueprints: z.boolean().optional().describe('Also match blueprints/reaction formulas (default false)'),
-      },
+      }),
     },
-    async ({ item, system, include_blueprints }, extra) => {
-      const supabase = clientFor(extra)
+    async ({ item, system, include_blueprints }, ctx) => {
+      const supabase = clientFor(ctx)
       if (!supabase) return textResult('Missing bearer token.')
 
       const filter = await resolveTypeFilter(item, { includeBlueprints: include_blueprints ?? false })
@@ -545,10 +551,10 @@ export const registerTools = (server: McpServer): void => {
       description:
         'The user\'s characters with their current location, the ship they\'re currently in, active implants, jump-clone locations (each with its implants), and when each character can next clone jump. Answers questions like "where is my nearest clone to Jita", "what am I flying", or "which clone has my Genolution set".',
       annotations: { readOnlyHint: true, openWorldHint: false },
-      inputSchema: {},
+      inputSchema: z.object({}),
     },
-    async (_args, extra) => {
-      const supabase = clientFor(extra)
+    async (_args, ctx) => {
+      const supabase = clientFor(ctx)
       if (!supabase) return textResult('Missing bearer token.')
 
       const [
@@ -695,7 +701,7 @@ export const registerTools = (server: McpServer): void => {
       description:
         'The user\'s character- and corporation-owned blueprints with ME/TE research levels, remaining runs (for copies), and location. Filter by name — searching by product works too ("naglfar" matches "Naglfar Blueprint") — by owner, by solar system or structure, by original vs copy, and by research level. NOTE: below_me and below_te are OR\'d when both are given, i.e. "short of either target", which is how "which blueprints are not at ME/TE 10/20 yet" is actually asked. Set researchable to exclude reaction formulas, which can never be researched and otherwise flood any research-backlog result at 0/0. Set group to "type" to collapse identical (blueprint, ME, TE) stacks into one counted row, or "type_location" to keep those split per location.',
       annotations: { readOnlyHint: true, openWorldHint: false },
-      inputSchema: {
+      inputSchema: z.object({
         item: z.string().optional().describe('Blueprint (or product) name substring, e.g. "naglfar", "fuel block"'),
         owner: z
           .string()
@@ -754,10 +760,10 @@ export const registerTools = (server: McpServer): void => {
           .describe(
             `Maximum rows to itemize (default ${DEFAULT_BLUEPRINT_LIMIT}, max ${MAX_BLUEPRINT_LIMIT}). Totals always cover the whole filtered set.`
           ),
-      },
+      }),
     },
-    async ({ item, owner, system, structure, kind, below_me, below_te, researchable, group, limit }, extra) => {
-      const supabase = clientFor(extra)
+    async ({ item, owner, system, structure, kind, below_me, below_te, researchable, group, limit }, ctx) => {
+      const supabase = clientFor(ctx)
       if (!supabase) return textResult('Missing bearer token.')
 
       const filter = await resolveTypeFilter(item)
@@ -859,7 +865,7 @@ export const registerTools = (server: McpServer): void => {
       description:
         'The Upwell structures the user\'s corporations own and monitor — hull type and class, solar system and security, state, fuel expiry, online and offline services, and fitted rigs. Answers "which structures are in 27-HP0", "what runs out of fuel this week", or "what rigs are on the Athanor". Each row\'s structure_id is what blueprint_for_product and blueprints_using_material take as structure_id: pass it there to get a material bill costed for this structure, since what a fitted rig is worth depends on what you are building (use rigs_for_blueprint to check a rig covers a product).',
       annotations: { readOnlyHint: true, openWorldHint: false },
-      inputSchema: {
+      inputSchema: z.object({
         system: z.string().optional().describe('Only structures in this solar system, e.g. "27-HP0"'),
         name: z.string().optional().describe('Only structures whose name contains this substring, e.g. "T1 Research"'),
         owner: z.string().optional().describe('Only structures owned by this corporation (name substring)'),
@@ -869,10 +875,10 @@ export const registerTools = (server: McpServer): void => {
           .describe(
             'Only structures with all of these services online (case-insensitive substrings, e.g. ["manufacturing"])'
           ),
-      },
+      }),
     },
-    async ({ system, name, owner, services }, extra) => {
-      const supabase = clientFor(extra)
+    async ({ system, name, owner, services }, ctx) => {
+      const supabase = clientFor(ctx)
       if (!supabase) return textResult('Missing bearer token.')
 
       const owners = await fetchOwnerContext(supabase)
@@ -972,17 +978,17 @@ export const registerTools = (server: McpServer): void => {
       description:
         'Manufacturing, research, invention, copying, and reaction jobs across the user\'s characters and corporations. Defaults to active jobs; pass a status ("ready", "delivered", …) or "all" for history. Answers "what\'s building right now" or "when does my research finish". Pass as_of to see the jobs as they stood at a past moment (e.g. what was running last Tuesday).',
       annotations: { readOnlyHint: true, openWorldHint: false },
-      inputSchema: {
+      inputSchema: z.object({
         status: z
           .enum(['active', 'ready', 'paused', 'delivered', 'cancelled', 'reverted', 'all'])
           .optional()
           .describe('Job status to show (default "active")'),
         owner: z.string().optional().describe('Only jobs for this character or corporation (name substring)'),
         as_of: AS_OF_SHAPE,
-      },
+      }),
     },
-    async ({ status, owner, as_of }, extra) => {
-      const supabase = clientFor(extra)
+    async ({ status, owner, as_of }, ctx) => {
+      const supabase = clientFor(ctx)
       if (!supabase) return textResult('Missing bearer token.')
 
       const owners = await fetchOwnerContext(supabase)
@@ -1145,13 +1151,13 @@ export const registerTools = (server: McpServer): void => {
       description:
         'The user\'s open market orders (buys and sells) across all characters, with price, remaining volume, location, and expiry. Answers "what am I selling" or "do I still have that buy order up". Pass as_of to see the orders that were open at some past moment instead — reconstructed from SCD-2 history, so a since-filled order reappears.',
       annotations: { readOnlyHint: true, openWorldHint: false },
-      inputSchema: {
+      inputSchema: z.object({
         item: z.string().optional().describe('Only orders for items matching this name substring'),
         as_of: AS_OF_SHAPE,
-      },
+      }),
     },
-    async ({ item, as_of }, extra) => {
-      const supabase = clientFor(extra)
+    async ({ item, as_of }, ctx) => {
+      const supabase = clientFor(ctx)
       if (!supabase) return textResult('Missing bearer token.')
 
       const filter = await resolveTypeFilter(item)
@@ -1307,15 +1313,15 @@ export const registerTools = (server: McpServer): void => {
       description:
         'Past market buys and sells across the user\'s characters and corporations (most recent first). Answers "what did I pay for PLEX last month" or "how much have I sold this week". Corp-division trades made by the user\'s characters are included once, under the corporation.',
       annotations: { readOnlyHint: true, openWorldHint: false },
-      inputSchema: {
+      inputSchema: z.object({
         item: z.string().optional().describe('Only trades of items matching this name substring'),
         days: z.number().int().min(1).max(365).optional().describe('Lookback window in days (default 30)'),
         side: z.enum(['buy', 'sell']).optional().describe('Only buys or only sells (default both)'),
         limit: z.number().int().min(1).max(500).optional().describe('Maximum rows to return (default 100)'),
-      },
+      }),
     },
-    async ({ item, days, side, limit }, extra) => {
-      const supabase = clientFor(extra)
+    async ({ item, days, side, limit }, ctx) => {
+      const supabase = clientFor(ctx)
       if (!supabase) return textResult('Missing bearer token.')
 
       const filter = await resolveTypeFilter(item)
@@ -1417,12 +1423,12 @@ export const registerTools = (server: McpServer): void => {
       description:
         'Given something you want to build, return the blueprint that produces it (manufacturing or reaction) and its material bill — from static game data, independent of what you own. The bill is adjusted for the material-efficiency modifiers you pass: blueprint ME, an engineering-complex/refinery role bonus, a material-efficiency rig, and the system security that scales the rig.',
       annotations: { readOnlyHint: true, openWorldHint: false },
-      inputSchema: {
+      inputSchema: z.object({
         product: z.string().min(1).describe('The item you want to build, e.g. "Nightmare", "Nitrogen Fuel Block"'),
         ...MODIFIER_SHAPE,
-      },
+      }),
     },
-    async ({ product, ...modifiers }, extra) => {
+    async ({ product, ...modifiers }, ctx) => {
       const resolved = await resolveOneType(product)
       if (!resolved.ok) return textResult(resolved.message)
 
@@ -1435,7 +1441,7 @@ export const registerTools = (server: McpServer): void => {
         )
       }
 
-      const mods = await buildModifiers(modifiers, extra)
+      const mods = await buildModifiers(modifiers, ctx)
       if (!mods.ok) return textResult(mods.message)
 
       // A rig only discounts a build whose product its filter covers, so the
@@ -1471,12 +1477,12 @@ export const registerTools = (server: McpServer): void => {
       description:
         'Given an input material, return every blueprint (manufacturing or reaction) that consumes it — from static game data. Each entry shows how much of this material that blueprint needs after the material-efficiency modifiers you pass (blueprint ME, structure role bonus, rig, and the security that scales the rig).',
       annotations: { readOnlyHint: true, openWorldHint: false },
-      inputSchema: {
+      inputSchema: z.object({
         material: z.string().min(1).describe('The input material, e.g. "Tritanium", "Fernite Carbide"'),
         ...MODIFIER_SHAPE,
-      },
+      }),
     },
-    async ({ material, ...modifiers }, extra) => {
+    async ({ material, ...modifiers }, ctx) => {
       const resolved = await resolveOneType(material)
       if (!resolved.ok) return textResult(resolved.message)
 
@@ -1489,7 +1495,7 @@ export const registerTools = (server: McpServer): void => {
         )
       }
 
-      const mods = await buildModifiers(modifiers, extra)
+      const mods = await buildModifiers(modifiers, ctx)
       if (!mods.ok) return textResult(mods.message)
 
       const names = await getSdeTypeNames([
@@ -1545,7 +1551,7 @@ export const registerTools = (server: McpServer): void => {
       description:
         'Estimate the ISK market value of a batch of items via the innomin.at appraisal service (Jita by default). Answers "what\'s 3 Rifters and 100k Tritanium worth" or follows up a search_assets result with prices. Item names are matched fuzzily against EVE types. Prices are live market data, not the user\'s own orders.',
       annotations: { readOnlyHint: true, openWorldHint: true },
-      inputSchema: {
+      inputSchema: z.object({
         items: z
           .array(
             z.object({
@@ -1565,7 +1571,7 @@ export const registerTools = (server: McpServer): void => {
           .describe(
             'Market hub to price against (default jita). Others: amarr, rens, dodi, hek, plus player markets ualx, cj6mt.'
           ),
-      },
+      }),
     },
     // No Supabase client and no bearer token: this tool reads nothing from the
     // DB. It still only runs for authenticated MCP callers (the whole server is

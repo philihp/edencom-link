@@ -11,6 +11,13 @@ import { registerExploreTools } from './exploreTools'
 import { registerIndustryTools } from './industryTools'
 import { registerTools } from './tools'
 
+// mcp-handler 2.x serves the 2026-07-28 spec (stateless, no sessions), falling
+// back to stateless Streamable HTTP for 2025-era clients from the same handler.
+// It no longer inspects the request path — routing belongs to the framework, so
+// mounting this file at /api/mcp *is* the endpoint and the 1.x `basePath` dance
+// is gone, along with `disableSse`/`redisUrl` (the SSE transport was removed)
+// and the handler's own `maxDuration` (the route segment config below is what
+// Vercel reads). Server options and handler extras are now one object.
 const handler = createMcpHandler(
   (server) => {
     registerTools(server)
@@ -18,14 +25,7 @@ const handler = createMcpHandler(
     registerIndustryTools(server)
     registerExploreTools(server)
   },
-  { serverInfo: { name: 'edencom-link', version: '1.0.0' } },
-  // No Redis in this deployment, so the (spec-deprecated) SSE transport stays
-  // off; Streamable HTTP keeps everything within a single function invocation.
-  // basePath derives the endpoint paths: '/api' makes the streamable HTTP
-  // endpoint '/api/mcp' — exactly where this route file lives. (With
-  // '/api/mcp' the handler would only answer '/api/mcp/mcp', a path no route
-  // serves, so every authenticated call would 404.)
-  { basePath: '/api', disableSse: true, maxDuration: 60 }
+  { serverInfo: { name: 'edencom-link', version: '1.0.0' } }
 )
 
 // Point the 401 WWW-Authenticate challenge at the path-suffixed protected-
