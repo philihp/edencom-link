@@ -8,7 +8,7 @@ import type { ItemRow } from '../../asset/[locationId]/locationAssets'
 type EsiFitRow = Pick<ItemRow, 'itemId' | 'typeId' | 'flag' | 'quantity'>
 
 // Shapes a ship's fitted-module/cargo/drone rows (the same ItemRow[] fed to
-// ShipCargo) into the ESI-fitting-JSON shape @eveshipfit/react's
+// the module table) into the ESI-fitting-JSON shape @eveshipfit/react's
 // useImportEsiFitting() hook expects. Slot vs. charge disambiguation and
 // cargo/drone-bay routing happen inside that hook (it already has the full
 // type/dogma dataset loaded), so this is a plain reshape — no location-flag

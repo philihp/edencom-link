@@ -127,8 +127,9 @@ export const LocationAssets = ({ rows, owners, typeNamesPromise, canAppraise }: 
     }
   }
 
-  // Unsorted keeps the server's order (containers first, then type id). Sorting
-  // is stable, so rows that tie hold that order within their group.
+  // Unsorted keeps the server's order (the asset browser sends containers
+  // first, then type id; the ship page sends fitting-slot order). Sorting is
+  // stable, so rows that tie hold that order within their group.
   const ordered = sort
     ? sortWith<ItemRow>([(sort.dir === 'asc' ? ascend : descend)((row) => sortValue(row, sort.key))], filtered)
     : filtered
