@@ -1,0 +1,54 @@
+.editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8pt;
+  margin-top: 8pt;
+}
+
+.examples {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6pt;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 2pt;
+  font-size: 9pt;
+  color: var(--ink-soft);
+}
+
+.query,
+.variables {
+  font-family: var(--mono);
+  font-size: 10pt;
+  color: var(--ink);
+  background: var(--paper-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 6pt 8pt;
+  resize: vertical;
+}
+
+.result,
+.docs {
+  font-family: var(--mono);
+  font-size: 9pt;
+  background: var(--paper-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 6pt 8pt;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+.result {
+  max-height: 32em;
+  overflow-y: auto;
+}
+
+.docsNote {
+  font-size: 9pt;
+  color: var(--ink-soft);
+}
