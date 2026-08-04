@@ -16,17 +16,17 @@ const STRING = 3
 const commands = [
   {
     name: 'edencom',
-    description: 'edencom.link hangar tracker',
+    description: 'Edencom.link — query the SDE and your EVE Online ESI data',
     options: [
       {
         type: SUB_COMMAND,
         name: 'link',
-        description: 'Send den alerts to this channel (get a code from edencom.link settings)',
+        description: 'Send den alerts to this channel (get a code from Edencom.link settings)',
         options: [
           {
             type: STRING,
             name: 'code',
-            description: 'Link code from your edencom.link account settings',
+            description: 'Link code from your Edencom.link account settings',
             required: true,
           },
         ],
@@ -34,7 +34,7 @@ const commands = [
       {
         type: SUB_COMMAND,
         name: 'unlink',
-        description: 'Stop sending edencom.link alerts to this channel',
+        description: 'Stop sending Edencom.link alerts to this channel',
       },
     ],
   },

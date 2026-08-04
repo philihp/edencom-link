@@ -73,10 +73,10 @@ const Discord = ({ appId, channels }: { appId: string | null; channels: DiscordC
         <li>
           {installUrl ? (
             <a href={installUrl} target="_blank" rel="noreferrer">
-              Add the Edencom Link bot to your Discord server
+              Add the Edencom.link bot to your Discord server
             </a>
           ) : (
-            'Add the Edencom Link bot to your Discord server (bot not configured on this deployment)'
+            'Add the Edencom.link bot to your Discord server (bot not configured on this deployment)'
           )}
         </li>
         <li>Generate a link code below</li>

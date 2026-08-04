@@ -42,7 +42,7 @@ const describeChannel = (interaction: CommandInteraction): string => {
 }
 
 const link = async (interaction: CommandInteraction, code: string | undefined): Promise<CommandResponse> => {
-  if (!code) return reply('Provide the link code from your edencom.link account settings.')
+  if (!code) return reply('Provide the link code from your Edencom.link account settings.')
 
   const invokerId = interaction.member?.user?.id ?? interaction.user?.id
   if (!invokerId) return reply('Could not tell who ran this command — try again.')
@@ -54,7 +54,7 @@ const link = async (interaction: CommandInteraction, code: string | undefined): 
     .eq('code', code)
     .maybeSingle()
   if (codeError) return reply('Something went wrong looking up that code — try again.')
-  if (!codeRow) return reply('That code is not recognized — generate one from your edencom.link account settings.')
+  if (!codeRow) return reply('That code is not recognized — generate one from your Edencom.link account settings.')
   if (codeRow.redeemed_at) return reply('That code was already used — generate a fresh one from your settings.')
   if (new Date(codeRow.expires_at).getTime() < Date.now())
     return reply('That code has expired (codes last 10 minutes) — generate a fresh one from your settings.')
@@ -70,13 +70,13 @@ const link = async (interaction: CommandInteraction, code: string | undefined): 
   // 23505 = unique (user_id, channel_id): this account already targets this
   // channel. Burn the code anyway? No — leave it usable elsewhere; the state
   // the user wanted already exists, so just say so.
-  if (insertError?.code === '23505') return reply(`This channel is already linked to that edencom.link account.`)
+  if (insertError?.code === '23505') return reply(`This channel is already linked to that Edencom.link account.`)
   if (insertError) return reply('Something went wrong linking the channel — try again.')
 
   await supabase.from('discord_link_code').update({ redeemed_at: new Date().toISOString() }).eq('id', codeRow.id)
 
   return reply(
-    `Linked! Alerts for that edencom.link account will post to ${describeChannel(interaction)}. Run /edencom unlink here to stop.`
+    `Linked! Alerts for that Edencom.link account will post to ${describeChannel(interaction)}. Run /edencom unlink here to stop.`
   )
 }
 
@@ -96,7 +96,7 @@ const unlink = async (interaction: CommandInteraction): Promise<CommandResponse>
     .select('id')
   if (error) return reply('Something went wrong unlinking — try again.')
   if (!removed?.length)
-    return reply('No link of yours found for this channel. Links can also be removed from edencom.link settings.')
+    return reply('No link of yours found for this channel. Links can also be removed from Edencom.link settings.')
 
   return reply(`Unlinked — ${describeChannel(interaction)} will no longer receive alerts you set up.`)
 }
