@@ -6,6 +6,8 @@ import { createClient } from '@/utils/supabase/server'
 
 import { DateTime } from '../../DateTime'
 import { isChancellor } from '../chancellor/chancellor'
+import { mainCharacterNameForUser } from '../lib/inviter'
+import CopyLink from './copyLink'
 import CreateButton from './createButton'
 import { earnedCount, unlockDate, weeksToUnlock } from './schedule'
 
@@ -47,18 +49,7 @@ const InvitesPage = async () => {
     .select('created_by')
     .eq('redeemed_by', data.user.id)
     .maybeSingle()
-  let inviterName: string | null = null
-  if (redeemedCode?.created_by) {
-    const { data: inviter } = await service
-      .from('registration')
-      .select('name')
-      .eq('user_id', redeemedCode.created_by)
-      .order('is_main', { ascending: false })
-      .order('created_at', { ascending: true })
-      .limit(1)
-      .maybeSingle()
-    inviterName = inviter?.name ?? null
-  }
+  const inviterName = redeemedCode?.created_by ? await mainCharacterNameForUser(redeemedCode.created_by) : null
 
   const allCodes = codes ?? []
   const unused = allCodes.filter((c) => !c.redeemed_by)
@@ -72,8 +63,8 @@ const InvitesPage = async () => {
     <>
       <h1>Invite codes</h1>
       <p>
-        Edencom Link is invite-only. Share an unused code below with someone to let them register an account — each code
-        works once.
+        Edencom Link is invite-only. Copy an unused code&rsquo;s link below and send it to someone to let them register
+        an account — each code works once.
       </p>
 
       {!firstSsoAt && (
@@ -88,7 +79,7 @@ const InvitesPage = async () => {
         <ul>
           {unused.map((c) => (
             <li key={c.code}>
-              <code>{c.code}</code>
+              <CopyLink code={c.code} />
             </li>
           ))}
         </ul>
@@ -166,9 +157,7 @@ const InvitesPage = async () => {
             <tbody>
               {allCodes.map((c) => (
                 <tr key={c.code}>
-                  <td>
-                    <code>{c.code}</code>
-                  </td>
+                  <td>{c.redeemed_by ? <code>{c.code}</code> : <CopyLink code={c.code} />}</td>
                   <td>{c.created_at ? <DateTime value={new Date(c.created_at)} /> : '—'}</td>
                   <td>
                     {c.redeemed_by ? (

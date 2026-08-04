@@ -5,6 +5,36 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { createServiceClient } from '@/utils/supabase/service'
 import { createClient } from '@/utils/supabase/server'
 
+import { mainCharacterNameForUser } from '../lib/inviter'
+import { INVITE_CODE_PATTERN } from './inviteCode'
+
+export type InviteLookup =
+  | { status: 'valid'; inviterName: string | null } // null inviter = a founding/seed code
+  | { status: 'redeemed' }
+  | { status: 'unknown' }
+
+// Resolve who an unredeemed invite code came from, so the register form can
+// show "Invited by <main character>" beside the field. Unauthenticated by
+// nature (the registrant has no session), so it reveals nothing beyond the
+// status for redeemed codes, and only ever names the inviter of a code the
+// caller already holds in full.
+export const lookupInvite = async (rawCode: string): Promise<InviteLookup> => {
+  const code = `${rawCode ?? ''}`.trim()
+  if (!INVITE_CODE_PATTERN.test(code)) return { status: 'unknown' }
+
+  const service = createServiceClient()
+  const { data: invite } = await service
+    .from('invite_code')
+    .select('created_by, redeemed_by')
+    .eq('code', code)
+    .maybeSingle()
+  if (!invite) return { status: 'unknown' }
+  if (invite.redeemed_by) return { status: 'redeemed' }
+
+  const inviterName = invite.created_by ? await mainCharacterNameForUser(invite.created_by) : null
+  return { status: 'valid', inviterName }
+}
+
 // Registration is invite-only: the form must carry an unused invite code. We
 // validate and redeem it with the service role, since the registrant has no
 // Supabase session yet and so can't see invite_code rows under RLS.
