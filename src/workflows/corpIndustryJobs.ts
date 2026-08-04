@@ -14,14 +14,16 @@
 // job module (runCorpIndustryJobs → forEachCorporation in src/jobs/lib.js).
 //
 // Formerly the cron route fanned out one Vercel queue message per corporation
-// (fanOutPerCorporationCronJob); it now start()s this workflow. Only the
-// *scheduled* trigger moves — the on-demand "Refresh ESI" path
-// (dispatchRefresh's PER_CORPORATION_JOBS) still enqueues one message per corp;
-// the job module is CLI-runnable too.
+// (fanOutPerCorporationCronJob). Both triggers start() this workflow now
+// (phase 5): the cron route starts it bare, and the on-demand "Refresh ESI"
+// path (dispatchRefresh's PER_CORPORATION_JOBS) starts it with an OnDemandTarget — one corp's whole
+// character group plus its refresh_task row, tracked running → done/error
+// inside the step — which skips enumeration. The job module is CLI-runnable
+// too.
 
 import { map, reduce, splitEvery, transpose } from 'ramda'
 
-import { enumerateCorporations } from './lib'
+import { enumerateCorporations, type OnDemandTarget } from './lib'
 
 // This job's ESI scope, and the lane count. Only *different* corps run
 // concurrently (each corp's rows are disjoint); two lanes because the corp count
@@ -35,20 +37,23 @@ const LANES = 2
 // job module's top-level supabase/esi setup needs env vars absent at build
 // time). forEachCorporation still refreshes tokens, dedupes to one handler call
 // per corp, falls back through the group on a role failure, and records the
-// per-corp heartbeat pair — all unchanged. registrationIds (registration uuids) is
-// the only thing crossing the step boundary, and serializable.
-async function syncCorporation(registrationIds: string[]) {
+// per-corp heartbeat pair — all unchanged. registrationIds (registration uuids)
+// and the optional refresh_task id are all that cross the step boundary,
+// serializable. withRefreshTask is a passthrough without a taskId and
+// best-effort refresh_task status tracking with one (see ./lib).
+async function syncCorporation(registrationIds: string[], taskId?: string) {
   'use step'
+  const { withRefreshTask } = await import('./lib')
   const { runCorpIndustryJobs } = await import('@/jobs/corpIndustryJobs.js')
-  await runCorpIndustryJobs({ registrationIds })
+  await withRefreshTask(taskId, () => runCorpIndustryJobs({ registrationIds }))
 }
 
-export async function corpIndustryJobsWorkflow() {
+export async function corpIndustryJobsWorkflow(target?: OnDemandTarget) {
   'use workflow'
   // The workflow body must stay deterministic control flow over step calls (the
   // 'use workflow' directive compiles it — see sdeMirror.ts). Ramda's pure
   // combinators are fine here: referentially transparent, no Node imports.
-  const groups = await enumerateCorporations(SCOPE)
+  const groups = target?.registrationIds ? [target.registrationIds] : await enumerateCorporations(SCOPE)
 
   // Round-robin the corp groups into LANES lanes (splitEvery chunks rows of
   // LANES, transpose flips rows→columns, so group i lands in lane i % LANES with
@@ -68,7 +73,7 @@ export async function corpIndustryJobsWorkflow() {
     reduce(
       (p, group) =>
         p.then(() =>
-          syncCorporation(group).catch((err) => {
+          syncCorporation(group, target?.taskId).catch((err) => {
             console.error(`[corp-industry-jobs] corp group [${group.join(', ')}] failed:`, err)
             failures.push(group)
           })

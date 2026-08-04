@@ -40,9 +40,8 @@ export const recordEsiConditional = ({
     duration_ms: durationMs,
   })
 
-// One job invocation's memory footprint — emitted from the queue consumer
-// (src/app/api/queue/jobs/route.ts), the workflow heartbeat wrapper
-// (src/workflows/lib.ts), and per-entry from the sde-mirror ingest. Group by
+// One job invocation's memory footprint — emitted from the workflow heartbeat
+// wrapper (src/workflows/lib.ts) and per-entry from the sde-mirror ingest. Group by
 // (job) and chart max(peak_rss_mb) to size the function's `memory` limit
 // against real usage instead of guessing. `maxRSS` (process.resourceUsage, KB
 // on Linux) is the process-wide high-water mark; under Vercel Fluid Compute

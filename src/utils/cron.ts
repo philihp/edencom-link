@@ -14,12 +14,13 @@ export const requireCronSecret = (request: NextRequest): NextResponse | null => 
   return null
 }
 
-// For the handful of extract jobs that are whole-corp/whole-universe batches
-// rather than per-character work (corp-structures, corp-blueprints,
-// corp-wallet-journal, universe-structures, industry-systems): run the job
-// inline in the cron function and wrap it in a start/end heartbeat, the same
-// shape the job's own GitHub Actions workflow used to record via
-// `pnpm run heartbeat <job> start/end`.
+// Run a job inline in the cron function and wrap it in a start/end heartbeat.
+// Every *scheduled* extract job has moved to a Vercel Workflow (the cron →
+// Workflows migration, docs/cron-to-workflows/ — runJobWithHeartbeat in
+// src/workflows/lib.ts is this helper's workflow-shaped counterpart); the only
+// remaining callers are the unscheduled manual/bootstrap routes for the
+// SDE-derived encodes, /api/cron/esf-data and /api/cron/sheet-csv, which run
+// small enough to live inside the route's own invocation.
 export const runDirectCronJob = async (job: string, run: () => Promise<unknown>) => {
   const { recordHeartbeat } = await import('@/supabase.js')
   const runId = randomInt(1, 2 ** 48)
@@ -29,71 +30,4 @@ export const runDirectCronJob = async (job: string, run: () => Promise<unknown>)
   } finally {
     await recordHeartbeat(job, 'end', { runId, source: 'vercel-cron' })
   }
-}
-
-// For the per-character extract jobs: enumerate every character carrying the
-// job's ESI scope and fan out one Vercel queue message each, mirroring the
-// on-demand "Refresh ESI" flow (dispatchRefresh.ts). Each queued invocation
-// stays small enough to fit the function duration limit regardless of how
-// many characters are registered, and records its own per-character
-// heartbeat (see forEachCharacter/forEachCorporation in src/jobs/lib.js).
-export const fanOutPerCharacterCronJob = async (job: string, scope: string) => {
-  const { selectRegistrationIdsWithScopes } = await import('@/supabase.js')
-  const { send } = await import('@/utils/queue')
-  const registrationIds = await selectRegistrationIdsWithScopes([scope])
-  await Promise.all(registrationIds.map((characterId) => send('jobs', { job, characterId })))
-  return registrationIds.length
-}
-
-// Same fan-out as fanOutPerCharacterCronJob, but for a job that fronts several
-// endpoints with different scopes (character-status): enumerate every character
-// carrying *any* of `scopes` (selectRegistrationIdsWithScopes already unions them)
-// and send one message each. The consumer's handler
-// (forEachCharacterAnyScope) then runs only the endpoints each token is
-// authorized for.
-export const fanOutPerCharacterAnyScopeCronJob = async (job: string, scopes: string[]) => {
-  const { selectRegistrationIdsWithScopes } = await import('@/supabase.js')
-  const { send } = await import('@/utils/queue')
-  const registrationIds = await selectRegistrationIdsWithScopes(scopes)
-  await Promise.all(registrationIds.map((characterId) => send('jobs', { job, characterId })))
-  return registrationIds.length
-}
-
-// For the corp-scoped extract jobs (corp-assets, corp-industry-jobs,
-// corp-wallet-transactions): fanning out one message per character, like
-// fanOutPerCharacterCronJob, can enqueue two *concurrent* messages for the same
-// corp when more than one of its characters carries the scope. Each message
-// independently reconciles that corp's whole asset/job/transaction set, and the
-// two invocations racing corrupts the data — one's INSERT collides with the
-// other's already-committed row (`duplicate key value violates unique
-// constraint ..._current_item_idx`), aborting the losing invocation partway
-// through with some rows already closed (is_current: false) but never
-// reopened, so real items vanish from the *_asset/*_blueprint views until a
-// later, non-racing run reinserts them.
-//
-// Group every scoped character by corporation instead, and send one message
-// per corp carrying *all* of its scoped characters. That's still exactly one
-// invocation per corp (no race), but forEachCorporation (src/jobs/lib.js) can
-// now try them in order and fall back to the next one if an earlier character
-// turns out to carry the OAuth scope without the in-game role — director,
-// accountant, etc — the corp endpoint separately requires; picking just one
-// character up front had no way to know which of them ESI would actually let
-// through.
-export const fanOutPerCorporationCronJob = async (job: string, scope: string) => {
-  const { groupRegistrationIdsByCorporation } = await import('@/supabase.js')
-  const { send } = await import('@/utils/queue')
-  const { byCorp, unresolved } = await groupRegistrationIdsByCorporation([scope])
-
-  const groups = [...byCorp.values(), ...unresolved.map((id: string) => [id])]
-  await Promise.all(groups.map((registrationIds) => send('jobs', { job, registrationIds })))
-  return groups.length
-}
-
-// For the account-wide extract jobs that already process every registration
-// in one batch (character-directory, universe-names): dispatch a single
-// queue message: the consumer records its own whole-job heartbeat (see
-// src/app/api/queue/jobs/route.ts).
-export const dispatchAccountCronJob = async (job: string) => {
-  const { send } = await import('@/utils/queue')
-  await send('jobs', { job })
 }

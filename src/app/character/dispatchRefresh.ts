@@ -2,7 +2,9 @@ import { randomUUID } from 'node:crypto'
 
 import { forEach, reduce } from 'ramda'
 
-// The per-character ESI extracts a refresh fans out, one queue message per
+import type { OnDemandTarget } from '@/workflows/lib'
+
+// The per-character ESI extracts a refresh fans out, one workflow run per
 // character each. Most are named after the ESI endpoint they extract;
 // character-status is the combined live-state job that pulls wallet, location,
 // implants, and clones in one invocation (see src/jobs/characterStatus.js).
@@ -18,20 +20,20 @@ export const PER_CHARACTER_JOBS = [
 ] as const
 
 // Corp-scoped jobs pull one corp's whole asset/job/transaction set. Fanning one
-// message per character (like PER_CHARACTER_JOBS) risks two of the user's
+// run per character (like PER_CHARACTER_JOBS) risks two of the user's
 // characters in the same corp racing a concurrent reconcile for it — the
 // losing invocation's INSERT collides with the winner's already-committed row
 // (`duplicate key value violates unique constraint ..._current_item_idx`),
 // which can abort partway through with rows closed but never reopened, so real
 // items vanish until a later, non-racing run reinserts them. So, like the
-// cron-triggered fan-out (fanOutPerCorporationCronJob in src/utils/cron.ts),
-// each of these queues exactly one message per corporation — see
-// dispatchRefresh below, which looks up every character (account-wide, not
-// just this batch) known to carry the job's scope for that corp and sends the
-// whole group, so forEachCorporation (src/jobs/lib.js) can fall back through
-// them if the one representative character chosen for the refresh_task/UI row
-// turns out to lack the in-game role — director, accountant, etc — the
-// endpoint separately requires.
+// scheduled per-corporation fan-out (enumerateCorporations in
+// src/workflows/lib.ts), each of these starts exactly one workflow run per
+// corporation — see dispatchRefresh below, which looks up every character
+// (account-wide, not just this batch) known to carry the job's scope for that
+// corp and sends the whole group, so forEachCorporation (src/jobs/lib.js) can
+// fall back through them if the one representative character chosen for the
+// refresh_task/UI row turns out to lack the in-game role — director,
+// accountant, etc — the endpoint separately requires.
 //
 // corp-assets and corp-industry-jobs are included so a newly added character's
 // corp data shows up immediately rather than waiting for the next cron. The
@@ -55,14 +57,49 @@ export const ACCOUNT_JOBS = ['character-directory', 'universe-names'] as const
 
 type Character = { id: string; name: string | null }
 
+// One workflow per on-demand job (phase 5 of the cron → Workflows migration:
+// the on-demand path start()s the same per-job workflows the cron routes do,
+// passing an OnDemandTarget so the run skips enumeration and tracks its
+// refresh_task row — see src/workflows/lib.ts). Imported lazily for the same
+// build-time reason as the service client below.
+const JOB_WORKFLOWS: Record<string, () => Promise<(target?: OnDemandTarget) => Promise<void>>> = {
+  'character-assets': async () => (await import('@/workflows/characterAssets')).characterAssetsWorkflow,
+  'character-blueprints': async () => (await import('@/workflows/characterBlueprints')).characterBlueprintsWorkflow,
+  'character-orders': async () => (await import('@/workflows/characterOrders')).characterOrdersWorkflow,
+  'character-wallet-transactions': async () =>
+    (await import('@/workflows/characterWalletTransactions')).characterWalletTransactionsWorkflow,
+  'character-industry-jobs': async () =>
+    (await import('@/workflows/characterIndustryJobs')).characterIndustryJobsWorkflow,
+  'character-mercenary-dens': async () =>
+    (await import('@/workflows/characterMercenaryDens')).characterMercenaryDensWorkflow,
+  'character-fittings': async () => (await import('@/workflows/characterFittings')).characterFittingsWorkflow,
+  'character-status': async () => (await import('@/workflows/characterStatus')).characterStatusWorkflow,
+  'corp-wallet-transactions': async () =>
+    (await import('@/workflows/corpWalletTransactions')).corpWalletTransactionsWorkflow,
+  'corp-assets': async () => (await import('@/workflows/corpAssets')).corpAssetsWorkflow,
+  'corp-industry-jobs': async () => (await import('@/workflows/corpIndustryJobs')).corpIndustryJobsWorkflow,
+  'character-directory': async () => (await import('@/workflows/characterDirectory')).characterDirectoryWorkflow,
+  'universe-names': async () => (await import('@/workflows/universeNames')).universeNamesWorkflow,
+  'industry-systems': async () => (await import('@/workflows/industrySystems')).industrySystemsWorkflow,
+}
+
+// Start one on-demand workflow run: the job's workflow, given the target that
+// pins it to the task's characters and refresh_task row.
+const startJobWorkflow = async (job: string, target: OnDemandTarget) => {
+  const loadWorkflow = JOB_WORKFLOWS[job]
+  if (!loadWorkflow) throw new Error(`no workflow for on-demand job: ${job}`)
+  const { start } = await import('workflow/api')
+  return start(await loadWorkflow(), [target])
+}
+
 // Drop any character whose corporation is already represented by an earlier
 // character in the list. A character with no known corporation yet (a
 // brand-new registration whose corp hasn't been resolved) is always kept —
 // there's nothing to dedupe it against, and it's exactly the case
 // corp-assets/corp-industry-jobs need to run for right away. This only picks
-// the representative character for the refresh_task/UI row — the actual queue
-// message sent for that task carries every scoped character for the corp, not
-// just this one (see dispatchRefresh below).
+// the representative character for the refresh_task/UI row — the actual
+// workflow run started for that task carries every scoped character for the
+// corp, not just this one (see dispatchRefresh below).
 const oneCharacterPerCorporation = (characters: Character[], corporationById: Map<string, number | null>) => {
   const seenCorps = new Set<number>()
   return reduce(
@@ -81,11 +118,11 @@ const oneCharacterPerCorporation = (characters: Character[], corporationById: Ma
 
 // Run every on-demand ESI extract for the given characters: insert a
 // refresh_task row per unit of work (a per-character job for one character, or an
-// account-wide job) and enqueue a matching Vercel queue message tagged with that
-// row's id, which the consumer flips running -> done/error, live on
-// /character/refresh. Used when a character is added; the per-cell refresh
-// buttons go through dispatchSingleJob below instead. Uses the service role,
-// so callers must pass a userId they've already authorized.
+// account-wide job) and start a matching workflow run targeted at that row's
+// id, whose step flips it running -> done/error, live on /character/refresh.
+// Used when a character is added; the per-cell refresh buttons go through
+// dispatchSingleJob below instead. Uses the service role, so callers must pass
+// a userId they've already authorized.
 export const dispatchRefresh = async (userId: string, characters: Character[]): Promise<string> => {
   const batchId = randomUUID()
 
@@ -156,8 +193,8 @@ export const dispatchRefresh = async (userId: string, characters: Character[]): 
     throw error
   }
 
-  // A corp-scoped task's message carries every scoped character for its
-  // corporation (see corpGroupsByJob above); every other task's message
+  // A corp-scoped task's workflow target carries every scoped character for
+  // its corporation (see corpGroupsByJob above); every other task's target
   // carries just its own single character (or none, for the account-wide jobs).
   const registrationIdsForTask = (t: { job: string; registration_id: string | null }): string[] | undefined => {
     if (t.registration_id == null) return undefined
@@ -168,20 +205,17 @@ export const dispatchRefresh = async (userId: string, characters: Character[]): 
     return byCorp.get(corporationId) ?? [t.registration_id]
   }
 
-  const { send } = await import('@/utils/queue')
-  const sent = await Promise.all(
-    (inserted ?? []).map((t) => send('jobs', { job: t.job, registrationIds: registrationIdsForTask(t), taskId: t.id }))
+  const started = await Promise.all(
+    (inserted ?? []).map((t) => startJobWorkflow(t.job, { registrationIds: registrationIdsForTask(t), taskId: t.id }))
   )
-  console.log(
-    `[dispatchRefresh] enqueued ${sent.length} jobs to topic "jobs" region=${process.env.QUEUE_REGION ?? 'sfo1'}`
-  )
+  console.log(`[dispatchRefresh] started ${started.length} workflow runs`)
 
   return batchId
 }
 
 // One cell of the /character/refresh matrix: insert a single refresh_task row
-// and enqueue its one queue message. `character` is null for the account-wide
-// jobs. For a corp-scoped job the message carries every scoped character in the
+// and start its one workflow run. `character` is null for the account-wide
+// jobs. For a corp-scoped job the target carries every scoped character in the
 // representative character's corporation — the same grouping dispatchRefresh
 // sends — so forEachCorporation can fall back through them if the
 // representative lacks the in-game role the corp endpoint requires.
@@ -189,7 +223,7 @@ export const dispatchSingleJob = async (userId: string, job: string, character: 
   // Imported lazily for the same build-time reason as dispatchRefresh above.
   const { sudoSupabase, groupRegistrationIdsByCorporation } = await import('@/supabase.js')
 
-  const registrationIdsForMessage = async (): Promise<string[] | undefined> => {
+  const registrationIdsForTarget = async (): Promise<string[] | undefined> => {
     if (!character) return undefined
     const corpJob = PER_CORPORATION_JOBS.find((j) => j.job === job)
     if (!corpJob) return [character.id]
@@ -205,7 +239,7 @@ export const dispatchSingleJob = async (userId: string, job: string, character: 
     const { byCorp } = await groupRegistrationIdsByCorporation([scope])
     return byCorp.get(corporationId) ?? [character.id]
   }
-  const registrationIds = await registrationIdsForMessage()
+  const registrationIds = await registrationIdsForTarget()
 
   const { data: inserted, error } = await sudoSupabase
     .from('refresh_task')
@@ -220,7 +254,8 @@ export const dispatchSingleJob = async (userId: string, job: string, character: 
     .single()
   if (error) throw error
 
-  const { send } = await import('@/utils/queue')
-  await send('jobs', { job, registrationIds, taskId: inserted.id })
-  console.log(`[dispatchSingleJob] enqueued ${job} for ${character?.name ?? 'account'} taskId=${inserted.id}`)
+  const run = await startJobWorkflow(job, { registrationIds, taskId: inserted.id })
+  console.log(
+    `[dispatchSingleJob] started ${job} for ${character?.name ?? 'account'} taskId=${inserted.id} run=${run.runId}`
+  )
 }

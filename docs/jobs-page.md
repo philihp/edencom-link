@@ -19,6 +19,15 @@ runs the user has **enqueued** themselves.
 
 ## Prerequisite: finish the migration first
 
+> **Phase 5 has landed** — the decisions below are resolved: the on-demand
+> path `start()`s the same per-job workflows the cron routes do (option (b);
+> `refresh_task` transitions live in `withRefreshTask`, `src/workflows/lib.ts`),
+> the queue-dispatch cron helpers and the `/api/queue/jobs` consumer are
+> deleted (`runDirectCronJob` survives for the unscheduled `esf-data`/
+> `sheet-csv` bootstrap routes), and the `character-implants` pilot is retired
+> (no row of its own; implants stay folded into `character-status`). This page
+> is unblocked.
+
 **This page does not start until [`cron-to-workflows` phase 5](cron-to-workflows/05-contract.md)
 has landed.** Not a soft ordering — phase 5 decides the exact mechanics this
 page renders:
