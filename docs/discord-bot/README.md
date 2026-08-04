@@ -25,11 +25,15 @@ Scope for making edencom.link double as a Discord application. Two goals
   `DISCORD_APP_ID`/`DISCORD_PUBLIC_KEY`/`DISCORD_BOT_TOKEN` are in
   `.env.example`, and interactions emit `recordDiscordInteraction`
   observability metrics.
-- **Stage 03 — not started.** No `discord_link_code`/`discord_channel`
-  tables, no command router, no settings UI yet. Its "link codes, not
-  Discord OAuth" design predates goal 1 and is amended below: stage 06's
-  Discord identity becomes the primary account↔Discord binding, with link
-  codes kept as the fallback for users who haven't linked Discord.
+- **Stage 03 — shipped (link-code flow).** `discord_link_code`/
+  `discord_channel` tables, the `/edencom link|unlink` command router
+  (`src/app/api/discord/commands.ts`), the registration script
+  (`pnpm run discord-register-commands`, `--guild <id>` for instant test
+  registration), and the settings Discord section (install link, code
+  minting with countdown, linked-channel list). The identity-first binding
+  amended below (match the invoker's Discord user id against
+  `auth.identities`) waits on stage 06 — link codes are the only path
+  until then.
 - **Stages 04–07 — not started.**
 
 This is a scoping document set, not an implementation spec. Each stage is
