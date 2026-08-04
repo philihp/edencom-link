@@ -1,5 +1,15 @@
 # Phase 5: contract — retire the old scheduled plumbing, settle the queue's fate
 
+> **✅ Done.** §2 went the recommended way, (b): `dispatchRefresh`/
+> `dispatchSingleJob` `start()` the per-job workflows with an `OnDemandTarget`
+> (`src/workflows/lib.ts`), `refresh_task` tracking moved into the step
+> (`withRefreshTask`), and the `jobs` queue topic, its consumer, and the four
+> queue-dispatch helpers are deleted. §3 done: the `character-implants` pilot
+> (workflow, consumer special case, manual trigger route) is deleted. One
+> deviation from §1: `runDirectCronJob` stays — at implementation time the
+> unscheduled `esf-data`/`sheet-csv` bootstrap routes still called it, which
+> this doc's "nothing references these anymore" predates.
+
 After phases 1–4, every scheduled extract job `start()`s a workflow. This
 phase deletes what that stranded and makes the one real remaining
 decision: what happens to the on-demand "Refresh ESI" path.

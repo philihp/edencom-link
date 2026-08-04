@@ -4,8 +4,8 @@
 // reconcilers (corp-industry-jobs, corp-assets) copy.
 //
 // The fan-out unit is a *corp group*, not a character: enumerateCorporations
-// (src/workflows/lib.ts) returns the same set fanOutPerCorporationCronJob sends
-// today — one group per corporation (the ordered character list
+// (src/workflows/lib.ts) returns the same set the retired
+// fanOutPerCorporationCronJob used to send — one group per corporation (the ordered character list
 // forEachCorporation dedupes to one handler call and falls back through on an
 // in-game-role failure) plus a singleton group per unresolved character. A
 // corp's characters ride together in one step; a corp is NEVER split across
