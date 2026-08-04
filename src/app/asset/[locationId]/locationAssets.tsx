@@ -6,7 +6,7 @@ import { ascend, descend, sortWith } from 'ramda'
 
 import { ALL_OWNERS, OwnerSelect, ownerNames, useOwnerFilter, type Owners } from '../../ownerFilter'
 import retro from '../../retro.module.css'
-import { TypeIcon } from '../../typeIcon'
+import { TypeIcon, type IconVariation } from '../../typeIcon'
 import { TypeName } from '../../typeName'
 import styles from '../assets.module.css'
 import { OWNER_STORAGE_KEY } from '../filterKey'
@@ -31,6 +31,16 @@ export type ItemRow = {
   // containers with contents, null for plain stacks (no link). Computed
   // server-side, where the SDE category lookup lives.
   href: string | null
+  // SDE facts about this row's type, resolved server-side for the same reason
+  // (the browser has no SDE access): m³ per unit — the assembled figure for a
+  // ship or other singleton, which is all the SDE carries — plus the group and
+  // category the type belongs to. Null for a type the published-type view
+  // doesn't cover.
+  unitVolume: number | null
+  groupName: string | null
+  categoryName: string | null
+  // Which image CCP holds for this type; blueprints have no "icon" variation.
+  icon: IconVariation
 }
 
 type LocationAssetsProps = {
@@ -45,7 +55,7 @@ type LocationAssetsProps = {
 
 // The sortable columns. Appraisal is deliberately absent: its values only exist
 // once each row's button has been pressed, so there'd be nothing to order by.
-type SortKey = 'quantity' | 'item' | 'owner' | 'hangar' | 'contents'
+type SortKey = 'quantity' | 'item' | 'volume' | 'group' | 'category' | 'owner' | 'hangar' | 'contents'
 type Sort = { key: SortKey; dir: 'asc' | 'desc' }
 
 // A stack of one — what a singleton (a ship, a rig, an assembled container)
@@ -55,6 +65,18 @@ const SINGLE = 1
 // ESI stores the literal string "None" for a singleton with no player-assigned
 // name; TypeName hides it, so sorting ignores it too.
 const givenName = (row: ItemRow): string | null => (row.name && row.name !== 'None' ? row.name : null)
+
+const stackSize = (row: ItemRow): number => (row.isSingleton ? SINGLE : Number(row.quantity ?? SINGLE))
+
+// What the whole stack occupies: the type's per-unit m³ times how many are in
+// it. Null for a type with no volume in the SDE mirror, which renders blank
+// rather than an invented zero.
+const stackVolume = (row: ItemRow): number | null => (row.unitVolume == null ? null : row.unitVolume * stackSize(row))
+
+// Volumes span from 0.01 m³ (a piece of ammo) to eight figures (a freighter's
+// worth of ore), so they're grouped and capped at two decimals rather than
+// printed raw.
+const formatVolume = (m3: number): string => m3.toLocaleString('en-US', { maximumFractionDigits: 2 })
 
 type SortHeaderProps = {
   label: string
@@ -115,9 +137,16 @@ export const LocationAssets = ({ rows, owners, typeNamesPromise, canAppraise }: 
   const sortValue = (row: ItemRow, key: SortKey): number | string => {
     switch (key) {
       case 'quantity':
-        return row.isSingleton ? SINGLE : Number(row.quantity ?? SINGLE)
+        return stackSize(row)
       case 'item':
         return (givenName(row) ?? typeNames[row.typeId] ?? `#${row.typeId}`).toLowerCase()
+      case 'volume':
+        // An unknown volume sorts as nothing rather than jumping to the top.
+        return stackVolume(row) ?? 0
+      case 'group':
+        return (row.groupName ?? '').toLowerCase()
+      case 'category':
+        return (row.categoryName ?? '').toLowerCase()
       case 'owner':
         return (ownerMap.get(row.ownerId) ?? row.ownerId).toLowerCase()
       case 'hangar':
@@ -158,6 +187,9 @@ export const LocationAssets = ({ rows, owners, typeNamesPromise, canAppraise }: 
               <tr>
                 <SortHeader label="Quantity" sortKey="quantity" sort={sort} onSort={toggleSort} numeric />
                 <SortHeader label="Item" sortKey="item" sort={sort} onSort={toggleSort} />
+                <SortHeader label="Volume (m³)" sortKey="volume" sort={sort} onSort={toggleSort} numeric />
+                <SortHeader label="Group" sortKey="group" sort={sort} onSort={toggleSort} />
+                <SortHeader label="Category" sortKey="category" sort={sort} onSort={toggleSort} />
                 <SortHeader label="Owner" sortKey="owner" sort={sort} onSort={toggleSort} />
                 <SortHeader label="Hangar" sortKey="hangar" sort={sort} onSort={toggleSort} />
                 <SortHeader label="Contents" sortKey="contents" sort={sort} onSort={toggleSort} numeric />
@@ -178,7 +210,7 @@ export const LocationAssets = ({ rows, owners, typeNamesPromise, canAppraise }: 
                         outside the link so a click always lands on the name,
                         and it renders immediately (no name lookup). */}
                     <span className={styles.item}>
-                      <TypeIcon id={row.typeId} />
+                      <TypeIcon id={row.typeId} variation={row.icon} />
                       {row.href ? (
                         // Ships open their own /ship page; containers drill into /asset.
                         <Link href={row.href}>
@@ -190,6 +222,16 @@ export const LocationAssets = ({ rows, owners, typeNamesPromise, canAppraise }: 
                       {row.isCurrentShip && <span className={styles.badge}>current ship</span>}
                     </span>
                   </td>
+                  {/* Blank rather than a zero when the SDE has no volume for
+                      the type — nothing is known, not "it takes no space". */}
+                  <td className={retro.num}>
+                    {(() => {
+                      const m3 = stackVolume(row)
+                      return m3 == null ? null : formatVolume(m3)
+                    })()}
+                  </td>
+                  <td>{row.groupName ?? '—'}</td>
+                  <td>{row.categoryName ?? '—'}</td>
                   <td>{ownerMap.get(row.ownerId) ?? row.ownerId}</td>
                   <td>{row.flag ?? '—'}</td>
                   <td className={retro.num}>{row.contents > 0 ? row.contents : '—'}</td>
@@ -204,7 +246,7 @@ export const LocationAssets = ({ rows, owners, typeNamesPromise, canAppraise }: 
               ))}
               {ordered.length === 0 && (
                 <tr>
-                  <td colSpan={canAppraise ? 6 : 5}>No assets here for this owner.</td>
+                  <td colSpan={canAppraise ? 9 : 8}>No assets here for this owner.</td>
                 </tr>
               )}
             </tbody>

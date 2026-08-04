@@ -5,6 +5,7 @@ import { getSdeTypes } from '@/sdeTypes'
 import { createClient } from '@/utils/supabase/server'
 import { createServiceClient } from '@/utils/supabase/service'
 import { AssetPath, fetchAssetPath, regionSystemCrumbs, type Crumb } from '../../assetPath'
+import { typeFacts } from '../../assetTypeFacts'
 import { fetchOwners } from '../../owners'
 import { resolveLocations, type LocationRef } from '../../resolveLocations'
 import { resolveShareToken } from '../../ship/access'
@@ -42,6 +43,7 @@ type CharacterAsset = {
   location_type: string | null
   quantity: number | string | null
   is_singleton: boolean | null
+  is_blueprint_copy: boolean | null
   name: string | null
 }
 
@@ -98,13 +100,15 @@ const AssetLocationPage = async ({
   let characterQuery = supabase
     .from('character_asset')
     .select(
-      'item_id, registration_id, type_id, location_id, location_flag, location_type, quantity, is_singleton, name'
+      'item_id, registration_id, type_id, location_id, location_flag, location_type, quantity, is_singleton, is_blueprint_copy, name'
     )
     .eq('location_id', locationId)
   if (characterScope) characterQuery = characterQuery.in('registration_id', characterScope)
   let corpQuery = supabase
     .from('corp_asset')
-    .select('item_id, corporation_id, type_id, location_id, location_flag, location_type, quantity, is_singleton')
+    .select(
+      'item_id, corporation_id, type_id, location_id, location_flag, location_type, quantity, is_singleton, is_blueprint_copy'
+    )
     .eq('location_id', locationId)
   if (corpScope) corpQuery = corpQuery.in('corporation_id', corpScope)
   // A character's currently-piloted ship reports its location as wherever it's
@@ -176,14 +180,15 @@ const AssetLocationPage = async ({
   const self = characterSelf ?? (corpSelf ? { ...corpSelf, name: null } : null)
 
   // One bulk SDE lookup for every type in play (this location's root items plus
-  // the location itself, if it's an item) → the set of Ship-category type ids,
-  // so the per-row ship test stays a sync Set.has.
-  const shipTypes = await getSdeTypes([
+  // the location itself, if it's an item). It feeds three things: the set of
+  // Ship-category type ids, so the per-row ship test stays a sync Set.has; each
+  // row's volume/group/category columns; and which image variation its icon has.
+  const itemTypes = await getSdeTypes([
     ...rootItems.map((a) => Number(a.type_id)),
     ...(self ? [Number(self.type_id)] : []),
   ])
   const shipTypeIds = new Set(
-    Object.values(shipTypes)
+    Object.values(itemTypes)
       .filter((t) => t.categoryID === SHIP_CATEGORY_ID)
       .map((t) => t.typeID)
   )
@@ -357,6 +362,7 @@ const AssetLocationPage = async ({
   const rows: ItemRow[] = rootItems
     .map((a) => {
       const contents = contentsByItem.get(String(a.item_id)) ?? 0
+      const type = itemTypes[Number(a.type_id)]
       return {
         itemId: String(a.item_id),
         ownerId: a.owner_id,
@@ -368,6 +374,7 @@ const AssetLocationPage = async ({
         contents,
         isCurrentShip: currentShipItemIds.has(String(a.item_id)),
         href: scope ? null : isShip(a.type_id) ? `/ship/${a.item_id}` : contents > 0 ? `/asset/${a.item_id}` : null,
+        ...typeFacts(type, a.is_blueprint_copy),
       }
     })
     .sort((a, b) => b.contents - a.contents || a.typeId - b.typeId)

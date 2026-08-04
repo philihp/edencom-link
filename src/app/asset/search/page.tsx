@@ -10,7 +10,7 @@ import { createClient } from '@/utils/supabase/server'
 import { fetchOwners } from '../../owners'
 import { resolveLocations, type LocationRef } from '../../resolveLocations'
 import retro from '../../retro.module.css'
-import { TypeIcon } from '../../typeIcon'
+import { TypeIcon, type IconVariation } from '../../typeIcon'
 import { TypeName } from '../../typeName'
 import { AssetSearchForm } from '../assetSearchForm'
 import { Quantity } from '../[locationId]/quantity'
@@ -148,6 +148,12 @@ const AssetSearchPage = async ({ searchParams }: { searchParams: Promise<{ q?: s
   // every matched type's name — no extra SDE lookup needed. TypeName still
   // expects a promise (it also renders each row's player-assigned name, if any).
   const typeNamesPromise = Promise.resolve(Object.fromEntries(typeNameById))
+  // Blueprints have no "icon" on CCP's image server (only bp/bpc — asking for
+  // an icon is a 400, not a fallback), and the search results already carry
+  // each match's category. The asset-search RPCs don't report whether a given
+  // stack is a copy, so every blueprint row shows the original's artwork.
+  const blueprintTypeIds = new Set(matches.filter((m) => m.categoryID === BLUEPRINT_CATEGORY_ID).map((m) => m.typeID))
+  const iconFor = (typeId: number): IconVariation => (blueprintTypeIds.has(typeId) ? 'bp' : 'icon')
 
   const [{ data: characterRows }, { data: corpRows }, owners] = await Promise.all([
     supabase.rpc('character_asset_search', { type_ids: typeIds }),
@@ -266,7 +272,7 @@ const AssetSearchPage = async ({ searchParams }: { searchParams: Promise<{ q?: s
                   {row.root && !floating ? <Link href={`/asset/${row.root.id}`}>{stationName}</Link> : '—'}
                 </td>
                 <td>
-                  <TypeIcon id={row.typeId} />
+                  <TypeIcon id={row.typeId} variation={iconFor(row.typeId)} />
                   {row.contents > 0 ? (
                     <Link href={`/asset/${row.itemId}`}>
                       <TypeName id={row.typeId} name={row.name} promise={typeNamesPromise} />
