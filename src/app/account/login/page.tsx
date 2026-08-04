@@ -1,3 +1,7 @@
+import { redirect } from 'next/navigation'
+
+import { createClient } from '@/utils/supabase/server'
+
 import { LoginForm } from './loginForm'
 
 // Only same-site absolute paths are honored (no scheme-relative `//host` or
@@ -7,7 +11,17 @@ const sanitizeNext = (next: string | undefined): string | undefined =>
 
 const Login = async ({ searchParams }: { searchParams: Promise<{ next?: string }> }) => {
   const { next } = await searchParams
-  return <LoginForm next={sanitizeNext(next)} />
+  const sanitizedNext = sanitizeNext(next)
+
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (user) {
+    redirect(sanitizedNext ?? '/')
+  }
+
+  return <LoginForm next={sanitizedNext} />
 }
 
 export default Login
