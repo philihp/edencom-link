@@ -5,6 +5,7 @@ import { getSdeType, getSdeTypes } from '@/sdeTypes'
 import { createClient } from '@/utils/supabase/server'
 import { createServiceClient } from '@/utils/supabase/service'
 import { AssetPath, fetchAssetPath } from '../../assetPath'
+import { typeFacts } from '../../assetTypeFacts'
 import { fetchOwners } from '../../owners'
 import type { Owners } from '../../ownerFilter'
 import { TypeIcon } from '../../typeIcon'
@@ -35,6 +36,7 @@ type ChildRow = {
   location_flag: string | null
   quantity: number | string | null
   is_singleton: boolean | null
+  is_blueprint_copy?: boolean | null
   name?: string | null
   registration_id?: string
   corporation_id?: number | string
@@ -103,11 +105,11 @@ const ShipPage = async ({
   const [{ data: characterChildren }, { data: corpChildren }] = await Promise.all([
     supabase
       .from('character_asset')
-      .select('item_id, registration_id, type_id, location_flag, quantity, is_singleton, name')
+      .select('item_id, registration_id, type_id, location_flag, quantity, is_singleton, is_blueprint_copy, name')
       .eq('location_id', itemId),
     supabase
       .from('corp_asset')
-      .select('item_id, corporation_id, type_id, location_flag, quantity, is_singleton')
+      .select('item_id, corporation_id, type_id, location_flag, quantity, is_singleton, is_blueprint_copy')
       .eq('location_id', itemId),
   ])
   const children = [...((characterChildren ?? []) as ChildRow[]), ...((corpChildren ?? []) as ChildRow[])]
@@ -181,6 +183,7 @@ const ShipPage = async ({
           : contents > 0
             ? `/asset/${c.item_id}`
             : null,
+        ...typeFacts(childTypes[Number(c.type_id)], c.is_blueprint_copy),
       }
     })
   )
@@ -235,12 +238,12 @@ const SharedShipPage = async ({ itemId, token }: { itemId: string; token: string
   const [{ data: characterChildren }, { data: corpChildren }] = await Promise.all([
     supabase
       .from('character_asset')
-      .select('item_id, type_id, location_flag, quantity, is_singleton, name')
+      .select('item_id, type_id, location_flag, quantity, is_singleton, is_blueprint_copy, name')
       .eq('location_id', itemId)
       .in('registration_id', scope.registrationIds),
     supabase
       .from('corp_asset')
-      .select('item_id, type_id, location_flag, quantity, is_singleton')
+      .select('item_id, type_id, location_flag, quantity, is_singleton, is_blueprint_copy')
       .eq('location_id', itemId)
       .in('corporation_id', scope.corporationIds.length > 0 ? scope.corporationIds : [-1]),
   ])
@@ -267,6 +270,10 @@ const SharedShipPage = async ({ itemId, token }: { itemId: string; token: string
   const heading = self.name && self.name !== typeName ? `${self.name} (${typeName})` : typeName
 
   const typeNamesPromise = fetchTypeNames(children.map((c) => Number(c.type_id)))
+  // The same bulk lookup the signed-in view does, for the volume/group/category
+  // columns and each row's icon variation. Pure SDE data — public-read, nothing
+  // owner-specific — so it's as safe on the share path as the type names are.
+  const childTypes = await getSdeTypes(children.map((c) => Number(c.type_id)))
   // Display-only in the shared view: no href (a nested container would need its
   // own share token to open), and contents is unused without drill-down links.
   const rows: ItemRow[] = fittingOrder(
@@ -281,6 +288,7 @@ const SharedShipPage = async ({ itemId, token }: { itemId: string; token: string
       contents: 0,
       isCurrentShip: false,
       href: null,
+      ...typeFacts(childTypes[Number(c.type_id)], c.is_blueprint_copy),
     }))
   )
 

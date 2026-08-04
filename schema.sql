@@ -3423,7 +3423,10 @@ select
   g.data -> 'name' ->> 'en' as group_name,
   c.data -> 'name' ->> 'en' as category_name,
   (t.data ->> 'raceID')::bigint as race_id,
-  (t.data ->> 'metaGroupID')::bigint as meta_group_id
+  (t.data ->> 'metaGroupID')::bigint as meta_group_id,
+  -- m³ per unit (migration 20260804000000). Assembled singletons carry their
+  -- assembled volume — the SDE has no packaged figure for them.
+  (t.data ->> 'volume')::double precision as volume
 from public.sde_types t
 left join public.sde_groups g on g._key = (t.data ->> 'groupID')::bigint
 left join public.sde_categories c on c._key = (g.data ->> 'categoryID')::bigint

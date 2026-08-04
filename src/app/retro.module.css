@@ -45,3 +45,11 @@
   text-align: right;
   white-space: nowrap;
 }
+
+/* The alignment has to be restated at cell specificity: `.retro td` above is a
+   class plus an element, which outranks a bare `.num` and was quietly winning,
+   leaving every numeric column left-aligned. */
+.retro td.num,
+.retro th.num {
+  text-align: right;
+}

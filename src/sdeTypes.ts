@@ -11,19 +11,24 @@
 import { bulkLookup, createByIdCache } from './sdeCache'
 import { sdeSupabase } from './utils/supabase/sde'
 
-// groupName/raceID/metaGroupID ride along from the view (raceID and
-// metaGroupID added by migration 20260728120000_sde_type_race_meta): race is
-// which empire's ship line a hull belongs to, metaGroup its tech/faction tier.
-// Both are null for the many types the SDE doesn't stamp (metaGroupID is
-// absent on plain T1 types). First consumer is the /fitting ship matrix.
+// groupName/categoryName/raceID/metaGroupID/volume ride along from the view
+// (raceID and metaGroupID added by migration 20260728120000_sde_type_race_meta,
+// volume by 20260804000000_sde_type_volume): race is which empire's ship line a
+// hull belongs to, metaGroup its tech/faction tier — both null for the many
+// types the SDE doesn't stamp (metaGroupID is absent on plain T1 types) — and
+// volume is m³ per unit, the assembled figure for ships and other singletons
+// (the SDE carries no packaged volume). The /fitting ship matrix reads race and
+// meta; the asset folder table reads group/category names and volume.
 export type SdeType = {
   typeID: number
   name: string
   groupID: number
   categoryID: number | null
   groupName: string | null
+  categoryName: string | null
   raceID: number | null
   metaGroupID: number | null
+  volume: number | null
 }
 
 type TypeRow = {
@@ -32,8 +37,10 @@ type TypeRow = {
   group_id: number
   category_id: number | null
   group_name: string | null
+  category_name: string | null
   race_id: number | null
   meta_group_id: number | null
+  volume: number | null
 }
 
 const cache = createByIdCache<SdeType>()
@@ -44,11 +51,13 @@ const rowToType = (r: TypeRow): SdeType => ({
   groupID: r.group_id,
   categoryID: r.category_id,
   groupName: r.group_name,
+  categoryName: r.category_name,
   raceID: r.race_id == null ? null : Number(r.race_id),
   metaGroupID: r.meta_group_id == null ? null : Number(r.meta_group_id),
+  volume: r.volume == null ? null : Number(r.volume),
 })
 
-const TYPE_COLUMNS = 'type_id, name, group_id, category_id, group_name, race_id, meta_group_id'
+const TYPE_COLUMNS = 'type_id, name, group_id, category_id, group_name, category_name, race_id, meta_group_id, volume'
 
 export const getSdeTypes = (typeIDs: Iterable<number>): Promise<Record<number, SdeType>> =>
   bulkLookup(cache, typeIDs, async (chunk) => {
