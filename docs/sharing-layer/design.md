@@ -1,5 +1,11 @@
 # Sharing layer — data architecture
 
+> **Superseded in part by Revision 3** — see [README.md](README.md) and the
+> numbered phase docs beside this file for the current execution plan. This
+> document remains the reference for the identity split, the alt-privacy
+> rationale, and the invariants; where it disagrees with the phase docs
+> (audience representation, token scheme), the phase docs win.
+
 Design for a uniform, table-driven sharing layer: for every core table a
 sibling `<table>_share` table, and RLS of the shape **"read your own rows, or
 rows a matching share row grants you."** Replaces the three ad-hoc mechanisms
