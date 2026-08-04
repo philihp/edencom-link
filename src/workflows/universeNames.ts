@@ -6,21 +6,27 @@
 // (source: 'vercel-workflow') — the same pair the queue consumer recorded for
 // the account-wide jobs (source: 'vercel'), now moved into the step.
 //
-// Only the *scheduled* trigger moves here; the on-demand "Refresh ESI" path
-// (dispatchRefresh's ACCOUNT_JOBS) still enqueues this job through the queue,
-// where the consumer records its own whole-job heartbeat. The source column
-// ('vercel' vs 'vercel-workflow') tells the two paths apart. The job module is
+// Both triggers start() this workflow now (phase 5): the cron route starts it
+// bare, and the on-demand "Refresh ESI" path (dispatchRefresh's ACCOUNT_JOBS)
+// starts it with an OnDemandTarget whose taskId names the refresh_task row the
+// step tracks running → done/error via withRefreshTask. Either way the
+// heartbeat pair records source: 'vercel-workflow'. The job module is
 // untouched and still CLI-runnable.
 
-// Both imports live inside the step body on purpose (workflow compiler bans
-// Node modules in workflow context — see src/workflows/lib.ts).
-async function runStep() {
+import type { OnDemandTarget } from './lib'
+
+// The value imports live inside the step body on purpose (workflow compiler
+// bans Node modules in workflow context — see src/workflows/lib.ts; the type
+// import above is erased at compile time).
+async function runStep(taskId?: string) {
   'use step'
-  const { runJobWithHeartbeat } = await import('./lib')
-  await runJobWithHeartbeat('universe-names', async () => (await import('@/jobs/universeNames.js')).runUniverseNames)
+  const { runJobWithHeartbeat, withRefreshTask } = await import('./lib')
+  await withRefreshTask(taskId, () =>
+    runJobWithHeartbeat('universe-names', async () => (await import('@/jobs/universeNames.js')).runUniverseNames)
+  )
 }
 
-export async function universeNamesWorkflow() {
+export async function universeNamesWorkflow(target?: OnDemandTarget) {
   'use workflow'
-  await runStep()
+  await runStep(target?.taskId)
 }

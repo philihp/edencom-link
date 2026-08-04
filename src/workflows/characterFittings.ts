@@ -11,13 +11,15 @@
 // stays inside the job module (runCharacterFittings → forEachCharacter in
 // src/jobs/lib.js).
 //
-// Only the *scheduled* trigger lives here. The on-demand "Refresh ESI" path
-// (dispatchRefresh's PER_CHARACTER_JOBS) enqueues this job through the queue;
-// the job module is CLI-runnable too.
+// Both triggers start() this workflow now (phase 5): the cron route starts it
+// bare, and the on-demand "Refresh ESI" path (dispatchRefresh's
+// PER_CHARACTER_JOBS) starts it with an OnDemandTarget — the one character to
+// run plus its refresh_task row, tracked running → done/error inside the step
+// — which skips enumeration. The job module is CLI-runnable too.
 
 import { map, reduce, splitEvery, transpose } from 'ramda'
 
-import { enumerateCharacters } from './lib'
+import { enumerateCharacters, type OnDemandTarget } from './lib'
 
 // This job's ESI scope, and the lane count. Four lanes matches the sibling
 // per-character workflows; a fitting pull is one conditional GET per character,
@@ -28,21 +30,24 @@ const LANES = 4
 // Step: run the job for one character. The lazy import is the usual reason (the
 // job module's top-level supabase/esi setup needs env vars absent at build
 // time). forEachCharacter still refreshes the token and records the
-// per-character heartbeat pair, unchanged. characterId is a bigint-derived
-// number — the only thing crossing the step boundary, and serializable.
-async function syncCharacter(characterId: number) {
+// per-character heartbeat pair, unchanged. registrationId is the registration
+// uuid; it and the optional refresh_task id are all that cross the step
+// boundary, both serializable. withRefreshTask is a passthrough without a
+// taskId and best-effort refresh_task status tracking with one (see ./lib).
+async function syncCharacter(registrationId: string, taskId?: string) {
   'use step'
+  const { withRefreshTask } = await import('./lib')
   const { runCharacterFittings } = await import('@/jobs/characterFittings.js')
-  await runCharacterFittings({ registrationIds: [characterId] })
+  await withRefreshTask(taskId, () => runCharacterFittings({ registrationIds: [registrationId] }))
 }
 
-export async function characterFittingsWorkflow() {
+export async function characterFittingsWorkflow(target?: OnDemandTarget) {
   'use workflow'
   // The workflow body must stay deterministic control flow over step calls (the
   // 'use workflow' directive compiles it — see sdeMirror.ts). Ramda's pure
   // combinators are fine here: they're referentially transparent (identical on
   // every replay) and pull in no Node modules.
-  const ids = await enumerateCharacters(SCOPES)
+  const ids = target?.registrationIds ?? (await enumerateCharacters(SCOPES))
 
   // Round-robin the characters into LANES lanes: splitEvery chunks the ids into
   // rows of LANES, then transpose flips rows→columns, so column j collects every
@@ -58,12 +63,12 @@ export async function characterFittingsWorkflow() {
   // re-looped, but must not abort its lane-mates — so each failure is caught and
   // collected, and once every lane drains the collected ids are thrown together
   // as an AggregateError, marking the run failed in Observability.
-  const failures: number[] = []
-  const drainLane = (lane: number[]): Promise<void> =>
+  const failures: string[] = []
+  const drainLane = (lane: string[]): Promise<void> =>
     reduce(
       (p, id) =>
         p.then(() =>
-          syncCharacter(id).catch((err) => {
+          syncCharacter(id, target?.taskId).catch((err) => {
             console.error(`[character-fittings] character ${id} failed:`, err)
             failures.push(id)
           })
