@@ -1,5 +1,10 @@
 # Phase 4: the per-corporation jobs → fan-out workflows
 
+> ✅ **Done.** All three migrated in risk order (`corpWalletTransactionsWorkflow`,
+> `corpIndustryJobsWorkflow`, `corpAssetsWorkflow`); the same-corp
+> serialization is now control flow, and `fanOutPerCorporationCronJob` was
+> deleted in phase 5.
+
 `corp-wallet-transactions`, `corp-industry-jobs`, `corp-assets` — the
 three jobs whose cron routes today group scoped characters by corporation
 and send **one queue message per corp** (`fanOutPerCorporationCronJob`).

@@ -9,7 +9,8 @@
 > queue-dispatch cron helpers are deleted; `runDirectCronJob` survives only
 > for the unscheduled `esf-data`/`sheet-csv` bootstrap routes, and the
 > `innominate` queue topic is unrelated and stays. The `character-implants`
-> pilot is retired. Next: [docs/jobs-page.md](../jobs-page.md).
+> pilot is retired. Phase 6 tracks the aftercare — production burn-in and the
+> debt the audit found. Next real project: [docs/jobs-page.md](../jobs-page.md).
 
 Move every scheduled extract job off the current Cron → (inline | queue)
 execution paths and onto **Vercel Workflows**, in risk order: the simplest,
@@ -131,6 +132,7 @@ migration PR only swaps the scheduled trigger.
 | [03-per-character.md](03-per-character.md) | `character-wallet-transactions` ✅, `character-orders` ✅, `character-industry-jobs` ✅, `character-status` ✅, `character-mercenary-dens` ✅, `character-blueprints` ✅, `character-assets` ✅ | per-char queue fan-out → fan-out workflow | ✅ **Done** — all 7 migrated; `fanOutPerCharacterCronJob`/`fanOutPerCharacterAnyScopeCronJob` now unused on the scheduled path (deleted in phase 5) |
 | [04-per-corporation.md](04-per-corporation.md) | `corp-wallet-transactions` ✅, `corp-industry-jobs` ✅, `corp-assets` ✅ | per-corp queue fan-out → fan-out workflow | ✅ **Done** — all 3 migrated; `fanOutPerCorporationCronJob` now unused on the scheduled path (deleted in phase 5) |
 | [05-contract.md](05-contract.md) | — | retire dead cron helpers, decide the on-demand queue path, retire the `character-implants` pilot | ✅ **Done** — §2 resolved as (b): on-demand `start()`s workflows with an `OnDemandTarget`; queue consumer + `jobs` topic deleted; pilot retired. One deviation from the spec: `runDirectCronJob` was *not* deleted — the unscheduled `esf-data`/`sheet-csv` bootstrap routes still run through it |
+| [06-burn-in.md](06-burn-in.md) | `esf-data`, `sheet-csv` (§4) | burn-in and aftercare: production verification phase 5 owed, orphaned `refresh_task` sweep, heartbeat failure recording, retire `runDirectCronJob` | — |
 
 Phase 1's first PR migrates **one** job (`industry-systems`) to establish
 the single-step pattern; the rest of the phase can then batch 2–3 jobs per
