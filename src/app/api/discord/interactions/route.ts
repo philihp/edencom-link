@@ -1,15 +1,15 @@
 // The one route Discord calls into us. Discord signs every interaction with
 // Ed25519; we verify the signature (over the raw body, before parsing) and
-// answer by interaction type. Stage 2 only handles PING (what the developer
-// portal's endpoint validation exercises) — application commands get a
-// placeholder ephemeral reply until the command router lands in a later stage.
+// answer by interaction type: PING→PONG (the developer portal's endpoint
+// validation), application commands via the /edencom router in ../commands.
 //
-// Node runtime: node:crypto Ed25519 verification (and, later, the service-role
-// Supabase client) aren't available on the edge runtime.
+// Node runtime: node:crypto Ed25519 verification and the service-role
+// Supabase client aren't available on the edge runtime.
 import { NextResponse } from 'next/server'
 
 import { recordDiscordInteraction } from '@/observability'
 
+import { handleCommand, type CommandInteraction } from '../commands'
 import { EPHEMERAL, InteractionResponseType, InteractionType, verifyDiscordSignature } from '../lib'
 
 export const runtime = 'nodejs'
@@ -32,7 +32,7 @@ export async function POST(request: Request) {
 
   // A verified body came from Discord and is always valid JSON; guard anyway so
   // a malformed one is a clean 400 rather than a logged 500.
-  let interaction: { type?: number }
+  let interaction: CommandInteraction & { type?: number }
   try {
     interaction = JSON.parse(rawBody)
   } catch {
@@ -44,15 +44,11 @@ export async function POST(request: Request) {
       recordDiscordInteraction({ type: interaction.type, outcome: 'pong' })
       return NextResponse.json({ type: InteractionResponseType.PONG })
 
-    case InteractionType.APPLICATION_COMMAND:
-      recordDiscordInteraction({ type: interaction.type, outcome: 'unimplemented' })
-      return NextResponse.json({
-        type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
-        data: {
-          flags: EPHEMERAL,
-          content: 'Edencom Link is still setting up — commands are not available yet.',
-        },
-      })
+    case InteractionType.APPLICATION_COMMAND: {
+      const response = await handleCommand(interaction)
+      recordDiscordInteraction({ type: interaction.type, outcome: 'command' })
+      return NextResponse.json(response)
+    }
 
     default:
       recordDiscordInteraction({ type: interaction.type ?? null, outcome: 'unhandled' })

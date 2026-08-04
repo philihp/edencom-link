@@ -60,6 +60,44 @@ export const generateApiToken = async (): Promise<{ token?: string; error?: stri
   return { token }
 }
 
+// Mint a short-lived, single-use Discord link code, redeemed by running
+// `/edencom link <code>` in the Discord channel that should receive alerts
+// (docs/discord-bot/03-account-linking.md). Old codes aren't revoked — they
+// expire on their own within 10 minutes.
+export const generateDiscordLinkCode = async (): Promise<{ code?: string; expiresAt?: string; error?: string }> => {
+  const supabase = await createClient()
+
+  const { data, error: userError } = await supabase.auth.getUser()
+  if (userError || !data?.user) {
+    return { error: 'Not signed in' }
+  }
+
+  const code = randomBytes(8).toString('hex')
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString()
+  const { error } = await supabase
+    .from('discord_link_code')
+    .insert({ code, user_id: data.user.id, expires_at: expiresAt })
+  if (error) {
+    return { error: error.message }
+  }
+
+  return { code, expiresAt }
+}
+
+// Remove a linked Discord channel. RLS's owner delete policy scopes the row to
+// the caller, so a foreign id matches nothing.
+export const removeDiscordChannel = async (id: string): Promise<{ error?: string }> => {
+  const supabase = await createClient()
+
+  const { error } = await supabase.from('discord_channel').delete().eq('id', id)
+  if (error) {
+    return { error: error.message }
+  }
+
+  revalidatePath('/account/settings')
+  return {}
+}
+
 // Mark the selected registration as the player's main character, clearing any
 // previous main. RLS scopes both writes to the caller's own registrations, so a
 // foreign id simply matches nothing. Returns { error } on failure.

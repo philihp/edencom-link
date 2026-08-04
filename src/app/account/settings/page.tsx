@@ -6,6 +6,7 @@ import { createClient } from '@/utils/supabase/server'
 import { isChancellor } from '../chancellor/chancellor'
 import ApiToken from './apiToken'
 import ChangePassword from './changePassword'
+import Discord from './discord'
 import { LogoffButton } from './logoffButton'
 import MainCharacter from './mainCharacter'
 
@@ -25,6 +26,10 @@ const SettingsPage = async () => {
     .order('name', { ascending: true })
   const mainId = characters?.find((c) => c.is_main)?.id ?? null
   const chancellor = await isChancellor(data.user.id)
+  const { data: discordChannels } = await supabase
+    .from('discord_channel')
+    .select('id, guild_id, channel_id, guild_name, channel_name, created_at, disabled_at')
+    .order('created_at', { ascending: true })
 
   return (
     <>
@@ -41,6 +46,8 @@ const SettingsPage = async () => {
       <h2>Invite codes</h2>
       <p>Edencom Link is invite-only. See the codes you can give out and when you earn more.</p>
       <Link href="/account/invite">Manage invite codes</Link>
+
+      <Discord appId={process.env.DISCORD_APP_ID ?? null} channels={discordChannels ?? []} />
 
       <ApiToken initialToken={settings?.api_token ?? null} />
 
