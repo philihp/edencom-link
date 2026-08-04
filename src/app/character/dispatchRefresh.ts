@@ -97,9 +97,9 @@ const startJobWorkflow = async (job: string, target: OnDemandTarget) => {
 // brand-new registration whose corp hasn't been resolved) is always kept —
 // there's nothing to dedupe it against, and it's exactly the case
 // corp-assets/corp-industry-jobs need to run for right away. This only picks
-// the representative character for the refresh_task/UI row — the actual queue
-// message sent for that task carries every scoped character for the corp, not
-// just this one (see dispatchRefresh below).
+// the representative character for the refresh_task/UI row — the actual
+// workflow run started for that task carries every scoped character for the
+// corp, not just this one (see dispatchRefresh below).
 const oneCharacterPerCorporation = (characters: Character[], corporationById: Map<string, number | null>) => {
   const seenCorps = new Set<number>()
   return reduce(

@@ -79,17 +79,6 @@
     }
   ],
   "functions": {
-    "src/app/api/queue/jobs/route.ts": {
-      "maxDuration": 60,
-      "experimentalTriggers": [
-        {
-          "type": "queue/v2beta",
-          "topic": "jobs",
-          "retryAfterSeconds": 60,
-          "initialDelaySeconds": 0
-        }
-      ]
-    },
     "src/app/api/queue/innominate/route.ts": {
       "maxDuration": 30,
       "experimentalTriggers": [

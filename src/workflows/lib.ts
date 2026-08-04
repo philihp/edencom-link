@@ -1,7 +1,7 @@
-// Shared helper for the extract-job workflows (the cron → Vercel Workflows
-// migration; see docs/cron-to-workflows/). The two pilot workflows
-// (characterImplants.ts, sdeMirror.ts) inline everything; this lets the many
-// like-shaped jobs share the heartbeat boilerplate as they migrate.
+// Shared helpers for the extract-job workflows (the cron → Vercel Workflows
+// migration; see docs/cron-to-workflows/, complete). The sde-mirror workflow
+// (sdeMirror.ts) inlines everything; this lets the many like-shaped jobs share
+// the heartbeat, enumeration, and refresh_task boilerplate.
 //
 // This module exports two *kinds* of thing, imported differently:
 //
@@ -99,9 +99,8 @@ export async function enumerateCharacters(scopes: string[]): Promise<string[]> {
   return (await selectRegistrationIdsWithScopes(scopes)) as string[]
 }
 
-// Step: build the exact per-corp fan-out set fanOutPerCorporationCronJob
-// (src/utils/cron.ts) sends today — one group per corporation plus a singleton
-// group per character whose corporation isn't resolved yet — so the
+// Step: build the per-corp fan-out set — one group per corporation plus a
+// singleton group per character whose corporation isn't resolved yet — so the
 // per-corporation fan-out workflows (phase 4) can run one step per group. Each
 // group is the ordered character-id list forEachCorporation (src/jobs/lib.js)
 // dedupes to a single handler call and falls back through on an in-game-role

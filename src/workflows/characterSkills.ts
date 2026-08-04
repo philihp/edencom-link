@@ -1,7 +1,7 @@
 // character-skills as a per-character fan-out Vercel Workflow, following the
 // phase-3 shape the scheduled per-character jobs use (characterOrders.ts,
-// characterStatus.ts, …) rather than the older single-step character-implants
-// pilot. The trigger route (/api/cron/character-skills) start()s this workflow,
+// characterStatus.ts, …) rather than the since-retired single-step
+// character-implants pilot. The trigger route start()s this workflow,
 // which enumerates the scoped characters itself (enumerateCharacters step) and
 // runs one step per character across a few statically assigned lanes.
 // Everything per-character — token refresh, the per-character heartbeat pair,

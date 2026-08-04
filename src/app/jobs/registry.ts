@@ -5,8 +5,8 @@
 // The schedules are NOT restated here. vercel.json's `crons` array is what
 // actually schedules these jobs, so it's imported and keyed by job name; a
 // schedule change in one place can't drift from the other. A job with no
-// vercel.json entry (character-skills, character-implants, esf-data, sheet-csv,
-// and the individual live-state modules) is manual-only and says so.
+// vercel.json entry (character-skills, esf-data, sheet-csv, and the individual
+// live-state modules) is manual-only and says so.
 
 import { fromPairs, map } from 'ramda'
 
