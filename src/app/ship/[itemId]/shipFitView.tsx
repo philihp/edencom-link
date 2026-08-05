@@ -137,17 +137,20 @@ export const ShipFitView = ({ esiFit }: ShipFitViewProps) => {
                         <div className={styles.stats}>
                           <ShipStatistics />
                         </div>
+                        {/* Last in the DOM, first in the row: CSS `order` moves
+                            it left of the wheel once there's room for three
+                            columns, and leaves it at the bottom when stacked. */}
+                        <details className={styles.hardware} open>
+                          <summary>Load modules &amp; ammo (simulate)</summary>
+                          <p className={styles.hardwareHint}>
+                            Drag a charge onto a weapon slot to load ammo and see damage update. Changes here are a
+                            local simulation and are never saved back to the game.
+                          </p>
+                          <div className={styles.hardwareListing}>
+                            <HardwareListing />
+                          </div>
+                        </details>
                       </div>
-                      <details className={styles.hardware}>
-                        <summary>Load modules &amp; ammo (simulate)</summary>
-                        <p className={styles.hardwareHint}>
-                          Drag a charge onto a weapon slot to load ammo and see damage update. Changes here are a local
-                          simulation and are never saved back to the game.
-                        </p>
-                        <div className={styles.hardwareListing}>
-                          <HardwareListing />
-                        </div>
-                      </details>
                     </FitManagerProvider>
                   </StatisticsProvider>
                 </FitFromEsi>
