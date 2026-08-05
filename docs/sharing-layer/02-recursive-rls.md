@@ -1,6 +1,14 @@
 # Phase 2: recursive RLS — the widening policy on assets
 
-**Status: not started.**
+**Status: ✅ done** — migration `20260805010000_asset_share_recursive_rls.sql`.
+Implementation note vs the sketch below: `asset_share_covers()` gained a
+second parameter, the row's `registration_id`, so the share scan filters to
+shares by that grantor — rows of unshared hangars short-circuit on one
+indexed probe (a share can only cover its grantor's own items). The walk uses
+a per-step best-known-parent lateral probe instead of materializing
+`parent_of` for the whole table, and is gated on any matching share existing.
+Covered by `test/sql/asset_share.sql`, including a policy-level smoke as the
+`authenticated` role proving no policy recursion.
 
 The hard phase. A share on a ship or container must open **everything inside
 it**, to any depth, purely through RLS — so `/asset/[locationId]`,

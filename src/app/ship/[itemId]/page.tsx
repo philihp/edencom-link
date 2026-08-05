@@ -12,9 +12,11 @@ import { TypeIcon } from '../../typeIcon'
 import { fetchTypeNames } from '../../typeNames'
 import { flagSortKey } from '../../fitting/fit'
 import { LocationAssets, type ItemRow } from '../../asset/[locationId]/locationAssets'
-import { resolveShareToken } from '../access'
+import { resolveShareParams } from '../../asset/access'
+import { fetchShareDialogData } from '../../asset/shareData'
+import { ShareDialog } from '../../asset/shareDialog'
+import assetStyles from '../../asset/assets.module.css'
 import { toEsiFit } from './esfFit'
-import { ShareControls } from './shareControls'
 import { ShipFitViewDynamic } from './shipFitViewDynamic'
 
 // invGroups.categoryID for the Ship category in CCP's SDE.
@@ -71,12 +73,12 @@ const ShipPage = async ({
   searchParams,
 }: {
   params: Promise<{ itemId: string }>
-  searchParams: Promise<{ token?: string }>
+  searchParams: Promise<{ token?: string; share?: string }>
 }) => {
   const { itemId } = await params
-  const { token } = await searchParams
+  const { token, share } = await searchParams
 
-  if (token) return <SharedShipPage itemId={itemId} token={token} />
+  if (token || share) return <SharedShipPage itemId={itemId} shareParams={{ token, share }} />
 
   const supabase = await createClient()
   const { data: auth, error: authError } = await supabase.auth.getUser()
@@ -136,7 +138,16 @@ const ShipPage = async ({
       .select('name')
       .eq('id', characterSelf.registration_id)
       .maybeSingle<{ name: string }>()
-    ownerName = registration?.name ?? 'Unknown character'
+    // A shared ship's owner is outside the caller's registration view (RLS);
+    // their public name resolves through the world-readable directory.
+    const { data: directory } = registration
+      ? { data: null }
+      : await supabase
+          .from('character_directory')
+          .select('name')
+          .eq('registration_id', characterSelf.registration_id)
+          .maybeSingle<{ name: string | null }>()
+    ownerName = registration?.name ?? directory?.name ?? 'Unknown character'
   } else {
     const corporationId = Number(corpSelf?.corporation_id)
     const { data: corpName } = await supabase
@@ -188,32 +199,42 @@ const ShipPage = async ({
     })
   )
 
-  const [{ data: share }, owners] = await Promise.all([
-    supabase.from('shared_asset_token').select('token').eq('item_id', itemId).maybeSingle<{ token: string }>(),
-    fetchOwners(),
-  ])
+  // The share dialog appears only for a character item the caller actually
+  // owns — with phase 2's widening policy, RLS visibility alone can also mean
+  // "shared with me", which must not offer the dialog.
+  const [shareData, owners] = await Promise.all([fetchShareDialogData(supabase, itemId), fetchOwners()])
 
   return (
     <>
       <AssetPath crumbs={crumbs} current={heading} />
-      <h1 className="serif">
-        <TypeIcon id={Number(self.type_id)} size={32} />
-        {heading}
-      </h1>
+      <div className={assetStyles.header}>
+        <h1 className="serif">
+          <TypeIcon id={Number(self.type_id)} size={32} />
+          {heading}
+        </h1>
+        {shareData ? <ShareDialog itemId={itemId} path="ship" data={shareData} /> : null}
+      </div>
       <p>
         Owner: <span className="serif">{ownerName}</span>
       </p>
-      <ShareControls itemId={itemId} initialToken={share?.token ?? null} />
       <ShipFitViewDynamic esiFit={toEsiFit(Number(self.type_id), self.name ?? null, rows)} />
       <LocationAssets rows={rows} owners={owners} typeNamesPromise={typeNamesPromise} canAppraise />
     </>
   )
 }
 
-// Anonymous share-token view: wheel + name + owner only. All queries run on
+// Anonymous share-link view: wheel + name + owner only. All queries run on
 // the service client, explicitly filtered to the sharer's characters/corps.
-const SharedShipPage = async ({ itemId, token }: { itemId: string; token: string }) => {
-  const scope = await resolveShareToken(token, itemId)
+// Accepts both link generations — the signed ?share= param (recursive over
+// the shared subtree) and the legacy ?token= (exact id).
+const SharedShipPage = async ({
+  itemId,
+  shareParams,
+}: {
+  itemId: string
+  shareParams: { token?: string; share?: string }
+}) => {
+  const scope = await resolveShareParams(shareParams, itemId)
   if (!scope) notFound()
 
   const supabase = createServiceClient()

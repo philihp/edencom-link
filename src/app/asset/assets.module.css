@@ -138,3 +138,10 @@
   color: var(--ink-soft);
   white-space: nowrap;
 }
+
+/* Right-hand action cluster in the location header (appraise + share). */
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: 6pt;
+}
