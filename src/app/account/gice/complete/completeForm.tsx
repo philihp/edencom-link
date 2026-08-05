@@ -3,9 +3,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { redirect } from 'next/navigation'
 
+import styles from '../../auth.module.css'
+import Status from '../../status'
+import SubmitButton from '../../submitButton'
 import { lookupInvite, type InviteLookup } from '../../register/actions'
 import { INVITE_CODE_PATTERN } from '../../register/inviteCode'
-import Dot from '../../settings/dot'
 import { completeGiceRegistration } from './actions'
 
 // Invite code entry for a freshly verified GICE identity. Mirrors the live
@@ -15,8 +17,8 @@ const CompleteForm = ({ name }: { name: string | null }) => {
   const [lookup, setLookup] = useState<InviteLookup | null>(null)
   const lookupSeq = useRef(0)
 
-  const [disabled, setDisabled] = useState(false)
-  const [response, setResponse] = useState('')
+  const [submitted, setSubmitted] = useState(false)
+  const [error, setError] = useState('')
 
   useEffect(() => {
     const seq = ++lookupSeq.current
@@ -32,53 +34,77 @@ const CompleteForm = ({ name }: { name: string | null }) => {
   }, [invite])
 
   const completeAndReturn = async (formData: FormData) => {
-    const error = await completeGiceRegistration(formData)
-    if (error) {
-      setDisabled(false)
-      setResponse(error)
+    const message = await completeGiceRegistration(formData)
+    if (message) {
+      setSubmitted(false)
+      setError(message)
       return
     }
     redirect('/')
   }
 
   return (
-    <form
-      onSubmit={() => {
-        setResponse('')
-        setDisabled(true)
-      }}
-    >
-      <h1>Almost there{name ? `, ${name}` : ''}</h1>
-      <p>
-        Your GICE login checks out. Edencom Link is invite-only, so one last thing: an invite code creates your account.
-      </p>
-      <label htmlFor="invite">Invite code:</label>
-      <br />
-      <input
-        id="invite"
-        name="invite"
-        type="text"
-        required
-        value={invite}
-        onChange={(e) => {
-          setInvite(e.target.value)
-          setDisabled(false)
-        }}
-      />{' '}
-      {lookup?.status === 'valid' && (
-        <Dot
-          color="#00AF00"
-          response={lookup.inviterName ? `Invited by ${lookup.inviterName}` : 'A founding invite code'}
-        />
-      )}
-      {lookup?.status === 'redeemed' && <Dot color="#FF0000" response="This invite code has already been used." />}
-      {lookup?.status === 'unknown' && <Dot color="#FF0000" response="This invite code isn’t recognized." />}
-      <br />
-      <button formAction={completeAndReturn} disabled={disabled}>
-        Create account
-      </button>
-      {response && <Dot color="#FF0000" response={response} />}
-    </form>
+    <main className={styles.wrap}>
+      <div className={styles.card}>
+        <h1 className={styles.title}>Almost there{name ? `, ${name}` : ''}</h1>
+        <p className={styles.intro}>
+          Your GICE login checks out. Edencom Link is invite-only, so one last thing: an invite code creates your
+          account.
+        </p>
+
+        <form
+          onSubmit={() => {
+            setError('')
+            setSubmitted(true)
+          }}
+        >
+          <div className={styles.fields}>
+            <div className={styles.field}>
+              <label className={styles.label} htmlFor="invite">
+                Invite code
+              </label>
+              <input
+                className={styles.input}
+                id="invite"
+                name="invite"
+                type="text"
+                autoComplete="off"
+                autoFocus
+                required
+                value={invite}
+                onChange={(e) => {
+                  setInvite(e.target.value)
+                  setSubmitted(false)
+                }}
+              />
+              <div aria-live="polite">
+                {lookup?.status === 'valid' && (
+                  <Status kind="ok" inline>
+                    {lookup.inviterName ? `Invited by ${lookup.inviterName}` : 'A founding invite code'}
+                  </Status>
+                )}
+                {lookup?.status === 'redeemed' && (
+                  <Status kind="error" inline>
+                    This invite code has already been used.
+                  </Status>
+                )}
+                {lookup?.status === 'unknown' && (
+                  <Status kind="error" inline>
+                    This invite code isn&rsquo;t recognized.
+                  </Status>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <SubmitButton formAction={completeAndReturn} disabled={submitted} pendingLabel="Creating account…">
+            Create account
+          </SubmitButton>
+
+          <div aria-live="polite">{error && <Status kind="error">{error}</Status>}</div>
+        </form>
+      </div>
+    </main>
   )
 }
 

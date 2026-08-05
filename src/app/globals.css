@@ -27,6 +27,15 @@
   --link: #0000ee;
   --link-visited: #551a8b;
 
+  /*
+   * Status colors, theme-aware. The account forms have long hardcoded a
+   * #00AF00 / #FF0000 pair straight into <Dot color=…>, which reads the same in
+   * both themes and is too hot against the dark paper; these are the
+   * successors, adopted by the sign-on surfaces first.
+   */
+  --ok: #15803d;
+  --danger: #b3261e;
+
   --radius: 10px;
   --radius-sm: 7px;
 
@@ -57,6 +66,8 @@
     --accent-tint: #25244a;
     --link: #6ea8fe;
     --link-visited: #c699f7;
+    --ok: #4ade80;
+    --danger: #fca5a5;
   }
 }
 
