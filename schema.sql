@@ -1395,20 +1395,16 @@ grant select on public.character_fitting           to authenticated;
 grant all    on public.character_fitting_over_time to service_role;
 
 -- ── character_fitting_share ───────────────────────────────────────────────
--- Shares for one saved fitting, at one of three levels, all widening read
--- access on character_fitting_over_time itself (see
--- fitting_shared_with_caller() and the policies after character_directory
--- below, which they depend on): 'corporation'/'alliance' to whoever currently
--- shares that corp/alliance with the owner — resolved live off the
--- world-readable character_directory at read time, the same "not frozen at
--- share time" philosophy the mercenary-den alliance sharing uses — and
--- 'public' to any signed-in user. No level carries a secret; there is no
--- anonymous no-login view. Every level points at the fit itself, never a copy
--- — an edit in the client is visible through any outstanding share, and
--- there's nothing to keep in sync.
---
--- No uniqueness on (registration_id, fitting_id): a player can hold one share
--- per level for the same fit at once, each independently revocable.
+-- Shares for one saved fitting, on the unified Revision 3 shape
+-- (docs/sharing-layer/05-supersede-fittings.md): ONE row per
+-- (registration_id, fitting_id) with the audience carried on the row —
+-- corporation_ids / alliance_ids matched against the viewer's affiliations,
+-- a nullable secret for signed links, and fully-public as the row that names
+-- no one (null secret, both lists empty). Superseded the per-level rows
+-- ('corporation'/'alliance'/'public') in the fitting_share_unified migration;
+-- note the audience is now PINNED ids, not the owner's live affiliation.
+-- Every share points at the fit itself, never a copy — an edit in the client
+-- is visible through any outstanding share.
 --
 -- (registration_id, fitting_id) rather than character_fitting_over_time's own
 -- surrogate `id`: that id is an SCD *version* stamp and changes every time the
@@ -1421,28 +1417,21 @@ create table public.character_fitting_share (
   id uuid primary key default gen_random_uuid(),
   registration_id uuid not null references public.registration(id) on delete cascade,
   fitting_id bigint not null,
-  level text not null check (level in ('corporation', 'alliance', 'public')),
-  -- Placeholder for a future anonymous-share-link design (a shared_asset_token
-  -- style secret). Nothing writes or reads it today — an earlier draft minted
-  -- one per public share, and the capability was pulled to be rethought.
-  token text,
-  created_at timestamptz not null default now()
+  corporation_ids bigint[] not null default '{}',
+  alliance_ids bigint[] not null default '{}',
+  secret text,
+  created_at timestamptz not null default now(),
+  unique (registration_id, fitting_id)
 );
-create index character_fitting_share_fitting_idx on public.character_fitting_share (registration_id, fitting_id);
 
 alter table public.character_fitting_share enable row level security;
 
--- Per-command owner policies, the character_mercenary_den_share layout —
--- deliberately not one FOR ALL policy, so what each command allows is
--- explicit. Only SELECT is ever widened beyond the owner (the audience policy
--- after character_directory below); INSERT and DELETE stay owner-only, so a
--- share can never be created or removed on behalf of a registration the
--- caller does not own. There is no UPDATE path at all (no policy, no
--- grant): a share row is immutable, toggled into and out of existence.
-
--- Owners always read their own share rows (drives the share toggles' checked
--- state), even for a level whose audience they've since left. Permissive:
--- OR'd with the audience policy below.
+-- Per-command owner policies, the character_asset_share layout. Only SELECT
+-- is ever widened beyond the owner (the audience policy after
+-- character_directory below); INSERT/UPDATE/DELETE stay owner-only. UPDATE
+-- exists because the dialog edits the one row's audience in place; with check
+-- repeats the predicate so a row can't be re-pointed at someone else's
+-- registration.
 create policy "Users read own fitting shares"
   on public.character_fitting_share
   for select
@@ -1459,6 +1448,17 @@ create policy "Users create own fitting shares"
     registration_id in (select id from public.registration where user_id = (select auth.uid()))
   );
 
+create policy "Users update own fitting shares"
+  on public.character_fitting_share
+  for update
+  to authenticated
+  using (
+    registration_id in (select id from public.registration where user_id = (select auth.uid()))
+  )
+  with check (
+    registration_id in (select id from public.registration where user_id = (select auth.uid()))
+  );
+
 create policy "Users remove own fitting shares"
   on public.character_fitting_share
   for delete
@@ -1467,7 +1467,8 @@ create policy "Users remove own fitting shares"
     registration_id in (select id from public.registration where user_id = (select auth.uid()))
   );
 
-grant select, insert, delete on public.character_fitting_share to authenticated;
+grant select                         on public.character_fitting_share to anon;
+grant select, insert, update, delete on public.character_fitting_share to authenticated;
 grant all                    on public.character_fitting_share to service_role;
 
 -- ── character_mercenary_den (SCD type 2) ──────────────────────────────────
@@ -1676,6 +1677,27 @@ grant execute on function public.my_alliance_ids() to authenticated;
 grant execute on function public.my_corporation_ids() to authenticated;
 grant execute on function public.mercenary_den_shared_with_caller(uuid) to authenticated;
 
+-- The one audience matcher every Revision 3 share table goes through
+-- (character_asset_share, character_fitting_share; see docs/sharing-layer/):
+-- (a)/(b) membership by array overlap with the caller's affiliations, (d)
+-- fully public when the row names no one, and (c) link-only rows (secret set,
+-- lists empty) deliberately match NOBODY under RLS — a URL token is invisible
+-- to the database; signed links resolve at the app layer. Invoker rights.
+create or replace function public.share_audience_matches(
+  corporation_ids bigint[], alliance_ids bigint[], secret text
+)
+returns boolean
+language sql
+stable
+as $$
+  select
+    (secret is null and corporation_ids = '{}' and alliance_ids = '{}')
+    or corporation_ids && array(select public.my_corporation_ids())
+    or alliance_ids && array(select public.my_alliance_ids());
+$$;
+
+grant execute on function public.share_audience_matches(bigint[], bigint[], text) to anon, authenticated;
+
 -- Members read the share rows aimed at their alliances. This is also what keeps
 -- the den/intel policies working: mercenary_den_shared_with_caller runs as the
 -- querying user, and the only rows it needs are exactly the ones this policy
@@ -1871,10 +1893,7 @@ returns boolean
 language sql
 stable
 as $$
-  select
-    (secret is null and corporation_ids = '{}' and alliance_ids = '{}')
-    or corporation_ids && array(select public.my_corporation_ids())
-    or alliance_ids && array(select public.my_alliance_ids());
+  select public.share_audience_matches(corporation_ids, alliance_ids, secret);
 $$;
 
 grant execute on function public.asset_share_matches_caller(bigint[], bigint[], text) to anon, authenticated;
@@ -2276,51 +2295,26 @@ grant all    on public.character_directory to service_role;
 -- audience must be able to read the share rows aimed at them, or the widening
 -- policy's probe of the share table would see nothing.
 
--- Members of the audience read the share rows aimed at them —
--- character_mercenary_den_share's "Alliance members read shares to their
--- alliances", adapted to a per-fit share whose audience is derived from the
--- owner's live affiliation rather than stored on the row (or, for 'public',
--- is simply every signed-in user). Load-bearing for
--- fitting_shared_with_caller() below, which sees exactly the rows this policy
--- (OR'd with "Users read own fitting shares") exposes. SELECT is the only
--- command this widens — inserts and deletes stay owner-only (see the
--- per-command policies at the table).
+-- Members of the audience read the share rows aimed at them — the same
+-- array/anon form as character_asset_share's audience policy, and load-bearing
+-- for fitting_shared_with_caller() below, which sees exactly the rows this
+-- policy (OR'd with "Users read own fitting shares") exposes. `to anon`
+-- because a fully-public share row is world-readable; the widening policy on
+-- character_fitting_over_time itself stays authenticated-only (a public fit is
+-- visible to any signed-in user — the anonymous path is the signed link,
+-- resolved through the service role).
 create policy "Audience reads fitting shares aimed at them"
   on public.character_fitting_share
   for select
-  to authenticated
-  using (
-    level = 'public'
-    or exists (
-      select 1
-      from public.character_directory owner
-      where owner.registration_id = character_fitting_share.registration_id
-        and (
-          (
-            character_fitting_share.level = 'corporation'
-            and owner.corporation_id in (select public.my_corporation_ids())
-          )
-          or (
-            character_fitting_share.level = 'alliance'
-            and owner.alliance_id in (select public.my_alliance_ids())
-          )
-        )
-    )
-  );
+  to anon, authenticated
+  using (public.share_audience_matches(corporation_ids, alliance_ids, secret));
 
--- True when the given fit carries a share whose audience the caller currently
--- belongs to: their corp, their alliance, or (level 'public') any signed-in
--- user — mercenary_den_shared_with_caller's shape, on invoker rights: it
--- reads only what the caller may already read (share rows via the policy
--- above, the world-readable character_directory, their own registrations via
--- my_corporation_ids()/my_alliance_ids()). The parameters are named after the
--- (registration_id, fitting_id) pair that is a fit's durable key — which is
--- why the body qualifies them with the function name: the joined tables carry
--- columns of the same names, and in a SQL function body an unqualified name
--- that matches a column resolves to the column. The directory join is a LEFT
--- join so an owner with no character_directory row yet (the
--- character-directory job runs daily) blocks only the membership levels, not
--- 'public'.
+-- True when the given fit carries a share whose audience covers the caller —
+-- the audience is pinned on the row now, so this is one probe through
+-- share_audience_matches(), no character_directory join. Same signature as the
+-- level-era version, so the widening policy below is untouched. The parameters
+-- are named after the (registration_id, fitting_id) pair that is a fit's
+-- durable key — which is why the body qualifies them with the function name.
 create or replace function public.fitting_shared_with_caller(registration_id uuid, fitting_id bigint)
 returns boolean
 language sql
@@ -2329,14 +2323,9 @@ as $$
   select exists (
     select 1
     from public.character_fitting_share s
-    left join public.character_directory owner on owner.registration_id = s.registration_id
     where s.registration_id = fitting_shared_with_caller.registration_id
       and s.fitting_id = fitting_shared_with_caller.fitting_id
-      and (
-        s.level = 'public'
-        or (s.level = 'corporation' and owner.corporation_id in (select public.my_corporation_ids()))
-        or (s.level = 'alliance' and owner.alliance_id in (select public.my_alliance_ids()))
-      )
+      and public.share_audience_matches(s.corporation_ids, s.alliance_ids, s.secret)
   );
 $$;
 

@@ -2,13 +2,16 @@ import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
 
 import { createClient } from '@/utils/supabase/server'
+import { createServiceClient } from '@/utils/supabase/service'
 import { ShipFitViewDynamic } from '../../../ship/[itemId]/shipFitViewDynamic'
 import { Name } from '../../../names'
 import { fetchTypeNames } from '../../../typeNames'
-import type { ShareRow } from '../../actions'
+import { ShareDialog } from '../../../asset/shareDialog'
+import { verifySignedFittingShare } from '../../access'
+import { saveFittingShare, revokeFittingShare } from '../../actions'
 import { toEsiFit, type FittingItem, type FittingRow } from '../../fit'
 import { resolveFittingOwner } from '../../resolveCharacter'
-import { ShareControls } from '../../shareControls'
+import { fetchFittingShareDialogData } from '../../shareData'
 import { SlotGroups } from '../../slotGroups'
 import styles from '../../fittings.module.css'
 
@@ -22,29 +25,53 @@ import styles from '../../fittings.module.css'
 //
 // RLS still does the access control: a registration belonging to another
 // account matches no fitting row, *unless* a character_fitting_share row
-// widens it to the caller (see schema.sql's "Audience reads shared fittings"
-// policy — corp/alliance shares to current mates, public shares to any
-// signed-in user), which is why the query below can return a fit for someone
-// other than its owner. There is no anonymous view: every visitor signs in,
-// and a non-owner gets the read-only rendering.
-const FittingDetailPage = async ({ params }: { params: Promise<{ characterId: string; fittingId: string }> }) => {
+// widens it to the caller (schema.sql's "Audience reads shared fittings"
+// policy — pinned corp/alliance audiences to current mates, a public share to
+// any signed-in user). A signed ?share= link is the one path that works
+// without any of that — including signed out: it verifies against the share
+// row's secret + TOKEN_SALT and then reads the exact subject fit through the
+// service role.
+const FittingDetailPage = async ({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ characterId: string; fittingId: string }>
+  searchParams: Promise<{ share?: string }>
+}) => {
   const { characterId, fittingId } = await params
+  const { share } = await searchParams
 
   const supabase = await createClient()
   const {
     data: { user },
   } = await supabase.auth.getUser()
-  if (!user) redirect('/')
+  // Anonymous visitors may still open a signed share link; anyone else signs in.
+  if (!user && !share) redirect('/')
 
+  // Resolves for anon too: character_directory is world-readable.
   const owner = await resolveFittingOwner(supabase, characterId)
   if (!owner) notFound()
 
-  const { data: fit } = await supabase
+  let { data: fit } = await supabase
     .from('character_fitting')
     .select('registration_id, fitting_id, name, description, ship_type_id, items')
     .eq('registration_id', owner.registrationId)
     .eq('fitting_id', fittingId)
     .maybeSingle<FittingRow>()
+
+  // Not RLS-visible (signed out, or no membership share aims at this caller):
+  // a valid signed link still opens exactly this fit, via the service role
+  // explicitly scoped to the share's subject.
+  if (!fit && share && (await verifySignedFittingShare(share, owner.registrationId, fittingId))) {
+    const service = createServiceClient()
+    const { data: linkedFit } = await service
+      .from('character_fitting')
+      .select('registration_id, fitting_id, name, description, ship_type_id, items')
+      .eq('registration_id', owner.registrationId)
+      .eq('fitting_id', fittingId)
+      .maybeSingle<FittingRow>()
+    fit = linkedFit
+  }
   if (!fit) notFound()
 
   const items: FittingItem[] = fit.items ?? []
@@ -55,16 +82,7 @@ const FittingDetailPage = async ({ params }: { params: Promise<{ characterId: st
   // caller's own rows — so it's an RLS-native ownership proof, not a guess.
   const isOwner = owner.isOwn
 
-  let shares: ShareRow[] = []
-  if (isOwner) {
-    const { data } = await supabase
-      .from('character_fitting_share')
-      .select('id, level')
-      .eq('registration_id', owner.registrationId)
-      .eq('fitting_id', fittingId)
-      .returns<ShareRow[]>()
-    shares = data ?? []
-  }
+  const shareData = isOwner ? await fetchFittingShareDialogData(supabase, owner.registrationId, fittingId) : null
 
   return (
     <div className={isOwner ? undefined : styles.sharedPage}>
@@ -96,8 +114,16 @@ const FittingDetailPage = async ({ params }: { params: Promise<{ characterId: st
       )}
       {fit.description ? <p className={styles.description}>{fit.description}</p> : null}
 
-      {isOwner ? (
-        <ShareControls registrationId={owner.registrationId} fittingId={fittingId} initialShares={shares} />
+      {shareData ? (
+        <div className={styles.shareRow}>
+          <ShareDialog
+            subjectLabel="fitting"
+            urlPath={`/fitting/${characterId}/${fittingId}`}
+            data={shareData}
+            save={saveFittingShare.bind(null, owner.registrationId, fittingId)}
+            revoke={revokeFittingShare.bind(null, owner.registrationId, fittingId)}
+          />
+        </div>
       ) : null}
 
       <ShipFitViewDynamic esiFit={toEsiFit(fit)} />

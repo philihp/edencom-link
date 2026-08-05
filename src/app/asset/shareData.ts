@@ -1,11 +1,8 @@
 // Server-side fetch of everything the share dialog needs on first paint: the
-// caller's existing share row for an item, the corporations/alliances they may
-// aim it at, and whether a legacy shared_asset_token link still exists.
-// Returns null unless the caller OWNS the item as a character asset — mere
-// RLS visibility isn't ownership any more, since phase 2 made shared items
-// visible to their audience too; ownership is proven by the item's
-// registration_id appearing in the caller's own registration rows (an
-// RLS-scoped read that only ever returns their own).
+// caller's existing share row for a subject, the corporations/alliances they
+// may aim it at, and (for assets) whether a legacy shared_asset_token link
+// still exists. The audience/state helpers are exported for the other share
+// subjects (fittings today) so every dialog is fed the same shapes.
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 import { signShare, tokenSalt } from '@/shareToken'
@@ -28,23 +25,16 @@ export type ShareDialogData = {
   hasLegacyToken: boolean
 }
 
-export const fetchShareDialogData = async (
-  supabase: SupabaseClient,
-  itemId: string
-): Promise<ShareDialogData | null> => {
-  const [{ data: item }, { data: regs }] = await Promise.all([
-    supabase
-      .from('character_asset')
-      .select('item_id, registration_id')
-      .eq('item_id', itemId)
-      .maybeSingle<{ item_id: number | string; registration_id: string }>(),
-    supabase.from('registration').select('id, corporation_id'),
-  ])
-  const own = (regs ?? []) as Array<{ id: string; corporation_id: number | string | null }>
-  if (!item || !own.some((r) => r.id === item.registration_id)) return null
+export type OwnRegistration = { id: string; corporation_id: number | string | null }
 
-  // The audiences on offer: the corporations the caller's characters are in,
-  // and those corporations' alliances — same derivation the den share uses.
+// The audiences a share may be aimed at: the corporations the caller's
+// characters are in, and those corporations' alliances — same derivation the
+// den share uses, with names from the world-readable corporation/alliance
+// directories.
+export const fetchShareAudiences = async (
+  supabase: SupabaseClient,
+  own: OwnRegistration[]
+): Promise<{ corporations: ShareAudienceOption[]; alliances: ShareAudienceOption[] }> => {
   const corpIds = [
     ...new Set(
       own
@@ -87,35 +77,68 @@ export const fetchShareDialogData = async (
     }))
     .sort((a, b) => a.name.localeCompare(b.name))
 
+  return { corporations, alliances }
+}
+
+export type ShareRowLike = {
+  id: string
+  corporation_ids: number[] | null
+  alliance_ids: number[] | null
+  secret: string | null
+}
+
+// A share row → the dialog's view of it, with the signed ?share= param when a
+// link is enabled. Signing is server-only (secret + TOKEN_SALT never reach
+// the client); a deployment without its salt just shows the link unavailable.
+export const shareRowToState = (row: ShareRowLike | null): ShareState | null => {
+  if (!row) return null
+  let shareParam: string | null = null
+  if (row.secret) {
+    try {
+      shareParam = `${row.id}.${signShare(row.id, row.secret, tokenSalt())}`
+    } catch {
+      shareParam = null
+    }
+  }
+  const corporationIds = (row.corporation_ids ?? []).map(Number)
+  const allianceIds = (row.alliance_ids ?? []).map(Number)
+  return {
+    corporationIds,
+    allianceIds,
+    hasLink: row.secret != null,
+    shareParam,
+    isPublic: row.secret == null && corporationIds.length === 0 && allianceIds.length === 0,
+  }
+}
+
+// Returns null unless the caller OWNS the item as a character asset — mere
+// RLS visibility isn't ownership any more, since phase 2 made shared items
+// visible to their audience too; ownership is proven by the item's
+// registration_id appearing in the caller's own registration rows (an
+// RLS-scoped read that only ever returns their own).
+export const fetchShareDialogData = async (
+  supabase: SupabaseClient,
+  itemId: string
+): Promise<ShareDialogData | null> => {
+  const [{ data: item }, { data: regs }] = await Promise.all([
+    supabase
+      .from('character_asset')
+      .select('item_id, registration_id')
+      .eq('item_id', itemId)
+      .maybeSingle<{ item_id: number | string; registration_id: string }>(),
+    supabase.from('registration').select('id, corporation_id'),
+  ])
+  const own = (regs ?? []) as OwnRegistration[]
+  if (!item || !own.some((r) => r.id === item.registration_id)) return null
+
+  const { corporations, alliances } = await fetchShareAudiences(supabase, own)
+
   const { data: shareRow } = await supabase
     .from('character_asset_share')
     .select('id, corporation_ids, alliance_ids, secret')
     .eq('registration_id', item.registration_id)
     .eq('item_id', itemId)
-    .maybeSingle<{ id: string; corporation_ids: number[]; alliance_ids: number[]; secret: string | null }>()
-
-  let share: ShareState | null = null
-  if (shareRow) {
-    // Signing is server-only (secret + TOKEN_SALT never reach the client);
-    // a deployment without its salt just shows the link as unavailable.
-    let shareParam: string | null = null
-    if (shareRow.secret) {
-      try {
-        shareParam = `${shareRow.id}.${signShare(shareRow.id, shareRow.secret, tokenSalt())}`
-      } catch {
-        shareParam = null
-      }
-    }
-    const corporationIds = (shareRow.corporation_ids ?? []).map(Number)
-    const allianceIdsOnRow = (shareRow.alliance_ids ?? []).map(Number)
-    share = {
-      corporationIds,
-      allianceIds: allianceIdsOnRow,
-      hasLink: shareRow.secret != null,
-      shareParam,
-      isPublic: shareRow.secret == null && corporationIds.length === 0 && allianceIdsOnRow.length === 0,
-    }
-  }
+    .maybeSingle<ShareRowLike>()
 
   const { data: legacy } = await supabase
     .from('shared_asset_token')
@@ -123,5 +146,5 @@ export const fetchShareDialogData = async (
     .eq('item_id', itemId)
     .maybeSingle<{ token: string }>()
 
-  return { share, corporations, alliances, hasLegacyToken: legacy != null }
+  return { share: shareRowToState(shareRow), corporations, alliances, hasLegacyToken: legacy != null }
 }

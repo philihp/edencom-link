@@ -1,6 +1,13 @@
 # Phase 5: fold fittings into the unified model
 
-**Status: not started.**
+**Status: ✅ done** — migration `20260805130000_fitting_share_unified.sql`
+(backfill pins the owner's directory affiliation; unhonorable membership rows
+are deleted rather than widened to public; public dominates a collapse),
+shared `share_audience_matches()` extracted with `asset_share_matches_caller`
+delegating, the dialog generalized (`subjectLabel`/`urlPath`/bound-action
+props) and reused on the fitting page, and signed fitting links via
+`verifySignedFittingShare` (`?share=` works signed-out). Covered by
+`test/sql/fitting_share.sql`.
 
 `character_fitting_share` works today (create/revoke UI on the fitting page,
 RLS policies, `fitting_shared_with_caller()`), but it speaks the Revision 2

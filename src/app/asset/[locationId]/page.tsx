@@ -9,6 +9,7 @@ import { typeFacts } from '../../assetTypeFacts'
 import { fetchOwners } from '../../owners'
 import { resolveLocations, type LocationRef } from '../../resolveLocations'
 import { resolveShareParams } from '../access'
+import { saveAssetShare, revokeAssetShare } from '../shareActions'
 import { fetchShareDialogData } from '../shareData'
 import { ShareDialog } from '../shareDialog'
 import { fetchStationNames, fetchStationSystems } from '../../stationNames'
@@ -404,7 +405,15 @@ const AssetLocationPage = async ({
           {/* Sharing is per-item: only an owned character item (a container
               drilled into) gets the dialog — never a station/structure/system,
               and never something merely shared with the viewer. */}
-          {shareData ? <ShareDialog itemId={locationId} path="asset" data={shareData} /> : null}
+          {shareData ? (
+            <ShareDialog
+              subjectLabel="item"
+              urlPath={`/asset/${locationId}`}
+              data={shareData}
+              save={saveAssetShare.bind(null, locationId)}
+              revoke={revokeAssetShare.bind(null, locationId)}
+            />
+          ) : null}
         </div>
       </div>
       {systemName && systemName !== heading ? (
