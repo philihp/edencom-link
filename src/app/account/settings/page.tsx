@@ -4,13 +4,15 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/utils/supabase/server'
 
 import { isChancellor } from '../chancellor/chancellor'
+import { isSsoPlaceholderEmail } from '../lib/ssoEmail'
 import ApiToken from './apiToken'
 import ChangePassword from './changePassword'
 import Discord from './discord'
 import { LogoffButton } from './logoffButton'
 import MainCharacter from './mainCharacter'
 
-const SettingsPage = async () => {
+const SettingsPage = async ({ searchParams }: { searchParams: Promise<{ gice?: string }> }) => {
+  const { gice: giceParam } = await searchParams
   const supabase = await createClient()
 
   const { data, error } = await supabase.auth.getUser()
@@ -26,6 +28,8 @@ const SettingsPage = async () => {
     .order('name', { ascending: true })
   const mainId = characters?.find((c) => c.is_main)?.id ?? null
   const chancellor = await isChancellor(data.user.id)
+  const { data: giceAccount } = await supabase.from('gice_account').select('gice_id, name').maybeSingle()
+  const placeholderEmail = isSsoPlaceholderEmail(data.user.email)
   const { data: discordChannels } = await supabase
     .from('discord_channel')
     .select('id, guild_id, channel_id, guild_name, channel_name, created_at, disabled_at')
@@ -34,6 +38,31 @@ const SettingsPage = async () => {
   return (
     <>
       <h1>Settings</h1>
+
+      <h2>Sign-in methods</h2>
+      <p>
+        Email:{' '}
+        {placeholderEmail ? (
+          <>
+            none yet — <Link href="/account/email">add an email address</Link>
+          </>
+        ) : (
+          <>
+            <strong>{data.user.email}</strong> — <Link href="/account/email">change</Link>
+          </>
+        )}
+      </p>
+      <p>
+        GICE:{' '}
+        {giceAccount ? (
+          <>
+            linked as <strong>{giceAccount.name ?? `account ${giceAccount.gice_id}`}</strong>
+          </>
+        ) : (
+          <a href="/account/gice">Link your GICE account</a>
+        )}
+        {giceParam === 'conflict' && ' — that GICE account is already linked to a different Edencom Link account.'}
+      </p>
 
       <ChangePassword />
 

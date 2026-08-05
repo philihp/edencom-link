@@ -66,6 +66,10 @@ const RegisterForm = () => {
     >
       <h1>Register</h1>
       <p>Create an account to manage your hangars. Registration is invite-only.</p>
+      <p>
+        In The Imperium? <a href="/account/gice">Register with your GICE account</a> instead — no email needed, though
+        you&rsquo;ll still enter an invite code.
+      </p>
       <label htmlFor="invite">Invite code:</label>
       <br />
       {/* readOnly, not disabled — a disabled input is dropped from FormData on submit */}
