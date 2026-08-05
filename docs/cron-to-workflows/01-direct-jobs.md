@@ -1,5 +1,12 @@
 # Phase 1: the direct-run jobs → single-step workflows
 
+> ✅ **Done.** All five migrated to single-step workflows
+> (`industrySystemsWorkflow`, `universeStructuresWorkflow`,
+> `corpStructuresWorkflow`, `corpWalletJournalWorkflow`,
+> `corpBlueprintsWorkflow`). `runDirectCronJob` outlived the phase — the
+> unscheduled `esf-data`/`sheet-csv` bootstrap routes still call it; retiring
+> it is [phase 6 §4](06-burn-in.md).
+
 The five jobs whose cron routes run them **inline** via `runDirectCronJob`
 (`src/utils/cron.ts`): `industry-systems`, `universe-structures`,
 `corp-structures`, `corp-wallet-journal`, `corp-blueprints`.
