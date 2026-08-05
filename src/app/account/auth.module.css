@@ -1,0 +1,206 @@
+/*
+ * Shared chrome for the sign-on surfaces: /account/login, /account/register,
+ * /account/reset and the GICE registration step at /account/gice/complete.
+ *
+ * One centered card at a readable measure, so the steps of a single flow look
+ * like one flow rather than four bare <br/>-separated forms. Built entirely
+ * from the globals.css custom properties, so these pages inherit dark mode and
+ * the warm palette along with the rest of the app.
+ */
+
+.wrap {
+  max-width: 26rem;
+  margin: 32px auto 0;
+}
+
+.card {
+  padding: 28px 28px 24px;
+  border: 1px solid var(--line);
+  border-radius: calc(var(--radius) * 2);
+  background: var(--paper-raised);
+}
+
+.title {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 26px;
+  font-weight: 500;
+  letter-spacing: -0.015em;
+}
+
+.intro {
+  margin: 10px 0 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--ink-soft);
+}
+
+/* Field stack ------------------------------------------------------------- */
+
+.fields {
+  display: grid;
+  gap: 14px;
+  margin-top: 22px;
+}
+
+.field {
+  display: grid;
+  gap: 5px;
+}
+
+.label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.input {
+  width: 100%;
+  padding: 9px 12px;
+  font-size: 14px;
+}
+
+/* An invite code arriving via a shared link renders read-only until unlocked. */
+.input[readonly] {
+  background: var(--line-soft);
+  color: var(--ink-soft);
+}
+
+/* The "use a different code" affordance beside a locked invite field: a button
+ * for the semantics (it changes state, it doesn't navigate), a link for looks. */
+.linkButton {
+  justify-self: start;
+  margin: 0;
+  padding: 0;
+  background: none;
+  border: none;
+  color: var(--link);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.linkButton:hover {
+  background: none;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.submit {
+  width: 100%;
+  margin: 20px 0 0;
+  padding: 10px 16px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* Status lines ------------------------------------------------------------ */
+
+.status {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 14px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* Inline under a field (the invite-code lookup) rather than under the form. */
+.statusInline {
+  margin: 1px 0 0;
+  font-size: 12px;
+}
+
+.ok {
+  color: var(--ok);
+}
+
+.error {
+  color: var(--danger);
+}
+
+.dot {
+  flex: none;
+  align-self: center;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+/* Alternate sign-on (GICE) ------------------------------------------------ */
+
+.divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 22px 0 16px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.divider::before,
+.divider::after {
+  content: '';
+  flex: 1;
+  border-top: 1px solid var(--line);
+}
+
+.alt,
+.alt:visited {
+  display: block;
+  padding: 9px 16px;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  transition:
+    border-color 0.12s ease,
+    transform 0.04s ease;
+}
+
+.alt:hover {
+  border-color: var(--accent);
+  text-decoration: none;
+}
+
+.alt:active {
+  transform: translateY(1px);
+}
+
+.altNote {
+  margin: 8px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: center;
+  color: var(--ink-faint);
+}
+
+.footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 20px 0 0;
+  padding-top: 16px;
+  border-top: 1px solid var(--line-soft);
+  font-size: 12px;
+}
+
+@media (max-width: 480px) {
+  .wrap {
+    margin-top: 20px;
+  }
+
+  .card {
+    padding: 22px 18px 20px;
+  }
+
+  .title {
+    font-size: 22px;
+  }
+}
