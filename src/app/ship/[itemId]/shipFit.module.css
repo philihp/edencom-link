@@ -16,7 +16,19 @@
   grid-area: 1 / 1;
 }
 
+/*
+ * The viewer's three columns in EVE's fitting-window order: the hardware
+ * browser you drag modules and ammo from on the left, the wheel in the
+ * middle, the statistics readout on the right. Narrower than all three
+ * together, they wrap into one column (see the .hardware order rule below).
+ */
 .layout {
+  /* The viewer's single sizing knob. eveship.fit draws the wheel at a 42rem
+     diameter and authors every panel beside it in fixed px off the same 15px
+     baseline, so shrinking the wheel on its own leaves the numbers and the
+     module browser oversized next to it — everything scales by this one
+     factor instead. */
+  --fit-scale: 0.667;
   display: flex;
   flex-wrap: wrap;
   gap: 1.5rem;
@@ -24,12 +36,13 @@
 }
 
 .wheel {
+  /* 42rem × --fit-scale. */
   width: min(90vw, 28rem);
   aspect-ratio: 1;
   flex: 0 0 auto;
   /* eveship.fit's wheel internals are percentage-sized, so the diameter alone
-     scales them; the font baseline (15px at the 42rem this page used to draw
-     it at) is kept in ratio for anything that inherits it. */
+     scales them; the font baseline (15px at the 42rem the library draws it at)
+     is kept in ratio for anything that inherits it. */
   font-size: 10px;
 }
 
@@ -60,29 +73,49 @@
   font-size: 12px;
 }
 
+/*
+ * The panels flanking the wheel don't follow a font-size or a container width
+ * the way the wheel does: ShipStatistics is a hard `width: 350px` and both it
+ * and HardwareListing lay their rows out in fixed px. `zoom` is what scales
+ * them — it shrinks the used layout box along with the contents, so the
+ * column really is the width it looks (a transform would leave a full-size
+ * hole in the flex row). Modules move onto the wheel by native HTML5
+ * drag-and-drop through dataTransfer, with no coordinate math, so zooming a
+ * drag source doesn't disturb dropping.
+ */
 .stats {
-  flex: 1 1 18rem;
-  min-width: 16rem;
+  flex: 0 0 auto;
+  zoom: var(--fit-scale);
 }
 
-/* Interactive (owner-only) hardware browser used to drag modules/ammo onto the
- * wheel. Collapsed by default so the big listing doesn't dominate the page. */
+/* Left column: the hardware browser, beside the wheel rather than under it,
+ * the way EVE's fitting window puts it. Still collapsible, but on a reserved
+ * column width so toggling it never moves the wheel. */
 .hardware {
-  margin-top: 1.5rem;
-  max-width: min(90vw, 42rem);
+  flex: 0 0 min(90vw, 16rem);
 }
 .hardware > summary {
   cursor: pointer;
   font-weight: 600;
 }
 
-/* Stand-in for the collapsed simulate <summary> line while the viewer loads,
- * matching its geometry so content below doesn't nudge when the real one
- * mounts. */
+/* Stand-in for the simulate <summary> line while the viewer loads, holding
+ * the same column so the wheel and stats don't slide left and back. */
 .hardwareGhost {
-  margin: 1.5rem 0 0;
+  flex: 0 0 min(90vw, 16rem);
+  margin: 0;
   font-weight: 600;
   color: var(--ink-faint);
+}
+
+/* Wide enough for all three columns: the browser to the left of the wheel.
+ * Below it they're stacked, and the browser — the optional tool of the three
+ * — goes last, which is also the DOM order (wheel, stats, browser). */
+@media (min-width: 68rem) {
+  .hardware,
+  .hardwareGhost {
+    order: -1;
+  }
 }
 
 .hardwareHint {
@@ -91,10 +124,13 @@
   margin: 0.5rem 0;
 }
 .hardwareListing {
-  height: 28rem;
+  /* In the listing's own pre-zoom units: 42rem × --fit-scale renders it
+     exactly as tall as the wheel beside it is wide. */
+  height: 42rem;
   overflow: auto;
   border: 1px solid var(--rule, #cbb8a0);
   border-radius: 6px;
+  zoom: var(--fit-scale);
 }
 /* Same global-img override the wheel needs: keep the listing's icons at their
  * intended size instead of the app-wide max-width: 100% clamp. */

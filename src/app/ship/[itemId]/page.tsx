@@ -8,15 +8,14 @@ import { AssetPath, fetchAssetPath } from '../../assetPath'
 import { typeFacts } from '../../assetTypeFacts'
 import { fetchOwners } from '../../owners'
 import type { Owners } from '../../ownerFilter'
-import { TypeIcon } from '../../typeIcon'
 import { fetchTypeNames } from '../../typeNames'
 import { flagSortKey } from '../../fitting/fit'
 import { LocationAssets, type ItemRow } from '../../asset/[locationId]/locationAssets'
 import { resolveShareParams } from '../../asset/access'
 import { fetchShareDialogData } from '../../asset/shareData'
 import { ShareDialog } from '../../asset/shareDialog'
-import assetStyles from '../../asset/assets.module.css'
 import { toEsiFit } from './esfFit'
+import { characterPortrait, corporationLogo, ShipHeading, type ShipOwner } from './shipHeading'
 import { ShipFitViewDynamic } from './shipFitViewDynamic'
 
 // invGroups.categoryID for the Ship category in CCP's SDE.
@@ -130,24 +129,31 @@ const ShipPage = async ({
     ).map((r) => [String(r.item_id), Number(r.contents)])
   )
 
-  // Owner: the holding character's name, or the corporation's cached name.
-  let ownerName: string
+  // Owner: the holding character's name and portrait, or the corporation's
+  // cached name and logo. `character_id` here is the EVE numeric id (what the
+  // image server serves portraits for), not the registration uuid its
+  // sibling asset columns misname.
+  let owner: ShipOwner
   if (characterSelf?.registration_id) {
     const { data: registration } = await supabase
       .from('registration')
-      .select('name')
+      .select('name, character_id')
       .eq('id', characterSelf.registration_id)
-      .maybeSingle<{ name: string }>()
+      .maybeSingle<{ name: string; character_id: number | string | null }>()
     // A shared ship's owner is outside the caller's registration view (RLS);
     // their public name resolves through the world-readable directory.
     const { data: directory } = registration
       ? { data: null }
       : await supabase
           .from('character_directory')
-          .select('name')
+          .select('name, character_id')
           .eq('registration_id', characterSelf.registration_id)
-          .maybeSingle<{ name: string | null }>()
-    ownerName = registration?.name ?? directory?.name ?? 'Unknown character'
+          .maybeSingle<{ name: string | null; character_id: number | string | null }>()
+    const eveCharacterId = registration?.character_id ?? directory?.character_id ?? null
+    owner = {
+      name: registration?.name ?? directory?.name ?? 'Unknown character',
+      portrait: eveCharacterId == null ? null : characterPortrait(eveCharacterId),
+    }
   } else {
     const corporationId = Number(corpSelf?.corporation_id)
     const { data: corpName } = await supabase
@@ -155,7 +161,7 @@ const ShipPage = async ({
       .select('name')
       .eq('id', corporationId)
       .maybeSingle<{ name: string }>()
-    ownerName = corpName?.name ?? `Corporation #${corporationId}`
+    owner = { name: corpName?.name ?? `Corporation #${corporationId}`, portrait: corporationLogo(corporationId) }
   }
 
   // Where the ship lives: the full container chain up to its station /
@@ -207,16 +213,12 @@ const ShipPage = async ({
   return (
     <>
       <AssetPath crumbs={crumbs} current={heading} />
-      <div className={assetStyles.header}>
-        <h1 className="serif">
-          <TypeIcon id={Number(self.type_id)} size={32} />
-          {heading}
-        </h1>
-        {shareData ? <ShareDialog itemId={itemId} path="ship" data={shareData} /> : null}
-      </div>
-      <p>
-        Owner: <span className="serif">{ownerName}</span>
-      </p>
+      <ShipHeading
+        typeId={Number(self.type_id)}
+        heading={heading}
+        owner={owner}
+        actions={shareData ? <ShareDialog itemId={itemId} path="ship" data={shareData} /> : null}
+      />
       <ShipFitViewDynamic esiFit={toEsiFit(Number(self.type_id), self.name ?? null, rows)} />
       <LocationAssets rows={rows} owners={owners} typeNamesPromise={typeNamesPromise} canAppraise />
     </>
@@ -273,9 +275,20 @@ const SharedShipPage = async ({
   // Everything inside a ship belongs to whoever owns the ship, so the whole
   // cargo view carries a single owner.
   const ownerId = characterSelf?.registration_id ?? String(corpSelf?.corporation_id)
-  let ownerName: string
+  let owner: ShipOwner
   if (characterSelf?.registration_id) {
-    ownerName = scope.characterNames.get(characterSelf.registration_id) ?? 'Unknown character'
+    // The share scope carries the sharer's name but not their EVE id, which is
+    // what the portrait is keyed on — one lookup on the registration the scope
+    // already vouched for.
+    const { data: registration } = await supabase
+      .from('registration')
+      .select('character_id')
+      .eq('id', characterSelf.registration_id)
+      .maybeSingle<{ character_id: number | string | null }>()
+    owner = {
+      name: scope.characterNames.get(characterSelf.registration_id) ?? 'Unknown character',
+      portrait: registration?.character_id == null ? null : characterPortrait(registration.character_id),
+    }
   } else {
     const corporationId = Number(corpSelf?.corporation_id)
     const { data: corpName } = await supabase
@@ -283,7 +296,7 @@ const SharedShipPage = async ({
       .select('name')
       .eq('id', corporationId)
       .maybeSingle<{ name: string }>()
-    ownerName = corpName?.name ?? `Corporation #${corporationId}`
+    owner = { name: corpName?.name ?? `Corporation #${corporationId}`, portrait: corporationLogo(corporationId) }
   }
 
   const typeNames = await fetchTypeNames([Number(self.type_id)])
@@ -316,18 +329,12 @@ const SharedShipPage = async ({
   // The table's owner column/filter only ever sees the sharing owner — the
   // anonymous viewer has no owner context of their own to offer.
   const owners: Owners = characterSelf?.registration_id
-    ? { characters: [{ id: characterSelf.registration_id, name: ownerName }], corporations: [] }
-    : { characters: [], corporations: [{ id: String(corpSelf?.corporation_id), name: ownerName }] }
+    ? { characters: [{ id: characterSelf.registration_id, name: owner.name }], corporations: [] }
+    : { characters: [], corporations: [{ id: String(corpSelf?.corporation_id), name: owner.name }] }
 
   return (
     <>
-      <h1 className="serif">
-        <TypeIcon id={Number(self.type_id)} size={32} />
-        {heading}
-      </h1>
-      <p>
-        Owner: <span className="serif">{ownerName}</span>
-      </p>
+      <ShipHeading typeId={Number(self.type_id)} heading={heading} owner={owner} />
       <ShipFitViewDynamic esiFit={toEsiFit(Number(self.type_id), self.name ?? null, rows)} />
       <LocationAssets rows={rows} owners={owners} typeNamesPromise={typeNamesPromise} canAppraise={false} />
     </>

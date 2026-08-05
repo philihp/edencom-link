@@ -1,0 +1,63 @@
+/* The ship page's identity block: hull render, name, owner. */
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 12pt;
+  margin-bottom: 12pt;
+}
+
+/* The hull render, flanking the whole identity block rather than sitting
+ * inside the <h1> — it labels the ship, not just its name, and the owner line
+ * below reads as part of the same subject. */
+.render {
+  flex: none;
+  /* The flex gap does the spacing here, not the inline icon's own margin. */
+  margin-right: 0;
+  border-radius: var(--radius-sm);
+  background: var(--line-soft);
+}
+
+.identity {
+  display: flex;
+  flex-direction: column;
+  gap: 4pt;
+  min-width: 0;
+}
+
+.identity h1 {
+  margin: 0;
+}
+
+/* Pushes the share dialog (when there is one) to the far end of the row. */
+.actions {
+  margin-left: auto;
+}
+
+.owner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  /* Between the body text it used to be set in and the 22px heading above. */
+  font-size: 17px;
+}
+
+.ownerLabel {
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+
+.ownerAvatar {
+  width: 32px;
+  height: 32px;
+  flex: none;
+  /* Round for a pilot portrait, square-ish for a corporation logo — CCP draws
+     the two that way, so match the shape to what the image is. */
+  border-radius: 50%;
+  background: var(--line-soft);
+}
+
+.ownerAvatarCorporation {
+  border-radius: var(--radius-sm);
+}
