@@ -69,6 +69,46 @@ const locationNamesFor = async (ctx: GraphqlContext, refs: Array<LocationRef | n
 
 const str = (v: number | string | null | undefined): string | null => (v == null ? null : String(v))
 
+// Session-only guard for the shared-data surfaces: the Bearer path runs on the
+// service client, where RLS can't arbitrate a widened filter — the designed
+// answer for external tools consuming shared data is a Lens (phase 7).
+const requireSession = (ctx: GraphqlContext): void => {
+  if (ctx.mode !== 'session') {
+    badRequest('Shared data requires a session — the api_token path is own-data only. Use a Lens instead.')
+  }
+}
+
+// The grantor registration ids behind share rows the caller's audience
+// matches — what RLS exposes on character_asset_share beyond the caller's own
+// rows. RLS is the authority; this list just widens the resolvers' explicit
+// .in() so shared rows aren't filtered back out by the leak guard.
+const grantorRegistrationIds = async (ctx: GraphqlContext): Promise<string[]> => {
+  const { data, error } = await ctx.supabase.from('character_asset_share').select('registration_id')
+  if (error) return queryFailed()
+  const own = new Set(ctx.registrationIds)
+  return [...new Set(((data ?? []) as Array<{ registration_id: string }>).map((r) => r.registration_id))].filter(
+    (id) => !own.has(id)
+  )
+}
+
+// Owner display names for a mixed set of registration ids: the caller's own
+// from the context, foreign grantors through the world-readable
+// character_directory (never registration, which RLS hides to non-owners).
+const ownerNamesFor = async (ctx: GraphqlContext, registrationIds: Iterable<string>): Promise<Map<string, string>> => {
+  const names = new Map(ctx.ownerNameById)
+  const foreign = [...new Set([...registrationIds])].filter((id) => !names.has(id))
+  if (foreign.length > 0) {
+    const { data } = await ctx.supabase
+      .from('character_directory')
+      .select('registration_id, name')
+      .in('registration_id', foreign)
+    for (const row of (data ?? []) as Array<{ registration_id: string | null; name: string | null }>) {
+      if (row.registration_id != null && row.name != null) names.set(row.registration_id, row.name)
+    }
+  }
+  return names
+}
+
 type AssetRow = {
   item_id: number
   registration_id: string
@@ -97,10 +137,24 @@ export const resolvers = {
 
     assets: async (
       _parent: unknown,
-      args: { typeName?: string | null; locationId?: string | null; owner?: string | null; limit?: number | null },
+      args: {
+        typeName?: string | null
+        locationId?: string | null
+        owner?: string | null
+        limit?: number | null
+        includeShared?: boolean | null
+      },
       ctx: GraphqlContext
     ) => {
+      // includeShared widens the leak-guard filter to own ∪ grantor
+      // registrations and lets RLS decide which grantor rows come back — the
+      // DB is the authority; the widened .in() is just no longer the barrier.
+      // The owner-name filter still narrows only the caller's own characters;
+      // shared rows ride along unfiltered.
+      if (args.includeShared) requireSession(ctx)
       const ownerIds = scopeIds(ctx, args.owner)
+      const sharedIds = args.includeShared ? await grantorRegistrationIds(ctx) : []
+      const scopedIds = [...ownerIds, ...sharedIds]
       const typeIds = await typeIdsFor(args.typeName)
       const location = parseIdArg(args.locationId, 'locationId')
       if (!location.ok) return badRequest(location.message)
@@ -109,7 +163,7 @@ export const resolvers = {
       // The same filter set applies to the head-only count and the row pages.
       // The builder is untyped (no generated DB types in this repo), so `any`.
       const filtered = (query: any): any => {
-        let q = query.in('registration_id', ownerIds)
+        let q = query.in('registration_id', scopedIds)
         if (typeIds !== null) q = q.in('type_id', typeIds)
         if (location.id !== null) q = q.eq('location_id', location.id)
         return q
@@ -126,9 +180,13 @@ export const resolvers = {
         cap
       )
 
-      const [typeNames, locations] = await Promise.all([
+      const [typeNames, locations, ownerNames] = await Promise.all([
         typeNamesFor(rows.map((r) => r.type_id)),
         locationNamesFor(ctx, rows.map(assetLocationRef)),
+        ownerNamesFor(
+          ctx,
+          rows.map((r) => r.registration_id)
+        ),
       ])
 
       return {
@@ -149,10 +207,62 @@ export const resolvers = {
             isBlueprintCopy: r.is_blueprint_copy,
             name: r.name,
             ownerId: r.registration_id,
-            ownerName: ctx.ownerNameById.get(r.registration_id) ?? r.registration_id,
+            ownerName: ownerNames.get(r.registration_id) ?? r.registration_id,
           }
         }),
       }
+    },
+
+    sharedWithMe: async (_parent: unknown, _args: unknown, ctx: GraphqlContext) => {
+      requireSession(ctx)
+
+      // Everything RLS exposes on the share table minus the caller's own rows:
+      // exactly the shares whose audience they match (link-only shares match
+      // no one under RLS, so they never appear here).
+      const { data, error } = await ctx.supabase
+        .from('character_asset_share')
+        .select('id, registration_id, item_id, created_at')
+      if (error) return queryFailed()
+      const own = new Set(ctx.registrationIds)
+      const grants = (
+        (data ?? []) as Array<{ id: string; registration_id: string; item_id: number | string; created_at: string }>
+      ).filter((g) => !own.has(g.registration_id))
+      if (grants.length === 0) return []
+
+      // The shared roots are RLS-visible to the audience (phase 2), so their
+      // types resolve through a plain read.
+      const { data: items } = await ctx.supabase
+        .from('character_asset')
+        .select('item_id, type_id')
+        .in(
+          'item_id',
+          grants.map((g) => g.item_id)
+        )
+      const typeByItem = new Map(
+        ((items ?? []) as Array<{ item_id: number | string; type_id: number | string }>).map((i) => [
+          String(i.item_id),
+          Number(i.type_id),
+        ])
+      )
+      const [typeNames, ownerNames] = await Promise.all([
+        typeNamesFor([...typeByItem.values()]),
+        ownerNamesFor(
+          ctx,
+          grants.map((g) => g.registration_id)
+        ),
+      ])
+
+      return grants.map((g) => {
+        const typeId = typeByItem.get(String(g.item_id))
+        return {
+          shareId: g.id,
+          itemId: String(g.item_id),
+          itemTypeName: typeId != null ? (typeNames[typeId] ?? null) : null,
+          ownerId: g.registration_id,
+          ownerName: ownerNames.get(g.registration_id) ?? g.registration_id,
+          sharedAt: g.created_at,
+        }
+      })
     },
 
     blueprints: async (

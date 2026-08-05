@@ -13,8 +13,16 @@ export const typeDefs = /* GraphQL */ `
     "Your linked characters. ownerId on every row below is one of these ids."
     owners: [Owner!]!
 
-    "Current asset rows (live inventory) across your characters."
-    assets(typeName: String, locationId: String, owner: String, limit: Int): AssetPage!
+    """
+    Current asset rows (live inventory) across your characters. includeShared
+    additionally returns rows other users have shared with you (session auth
+    only — the api_token path is own-data only; a Lens is the way to hand
+    shared data to external tools).
+    """
+    assets(typeName: String, locationId: String, owner: String, limit: Int, includeShared: Boolean = false): AssetPage!
+
+    "Asset shares other users have aimed at you (corporation/alliance/public). Session auth only."
+    sharedWithMe: [ShareGrant!]!
 
     "Current blueprint rows (BPOs and BPCs) across your characters."
     blueprints(typeName: String, owner: String, limit: Int): BlueprintPage!
@@ -36,6 +44,16 @@ export const typeDefs = /* GraphQL */ `
   type Owner {
     id: String!
     name: String!
+  }
+
+  "An asset share another user has aimed at you; itemId is the shared root (a ship or container), covering everything inside it."
+  type ShareGrant {
+    shareId: String!
+    itemId: String!
+    itemTypeName: String
+    ownerId: String!
+    ownerName: String!
+    sharedAt: String!
   }
 
   type Asset {

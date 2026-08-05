@@ -19,9 +19,21 @@ test('the SDL parses and exposes the expected query fields', () => {
     'industryJobs',
     'marketOrders',
     'owners',
+    'sharedWithMe',
     'walletBalances',
     'walletTransactions',
   ])
+})
+
+test('assets carries the opt-in includeShared arg, default false', () => {
+  const schema = buildSchema(typeDefs)
+  const query = schema.getQueryType() as GraphQLObjectType
+  const arg = query.getFields().assets.args.find((a) => a.name === 'includeShared')
+  assert.ok(arg)
+  // Read the default off the SDL ast — the runtime defaultValue representation
+  // differs across graphql-js majors, the source of truth doesn't.
+  const defaultNode = arg.astNode?.defaultValue
+  assert.ok(defaultNode?.kind === 'BooleanValue' && defaultNode.value === false)
 })
 
 test('ids stay String — EVE item ids overflow GraphQL Int', () => {
