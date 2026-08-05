@@ -1,6 +1,8 @@
 # Phase 1: the `character_asset_share` table
 
-**Status: not started.**
+**Status: ✅ done** — migration `20260805000000_character_asset_share.sql`,
+`src/shareToken.ts` (+ unit tests), `test/sql/asset_share.sql`, `TOKEN_SALT`
+in `.env.example`. Set `TOKEN_SALT` on Vercel before phase 3 ships.
 
 Pure additive schema: the share table, its owner and audience policies, the
 audience-match helper, and the token-signing seam. Nothing reads it yet — the
