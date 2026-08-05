@@ -1,6 +1,9 @@
 # Phase 4: shared rows in GraphQL
 
-**Status: not started.**
+**Status: ✅ done** — `assets(includeShared:)` + `sharedWithMe` in
+`schema.graphql.ts`/`resolvers.ts`, both session-only (`requireSession`);
+foreign owner names resolve through `character_directory` via the shared
+`ownerNamesFor` helper. No DB changes, per the plan.
 
 Let a grantee query what's been shared with them through `/api/graphql`, so
 shared stockpiles are scriptable, not just browsable. **Current views only —
