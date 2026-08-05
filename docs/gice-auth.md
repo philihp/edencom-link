@@ -76,7 +76,7 @@ placeholder address and never complete.
 
 ## Schema
 
-`gice_account` (migration `20260805000000_gice_account.sql`): `gice_id`
+`gice_account` (migration `20260805010000_gice_account.sql`): `gice_id`
 (bigint PK, the OIDC `sub` — the forum account id) ↔ `user_id` (unique FK →
 auth.users, cascade), plus display-only `name` / `primary_group` refreshed on
 each sign-in. RLS: owners select their own row; all writes go through the
