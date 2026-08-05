@@ -1,6 +1,11 @@
 # Phase 3: the Share dialog
 
-**Status: not started.**
+**Status: ✅ done** — `shareDialog.tsx`/`shareData.ts`/`shareActions.ts` under
+`src/app/asset/`, `resolveSignedShare`/`resolveShareParams` in
+`src/app/asset/access.ts` (the old `src/app/ship/access.ts` and the ship
+page's mint UI are gone; legacy `?token=` links still resolve, and saving
+from the dialog retires the item's legacy row). Requires `TOKEN_SALT` on
+Vercel for link shares — corp/alliance/public audiences work without it.
 
 The user-facing surface: a **Share** button in the top right of an asset
 view, opening an HTML `<dialog>` that creates and configures a share of the

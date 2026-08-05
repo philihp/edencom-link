@@ -1,0 +1,62 @@
+.dialog {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--paper-raised);
+  color: var(--ink);
+  padding: 12pt 16pt;
+  max-width: 32em;
+}
+
+.dialog::backdrop {
+  background: rgb(0 0 0 / 40%);
+}
+
+.dialog h2 {
+  margin-top: 0;
+}
+
+.hint {
+  font-size: 9pt;
+  color: var(--ink-soft);
+}
+
+.publicRow {
+  display: flex;
+  align-items: center;
+  gap: 6pt;
+}
+
+.audience {
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  margin-top: 8pt;
+  display: flex;
+  flex-direction: column;
+  gap: 3pt;
+}
+
+.audience:disabled {
+  opacity: 0.5;
+}
+
+.audience label {
+  display: flex;
+  align-items: center;
+  gap: 6pt;
+}
+
+.linkRow code {
+  font-size: 8pt;
+  word-break: break-all;
+}
+
+.error {
+  color: #b91c1c;
+  font-size: 9pt;
+}
+
+.footer {
+  display: flex;
+  gap: 6pt;
+  margin-top: 10pt;
+}

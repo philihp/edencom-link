@@ -8,7 +8,9 @@ import { AssetPath, fetchAssetPath, regionSystemCrumbs, type Crumb } from '../..
 import { typeFacts } from '../../assetTypeFacts'
 import { fetchOwners } from '../../owners'
 import { resolveLocations, type LocationRef } from '../../resolveLocations'
-import { resolveShareToken } from '../../ship/access'
+import { resolveShareParams } from '../access'
+import { fetchShareDialogData } from '../shareData'
+import { ShareDialog } from '../shareDialog'
 import { fetchStationNames, fetchStationSystems } from '../../stationNames'
 import { fetchSystemNames } from '../../systemNames'
 import { TypeIcon } from '../../typeIcon'
@@ -72,13 +74,13 @@ const AssetLocationPage = async ({
   searchParams,
 }: {
   params: Promise<{ locationId: string }>
-  searchParams: Promise<{ token?: string }>
+  searchParams: Promise<{ token?: string; share?: string }>
 }) => {
   const { locationId } = await params
-  const { token } = await searchParams
+  const { token, share } = await searchParams
 
-  const scope = token ? await resolveShareToken(token, locationId) : null
-  if (token && !scope) notFound()
+  const scope = token || share ? await resolveShareParams({ token, share }, locationId) : null
+  if ((token || share) && !scope) notFound()
 
   const supabase = scope ? createServiceClient() : await createClient()
   if (!scope) {
@@ -179,6 +181,11 @@ const AssetLocationPage = async ({
     : await corpSelfQuery.maybeSingle<Pick<CorpAsset, 'item_id' | 'corporation_id' | 'type_id' | 'location_id'>>()
   const self = characterSelf ?? (corpSelf ? { ...corpSelf, name: null } : null)
 
+  // Share dialog data for an owned character item; fetchShareDialogData
+  // returns null unless the caller actually owns it (visibility alone can now
+  // mean "shared with me").
+  const shareData = !scope && characterSelf ? await fetchShareDialogData(supabase, locationId) : null
+
   // One bulk SDE lookup for every type in play (this location's root items plus
   // the location itself, if it's an item). It feeds three things: the set of
   // Ship-category type ids, so the per-row ship test stays a sync Set.has; each
@@ -194,10 +201,11 @@ const AssetLocationPage = async ({
   )
   const isShip = (typeId: number | string) => shipTypeIds.has(Number(typeId))
 
-  // A ship is its own page, not a directory level (a ship share token stays
-  // valid through the redirect — it's bound to the same id).
+  // A ship is its own page, not a directory level (a share link stays valid
+  // through the redirect — a signed link covers the whole shared subtree, a
+  // legacy token is bound to this same id).
   if (self && isShip(self.type_id)) {
-    redirect(`/ship/${locationId}${token ? `?token=${token}` : ''}`)
+    redirect(`/ship/${locationId}${share ? `?share=${share}` : token ? `?token=${token}` : ''}`)
   }
 
   let heading: string
@@ -389,9 +397,15 @@ const AssetLocationPage = async ({
           {self ? <TypeIcon id={Number(self.type_id)} size={32} /> : null}
           {heading}
         </h1>
-        {/* Prices this whole place in one request — the same endpoint each row
-            uses, just aimed at the location instead of an item. */}
-        {!scope ? <AppraiseButton target={locationId} label="Appraise everything here" /> : null}
+        <div className={styles.headerActions}>
+          {/* Prices this whole place in one request — the same endpoint each row
+              uses, just aimed at the location instead of an item. */}
+          {!scope ? <AppraiseButton target={locationId} label="Appraise everything here" /> : null}
+          {/* Sharing is per-item: only an owned character item (a container
+              drilled into) gets the dialog — never a station/structure/system,
+              and never something merely shared with the viewer. */}
+          {shareData ? <ShareDialog itemId={locationId} path="asset" data={shareData} /> : null}
+        </div>
       </div>
       {systemName && systemName !== heading ? (
         <p>
