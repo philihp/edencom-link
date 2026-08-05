@@ -46,6 +46,9 @@ export const LoginForm = ({ next }: { next?: string }) => {
           <a href="reset">Forgot Password</a>
         </div>
       </form>
+      <p>
+        In The Imperium? <a href="/account/gice">Log in with GICE</a> instead.
+      </p>
     </>
   )
 }
