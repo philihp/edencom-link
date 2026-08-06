@@ -2,13 +2,15 @@
 // via OAuth 2.1 against Supabase Auth acting as the authorization server (the
 // consent page lives at /oauth/consent; discovery metadata at
 // /.well-known/oauth-protected-resource). Tools are read-only queries over
-// the extracted DB — see tools.ts.
+// the extracted DB — see tools.ts — with one exception: lensTools.ts can
+// create and share a lens, the server's only write surface.
 import { createMcpHandler, withMcpAuth } from 'mcp-handler'
 
 import { verifySupabaseToken } from './auth'
 import { registerEstateTools } from './estateTools'
 import { registerExploreTools } from './exploreTools'
 import { registerIndustryTools } from './industryTools'
+import { registerLensTools } from './lensTools'
 import { registerTools } from './tools'
 
 // mcp-handler 2.x serves the 2026-07-28 spec (stateless, no sessions), falling
@@ -24,6 +26,7 @@ const handler = createMcpHandler(
     registerEstateTools(server)
     registerIndustryTools(server)
     registerExploreTools(server)
+    registerLensTools(server)
   },
   { serverInfo: { name: 'edencom-link', version: '1.0.0' } }
 )

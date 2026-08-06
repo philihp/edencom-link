@@ -7,8 +7,8 @@ import { contextForUser } from '@/app/api/graphql/context'
 import { schema } from '@/app/api/graphql/schema'
 import type { SaveShareInput, SaveShareResult } from '@/app/asset/shareActions'
 import { LENS_FLAG, hasFlag } from '@/flags'
-import { mintShareSecret, signShare, tokenSalt } from '@/shareToken'
 import { createClient } from '@/utils/supabase/server'
+import { applyLensShare, fetchOwnAudiences } from './share'
 import { parseLensVariables, validateLensQuery } from './validate'
 
 // Server actions behind the /lens editor (docs/sharing-layer/07-lens.md).
@@ -93,31 +93,11 @@ export const previewLens = async (input: {
 // The audience side, driven by the shared ShareDialog. The lens row IS the
 // share row, so save/revoke toggle its `enabled` flag and audience columns
 // rather than upserting a sibling row. Requested audience ids are filtered to
-// ones the caller actually has (the setSharedAlliances defense).
-const ownAudiences = async (supabase: Awaited<ReturnType<typeof createClient>>) => {
-  const { data: regs } = await supabase.from('registration').select('corporation_id')
-  const corpIds = [
-    ...new Set(
-      ((regs ?? []) as Array<{ corporation_id: number | string | null }>)
-        .map((r) => r.corporation_id)
-        .filter((c): c is number => c != null)
-        .map(Number)
-    ),
-  ]
-  const { data: corps } = corpIds.length
-    ? await supabase.from('corporation').select('corporation_id, alliance_id').in('corporation_id', corpIds)
-    : { data: [] }
-  const allianceIds = [
-    ...new Set(
-      ((corps ?? []) as Array<{ alliance_id: number | string | null }>)
-        .map((c) => c.alliance_id)
-        .filter((a): a is number => a != null)
-        .map(Number)
-    ),
-  ]
-  return { ownCorpIds: new Set(corpIds), ownAllianceIds: new Set(allianceIds) }
-}
-
+// ones the caller actually has (the setSharedAlliances defense) — the dialog
+// only offers those, but a form post is not a promise.
+//
+// The write itself lives in ./share.ts, shared with the MCP create_lens tool
+// so the two can't disagree about what "public" or "not shared" mean.
 export const saveLensShare = async (lensId: string, input: SaveShareInput): Promise<SaveShareResult> => {
   const supabase = await createClient()
   const userId = await flaggedUser(supabase)
@@ -131,45 +111,34 @@ export const saveLensShare = async (lensId: string, input: SaveShareInput): Prom
     .maybeSingle<{ id: string; secret: string | null }>()
   if (!existing) return { error: 'Not your lens' }
 
-  const own = await ownAudiences(supabase)
-  const corporationIds = input.isPublic
-    ? []
-    : [...new Set(input.corporationIds.map(Number))].filter((id) => own.ownCorpIds.has(id))
-  const allianceIds = input.isPublic
-    ? []
-    : [...new Set(input.allianceIds.map(Number))].filter((id) => own.ownAllianceIds.has(id))
-  const link = input.isPublic ? false : input.link
+  const own = await fetchOwnAudiences(supabase)
+  const ownCorpIds = new Set(own.corporations.map((c) => c.id))
+  const ownAllianceIds = new Set(own.alliances.map((a) => a.id))
 
-  let salt: string | null = null
-  if (link) {
-    try {
-      salt = tokenSalt()
-    } catch {
-      return { error: 'Share links are unavailable: TOKEN_SALT is not configured.' }
-    }
-  }
-
-  const secret = link ? (input.rotateLink || !existing.secret ? mintShareSecret() : existing.secret) : null
-
-  const { error } = await supabase
-    .from('lens')
-    .update({ enabled: true, corporation_ids: corporationIds, alliance_ids: allianceIds, secret })
-    .eq('id', lensId)
-    .eq('user_id', userId)
-  if (error) return { error: error.message }
+  const applied = await applyLensShare(
+    supabase,
+    userId,
+    lensId,
+    {
+      corporationIds: input.isPublic
+        ? []
+        : [...new Set(input.corporationIds.map(Number))].filter((id) => ownCorpIds.has(id)),
+      allianceIds: input.isPublic
+        ? []
+        : [...new Set(input.allianceIds.map(Number))].filter((id) => ownAllianceIds.has(id)),
+      link: input.isPublic ? false : input.link,
+      isPublic: input.isPublic,
+      // The dialog's Save always means "shared"; unsharing is Revoke's job, so
+      // an empty audience here is the public reading, as it always was.
+      shared: true,
+    },
+    { existingSecret: existing.secret, rotateLink: input.rotateLink }
+  )
+  if (!applied.ok) return { error: applied.message }
 
   revalidatePath('/lens')
   revalidatePath(`/lens/${lensId}`)
-
-  return {
-    share: {
-      corporationIds,
-      allianceIds,
-      hasLink: secret != null,
-      shareParam: secret != null && salt != null ? `${lensId}.${signShare(lensId, secret, salt)}` : null,
-      isPublic: secret == null && corporationIds.length === 0 && allianceIds.length === 0,
-    },
-  }
+  return { share: applied.share ?? undefined }
 }
 
 export const revokeLensShare = async (lensId: string): Promise<{ error?: string }> => {
@@ -178,12 +147,14 @@ export const revokeLensShare = async (lensId: string): Promise<{ error?: string 
   if (!userId) return { error: 'Not available' }
 
   // Back to the unshared state — NOT an empty audience, which would be public.
-  const { error } = await supabase
-    .from('lens')
-    .update({ enabled: false, corporation_ids: [], alliance_ids: [], secret: null })
-    .eq('id', lensId)
-    .eq('user_id', userId)
-  if (error) return { error: error.message }
+  const applied = await applyLensShare(
+    supabase,
+    userId,
+    lensId,
+    { corporationIds: [], allianceIds: [], link: false, isPublic: false, shared: false },
+    { existingSecret: null }
+  )
+  if (!applied.ok) return { error: applied.message }
 
   revalidatePath('/lens')
   revalidatePath(`/lens/${lensId}`)
