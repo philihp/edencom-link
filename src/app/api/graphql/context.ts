@@ -4,6 +4,7 @@ import { GraphQLError } from 'graphql'
 import { GRAPHQL_FLAG, hasFlag } from '@/flags'
 import { resolvePlayer } from '@/utils/apiToken'
 import { createClient } from '@/utils/supabase/server'
+import { createServiceClient } from '@/utils/supabase/service'
 
 // The per-request context every resolver receives. Two auth modes share it:
 //
@@ -28,6 +29,39 @@ export type GraphqlContext = {
 const deny = (message: string, status: number): never => {
   throw new GraphQLError(message, { extensions: { http: { status } } })
 }
+
+// The context for a given user on a given client — the tail every entry point
+// shares once auth has produced a (client, userId) pair. Owner names come from
+// the user's own registration rows, scoped by user_id here rather than through
+// fetchOwners, whose unscoped registration select would return every user's
+// characters under the service client.
+const contextFor = async (
+  supabase: SupabaseClient,
+  mode: GraphqlContext['mode'],
+  userId: string
+): Promise<GraphqlContext> => {
+  const { data: registrations, error } = await supabase.from('registration').select('id, name').eq('user_id', userId)
+  if (error) deny('Lookup failed', 500)
+
+  const rows = (registrations ?? []) as Array<{ id: string; name: string }>
+  return {
+    supabase,
+    mode,
+    userId,
+    registrationIds: rows.map((r) => r.id),
+    ownerNameById: new Map(rows.map((r) => [r.id, r.name])),
+  }
+}
+
+// A user's GraphQL context outside any request auth: the service client plus
+// their registrations — what api_token mode builds, minus the token lookup.
+// This is how a Lens (docs/sharing-layer/07-lens.md) runs a stored query
+// under its CREATOR's security context: mode 'token' means the session-only
+// surfaces (includeShared/sharedWithMe) reject exactly as they do for Bearer
+// callers, and the resolvers' leak-guard .in('registration_id', …) is the
+// barrier. Callers must have authorized the viewer BEFORE building this.
+export const contextForUser = (userId: string): Promise<GraphqlContext> =>
+  contextFor(createServiceClient(), 'token', userId)
 
 export const buildContext = async (request: Request): Promise<GraphqlContext> => {
   const authorization = request.headers.get('authorization') ?? ''
@@ -55,21 +89,5 @@ export const buildContext = async (request: Request): Promise<GraphqlContext> =>
     deny('The GraphQL API is not enabled for this account.', 403)
   }
 
-  // Owner names come from the user's own registration rows — scoped by user_id
-  // here rather than through fetchOwners, whose unscoped registration select
-  // would return every user's characters under the service client.
-  const { data: registrations, error: registrationError } = await supabase
-    .from('registration')
-    .select('id, name')
-    .eq('user_id', userId)
-  if (registrationError) deny('Lookup failed', 500)
-
-  const rows = (registrations ?? []) as Array<{ id: string; name: string }>
-  return {
-    supabase,
-    mode,
-    userId,
-    registrationIds: rows.map((r) => r.id),
-    ownerNameById: new Map(rows.map((r) => [r.id, r.name])),
-  }
+  return contextFor(supabase, mode, userId)
 }

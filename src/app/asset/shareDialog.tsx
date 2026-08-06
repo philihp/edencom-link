@@ -18,6 +18,9 @@ type ShareDialogProps = {
   // dialog drive asset AND fitting shares.
   save: (input: SaveShareInput) => Promise<SaveShareResult>
   revoke: () => Promise<{ error?: string }>
+  // Overrides the what-sharing-means line for subjects that aren't a
+  // container of items (a lens shares query results, not an item tree).
+  hint?: string
 }
 
 // The Share button + native <dialog> editor over a subject's single share row
@@ -30,6 +33,7 @@ export const ShareDialog = ({
   data,
   save: saveAction,
   revoke: revokeAction,
+  hint,
 }: ShareDialogProps) => {
   const ref = useRef<HTMLDialogElement>(null)
   const [share, setShare] = useState<ShareState | null>(data.share)
@@ -99,7 +103,7 @@ export const ShareDialog = ({
       <dialog ref={ref} className={styles.dialog}>
         <h2>Share this {subjectLabel}</h2>
         <p className={styles.hint}>
-          Whoever you share with can see this item and everything inside it, live, until you stop sharing.
+          {hint ?? 'Whoever you share with can see this item and everything inside it, live, until you stop sharing.'}
         </p>
 
         <label className={styles.publicRow}>

@@ -1,0 +1,81 @@
+import Link from 'next/link'
+import { notFound } from 'next/navigation'
+
+import { resolveLens } from '../access'
+import { lensRows } from '../flatten'
+import { runLens } from '../run'
+import styles from '../lens.module.css'
+
+// The Lens viewer (docs/sharing-layer/07-lens.md): runs the stored query
+// under its CREATOR's security context and shows the result to anyone the
+// lens is shared with — RLS decides for signed-in audiences (corporation/
+// alliance/public), a signed ?share= link for everyone else, including
+// signed-out. The viewer receives results, never access.
+export const dynamic = 'force-dynamic'
+export const maxDuration = 60
+
+const LensViewerPage = async ({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>
+  searchParams: Promise<{ share?: string }>
+}) => {
+  const { id } = await params
+  const { share } = await searchParams
+
+  const resolved = await resolveLens(id, share)
+  if (!resolved) notFound()
+  const { lens, viewerIsOwner } = resolved
+
+  const result = await runLens(lens)
+  const rows = lensRows(result.data)
+  const headers = rows.length > 0 ? Object.keys(rows[0]) : []
+  const csvHref = `/lens/${lens.id}/csv${share ? `?share=${encodeURIComponent(share)}` : ''}`
+
+  return (
+    <>
+      <div className={styles.lensHeading}>
+        <h1>{lens.name}</h1>
+        <div className={styles.buttons}>
+          <a href={csvHref}>CSV</a>
+          {viewerIsOwner && <Link href="/lens">Edit</Link>}
+        </div>
+      </div>
+
+      {result.errors.length > 0 && <p className={styles.error}>{result.errors.join(' — ')}</p>}
+
+      {rows.length === 0 ? (
+        <p className={styles.note}>No rows.</p>
+      ) : (
+        <div className={styles.tableWrap}>
+          <table className={styles.table}>
+            <thead>
+              <tr>
+                {headers.map((h) => (
+                  <th key={h}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, i) => (
+                <tr key={i}>
+                  {headers.map((h) => (
+                    <td key={h}>{row[h] == null ? '' : String(row[h])}</td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <details>
+        <summary className={styles.note}>Raw result</summary>
+        <pre className={styles.result}>{JSON.stringify({ data: result.data }, null, 2)}</pre>
+      </details>
+    </>
+  )
+}
+
+export default LensViewerPage
