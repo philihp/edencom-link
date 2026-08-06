@@ -44,3 +44,15 @@ test('ids stay String — EVE item ids overflow GraphQL Int', () => {
   const order = schema.getType('MarketOrder') as GraphQLObjectType
   assert.equal(String(order.getFields().orderId.type), 'String!')
 })
+
+test('the type-filtered fields all carry typeIds as a String list', () => {
+  const schema = buildSchema(typeDefs)
+  const fields = (schema.getQueryType() as GraphQLObjectType).getFields()
+  for (const name of ['assets', 'blueprints', 'walletTransactions']) {
+    const arg = fields[name].args.find((a) => a.name === 'typeIds')
+    assert.ok(arg, `${name} has a typeIds arg`)
+    // String, not Int: EVE type ids are small today but the schema keeps one
+    // id representation, and Int is 32-bit.
+    assert.equal(String(arg.type), '[String!]')
+  }
+})

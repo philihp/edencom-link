@@ -58,3 +58,26 @@ export const parseIdArg = (raw: string | null | undefined, label: string): IdPar
   if (!/^\d+$/.test(trimmed)) return { ok: false, message: `${label} must be a numeric id, got "${raw}".` }
   return { ok: true, id: trimmed }
 }
+
+// The two ways to name item types, resolved to one filter. They are mutually
+// EXCLUSIVE rather than unioned: typeIds asks an exact question and typeName a
+// fuzzy one (it substring-matches the SDE, so "Fuel Block" also catches the
+// blueprints), and a lens whose stored query silently blends both is a lens
+// nobody can predict a year later. Returns the exact ids when given, `null`
+// for "no id filter" (the caller then applies its fuzzy typeName path), and an
+// error when both or a malformed id arrive.
+export type TypeIdsParse = { ok: true; ids: number[] | null } | { ok: false; message: string }
+
+export const parseTypeIdsArg = (
+  typeIds: readonly string[] | null | undefined,
+  typeName: string | null | undefined
+): TypeIdsParse => {
+  const ids = (typeIds ?? []).map((id) => (id ?? '').trim()).filter((id) => id !== '')
+  if (ids.length === 0) return { ok: true, ids: null }
+  if ((typeName ?? '').trim() !== '') {
+    return { ok: false, message: 'Pass typeIds or typeName, not both — one is exact, the other is a name search.' }
+  }
+  const bad = ids.find((id) => !/^\d+$/.test(id))
+  if (bad !== undefined) return { ok: false, message: `typeIds must be numeric ids, got "${bad}".` }
+  return { ok: true, ids: [...new Set(ids.map(Number))] }
+}

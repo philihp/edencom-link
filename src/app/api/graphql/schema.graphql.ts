@@ -14,18 +14,26 @@ export const typeDefs = /* GraphQL */ `
     owners: [Owner!]!
 
     """
-    Current asset rows (live inventory) across your characters. includeShared
-    additionally returns rows other users have shared with you (session auth
-    only — the api_token path is own-data only; a Lens is the way to hand
-    shared data to external tools).
+    Current asset rows (live inventory) across your characters. typeIds filters
+    on exact SDE type ids; typeName is a fuzzy name search — pass one or the
+    other, never both. includeShared additionally returns rows other users have
+    shared with you (session auth only — the api_token path is own-data only; a
+    Lens is the way to hand shared data to external tools).
     """
-    assets(typeName: String, locationId: String, owner: String, limit: Int, includeShared: Boolean = false): AssetPage!
+    assets(
+      typeIds: [String!]
+      typeName: String
+      locationId: String
+      owner: String
+      limit: Int
+      includeShared: Boolean = false
+    ): AssetPage!
 
     "Asset shares other users have aimed at you (corporation/alliance/public). Session auth only."
     sharedWithMe: [ShareGrant!]!
 
-    "Current blueprint rows (BPOs and BPCs) across your characters."
-    blueprints(typeName: String, owner: String, limit: Int): BlueprintPage!
+    "Current blueprint rows (BPOs and BPCs) across your characters. typeIds and typeName are mutually exclusive."
+    blueprints(typeIds: [String!], typeName: String, owner: String, limit: Int): BlueprintPage!
 
     "Open market orders across your characters."
     marketOrders(owner: String): [MarketOrder!]!
@@ -36,8 +44,14 @@ export const typeDefs = /* GraphQL */ `
     "Latest known wallet balance per character."
     walletBalances: [WalletBalance!]!
 
-    "Market transaction history across your characters, newest first."
-    walletTransactions(typeName: String, owner: String, since: String, limit: Int): [WalletTransaction!]!
+    "Market transaction history across your characters, newest first. typeIds and typeName are mutually exclusive."
+    walletTransactions(
+      typeIds: [String!]
+      typeName: String
+      owner: String
+      since: String
+      limit: Int
+    ): [WalletTransaction!]!
   }
 
   "A linked character (id is this site's registration id, not the EVE character id)."
