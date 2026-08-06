@@ -34,7 +34,14 @@ Scope for making edencom.link double as a Discord application. Two goals
   amended below (match the invoker's Discord user id against
   `auth.identities`) waits on stage 06 — link codes are the only path
   until then.
-- **Stages 04–07 — not started.**
+- **Stage 04 — shipped.** Detection lives inside the
+  `character-mercenary-dens` extract (`src/jobs/characterMercenaryDens.js`
+  compares each fresh observation against the den's previous one; the pure
+  transition/format seam is `src/jobs/denReinforcement.js`, the enqueue I/O
+  is `src/jobs/mercenaryDenNotification.js`). The generic `notification`
+  outbox table was minted with `transport` + `discord_channel_id` per the
+  amended ntfy design; the extract cadence was bumped to hourly.
+- **Stages 05–07 — not started.**
 
 This is a scoping document set, not an implementation spec. Each stage is
 one PR with its own milestone; do them **in order** (each builds on the

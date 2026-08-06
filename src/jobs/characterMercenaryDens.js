@@ -1,6 +1,7 @@
 import { characterMercenaryDen, characterMercenaryDens } from '../esi.js'
 import { sudoSupabase } from '../supabase.js'
 import { cli, forEachCharacter, forEachSequential } from './lib.js'
+import { enqueueDenReinforcement, selectUserDiscordChannels } from './mercenaryDenNotification.js'
 
 const TAG = 'character-mercenary-dens'
 export const SCOPE = 'esi-structures.read_character.v1'
@@ -27,7 +28,7 @@ const signature = (d) =>
     d.skyhook_corporation_id == null ? null : Number(d.skyhook_corporation_id),
   ])
 
-export const syncCharacterMercenaryDens = async ({ access_token, characterID, registration_id, name }) => {
+export const syncCharacterMercenaryDens = async ({ access_token, characterID, registration_id, userId, name }) => {
   const { mercenary_dens: listed = [] } = await characterMercenaryDens(access_token, characterID)
 
   // One timestamp for the whole character so valid_from/valid_until line up per run.
@@ -41,6 +42,11 @@ export const syncCharacterMercenaryDens = async ({ access_token, characterID, re
     .eq('is_current', true)
   if (curErr) throw curErr
   const currentByDen = new Map((currentRows ?? []).map((r) => [Number(r.den_id), r]))
+
+  // Reinforcement detection (docs/discord-bot/04-reinforcement-detection.md)
+  // only matters when someone is listening — no linked channels means no
+  // previous-observation selects and no outbox writes.
+  const channels = await selectUserDiscordChannels(userId)
 
   await forEachSequential(listed, async (den) => {
     const detail = await characterMercenaryDen(access_token, characterID, den.id)
@@ -76,6 +82,24 @@ export const syncCharacterMercenaryDens = async ({ access_token, characterID, re
       if (error) throw error
     }
 
+    // The den's previous latest observation, read before inserting the fresh
+    // one — the un→reinforced transition is the comparison between the two.
+    // maybeSingle: a den's first-ever run has no previous row (and per the
+    // first-observation rule, a first sighting already reinforced still pings).
+    let prevObservation = null
+    if (channels.length > 0) {
+      const { data, error } = await sudoSupabase
+        .from('character_mercenary_den_status')
+        .select('reinforcement_end')
+        .eq('registration_id', registration_id)
+        .eq('den_id', den.id)
+        .order('observed_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (error) throw error
+      prevObservation = data
+    }
+
     // Observed volatile state — appended as a new history row every run.
     const { error: statusError } = await sudoSupabase.from('character_mercenary_den_status').insert({
       registration_id,
@@ -90,6 +114,18 @@ export const syncCharacterMercenaryDens = async ({ access_token, characterID, re
       observed_at: now,
     })
     if (statusError) throw statusError
+
+    if (channels.length > 0) {
+      await enqueueDenReinforcement({
+        userId,
+        denId: den.id,
+        planetId: den.planet_id,
+        prevObservation,
+        newObservation: { reinforcement_end: detail.reinforcement_timer?.end ?? null },
+        channels,
+        now: new Date(now),
+      })
+    }
   })
 
   // Dens still open but not listed this run have been unanchored/transferred —
