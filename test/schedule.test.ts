@@ -32,6 +32,11 @@ test('parses the field syntax vercel.json uses', () => {
     hourly?.hours,
     Array.from({ length: 24 }, (_, h) => h)
   )
+
+  // discord-notification-send sweeps every five minutes (stage 05).
+  const everyFiveMinutes = parseCron('*/5 * * * *')
+  assert.deepEqual(everyFiveMinutes?.minutes, [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55])
+  assert.equal(everyFiveMinutes?.hours.length, 24)
 })
 
 test('parses ranges, lists and stepped ranges', () => {

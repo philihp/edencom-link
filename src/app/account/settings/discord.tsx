@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 
-import { generateDiscordLinkCode, removeDiscordChannel } from './actions'
+import { generateDiscordLinkCode, removeDiscordChannel, sendDiscordTestMessage } from './actions'
 import Dot from './dot'
 
 export type DiscordChannel = {
@@ -59,6 +59,19 @@ const Discord = ({ appId, channels }: { appId: string | null; channels: DiscordC
     setResponse('Channel unlinked')
   }
 
+  const test = async (id: string) => {
+    setColor('#000000')
+    setResponse('Sending…')
+    const result = await sendDiscordTestMessage(id)
+    if (result.error) {
+      setColor('#FF0000')
+      setResponse(result.error)
+      return
+    }
+    setColor('#00AF00')
+    setResponse('Test message sent — check the channel')
+  }
+
   const installUrl = appId
     ? `https://discord.com/oauth2/authorize?client_id=${appId}&scope=bot+applications.commands&permissions=${BOT_PERMISSIONS}`
     : null
@@ -106,6 +119,7 @@ const Discord = ({ appId, channels }: { appId: string | null; channels: DiscordC
                 {channel.channel_name ? `#${channel.channel_name}` : `channel ${channel.channel_id}`} — linked{' '}
                 {channel.created_at.slice(0, 10)}
                 {channel.disabled_at && ' — bot lost access; remove and re-link'}{' '}
+                <button onClick={() => test(channel.id)}>Send test message</button>{' '}
                 <button onClick={() => remove(channel.id)}>Remove</button>
               </li>
             ))}

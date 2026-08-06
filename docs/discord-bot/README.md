@@ -41,7 +41,17 @@ Scope for making edencom.link double as a Discord application. Two goals
   is `src/jobs/mercenaryDenNotification.js`). The generic `notification`
   outbox table was minted with `transport` + `discord_channel_id` per the
   amended ntfy design; the extract cadence was bumped to hourly.
-- **Stages 05–07 — not started.**
+- **Stage 05 — shipped; the MVP loop is closed.** The
+  `discord-notification-send` sweep (`src/jobs/discordNotificationSend.js`,
+  pure outcome seam in `src/jobs/discordDelivery.js`) posts pending outbox
+  rows to their channels every 5 minutes, stamping `sent_at` on success,
+  `discord_channel.disabled_at` on 403/404, and bumping `attempts` otherwise
+  (cap 10). Runs as a single-step Vercel Workflow like every other scheduled
+  job — the stage doc's `runDirectCronJob` suggestion predates the completed
+  cron → Workflows migration. Settings grew a per-channel "Send test
+  message" button. Sending needs `DISCORD_BOT_TOKEN` set in Vercel; without
+  it the sweep is a logged no-op.
+- **Stages 06–07 — not started.**
 
 This is a scoping document set, not an implementation spec. Each stage is
 one PR with its own milestone; do them **in order** (each builds on the
