@@ -1,78 +1,142 @@
 'use server'
 
+import { revalidatePath } from 'next/cache'
+
+import { mintShareSecret, signShare, tokenSalt } from '@/shareToken'
 import { createClient } from '@/utils/supabase/server'
+import type { SaveShareInput, SaveShareResult } from '../asset/shareActions'
 
-export type ShareLevel = 'corporation' | 'alliance' | 'public'
-export type ShareRow = { id: string; level: ShareLevel }
+// Create/update/revoke the caller's share for one fitting — the writer behind
+// the share dialog on /fitting/[characterId]/[fittingId], mirroring the asset
+// share actions over the unified character_fitting_share row
+// (docs/sharing-layer/05-supersede-fittings.md). Cookie-session client, never
+// the service role. The per-level createFittingShare/revokeFittingShare pair
+// (and the three-toggle shareControls) retired with the level column.
 
-// Create a share for one of the caller's own fittings, at the given level.
-// Ownership is proven by the fit being visible through RLS on
-// character_fitting; character_fitting_share's own with-check policy
-// additionally enforces the insert is under one of the caller's own
-// registrations.
-//
-// Every level gates on the caller's session at read time (see the widening
-// policy on character_fitting_over_time in schema.sql) — corp/alliance on
-// live membership, public on merely being signed in — so one row per level is
-// enough: repeat clicks find and return the existing row rather than piling
-// up duplicates. No token is minted for any level; anonymous share links are
-// a future design (the table's token column is a placeholder for it).
-export const createFittingShare = async (
+// Ownership + audience guard: the registration must be the CALLER's (RLS on
+// `registration` only ever returns their own rows), the fit must exist, and
+// requested audience ids are filtered to affiliations the caller actually
+// has, so a hand-rolled request can't aim a share at a third party.
+const ownFitting = async (
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  registrationId: string,
+  fittingId: string
+) => {
+  const [{ data: regs }, { data: fit }] = await Promise.all([
+    supabase.from('registration').select('id, corporation_id'),
+    supabase
+      .from('character_fitting')
+      .select('fitting_id')
+      .eq('registration_id', registrationId)
+      .eq('fitting_id', fittingId)
+      .maybeSingle<{ fitting_id: number | string }>(),
+  ])
+  const own = (regs ?? []) as Array<{ id: string; corporation_id: number | string | null }>
+  if (!fit || !own.some((r) => r.id === registrationId)) return null
+  const corpIds = [
+    ...new Set(
+      own
+        .map((r) => r.corporation_id)
+        .filter((c): c is number => c != null)
+        .map(Number)
+    ),
+  ]
+  const { data: corps } = corpIds.length
+    ? await supabase.from('corporation').select('corporation_id, alliance_id').in('corporation_id', corpIds)
+    : { data: [] }
+  const allianceIds = [
+    ...new Set(
+      ((corps ?? []) as Array<{ alliance_id: number | string | null }>)
+        .map((c) => c.alliance_id)
+        .filter((a): a is number => a != null)
+        .map(Number)
+    ),
+  ]
+  return { ownCorpIds: new Set(corpIds), ownAllianceIds: new Set(allianceIds) }
+}
+
+export const saveFittingShare = async (
   registrationId: string,
   fittingId: string,
-  level: ShareLevel
-): Promise<{ share?: ShareRow; error?: string }> => {
+  input: SaveShareInput
+): Promise<SaveShareResult> => {
   const supabase = await createClient()
 
   const { data: auth, error: userError } = await supabase.auth.getUser()
-  if (userError || !auth?.user) {
-    return { error: 'Not signed in' }
-  }
+  if (userError || !auth?.user) return { error: 'Not signed in' }
 
-  const { data: fit } = await supabase
-    .from('character_fitting')
-    .select('registration_id')
-    .eq('registration_id', registrationId)
-    .eq('fitting_id', fittingId)
-    .maybeSingle()
-  if (!fit) {
-    return { error: 'Not your fitting' }
+  const owned = await ownFitting(supabase, registrationId, fittingId)
+  if (!owned) return { error: 'Not your fitting' }
+
+  const corporationIds = input.isPublic
+    ? []
+    : [...new Set(input.corporationIds.map(Number))].filter((id) => owned.ownCorpIds.has(id))
+  const allianceIds = input.isPublic
+    ? []
+    : [...new Set(input.allianceIds.map(Number))].filter((id) => owned.ownAllianceIds.has(id))
+  const link = input.isPublic ? false : input.link
+
+  let salt: string | null = null
+  if (link) {
+    try {
+      salt = tokenSalt()
+    } catch {
+      return { error: 'Share links are unavailable: TOKEN_SALT is not configured.' }
+    }
   }
 
   const { data: existing } = await supabase
     .from('character_fitting_share')
-    .select('id, level')
+    .select('id, secret')
     .eq('registration_id', registrationId)
     .eq('fitting_id', fittingId)
-    .eq('level', level)
-    .maybeSingle<ShareRow>()
-  if (existing) return { share: existing }
+    .maybeSingle<{ id: string; secret: string | null }>()
 
-  const { data: inserted, error } = await supabase
+  const secret = link ? (input.rotateLink || !existing?.secret ? mintShareSecret() : existing.secret) : null
+
+  const { data: saved, error } = await supabase
     .from('character_fitting_share')
-    .insert({ registration_id: registrationId, fitting_id: fittingId, level })
-    .select('id, level')
-    .single<ShareRow>()
-  if (error) {
-    return { error: error.message }
+    .upsert(
+      {
+        registration_id: registrationId,
+        fitting_id: Number(fittingId),
+        corporation_ids: corporationIds,
+        alliance_ids: allianceIds,
+        secret,
+      },
+      { onConflict: 'registration_id,fitting_id' }
+    )
+    .select('id')
+    .maybeSingle<{ id: string }>()
+  if (error || !saved) return { error: error?.message ?? 'Save failed' }
+
+  revalidatePath('/fitting')
+
+  return {
+    share: {
+      corporationIds,
+      allianceIds,
+      hasLink: secret != null,
+      shareParam: secret != null && salt != null ? `${saved.id}.${signShare(saved.id, secret, salt)}` : null,
+      isPublic: secret == null && corporationIds.length === 0 && allianceIds.length === 0,
+    },
   }
-  return { share: inserted }
 }
 
-// Revoke one share by id — RLS scopes the delete to the caller's own rows, so
-// this is just the row address; the share stops widening visibility on the
-// next query.
-export const revokeFittingShare = async (shareId: string): Promise<{ error?: string }> => {
+export const revokeFittingShare = async (registrationId: string, fittingId: string): Promise<{ error?: string }> => {
   const supabase = await createClient()
 
   const { data: auth, error: userError } = await supabase.auth.getUser()
-  if (userError || !auth?.user) {
-    return { error: 'Not signed in' }
-  }
+  if (userError || !auth?.user) return { error: 'Not signed in' }
 
-  const { error } = await supabase.from('character_fitting_share').delete().eq('id', shareId)
-  if (error) {
-    return { error: error.message }
-  }
+  // RLS scopes the delete to the caller's own rows.
+  const { error } = await supabase
+    .from('character_fitting_share')
+    .delete()
+    .eq('registration_id', registrationId)
+    .eq('fitting_id', fittingId)
+  if (error) return { error: error.message }
+
+  revalidatePath('/fitting')
   return {}
 }

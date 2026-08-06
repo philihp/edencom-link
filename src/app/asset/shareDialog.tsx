@@ -2,22 +2,35 @@
 
 import { useRef, useState, useTransition } from 'react'
 
-import { saveAssetShare, revokeAssetShare } from './shareActions'
+import type { SaveShareInput, SaveShareResult } from './shareActions'
 import type { ShareDialogData, ShareState } from './shareData'
 import styles from './shareDialog.module.css'
 
 type ShareDialogProps = {
-  itemId: string
-  // Which page's URL a share link opens — /ship/[id] or /asset/[id].
-  path: 'ship' | 'asset'
+  // What the dialog says it's sharing ("ship", "item", "fitting").
+  subjectLabel: string
+  // The path a share link opens (e.g. `/ship/123`); the client appends
+  // ?share=<param> to the current origin.
+  urlPath: string
   data: ShareDialogData
+  // Server-action references, bound to the subject by the server component
+  // (e.g. saveAssetShare.bind(null, itemId)) — this is what lets the one
+  // dialog drive asset AND fitting shares.
+  save: (input: SaveShareInput) => Promise<SaveShareResult>
+  revoke: () => Promise<{ error?: string }>
 }
 
-// The Share button + native <dialog> editor over the item's single share row
+// The Share button + native <dialog> editor over a subject's single share row
 // (docs/sharing-layer/03-share-dialog.md): corporation/alliance checkboxes,
-// a signed share link, or fully public — saved via the cookie-session server
-// actions in shareActions.ts. Rendered only when the viewer owns the item.
-export const ShareDialog = ({ itemId, path, data }: ShareDialogProps) => {
+// a signed share link, or fully public — saved via cookie-session server
+// actions. Rendered only when the viewer owns the subject.
+export const ShareDialog = ({
+  subjectLabel,
+  urlPath,
+  data,
+  save: saveAction,
+  revoke: revokeAction,
+}: ShareDialogProps) => {
   const ref = useRef<HTMLDialogElement>(null)
   const [share, setShare] = useState<ShareState | null>(data.share)
   const [corporationIds, setCorporationIds] = useState<Set<number>>(new Set(data.share?.corporationIds ?? []))
@@ -30,7 +43,7 @@ export const ShareDialog = ({ itemId, path, data }: ShareDialogProps) => {
 
   const shareUrl =
     share?.shareParam && typeof window !== 'undefined'
-      ? `${window.location.origin}/${path}/${itemId}?share=${share.shareParam}`
+      ? `${window.location.origin}${urlPath}?share=${share.shareParam}`
       : null
 
   const toggle = (set: Set<number>, id: number): Set<number> => {
@@ -43,7 +56,7 @@ export const ShareDialog = ({ itemId, path, data }: ShareDialogProps) => {
   const save = (rotateLink = false) =>
     startTransition(async () => {
       setError(null)
-      const result = await saveAssetShare(itemId, {
+      const result = await saveAction({
         corporationIds: [...corporationIds],
         allianceIds: [...allianceIds],
         link,
@@ -60,7 +73,7 @@ export const ShareDialog = ({ itemId, path, data }: ShareDialogProps) => {
   const stopSharing = () =>
     startTransition(async () => {
       setError(null)
-      const result = await revokeAssetShare(itemId)
+      const result = await revokeAction()
       if (result.error) setError(result.error)
       else {
         setShare(null)
@@ -84,7 +97,7 @@ export const ShareDialog = ({ itemId, path, data }: ShareDialogProps) => {
         Share{share ? 'd' : ''}
       </button>
       <dialog ref={ref} className={styles.dialog}>
-        <h2>Share this {path === 'ship' ? 'ship' : 'item'}</h2>
+        <h2>Share this {subjectLabel}</h2>
         <p className={styles.hint}>
           Whoever you share with can see this item and everything inside it, live, until you stop sharing.
         </p>

@@ -12,6 +12,7 @@ import { fetchTypeNames } from '../../typeNames'
 import { flagSortKey } from '../../fitting/fit'
 import { LocationAssets, type ItemRow } from '../../asset/[locationId]/locationAssets'
 import { resolveShareParams } from '../../asset/access'
+import { saveAssetShare, revokeAssetShare } from '../../asset/shareActions'
 import { fetchShareDialogData } from '../../asset/shareData'
 import { ShareDialog } from '../../asset/shareDialog'
 import { toEsiFit } from './esfFit'
@@ -217,7 +218,17 @@ const ShipPage = async ({
         typeId={Number(self.type_id)}
         heading={heading}
         owner={owner}
-        actions={shareData ? <ShareDialog itemId={itemId} path="ship" data={shareData} /> : null}
+        actions={
+          shareData ? (
+            <ShareDialog
+              subjectLabel="ship"
+              urlPath={`/ship/${itemId}`}
+              data={shareData}
+              save={saveAssetShare.bind(null, itemId)}
+              revoke={revokeAssetShare.bind(null, itemId)}
+            />
+          ) : null
+        }
       />
       <ShipFitViewDynamic esiFit={toEsiFit(Number(self.type_id), self.name ?? null, rows)} />
       <LocationAssets rows={rows} owners={owners} typeNamesPromise={typeNamesPromise} canAppraise />
