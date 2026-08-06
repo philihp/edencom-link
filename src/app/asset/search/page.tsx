@@ -7,6 +7,7 @@ import { getSdeTypes, searchSdeTypesAll } from '@/sdeTypes'
 import { BLUEPRINT_CATEGORY_ID } from '@/utils/sdeCategories'
 import { createClient } from '@/utils/supabase/server'
 
+import { LinkSpinner } from '../../linkSpinner'
 import { fetchOwners } from '../../owners'
 import { resolveLocations, type LocationRef } from '../../resolveLocations'
 import retro from '../../retro.module.css'
@@ -263,19 +264,30 @@ const AssetSearchPage = async ({ searchParams }: { searchParams: Promise<{ q?: s
                 <td>{ownerMap.get(row.ownerId) ?? row.ownerId}</td>
                 <td className="serif">
                   {row.root && floating ? (
-                    <Link href={`/asset/${row.root.id}`}>{systemName}</Link>
+                    <Link href={`/asset/${row.root.id}`}>
+                      {systemName}
+                      <LinkSpinner />
+                    </Link>
                   ) : (
                     (systemName ?? '—')
                   )}
                 </td>
                 <td className="serif">
-                  {row.root && !floating ? <Link href={`/asset/${row.root.id}`}>{stationName}</Link> : '—'}
+                  {row.root && !floating ? (
+                    <Link href={`/asset/${row.root.id}`}>
+                      {stationName}
+                      <LinkSpinner />
+                    </Link>
+                  ) : (
+                    '—'
+                  )}
                 </td>
                 <td>
                   <TypeIcon id={row.typeId} variation={iconFor(row.typeId)} />
                   {row.contents > 0 ? (
                     <Link href={`/asset/${row.itemId}`}>
                       <TypeName id={row.typeId} name={row.name} promise={typeNamesPromise} />
+                      <LinkSpinner />
                     </Link>
                   ) : (
                     <TypeName id={row.typeId} name={row.name} promise={typeNamesPromise} />
@@ -293,6 +305,7 @@ const AssetSearchPage = async ({ searchParams }: { searchParams: Promise<{ q?: s
                           {row.parentTypeId != null && <TypeIcon id={row.parentTypeId} />}
                           <Link className="serif" href={`/ship/${row.parentId}`}>
                             {shipLabel}
+                            <LinkSpinner />
                           </Link>
                           {row.flag ? <span className={retro.muted}> · {row.flag}</span> : null}
                         </>

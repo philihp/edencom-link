@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { reduce } from 'ramda'
 
+import { LinkSpinner } from '../linkSpinner'
 import { ALL_OWNERS, OwnerSelect, useOwnerFilter, type Owners } from '../ownerFilter'
 import retro from '../retro.module.css'
 import styles from './assets.module.css'
@@ -113,8 +114,12 @@ export const AssetsTable = ({ locations, owners }: AssetsTableProps) => {
                   <tr key={`location-${loc.id}`}>
                     <td aria-hidden="true" />
                     <td>
+                      {/* Opening a busy hangar takes a moment; the spinner says
+                          which row is being opened, which the whole-page
+                          loading fallback can't. */}
                       <Link href={`/asset/${loc.id}`} className="serif">
                         {loc.name}
+                        <LinkSpinner />
                       </Link>
                     </td>
                     <td className={retro.num}>{count}</td>
