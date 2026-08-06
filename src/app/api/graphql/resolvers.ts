@@ -12,7 +12,7 @@ import { uniq } from 'ramda'
 import { guessLocationRef, resolveTypeFilter } from '@/app/api/mcp/lib'
 import { resolveLocations, type LocationRef, type ResolvedLocations } from '@/app/resolveLocations'
 import { getSdeTypeNames } from '@/sdeTypes'
-import { ASSET_CAP, LIST_CAP, clampLimit, matchOwnerIds, parseIdArg, parseSince } from './filters'
+import { ASSET_CAP, LIST_CAP, clampLimit, matchOwnerIds, parseIdArg, parseSince, parseTypeIdsArg } from './filters'
 import type { GraphqlContext } from './context'
 
 const badRequest = (message: string): never => {
@@ -31,10 +31,17 @@ const scopeIds = (ctx: GraphqlContext, owner: string | null | undefined): string
   return match.ids ?? ctx.registrationIds
 }
 
-// Fuzzy item-name filter → SDE type ids, with the MCP layer's "too many
-// matches" guard; null means no filter.
-const typeIdsFor = async (typeName: string | null | undefined): Promise<number[] | null> => {
-  const filter = await resolveTypeFilter(typeName ?? undefined)
+// The item-type filter → SDE type ids, or null for no filter. Exact `typeIds`
+// win outright; otherwise the fuzzy name search runs, with the MCP layer's
+// "too many matches" guard. parseTypeIdsArg rejects passing both.
+const typeIdsFor = async (args: {
+  typeIds?: readonly string[] | null
+  typeName?: string | null
+}): Promise<number[] | null> => {
+  const exact = parseTypeIdsArg(args.typeIds, args.typeName)
+  if (!exact.ok) return badRequest(exact.message)
+  if (exact.ids !== null) return exact.ids
+  const filter = await resolveTypeFilter(args.typeName ?? undefined)
   if (!filter.ok) return badRequest(filter.message)
   return filter.matches === null ? null : filter.matches.map((m) => m.typeID)
 }
@@ -138,6 +145,7 @@ export const resolvers = {
     assets: async (
       _parent: unknown,
       args: {
+        typeIds?: readonly string[] | null
         typeName?: string | null
         locationId?: string | null
         owner?: string | null
@@ -155,7 +163,7 @@ export const resolvers = {
       const ownerIds = scopeIds(ctx, args.owner)
       const sharedIds = args.includeShared ? await grantorRegistrationIds(ctx) : []
       const scopedIds = [...ownerIds, ...sharedIds]
-      const typeIds = await typeIdsFor(args.typeName)
+      const typeIds = await typeIdsFor(args)
       const location = parseIdArg(args.locationId, 'locationId')
       if (!location.ok) return badRequest(location.message)
       const cap = clampLimit(args.limit, ASSET_CAP)
@@ -267,11 +275,16 @@ export const resolvers = {
 
     blueprints: async (
       _parent: unknown,
-      args: { typeName?: string | null; owner?: string | null; limit?: number | null },
+      args: {
+        typeIds?: readonly string[] | null
+        typeName?: string | null
+        owner?: string | null
+        limit?: number | null
+      },
       ctx: GraphqlContext
     ) => {
       const ownerIds = scopeIds(ctx, args.owner)
-      const typeIds = await typeIdsFor(args.typeName)
+      const typeIds = await typeIdsFor(args)
       const cap = clampLimit(args.limit, LIST_CAP)
 
       type BlueprintRow = {
@@ -497,11 +510,17 @@ export const resolvers = {
 
     walletTransactions: async (
       _parent: unknown,
-      args: { typeName?: string | null; owner?: string | null; since?: string | null; limit?: number | null },
+      args: {
+        typeIds?: readonly string[] | null
+        typeName?: string | null
+        owner?: string | null
+        since?: string | null
+        limit?: number | null
+      },
       ctx: GraphqlContext
     ) => {
       const ownerIds = scopeIds(ctx, args.owner)
-      const typeIds = await typeIdsFor(args.typeName)
+      const typeIds = await typeIdsFor(args)
       const since = parseSince(args.since)
       if (!since.ok) return badRequest(since.message)
       const cap = clampLimit(args.limit, LIST_CAP)

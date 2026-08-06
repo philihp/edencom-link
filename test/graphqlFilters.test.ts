@@ -13,6 +13,7 @@ import {
   matchOwnerIds,
   parseIdArg,
   parseSince,
+  parseTypeIdsArg,
 } from '../src/app/api/graphql/filters.ts'
 
 test('clampLimit defaults to the cap when absent or not a number', () => {
@@ -69,4 +70,26 @@ test('parseIdArg accepts only bare positive integer literals', () => {
   assert.equal(parseIdArg('60003760; drop table', 'locationId').ok, false)
   assert.equal(parseIdArg('-1', 'locationId').ok, false)
   assert.equal(parseIdArg('1e9', 'locationId').ok, false)
+})
+
+test('parseTypeIdsArg returns null when no ids are given', () => {
+  assert.deepEqual(parseTypeIdsArg(undefined, undefined), { ok: true, ids: null })
+  assert.deepEqual(parseTypeIdsArg([], 'Fuel Block'), { ok: true, ids: null })
+  assert.deepEqual(parseTypeIdsArg(['  '], undefined), { ok: true, ids: null })
+})
+
+test('parseTypeIdsArg parses, trims and dedupes exact ids', () => {
+  assert.deepEqual(parseTypeIdsArg([' 4051 ', '4246', '4051'], undefined), { ok: true, ids: [4051, 4246] })
+})
+
+test('parseTypeIdsArg refuses typeIds and typeName together', () => {
+  const both = parseTypeIdsArg(['4051'], 'Fuel Block')
+  assert.equal(both.ok, false)
+  assert.match(!both.ok ? both.message : '', /not both/)
+})
+
+test('parseTypeIdsArg rejects non-numeric ids rather than widening', () => {
+  assert.equal(parseTypeIdsArg(['4051', 'Tritanium'], undefined).ok, false)
+  assert.equal(parseTypeIdsArg(['-4051'], undefined).ok, false)
+  assert.equal(parseTypeIdsArg(['4051; drop table'], undefined).ok, false)
 })
