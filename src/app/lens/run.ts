@@ -15,7 +15,7 @@ export type LensRecord = {
   name: string
   query: string
   variables: Record<string, unknown>
-  shared: boolean
+  enabled: boolean
   corporation_ids: number[] | null
   alliance_ids: number[] | null
   secret: string | null

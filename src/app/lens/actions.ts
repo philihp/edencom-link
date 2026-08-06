@@ -91,7 +91,7 @@ export const previewLens = async (input: {
 }
 
 // The audience side, driven by the shared ShareDialog. The lens row IS the
-// share row, so save/revoke toggle its `shared` flag and audience columns
+// share row, so save/revoke toggle its `enabled` flag and audience columns
 // rather than upserting a sibling row. Requested audience ids are filtered to
 // ones the caller actually has (the setSharedAlliances defense).
 const ownAudiences = async (supabase: Awaited<ReturnType<typeof createClient>>) => {
@@ -153,7 +153,7 @@ export const saveLensShare = async (lensId: string, input: SaveShareInput): Prom
 
   const { error } = await supabase
     .from('lens')
-    .update({ shared: true, corporation_ids: corporationIds, alliance_ids: allianceIds, secret })
+    .update({ enabled: true, corporation_ids: corporationIds, alliance_ids: allianceIds, secret })
     .eq('id', lensId)
     .eq('user_id', userId)
   if (error) return { error: error.message }
@@ -180,7 +180,7 @@ export const revokeLensShare = async (lensId: string): Promise<{ error?: string 
   // Back to the unshared state — NOT an empty audience, which would be public.
   const { error } = await supabase
     .from('lens')
-    .update({ shared: false, corporation_ids: [], alliance_ids: [], secret: null })
+    .update({ enabled: false, corporation_ids: [], alliance_ids: [], secret: null })
     .eq('id', lensId)
     .eq('user_id', userId)
   if (error) return { error: error.message }

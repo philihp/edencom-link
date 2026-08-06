@@ -37,7 +37,7 @@ const resolveSignedLens = async (lensId: string, param: string): Promise<LensRec
 
   const service = createServiceClient()
   const { data: lens } = await service.from('lens').select('*').eq('id', lensId).maybeSingle<LensRecord>()
-  if (!lens || !lens.shared || !lens.secret) return null
+  if (!lens || !lens.enabled || !lens.secret) return null
   return verifyShareToken(lens.id, lens.secret, salt, signature) ? lens : null
 }
 
