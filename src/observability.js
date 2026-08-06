@@ -67,3 +67,13 @@ export const recordPeakRss = ({ job, entry = null }) => {
 //   type: the Discord interaction type (1=PING, 2=APPLICATION_COMMAND, ...), or null
 //   outcome: 'pong' | 'unimplemented' | 'unhandled' | 'bad_signature'
 export const recordDiscordInteraction = ({ type, outcome }) => recordMetric('discord.interaction', { type, outcome })
+
+// One outbound Discord message attempt — see src/jobs/discordNotificationSend.js.
+// Group by outcome to watch delivery health without an OpenTelemetry exporter:
+// a rising 'disabled' count means bots are being kicked, 'throttled' means the
+// send rate is brushing Discord's limits.
+//   outcome: 'sent' | 'disabled' | 'throttled' | 'retry'
+//   status: the HTTP status Discord returned
+//   duration_ms: round-trip latency of the POST
+export const recordDiscordSend = ({ outcome, status, duration_ms }) =>
+  recordMetric('discord.send', { outcome, status, duration_ms })

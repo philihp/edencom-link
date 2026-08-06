@@ -81,7 +81,8 @@ export const nextRunFor = (job: string, from: Date = new Date()): Date | null =>
 
 // A run can start a little late and takes time to record its heartbeat, so a
 // missed fire is only called out once it's this far past due. Well under the
-// tightest cadence (6h) and well over any job's runtime.
+// tightest cadence of any job listed here (1h, character-mercenary-dens) and
+// well over any job's runtime.
 const MISSED_GRACE_MINUTES = 30
 
 // Did the last scheduled fire not happen? True when the previous time this cron

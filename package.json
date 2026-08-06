@@ -60,6 +60,7 @@
     "sheet-csv": "node src/jobs/sheetCsv.js",
     "connect": "node src/connect.js",
     "db:new": "supabase migration new",
+    "discord-notification-send": "node src/jobs/discordNotificationSend.js",
     "discord-register-commands": "node src/discordRegisterCommands.js",
     "db:push": "supabase db push",
     "dev": "next dev",

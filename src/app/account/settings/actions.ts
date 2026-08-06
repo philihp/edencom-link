@@ -84,6 +84,50 @@ export const generateDiscordLinkCode = async (): Promise<{ code?: string; expire
   return { code, expiresAt }
 }
 
+// Post a test message straight to a linked channel (not via the outbox), so a
+// user can verify the pipe before trusting it with real alerts
+// (docs/discord-bot/05-notification-sender.md). The channel is read through the
+// caller's RLS-scoped client, so only their own links resolve; a 403/404 marks
+// the channel disabled exactly as the sender sweep would.
+export const sendDiscordTestMessage = async (id: string): Promise<{ error?: string }> => {
+  const supabase = await createClient()
+
+  const { data: channel, error } = await supabase
+    .from('discord_channel')
+    .select('id, channel_id')
+    .eq('id', id)
+    .maybeSingle()
+  if (error) return { error: error.message }
+  if (!channel) return { error: 'Channel not found' }
+
+  const botToken = process.env.DISCORD_BOT_TOKEN
+  if (!botToken) return { error: 'The Discord bot is not configured on this deployment' }
+
+  const response = await fetch(`https://discord.com/api/v10/channels/${channel.channel_id}/messages`, {
+    method: 'POST',
+    headers: { Authorization: `Bot ${botToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      content: 'Test message from Edencom.link — alerts for this account will arrive here.',
+      allowed_mentions: { parse: [] },
+    }),
+  })
+
+  if (response.status === 403 || response.status === 404) {
+    // Permanent, same classification the sweep makes. Service role: the owner
+    // policy grants select/delete only, so the update needs to bypass RLS.
+    const { createServiceClient } = await import('@/utils/supabase/service')
+    await createServiceClient()
+      .from('discord_channel')
+      .update({ disabled_at: new Date().toISOString() })
+      .eq('id', channel.id)
+    revalidatePath('/account/settings')
+    return { error: "The bot can't post there — check it's still in the server and can see the channel" }
+  }
+  if (!response.ok) return { error: `Discord returned ${response.status}` }
+
+  return {}
+}
+
 // Remove a linked Discord channel. RLS's owner delete policy scopes the row to
 // the caller, so a foreign id matches nothing.
 export const removeDiscordChannel = async (id: string): Promise<{ error?: string }> => {

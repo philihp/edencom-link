@@ -18,6 +18,10 @@
       "schedule": "30 * * * *"
     },
     {
+      "path": "/api/cron/discord-notification-send",
+      "schedule": "*/5 * * * *"
+    },
+    {
       "path": "/api/cron/character-fittings",
       "schedule": "34 */6 * * *"
     },
