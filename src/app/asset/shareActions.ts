@@ -125,7 +125,7 @@ export const saveAssetShare = async (itemId: string, input: SaveShareInput): Pro
       corporationIds,
       allianceIds,
       hasLink: secret != null,
-      shareParam: secret != null && salt != null ? `${saved.id}.${signShare(saved.id, secret, salt)}` : null,
+      shareParam: secret != null && salt != null ? signShare(saved.id, secret, salt) : null,
       isPublic: secret == null && corporationIds.length === 0 && allianceIds.length === 0,
     },
   }

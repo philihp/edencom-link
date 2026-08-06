@@ -90,6 +90,10 @@ The ordering runs safest-first:
 | [06-supersede-mercenary-dens.md](06-supersede-mercenary-dens.md) | Fold `character_mercenary_den_share` into the unified model                                                                                       | ✅ **Done** — migration `20260806000000`, `test/sql/den_share.sql`                        |
 | [07-lens.md](07-lens.md)                                         | Lenses: shared GraphQL queries under the creator's context, CSV rendering to supersede the Sheets endpoints; `/lens` editor behind a feature flag | ✅ **Done** — migration `20260806130000`, `test/sql/lens.sql`                            |
 
+Since then the URL token dropped its `<shareId>.` prefix — see the superseded
+note in [01-asset-share-table.md](01-asset-share-table.md#token-signing--srcsharetokents--token_salt).
+Old links still resolve and rewrite themselves to the short form.
+
 ## What already exists (build on this, don't reinvent it)
 
 - `my_corporation_ids()` / `my_alliance_ids()` — invoker-rights membership

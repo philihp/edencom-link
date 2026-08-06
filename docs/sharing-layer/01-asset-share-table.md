@@ -126,6 +126,19 @@ recomputes and compares with `timingSafeEqual`. Revoking a link = nulling
 `secret` (or rotating it, which invalidates old URLs); deleting the row
 revokes everything.
 
+**Superseded — the token is now just `?share=<signature>`.** Carrying the id
+was redundant: the URL's own path already identifies the share row (a lens
+share IS the lens, so `/lens/<id>?share=<id>.<sig>` said it twice; a fitting
+share is the path's `(registration, fitting)` pair; an asset share is one of
+the ≤16 shares covering the requested item's ancestry, and the signature says
+which). Resolvers look the row up from the path and verify the signature
+against it. `parseShareParam()` (`src/shareToken.ts`) still splits the old
+form so issued links keep working — the id half only ever _narrows_ the
+lookup, never selects a row the path doesn't already identify — and the pages
+rewrite such a URL to the short form in the address bar via
+`ShareUrlCleanup` (`src/app/shareUrlCleanup.tsx`, a `history.replaceState`
+with no navigation). Nothing mints the long form any more.
+
 `signShare`/`verifyShareToken` are pure given their inputs — unit-test them in
 `test/shareToken.test.ts` with a fixed salt injected as a parameter (read
 `process.env.TOKEN_SALT` only at the callers, so the node test runner needs

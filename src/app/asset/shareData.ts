@@ -13,7 +13,10 @@ export type ShareState = {
   corporationIds: number[]
   allianceIds: number[]
   hasLink: boolean
-  // `<shareId>.<signature>` for the ?share= param, when a link is enabled.
+  // The signature for the ?share= param, when a link is enabled. Bare — the
+  // row it verifies against is the one the URL's own path identifies, so the
+  // token doesn't repeat any id (links issued before this carried
+  // `<shareId>.<signature>` and still resolve; src/shareToken.ts).
   shareParam: string | null
   isPublic: boolean
 }
@@ -95,7 +98,7 @@ export const shareRowToState = (row: ShareRowLike | null): ShareState | null => 
   let shareParam: string | null = null
   if (row.secret) {
     try {
-      shareParam = `${row.id}.${signShare(row.id, row.secret, tokenSalt())}`
+      shareParam = signShare(row.id, row.secret, tokenSalt())
     } catch {
       shareParam = null
     }

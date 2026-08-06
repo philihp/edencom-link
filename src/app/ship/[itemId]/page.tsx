@@ -6,6 +6,7 @@ import { getSdeType, getSdeTypes } from '@/sdeTypes'
 import { createClient } from '@/utils/supabase/server'
 import { createServiceClient } from '@/utils/supabase/service'
 import { AssetPath, fetchAssetPath } from '../../assetPath'
+import { ShareUrlCleanup } from '../../shareUrlCleanup'
 import { typeFacts } from '../../assetTypeFacts'
 import type { Owners } from '../../ownerFilter'
 import { SkeletonTable } from '../../skeleton'
@@ -300,6 +301,7 @@ const SharedShipPage = async ({
 
   return (
     <>
+      {shareParams.share && <ShareUrlCleanup />}
       <ShipHeading typeId={Number(self.type_id)} heading={heading} owner={owner} />
       <ShipFitViewDynamic esiFit={toEsiFit(Number(self.type_id), self.name ?? null, rows)} />
       {/* Hull first here too, so a shared ship lists the same things the

@@ -7,6 +7,7 @@ import { ShipFitViewDynamic } from '../../../ship/[itemId]/shipFitViewDynamic'
 import { Name } from '../../../names'
 import { fetchTypeNames } from '../../../typeNames'
 import { ShareDialog } from '../../../asset/shareDialog'
+import { ShareUrlCleanup } from '../../../shareUrlCleanup'
 import { verifySignedFittingShare } from '../../access'
 import { saveFittingShare, revokeFittingShare } from '../../actions'
 import { toEsiFit, type FittingItem, type FittingRow } from '../../fit'
@@ -86,6 +87,7 @@ const FittingDetailPage = async ({
 
   return (
     <div className={isOwner ? undefined : styles.sharedPage}>
+      {share && <ShareUrlCleanup />}
       {isOwner ? null : (
         <div className={styles.sharedFrom}>
           <img

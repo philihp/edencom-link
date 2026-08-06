@@ -5,14 +5,17 @@
 //   policy or the audience policy (corporation/alliance membership, or a
 //   fully-public shared lens) decides. Works signed-out too: the anon role
 //   reaches only shared-and-public rows.
-// - Signed link: ?share=<lensId>.<signature> verified against the row's
-//   secret + TOKEN_SALT via the service client (an anonymous HTTP request is
-//   invisible to RLS — link-only lenses match no one there by design).
+// - Signed link: ?share=<signature> verified against the row's secret +
+//   TOKEN_SALT via the service client (an anonymous HTTP request is invisible
+//   to RLS — link-only lenses match no one there by design). The lens the
+//   signature must verify against is the one in the path, so the token needn't
+//   name it; legacy `<lensId>.<signature>` links still resolve, and the viewer
+//   rewrites them to the short form in the address bar.
 //
 // Either way the run is gated on the CREATOR still holding the lens flag —
 // un-flagging an account turns its shared lenses off, the dark-launch lever.
 import { LENS_FLAG, hasFlag } from '@/flags'
-import { tokenSalt, verifyShareToken } from '@/shareToken'
+import { parseShareParam, tokenSalt, verifyShareToken } from '@/shareToken'
 import { createClient } from '@/utils/supabase/server'
 import { createServiceClient } from '@/utils/supabase/service'
 import type { LensRecord } from './run'
@@ -22,11 +25,10 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 export type ResolvedLens = { lens: LensRecord; viewerIsOwner: boolean }
 
 const resolveSignedLens = async (lensId: string, param: string): Promise<LensRecord | null> => {
-  const dot = param.indexOf('.')
-  if (dot <= 0) return null
-  const shareId = param.slice(0, dot)
-  const signature = param.slice(dot + 1)
-  if (shareId !== lensId || signature === '') return null
+  const { shareId, signature } = parseShareParam(param)
+  if (signature === '') return null
+  // A legacy link names the lens it was issued for; it has to be this one.
+  if (shareId !== null && shareId !== lensId) return null
 
   let salt: string
   try {

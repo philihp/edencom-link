@@ -119,7 +119,7 @@ export const applyLensShare = async (
       corporationIds: audience.corporationIds,
       allianceIds: audience.allianceIds,
       hasLink: secret != null,
-      shareParam: secret != null && salt != null ? `${lensId}.${signShare(lensId, secret, salt)}` : null,
+      shareParam: secret != null && salt != null ? signShare(lensId, secret, salt) : null,
       isPublic: secret == null && audience.corporationIds.length === 0 && audience.allianceIds.length === 0,
     },
   }
