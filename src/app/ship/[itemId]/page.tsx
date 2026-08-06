@@ -1,7 +1,7 @@
 import { notFound, redirect } from 'next/navigation'
 import { ascend, sortWith } from 'ramda'
 
-import { getSdeType, getSdeTypes } from '@/sdeTypes'
+import { getSdeType, getSdeTypes, type SdeType } from '@/sdeTypes'
 import { createClient } from '@/utils/supabase/server'
 import { createServiceClient } from '@/utils/supabase/service'
 import { AssetPath, fetchAssetPath } from '../../assetPath'
@@ -10,6 +10,7 @@ import { fetchOwners } from '../../owners'
 import type { Owners } from '../../ownerFilter'
 import { fetchTypeNames } from '../../typeNames'
 import { flagSortKey } from '../../fitting/fit'
+import { AppraisalPanel } from '../../asset/[locationId]/appraisalPanel'
 import { LocationAssets, type ItemRow } from '../../asset/[locationId]/locationAssets'
 import { resolveShareParams } from '../../asset/access'
 import { saveAssetShare, revokeAssetShare } from '../../asset/shareActions'
@@ -59,6 +60,40 @@ const fittingOrder = sortWith<ItemRow>([
   ascend((r) => r.flag ?? ''),
   ascend((r) => r.typeId),
 ])
+
+// The hull as a row of its own, heading the module table.
+//
+// It isn't one of the ship's children — it's their container — so nothing in
+// the child query produces it, and the table used to list a ship's contents
+// without listing the ship. That reads as an omission now that the table is
+// what gets selected and appraised: "everything shown in this list" has to
+// include the thing the page is about. Assembled, hence a singleton with no
+// stack size, and it links nowhere: this is already its page.
+const hullRow = (
+  self: Pick<ShipRow, 'item_id' | 'type_id' | 'name'>,
+  ownerId: string,
+  type: SdeType | undefined,
+  contents: number
+): ItemRow => ({
+  itemId: String(self.item_id),
+  ownerId,
+  typeId: Number(self.type_id),
+  name: self.name ?? null,
+  quantity: null,
+  isSingleton: true,
+  flag: null,
+  contents,
+  isCurrentShip: false,
+  href: null,
+  ...typeFacts(type),
+})
+
+// How many items the hull holds, all the way down: its own children plus
+// whatever each of them contains. The per-child counts come from the same
+// *_location_contents() walk the drill-in links use, so the hull's Contents
+// cell agrees with the rows under it.
+const nestedCount = (children: ChildRow[], contentsByItem: Map<string, number>): number =>
+  children.length + children.reduce((total, c) => total + (contentsByItem.get(String(c.item_id)) ?? 0), 0)
 
 // A ship's own page: the eveship.fit wheel + stats built from its fitted
 // modules, a full module/cargo table in fitting order (the same sortable
@@ -174,15 +209,16 @@ const ShipPage = async ({
   const heading = self.name && self.name !== typeName ? `${self.name} (${typeName})` : typeName
 
   // One bulk SDE lookup → set of Ship-category type ids among the cargo, so the
-  // per-row drill-in link test stays a sync Set.has.
-  const childTypes = await getSdeTypes(children.map((c) => Number(c.type_id)))
+  // per-row drill-in link test stays a sync Set.has. The hull's own type rides
+  // along for its row's volume/group/category columns.
+  const childTypes = await getSdeTypes([Number(self.type_id), ...children.map((c) => Number(c.type_id))])
   const childShipTypeIds = new Set(
     Object.values(childTypes)
       .filter((t) => t.categoryID === SHIP_CATEGORY_ID)
       .map((t) => t.typeID)
   )
 
-  const typeNamesPromise = fetchTypeNames(children.map((c) => Number(c.type_id)))
+  const typeNamesPromise = fetchTypeNames([Number(self.type_id), ...children.map((c) => Number(c.type_id))])
   const rows: ItemRow[] = fittingOrder(
     children.map((c) => {
       const contents = contentsByItem.get(String(c.item_id)) ?? 0
@@ -206,6 +242,18 @@ const ShipPage = async ({
     })
   )
 
+  // The hull heads the table; the fit viewer below is fed the children alone,
+  // since a ship isn't a module fitted to itself.
+  const tableRows: ItemRow[] = [
+    hullRow(
+      self,
+      characterSelf?.registration_id ?? String(corpSelf?.corporation_id),
+      childTypes[Number(self.type_id)],
+      nestedCount(children, contentsByItem)
+    ),
+    ...rows,
+  ]
+
   // The share dialog appears only for a character item the caller actually
   // owns — with phase 2's widening policy, RLS visibility alone can also mean
   // "shared with me", which must not offer the dialog.
@@ -219,19 +267,24 @@ const ShipPage = async ({
         heading={heading}
         owner={owner}
         actions={
-          shareData ? (
-            <ShareDialog
-              subjectLabel="ship"
-              urlPath={`/ship/${itemId}`}
-              data={shareData}
-              save={saveAssetShare.bind(null, itemId)}
-              revoke={revokeAssetShare.bind(null, itemId)}
-            />
-          ) : null
+          <>
+            {/* The hull plus everything nested inside it — the same set the
+                table below lists, priced in one request. */}
+            <AppraisalPanel targets={[itemId]} label="Appraise ship" />
+            {shareData ? (
+              <ShareDialog
+                subjectLabel="ship"
+                urlPath={`/ship/${itemId}`}
+                data={shareData}
+                save={saveAssetShare.bind(null, itemId)}
+                revoke={revokeAssetShare.bind(null, itemId)}
+              />
+            ) : null}
+          </>
         }
       />
       <ShipFitViewDynamic esiFit={toEsiFit(Number(self.type_id), self.name ?? null, rows)} />
-      <LocationAssets rows={rows} owners={owners} typeNamesPromise={typeNamesPromise} canAppraise />
+      <LocationAssets rows={tableRows} owners={owners} typeNamesPromise={typeNamesPromise} canAppraise />
     </>
   )
 }
@@ -314,11 +367,11 @@ const SharedShipPage = async ({
   const typeName = typeNames[Number(self.type_id)] ?? `#${self.type_id}`
   const heading = self.name && self.name !== typeName ? `${self.name} (${typeName})` : typeName
 
-  const typeNamesPromise = fetchTypeNames(children.map((c) => Number(c.type_id)))
+  const typeNamesPromise = fetchTypeNames([Number(self.type_id), ...children.map((c) => Number(c.type_id))])
   // The same bulk lookup the signed-in view does, for the volume/group/category
   // columns and each row's icon variation. Pure SDE data — public-read, nothing
   // owner-specific — so it's as safe on the share path as the type names are.
-  const childTypes = await getSdeTypes(children.map((c) => Number(c.type_id)))
+  const childTypes = await getSdeTypes([Number(self.type_id), ...children.map((c) => Number(c.type_id))])
   // Display-only in the shared view: no href (a nested container would need its
   // own share token to open), and contents is unused without drill-down links.
   const rows: ItemRow[] = fittingOrder(
@@ -347,7 +400,15 @@ const SharedShipPage = async ({
     <>
       <ShipHeading typeId={Number(self.type_id)} heading={heading} owner={owner} />
       <ShipFitViewDynamic esiFit={toEsiFit(Number(self.type_id), self.name ?? null, rows)} />
-      <LocationAssets rows={rows} owners={owners} typeNamesPromise={typeNamesPromise} canAppraise={false} />
+      {/* Hull first here too, so a shared ship lists the same things the
+          owner's own view does. Contents counts are unavailable on this path
+          (the walk RPCs are skipped), so it reports none rather than a guess. */}
+      <LocationAssets
+        rows={[hullRow(self, ownerId, childTypes[Number(self.type_id)], 0), ...rows]}
+        owners={owners}
+        typeNamesPromise={typeNamesPromise}
+        canAppraise={false}
+      />
     </>
   )
 }

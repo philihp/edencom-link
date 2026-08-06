@@ -1,0 +1,117 @@
+/*
+ * Appraise control: a secondary button that swaps in place for the figures it
+ * fetches, plus the primary arrow that saves the appraisal and becomes a link
+ * to it. Shared by the selection footer under the asset table and the "whole
+ * place" / "whole ship" buttons in the page headers, so the same action always
+ * looks and behaves the same wherever it sits.
+ */
+
+.panel {
+  display: inline-flex;
+  align-items: center;
+  gap: 8pt;
+}
+
+/* Matches the site's secondary button (see home.module.css): quiet, outlined,
+   the resting state of an action the user hasn't asked for yet. */
+.secondary {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  margin: 0;
+  padding: 6px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  background: var(--paper-raised);
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    border-color 0.12s ease,
+    transform 0.04s ease;
+}
+
+.secondary:hover:not(:disabled) {
+  border-color: var(--accent);
+  text-decoration: none;
+}
+
+.secondary:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+/* The follow-up action, once there are figures to save: the site's primary
+   button, since at that point it's the obvious next thing to do. Styled
+   identically as a <button> and as the <a> it turns into. */
+.primary,
+.primary:visited {
+  display: inline-flex;
+  align-items: center;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--accent-strong);
+  border-radius: var(--radius-sm);
+  color: var(--paper-raised);
+  background: var(--accent);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.primary:hover {
+  background: var(--accent-strong);
+  text-decoration: none;
+}
+
+.primary:active {
+  transform: translateY(1px);
+}
+
+.primary:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+/* In-flight, where the button was. */
+.pending {
+  font-size: 13px;
+  color: var(--ink-faint);
+  white-space: nowrap;
+}
+
+/* High over low, one per line. Tabular so the two figures' digits sit in the
+   same columns, which is the whole reason they're stacked rather than slashed. */
+.figures {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  line-height: 1.35;
+  white-space: nowrap;
+  cursor: help;
+}
+
+.figure {
+  display: flex;
+  align-items: baseline;
+  gap: 6pt;
+}
+
+.figureLabel {
+  font-family: var(--sans);
+  font-size: 10px;
+  color: var(--ink-faint);
+}
+
+/* Errors stay quiet and inline — no toast, per the design. */
+.error {
+  font-size: 12px;
+  color: var(--ink-faint);
+  white-space: normal;
+}

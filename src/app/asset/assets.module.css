@@ -145,3 +145,66 @@
   align-items: center;
   gap: 6pt;
 }
+
+/* Selection column. Narrow, and never the thing that sets the row height. */
+.checkCell {
+  width: 1px;
+  padding-right: 0;
+}
+
+/* The hitbox. Padded far past the box itself and pulled back by the same
+   amount, so the clickable area covers most of the cell without any of the
+   columns beside it moving — the checkboxes are small and the rows are dense,
+   and a miss selects nothing rather than the row next door. */
+.checkSlop {
+  display: inline-flex;
+  align-items: center;
+  padding: 10px;
+  margin: -10px;
+  cursor: pointer;
+}
+
+.checkSlop input {
+  width: 13px;
+  height: 13px;
+  margin: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+.selectedRow td {
+  background: var(--accent-tint);
+}
+
+/* Beats `.retro tbody tr:hover td`, which would otherwise wash a selected row
+   back to the plain raised paper as the pointer crosses it. */
+.selectedRow:hover td {
+  background: var(--accent-tint);
+}
+
+/* While a rectangle is being dragged, nothing under it should look like text
+   waiting to be selected. */
+.dragging {
+  user-select: none;
+}
+
+/* The drag rectangle. Fixed, because it's positioned from viewport coordinates
+   (what getBoundingClientRect and the mouse events both speak), and inert so
+   the mouseup that ends the drag lands on the page rather than on this. */
+.marquee {
+  position: fixed;
+  z-index: 5;
+  border: 1px dashed var(--accent);
+  background: var(--accent-tint);
+  pointer-events: none;
+}
+
+/* The appraisal control under the table, at the end the numeric columns are on. */
+.tableFooter {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8pt;
+  margin: 8pt 0 16pt;
+  min-height: 34px;
+}

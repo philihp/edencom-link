@@ -28,27 +28,30 @@ type SelfRow = { type_id: number | string; quantity: number | string | null; is_
 // stack) or a bare place id — a station, structure or solar system. RLS decides
 // what's visible, so an id the caller doesn't own simply reads as a location
 // whose subtree comes back empty.
-export const collectAssetLines = async (supabase: SupabaseClient, target: string): Promise<AssetLines> => {
-  const { data: characterSelf } = await supabase
-    .from('character_asset')
-    .select('type_id, quantity, is_singleton')
-    .eq('item_id', target)
-    .maybeSingle<SelfRow>()
-  const { data: corpSelf } = characterSelf
-    ? { data: null }
-    : await supabase
-        .from('corp_asset')
-        .select('type_id, quantity, is_singleton')
-        .eq('item_id', target)
-        .maybeSingle<SelfRow>()
-  const self = characterSelf ?? corpSelf
+export const collectAssetLines = (supabase: SupabaseClient, target: string): Promise<AssetLines> =>
+  collectAssetLinesForTargets(supabase, [target])
 
-  // Everything nested under the target, from both hangars. An item lives in
-  // exactly one of the two tables, so unioning the two can't double-count.
-  const [{ data: characterRows }, { data: corpRows }] = await Promise.all([
-    supabase.rpc('character_asset_subtree_items', { parent: target }),
-    supabase.rpc('corp_asset_subtree_items', { parent: target }),
-  ])
+// The same, over several targets at once — what the asset table's checkbox
+// selection appraises. Still four queries however many rows are selected: the
+// array-taking *_asset_subtree_items() overloads descend every target in one
+// walk, and the two self lookups are `in` filters rather than a lookup apiece.
+// Pricing has to stay a single upstream request (the provider budget is 200 an
+// hour, deployment-wide), so the fan-out has to collapse on our side too.
+//
+// Targets are deliberately not required to be disjoint: selecting a container
+// and something inside it prices each item exactly once (the walk folds an item
+// reached twice, and drops any item that is itself a target, since every
+// resolved target gets its own line here).
+export const collectAssetLinesForTargets = async (supabase: SupabaseClient, targets: string[]): Promise<AssetLines> => {
+  // An item lives in exactly one of the two hangar tables, so unioning both
+  // sides can't double-count — that holds for the self rows and the walks alike.
+  const [{ data: characterSelves }, { data: corpSelves }, { data: characterRows }, { data: corpRows }] =
+    await Promise.all([
+      supabase.from('character_asset').select('type_id, quantity, is_singleton').in('item_id', targets),
+      supabase.from('corp_asset').select('type_id, quantity, is_singleton').in('item_id', targets),
+      supabase.rpc('character_asset_subtree_items', { parents: targets }),
+      supabase.rpc('corp_asset_subtree_items', { parents: targets }),
+    ])
 
   const quantities = new Map<number, number>()
   const add = (typeId: number, quantity: number) => quantities.set(typeId, (quantities.get(typeId) ?? 0) + quantity)
@@ -57,9 +60,13 @@ export const collectAssetLines = async (supabase: SupabaseClient, target: string
     [...((characterRows ?? []) as SubtreeRow[]), ...((corpRows ?? []) as SubtreeRow[])]
   )
   // Those functions return strictly the contents, so an item target still owes
-  // its own line — the hull of a ship, the container itself. A bare location has
-  // nothing to add.
-  if (self) add(Number(self.type_id), self.is_singleton ? 1 : Number(self.quantity ?? 1))
+  // its own line — the hull of a ship, the container itself, a plain stack that
+  // holds nothing. A bare location has nothing to add, and simply doesn't
+  // resolve to a self row.
+  forEach(
+    (self: SelfRow) => add(Number(self.type_id), self.is_singleton ? 1 : Number(self.quantity ?? 1)),
+    [...((characterSelves ?? []) as SelfRow[]), ...((corpSelves ?? []) as SelfRow[])]
+  )
 
   return toAppraisalLines(quantities, await getSdeTypes([...quantities.keys()]))
 }

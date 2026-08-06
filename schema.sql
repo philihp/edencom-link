@@ -35,6 +35,8 @@ drop function if exists public.character_asset_search(bigint[])          cascade
 drop function if exists public.corp_asset_search(bigint[])               cascade;
 drop function if exists public.character_asset_subtree_items(bigint)     cascade;
 drop function if exists public.corp_asset_subtree_items(bigint)          cascade;
+drop function if exists public.character_asset_subtree_items(bigint[])   cascade;
+drop function if exists public.corp_asset_subtree_items(bigint[])        cascade;
 drop function if exists public.blueprint_search(bigint[], bigint[], bigint[], uuid[], bigint[], text, int, int, boolean, text, int) cascade;
 drop function if exists public.character_asset_snapshot_at(uuid[], timestamptz) cascade;
 drop function if exists public.character_industry_jobs(uuid[], boolean)             cascade;
@@ -400,6 +402,40 @@ as $$
   group by d.type_id;
 $$;
 
+-- appraisal (selection in the asset table): the same walk over many parents at
+-- once, so appraising a checkbox selection is one query rather than one per
+-- row. A selection can name both a container and something inside it, which
+-- the scalar version never had to consider: an item reached by two descents is
+-- folded once, and an item that is itself a parent is dropped (the caller adds
+-- one line per target it resolved, so it would otherwise be priced twice).
+create or replace function public.character_asset_subtree_items(parents bigint[])
+returns table (type_id bigint, quantity bigint)
+language sql
+stable
+as $$
+  with recursive descend as (
+    select a.item_id, a.type_id, a.quantity, a.is_singleton, 1 as depth
+    from public.character_asset a
+    where a.location_id = any(parents)
+    union all
+    select c.item_id, c.type_id, c.quantity, c.is_singleton, d.depth + 1
+    from descend d
+    join public.character_asset c on c.location_id = d.item_id
+    where d.depth < 64
+  ),
+  once as (
+    select distinct on (item_id) item_id, type_id, quantity, is_singleton
+    from descend
+    order by item_id
+  )
+  select
+    o.type_id,
+    sum(case when o.is_singleton then 1 else coalesce(o.quantity, 1) end)::bigint as quantity
+  from once o
+  where o.item_id <> all(parents)
+  group by o.type_id;
+$$;
+
 -- item search (/asset/search): every current item whose type_id is in
 -- `type_ids`, with its root location and nested-item count. Seeded from just
 -- the matched items (rather than every asset, like the two functions above),
@@ -495,6 +531,7 @@ grant execute on function public.character_asset_location_summary()        to au
 grant execute on function public.character_asset_location_contents(bigint) to authenticated;
 grant execute on function public.character_asset_search(bigint[])          to authenticated;
 grant execute on function public.character_asset_subtree_items(bigint)     to authenticated;
+grant execute on function public.character_asset_subtree_items(bigint[])   to authenticated;
 
 -- /api/character/assets IMPORTDATA endpoint: the player's raw asset rows (one
 -- per item stack), with the owning character's name, as of `as_of`,
@@ -2655,6 +2692,37 @@ as $$
   group by d.type_id;
 $$;
 
+-- appraisal (selection in the asset table): mirrors the array-taking
+-- character_asset_subtree_items() over corp assets — many parents in one walk,
+-- each item folded once, parents themselves left to the caller's own lines.
+create or replace function public.corp_asset_subtree_items(parents bigint[])
+returns table (type_id bigint, quantity bigint)
+language sql
+stable
+as $$
+  with recursive descend as (
+    select a.item_id, a.type_id, a.quantity, a.is_singleton, 1 as depth
+    from public.corp_asset a
+    where a.location_id = any(parents)
+    union all
+    select c.item_id, c.type_id, c.quantity, c.is_singleton, d.depth + 1
+    from descend d
+    join public.corp_asset c on c.location_id = d.item_id
+    where d.depth < 64
+  ),
+  once as (
+    select distinct on (item_id) item_id, type_id, quantity, is_singleton
+    from descend
+    order by item_id
+  )
+  select
+    o.type_id,
+    sum(case when o.is_singleton then 1 else coalesce(o.quantity, 1) end)::bigint as quantity
+  from once o
+  where o.item_id <> all(parents)
+  group by o.type_id;
+$$;
+
 -- item search (/asset/search): mirrors character_asset_search() over corp
 -- assets, seeded from just the matched items.
 create or replace function public.corp_asset_search(type_ids bigint[])
@@ -2744,6 +2812,7 @@ grant execute on function public.corp_asset_location_summary()        to authent
 grant execute on function public.corp_asset_location_contents(bigint) to authenticated;
 grant execute on function public.corp_asset_search(bigint[])          to authenticated;
 grant execute on function public.corp_asset_subtree_items(bigint)     to authenticated;
+grant execute on function public.corp_asset_subtree_items(bigint[])   to authenticated;
 
 -- breadcrumb (/asset/[locationId], /ship/[itemId]): the materialized path of
 -- one item — the item itself, then each enclosing container outward, ordered
