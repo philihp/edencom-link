@@ -1,12 +1,13 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
+import { pluck, uniq } from 'ramda'
 
 import { createServiceClient } from '@/utils/supabase/service'
 import { createClient } from '@/utils/supabase/server'
 
 import { DateTime } from '../../DateTime'
 import { isChancellor } from '../chancellor/chancellor'
-import { mainCharacterNameForUser } from '../lib/inviter'
+import { mainCharacterNameForUser, mainCharacterNamesForUsers } from '../lib/inviter'
 import CopyLink from './copyLink'
 import CreateButton from './createButton'
 import { earnedCount, unlockDate, weeksToUnlock } from './schedule'
@@ -53,6 +54,18 @@ const InvitesPage = async () => {
 
   const allCodes = codes ?? []
   const unused = allCodes.filter((c) => !c.redeemed_by)
+
+  // Who claimed each redeemed code, by their main character. The redeemer's
+  // registrations sit behind their own RLS, so this reuses the same service-role
+  // lookup as the inviter line above, batched across every claimed code.
+  const claimedNames = await mainCharacterNamesForUsers(
+    uniq(
+      pluck(
+        'redeemed_by',
+        allCodes.filter((c) => c.redeemed_by)
+      ) as string[]
+    )
+  )
   const earned = earnedCount(firstSsoAt)
   const available = Math.max(0, earned - allCodes.length)
 
@@ -152,6 +165,7 @@ const InvitesPage = async () => {
                 <th>Code</th>
                 <th>Created</th>
                 <th>Status</th>
+                <th>Claimed by</th>
               </tr>
             </thead>
             <tbody>
@@ -172,6 +186,7 @@ const InvitesPage = async () => {
                       'Unclaimed'
                     )}
                   </td>
+                  <td>{(c.redeemed_by && claimedNames.get(c.redeemed_by)) || '—'}</td>
                 </tr>
               ))}
             </tbody>
