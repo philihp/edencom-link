@@ -1,6 +1,15 @@
 # Phase 6: fold mercenary dens into the unified model
 
-**Status: not started.**
+**Status: ✅ done** — migration `20260806000000_den_share_unified.sql`
+(one row per registration, alliances aggregated into `alliance_ids`, `id` uuid
+primary key for future signed links; no empty-audience rows can be produced —
+"shared with nobody" stays "no row", since an empty audience now means
+public). `mercenary_den_shared_with_caller` rewrites onto
+`share_audience_matches()` with the same signature, so the den and enemy-intel
+widening policies are untouched. The `/mercenary-dens` alliance picker is kept
+(better fit than the dialog for "usually one alliance") and its action becomes
+a per-registration upsert — fixing the old non-transactional
+delete-then-insert replace. Covered by `test/sql/den_share.sql`.
 
 The den share was the pattern-setter and is the closest to the target
 already; this phase is mostly a reshape. It carries one structural difference

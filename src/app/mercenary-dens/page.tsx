@@ -97,9 +97,15 @@ const MercenaryDensPage = async () => {
   // writes them: all characters at once).
   const registrationIds = [...ownRegById.keys()]
   const { data: shares } = registrationIds.length
-    ? await supabase.from('character_mercenary_den_share').select('alliance_id').in('registration_id', registrationIds)
+    ? await supabase.from('character_mercenary_den_share').select('alliance_ids').in('registration_id', registrationIds)
     : { data: [] }
-  const sharedAllianceIds = [...new Set((shares ?? []).map((s) => String(s.alliance_id)))]
+  const sharedAllianceIds = [
+    ...new Set(
+      ((shares ?? []) as Array<{ alliance_ids: Array<number | string> | null }>).flatMap((s) =>
+        (s.alliance_ids ?? []).map(String)
+      )
+    ),
+  ]
 
   // Every mercenary den we can see (own + shared to one of our alliances), each
   // enriched with its latest observed status (the view left-joins it).

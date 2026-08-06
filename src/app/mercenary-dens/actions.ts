@@ -53,23 +53,32 @@ export const setSharedAlliances = async (allianceIds: number[]): Promise<{ error
   )
   const alliances = [...new Set(allianceIds.map(Number))].filter((a) => ownAlliances.has(a))
 
-  // Replace this user's shares wholesale: clear their existing rows, then insert
-  // the desired (character × chosen alliance) set.
-  const { error: delError } = await supabase
-    .from('character_mercenary_den_share')
-    .delete()
-    .in('registration_id', registrationIds)
-  if (delError) {
-    return { error: delError.message }
-  }
-
-  if (alliances.length > 0) {
-    const rows = registrationIds.flatMap((registration_id) =>
-      alliances.map((alliance_id) => ({ registration_id, alliance_id }))
-    )
-    const { error: insError } = await supabase.from('character_mercenary_den_share').insert(rows)
-    if (insError) {
-      return { error: insError.message }
+  // The unified share row carries the whole audience as an array (one row per
+  // registration), so choosing alliances is an upsert per character rather
+  // than the old delete-then-insert cross product — no window where a failed
+  // insert leaves the user with no shares. Choosing NONE deletes the rows:
+  // under the unified model an empty-audience row means PUBLIC, so "shared
+  // with nobody" must be no row at all.
+  if (alliances.length === 0) {
+    const { error: delError } = await supabase
+      .from('character_mercenary_den_share')
+      .delete()
+      .in('registration_id', registrationIds)
+    if (delError) {
+      return { error: delError.message }
+    }
+  } else {
+    const rows = registrationIds.map((registration_id) => ({
+      registration_id,
+      corporation_ids: [],
+      alliance_ids: alliances,
+      secret: null,
+    }))
+    const { error: upsertError } = await supabase
+      .from('character_mercenary_den_share')
+      .upsert(rows, { onConflict: 'registration_id' })
+    if (upsertError) {
+      return { error: upsertError.message }
     }
   }
 
