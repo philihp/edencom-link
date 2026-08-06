@@ -1,0 +1,97 @@
+.editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8pt;
+  margin-top: 8pt;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 2pt;
+  font-size: 9pt;
+  color: var(--ink-soft);
+}
+
+.name {
+  font-size: 10pt;
+  color: var(--ink);
+  background: var(--paper-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 4pt 8pt;
+  max-width: 24em;
+}
+
+.query,
+.variables {
+  font-family: var(--mono);
+  font-size: 10pt;
+  color: var(--ink);
+  background: var(--paper-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 6pt 8pt;
+  resize: vertical;
+}
+
+.result {
+  font-family: var(--mono);
+  font-size: 9pt;
+  background: var(--paper-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 6pt 8pt;
+  overflow-x: auto;
+  white-space: pre;
+  max-height: 32em;
+  overflow-y: auto;
+}
+
+.buttons {
+  display: flex;
+  gap: 6pt;
+  align-items: center;
+}
+
+.error {
+  color: var(--danger, #c33);
+  font-size: 9pt;
+}
+
+.lens {
+  margin-top: 16pt;
+  padding-top: 8pt;
+  border-top: 1px solid var(--line);
+}
+
+.lensHeading {
+  display: flex;
+  gap: 8pt;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.note {
+  font-size: 9pt;
+  color: var(--ink-soft);
+}
+
+.table {
+  border-collapse: collapse;
+  font-size: 9pt;
+}
+
+.table th,
+.table td {
+  border: 1px solid var(--line);
+  padding: 3pt 6pt;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.tableWrap {
+  overflow-x: auto;
+  margin-top: 8pt;
+}

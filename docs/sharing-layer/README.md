@@ -88,7 +88,7 @@ The ordering runs safest-first:
 | [04-graphql-shared.md](04-graphql-shared.md)                     | Shared rows in GraphQL — session mode only, current views only, opt-in                                                                            | ✅ **Done** — `assets(includeShared:)` + `sharedWithMe`                                   |
 | [05-supersede-fittings.md](05-supersede-fittings.md)             | Fold `character_fitting_share` into the unified audience model, keep the fitting page UI                                                          | ✅ **Done** — migration `20260805130000`, `test/sql/fitting_share.sql`                    |
 | [06-supersede-mercenary-dens.md](06-supersede-mercenary-dens.md) | Fold `character_mercenary_den_share` into the unified model                                                                                       | ✅ **Done** — migration `20260806000000`, `test/sql/den_share.sql`                        |
-| [07-lens.md](07-lens.md)                                         | Lenses: shared GraphQL queries under the creator's context, CSV rendering to supersede the Sheets endpoints; `/lens` editor behind a feature flag | after 04 (05/06 not required)                                                             |
+| [07-lens.md](07-lens.md)                                         | Lenses: shared GraphQL queries under the creator's context, CSV rendering to supersede the Sheets endpoints; `/lens` editor behind a feature flag | ✅ **Done** — migration `20260806130000`, `test/sql/lens.sql`                            |
 
 ## What already exists (build on this, don't reinvent it)
 

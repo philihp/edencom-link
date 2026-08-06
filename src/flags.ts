@@ -2,6 +2,7 @@ import { createServiceClient } from '@/utils/supabase/service'
 
 // Dark-launch flag names live here so callers can't typo them apart.
 export const GRAPHQL_FLAG = 'graphql'
+export const LENS_FLAG = 'lens'
 
 // user_settings.flags is the per-user dark-launch flag list (see the
 // add_user_settings_flags migration, whose comment points at this module).
