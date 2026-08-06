@@ -24,12 +24,15 @@ import type { AuthInfo, McpServer } from '@modelcontextprotocol/server'
 import { z } from 'zod'
 
 import { typeDefs } from '@/app/api/graphql/schema.graphql'
-import { resolveAudience } from '@/app/lens/audience'
+import type { ShareState } from '@/app/asset/shareData'
+import { resolveAudience, type AudienceResolution, type OwnAudiences } from '@/app/lens/audience'
 import { lensRows } from '@/app/lens/flatten'
+import { lensEdits, resolveLensRef } from '@/app/lens/lensRef'
 import { runLens } from '@/app/lens/run'
 import { applyLensShare, fetchOwnAudiences } from '@/app/lens/share'
 import { parseLensVariables, SESSION_ONLY_ARGUMENTS, SESSION_ONLY_FIELDS, validateLensQuery } from '@/app/lens/validate'
 import { LENS_FLAG, hasFlag } from '@/flags'
+import { signShare, tokenSalt } from '@/shareToken'
 import { createBearerClient } from '@/utils/supabase/bearer'
 import { siteUrl } from '@/utils/siteUrl'
 
@@ -85,6 +88,104 @@ const EXAMPLES = [
     variables: { container: '1046809423988', types: ['16273', '17887'] },
   },
 ]
+
+// The lens's own URLs. Absolute when the deployment knows its origin, paths
+// otherwise (see src/utils/siteUrl.ts).
+const lensLinks = (id: string, name: string) => ({
+  id,
+  name,
+  url: siteUrl(`/lens/${id}`),
+  csv_url: siteUrl(`/lens/${id}/csv`),
+})
+
+// Who a lens is shared with, in names rather than ids — the answer is read by
+// a human through a model, and "KarmaFleet" beats 98000001.
+const describeShare = (lensId: string, share: ShareState | null, own: OwnAudiences) => {
+  if (!share) {
+    return { shared_with_nobody: true, note: 'Saved, but not shared with anyone.' }
+  }
+  const shareParam = share.shareParam
+  return {
+    corporations: share.corporationIds.map(
+      (id) => own.corporations.find((c) => c.id === id)?.name ?? `Corporation #${id}`
+    ),
+    alliances: share.allianceIds.map((id) => own.alliances.find((a) => a.id === id)?.name ?? `Alliance #${id}`),
+    public: share.isPublic,
+    // The signed link is the only URL that works without a session — it's also
+    // the one a spreadsheet can pull the CSV from.
+    link_url: shareParam ? siteUrl(`/lens/${lensId}?share=${shareParam}`) : null,
+    link_csv_url: shareParam ? siteUrl(`/lens/${lensId}/csv?share=${shareParam}`) : null,
+  }
+}
+
+// Run a query in the caller's own context and describe what came back.
+//
+// `failed` is the "don't save this" signal: zero rows is a legitimate answer
+// (an empty container is still worth watching), but a run that produced no
+// data at all means the query is broken in a way validation didn't catch.
+const preview = async (userId: string, query: string, variables: Record<string, unknown>) => {
+  const result = await runLens({ user_id: userId, query, variables })
+  const rows = lensRows(result.data)
+  return {
+    failed: result.data == null && result.errors.length > 0,
+    report: {
+      row_count: rows.length,
+      columns: rows.length > 0 ? Object.keys(rows[0]) : [],
+      sample: rows.slice(0, PREVIEW_ROWS),
+      ...(rows.length > PREVIEW_ROWS && {
+        note: `Showing ${PREVIEW_ROWS} of ${rows.length} rows; the lens itself returns all of them.`,
+      }),
+      ...(result.errors.length > 0 && { errors: result.errors }),
+    },
+  }
+}
+
+// The caller's own lenses. RLS would also surface lenses aimed at them by
+// other people, which they can neither edit nor should see listed as theirs —
+// hence the explicit user_id filter on top of it.
+type LensRow = {
+  id: string
+  name: string
+  query: string
+  variables: Record<string, unknown> | null
+  enabled: boolean
+  corporation_ids: number[] | null
+  alliance_ids: number[] | null
+  secret: string | null
+  updated_at: string
+}
+
+const fetchOwnLenses = async (supabase: SupabaseClient, userId: string): Promise<LensRow[]> => {
+  const { data } = await supabase
+    .from('lens')
+    .select('id, name, query, variables, enabled, corporation_ids, alliance_ids, secret, updated_at')
+    .eq('user_id', userId)
+    .order('updated_at', { ascending: false })
+  return (data ?? []) as LensRow[]
+}
+
+// A stored row's audience in the same shape applyLensShare hands back, so a
+// listing and a just-written lens describe sharing identically. The signature
+// is recomputed rather than stored — it's an HMAC over the id, keyed by the
+// row's secret and the env-only salt.
+const storedShare = (row: LensRow): ShareState | null => {
+  if (!row.enabled) return null
+  let salt: string | null = null
+  if (row.secret) {
+    try {
+      salt = tokenSalt()
+    } catch {
+      salt = null
+    }
+  }
+  return {
+    corporationIds: row.corporation_ids ?? [],
+    allianceIds: row.alliance_ids ?? [],
+    hasLink: row.secret != null,
+    shareParam: row.secret && salt ? `${row.id}.${signShare(row.id, row.secret, salt)}` : null,
+    isPublic: row.secret == null && (row.corporation_ids ?? []).length === 0 && (row.alliance_ids ?? []).length === 0,
+  }
+}
 
 const RULES = [
   'Exactly one operation, and it must be a query.',
@@ -202,6 +303,19 @@ export const registerLensTools = (server: McpServer): void => {
       )
       if (!resolved.ok) return textResult(resolved.message)
 
+      // Run it as the creator (which is the caller) BEFORE saving anything, so
+      // a query that only fails at run time leaves no row behind for someone to
+      // clean up. Nothing is persisted by running — this is what the editor's
+      // Run-as-me preview does, in the same context the viewer builds.
+      const preflight = await preview(caller.userId, query, parsedVariables.variables)
+      if (preflight.failed) {
+        return textResult({
+          saved: false,
+          error: 'Nothing was created: running this query returned no data at all.',
+          preview: preflight.report,
+        })
+      }
+
       const { data: inserted, error } = await caller.supabase
         .from('lens')
         .insert({
@@ -216,80 +330,206 @@ export const registerLensTools = (server: McpServer): void => {
       if (error || !inserted)
         return textResult(`Could not save the lens: ${error?.message ?? 'insert returned no row'}`)
 
-      // Run it as the creator (which is the caller) before publishing it, so
-      // the answer shows what the audience will actually see and a query that
-      // only fails at run time never reaches an audience. Same context the
-      // viewer page builds — previewing widens no access.
-      const result = await runLens({
-        user_id: caller.userId,
-        query,
-        variables: parsedVariables.variables,
+      const applied = await applyLensShare(caller.supabase, caller.userId, inserted.id, resolved.audience, {
+        existingSecret: null,
       })
-      const rows = lensRows(result.data)
-      const preview = {
-        row_count: rows.length,
-        columns: rows.length > 0 ? Object.keys(rows[0]) : [],
-        sample: rows.slice(0, PREVIEW_ROWS),
-        ...(rows.length > PREVIEW_ROWS && {
-          note: `Showing ${PREVIEW_ROWS} of ${rows.length} rows; the lens itself returns all of them.`,
-        }),
-        ...(result.errors.length > 0 && { errors: result.errors }),
-      }
-      // Zero rows is a legitimate answer (an empty container is still worth
-      // watching); a run that produced nothing at all is not, so that one is
-      // saved unshared rather than published broken.
-      const failedOutright = result.data == null && result.errors.length > 0
-
-      const applied = failedOutright
-        ? ({ ok: true, share: null } as const)
-        : await applyLensShare(caller.supabase, caller.userId, inserted.id, resolved.audience, {
-            existingSecret: null,
-          })
       // The lens exists either way — say so rather than implying nothing
       // happened, or the model will try again and leave a duplicate behind.
       if (!applied.ok) {
         return textResult({
-          lens: { id: inserted.id, name: name.trim(), url: siteUrl(`/lens/${inserted.id}`) },
+          lens: lensLinks(inserted.id, name.trim()),
           shared: false,
-          preview,
+          preview: preflight.report,
           warning: `The lens was saved but could not be shared: ${applied.message} Set the audience in the web editor at /lens.`,
         })
       }
-      if (failedOutright) {
+
+      return textResult({
+        lens: lensLinks(inserted.id, name.trim()),
+        share: describeShare(inserted.id, applied.share, own),
+        preview: preflight.report,
+      })
+    }
+  )
+
+  server.registerTool(
+    'list_lenses',
+    {
+      title: 'List your lenses',
+      description:
+        'The lenses this user has saved: name, id, the stored query and variables, who each is shared with, and its URLs (including the signed link where one exists). Call this before update_lens to find the lens being talked about, or to answer "what lenses do I have" and "what\'s the link for my fuel lens again". Lists only lenses this user created — a lens someone else shared with them isn\'t theirs to edit.',
+      annotations: { readOnlyHint: true, openWorldHint: false },
+      inputSchema: z.object({
+        include_query: z
+          .boolean()
+          .optional()
+          .describe("Include each lens's full GraphQL query text (default true). Turn off for a shorter list."),
+      }),
+    },
+    async ({ include_query }, ctx: ServerCtx): Promise<ToolResult> => {
+      const caller = callerFor(ctx)
+      if (!caller) return textResult('Missing bearer token.')
+      if (!(await hasFlag(caller.userId, LENS_FLAG))) return textResult(FLAG_REFUSAL)
+
+      const [rows, own] = await Promise.all([
+        fetchOwnLenses(caller.supabase, caller.userId),
+        fetchOwnAudiences(caller.supabase),
+      ])
+
+      return textResult({
+        lenses: rows.map((row) => ({
+          ...lensLinks(row.id, row.name),
+          updated_at: row.updated_at,
+          share: describeShare(row.id, storedShare(row), own),
+          ...(include_query === false
+            ? {}
+            : {
+                query: row.query,
+                ...(row.variables && Object.keys(row.variables).length > 0 && { variables: row.variables }),
+              }),
+        })),
+        ...(rows.length === 0 && { note: 'No lenses yet. create_lens makes one.' }),
+      })
+    }
+  )
+
+  server.registerTool(
+    'update_lens',
+    {
+      title: 'Update a lens',
+      description:
+        "Change an existing lens: its name, its query, its variables, who it's shared with, or any combination. Anything not given is left alone, so renaming a lens doesn't touch its query and re-sharing it doesn't touch either. Identify the lens by id or by name (list_lenses shows both). Writes: this changes what the lens's existing audience sees the next time they open it. A new query is run before it is saved, so a broken one is refused rather than pushed to that audience. Deleting a lens is done in the web editor at /lens.",
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+      inputSchema: z.object({
+        lens: z.string().min(1).describe('Which lens — its id, or its name as saved (see list_lenses).'),
+        name: z.string().optional().describe('Rename it.'),
+        query: z
+          .string()
+          .optional()
+          .describe('Replace the GraphQL query. Same rules as create_lens; call lens_schema if unsure.'),
+        variables: z
+          .record(z.string(), z.unknown())
+          .optional()
+          .describe('Replace the variables wholesale (not merged with the stored ones).'),
+        share_with_corporations: z
+          .array(z.string())
+          .optional()
+          .describe(
+            'Replace the corporation audience. Naming any share_* option replaces the whole audience — list every corporation, alliance and link the lens should end up with, not just the additions.'
+          ),
+        share_with_alliances: z.array(z.string()).optional().describe('Replace the alliance audience.'),
+        share_link: z.boolean().optional().describe('Whether a signed link works. False removes the existing link.'),
+        share_public: z
+          .boolean()
+          .optional()
+          .describe('Make it visible to everyone. Mutually exclusive with the corporation, alliance and link options.'),
+        rotate_link: z
+          .boolean()
+          .optional()
+          .describe('Mint a fresh signed link, invalidating every URL previously issued for this lens.'),
+        unshare: z
+          .boolean()
+          .optional()
+          .describe('Stop sharing entirely — back to private, not public. Overrides the other share options.'),
+      }),
+    },
+    async (args, ctx: ServerCtx): Promise<ToolResult> => {
+      const caller = callerFor(ctx)
+      if (!caller) return textResult('Missing bearer token.')
+      if (!(await hasFlag(caller.userId, LENS_FLAG))) return textResult(FLAG_REFUSAL)
+
+      const rows = await fetchOwnLenses(caller.supabase, caller.userId)
+      if (rows.length === 0) return textResult('You have no lenses to update. create_lens makes one.')
+      const picked = resolveLensRef(args.lens, rows)
+      if (!picked.ok) return textResult(picked.message)
+      const stored = rows.find((r) => r.id === picked.id) as LensRow
+
+      // What the edit actually changes, and what the lens will run afterwards —
+      // which is the stored query when only the audience is being touched.
+      const edits = lensEdits(
+        { name: args.name, query: args.query, variables: args.variables },
+        { query: stored.query, variables: stored.variables ?? {} }
+      )
+      if (edits.changes.query !== undefined) {
+        const validation = validateLensQuery(edits.changes.query)
+        if (!validation.ok) {
+          return textResult(`${validation.message} Call lens_schema for the schema this query has to satisfy.`)
+        }
+      }
+
+      // Sharing is only touched when the call says something about it —
+      // otherwise a rename would quietly unshare the lens.
+      const shareRequested =
+        args.unshare === true ||
+        args.share_public !== undefined ||
+        args.share_link !== undefined ||
+        args.share_with_corporations !== undefined ||
+        args.share_with_alliances !== undefined ||
+        args.rotate_link === true
+
+      const own = await fetchOwnAudiences(caller.supabase)
+      const resolved: AudienceResolution = args.unshare
+        ? { ok: true, audience: { corporationIds: [], allianceIds: [], link: false, isPublic: false, shared: false } }
+        : resolveAudience(
+            {
+              corporations: args.share_with_corporations,
+              alliances: args.share_with_alliances,
+              // An unmentioned link survives a re-share; false removes it.
+              link: args.share_link ?? stored.secret != null,
+              isPublic: args.share_public,
+            },
+            own
+          )
+      if (!resolved.ok) return textResult(resolved.message)
+
+      // Run the query the lens will have BEFORE writing it, so an audience that
+      // already has this lens never sees a broken one — the existing row stays
+      // exactly as it was.
+      const preflight = await preview(caller.userId, edits.effective.query, edits.effective.variables)
+      if (preflight.failed) {
         return textResult({
-          lens: { id: inserted.id, name: name.trim(), url: siteUrl(`/lens/${inserted.id}`) },
-          shared: false,
-          preview,
-          warning:
-            'The lens was saved but NOT shared: running it returned no data. Fix or delete it in the web editor at /lens rather than creating another.',
+          updated: false,
+          error: 'Nothing was changed: running the query this lens would have returned no data at all.',
+          lens: lensLinks(stored.id, stored.name),
+          preview: preflight.report,
         })
       }
 
-      const share = applied.share
-      const shareParam = share?.shareParam ?? null
+      if (edits.changed.length > 0) {
+        const { error } = await caller.supabase
+          .from('lens')
+          .update({ ...edits.changes, updated_at: new Date().toISOString() })
+          .eq('id', stored.id)
+          .eq('user_id', caller.userId)
+        if (error) return textResult(`Could not update the lens: ${error.message}`)
+      }
+
+      const applied = shareRequested
+        ? await applyLensShare(caller.supabase, caller.userId, stored.id, resolved.audience, {
+            existingSecret: stored.secret,
+            rotateLink: args.rotate_link === true,
+          })
+        : ({ ok: true, share: storedShare(stored) } as const)
+      if (!applied.ok) {
+        return textResult({
+          lens: lensLinks(stored.id, edits.changes.name ?? stored.name),
+          changed: edits.changed,
+          warning: `The lens was updated but its sharing could not be changed: ${applied.message}`,
+          preview: preflight.report,
+        })
+      }
+
       return textResult({
-        lens: {
-          id: inserted.id,
-          name: name.trim(),
-          url: siteUrl(`/lens/${inserted.id}`),
-          csv_url: siteUrl(`/lens/${inserted.id}/csv`),
-        },
-        share: share
-          ? {
-              corporations: share.corporationIds.map(
-                (id) => own.corporations.find((c) => c.id === id)?.name ?? `Corporation #${id}`
-              ),
-              alliances: share.allianceIds.map(
-                (id) => own.alliances.find((a) => a.id === id)?.name ?? `Alliance #${id}`
-              ),
-              public: share.isPublic,
-              // The signed link is the only URL that works without a session —
-              // it's also the one a spreadsheet can pull the CSV from.
-              link_url: shareParam ? siteUrl(`/lens/${inserted.id}?share=${shareParam}`) : null,
-              link_csv_url: shareParam ? siteUrl(`/lens/${inserted.id}/csv?share=${shareParam}`) : null,
-            }
-          : { shared_with_nobody: true, note: 'Saved, but not shared. Share it from the web editor at /lens.' },
-        preview,
+        lens: lensLinks(stored.id, edits.changes.name ?? stored.name),
+        changed: [...edits.changed, ...(shareRequested ? ['share'] : [])],
+        ...(edits.changed.length === 0 && !shareRequested && { note: 'Nothing to change — no fields were given.' }),
+        share: describeShare(stored.id, applied.share, own),
+        preview: preflight.report,
       })
     }
   )

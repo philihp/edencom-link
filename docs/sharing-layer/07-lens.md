@@ -140,11 +140,40 @@ editor.
   corporations and alliances, with ids). A model can't write a valid query
   against a schema it hasn't seen, and can't name an audience it doesn't know
   the user is in, so this is the required first call.
-- **`create_lens`** — validates and inserts, applies the audience, and returns
-  the lens URL, the CSV URL, the signed link when one was asked for, and a
-  **preview of the lens's own output** (row count, columns, first few rows) so
-  the human can see it answers the question before it's shared. Editing and
-  deleting stay in the web editor; this is a create-only surface.
+- **`create_lens`** — validates, **runs the query before saving anything**,
+  then inserts and applies the audience. Returns the lens URL, the CSV URL, the
+  signed link when one was asked for, and a **preview of the lens's own output**
+  (row count, columns, first few rows) so the human can see it answers the
+  question. Running first means a query that only fails at run time leaves no
+  row behind: nothing is persisted by a preview (it's what the editor's
+  Run-as-me does), so the refusal is clean.
+- **`list_lenses`** (read-only) — the caller's own lenses with their queries,
+  audiences and URLs (signed link included). How the model finds the lens
+  someone is talking about, and how "what's the link for my fuel lens again"
+  gets answered. Own lenses only: RLS would also surface ones aimed at the
+  caller, which aren't theirs to edit.
+- **`update_lens`** — change a lens's name, query, variables, audience, or any
+  combination. **Absent means unchanged**, so a rename doesn't touch the query
+  and a re-share doesn't touch either; the audience is only written when the
+  call says something about sharing, or a rename would quietly unshare the
+  lens. Naming any share option replaces the audience wholesale rather than
+  adding to it (the tool says so), `unshare` returns a lens to private — not
+  public — and `rotate_link` invalidates every URL previously issued.
+
+Deleting a lens stays in the web editor.
+
+`update_lens` runs the query the lens *would have* before writing it, and
+refuses the whole edit if it comes back with nothing at all: a lens that
+already has an audience must never be broken underneath them. Zero rows is
+still a legitimate answer — an empty container is worth watching — so only a
+run that produced no data is treated as a failure.
+
+Which lens an edit means is resolved from a name or an id by
+`src/app/lens/lensRef.ts`, over the same matcher the audience resolver uses
+(`src/app/lens/match.ts`: id, then exact name, then unique substring, and
+ambiguity is always a refusal). Overwriting the wrong saved query and sharing
+with the wrong corporation are the same class of mistake, so they get the same
+answer — never a guess.
 
 The model gets from words to arguments with the existing read tools —
 `search_assets`/`browse_assets` for the container's item id,
@@ -153,15 +182,19 @@ the query.
 
 ### The first write tools on this server
 
-Everything else under `/api/mcp` answers questions. `create_lens` inserts a row
-and can publish its results to an audience, so it carries
-`readOnlyHint: false` (with `destructiveHint: false`, `idempotentHint: false`,
-`openWorldHint: false`) rather than the read-only annotation every other tool
-declares. What actually constrains it, as always, is not the hint:
+Everything else under `/api/mcp` answers questions. `create_lens` and
+`update_lens` write rows and can publish results to an audience, so they carry
+`readOnlyHint: false` (`create_lens` with `idempotentHint: false` — calling it
+twice makes two lenses; `update_lens` with `idempotentHint: true`, since the
+same edit applied twice lands in the same place; `destructiveHint: false` and
+`openWorldHint: false` on both) rather than the read-only annotation every
+other tool declares. What actually constrains it, as always, is not the hint:
 
-- it writes on the **caller's own bearer client**, so RLS pins the row to them
+- they write on the **caller's own bearer client**, so RLS pins the row to them
   exactly as the editor's cookie session does — no service role anywhere in the
-  path, and no creating a lens for someone else;
+  path, no creating a lens for someone else, and no editing one (`update_lens`
+  additionally filters to `user_id`, so a lens merely shared *with* the caller
+  is invisible to it);
 - the audience is resolved against the caller's **own** corporations and
   alliances (`src/app/lens/audience.ts`, pure and unit-tested in
   `test/lensAudience.test.ts`), so a lens can't be aimed at a group the caller

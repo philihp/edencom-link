@@ -12,6 +12,10 @@
 // unit-tested without a Supabase client — see test/lensAudience.test.ts.
 import { reduce } from 'ramda'
 
+// Relative + .ts, like the other pure modules: `pnpm test` runs Node's
+// stripped-types loader, which resolves no path aliases.
+import { pickOne } from './match.ts'
+
 export type AudienceOption = { id: number; name: string }
 
 export type OwnAudiences = { corporations: AudienceOption[]; alliances: AudienceOption[] }
@@ -43,44 +47,32 @@ export type AudienceResolution = { ok: true; audience: ResolvedAudience } | { ok
 // What a person says when they mean "the one I'm in" rather than naming it.
 const SELF_REFERENCES = ['my corp', 'my corporation', 'mine', 'my alliance', 'ours', 'my own']
 
-const normalize = (value: string): string => value.trim().toLowerCase()
-
-// One requested audience → one option the caller actually holds. Tried in
-// order of how sure the match is: an id, then an exact name, then a unique
-// substring, then the "I only have one" reading of "my corp".
+// One requested audience → one option the caller actually holds. Id, exact
+// name, then unique substring come from the shared matcher; the "I only have
+// one" reading of "my corp" is this caller's own fallback, and only applies
+// once the matcher has found nothing (a corporation actually named "Mine"
+// still wins).
 const matchOne = (requested: string, options: AudienceOption[], kind: string): { id: number } | { error: string } => {
-  const query = normalize(requested)
-  if (query === '') return { error: `An empty ${kind} name can't be matched.` }
+  const picked = pickOne(
+    requested,
+    options.map((o) => ({ id: String(o.id), name: o.name })),
+    kind
+  )
+  if (picked.ok) return { id: Number(picked.id) }
 
-  const available = options.map((o) => `${o.name} (${o.id})`).join(', ') || `none — you have no ${kind} to share with`
-
-  if (/^\d+$/.test(query)) {
-    const byId = options.find((o) => String(o.id) === query)
-    return byId ? { id: byId.id } : { error: `${requested} is not one of your ${kind}s. Yours: ${available}.` }
-  }
-
-  const exact = options.filter((o) => normalize(o.name) === query)
-  if (exact.length === 1) return { id: exact[0].id }
-
-  const partial = options.filter((o) => normalize(o.name).includes(query))
-  if (partial.length === 1) return { id: partial[0].id }
-  if (partial.length > 1) {
-    return { error: `"${requested}" matches more than one of your ${kind}s: ${partial.map((o) => o.name).join(', ')}.` }
-  }
-
-  // "my corp" only means something when there's exactly one candidate; with
-  // two it's a question, not an instruction.
-  if (SELF_REFERENCES.includes(query)) {
+  if (SELF_REFERENCES.includes(requested.trim().toLowerCase())) {
     if (options.length === 1) return { id: options[0].id }
     return {
       error:
         options.length === 0
           ? `You have no ${kind} to share with.`
-          : `"${requested}" is ambiguous — you're in more than one ${kind}: ${available}. Name the one you mean.`,
+          : `"${requested}" is ambiguous — you're in more than one ${kind}: ${options
+              .map((o) => `${o.name} (${o.id})`)
+              .join(', ')}. Name the one you mean.`,
     }
   }
 
-  return { error: `"${requested}" is not one of your ${kind}s. Yours: ${available}.` }
+  return { error: picked.message }
 }
 
 // The first failure wins and is carried to the end rather than thrown: a
