@@ -65,6 +65,14 @@ add_notification`) change together.
 
 ### New table `notification`
 
+> **Update:** this table was minted by Discord stage 04
+> (`supabase/migrations/20260806120000_notification_outbox.sql`) with two
+> extra columns — `transport text not null` and a nullable
+> `discord_channel_id` FK — and the pending unique index widened to
+> `(user_id, source, discord_channel_id) nulls not distinct`. This project
+> adds `transport = 'ntfy'` rows (null channel) and filters its sweep on its
+> own transport; the DDL below is otherwise as built.
+
 Deliberately generic — nothing industry-specific in the columns — so future
 sources (mercenary den reinforcement timers, clone-jump cooldowns, structure
 fuel) reuse it by minting new `source` prefixes.

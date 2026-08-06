@@ -24,6 +24,14 @@ test('parses the field syntax vercel.json uses', () => {
   const daily = parseCron('7 9 * * *')
   assert.deepEqual(daily?.minutes, [7])
   assert.deepEqual(daily?.hours, [9])
+
+  // character-mercenary-dens runs hourly (Discord stage 04 detection cadence).
+  const hourly = parseCron('30 * * * *')
+  assert.deepEqual(hourly?.minutes, [30])
+  assert.deepEqual(
+    hourly?.hours,
+    Array.from({ length: 24 }, (_, h) => h)
+  )
 })
 
 test('parses ranges, lists and stepped ranges', () => {
