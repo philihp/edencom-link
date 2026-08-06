@@ -1608,14 +1608,21 @@ grant all    on public.character_mercenary_den_over_time to service_role;
 -- character id. It was called character_id until the step-6 rename in
 -- docs/registration-id-rename.md, which is the last of that cleanup's column
 -- renames.
+-- Unified Revision 3 shape (docs/sharing-layer/06-supersede-mercenary-dens.md):
+-- ONE row per registration with the audience carried as arrays, like
+-- character_asset_share/character_fitting_share. The subject stays "all my
+-- dens" (no den_id — a whole-category preference). An EMPTY audience row
+-- (null secret, both lists empty) means PUBLIC, so "shared with nobody" is
+-- represented by NO ROW — the picker deletes rather than writing an empty row.
 create table public.character_mercenary_den_share (
+  id uuid primary key default gen_random_uuid(),
   registration_id uuid not null references public.registration(id) on delete cascade,
-  alliance_id bigint not null,
+  corporation_ids bigint[] not null default '{}',
+  alliance_ids bigint[] not null default '{}',
+  secret text,
   created_at timestamptz not null default now(),
-  primary key (registration_id, alliance_id)
+  unique (registration_id)
 );
-create index character_mercenary_den_share_alliance_id_idx
-  on public.character_mercenary_den_share (alliance_id);
 
 alter table public.character_mercenary_den_share enable row level security;
 
@@ -1667,9 +1674,9 @@ stable
 as $$
   select exists (
     select 1
-    from public.character_mercenary_den_share sh
-    where sh.registration_id = reg_id
-      and sh.alliance_id in (select public.my_alliance_ids())
+    from public.character_mercenary_den_share s
+    where s.registration_id = reg_id
+      and public.share_audience_matches(s.corporation_ids, s.alliance_ids, s.secret)
   );
 $$;
 
@@ -1698,15 +1705,16 @@ $$;
 
 grant execute on function public.share_audience_matches(bigint[], bigint[], text) to anon, authenticated;
 
--- Members read the share rows aimed at their alliances. This is also what keeps
--- the den/intel policies working: mercenary_den_shared_with_caller runs as the
+-- Members of the audience read the share rows aimed at them — the array/anon
+-- form every Revision 3 share table uses. This is also what keeps the
+-- den/intel policies working: mercenary_den_shared_with_caller runs as the
 -- querying user, and the only rows it needs are exactly the ones this policy
 -- exposes.
-create policy "Alliance members read shares to their alliances"
+create policy "Audience reads den shares aimed at them"
   on public.character_mercenary_den_share
   for select
-  to authenticated
-  using (alliance_id in (select public.my_alliance_ids()));
+  to anon, authenticated
+  using (public.share_audience_matches(corporation_ids, alliance_ids, secret));
 
 -- Owners always read their own share rows (drives the /mercenary-dens picker's
 -- checked state), even if the sharing character has since left that alliance —
@@ -1731,6 +1739,17 @@ create policy "Users create own den shares"
     registration_id in (select id from public.registration where user_id = (select auth.uid()))
   );
 
+create policy "Users update own den shares"
+  on public.character_mercenary_den_share
+  for update
+  to authenticated
+  using (
+    registration_id in (select id from public.registration where user_id = (select auth.uid()))
+  )
+  with check (
+    registration_id in (select id from public.registration where user_id = (select auth.uid()))
+  );
+
 create policy "Users remove own den shares"
   on public.character_mercenary_den_share
   for delete
@@ -1739,8 +1758,9 @@ create policy "Users remove own den shares"
     registration_id in (select id from public.registration where user_id = (select auth.uid()))
   );
 
-grant select, insert, delete on public.character_mercenary_den_share to authenticated;
-grant all                    on public.character_mercenary_den_share to service_role;
+grant select                         on public.character_mercenary_den_share to anon;
+grant select, insert, update, delete on public.character_mercenary_den_share to authenticated;
+grant all                            on public.character_mercenary_den_share to service_role;
 
 -- Alliance-sharing policy: a den is visible to the caller when its owner shares
 -- with an alliance the caller has a character in. Additive/permissive: OR'd with
