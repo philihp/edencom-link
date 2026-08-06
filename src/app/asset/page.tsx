@@ -1,6 +1,5 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
-import { Suspense } from 'react'
 import { map, reduce } from 'ramda'
 
 import { createClient } from '@/utils/supabase/server'
@@ -44,25 +43,13 @@ const AssetsPage = async () => {
     redirect('/')
   }
 
-  // The location buckets are expensive to build (every asset is paged in and walked
-  // up its location chain, then station/structure/system names are resolved), so the
-  // page shell streams immediately and the table streams in once Locations() resolves.
-  return (
-    <Suspense fallback={<AssetsLoading />}>
-      <Locations />
-    </Suspense>
-  )
+  // The location buckets are expensive to build (two location-summary RPCs plus
+  // a name-resolution pass), so the wait is covered by ./loading.tsx — which
+  // paints the instant the link is clicked, rather than only once the server
+  // has started responding, as an in-page Suspense fallback did.
+  return <Locations />
 }
 export default AssetsPage
-
-const AssetsLoading = () => (
-  <section>
-    <div className={styles.header}>
-      <h1>Assets</h1>
-    </div>
-    <p>Loading locations…</p>
-  </section>
-)
 
 const Locations = async () => {
   const supabase = await createClient()

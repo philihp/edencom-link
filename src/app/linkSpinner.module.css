@@ -1,0 +1,44 @@
+/*
+ * The pending indicator shown inside a <Link> while its navigation is in
+ * flight (see linkSpinner.tsx). Deliberately small and inline: it marks *which*
+ * link was clicked, which is the thing a whole-page fallback can't say.
+ */
+
+.spinner {
+  display: inline-block;
+  width: 0.7em;
+  height: 0.7em;
+  margin-left: 0.45em;
+  vertical-align: baseline;
+  border: 1.5px solid var(--line);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/*
+ * With motion suppressed the spin is out, but the indicator still has to say
+ * "working" — so it pulses between the line and accent colors instead.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation: fade 1.4s ease-in-out infinite;
+    border-top-color: var(--accent);
+  }
+
+  @keyframes fade {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.35;
+    }
+  }
+}

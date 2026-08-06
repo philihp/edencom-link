@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ascend, descend, difference, sortWith, union } from 'ramda'
 
+import { LinkSpinner } from '../../linkSpinner'
 import { ALL_OWNERS, OwnerSelect, ownerNames, useOwnerFilter, type Owners } from '../../ownerFilter'
 import retro from '../../retro.module.css'
 import { TypeIcon, type IconVariation } from '../../typeIcon'
@@ -347,6 +348,7 @@ export const LocationAssets = ({ rows, owners, typeNamesPromise, canAppraise }: 
                         // Ships open their own /ship page; containers drill into /asset.
                         <Link href={row.href}>
                           <TypeName id={row.typeId} name={row.name} promise={typeNamesPromise} />
+                          <LinkSpinner />
                         </Link>
                       ) : (
                         <TypeName id={row.typeId} name={row.name} promise={typeNamesPromise} />

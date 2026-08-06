@@ -3,6 +3,7 @@
 import Link from 'next/link'
 
 import type { SdeType } from '@/sdeTypes'
+import { LinkSpinner } from '../linkSpinner'
 import { ALL_OWNERS, useOwnerFilter, type Owner } from '../ownerFilter'
 import { OWNER_STORAGE_KEY } from './filterKey'
 import { buildMatrix, RACE_COLUMNS, type MatrixEntry } from './shipMatrix'
@@ -113,6 +114,7 @@ export const FittingMatrix = ({ entries, types, ownCharacters, sharedCharacters 
                             <li key={f.href}>
                               <Link href={f.href} className={styles.fitLink}>
                                 {f.name}
+                                <LinkSpinner />
                               </Link>
                               <span className={styles.fitHull}>{f.hull}</span>
                               {f.owner ? <span className={styles.fitOwner}>shared by {f.owner}</span> : null}

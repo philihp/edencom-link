@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 
+import { LinkSpinner } from '../../linkSpinner'
 import { ALL_OWNERS, OwnerSelect, useOwnerFilter, type Owners } from '../../ownerFilter'
 import retro from '../../retro.module.css'
 import styles from '../assets.module.css'
@@ -46,6 +47,7 @@ export const SystemLocations = ({ locations, owners }: { locations: Location[]; 
               <td>
                 <Link href={`/asset/${loc.id}`} className="serif">
                   {loc.name}
+                  <LinkSpinner />
                 </Link>
               </td>
               <td className={retro.num}>{count}</td>
