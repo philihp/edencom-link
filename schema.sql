@@ -2073,9 +2073,9 @@ create table public.lens (
   variables jsonb not null default '{}',
   -- Unlike the sibling share tables, the lens row IS the share row — so the
   -- Revision 3 "empty audience = public" reading would make a freshly created
-  -- lens public by default. `shared` keeps "not shared yet" (the no-row state
+  -- lens public by default. `enabled` keeps "not shared yet" (the no-row state
   -- the other tables get for free) distinct from "shared with everyone".
-  shared boolean not null default false,
+  enabled boolean not null default false,
   corporation_ids bigint[] not null default '{}',
   alliance_ids bigint[] not null default '{}',
   secret text,
@@ -2102,7 +2102,7 @@ create policy "Audience reads lenses aimed at them"
   on public.lens
   for select
   to anon, authenticated
-  using (shared and public.share_audience_matches(corporation_ids, alliance_ids, secret));
+  using (enabled and public.share_audience_matches(corporation_ids, alliance_ids, secret));
 
 grant select                         on public.lens to anon;
 grant select, insert, update, delete on public.lens to authenticated;

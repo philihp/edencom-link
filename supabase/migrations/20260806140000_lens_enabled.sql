@@ -1,0 +1,14 @@
+-- Rename the lens share gate from `shared` to `enabled`.
+--
+-- The column (added in 20260806130000_lens.sql) is what keeps a never-shared
+-- lens out of the Revision 3 "empty audience = public" reading — the lens row
+-- doubles as its own share row, so a freshly created lens would otherwise
+-- read as shared with everyone. `enabled` says what the flag does without
+-- colliding with the word "shared", which in this layer already means the
+-- audience arrays.
+--
+-- A rename rather than a new column: the flag has no production data worth
+-- preserving semantics around, and Postgres rewrites dependent expressions
+-- (the audience-read policy's qual is a parsed node tree over the attribute,
+-- not the text "shared"), so the policy follows the rename untouched.
+alter table public.lens rename column shared to enabled;

@@ -1,7 +1,7 @@
 -- SQL-level coverage for the lens migration
 -- (docs/sharing-layer/07-lens.md): owner-only management, the audience-read
 -- policy through share_audience_matches(), and — the lens-specific semantic —
--- the `shared` gate: because the lens row IS the share row, an UNSHARED lens
+-- the `enabled` gate: because the lens row IS the share row, an UNSHARED lens
 -- must be invisible to everyone but its owner even though its default empty
 -- audience would otherwise read as "public".
 --
@@ -74,6 +74,11 @@ as $$
 $$;
 
 \i supabase/migrations/20260806130000_lens.sql
+-- The share gate arrives as `shared` and is renamed by the follow-up; the
+-- assertions below run against the post-rename `enabled`, which also proves
+-- the audience-read policy followed the rename (its qual is a node tree over
+-- the attribute, not the text).
+\i supabase/migrations/20260806140000_lens_enabled.sql
 
 -- Fixtures: alice (corp 98001 / alliance 99001) owns four lenses in different
 -- share states; bob is a corp-mate, carol is unaffiliated.
@@ -86,7 +91,7 @@ insert into public.registration values
   ('00000000-0000-0000-0000-0000000000aa', 'a0000000-0000-0000-0000-000000000000', 98001),
   ('00000000-0000-0000-0000-0000000000bb', 'b0000000-0000-0000-0000-000000000000', 98001),
   ('00000000-0000-0000-0000-0000000000cc', 'c0000000-0000-0000-0000-000000000000', null);
-insert into public.lens (id, user_id, name, query, shared, corporation_ids, alliance_ids, secret) values
+insert into public.lens (id, user_id, name, query, enabled, corporation_ids, alliance_ids, secret) values
   -- Freshly created: never shared. The empty audience must NOT read as public.
   ('11111111-0000-0000-0000-000000000001', 'a0000000-0000-0000-0000-000000000000', 'unshared', '{ x }', false, '{}', '{}', null),
   -- Shared with the corp.
@@ -126,7 +131,7 @@ begin
   select count(*) into n from public.lens;
   assert n = 1, format('anon sees only public, got %s', n);
 
-  -- The unshared lens is invisible to everyone but the owner: the shared
+  -- The unshared lens is invisible to everyone but the owner: the enabled
   -- gate, not the audience, is what held it back.
   select count(*) into n from public.lens where name = 'unshared';
   assert n = 0, 'an unshared lens never leaks through the empty-audience-is-public reading';
@@ -136,9 +141,9 @@ begin
   -- Non-owner writes bounce off RLS: bob's update matches no row.
   set local role authenticated;
   perform set_config('test.uid', 'b0000000-0000-0000-0000-000000000000', true);
-  update public.lens set shared = true where name = 'unshared';
+  update public.lens set enabled = true where name = 'unshared';
   get diagnostics n = row_count;
-  assert n = 0, 'a non-owner cannot flip another user''s lens to shared';
+  assert n = 0, 'a non-owner cannot flip another user''s lens to enabled';
   reset role;
 end $$;
 

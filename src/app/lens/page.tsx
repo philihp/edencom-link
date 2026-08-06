@@ -58,7 +58,7 @@ const LensPage = async () => {
               urlPath={`/lens/${lens.id}`}
               hint="Whoever you share with can run this query and see its results — your data, live — until you stop sharing."
               data={{
-                share: lens.shared ? shareRowToState(lens) : null,
+                share: lens.enabled ? shareRowToState(lens) : null,
                 corporations: audiences.corporations,
                 alliances: audiences.alliances,
                 hasLegacyToken: false,

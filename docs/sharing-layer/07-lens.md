@@ -8,8 +8,9 @@ save-time validation in `src/app/lens/validate.ts`, CSV flattening in
 `test/lensFlatten.test.ts`, `test/sql/lens.sql`. One deviation from the
 sketch below, found while building: because the lens row IS the share row,
 the Revision 3 "empty audience = public" reading would have made a freshly
-created lens public — the table carries a `shared boolean not null default
-false` that gates the audience-read policy, keeping "not shared yet"
+created lens public — the table carries an `enabled boolean not null default
+false` (shipped as `shared`, renamed by `20260806140000_lens_enabled.sql`)
+that gates the audience-read policy, keeping "not shared yet"
 distinct from "shared with everyone" (the no-row state the sibling share
 tables get for free). The CSV route is `/lens/[id]/csv` (a path segment,
 not `?format=csv`).
@@ -45,7 +46,7 @@ create table public.lens (
   -- As built: the lens row doubles as its share row, so this flag keeps a
   -- freshly created (never-shared) lens out of the empty-audience-is-public
   -- reading. The audience policy requires it.
-  shared boolean not null default false,
+  enabled boolean not null default false,
   corporation_ids bigint[] not null default '{}',
   alliance_ids bigint[] not null default '{}',
   secret text,
