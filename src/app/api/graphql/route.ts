@@ -1,6 +1,8 @@
 import { createYoga } from 'graphql-yoga'
 import type { NextRequest } from 'next/server'
 
+import { GRAPHQL_FLAG, hasFlag } from '@/flags'
+import { createClient } from '@/utils/supabase/server'
 import { buildContext } from './context'
 import { schema } from './schema'
 
@@ -15,13 +17,31 @@ export const dynamic = 'force-dynamic'
 // /api/character/assets.
 export const maxDuration = 60
 
+// GraphiQL is served on GET, and rendering it never touches a resolver — so
+// without this the IDE shell would answer anonymous requests at a public path.
+// The factory keeps the dark launch honest: only a signed-in account carrying
+// the `graphql` flag gets the IDE, everyone else gets yoga's 404. Queries are
+// still authorized independently by buildContext.
+const graphiqlForRequest = async (): Promise<boolean> => {
+  const supabase = await createClient()
+  const { data, error } = await supabase.auth.getUser()
+  if (error || !data?.user) return false
+  return hasFlag(data.user.id, GRAPHQL_FLAG)
+}
+
 const { handleRequest } = createYoga({
   schema,
   context: ({ request }) => buildContext(request),
   graphqlEndpoint: '/api/graphql',
   fetchAPI: { Response },
-  // The /graphql page is the in-browser UI; no bundled GraphiQL or landing page.
-  graphiql: false,
+  // GraphiQL for schema-aware autocomplete and the docs explorer; the /graphql
+  // page's plain editor stays as the lightweight surface (and is what the Lens
+  // editor reuses). credentials same-origin so the IDE's own requests carry
+  // the Supabase session cookie — the Bearer path is for external tools.
+  graphiql: () =>
+    graphiqlForRequest().then(
+      (allowed) => allowed && { title: 'Edencom Link GraphQL', credentials: 'same-origin' as const }
+    ),
   landingPage: false,
   batching: false,
   // Wildcard origin with credentials OFF is the safe pairing: external UIs

@@ -34,7 +34,8 @@ const GraphqlPage = async () => {
       <h1>GraphQL</h1>
       <p>
         Query your extracted data — assets, blueprints, orders, industry jobs, wallets — with GraphQL. This page posts
-        to <code>/api/graphql</code> with your session; external tools authenticate with your API token instead.
+        to <code>/api/graphql</code> with your session; external tools authenticate with your API token instead. For
+        autocomplete and a browsable schema, <a href="/api/graphql">open GraphiQL</a>.
       </p>
 
       <QueryEditor />
