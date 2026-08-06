@@ -19,7 +19,7 @@ import { fetchTypeNames } from '../../typeNames'
 import type { Owners } from '../../ownerFilter'
 import styles from '../assets.module.css'
 import { type Location } from '../assetsTable'
-import { AppraiseButton } from './appraiseButton'
+import { AppraisalPanel } from './appraisalPanel'
 import { LocationAssets, type ItemRow } from './locationAssets'
 import { SystemLocations } from './systemLocations'
 
@@ -401,7 +401,7 @@ const AssetLocationPage = async ({
         <div className={styles.headerActions}>
           {/* Prices this whole place in one request — the same endpoint each row
               uses, just aimed at the location instead of an item. */}
-          {!scope ? <AppraiseButton target={locationId} label="Appraise everything here" /> : null}
+          {!scope ? <AppraisalPanel targets={[locationId]} label="Appraise everything here" /> : null}
           {/* Sharing is per-item: only an owned character item (a container
               drilled into) gets the dialog — never a station/structure/system,
               and never something merely shared with the viewer. */}

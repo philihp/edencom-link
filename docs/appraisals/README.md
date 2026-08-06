@@ -13,6 +13,11 @@ implementation spec:
 | [02-asset-subtree-items.md](02-asset-subtree-items.md) | small | Postgres functions that aggregate a container/location subtree into `(type_id, quantity)` rows | Independent of 01 (pure DB); needed by 03 |
 | [03-asset-viewer-appraisal.md](03-asset-viewer-appraisal.md) | **Milestone 2** | Appraise buttons in the asset viewer: lazy-load the appraisal of one stack, or a container/ship and everything inside it | After 01 (client) **and** 02 (DB functions) |
 | [04-mcp-appraise-assets.md](04-mcp-appraise-assets.md) | small | The `appraise_assets` MCP tool: price a location, ship or container by reusing 03's walk | After 01–03; shipped |
+| [05-asset-selection-appraisal.md](05-asset-selection-appraisal.md) | small | Row selection (checkboxes + drag rectangle) in the asset table, with one appraisal control per table instead of 03's per-row column | Supersedes 03's UI; shipped |
+
+Doc 03 describes the per-row appraise column as originally shipped; doc 05
+replaced that UI with row selection and a single appraisal control, so read 03
+for the endpoint and 05 for what the viewer actually does today.
 
 Future ideas deliberately **not** in scope (park them unless asked): a market
 picker in the UI (everything defaults to Jita), appraising a `/asset/search`

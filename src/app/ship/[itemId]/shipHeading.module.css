@@ -29,8 +29,12 @@
   margin: 0;
 }
 
-/* Pushes the share dialog (when there is one) to the far end of the row. */
+/* Pushes the actions (appraise, and the share dialog when there is one) to the
+   far end of the row, side by side. */
 .actions {
+  display: flex;
+  align-items: center;
+  gap: 6pt;
   margin-left: auto;
 }
 
