@@ -315,8 +315,16 @@ as $$
     -- enclosing structure instead of stranding them on the bare item id. RLS
     -- keeps character_asset_over_time scoped to the caller's own characters, so
     -- a container owned by someone else (a corpmate's) still can't be bridged.
+    --
+    -- Narrowed to ids that appear as some row's location: those are exactly
+    -- the ids the walk and the root test below can probe, and there are ~28x
+    -- fewer of them than there are distinct item ids. Equivalence-preserving
+    -- — any id either side probes is by construction a location_id.
     select distinct on (item_id) item_id, location_id, location_type
     from public.character_asset_over_time
+    where item_id in (
+      select location_id from public.character_asset_over_time where location_id is not null
+    )
     order by item_id, is_current desc, valid_until desc
   ),
   walk as (
@@ -2614,8 +2622,12 @@ as $$
     -- One best-known parent per item the caller can see: the live row if there
     -- is one, otherwise the most recent historical sighting, so the walk can
     -- bridge a container that momentarily dropped out of the current snapshot.
+    -- Narrowed as in character_asset_location_summary() above.
     select distinct on (item_id) item_id, location_id, location_type
     from public.corp_asset_over_time
+    where item_id in (
+      select location_id from public.corp_asset_over_time where location_id is not null
+    )
     order by item_id, is_current desc, valid_until desc
   ),
   walk as (

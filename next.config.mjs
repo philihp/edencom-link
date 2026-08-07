@@ -11,6 +11,27 @@ const nextConfig = {
   // pre-existing incompatibility between that route and the webpack build
   // path, so Turbopack is the only viable option here regardless.)
   turbopack: {},
+  experimental: {
+    staleTimes: {
+      // How long the client-side router cache may reuse an already-rendered
+      // dynamic segment — every page here is dynamic, since they all read a
+      // cookie session. The default is 0, meaning a back/forward or a repeat
+      // visit re-runs the whole server render, which is why navigating around
+      // the asset browser never felt cached.
+      //
+      // 60s is chosen against what the data can actually do: the extract jobs
+      // run every 6 hours, so a page reused within a minute cannot be showing
+      // anything a fresh render would have changed. It is deliberately not
+      // longer — the header's "Refreshed N minutes ago" freshness indicator
+      // rides on these same renders, and a multi-minute cache would let it sit
+      // visibly behind an on-demand refresh the user just triggered.
+      //
+      // (docs/page-load-performance.md originally listed this as a non-goal,
+      // on the reasoning that it trades data freshness for navigation speed.
+      // That was wrong: at a 6-hourly cadence there is no freshness to trade.)
+      dynamic: 60,
+    },
+  },
   env: {
     // Captured at build time (i.e. when the deployment is built).
     BUILD_TIME: new Date().toISOString(),
