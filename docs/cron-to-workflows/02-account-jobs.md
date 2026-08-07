@@ -51,7 +51,7 @@ tokens (both use public ESI endpoints).
    `'character-affiliations'` and `'universe-names'` entries in the
    consumer's registry stay, because `dispatchRefresh.ts` still enqueues
    them account-wide when a user adds a character (`ACCOUNT_JOBS`). Only
-   the *scheduled* trigger moves. (The on-demand path is phase 5's
+   the _scheduled_ trigger moves. (The on-demand path is phase 5's
    decision.) The consumer's whole-job heartbeat block keeps working for
    those on-demand runs; scheduled runs now get their pair from the step —
    the `source` column ('vercel' vs 'vercel-workflow') tells them apart.

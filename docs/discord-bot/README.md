@@ -38,15 +38,15 @@ previous). Stage docs deliberately stay at scoping depth — enough to size
 and sequence the work — and the implementing PR should firm up the details
 against the code as it stands then.
 
-| Doc | PR | What | Milestone |
-|---|---|---|---|
-| [01-legal-pages.md](01-legal-pages.md) | tiny | Privacy policy + terms of service pages (Discord requires the URLs) | Pages live at `/privacy` and `/terms`, linked from the footer |
-| [02-interactions-endpoint.md](02-interactions-endpoint.md) | small | Discord application registration + the signed interactions endpoint | Discord's developer-portal endpoint validation passes against production |
-| [03-account-linking.md](03-account-linking.md) | medium | Bot install flow, account↔Discord linking, channel configuration via `/edencom link` | A linked channel row appears in settings after running the slash command |
-| [04-reinforcement-detection.md](04-reinforcement-detection.md) | medium | Detect the unreinforced→reinforced transition at extract time; notification outbox table | A simulated reinforcement produces exactly one pending outbox row |
-| [05-notification-sender.md](05-notification-sender.md) | small | Cron sweep that posts pending notifications to the linked channel | End-to-end: reinforced den → message in the Discord channel |
-| [06-discord-sign-in.md](06-discord-sign-in.md) | medium | Discord as a Supabase Auth provider: sign in / sign up with Discord, link Discord to an email account, add email later | A Discord-only account exists and works; an email account shows a linked Discord identity in settings |
-| [07-structure-fuel-alerts.md](07-structure-fuel-alerts.md) | small | Low-fuel detection on the `corp-structures` extract, riding the stage-04 outbox and stage-05 sender | A structure crossing the fuel threshold produces exactly one channel message |
+| Doc                                                            | PR     | What                                                                                                                   | Milestone                                                                                             |
+| -------------------------------------------------------------- | ------ | ---------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| [01-legal-pages.md](01-legal-pages.md)                         | tiny   | Privacy policy + terms of service pages (Discord requires the URLs)                                                    | Pages live at `/privacy` and `/terms`, linked from the footer                                         |
+| [02-interactions-endpoint.md](02-interactions-endpoint.md)     | small  | Discord application registration + the signed interactions endpoint                                                    | Discord's developer-portal endpoint validation passes against production                              |
+| [03-account-linking.md](03-account-linking.md)                 | medium | Bot install flow, account↔Discord linking, channel configuration via `/edencom link`                                   | A linked channel row appears in settings after running the slash command                              |
+| [04-reinforcement-detection.md](04-reinforcement-detection.md) | medium | Detect the unreinforced→reinforced transition at extract time; notification outbox table                               | A simulated reinforcement produces exactly one pending outbox row                                     |
+| [05-notification-sender.md](05-notification-sender.md)         | small  | Cron sweep that posts pending notifications to the linked channel                                                      | End-to-end: reinforced den → message in the Discord channel                                           |
+| [06-discord-sign-in.md](06-discord-sign-in.md)                 | medium | Discord as a Supabase Auth provider: sign in / sign up with Discord, link Discord to an email account, add email later | A Discord-only account exists and works; an email account shows a linked Discord identity in settings |
+| [07-structure-fuel-alerts.md](07-structure-fuel-alerts.md)     | small  | Low-fuel detection on the `corp-structures` extract, riding the stage-04 outbox and stage-05 sender                    | A structure crossing the fuel threshold produces exactly one channel message                          |
 
 Stage 06 is independent of 03–05 and can land any time after 02 (it wants
 the same Discord application, plus a second OAuth2 redirect for Supabase).
@@ -70,7 +70,7 @@ The project still targets a real Discord **application/bot** because:
 - Slash commands (`/edencom link`, later `/edencom dens`) make channel
   configuration self-serve inside Discord, where the corp already lives —
   no copying webhook URLs into a website.
-- A bot identity can later *answer* questions (den status, timers) in
+- A bot identity can later _answer_ questions (den status, timers) in
   channel, not just push.
 - Webhook URLs are bearer secrets users paste around; a bot posting via its
   own token with per-channel rows we control is easier to revoke and audit.
@@ -151,7 +151,7 @@ New secrets (Vercel env vars + `.env.example`), introduced in stage 02:
   reinforcement.
 - Role mentions in the ping (`@dens` etc.) via `allowed_mentions` — needs
   per-channel config for which role to ping.
-- Notifications for dens *shared by corp/alliance mates* (everything the
+- Notifications for dens _shared by corp/alliance mates_ (everything the
   `mercenary_den_visible_registrations()` helper returns), not just my own dens.
 - Notifications from the enemy-den intel corkboard (user-submitted
   reinforcements, `enemyDenIntel.tsx`).

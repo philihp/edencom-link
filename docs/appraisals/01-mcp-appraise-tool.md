@@ -63,7 +63,7 @@ export const appraise = async (items: AppraisalItemInput[], market: Market = 'ji
 Implementation requirements:
 
 - `POST https://innomin.at/api/v1/appraise/` with headers `X-API-Key:
-  process.env.INNOMINATE_API_KEY`, `Content-Type: application/json`, and a
+process.env.INNOMINATE_API_KEY`, `Content-Type: application/json`, and a
   `User-Agent` identifying us (`edencom-link (philihp@gmail.com)` — matches
   the etiquette `src/esi.js` follows).
 - Body: `{ items, market, save: false }`. **`save: false` is hard-coded.**
@@ -156,19 +156,23 @@ blueprint tools do (`resolveOneType` in tools.ts — best coverage match via
   "total_volume_m3": 5010.0,
   "items": [
     {
-      "item": "Tritanium", "quantity": 1000,
-      "sell_price": 4.03, "buy_price": 3.95,
-      "total_sell": 4030.0, "total_buy": 3950.0,
-      "volume_m3": 10.0
-    }
+      "item": "Tritanium",
+      "quantity": 1000,
+      "sell_price": 4.03,
+      "buy_price": 3.95,
+      "total_sell": 4030.0,
+      "total_buy": 3950.0,
+      "volume_m3": 10.0,
+    },
   ],
-  "unpriced": [                    // omit key when empty
-    { "item": "Not A Real Item", "possible_matches": ["…", "…"] }
+  "unpriced": [
+    // omit key when empty
+    { "item": "Not A Real Item", "possible_matches": ["…", "…"] },
   ],
-  "notes": ["Interpreted \"trit\" as Tritanium."],   // omit when empty
-  "cached": false,                  // omit when false
-  "rate_limit_remaining": 198,      // omit when null
-  "source": "innomin.at"
+  "notes": ["Interpreted \"trit\" as Tritanium."], // omit when empty
+  "cached": false, // omit when false
+  "rate_limit_remaining": 198, // omit when null
+  "source": "innomin.at",
 }
 ```
 

@@ -13,7 +13,7 @@ channel(s); nothing posts to them yet.
 
 ## Design: linked identity first, link codes as fallback
 
-*(Amended 2026-08-01: this stage originally ruled out Discord OAuth. Stage
+_(Amended 2026-08-01: this stage originally ruled out Discord OAuth. Stage
 06 now brings Discord sign-in via Supabase Auth, so a growing share of
 accounts carry a Discord identity — `auth.identities` holds the Discord
 user id. When the `/edencom link` invoker's Discord user id matches a
@@ -21,7 +21,7 @@ linked identity (service-role lookup), bind the channel to that account
 directly, no code needed. The link-code flow below stays as the fallback
 for accounts without a Discord identity, and the two flows share the same
 `discord_channel` row shape. If 06 lands first, the implementing PR for
-this stage may make codes a follow-up rather than building both paths.)*
+this stage may make codes a follow-up rather than building both paths.)_
 
 Two identities need joining: the edencom.link account (Supabase `user_id`)
 and a Discord channel. The code-based flow mirrors the invite-code pattern
@@ -102,7 +102,7 @@ Server actions in the existing settings `actions.ts`.
 
 ## Out of scope
 
-- Choosing *which* events go to *which* channel (all den reinforcements to
+- Choosing _which_ events go to _which_ channel (all den reinforcements to
   every linked channel is the MVP; per-den or per-event routing is a
   follow-up).
 - Discord OAuth2 website sign-in (now stage 06).

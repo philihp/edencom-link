@@ -15,6 +15,7 @@ This project folder contains a multi-stage plan to identify and eliminate unnece
 Each stage builds on the previous one and includes concrete deliverables and acceptance criteria.
 
 ### [Stage 1: Discovery & Current State Assessment](01-discovery.md)
+
 **Goal:** Establish baseline memory metrics and costs.
 
 - [ ] Measure current memory usage per function type
@@ -28,6 +29,7 @@ Each stage builds on the previous one and includes concrete deliverables and acc
 ---
 
 ### [Stage 2: Root Cause Analysis](02-analysis.md)
+
 **Goal:** Identify why memory is being consumed and where.
 
 - [ ] Profile SDE mirror workflow (largest data ingest)
@@ -42,9 +44,11 @@ Each stage builds on the previous one and includes concrete deliverables and acc
 ---
 
 ### [Stage 3: Solutions & Options](03-solutions.md)
+
 **Goal:** Identify concrete optimization strategies.
 
 Organized by category:
+
 - **A. SDE Mirror Workflow** (30–50% potential savings)
 - **B. ESI Extract Jobs** (10–20% potential savings)
 - **C. SDE Loaders & Caching** (5–10% potential savings)
@@ -56,24 +60,29 @@ Organized by category:
 ---
 
 ### [Stage 4: Implementation Roadmap](04-implementation-roadmap.md)
+
 **Goal:** Prioritize and schedule concrete work.
 
 **Phase 1: Quick Wins (Weeks 1–2)** — 15–25% reduction
+
 - Chunked bulk inserts across extract jobs
 - Bound SDE loader cache
 - Stream API responses
 - Cache TTL tuning
 
 **Phase 2: Stream Rewrites (Weeks 3–5)** — +10–20% reduction
+
 - Stream SDE mirror ZIP decompression
 - Stream ESI paginated responses
 - Pre-allocate reconciliation buffers
 
 **Phase 3: Observability (Weeks 6–8)** — +2–5% reduction + monitoring
+
 - Memory profiling dashboard
 - Batch size tuning & experiments
 
 **Phase 4: Deferred** — High effort, deferred unless critical
+
 - External Redis cache
 - Postgres cursor streaming
 
@@ -82,6 +91,7 @@ Organized by category:
 ---
 
 ### [Stage 5: Monitoring & Validation](05-monitoring-validation.md)
+
 **Goal:** Establish metrics and validation checkpoints.
 
 - Baseline metrics table (memory per job type)
@@ -123,13 +133,13 @@ Organized by category:
 
 ## Status
 
-| Stage | Status | Date |
-|-------|--------|------|
-| 1. Discovery | TBD | [FILL IN] |
-| 2. Analysis | TBD | [FILL IN] |
-| 3. Solutions | TBD | [FILL IN] |
-| 4. Roadmap | TBD | [FILL IN] |
-| 5. Monitoring | TBD | [FILL IN] |
+| Stage         | Status | Date      |
+| ------------- | ------ | --------- |
+| 1. Discovery  | TBD    | [FILL IN] |
+| 2. Analysis   | TBD    | [FILL IN] |
+| 3. Solutions  | TBD    | [FILL IN] |
+| 4. Roadmap    | TBD    | [FILL IN] |
+| 5. Monitoring | TBD    | [FILL IN] |
 
 ## Related Documentation
 

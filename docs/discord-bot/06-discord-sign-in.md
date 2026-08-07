@@ -16,12 +16,12 @@ No hand-rolled OAuth client. Supabase Auth ships a Discord provider; the
 whole feature is dashboard configuration plus a handful of client calls:
 
 - **Sign in / sign up:** `supabase.auth.signInWithOAuth({ provider:
-  'discord', options: { redirectTo } })` from a "Continue with Discord"
+'discord', options: { redirectTo } })` from a "Continue with Discord"
   button on `/account/login` and `/account/register`. Supabase creates the
   account on first sign-in (identity in `auth.identities`, carrying the
   Discord user id, username, avatar).
 - **Add Discord to an email account:** `supabase.auth.linkIdentity({
-  provider: 'discord' })` from a new "Connected accounts" section on
+provider: 'discord' })` from a new "Connected accounts" section on
   `/account/settings`. Requires **manual linking** enabled in the Supabase
   dashboard (Authentication → Providers). `unlinkIdentity` for removal —
   Supabase refuses to unlink the last identity, so a Discord-only account

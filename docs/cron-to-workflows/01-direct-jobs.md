@@ -22,13 +22,13 @@ The five jobs whose cron routes run them **inline** via `runDirectCronJob`
 
 ## In-phase order (simplest write pattern first)
 
-| # | Job | Runs | Write pattern | Notes |
-|---|---|---|---|---|
-| 1 | `industry-systems` | every 6h `:10` | append-only insert (`industry_system_index`) | Public ESI endpoint, no tokens at all. **First PR: this job alone**, to establish the pattern. |
-| 2 | `universe-structures` | 09:57 daily | upsert cache (`universe_structure`) | Token-authed reads, but a plain refresh of already-known ids. |
-| 3 | `corp-structures` | 09:17 daily | upsert (`corp_structure`) + name resolution | Per-corp token loop via `forEachCorporation` (which records its own per-corp heartbeats — see below). |
-| 4 | `corp-wallet-journal` | every 6h `:37` | paged append (`corp_wallet_journal`) + name resolution | Append-only; re-running a partially-failed pull is naturally idempotent (PK on entry id). |
-| 5 | `corp-blueprints` | 09:07 daily | **SCD-2 reconcile** (`corp_blueprint_over_time`) | The one reconciler in this phase — do it last, after the pattern has survived a few scheduled firings. |
+| #   | Job                   | Runs           | Write pattern                                          | Notes                                                                                                  |
+| --- | --------------------- | -------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| 1   | `industry-systems`    | every 6h `:10` | append-only insert (`industry_system_index`)           | Public ESI endpoint, no tokens at all. **First PR: this job alone**, to establish the pattern.         |
+| 2   | `universe-structures` | 09:57 daily    | upsert cache (`universe_structure`)                    | Token-authed reads, but a plain refresh of already-known ids.                                          |
+| 3   | `corp-structures`     | 09:17 daily    | upsert (`corp_structure`) + name resolution            | Per-corp token loop via `forEachCorporation` (which records its own per-corp heartbeats — see below).  |
+| 4   | `corp-wallet-journal` | every 6h `:37` | paged append (`corp_wallet_journal`) + name resolution | Append-only; re-running a partially-failed pull is naturally idempotent (PK on entry id).              |
+| 5   | `corp-blueprints`     | 09:07 daily    | **SCD-2 reconcile** (`corp_blueprint_over_time`)       | The one reconciler in this phase — do it last, after the pattern has survived a few scheduled firings. |
 
 Jobs 2–5 can batch two per PR once #1 has landed and fired on schedule.
 
@@ -57,8 +57,8 @@ export async function runJobWithHeartbeat(job: string, load: () => Promise<() =>
 
 **Resolved during the `industry-systems` PR — the shared-module `'use step'`
 approach does NOT compile.** The workflow compiler bans Node modules in
-workflow context, and it traces *every import reachable from workflow
-context*, but treats imports written *inside a `'use step'` function body* as
+workflow context, and it traces _every import reachable from workflow
+context_, but treats imports written _inside a `'use step'` function body_ as
 running in Node. A `load` closure defined in `'use workflow'` context (as the
 first draft had it) makes the compiler pull the job module — and its
 `src/jobs/lib.js` → `node:crypto`/`node:url` — into workflow context, which
@@ -69,7 +69,7 @@ inline within whatever step calls it), and each workflow file keeps a tiny
 inlined `'use step'` where **both** the `./lib` import and the job-module
 import are written inside the step body:
 
-- Retry caveat: if the *end* heartbeat write itself fails after the job
+- Retry caveat: if the _end_ heartbeat write itself fails after the job
   succeeded, a step retry re-runs the whole job. Every job in this phase is
   idempotent (upserts / keyed appends / SCD-2 reconcile that converges), so
   this is safe — but it's why non-idempotent work must never share a step
@@ -106,7 +106,7 @@ picked up the new step.
 
 **Heartbeat subtlety for the corp jobs (#3–#5):** their `run*()` functions
 use `forEachCorporation`, which records its own per-corp heartbeat rows.
-`runDirectCronJob` *additionally* records a whole-job pair today, and
+`runDirectCronJob` _additionally_ records a whole-job pair today, and
 `runJobStep` preserves exactly that — so the heartbeat picture is
 unchanged. Don't "simplify" the whole-job pair away; `/character/refresh`
 and the daily freshness checks key off it.

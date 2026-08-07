@@ -76,7 +76,7 @@ append the new output columns.
    `resolveLocations` pass later.
 3. **`asset_ancestors(start_id)`** → add `type_name` per ancestor row (feeds
    the `assetPath.tsx` breadcrumb).
-4. *(Optional, only if cheap)* `character_asset_location_summary()` /
+4. _(Optional, only if cheap)_ `character_asset_location_summary()` /
    `corp_asset_location_summary()` → station name/system for NPC-station
    roots.
 

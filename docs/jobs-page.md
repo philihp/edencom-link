@@ -17,20 +17,23 @@ runs the user has **enqueued** themselves.
 > an implementation detail with no user-facing meaning, which is also why the
 > page is named after jobs rather than after the engine.
 
-## Prerequisite: finish the migration first
+## Prerequisite: finish the migration first — ✅ satisfied
 
-**This page does not start until [`cron-to-workflows` phase 5](cron-to-workflows/05-contract.md)
-has landed.** Not a soft ordering — phase 5 decides the exact mechanics this
-page renders:
+Phase 5 of [`cron-to-workflows`](cron-to-workflows/05-contract.md) has
+landed, settling every mechanic this page was waiting on:
 
-| Phase 5 decision                                                    | What this page depends on                                                                                                                                                                                                                       |
-| ------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| §2: does the on-demand path keep the queue, or `start()` workflows? | Every refresh button on this page goes down that path. If on-demand becomes workflows, `refresh_task` terminal status moves into a workflow step (phase 5's gap-2 pattern), and the "Status" column's failure semantics change with it.         |
-| §1: delete the dead cron helpers                                    | `refreshCell`'s allow-list (`src/app/character/refresh/actions.ts`) is built from `PER_CHARACTER_JOBS` / `PER_CORPORATION_JOB_NAMES` / `ACCOUNT_JOBS`. This page's registry replaces that list; doing it before phase 5 means writing it twice. |
-| §3: retire the `character-implants` pilot                           | Decides whether `character-implants` is a row at all, or stays folded into `character-status`.                                                                                                                                                  |
+- **On-demand refreshes start workflows** (§2 chose option b):
+  `dispatchRefresh`/`dispatchSingleJob` `start()` the same workflow the cron
+  routes start, and `refresh_task` transitions (`running` → `done`/`error`)
+  live in the `markRefreshTask` step (`src/workflows/lib.ts`). The "Status
+  semantics" section below describes exactly that end state.
+- **The dead cron helpers are gone** — `refreshCell`'s allow-list still reads
+  `PER_CHARACTER_JOBS` / `PER_CORPORATION_JOB_NAMES` / `ACCOUNT_JOBS` from
+  `dispatchRefresh.ts`; this page's registry replaces that list when built.
+- **The `character-implants` pilot is retired** — implants stays folded into
+  `character-status`, so it is not a row on this page.
 
-Building the page first would mean shipping a UI whose refresh path is
-rewritten underneath it a PR later. Phase 5 first, then this.
+The page can now be built.
 
 ## Sections
 

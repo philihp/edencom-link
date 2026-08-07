@@ -34,7 +34,7 @@ static files (`public/esf-data/`), so there is zero regression window.
   the latest completed build for a CLI run) via the service role.
 - **Workflow step** (`src/workflows/sdeMirror.ts`): a new `encodeEsf(build)`
   `'use step'` runs after `finalize` — its own duration budget + bounded
-  retries, and deliberately *after* finalize so an encode failure can't hold
+  retries, and deliberately _after_ finalize so an encode failure can't hold
   back the mirror completion the rest of the app reads.
 
 **Bootstrap:** the nightly workflow only reaches `encodeEsf` after a full
@@ -60,7 +60,7 @@ Prerequisite: `esf_data` populated in production (trigger the workflow once).
   CDN keeps serving it hot, and a modest browser `max-age` so a patched SDE
   propagates via revalidation.
 - Flip `EveDataProvider`'s `dataUrl` to `/esf/` (`src/app/ship/[itemId]/
-  shipFitView.tsx`) so the preview deploy validates the wheel against the
+shipFitView.tsx`) so the preview deploy validates the wheel against the
   DB-served data end-to-end.
 
 ## Phase 3 — Contract: remove the ESF build job from the build (PR 3) ✅ done

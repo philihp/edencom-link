@@ -42,30 +42,31 @@ The Python's `--mode twines|miros` flag changes only the group labeling
 (everything carrying a `Group` column or labels), so files are precomputed
 per mode rather than parameterized:
 
-| Row `name` (PK) / URL file | Contents |
-|---|---|
-| `static-inputs-twines.csv`, `static-inputs-miros.csv` | StaticInputs |
-| `static-outputs-twines.csv`, `static-outputs-miros.csv` | StaticOutputs |
-| `types-twines.csv`, `types-miros.csv` | types.csv |
-| `invention.csv` | invention (mode-independent) |
+| Row `name` (PK) / URL file                              | Contents                     |
+| ------------------------------------------------------- | ---------------------------- |
+| `static-inputs-twines.csv`, `static-inputs-miros.csv`   | StaticInputs                 |
+| `static-outputs-twines.csv`, `static-outputs-miros.csv` | StaticOutputs                |
+| `types-twines.csv`, `types-miros.csv`                   | types.csv                    |
+| `invention.csv`                                         | invention (mode-independent) |
 
 (Open question 3: if `miros` mode is no longer used, drop its variants and
 the suffixes — 4 files instead of 7.)
 
 ## Architecture: a hybrid of two existing patterns
 
-| | ESF protobufs (`esf-data`) | Sheets API endpoints (`/api/character/*`) | **This project (`sheet-csv`)** |
-|---|---|---|---|
-| Built | nightly, tail step of `sde-mirror` workflow | per-request | **nightly, tail step of `sde-mirror` workflow** |
-| Source | `sde_*` mirror tables | extract DB (per-user) | **`sde_*` mirror tables** |
-| Stored | `esf_data` table (base64) | not stored | **`sheet_csv` table (plain text)** |
-| Served | `/esf/[file]`, binary, CDN-cached, ETag on `sde_build` | CSV, `api_token`-authenticated, uncached | **`/sheets/[file]`, CSV, CDN-cached, ETag on `sde_build`, no auth** |
+|        | ESF protobufs (`esf-data`)                             | Sheets API endpoints (`/api/character/*`) | **This project (`sheet-csv`)**                                      |
+| ------ | ------------------------------------------------------ | ----------------------------------------- | ------------------------------------------------------------------- |
+| Built  | nightly, tail step of `sde-mirror` workflow            | per-request                               | **nightly, tail step of `sde-mirror` workflow**                     |
+| Source | `sde_*` mirror tables                                  | extract DB (per-user)                     | **`sde_*` mirror tables**                                           |
+| Stored | `esf_data` table (base64)                              | not stored                                | **`sheet_csv` table (plain text)**                                  |
+| Served | `/esf/[file]`, binary, CDN-cached, ETag on `sde_build` | CSV, `api_token`-authenticated, uncached  | **`/sheets/[file]`, CSV, CDN-cached, ETag on `sde_build`, no auth** |
 
 The build side is a straight copy of the `esf-data` shape (`src/buildEsfData.js`
-+ `src/jobs/esfData.js` + the `encodeEsf` workflow step): a pure encode module
-that pages the mirror tables through the public-read anon client and returns
-`{ [fileName]: string }`, wrapped by a job that upserts into a table, kicked by
-the workflow once its input tables have landed.
+
+- `src/jobs/esfData.js` + the `encodeEsf` workflow step): a pure encode module
+  that pages the mirror tables through the public-read anon client and returns
+  `{ [fileName]: string }`, wrapped by a job that upserts into a table, kicked by
+  the workflow once its input tables have landed.
 
 The serve side is a copy of `/esf/[file]` (allowlisted filename, ETag keyed on
 `sde_build`, long CDN cache with stale-while-revalidate) — but returning
@@ -106,7 +107,7 @@ port:
 - **Output format:** headered RFC 4180 CSV via the existing `toCsv`
   (`src/utils/csv.ts`), matching the sample tab exports — **not** the
   Python's odd headerless `", "`-joined format (decision 1 below). Row
-  *ordering* still matches the Python so rows land in the same positions the
+  _ordering_ still matches the Python so rows land in the same positions the
   sheet's adjacent formula columns expect.
 
 ## Phases
@@ -156,13 +157,13 @@ doc 04).
    Python's rules a manufacturing output can't be labeled `Input`, so those
    are presumably rows whose sheet lookup hit a type the old types.csv
    labeled before it became buildable (or lookup drift). Pre-joining makes
-   the label consistent; confirm the sheet's formulas don't *depend* on the
+   the label consistent; confirm the sheet's formulas don't _depend_ on the
    stale labels.
 3. Is `miros` mode still used? If not, drop its file variants (7 files → 4,
    no suffixes).
 4. Row-position stability: sheet columns to the right of the imported range
    reference row numbers. IMPORTDATA rewrites rows on every refresh — the
    adjacent-formula pattern survives only if ordering is deterministic (it
-   is: blueprint-id order) but *inserted/removed blueprints between SDE
-   builds still shift rows*, exactly as they did with manual pastes. Worth
+   is: blueprint-id order) but _inserted/removed blueprints between SDE
+   builds still shift rows_, exactly as they did with manual pastes. Worth
    confirming with the sheet owner that this is understood/acceptable.
