@@ -1,9 +1,11 @@
+import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { concat } from 'ramda'
 
 import { createClient } from '@/utils/supabase/server'
 import { DateTime } from '../DateTime'
 import { formatIsk, formatKisk } from '../isk'
+import { LinkSpinner } from '../linkSpinner'
 import { Name, SystemName } from '../names'
 import { fetchSystemNames } from '../systemNames'
 import { fetchTypeNames } from '../typeNames'
@@ -288,8 +290,8 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
         </span>
       </div>
       <p className={styles.pageLinks}>
-        <a href="/structure/revenue">Tax revenue events &raquo;</a>
-        <a href="/mercenary-dens">Mercenary dens &raquo;</a>
+        <Link href="/structure/revenue">Tax revenue events &raquo;</Link>
+        <Link href="/mercenary-dens">Mercenary dens &raquo;</Link>
       </p>
       {list.length > 0 ? (
         <>
@@ -305,9 +307,10 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
                   <StructureSilhouette typeId={s.type_id} className={styles.silhouette} />
                   <div className={styles.head}>
                     <div>
-                      <a href={`/structure/${s.structure_id}`} className={styles.name}>
+                      <Link href={`/structure/${s.structure_id}`} className={styles.name}>
                         {s.name ?? `Structure #${s.structure_id}`}
-                      </a>
+                        <LinkSpinner />
+                      </Link>
                       {/* Upwell structures share their structure_id with the station/facility id industry jobs run at. */}
                       <span className={styles.subId}>#{s.structure_id}</span>
                     </div>
@@ -438,8 +441,8 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
         </>
       ) : (
         <p>
-          No structures visible. Re-link a director character on the <a href="/character">Characters</a> page so the
-          hourly job can fetch them.
+          No structures visible. Re-link a director character on the <Link href="/character">Characters</Link> page so
+          the hourly job can fetch them.
         </p>
       )}
       <p className={styles.lastRun}>

@@ -90,7 +90,7 @@ const StructurePage = async ({ params }: StructureParams) => {
         <h1>Structure not found</h1>
         <p>
           No structure {structureId} is visible. It may not exist, or you may need to re-link a director character on
-          the <a href="/character">Characters</a> page. Back to <Link href="/structure">Structures</Link>.
+          the <Link href="/character">Characters</Link> page. Back to <Link href="/structure">Structures</Link>.
         </p>
       </>
     )

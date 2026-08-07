@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { redirect } from 'next/navigation'
 
 import { getSdePlanets } from '@/sdePlanets'
@@ -242,9 +243,9 @@ const MercenaryDensPage = async () => {
     <>
       <div className={styles.pageHeader}>
         {/* The header nav no longer carries this page — it's reached from /structure. */}
-        <a href="/structure" className={styles.backLink}>
+        <Link href="/structure" className={styles.backLink}>
           &laquo; Structures
-        </a>
+        </Link>
         <h1>Mercenary Dens</h1>
         <ShareAlliance alliances={alliances} sharedAllianceIds={sharedAllianceIds} />
       </div>
