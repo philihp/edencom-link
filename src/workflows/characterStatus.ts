@@ -25,7 +25,7 @@
 
 import { map, reduce, splitEvery, transpose } from 'ramda'
 
-import { enumerateCharacters } from './lib'
+import { type OnDemand, enumerateCharacters, markRefreshTask } from './lib'
 
 // The six ESI scopes character-status fronts (wallet, location, implants,
 // clones, ship, skills). Keep in sync with SCOPES in src/jobs/characterStatus.js
@@ -46,22 +46,26 @@ const LANES = 4
 // job module's top-level supabase/esi setup needs env vars absent at build
 // time). forEachCharacterAnyScope still refreshes the token, records the
 // per-character heartbeat pair, and runs only the endpoints the token carries.
-// characterId is a bigint-derived number — the only thing crossing the step
+// registrationId is a registration uuid — the only thing crossing the step
 // boundary, and serializable.
-async function syncCharacter(characterId: number) {
+async function syncCharacter(registrationId: string) {
   'use step'
   const { runCharacterStatus } = await import('@/jobs/characterStatus.js')
-  await runCharacterStatus({ registrationIds: [characterId] })
+  await runCharacterStatus({ registrationIds: [registrationId] })
 }
 
-export async function characterStatusWorkflow() {
+export async function characterStatusWorkflow(onDemand?: OnDemand) {
   'use workflow'
   // The workflow body must stay deterministic control flow over step calls (the
   // 'use workflow' directive compiles it — see sdeMirror.ts). Ramda's pure
   // combinators are fine here: they're referentially transparent (identical on
   // every replay) and pull in no Node modules, unlike a workflow-level helper
   // that would run impure/Node code in workflow context.
-  const ids = await enumerateCharacters(SCOPES)
+  if (onDemand?.taskId) await markRefreshTask(onDemand.taskId, 'running')
+
+  // An on-demand run arrives with its target pre-enumerated (the one character
+  // a refresh cell kicked); a scheduled run enumerates every scoped character.
+  const ids = onDemand?.registrationIds ?? (await enumerateCharacters(SCOPES))
 
   // Round-robin the characters into LANES lanes: splitEvery chunks the ids into
   // rows of LANES, then transpose flips rows→columns, so column j collects
@@ -81,8 +85,8 @@ export async function characterStatusWorkflow() {
   // mapped to one Error each and thrown together as an AggregateError, marking
   // the run failed in Observability. All characters are attempted regardless of
   // how the runtime treats a rejection inside Promise.all.
-  const failures: number[] = []
-  const drainLane = (lane: number[]): Promise<void> =>
+  const failures: string[] = []
+  const drainLane = (lane: string[]): Promise<void> =>
     reduce(
       (p, id) =>
         p.then(() =>
@@ -97,9 +101,12 @@ export async function characterStatusWorkflow() {
   await Promise.all(map(drainLane, lanes))
 
   if (failures.length > 0) {
+    if (onDemand?.taskId) await markRefreshTask(onDemand.taskId, 'error', `${failures.length} character step(s) failed`)
     throw new AggregateError(
       map((id) => new Error(`character ${id} failed`), failures),
       `character-status: ${failures.length} character step(s) failed`
     )
   }
+
+  if (onDemand?.taskId) await markRefreshTask(onDemand.taskId, 'done')
 }

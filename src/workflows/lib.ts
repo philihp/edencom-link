@@ -41,17 +41,53 @@ export async function runJobWithHeartbeat(job: string, load: () => Promise<() =>
   }
 }
 
-// Step: enumerate the character_ids carrying the job's ESI scope(s), the same
-// set fanOutPerCharacter*CronJob (src/utils/cron.ts) enumerates before sending
-// one queue message each. Returning it from a step lets the per-character
-// fan-out workflows (phase 3) map it into one step per character. Passing
-// several scopes unions them (array overlap), exactly like the any-scope cron
-// variant character-status uses. character_id is a bigint, so it comes back as a
-// JS number — safe to serialize as a step result.
-export async function enumerateCharacters(scopes: string[]): Promise<number[]> {
+// The on-demand "Refresh ESI" handle (phase 5 of the cron → Workflows
+// migration): dispatchRefresh/dispatchSingleJob start() each workflow with a
+// pre-enumerated target — the exact ids the queue message used to carry — plus
+// the refresh_task row the /character/refresh matrix tracks. A scheduled cron
+// start() passes nothing, and the workflow enumerates for itself.
+export type OnDemand = {
+  // Per-character workflows: the registrations to sync (usually one). Per-corp
+  // workflows: one corp's whole scoped-character group, kept together so a
+  // corp's reconcile is never split across concurrent runs. Absent: enumerate.
+  registrationIds?: string[]
+  // A refresh_task row to flip running → done/error as the run progresses.
+  taskId?: string
+}
+
+// Step: flip an on-demand run's refresh_task row, preserving the old queue
+// consumer's exact best-effort semantics — a failure to record status is logged
+// and swallowed (never throws), so a DB hiccup can't fail a run whose actual
+// extract work succeeded, and the page's 10-minute task floor covers a lost
+// terminal update.
+export async function markRefreshTask(taskId: string, status: 'running' | 'done' | 'error', error?: string) {
+  'use step'
+  const { sudoSupabase } = await import('@/supabase.js')
+  const now = new Date().toISOString()
+  const { error: updateError } = await sudoSupabase
+    .from('refresh_task')
+    .update({
+      status,
+      updated_at: now,
+      ...(status === 'running' ? { started_at: now } : { ended_at: now }),
+      ...(error != null ? { error: error.slice(0, 500) } : {}),
+    })
+    .eq('id', taskId)
+  if (updateError) console.error(`[refresh_task] failed to mark ${taskId} ${status}:`, updateError)
+}
+
+// Step: enumerate the registration ids carrying the job's ESI scope(s), the
+// same set fanOutPerCharacter*CronJob (src/utils/cron.ts) enumerated before
+// sending one queue message each. Returning it from a step lets the
+// per-character fan-out workflows (phase 3) map it into one step per character.
+// Passing several scopes unions them (array overlap), exactly like the
+// any-scope cron variant character-status uses. The ids are registration uuids
+// (token.registration_id), i.e. JS strings — safe to serialize as a step
+// result.
+export async function enumerateCharacters(scopes: string[]): Promise<string[]> {
   'use step'
   const { selectRegistrationIdsWithScopes } = await import('@/supabase.js')
-  return (await selectRegistrationIdsWithScopes(scopes)) as number[]
+  return (await selectRegistrationIdsWithScopes(scopes)) as string[]
 }
 
 // Step: build the exact per-corp fan-out set fanOutPerCorporationCronJob

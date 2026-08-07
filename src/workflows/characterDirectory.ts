@@ -12,8 +12,12 @@
 // (dispatchRefresh's ACCOUNT_JOBS) still enqueues this job through the queue.
 // The job module is untouched and still CLI-runnable.
 
+import { type OnDemand, markRefreshTask } from './lib'
+
 // Both imports live inside the step body on purpose (workflow compiler bans
-// Node modules in workflow context — see src/workflows/lib.ts).
+// Node modules in workflow context — see src/workflows/lib.ts). markRefreshTask
+// above is different: it IS a 'use step' export, made to be imported at top
+// level and called from workflow context.
 async function runStep() {
   'use step'
   const { runJobWithHeartbeat } = await import('./lib')
@@ -23,7 +27,15 @@ async function runStep() {
   )
 }
 
-export async function characterDirectoryWorkflow() {
+export async function characterDirectoryWorkflow(onDemand?: OnDemand) {
   'use workflow'
-  await runStep()
+  if (onDemand?.taskId) await markRefreshTask(onDemand.taskId, 'running')
+  try {
+    await runStep()
+  } catch (err) {
+    if (onDemand?.taskId)
+      await markRefreshTask(onDemand.taskId, 'error', err instanceof Error ? err.message : String(err))
+    throw err
+  }
+  if (onDemand?.taskId) await markRefreshTask(onDemand.taskId, 'done')
 }

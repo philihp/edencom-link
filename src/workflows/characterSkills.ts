@@ -25,12 +25,12 @@ const LANES = 4
 // Step: run the job for one character. The lazy import is the usual reason (the
 // job module's top-level supabase/esi setup needs env vars absent at build
 // time). forEachCharacter still refreshes the token and records the
-// per-character heartbeat pair, unchanged. characterId is a bigint-derived
-// number — the only thing crossing the step boundary, and serializable.
-async function syncCharacter(characterId: number) {
+// per-character heartbeat pair, unchanged. registrationId is a registration
+// uuid — the only thing crossing the step boundary, and serializable.
+async function syncCharacter(registrationId: string) {
   'use step'
   const { runCharacterSkills } = await import('@/jobs/characterSkills.js')
-  await runCharacterSkills({ registrationIds: [characterId] })
+  await runCharacterSkills({ registrationIds: [registrationId] })
 }
 
 export async function characterSkillsWorkflow() {
@@ -60,8 +60,8 @@ export async function characterSkillsWorkflow() {
   // mapped to one Error each and thrown together as an AggregateError, marking
   // the run failed in Observability. All characters are attempted regardless of
   // how the runtime treats a rejection inside Promise.all.
-  const failures: number[] = []
-  const drainLane = (lane: number[]): Promise<void> =>
+  const failures: string[] = []
+  const drainLane = (lane: string[]): Promise<void> =>
     reduce(
       (p, id) =>
         p.then(() =>

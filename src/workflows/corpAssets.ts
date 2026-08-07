@@ -24,7 +24,7 @@
 
 import { map, reduce, splitEvery, transpose } from 'ramda'
 
-import { enumerateCorporations } from './lib'
+import { type OnDemand, enumerateCorporations, markRefreshTask } from './lib'
 
 // This job's ESI scope, and the lane count. Only *different* corps run
 // concurrently (each corp's rows are disjoint); two lanes because the corp count
@@ -46,12 +46,17 @@ async function syncCorporation(registrationIds: string[]) {
   await runCorpAssets({ registrationIds })
 }
 
-export async function corpAssetsWorkflow() {
+export async function corpAssetsWorkflow(onDemand?: OnDemand) {
   'use workflow'
   // The workflow body must stay deterministic control flow over step calls (the
   // 'use workflow' directive compiles it — see sdeMirror.ts). Ramda's pure
   // combinators are fine here: referentially transparent, no Node imports.
-  const groups = await enumerateCorporations(SCOPE)
+  if (onDemand?.taskId) await markRefreshTask(onDemand.taskId, 'running')
+
+  // An on-demand run arrives with one corp's whole scoped-character group
+  // pre-enumerated (kept together — a corp's reconcile must never run
+  // concurrently with itself); a scheduled run enumerates every corp.
+  const groups = onDemand?.registrationIds ? [onDemand.registrationIds] : await enumerateCorporations(SCOPE)
 
   // Round-robin the corp groups into LANES lanes (splitEvery chunks rows of
   // LANES, transpose flips rows→columns, so group i lands in lane i % LANES with
@@ -82,9 +87,12 @@ export async function corpAssetsWorkflow() {
   await Promise.all(map(drainLane, lanes))
 
   if (failures.length > 0) {
+    if (onDemand?.taskId) await markRefreshTask(onDemand.taskId, 'error', `${failures.length} corp step(s) failed`)
     throw new AggregateError(
       map((group) => new Error(`corp group [${group.join(', ')}] failed`), failures),
       `corp-assets: ${failures.length} corp step(s) failed`
     )
   }
+
+  if (onDemand?.taskId) await markRefreshTask(onDemand.taskId, 'done')
 }

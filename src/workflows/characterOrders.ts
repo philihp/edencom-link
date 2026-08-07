@@ -17,7 +17,7 @@
 
 import { map, reduce, splitEvery, transpose } from 'ramda'
 
-import { enumerateCharacters } from './lib'
+import { type OnDemand, enumerateCharacters, markRefreshTask } from './lib'
 
 // This job's ESI scope, and the lane count. Four lanes keeps a big account
 // polite to ESI's error-rate limits (the queue already ran per-character pulls
@@ -29,22 +29,26 @@ const LANES = 4
 // Step: run the job for one character. The lazy import is the usual reason (the
 // job module's top-level supabase/esi setup needs env vars absent at build
 // time). forEachCharacter still refreshes the token and records the
-// per-character heartbeat pair, unchanged. characterId is a bigint-derived
-// number — the only thing crossing the step boundary, and serializable.
-async function syncCharacter(characterId: number) {
+// per-character heartbeat pair, unchanged. registrationId is a registration
+// uuid — the only thing crossing the step boundary, and serializable.
+async function syncCharacter(registrationId: string) {
   'use step'
   const { runCharacterOrders } = await import('@/jobs/characterOrders.js')
-  await runCharacterOrders({ registrationIds: [characterId] })
+  await runCharacterOrders({ registrationIds: [registrationId] })
 }
 
-export async function characterOrdersWorkflow() {
+export async function characterOrdersWorkflow(onDemand?: OnDemand) {
   'use workflow'
   // The workflow body must stay deterministic control flow over step calls (the
   // 'use workflow' directive compiles it — see sdeMirror.ts). Ramda's pure
   // combinators are fine here: they're referentially transparent (identical on
   // every replay) and pull in no Node modules, unlike a workflow-level helper
   // that would run impure/Node code in workflow context.
-  const ids = await enumerateCharacters(SCOPES)
+  if (onDemand?.taskId) await markRefreshTask(onDemand.taskId, 'running')
+
+  // An on-demand run arrives with its target pre-enumerated (the one character
+  // a refresh cell kicked); a scheduled run enumerates every scoped character.
+  const ids = onDemand?.registrationIds ?? (await enumerateCharacters(SCOPES))
 
   // Round-robin the characters into LANES lanes: splitEvery chunks the ids into
   // rows of LANES, then transpose flips rows→columns, so column j collects
@@ -64,8 +68,8 @@ export async function characterOrdersWorkflow() {
   // mapped to one Error each and thrown together as an AggregateError, marking
   // the run failed in Observability. All characters are attempted regardless of
   // how the runtime treats a rejection inside Promise.all.
-  const failures: number[] = []
-  const drainLane = (lane: number[]): Promise<void> =>
+  const failures: string[] = []
+  const drainLane = (lane: string[]): Promise<void> =>
     reduce(
       (p, id) =>
         p.then(() =>
@@ -80,9 +84,12 @@ export async function characterOrdersWorkflow() {
   await Promise.all(map(drainLane, lanes))
 
   if (failures.length > 0) {
+    if (onDemand?.taskId) await markRefreshTask(onDemand.taskId, 'error', `${failures.length} character step(s) failed`)
     throw new AggregateError(
       map((id) => new Error(`character ${id} failed`), failures),
       `character-orders: ${failures.length} character step(s) failed`
     )
   }
+
+  if (onDemand?.taskId) await markRefreshTask(onDemand.taskId, 'done')
 }
