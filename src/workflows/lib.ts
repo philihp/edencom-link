@@ -81,9 +81,19 @@ export async function runJobWithHeartbeat(job: string, load: () => Promise<() =>
   await recordHeartbeat(job, 'start', { runId, source: 'vercel-workflow' })
   try {
     await run()
-  } finally {
     recordPeakRss({ job })
-    await recordHeartbeat(job, 'end', { runId, source: 'vercel-workflow' })
+    await recordHeartbeat(job, 'end', { runId, source: 'vercel-workflow', ok: true })
+  } catch (e) {
+    // Stamp the failure on the end row (heartbeat.ok/error) and rethrow so the
+    // step still fails visibly in Observability and gets its bounded retries.
+    recordPeakRss({ job })
+    await recordHeartbeat(job, 'end', {
+      runId,
+      source: 'vercel-workflow',
+      ok: false,
+      error: e instanceof Error ? e.message : String(e),
+    })
+    throw e
   }
 }
 

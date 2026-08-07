@@ -18,9 +18,14 @@ const withHeartbeat = async (tag, owner, fn) => {
   const runId = randomInt(1, 2 ** 48)
   await recordHeartbeat(tag, 'start', { runId, ...owner })
   try {
-    return await fn()
-  } finally {
-    await recordHeartbeat(tag, 'end', { runId, ...owner })
+    const result = await fn()
+    await recordHeartbeat(tag, 'end', { runId, ...owner, ok: true })
+    return result
+  } catch (e) {
+    // Stamp the failure on the end row (heartbeat.ok/error) and rethrow — the
+    // caller's catch still logs and skips to the next character/corp as before.
+    await recordHeartbeat(tag, 'end', { runId, ...owner, ok: false, error: e?.message ?? e })
+    throw e
   }
 }
 

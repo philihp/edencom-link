@@ -212,31 +212,23 @@ The open-heartbeat clause is what makes **scheduled** runs visible as
 no new RPC: a direct `heartbeat` select is already RLS-scoped correctly (own
 characters, own corps, and the `user_id IS NULL` shared rows).
 
-### Known gap: a failed _scheduled_ run looks identical to a successful one
+### Closed gap: failed runs are now recorded on the heartbeat ✅
 
 `withHeartbeat` (`src/jobs/lib.js`) and `runJobWithHeartbeat`
-(`src/workflows/lib.ts`) both close the heartbeat pair from a `finally`, so a
-run that threw still writes `ended_at` and the table cannot tell the two
-apart. Only `refresh_task` records failure, and only for on-demand runs. So
-`✗ failed` in the table above is reachable from section 4's data but not from
-a cron run — a nightly job that has failed every night for a week shows a
-red-ish freshness dot and nothing more.
+(`src/workflows/lib.ts`) used to close the heartbeat pair from a `finally`, so
+a run that threw wrote the same end row as one that succeeded and only
+`refresh_task` recorded failure — and only for on-demand runs. Both wrappers
+now stamp the end row with **`heartbeat.ok`** (true/false) and **`error`**
+(the message, truncated) — see the `20260807020000_heartbeat_ok_error`
+migration. Null means "outcome unknown": still-open rows, rows predating the
+column, and CLI runs through code paths that don't pass it.
 
-Two ways out, both deliberately **out of scope for the page PR** so it stays a
-UI change:
-
-1. **`heartbeat.ok boolean` / `heartbeat.error text`** — set from the same
-   `finally` that already writes `ended_at`. A normal dual write (`schema.sql`
-   - an incremental migration) and a two-line change in the two heartbeat
-     wrappers. Makes "last run failed" a first-class cell on this page and would
-     also improve the header indicator.
-2. **Leave it to Vercel Observability → Workflows**, and have the page link
-   there per job.
-
-Recommend (1) as a small follow-up PR once the page exists and the gap is
-visible. Note that a fan-out workflow's `AggregateError` (one bad character in
-a lane) already fails the _run_ while every other character's heartbeat closes
-normally — so per-entity `ok` is the meaningful granularity, not per-job.
+So the page can render `✗ failed` for scheduled runs too: a cell whose newest
+end row has `ok = false` shows the failure (and its message on hover) instead
+of an undifferentiated stale dot. Per-entity granularity comes free — the
+per-character/per-corp rows are written by `withHeartbeat` per entity, so one
+character with a dead token shows failed while its neighbors show fresh,
+which is exactly the "1 lagging" diagnosis made explicit.
 
 ### Known gap: fan-out jobs have no whole-job heartbeat
 
