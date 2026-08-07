@@ -6,7 +6,7 @@ import { createServiceClient } from '@/utils/supabase/service'
 import { createClient } from '@/utils/supabase/server'
 
 import { DateTime } from '../../DateTime'
-import { isChancellor } from '../chancellor/chancellor'
+import { isChancellor } from '../settings/chancellor/chancellor'
 import { mainCharacterNameForUser, mainCharacterNamesForUsers } from '../lib/inviter'
 import CopyLink from './copyLink'
 import CreateButton from './createButton'

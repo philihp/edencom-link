@@ -63,6 +63,8 @@ const nextConfig = {
     { source: '/characters/refresh', destination: '/character/refresh', permanent: true },
     // The short-lived bare fit view moved when ships got their own page.
     { source: '/asset/:itemId/fit', destination: '/ship/:itemId', permanent: false },
+    // The Chancellor tools became a settings subpage.
+    { source: '/account/chancellor', destination: '/account/settings/chancellor', permanent: true },
   ],
 }
 

@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation'
 
 import { createClient } from '@/utils/supabase/server'
 
-import { isChancellor } from '../chancellor/chancellor'
+import { isChancellor } from './chancellor/chancellor'
 import { isSsoPlaceholderEmail } from '../lib/ssoEmail'
 import ApiToken from './apiToken'
 import ChangePassword from './changePassword'
@@ -83,8 +83,11 @@ const SettingsPage = async ({ searchParams }: { searchParams: Promise<{ gice?: s
       {chancellor && (
         <>
           <h2>Chancellor</h2>
-          <p>You have Chancellor powers. Manage who else is a Chancellor and mint invite codes anytime.</p>
-          <Link href="/account/chancellor">Manage chancellors</Link>
+          <p>
+            You have Chancellor powers. Manage who else is a Chancellor, set other accounts&rsquo; feature flags, and
+            mint invite codes anytime.
+          </p>
+          <Link href="/account/settings/chancellor">Chancellor tools</Link>
         </>
       )}
 

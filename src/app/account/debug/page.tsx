@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 
 import { createClient } from '@/utils/supabase/server'
-import { isChancellor } from '../chancellor/chancellor'
+import { isChancellor } from '../settings/chancellor/chancellor'
 import ImpersonateForm from './impersonateForm'
 
 const DebugPage = async () => {

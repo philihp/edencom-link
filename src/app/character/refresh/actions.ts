@@ -5,7 +5,7 @@ import { redirect } from 'next/navigation'
 
 import { createClient } from '@/utils/supabase/server'
 
-import { isChancellor } from '../../account/chancellor/chancellor'
+import { isChancellor } from '../../account/settings/chancellor/chancellor'
 import { ACCOUNT_JOBS, PER_CHARACTER_JOBS, PER_CORPORATION_JOB_NAMES, dispatchSingleJob } from '../dispatchRefresh'
 
 // Account-wide jobs reserved for Chancellors: unlike character-directory/
