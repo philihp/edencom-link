@@ -6,6 +6,7 @@ import { fetchShareAudiences, shareRowToState, type OwnRegistration } from '@/ap
 import { LENS_FLAG, hasFlag } from '@/flags'
 import { createClient } from '@/utils/supabase/server'
 import { revokeLensShare, saveLensShare } from './actions'
+import { shortLensId } from './shortId'
 import { LensEditor } from './lensEditor'
 import type { LensRecord } from './run'
 import styles from './lens.module.css'
@@ -35,6 +36,9 @@ const LensPage = async () => {
   ])
   const lenses = (lensRows ?? []) as LensRecord[]
   const audiences = await fetchShareAudiences(supabase, (regs ?? []) as OwnRegistration[])
+  // The dialog's copyable URL carries the shortest id that resolves back to
+  // each lens, so what people paste onward is the graceful form.
+  const shortIds = await Promise.all(lenses.map((lens) => shortLensId(lens.id)))
 
   return (
     <>
@@ -47,7 +51,7 @@ const LensPage = async () => {
 
       <LensEditor lens={null} />
 
-      {lenses.map((lens) => (
+      {lenses.map((lens, i) => (
         <section key={lens.id} className={styles.lens}>
           <div className={styles.lensHeading}>
             <h2>
@@ -55,7 +59,7 @@ const LensPage = async () => {
             </h2>
             <ShareDialog
               subjectLabel="lens"
-              urlPath={`/lens/${lens.id}`}
+              urlPath={`/lens/${shortIds[i]}`}
               hint="Whoever you share with can run this query and see its results — your data, live — until you stop sharing."
               data={{
                 share: lens.enabled ? shareRowToState(lens) : null,
