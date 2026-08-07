@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 
-import Dot from '../settings/dot'
+import Dot from '../dot'
 import { grantChancellor } from './actions'
 
 // Form to promote another account to Chancellor by one of its character names.

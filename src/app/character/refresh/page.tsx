@@ -4,7 +4,7 @@ import { reduce } from 'ramda'
 
 import { createClient } from '@/utils/supabase/server'
 
-import { isChancellor } from '../../account/chancellor/chancellor'
+import { isChancellor } from '../../account/settings/chancellor/chancellor'
 import { Freshness } from '../../Freshness'
 import { freshnessLevel } from '../../freshness'
 import { CharacterName, Name } from '../../names'

@@ -7,7 +7,7 @@ import { revalidatePath } from 'next/cache'
 import { createServiceClient } from '@/utils/supabase/service'
 import { createClient } from '@/utils/supabase/server'
 
-import { isChancellor } from '../chancellor/chancellor'
+import { isChancellor } from '../settings/chancellor/chancellor'
 import { earnedCount } from './schedule'
 
 // Mint a new invite code for the signed-in user. Chancellors may mint freely;
