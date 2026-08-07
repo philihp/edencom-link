@@ -1,8 +1,10 @@
 'use client'
 
+import Link from 'next/link'
 import { useEffect, useState } from 'react'
 
 import { DateTime } from '../DateTime'
+import { LinkSpinner } from '../linkSpinner'
 import { Name } from '../names'
 import { ALL_OWNERS, OwnerSelect, ownerNames, useExcludedCorps, useOwnerFilter, type Owners } from '../ownerFilter'
 import retro from '../retro.module.css'
@@ -125,7 +127,14 @@ export const ActiveJobs = ({ jobs, owners, initialNow, typeNamesPromise, station
                     const stationId = j.station_id ?? j.facility_id
                     if (stationId == null) return '—'
                     const name = stationNames[String(stationId)]
-                    return name ? <a href={`/structure/${stationId}`}>{name}</a> : String(stationId)
+                    return name ? (
+                      <Link href={`/structure/${stationId}`}>
+                        {name}
+                        <LinkSpinner />
+                      </Link>
+                    ) : (
+                      String(stationId)
+                    )
                   })()}
                 </td>
                 <td>
