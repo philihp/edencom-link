@@ -121,11 +121,20 @@ lookups) is already process-cached for 6h in `src/sdeCache.ts`. Revisit
 only if profiling shows SDE round trips dominating a hot page on cold
 lambdas.
 
-### 6. Router cache tuning (`staleTimes`), prefetch hints — no
+### 6. Router cache tuning (`staleTimes`) — **yes, reversed**
 
-Marginal next to 1–4, and `staleTimes` trades staleness of player data
-(freshness is a product feature here — see `freshness.ts`) for
-back-navigation speed the browser bfcache mostly covers anyway.
+> **This was originally a "no" and the reasoning was wrong.** It said
+> `staleTimes` trades staleness of player data (freshness being a product
+> feature — see `freshness.ts`) for back-navigation speed the bfcache mostly
+> covers anyway. Two errors: the bfcache does not cover in-app client
+> navigation, and there is no freshness to trade — the extract jobs run every
+> six hours, so a segment reused within a minute cannot differ from a fresh
+> render. In practice `staleTimes.dynamic` defaults to **0**, and every page
+> here is dynamic (cookie session), so the router cache was holding nothing at
+> all: each back/forward re-ran the entire server render. Set to 60s in
+> `next.config.mjs`. Kept to 60 rather than the 300s ceiling because the
+> header's freshness indicator rides on these same renders and should not sit
+> visibly behind an on-demand refresh.
 
 ## The plan
 
@@ -194,10 +203,58 @@ shape, for the contents counts.
 lands, note the current p75 for the worst routes; after each phase,
 compare. No new tooling needed.
 
+## What measurement actually found
+
+Phase 4 said to measure before doing more. It was worth it — the biggest wins
+were not where this plan predicted, and phase 3's premise turned out to be
+wrong.
+
+| | |
+| --- | --- |
+| `asset_ancestors()` (breadcrumb, blocking) | **3,199 ms → 59 ms** |
+| `character_asset_location_summary()` (index + system pages, blocking) | 970 ms → 588 ms |
+| `corp_asset_location_summary()` | 257 ms → 126 ms |
+| `character_asset_location_contents()` | 128 ms → 63 ms |
+| root items | 34 ms → 0.8 ms |
+
+None of it was round-trip count, which is what phases 2 and 3 were aimed at.
+It was three query-level faults:
+
+1. **A materialized CTE.** `asset_ancestors`' `parent_of` is referenced twice,
+   so Postgres built all ~117k current asset rows and filtered to one, with the
+   `item_id` index unused. `not materialized` fixed it.
+2. **A hash join against jsonb.** The same function joined `sde_published_type`
+   for one row; with a recursive-CTE row estimate of 41,202 against an actual 1,
+   the planner hashed the whole view — a seq scan parsing 52,848 jsonb
+   documents. A scalar subquery made it one index probe.
+3. **A missing index.** Nothing indexed `location_id`, anywhere, so every
+   location query scanned the full current snapshot.
+
+(1) and (2) shipped in `20260807000000`, along with the indexes; the summary
+narrowing in `20260807010000`.
+
+**Phase 3 as written is dead.** It proposed folding the location page's fetch
+prefix into one `asset_location_page()` RPC, gated on measurement. Measurement
+says the prefix was never the problem — it was ~35 ms of round trips behind a
+3.2 s query. Collapsing them would have saved tens of milliseconds while the
+real fault sat untouched. Do not build it.
+
+What replaces it, if the index page still feels slow: the summary functions
+still walk every current asset up its container chain on every request, to
+produce ~1.5k rows from data that changes every six hours. The fix is to stop
+recomputing per request — a rollup table maintained by the `character-assets`
+extract, turning the page read into an indexed select. Considered and rejected
+for the same job: wrapping the RPCs in Next's data cache, since the key would
+have to carry the user id and a wrong key serves one player another player's
+hangar.
+
+Reach for `EXPLAIN ANALYZE` before reasoning about waterfall depth next time.
+
 ## Non-goals
 
-- No caching of player data across users or requests (RLS + freshness are
-  product features).
+- No caching of player data **on the server**, shared across users or
+  requests (RLS makes a mis-keyed cache a data leak). The per-client router
+  cache is a different thing and is now on — see option 6.
 - No PPR / `use cache` adoption.
 - No client-side data fetching rewrite (SWR/React Query) — server
   components + streaming stay the architecture.
