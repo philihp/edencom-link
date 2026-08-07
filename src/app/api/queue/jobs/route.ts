@@ -161,20 +161,6 @@ export const POST = handleCallback(async (message: Msg) => {
   const ids = registrationIds ?? characterIds ?? (characterId != null ? [characterId] : undefined)
   console.log(`[queue/jobs] consume job=${job} registrationIds=${ids?.join(',') ?? '-'} taskId=${taskId ?? '-'}`)
 
-  // Pilot: character-implants runs as a Vercel Workflow instead of inline, to
-  // validate the queue → workflow chain before any other job migrates (see
-  // src/workflows/characterImplants.ts). Fire-and-forget: the workflow owns
-  // retries, and its run/step status shows under Observability → Workflows.
-  // This job is never dispatched with a taskId (it's in no dispatchRefresh
-  // list), so tracked refresh_task semantics don't apply here.
-  if (job === 'character-implants') {
-    const { start } = await import('workflow/api')
-    const { characterImplantsWorkflow } = await import('@/workflows/characterImplants')
-    const run = await start(characterImplantsWorkflow, [ids])
-    console.log(`[queue/jobs] started workflow run=${run.runId} job=${job}`)
-    return
-  }
-
   try {
     const entry = JOBS[job]
     if (!entry) throw new Error(`unknown job: ${String(job)}`)

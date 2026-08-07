@@ -51,18 +51,20 @@ Do (b) as its own small PR stack: thread `characterIds`/`taskId` through
 the workflows first (backward-compatible), then flip `dispatchRefresh.ts`,
 then delete the consumer. Each step is revertable alone.
 
-## 3. Retire the `character-implants` pilot
+## 3. Retire the `character-implants` pilot — ✅ done
 
-The pilot did its job. With the fan-out pattern landed:
+The pilot did its job; all three pieces are deleted (its own PR, ahead of
+§1/§2 because the manual trigger route was the last caller of
+`fanOutPerCharacterCronJob`):
 
-- Delete the queue-consumer special case for `character-implants`.
-- Delete the manual trigger route `/api/cron/character-implants` (it was
-  explicitly "delete once the pilot is proven out") — or, if a standalone
-  implants schedule is ever wanted, rebuild it as a normal phase-3-style
-  workflow; today `character-status` covers implants on the schedule, so
-  deletion is the default.
-- `src/workflows/characterImplants.ts` goes with it (or is rewritten to
-  the shared `lib.ts` shape if kept for manual/backfill use).
+- ~~the queue-consumer special case for `character-implants`~~
+- ~~the manual trigger route `/api/cron/character-implants`~~
+- ~~`src/workflows/characterImplants.ts`~~
+
+The job module (`src/jobs/characterImplants.js`) stays: `character-status`
+calls its `syncCharacterImplants` on the schedule, and it remains
+CLI-runnable and in the queue consumer's `JOBS` registry until §2 deletes
+the consumer.
 
 ## 4. Documentation contract
 
@@ -70,7 +72,7 @@ The pilot did its job. With the fan-out pattern landed:
   shapes are gone; describe the workflow trigger shape and the
   `src/workflows/` per-job convention instead. Update the sde-mirror
   bullet that calls its trigger "a fifth cron dispatch shape" (it's now
-  *the* shape).
+  _the_ shape).
 - Mark every row of this plan's README table done; note the end state at
   the top.
 - The [`/jobs` page](../jobs-page.md) is sequenced after this phase and
