@@ -260,6 +260,11 @@ create index character_asset_over_time_registration_id_idx on public.character_a
 create unique index character_asset_over_time_current_item_idx on public.character_asset_over_time (item_id) where is_current;
 -- Time-travel lookups walking an item's version history.
 create index character_asset_over_time_item_id_idx on public.character_asset_over_time (item_id, valid_until desc);
+-- "What is at this location": the root-item query behind /asset/[locationId]
+-- and the recursive descend in character_asset_location_contents(). Partial to
+-- match the character_asset view those go through — history rows are never
+-- location-filtered, so indexing them would only slow the extract's writes.
+create index character_asset_over_time_current_location_idx on public.character_asset_over_time (location_id) where is_current;
 
 alter table public.character_asset_over_time enable row level security;
 create policy "Users read own assets"
@@ -2567,6 +2572,8 @@ create index corp_asset_over_time_corporation_id_idx on public.corp_asset_over_t
 create unique index corp_asset_over_time_current_item_idx on public.corp_asset_over_time (item_id) where is_current;
 -- Time-travel lookups walking an item's version history.
 create index corp_asset_over_time_item_id_idx on public.corp_asset_over_time (item_id, valid_until desc);
+-- Location lookups, as for character_asset_over_time above.
+create index corp_asset_over_time_current_location_idx on public.corp_asset_over_time (location_id) where is_current;
 
 alter table public.corp_asset_over_time enable row level security;
 create policy "Users read assets for own corps"
@@ -2827,7 +2834,11 @@ returns table (item_id bigint, type_id bigint, name text, location_id bigint, lo
 language sql
 stable
 as $$
-  with recursive parent_of as (
+  -- `not materialized` matters: parent_of is referenced twice (base term and
+  -- recursive term), so by default Postgres materializes all ~117k current
+  -- character+corp asset rows and then filters down to one, leaving the
+  -- item_id index unused. Inlined, the base term is an index seek.
+  with recursive parent_of as not materialized (
     select item_id, type_id, name, location_id, location_type
     from public.character_asset
     union all
@@ -2844,9 +2855,20 @@ as $$
     join parent_of p on p.item_id = w.location_id
     where w.depth < 16
   )
-  select w.item_id, w.type_id, w.name, w.location_id, w.location_type, w.depth, t.name as type_name
+  -- The type name is a scalar subquery, not a join: a recursive CTE's row
+  -- estimate is wild (41,202 against an actual 1 on a real container), and
+  -- against `left join sde_published_type` that made the planner hash the whole
+  -- view — a seq scan parsing 52,848 jsonb documents, ~3s, to label one row.
+  -- Keyed on _key, so at most one row matches and this is equivalent.
+  select
+    w.item_id,
+    w.type_id,
+    w.name,
+    w.location_id,
+    w.location_type,
+    w.depth,
+    (select t.name from public.sde_published_type t where t.type_id = w.type_id) as type_name
   from walk w
-  left join public.sde_published_type t on t.type_id = w.type_id
   order by w.depth;
 $$;
 
