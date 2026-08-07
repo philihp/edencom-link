@@ -6,7 +6,9 @@ import { getSdeSystem } from '@/sdeSystems'
 import { getSdeType } from '@/sdeTypes'
 import { createClient } from '@/utils/supabase/server'
 import { createServiceClient } from '@/utils/supabase/service'
+import { parseShareParam } from '@/shareToken'
 import { AssetPath, fetchAssetPath, regionSystemCrumbs, type Crumb } from '../../assetPath'
+import { ShareUrlCleanup } from '../../shareUrlCleanup'
 import { fetchOwners } from '../../owners'
 import type { Owners } from '../../ownerFilter'
 import { SkeletonTable } from '../../skeleton'
@@ -211,9 +213,11 @@ const AssetLocationPage = async ({
 
   // A ship is its own page, not a directory level (a share link stays valid
   // through the redirect — a signed link covers the whole shared subtree, a
-  // legacy token is bound to this same id).
+  // legacy token is bound to this same id). The redirect is also where a
+  // legacy `<shareId>.<signature>` param sheds its id half.
   if (self && selfType?.categoryID === SHIP_CATEGORY_ID) {
-    redirect(`/ship/${locationId}${share ? `?share=${share}` : token ? `?token=${token}` : ''}`)
+    const shipShare = share ? parseShareParam(share).signature : undefined
+    redirect(`/ship/${locationId}${shipShare ? `?share=${shipShare}` : token ? `?token=${token}` : ''}`)
   }
 
   // Share dialog data for an owned character item; fetchShareDialogData returns
@@ -281,6 +285,7 @@ const AssetLocationPage = async ({
 
   return (
     <>
+      {share && <ShareUrlCleanup />}
       {!scope ? <AssetPath crumbs={crumbs} current={heading} /> : null}
       <div className={styles.header}>
         <h1 className="serif">

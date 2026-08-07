@@ -182,7 +182,7 @@ const storedShare = (row: LensRow): ShareState | null => {
     corporationIds: row.corporation_ids ?? [],
     allianceIds: row.alliance_ids ?? [],
     hasLink: row.secret != null,
-    shareParam: row.secret && salt ? `${row.id}.${signShare(row.id, row.secret, salt)}` : null,
+    shareParam: row.secret && salt ? signShare(row.id, row.secret, salt) : null,
     isPublic: row.secret == null && (row.corporation_ids ?? []).length === 0 && (row.alliance_ids ?? []).length === 0,
   }
 }

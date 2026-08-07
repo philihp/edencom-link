@@ -1,6 +1,8 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
+import { parseShareParam } from '@/shareToken'
+import { ShareUrlCleanup } from '../../shareUrlCleanup'
 import { resolveLens } from '../access'
 import { lensRows } from '../flatten'
 import { runLens } from '../run'
@@ -31,10 +33,13 @@ const LensViewerPage = async ({
   const result = await runLens(lens)
   const rows = lensRows(result.data)
   const headers = rows.length > 0 ? Object.keys(rows[0]) : []
-  const csvHref = `/lens/${lens.id}/csv${share ? `?share=${encodeURIComponent(share)}` : ''}`
+  // Hand the CSV link the short token, whichever generation arrived here.
+  const cleanShare = share ? parseShareParam(share).signature : undefined
+  const csvHref = `/lens/${lens.id}/csv${cleanShare ? `?share=${encodeURIComponent(cleanShare)}` : ''}`
 
   return (
     <>
+      {share && <ShareUrlCleanup />}
       <div className={styles.lensHeading}>
         <h1>{lens.name}</h1>
         <div className={styles.buttons}>

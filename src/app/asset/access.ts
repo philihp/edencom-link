@@ -4,17 +4,19 @@
 // registration/corporation ids.
 //
 // Two link generations live here:
-//  - resolveSignedShare: the sharing layer's ?share=<shareId>.<signature>
+//  - resolveSignedShare: the sharing layer's ?share=<signature>
 //    (docs/sharing-layer/03-share-dialog.md). The signature is an HMAC over
 //    the share id keyed by the row's secret + TOKEN_SALT (src/shareToken.ts),
 //    and the link is RECURSIVE: it opens the share's subject item and
-//    anything nested inside it — the requested id must be the subject or
-//    have it among its ancestors.
+//    anything nested inside it — so the candidate rows are the shares whose
+//    subject is the requested item or one of its ancestors, and the signature
+//    picks which of those (if any) the link was issued for. Legacy
+//    `<shareId>.<signature>` links narrow that candidate set to the named row.
 //  - resolveShareToken: the legacy shared_asset_token ?token=… link, kept
 //    resolving through a deprecation window (no UI mints these any more;
 //    saving a share from the dialog retires the item's legacy row). Exact-id
 //    only, as it always was.
-import { tokenSalt, verifyShareToken } from '@/shareToken'
+import { parseShareParam, tokenSalt, verifyShareToken } from '@/shareToken'
 import { createServiceClient } from '@/utils/supabase/service'
 
 export type ShareScope = {
@@ -27,18 +29,18 @@ export type ShareScope = {
   corporationIds: number[]
 }
 
-// Whether `subject` is `from` itself or among its enclosing containers —
-// climbing best-known parents one indexed probe at a time, depth-capped to
-// match asset_ancestors()/asset_share_covers(). Service client: the anonymous
+// `from` itself followed by its enclosing containers — climbing best-known
+// parents one indexed probe at a time, depth-capped to match
+// asset_ancestors()/asset_share_covers(). Every id a recursive share could
+// have been issued for and still cover `from`. Service client: the anonymous
 // caller has no RLS visibility yet, that's the point of the walk.
-const subjectInAncestry = async (
+const ancestryChain = async (
   supabase: ReturnType<typeof createServiceClient>,
   from: string,
-  subject: string,
-  depth = 0
-): Promise<boolean> => {
-  if (from === subject) return true
-  if (depth >= 16) return false
+  acc: string[] = []
+): Promise<string[]> => {
+  const chain = [...acc, from]
+  if (chain.length > 16) return chain
   const { data } = await supabase
     .from('character_asset_over_time')
     .select('location_id')
@@ -48,17 +50,15 @@ const subjectInAncestry = async (
     .limit(1)
     .maybeSingle<{ location_id: number | string | null }>()
   const parent = data?.location_id
-  return parent == null ? false : subjectInAncestry(supabase, String(parent), subject, depth + 1)
+  return parent == null ? chain : ancestryChain(supabase, String(parent), chain)
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 export const resolveSignedShare = async (param: string, itemId: string): Promise<ShareScope | null> => {
-  const dot = param.indexOf('.')
-  if (dot <= 0) return null
-  const shareId = param.slice(0, dot)
-  const signature = param.slice(dot + 1)
-  if (!UUID_RE.test(shareId) || signature === '') return null
+  const { shareId, signature } = parseShareParam(param)
+  if (signature === '') return null
+  if (shareId !== null && !UUID_RE.test(shareId)) return null
 
   // A deployment without its salt can't verify anything — treat as no share
   // rather than throwing into the page.
@@ -69,15 +69,16 @@ export const resolveSignedShare = async (param: string, itemId: string): Promise
     return null
   }
 
+  // Every share that covers the requested item, then the signature says which
+  // one (if any) minted this link. A legacy link's id narrows it to one row.
   const supabase = createServiceClient()
-  const { data: share } = await supabase
-    .from('character_asset_share')
-    .select('id, registration_id, item_id, secret')
-    .eq('id', shareId)
-    .maybeSingle<{ id: string; registration_id: string; item_id: number | string; secret: string | null }>()
-  if (!share?.secret) return null
-  if (!verifyShareToken(share.id, share.secret, salt, signature)) return null
-  if (!(await subjectInAncestry(supabase, itemId, String(share.item_id)))) return null
+  const chain = await ancestryChain(supabase, itemId)
+  const query = supabase.from('character_asset_share').select('id, registration_id, secret').in('item_id', chain)
+  const { data: covering } = await (shareId === null ? query : query.eq('id', shareId))
+  const share = ((covering ?? []) as Array<{ id: string; registration_id: string; secret: string | null }>).find(
+    (row) => row.secret != null && verifyShareToken(row.id, row.secret, salt, signature)
+  )
+  if (!share) return null
 
   const { data: registration } = await supabase
     .from('registration')

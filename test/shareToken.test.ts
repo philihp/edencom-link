@@ -6,7 +6,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { mintShareSecret, signShare, verifyShareToken } from '../src/shareToken.ts'
+import { mintShareSecret, parseShareParam, signShare, verifyShareToken } from '../src/shareToken.ts'
 
 const SECRET = 'a'.repeat(64)
 const SALT = 'test-salt'
@@ -29,6 +29,23 @@ test('malformed presented tokens fail without throwing', () => {
   assert.equal(verifyShareToken('share-1', SECRET, SALT, ''), false)
   assert.equal(verifyShareToken('share-1', SECRET, SALT, 'short'), false)
   assert.equal(verifyShareToken('share-1', SECRET, SALT, 'x'.repeat(300)), false)
+})
+
+// The two link generations. A current link is the bare signature; one issued
+// before the URL cleanup prefixes the share id and a dot. A signature is
+// base64url, which can't contain a dot, so the split is unambiguous.
+test('a bare param is all signature, with no id claimed', () => {
+  const token = signShare('share-1', SECRET, SALT)
+  assert.deepEqual(parseShareParam(token), { shareId: null, signature: token })
+})
+
+test('a legacy param splits into its id and signature halves', () => {
+  const token = signShare('share-1', SECRET, SALT)
+  assert.deepEqual(parseShareParam(`share-1.${token}`), { shareId: 'share-1', signature: token })
+  // Either half missing yields an empty half, never a mis-attributed one —
+  // callers reject on the empty signature or the unmatched id.
+  assert.deepEqual(parseShareParam('.sig'), { shareId: '', signature: 'sig' })
+  assert.deepEqual(parseShareParam('share-1.'), { shareId: 'share-1', signature: '' })
 })
 
 test('minted secrets are 32 random bytes, hex, and unique', () => {
