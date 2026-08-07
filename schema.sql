@@ -706,6 +706,15 @@ create table public.heartbeat (
   -- 'github' (Actions). Null for local CLI runs and the per-character/per-corp
   -- loop rows, which don't know how they were invoked.
   source text,
+  -- Whether the run succeeded: true/false once the end heartbeat lands (the
+  -- wrappers in src/jobs/lib.js and src/workflows/lib.ts write it from their
+  -- catch), null for still-open rows and for rows written before this column
+  -- existed. Without it a failed scheduled run is indistinguishable from a
+  -- successful one — both close their pair from a finally — which is the gap
+  -- docs/jobs-page.md documents.
+  ok boolean,
+  -- The failure's message (truncated), null when ok.
+  error text,
   started_at timestamptz,
   ended_at timestamptz,
   -- How long the run took for that job/entity; null until ended_at lands.

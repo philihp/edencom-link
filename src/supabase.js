@@ -81,6 +81,12 @@ export const recordHeartbeat = async (job, phase = 'end', opts = {}) => {
     // is known (local CLI runs, the per-character/per-corp loop rows).
     source: opts.source ?? gh.source,
     ...(phase === 'start' ? { started_at: now } : { ended_at: now }),
+    // Outcome, end phase only: the wrappers pass ok (and error's message on a
+    // failure) so a run that threw is distinguishable from one that succeeded.
+    // Callers that don't pass ok leave it null — same as every pre-column row.
+    ...(phase === 'end' && opts.ok != null
+      ? { ok: opts.ok, error: opts.error != null ? String(opts.error).slice(0, 500) : null }
+      : {}),
   }
   const table = sudoSupabase.from('heartbeat')
   const { error } =
