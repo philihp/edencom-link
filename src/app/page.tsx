@@ -2,53 +2,85 @@ import Link from 'next/link'
 import { createClient } from '@/utils/supabase/server'
 import styles from './home.module.css'
 
-// The capability pitch: each card names something the game client can't do,
-// because it can't hold history or hand out a slice of your account.
-const CAPABILITIES = [
+// The module suite, pitched the way an ERP vendor would pitch NetSuite or SAP:
+// every EVE surface recast as an enterprise line-of-business module.
+const MODULES = [
   {
-    label: 'Sharing',
-    title: 'Share one ship, not your hangar',
-    body: 'Mint a public link to a single fitted ship — the fit wheel, its cargo, where it is parked. A buyer or a fleetmate opens it without an account, sees that ship and nothing else, and the link dies when you revoke it.',
+    label: 'Financials',
+    title: 'Financial Management',
+    body: 'Consolidated wallets across every character, corporation division ledgers, and journal rollups by reference type. Close the books on your empire without alt-tabbing through eleven clients.',
   },
   {
-    label: 'Intel',
-    title: 'Show dens to one alliance',
-    body: 'Mercenary den sharing is opt-in per alliance. Pick which of yours can see your dens and the hostile-den map you keep — everyone else, corpmates included, sees nothing.',
+    label: 'Inventory',
+    title: 'Warehouse & Inventory',
+    body: 'Every item, every station, every nested container — one searchable warehouse system with location drill-down, stack counts, and point-in-time snapshots of what you held before downtime.',
   },
   {
-    label: 'Public pages',
-    title: 'Hand out a corpse collection',
-    body: 'Your trophies get a page of their own that needs no login on either end, with anything you picked up in the last two days badged as new.',
+    label: 'Manufacturing',
+    title: 'Manufacturing & MRP',
+    body: 'Industry jobs, blueprint portfolios with ME/TE research tracking, slot capacity planning from trained skills, and system cost indices. Material requirements planning that knows which rigs are fitted to your structures.',
   },
   {
-    label: 'MCP',
-    title: 'Let an assistant answer for you',
-    body: 'An OAuth-authorized MCP server, so Claude can field “which blueprints are worth researching” or “what is sitting in my Jita hangar” against exactly the data your account can see — never more.',
+    label: 'Orders',
+    title: 'Order Management',
+    body: 'Open market orders and full transaction history across characters and corp divisions, unified into one trade ledger. Know what filled, what expired, and what it all cleared at.',
   },
   {
-    label: 'Exports',
-    title: 'Feed a spreadsheet',
-    body: 'CSV endpoints built for =IMPORTDATA() and keyed to a personal token, several of which take an at= timestamp — so a sheet can pull last Tuesday’s hangar instead of today’s.',
+    label: 'Facilities',
+    title: 'Enterprise Asset Management',
+    body: 'Your Upwell structures as managed facilities: fuel runway, service modules, fitted rigs, reinforcement state, and industry-tax revenue per structure per day.',
   },
   {
-    label: 'History',
-    title: 'Ask what changed',
-    body: 'Assets, orders, jobs and blueprints are versioned rather than replaced. “When did that stack move?” and “what did I own before downtime?” both have answers.',
+    label: 'Workforce',
+    title: 'Clone Capital Management',
+    body: 'The HR module, adapted for a workforce that respawns. Characters, jump clones, implant loadouts, skill training history, and jump-timer availability — your entire distributed labor pool on one screen.',
+  },
+  {
+    label: 'Field ops',
+    title: 'Field Operations',
+    body: 'Mercenary den deployments with development and anarchy telemetry, reinforcement timers, and opt-in intel sharing scoped to exactly one alliance. Territory management as a first-class module.',
+  },
+  {
+    label: 'Analytics',
+    title: 'Business Intelligence',
+    body: 'CSV endpoints built for Google Sheets =IMPORTDATA(), keyed to a personal token, with time-travel queries against any historical date. Your dashboards, your formulas, our system of record.',
+  },
+  {
+    label: 'AI',
+    title: 'AI Copilot',
+    body: 'An OAuth-authorized MCP server, so an AI assistant can field “which blueprints are worth researching” or “appraise my Jita hangar” against exactly the data your account can see — never more.',
+  },
+]
+
+// The platform pitch: the governance section every ERP vendor leads with,
+// except here the claims are structural rather than aspirational.
+const PILLARS = [
+  {
+    title: 'A single source of truth',
+    body: 'Every asset, order, job, and blueprint is versioned rather than replaced — a full audit trail on every record. “When did that stack move?” is a query, not an argument.',
+  },
+  {
+    title: 'Role-based access, all the way down',
+    body: 'Row-level security scopes every read to your account. Grants are per-scope at SSO time, and shares are cut deliberately thin: one ship, one alliance’s intel, one public page.',
+  },
+  {
+    title: 'Read-only by design',
+    body: 'The platform holds no write permission against your account and never asks for one. It observes your enterprise; it cannot touch it.',
   },
 ]
 
 const STEPS = [
   {
-    title: 'Link a character',
-    body: 'EVE SSO asks for one permission at a time. Grant what you want; the features you skip are simply the ones you do not get.',
+    title: 'Discovery & integration',
+    body: 'Link a character through EVE SSO. Each permission is granted one scope at a time — the modules you skip are simply the ones that stay dark.',
   },
   {
-    title: 'Let the extracts run',
-    body: 'Scheduled jobs pull each endpoint into storage and keep every version. Nothing here writes to your account, ever.',
+    title: 'Data migration',
+    body: 'Scheduled extraction pipelines pull every endpoint into the system of record and keep every version. No consultants, no cutover weekend.',
   },
   {
-    title: 'Read it, slice it, query it',
-    body: 'Browse the pages, hand out a link to exactly one thing, pipe it into Sheets, or point an AI assistant at it.',
+    title: 'Go-live',
+    body: 'Browse the modules, wire up a spreadsheet, hand out a scoped share link, or point an AI assistant at your data. Day two looks like day one, but fresher.',
   },
 ]
 
@@ -63,58 +95,62 @@ const Home = async () => {
       <section className={styles.hero}>
         <p className={styles.eyebrow}>
           <span className={styles.spark}>✻</span>
-          EVE Online · assets, industry &amp; intel
+          Capsuleer Resource Planning
         </p>
-        <h1 className={styles.headline}>Your empire, extracted — and sliceable.</h1>
+        <h1 className={styles.headline}>One platform to run your entire space empire.</h1>
         <p className={styles.sub}>
-          Edencom Link keeps a versioned copy of what your characters and corporations own, earn, build and hold space
-          with. Then it lets you hand out exactly one piece of it — a single ship, one alliance&rsquo;s worth of den
-          intel, a spreadsheet, an AI assistant&rsquo;s question — without opening the rest.
+          Edencom Link unifies financials, inventory, manufacturing, order management and field operations across every
+          character and corporation you fly. One system of record, continuously synchronized from ESI, with a complete
+          audit trail on every asset — from your first frigate to the ten-millionth unit of Tritanium.
         </p>
         <div className={styles.actions}>
           {user ? (
             <>
               <Link href="/asset" className={styles.primary}>
-                Open your hangars
+                Open your workspace
               </Link>
               <Link href="/character/" className={styles.secondary}>
-                Add a character
+                Onboard a character
               </Link>
             </>
           ) : (
             <>
               <Link href="/account/register" className={styles.primary}>
-                Redeem an invite
+                Request access
               </Link>
               <Link href="/account/login" className={styles.secondary}>
-                Log in
+                Sign in
               </Link>
             </>
           )}
         </div>
-        <p className={styles.microcopy}>Invite-only · read-only ESI access · you choose the scopes</p>
+        <p className={styles.microcopy}>Invite-only deployment · read-only ESI access · you choose the scopes</p>
       </section>
 
       <section className={styles.stats}>
         <div className={styles.stat}>
           <span className={styles.statValue}>18</span>
-          <span className={styles.statLabel}>scheduled extracts keeping your copy current</span>
+          <span className={styles.statLabel}>integrated extraction pipelines keeping the system of record current</span>
         </div>
         <div className={styles.stat}>
           <span className={styles.statValue}>6h</span>
-          <span className={styles.statLabel}>between passes, or refresh any of them on demand</span>
+          <span className={styles.statLabel}>maximum sync latency — or refresh any pipeline on demand</span>
         </div>
         <div className={styles.stat}>
           <span className={styles.statValue}>0</span>
-          <span className={styles.statLabel}>writes back to your account — it only ever reads</span>
+          <span className={styles.statLabel}>write-backs to production. Your account is read, never touched</span>
         </div>
       </section>
 
       <section className={styles.section}>
-        <p className={styles.eyebrow}>Capabilities</p>
-        <h2 className={styles.sectionTitle}>Cut it thinner than the game lets you</h2>
+        <p className={styles.eyebrow}>The suite</p>
+        <h2 className={styles.sectionTitle}>Nine modules. One system of record.</h2>
+        <p className={styles.sectionSub}>
+          Most capsuleers run their enterprise on spreadsheets, screenshots, and a Discord bot that stopped working two
+          patches ago. Edencom Link replaces the pile with an integrated suite.
+        </p>
         <div className={styles.cards}>
-          {CAPABILITIES.map(({ label, title, body }) => (
+          {MODULES.map(({ label, title, body }) => (
             <article key={title} className={styles.card}>
               <p className={styles.cardLabel}>{label}</p>
               <h3 className={styles.cardTitle}>{title}</h3>
@@ -125,8 +161,21 @@ const Home = async () => {
       </section>
 
       <section className={styles.section}>
-        <p className={styles.eyebrow}>How it works</p>
-        <h2 className={styles.sectionTitle}>Three steps, then it runs itself</h2>
+        <p className={styles.eyebrow}>The platform</p>
+        <h2 className={styles.sectionTitle}>Governance your alliance auditor would approve of</h2>
+        <div className={styles.pillars}>
+          {PILLARS.map(({ title, body }) => (
+            <div key={title} className={styles.pillar}>
+              <h3 className={styles.pillarTitle}>{title}</h3>
+              <p className={styles.pillarBody}>{body}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className={styles.section}>
+        <p className={styles.eyebrow}>Implementation</p>
+        <h2 className={styles.sectionTitle}>Deployed in minutes, not fiscal quarters</h2>
         <ol className={styles.steps}>
           {STEPS.map(({ title, body }, index) => (
             <li key={title} className={styles.step}>
@@ -140,32 +189,40 @@ const Home = async () => {
         </ol>
       </section>
 
+      <section className={styles.quote}>
+        <blockquote className={styles.quoteText}>
+          “Before Edencom Link, our quarterly close meant alt-tabbing through eleven hangars and trusting a spreadsheet
+          last edited before the war. Now I know where every asset is — including the corpses.”
+        </blockquote>
+        <p className={styles.quoteAttribution}>— Director of Logistics, an undisclosed nullsec alliance</p>
+      </section>
+
       <section className={styles.closing}>
         <h2 className={styles.closingTitle}>
-          {user ? 'Everything is where you left it.' : 'Bring your own invite code.'}
+          {user ? 'Your enterprise, already running.' : 'Ready to modernize your empire?'}
         </h2>
         <p className={styles.closingBody}>
           {user
-            ? 'Your extracts are running. Check what landed recently, or grant a scope you skipped the first time.'
-            : 'This is a small outfit, so accounts are handed out by invite. If you have a code, it takes about a minute to link your first character.'}
+            ? 'Your extraction pipelines are live. Review what landed recently, or grant a scope you skipped during onboarding.'
+            : 'Deployment is invite-only. If you have a code, onboarding takes about a minute — no consultants, no implementation partner, no six-quarter rollout.'}
         </p>
         <div className={styles.actions}>
           {user ? (
             <>
               <Link href="/character/refresh" className={styles.primary}>
-                See what is fresh
+                Review pipeline status
               </Link>
               <Link href="/settings/grants" className={styles.secondary}>
-                Review your grants
+                Manage access grants
               </Link>
             </>
           ) : (
             <>
               <Link href="/account/register" className={styles.primary}>
-                Redeem an invite
+                Request access
               </Link>
               <Link href="/account/login" className={styles.secondary}>
-                Log in
+                Sign in
               </Link>
             </>
           )}

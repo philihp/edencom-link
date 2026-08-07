@@ -157,7 +157,15 @@
   color: var(--ink);
 }
 
-/* Capability cards ------------------------------------------------------- */
+.sectionSub {
+  margin: 10px 0 0;
+  max-width: 62ch;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--ink-soft);
+}
+
+/* Module cards ------------------------------------------------------------ */
 
 .cards {
   display: grid;
@@ -208,7 +216,37 @@
   color: var(--ink-soft);
 }
 
-/* How it works ----------------------------------------------------------- */
+/* Platform pillars -------------------------------------------------------- */
+
+.pillars {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  margin-top: 22px;
+}
+
+.pillar {
+  padding: 18px 20px;
+  border-left: 2px solid var(--accent);
+  background: var(--paper-raised);
+  border-radius: var(--radius-sm);
+}
+
+.pillarTitle {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.pillarBody {
+  margin: 8px 0 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--ink-soft);
+}
+
+/* Implementation steps ---------------------------------------------------- */
 
 .steps {
   display: grid;
@@ -252,6 +290,34 @@
   font-size: 13px;
   line-height: 1.6;
   color: var(--ink-soft);
+}
+
+/* Testimonial ------------------------------------------------------------- */
+
+.quote {
+  margin-top: 52px;
+  padding: 34px 36px;
+  text-align: center;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  background: var(--paper-raised);
+}
+
+.quoteText {
+  margin: 0 auto;
+  max-width: 58ch;
+  font-family: var(--serif);
+  font-size: 18px;
+  font-style: italic;
+  line-height: 1.55;
+  color: var(--ink);
+}
+
+.quoteAttribution {
+  margin: 14px 0 0;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: var(--ink-faint);
 }
 
 /* Closing call to action ------------------------------------------------- */
