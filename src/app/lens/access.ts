@@ -14,13 +14,41 @@
 //
 // Either way the run is gated on the CREATOR still holding the lens flag —
 // un-flagging an account turns its shared lenses off, the dark-launch lever.
+//
+// The path id may be truncated (any canonical-format prefix of ≥8 hex digits,
+// e.g. /lens/da204490): it expands to the oldest-created matching lens before
+// either door is tried — see expandLensId.
 import { LENS_FLAG, hasFlag } from '@/flags'
 import { parseShareParam, tokenSalt, verifyShareToken } from '@/shareToken'
 import { createClient } from '@/utils/supabase/server'
 import { createServiceClient } from '@/utils/supabase/service'
 import type { LensRecord } from './run'
+import { uuidPrefixRange } from './uuidPrefix'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+// A truncated path id → the full lens id it canonically means, or null. The
+// service role on purpose: a short link must name the same lens for EVERY
+// viewer, and resolving through RLS would let each caller's visibility pick a
+// different prefix-match (a signed ?share= could then verify against the
+// wrong row). This resolves the name only — the caller still puts the full id
+// through the same RLS/signature doors as an untruncated URL, so it widens
+// access to nothing. Ties break to the oldest created_at, which is stable:
+// a lens created later can never capture an already-working short link.
+const expandLensId = async (prefix: string): Promise<string | null> => {
+  const range = uuidPrefixRange(prefix)
+  if (!range) return null
+  const service = createServiceClient()
+  const { data } = await service
+    .from('lens')
+    .select('id')
+    .gte('id', range.low)
+    .lte('id', range.high)
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle<{ id: string }>()
+  return data?.id ?? null
+}
 
 export type ResolvedLens = { lens: LensRecord; viewerIsOwner: boolean }
 
@@ -44,16 +72,17 @@ const resolveSignedLens = async (lensId: string, param: string): Promise<LensRec
 }
 
 export const resolveLens = async (lensId: string, shareParam?: string): Promise<ResolvedLens | null> => {
-  if (!UUID_RE.test(lensId)) return null
+  const id = UUID_RE.test(lensId) ? lensId.toLowerCase() : await expandLensId(lensId)
+  if (id === null) return null
 
   const supabase = await createClient()
   const { data: auth } = await supabase.auth.getUser()
   const viewerId = auth?.user?.id ?? null
 
   // RLS is the authority for the membership/public/owner doors.
-  const { data: rlsLens } = await supabase.from('lens').select('*').eq('id', lensId).maybeSingle<LensRecord>()
+  const { data: rlsLens } = await supabase.from('lens').select('*').eq('id', id).maybeSingle<LensRecord>()
 
-  const lens = rlsLens ?? (shareParam ? await resolveSignedLens(lensId, shareParam) : null)
+  const lens = rlsLens ?? (shareParam ? await resolveSignedLens(id, shareParam) : null)
   if (!lens) return null
   if (!(await hasFlag(lens.user_id, LENS_FLAG))) return null
 
