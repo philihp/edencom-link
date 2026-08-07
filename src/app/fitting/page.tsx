@@ -34,7 +34,17 @@ const FittingPage = async () => {
   // Every owner behind a visible fit, resolved to the EVE character id the
   // route addresses them by (see resolveCharacter.ts). Own registrations come
   // back too, so the filter can list a character that has saved no fits yet.
-  const owners = await fetchFittingOwners(supabase, [...new Set(rows.map((f) => f.registration_id))])
+  //
+  // The hull lookup that follows keys off the fits' own ship_type_id, not off
+  // anything the owner resolution produces, so the two run together rather than
+  // one after the other. It covers every entry the matrix can build, since an
+  // entry only ever comes from one of these rows.
+  const [owners, types] = await Promise.all([
+    fetchFittingOwners(supabase, [...new Set(rows.map((f) => f.registration_id))]),
+    // One bulk SDE lookup carries everything the matrix buckets by: hull name,
+    // group (→ class row), race and meta group (→ column).
+    getSdeTypes(rows.map((f) => Number(f.ship_type_id))),
+  ])
 
   const entries: FittingEntry[] = rows.flatMap((f) => {
     const owner = owners.get(f.registration_id)
@@ -66,10 +76,6 @@ const FittingPage = async () => {
     .filter((o) => !o.isOwn)
     .map(toFilterOwner)
     .sort(byName)
-
-  // One bulk SDE lookup carries everything the matrix buckets by: hull name,
-  // group (→ class row), race and meta group (→ column).
-  const types = await getSdeTypes(entries.map((e) => e.shipTypeId))
 
   return (
     <FittingMatrix entries={entries} types={types} ownCharacters={ownCharacters} sharedCharacters={sharedCharacters} />
