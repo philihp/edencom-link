@@ -30,6 +30,7 @@ import { lensRows } from '@/app/lens/flatten'
 import { lensEdits, resolveLensRef } from '@/app/lens/lensRef'
 import { runLens } from '@/app/lens/run'
 import { applyLensShare, fetchOwnAudiences } from '@/app/lens/share'
+import { shortLensId } from '@/app/lens/shortId'
 import { parseLensVariables, SESSION_ONLY_ARGUMENTS, SESSION_ONLY_FIELDS, validateLensQuery } from '@/app/lens/validate'
 import { LENS_FLAG, hasFlag } from '@/flags'
 import { signShare, tokenSalt } from '@/shareToken'
@@ -90,17 +91,19 @@ const EXAMPLES = [
 ]
 
 // The lens's own URLs. Absolute when the deployment knows its origin, paths
-// otherwise (see src/utils/siteUrl.ts).
-const lensLinks = (id: string, name: string) => ({
+// otherwise (see src/utils/siteUrl.ts). `pathId` is the shortest id that
+// resolves back to this lens (src/app/lens/shortId.ts) — the URLs carry it,
+// while `id` stays the full uuid for anything that needs the exact row.
+const lensLinks = (id: string, name: string, pathId: string) => ({
   id,
   name,
-  url: siteUrl(`/lens/${id}`),
-  csv_url: siteUrl(`/lens/${id}/csv`),
+  url: siteUrl(`/lens/${pathId}`),
+  csv_url: siteUrl(`/lens/${pathId}/csv`),
 })
 
 // Who a lens is shared with, in names rather than ids — the answer is read by
 // a human through a model, and "KarmaFleet" beats 98000001.
-const describeShare = (lensId: string, share: ShareState | null, own: OwnAudiences) => {
+const describeShare = (pathId: string, share: ShareState | null, own: OwnAudiences) => {
   if (!share) {
     return { shared_with_nobody: true, note: 'Saved, but not shared with anyone.' }
   }
@@ -113,8 +116,8 @@ const describeShare = (lensId: string, share: ShareState | null, own: OwnAudienc
     public: share.isPublic,
     // The signed link is the only URL that works without a session — it's also
     // the one a spreadsheet can pull the CSV from.
-    link_url: shareParam ? siteUrl(`/lens/${lensId}?share=${shareParam}`) : null,
-    link_csv_url: shareParam ? siteUrl(`/lens/${lensId}/csv?share=${shareParam}`) : null,
+    link_url: shareParam ? siteUrl(`/lens/${pathId}?share=${shareParam}`) : null,
+    link_csv_url: shareParam ? siteUrl(`/lens/${pathId}/csv?share=${shareParam}`) : null,
   }
 }
 
@@ -329,6 +332,7 @@ export const registerLensTools = (server: McpServer): void => {
         .maybeSingle<{ id: string }>()
       if (error || !inserted)
         return textResult(`Could not save the lens: ${error?.message ?? 'insert returned no row'}`)
+      const pathId = await shortLensId(inserted.id)
 
       const applied = await applyLensShare(caller.supabase, caller.userId, inserted.id, resolved.audience, {
         existingSecret: null,
@@ -337,7 +341,7 @@ export const registerLensTools = (server: McpServer): void => {
       // happened, or the model will try again and leave a duplicate behind.
       if (!applied.ok) {
         return textResult({
-          lens: lensLinks(inserted.id, name.trim()),
+          lens: lensLinks(inserted.id, name.trim(), pathId),
           shared: false,
           preview: preflight.report,
           warning: `The lens was saved but could not be shared: ${applied.message} Set the audience in the web editor at /lens.`,
@@ -345,8 +349,8 @@ export const registerLensTools = (server: McpServer): void => {
       }
 
       return textResult({
-        lens: lensLinks(inserted.id, name.trim()),
-        share: describeShare(inserted.id, applied.share, own),
+        lens: lensLinks(inserted.id, name.trim(), pathId),
+        share: describeShare(pathId, applied.share, own),
         preview: preflight.report,
       })
     }
@@ -375,12 +379,13 @@ export const registerLensTools = (server: McpServer): void => {
         fetchOwnLenses(caller.supabase, caller.userId),
         fetchOwnAudiences(caller.supabase),
       ])
+      const pathIds = await Promise.all(rows.map((row) => shortLensId(row.id)))
 
       return textResult({
-        lenses: rows.map((row) => ({
-          ...lensLinks(row.id, row.name),
+        lenses: rows.map((row, i) => ({
+          ...lensLinks(row.id, row.name, pathIds[i]),
           updated_at: row.updated_at,
-          share: describeShare(row.id, storedShare(row), own),
+          share: describeShare(pathIds[i], storedShare(row), own),
           ...(include_query === false
             ? {}
             : {
@@ -448,6 +453,7 @@ export const registerLensTools = (server: McpServer): void => {
       const picked = resolveLensRef(args.lens, rows)
       if (!picked.ok) return textResult(picked.message)
       const stored = rows.find((r) => r.id === picked.id) as LensRow
+      const pathId = await shortLensId(stored.id)
 
       // What the edit actually changes, and what the lens will run afterwards —
       // which is the stored query when only the audience is being touched.
@@ -495,7 +501,7 @@ export const registerLensTools = (server: McpServer): void => {
         return textResult({
           updated: false,
           error: 'Nothing was changed: running the query this lens would have returned no data at all.',
-          lens: lensLinks(stored.id, stored.name),
+          lens: lensLinks(stored.id, stored.name, pathId),
           preview: preflight.report,
         })
       }
@@ -517,7 +523,7 @@ export const registerLensTools = (server: McpServer): void => {
         : ({ ok: true, share: storedShare(stored) } as const)
       if (!applied.ok) {
         return textResult({
-          lens: lensLinks(stored.id, edits.changes.name ?? stored.name),
+          lens: lensLinks(stored.id, edits.changes.name ?? stored.name, pathId),
           changed: edits.changed,
           warning: `The lens was updated but its sharing could not be changed: ${applied.message}`,
           preview: preflight.report,
@@ -525,10 +531,10 @@ export const registerLensTools = (server: McpServer): void => {
       }
 
       return textResult({
-        lens: lensLinks(stored.id, edits.changes.name ?? stored.name),
+        lens: lensLinks(stored.id, edits.changes.name ?? stored.name, pathId),
         changed: [...edits.changed, ...(shareRequested ? ['share'] : [])],
         ...(edits.changed.length === 0 && !shareRequested && { note: 'Nothing to change — no fields were given.' }),
-        share: describeShare(stored.id, applied.share, own),
+        share: describeShare(pathId, applied.share, own),
         preview: preflight.report,
       })
     }
