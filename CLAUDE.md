@@ -15,26 +15,24 @@ EVE Online hangar/wallet/industry tracker, deployed on Vercel.
 - `pnpm run test:sql` — `psql $DATABASE_URL -f test/sql/blueprint_search.sql`; point at a **throwaway** DB (creates stand-in tables named like real views; rolls back).
 - No `typecheck` script (rely on `next build`).
 - Pre-commit: husky runs `lint-staged` (prettier + `eslint --fix` on staged files) then `pnpm run lint`.
-- **The build downloads nothing from CCP and never touches the SDE.** SDE lookups read the nightly-mirrored `sde_*` tables at runtime via the async loaders in `src/sde*.ts`. Ship-fitting protobufs are encoded by the nightly `sde-mirror` workflow into `esf_data`, served at `/esf/[file]`. No `predev`/`prebuild` steps.
-- `pnpm run esf-data` — encodes the 6 `@eveshipfit/react` protobuf files from `sde_*` tables per `src/esf.proto`, upserts base64 into `esf_data` (`src/jobs/esfData.js`). Runs as `sde-mirror` tail step `encodeEsf`; idempotent; also manual via CLI or the unscheduled `CRON_SECRET`-protected `/api/cron/esf-data` route (`?force=1`).
-- `pnpm run sheet-csv` — encodes the industry spreadsheet's static CSVs from `sde_types`/`sde_blueprints` into `sheet_csv` (`src/jobs/sheetCsv.js`; JS port of `docs/sheet-csv/reference/full_sheet_gen.py`). Runs as `sde-mirror` tail step `encodeSheets`; also manual (CLI or `/api/cron/sheet-csv`). Served at `/sheets/[file]` for Sheets `=IMPORTDATA()` — public, CDN-cached, ETag keyed on `sde_build`.
-- `pnpm run sde-mirror` — mirrors CCP's full SDE into `sde_*` tables plus ESI-resolved NPC station names into `sde_npc_station_name` (`--force` re-ingests). Production: nightly 12:21 UTC Vercel Workflow (`src/jobs/sdeMirror.js`).
+- **The build downloads nothing from CCP and never touches the SDE** — no `predev`/`prebuild` steps. SDE data reaches runtime only through the nightly-mirrored tables (see Architecture).
+- `pnpm run esf-data` / `sheet-csv` / `sde-mirror` — manual runs of the SDE mirror and its tail encoders (`src/jobs/esfData.js`, `src/jobs/sheetCsv.js` — a JS port of `docs/sheet-csv/reference/full_sheet_gen.py` — and `src/jobs/sdeMirror.js`, `--force` re-ingests); the first two also have unscheduled `CRON_SECRET`-protected `/api/cron/*` routes (`?force=1`). See the SDE mirror workflow pattern.
 - **Vendored `@eveshipfit/*`:** `react` and `dogma-engine` tarballs committed under `vendor/eveshipfit/` with `file:` specifiers (no GitHub Packages token at install); `@eveshipfit/data` is replaced by the stub `vendor/eveshipfit/data-stub/`. To bump: `npm pack @eveshipfit/<pkg>@<version>`, drop the `.tgz` in, update the `file:` path, `pnpm install`.
-- Extract job scripts (one per ESI endpoint, scheduled via Vercel Cron; see the Extract jobs table): `pnpm run <job>` for each job name, plus `heartbeat`. `connect`, `ping`, `refresh` are DB/token utilities.
+- Extract jobs: `pnpm run <job>` for each job name (see Extract jobs), plus `heartbeat`. `connect`, `ping`, `refresh` are DB/token utilities.
 - DB migrations (Supabase CLI): `pnpm run db:new <name>` scaffolds under `supabase/migrations/`; `pnpm run db:push` applies to the linked project. Push to `main` touching `supabase/migrations/**` runs the `Migrate` workflow automatically.
 
 ## Layout
 
 - `src/app/` — App Router pages: `account/`, `asset/`, `blueprint/`, `character/`, `corpses/`, `fitting/` (library as hull-class × race matrix `fittingMatrix.tsx` + one fit in the eveship.fit wheel with corp/alliance/public sharing; bucketing seam `shipMatrix.ts`), `indexes/`, `industry/`, `market/`, `mercenary-dens/`, `ship/` (eveship.fit wheel + stats — space reserved by `fitPlaceholder.tsx` — plus `LocationAssets` module/cargo table in `flagSortKey` order; `/asset/[id]` redirects ships here), `structure/`, `settings/`, `oauth/`, `xrpc/`, `layout/` (Header/Footer), `error/`, `private/`. Shared helpers at top level (see routes section).
-- `src/` (Node cron/scripts): `esi.js`, `supabase.js`, `resolveNames.js`, `tokenRefresh.js`/`refresh.js`, `proxy.ts`, `utils/`. Extract jobs under `src/jobs/` — one file per ESI endpoint plus shared plumbing in `src/jobs/lib.js`. Each job exports `run*` (callable from workflow steps) and self-runs as a CLI (`node src/jobs/<job>.js`).
+- `src/` (Node cron/scripts): `esi.js`, `supabase.js`, `resolveNames.js`, `tokenRefresh.js`/`refresh.js`, `proxy.ts`, `utils/`. Extract jobs under `src/jobs/` plus shared plumbing in `src/jobs/lib.js` (see Extract jobs).
 - `schema.sql` — single source of truth for the schema. It's a full reset (DROPs and recreates — wipes data). To change schema: edit it **and** add a non-destructive incremental migration under `supabase/migrations/`.
 - `.github/workflows/` — `heartbeat.yml` (daily canary, stays on Actions); `migrate.yml` (applies migrations on push to `main`); `bump-eveshipfit.yml` (Mondays; checks GitHub Packages for newer vendored packages, re-packs, opens/updates a PR). ESI extract jobs all moved to Vercel Cron because Actions schedules fired unreliably.
 
 ## Database & ESI
 
-- DB lives in the default `public` schema (no `.schema()` qualifier). Extract tables are named after the ESI endpoint feeding them, prefixed by owner scope: `character_*`, `corp_*`, `universe_*`. RLS enforced; cron uses service-role key.
+- DB lives in the default `public` schema (no `.schema()` qualifier). Extract tables are named after the ESI endpoint feeding them, prefixed by owner scope: `character_*`, `corp_*`, `universe_*`. All tables RLS-scoped to `auth.uid()`; cron uses the service-role key.
 - **Id naming — `character_id` means the EVE numeric (bigint) id; the registration uuid is `registration_id`.** **Most existing `character_*` extract tables get this wrong** — their owner column is declared `character_id uuid references registration(id)`, so it holds the registration uuid despite the name (legacy wart; why the fitting route has a uuid first segment). `character_directory` does it right. Name new columns/params correctly even next to a legacy one, and read existing `character_id` for what it actually holds. Don't fold the rename into unrelated work — `docs/registration-id-rename.md` stages that cleanup.
-- ESI base `https://esi.evetech.net/latest` via `src/esi.js`. Tokens refreshed per character before fetching.
+- ESI base `https://esi.evetech.net/latest` via `src/esi.js`. Tokens live in `token`; `refreshAccessToken()` refreshes via EVE SSO before any ESI call.
 - **Data flow:** ESI → DB (extract jobs) → server components read DB. Server components must NOT call ESI directly.
 - Env vars (`.env.example`): `EVE_*` (SSO), `SUPABASE_*`, `NEXT_PUBLIC_SUPABASE_*`, `GICE_*` (Goonfleet SSO; start route 503s when unset), Turnstile keys, `CRON_SECRET`.
 
@@ -44,14 +42,10 @@ EVE Online hangar/wallet/industry tracker, deployed on Vercel.
 - **Never rename an existing file under `supabase/migrations/`.** A migration's filename is its identity to the Supabase CLI and every environment that already applied it; renaming desyncs whichever environment isn't on the renaming commit (happened for real in #614/#615/#616 — each rename re-broke `supabase db push`). If ordering or content is wrong, add a **new** migration with a fresh timestamp.
 - **Two migrations may share a timestamp** — `schema_migrations` is keyed on `(version, name)` since migration `20260727000000` (after two production collisions repaired by hand). The ordering guard in `.github/scripts/check-migrations.mjs` forbids back-dating; the composite key covers what it can't catch (two open PRs with the same new timestamp merging). Still prefer distinct timestamps.
 
-# Data sources
-
-- The legacy `evesde` schema is dropped — do not recreate or reference it. SDE lookups go through the `src/sde*.ts` loaders. If a lookup has no non-SDE source, show the raw ID.
-
 # Architecture
 
-- ESI data flows into the DB via per-endpoint extract jobs in `src/jobs/`; the UI reads the DB.
-- Type/group/category/system/station/blueprint/planet lookups resolve at runtime from the nightly-mirrored `sde_*` tables/views (`sde_published_type`, `sde_kspace_system`, `sde_station`, `sde_planet`, `sde_blueprint_product`, taxonomy views `sde_group`/`sde_category`/`sde_region`, search RPCs `sde_search_type`/`sde_search_system`), populated by the `sde-mirror` workflow from CCP's official SDE (`developers.eveonline.com/static-data`, JSONL — **never Fuzzwork's mirror, off-limits**). Loaders in `src/sde*.ts` query via the public-read anon client `src/utils/supabase/sde.ts`, caching by-id lookups per process for 6h (misses never cached; `src/sdeCache.ts`). If a needed field isn't in a view, extend the view in `src/jobs/sdeMirror.js` + a migration.
+- The legacy `evesde` schema is dropped — do not recreate or reference it; if a lookup has no non-SDE source, show the raw ID.
+- Type/group/category/system/station/blueprint/planet lookups resolve at runtime through the `src/sde*.ts` loaders, over the nightly-mirrored `sde_*` tables/views (`sde_published_type`, `sde_kspace_system`, `sde_station`, `sde_planet`, `sde_blueprint_product`, taxonomy views `sde_group`/`sde_category`/`sde_region`, search RPCs `sde_search_type`/`sde_search_system`), populated by the `sde-mirror` workflow from CCP's official SDE (`developers.eveonline.com/static-data`, JSONL — **never Fuzzwork's mirror, off-limits**). Loaders query via the public-read anon client `src/utils/supabase/sde.ts`, caching by-id lookups per process for 6h (misses never cached; `src/sdeCache.ts`). If a needed field isn't in a view, extend the view in `src/jobs/sdeMirror.js` + a migration.
 
 # Codebase map
 
@@ -96,7 +90,7 @@ Functions take `(accessToken, id, ...)`; return raw ESI JSON (paged wrappers ret
 ### `src/app/blueprint/rigs.ts` / `src/app/industry/jobSlots.ts`
 
 - `rigsForProduct(groupID, categoryID)` / `rigAppliesToProduct(rigTypeID, groupID, categoryID)` — which Upwell rigs' material modifiers cover a product, from vendored eveship.fit modifier tables (`filtersUsed` + `rigsForFilter`); rigs with no `filterID` aren't listed. Consumers: `/blueprint/[typeID]`, MCP `rigs_for_blueprint`, the `structure_id` bonus resolver in `src/app/api/mcp/tools.ts`
-- `jobSlots.ts` — `ACTIVITY_FAMILY`, `SLOT_SKILLS`/`SLOT_SKILL_IDS`/`SKILL_FAMILY`/`SKILL_NAME` (six slot skills; 1 free slot + 1 per active level, ceiling 11), `baseSlotMax()`/`emptyCounts()`, `SLOT_FAMILIES`. Shared by `/character` slot bubbles and MCP `list_job_slots`
+- `jobSlots.ts` — `ACTIVITY_FAMILY`, `SLOT_SKILLS`/`SLOT_SKILL_IDS`/`SKILL_FAMILY`/`SKILL_NAME` (six slot skills; 1 free slot + 1 per active level, ceiling 11), `baseSlotMax()`/`emptyCounts()`, `SLOT_FAMILIES`. Shared by `/character` slot bubbles and MCP `list_job_slots`.
 
 ### `src/utils/`
 
@@ -127,7 +121,7 @@ Shared UI helpers: `src/app/isk.ts`, `DateTime.tsx`, `typeName.tsx`/`typeNames.t
 
 ## Extract jobs
 
-One job per ESI endpoint; entry point is the camelCased file under `src/jobs/` exporting `run<PascalCase>()`. Every job is scheduled by a like-named Vercel Cron entry (`vercel.json` crons + `src/app/api/cron/<job>/route.ts`).
+One job per ESI endpoint, sharing the token loops in `src/jobs/lib.js`; entry point is the camelCased file under `src/jobs/` exporting `run<PascalCase>()`, self-runnable as a CLI. Job names double as npm script, heartbeat label, and workflow file name; every job is scheduled by a like-named Vercel Cron entry (`vercel.json` crons + `src/app/api/cron/<job>/route.ts`).
 
 Each job pulls its like-named ESI endpoint into its like-named table (exact schedules in `vercel.json`). Every 6h at staggered minutes: the per-character jobs, `corp-wallet-journal`, `corp-industry-jobs`, `corp-wallet-transactions`, `universe-names`, `industry-systems`. Daily: `corp-blueprints`, `corp-structures`, `corp-assets` (also writes `corp_structure_rig`), `universe-structures`, `character-directory` (writes `character_directory`, `corporation`, `alliance`, `character_affiliation`, `registration.corporation_id`), `sde-mirror` 12:21.
 
@@ -143,15 +137,13 @@ Every `/api/cron/<job>/route.ts` checks `Authorization: Bearer $CRON_SECRET` (`r
 - **Per-corporation fan-out** (corp-assets, corp-industry-jobs, corp-wallet-transactions): groups characters by corp (shared `enumerateCorporations` step, plus singleton groups for unresolved characters), one `'use step'` per corp. A corp's characters stay together in one step (never split — two concurrent reconciles once corrupted the SCD-2 data); only different corps run concurrently; failures caught-and-continued with a summary rethrown.
 - **Single-step** (all remaining jobs): one `'use step'` wraps `run*()` in the heartbeat pair via `runJobWithHeartbeat`, gaining a per-step duration budget (no 60s inline cap) and bounded retries; visible in Observability → Workflows.
 
-Requires `CRON_SECRET` set in Vercel.
-
 ## Database tables (quick reference)
 
 Full column detail lives in `schema.sql`. SCD-2 tables (`*_over_time`) each have a like-named view of `is_current` rows (e.g. `character_asset`).
 
 - `registration` — linked EVE characters (`id` uuid PK, `character_id` bigint, `user_id`, `name`, `corporation_id`)
 - `token` — OAuth tokens; `registration_id` (unique FK; renamed from `character_id`, step 1 of `docs/registration-id-rename.md`), tokens, `expires_at`, `scope[]`
-- SCD-2 histories + views: `character_asset_over_time`, `character_blueprint_over_time` (+ME/TE/runs), `character_order_over_time`, `character_industry_job_over_time`, `character_clone_over_time` (home + jump clones, `implants` jsonb), `character_skill_over_time` (drives job-slot bubbles), `character_ship_over_time` (single open row per character), `character_fitting_over_time` (`registration_id` named correctly unlike its siblings; `owner_scope` always `character` — ESI has no corp/alliance fittings endpoint; `items` jsonb `[{ type_id, flag, quantity }]`), `character_mercenary_den_over_time` (stable den identity/config; its view left-joins the latest status observation)
+- SCD-2 histories + views: `character_asset_over_time`, `character_blueprint_over_time` (+ME/TE/runs), `character_order_over_time`, `character_industry_job_over_time`, `character_clone_over_time` (home + jump clones, `implants` jsonb), `character_skill_over_time` (drives job-slot bubbles), `character_ship_over_time` (single open row per character), `character_fitting_over_time` (`registration_id` named correctly unlike its siblings; `owner_scope` always `character`; `items` jsonb `[{ type_id, flag, quantity }]`), `character_mercenary_den_over_time` (stable den identity/config; its view left-joins the latest status observation)
 - Live/per-character: `character_wallet` (balance history), `character_wallet_transaction`, `character_location`, `character_clone_state` (jump timers), `character_implant` (`type_ids` array)
 - `character_mercenary_den_status` — append-only den observations (state, development/anarchy, infomorphs, `reinforcement_end`, `observed_at`)
 - `character_fitting_share` — per-fit shares, one row per level (`corporation`/`alliance`/`public`), each a toggle; no secrets, no anonymous view. Widens RLS on `character_fitting_over_time` via `fitting_shared_with_caller()` (invoker rights): owner affiliation via world-readable `character_directory` (never RLS-hidden `registration`), caller membership via `my_corporation_ids()`/`my_alliance_ids()`; `public` = any signed-in user. An audience policy on the share table itself lets members read rows aimed at them. Points at the live fit; the fitting route addresses by EVE character id, translated by `src/app/fitting/resolveCharacter.ts`. `token` column is an unused placeholder
@@ -171,7 +163,7 @@ Full column detail lives in `schema.sql`. SCD-2 tables (`*_over_time`) each have
 - `esi_etag` — ETag per conditional-request cache key (`<job>:<registration uuid>`); service-role only (RLS on, no policy)
 - `sde_*` — SDE mirror, one table per JSONL file, minted by `ensure_sde_mirror_table()`; public SELECT, service-role write (`_key` PK, `data` jsonb, `sde_build`)
 - `sde_mirror_state` — one row per SDE build (drives `planMirror` skip decision); `sde_npc_station_name` — ESI-resolved NPC station names (not in SDE), never swept
-- `esf_data` — base64 eveship.fit protobufs re-encoded per SDE build (refreshes without redeploy); `sheet_csv` — spreadsheet static CSVs served at `/sheets/[file]`. Both public-read, service-role write, keyed on `name`
+- `esf_data` — base64 eveship.fit protobufs re-encoded per SDE build (refreshes without redeploy); `sheet_csv` — spreadsheet static CSVs served at `/sheets/[file]` for Sheets `=IMPORTDATA()` (public, CDN-cached, ETag keyed on `sde_build`). Both public-read, service-role write, keyed on `name`
 
 Key Postgres functions (RPC or SQL):
 
@@ -179,12 +171,11 @@ Key Postgres functions (RPC or SQL):
 - `character_asset_search(type_ids[])` / `corp_asset_search(type_ids[])` — current items matching type ids, with root location + nested count (`/asset/search`)
 - `asset_ancestors(start_id)` — ancestor chain to root over both asset views, depth-capped 16; feeds `assetPath.tsx`
 - `blueprint_search(...)` — the MCP `list_blueprints` query (docs/mcp-tools-spec.md §1): unions character+corp blueprints, resolves location→system, applies item/owner/system/structure/kind/ME/TE filters, optionally collapses identical (type, ME, TE) stacks; totals cover the whole filtered set while only `row_limit` rows are itemized. `below_me`/`below_te` OR'd; `researchable_only` drops reaction formulas. SECURITY INVOKER
-- `latest_heartbeats()` — latest completed heartbeat per job per owner, RLS-scoped; feeds `/character/refresh`
+- `latest_heartbeats()` — latest completed heartbeat per job per owner, RLS-scoped
 - Time-travel/Sheets snapshots as JSON (`as_of` defaults now, reconstructed from SCD-2): `character_asset_snapshot_at`, `character_orders`, `character_industry_jobs`, `character_blueprints`, `corp_assets`, `corp_industry_jobs`, `corp_blueprints` — each taking `character_ids[]` (+ `as_of`, `include_delivered` where applicable)
 
 ## Design patterns
 
-- **One extract job per ESI endpoint**, sharing the token loops in `src/jobs/lib.js`. Job names double as npm script, heartbeat label, workflow file name.
 - **Prefer ramda over `for`/`while`:** sync iteration uses ramda (`map`/`filter`/`reduce`/`pipe`/`chain`/`reject`/`forEach`, …). Sequential async iteration uses `forEachSequential(items, fn)`. Unbounded pagination becomes a small **tail-recursive** async function carrying `(from, acc)` — fetch one page, recurse while full. Canonical shape (prefer over the `for`-loop generator still in `src/buildEsfData.js`, to migrate when next touched):
 
   ```js
@@ -202,9 +193,8 @@ Key Postgres functions (RPC or SQL):
 
   Accepted exception: when a `reduce`/`forEach` builds a large array, the accumulator is push-mutated rather than re-spread per item (spreading turns O(n) into O(n^2)). The loop itself still isn't a `for`/`while`.
 
-- **SCD Type 2:** `*_over_time` tables track full history; `is_current=true` rows form the current snapshot (the like-named view). `valid_until` is bumped for unchanged rows; a change inserts a new row and closes the old one. Applied to character/corp assets, blueprints, ship (single open row per character), skills (keyed `(registration_id, skill_id)`; never unlearned, so superseded, never closed for vanishing), orders/industry jobs (keyed `order_id`/`job_id`), fittings (keyed `(registration_id, fitting_id)`; an in-client edit opens a new version, a delete closes the row). Vanishing-row semantics differ: a vanished order has filled/expired/cancelled → closed (view holds only open orders); a vanished industry job just aged past ESI's `include_completed` window → its delivered row stays `is_current` (view keeps every job ever reported).
+- **SCD Type 2:** `is_current=true` rows form the current snapshot; `valid_until` is bumped for unchanged rows; a change inserts a new row and closes the old one. Applied to character/corp assets, blueprints, ship (single open row per character), skills (keyed `(registration_id, skill_id)`; never unlearned, so superseded, never closed for vanishing), orders/industry jobs (keyed `order_id`/`job_id`), fittings (keyed `(registration_id, fitting_id)`; an in-client edit opens a new version, a delete closes the row). Vanishing-row semantics differ: a vanished order has filled/expired/cancelled → closed (view holds only open orders); a vanished industry job just aged past ESI's `include_completed` window → its delivered row stays `is_current` (view keeps every job ever reported).
 - **Asset location-walk functions, two shapes:** the `summary`/`contents` functions seed from every asset (whole-hangar aggregate); the `search` functions seed from only the rows matching a filter, so search stays cheap — reuse the seeded-recursion shape for future "look up a few items, walk their tree" functions.
-- **Supabase RLS:** all tables RLS-scoped to `auth.uid()`. Cron uses the service-role key.
 - **Chancellor (admin) accounts:** redeemed an `is_chancellor` invite code. `isChancellor(userId)` checks via service role (RLS only shows a user codes they created). Gates `/account/settings/chancellor`, the impersonate form on `/account/debug`, and on-demand `industry-systems`.
 - **Sheets IMPORTDATA:** the `/api/character/*` and `/api/corp/*` routes authenticate via `user_settings.api_token`, call a Postgres function, return CSV.
 - **Vercel queue:** only the innomin.at appraisal throttle still uses it (topic `innominate`, consumer `/api/queue/innominate`).
@@ -223,7 +213,6 @@ Key Postgres functions (RPC or SQL):
 
   Auth is OAuth 2.1 with Supabase Auth as the authorization server: discovery via `/.well-known/oauth-protected-resource` (RFC 9728), consent at `/oauth/consent`, `withMcpAuth` verifies bearers with `auth.getClaims` (`src/app/api/mcp/auth.ts`). Every query runs on a client carrying the caller's token (`bearer.ts`) so RLS scopes like the cookie session; tools never widen access, never call ESI. Requires Supabase's OAuth 2.1 server enabled (Authorization Path `/oauth/consent`) + dynamic client registration.
 
-- **Token lifecycle:** tokens live in `token`; `refreshAccessToken()` refreshes via EVE SSO before any ESI call.
 - **ESI conditional requests (ETags):** the single-request snapshot jobs (character-orders, -wallet-transactions, -industry-jobs, -fittings) send the last ETag as `If-None-Match` (`esiConditionalJson`). On `304` the job skips its reconcile; on `200` it reconciles and stores the new ETag **after** the write commits, so a mid-run failure never skips a fetch whose data wasn't persisted. Only applied to endpoints returning the whole collection in one request (a `304` unambiguously means nothing changed); paginated endpoints are deliberately unconditional. Each request emits an `esi.conditional_request` metric (`recordEsiConditional` in `src/observability.js`).
 - **Observability metrics:** `src/observability.js` emits single-line JSON metrics to stdout, ingested from Vercel function logs — zero-dependency, the single seam to later swap in real OTel.
 - **Name resolution:** `universe_name` caches ESI `universeNames`; `resolveBatch()` bisects on error. Type names come from `src/sdeTypes.ts`.
