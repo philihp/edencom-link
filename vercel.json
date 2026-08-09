@@ -38,6 +38,14 @@
       "schedule": "46 */6 * * *"
     },
     {
+      "path": "/api/cron/character-contracts",
+      "schedule": "44 */6 * * *"
+    },
+    {
+      "path": "/api/cron/corp-contracts",
+      "schedule": "52 */6 * * *"
+    },
+    {
       "path": "/api/cron/corp-industry-jobs",
       "schedule": "47 */6 * * *"
     },

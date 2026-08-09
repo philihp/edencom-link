@@ -49,6 +49,26 @@ const esiConditionalJson = async (path, { access_token, params = {}, ifNoneMatch
   return { status: 200, json: await response.json(), etag }
 }
 
+// GET for endpoints where some ids are legitimately unreadable rather than
+// broken: returns { status, json } and hands back json: null for the statuses
+// the caller tolerates instead of throwing. Contract items are the case this
+// exists for — a contract we can see in the list can still 403 (we're not a
+// party to it any more) or 404 (deleted/expired past ESI's retention), and
+// neither is a run-failing error.
+const esiJsonTolerant = async (path, { access_token, params = {}, tolerate = [], label } = {}) => {
+  const search = new URLSearchParams({ ...(access_token ? { token: access_token } : {}), ...params })
+  const response = await fetch(`${ESI_BASE}${path}?${search}`, {
+    method: 'GET',
+    headers: { 'User-Agent': userAgent },
+  })
+  if (tolerate.includes(response.status)) return { status: response.status, json: null }
+  if (!response.ok) {
+    const text = await response.text().catch(() => '')
+    throw new Error(`${label ?? path}: ${response.status} ${response.statusText} body=${text.slice(0, 500)}`)
+  }
+  return { status: response.status, json: await response.json() }
+}
+
 // The newer, kebab-case ESI endpoints (Equinox onward — e.g. mercenary dens)
 // don't live under the legacy `/latest` base. They're the "compatibility date"
 // API: the same host with no version segment, gated by an `X-Compatibility-Date`
@@ -135,6 +155,47 @@ export const fittings = (access_token, characterID, ifNoneMatch) =>
     access_token,
     ifNoneMatch,
     label: `fittings ${characterID}`,
+  })
+
+// A character's contracts — every contract they issued or were assigned,
+// covering the last 30 days plus anything still outstanding or in progress.
+// Page-numbered (x-pages), so it is deliberately NOT a conditional request: an
+// ETag would only ever cover one page, and a 304 on page 1 says nothing about
+// the rest.
+export const contracts = (access_token, characterID, page = 1) =>
+  esiPaged(`/characters/${characterID}/contracts/`, {
+    access_token,
+    params: { page },
+    label: `contracts ${characterID} page=${page}`,
+  })
+
+// The item list of one contract. Immutable once the contract exists, so it is
+// fetched once per contract and never re-polled. Tolerates 403 (no longer a
+// party to it) and 404 (gone from ESI's retention window) as "no items we can
+// ever read", which the caller records so the contract isn't retried forever.
+export const contractItems = (access_token, characterID, contractID) =>
+  esiJsonTolerant(`/characters/${characterID}/contracts/${contractID}/items/`, {
+    access_token,
+    tolerate: [403, 404],
+    label: `contractItems ${characterID}/${contractID}`,
+  })
+
+// A corporation's contracts. Requires no in-game role beyond membership for
+// corp-issued contracts. Page-numbered, same as the character endpoint.
+export const corpContracts = (access_token, corporationID, page = 1) =>
+  esiPaged(`/corporations/${corporationID}/contracts/`, {
+    access_token,
+    params: { page },
+    label: `corpContracts ${corporationID} page=${page}`,
+  })
+
+// The item list of one corporation contract. Same once-only, tolerant contract
+// as its per-character twin above.
+export const corpContractItems = (access_token, corporationID, contractID) =>
+  esiJsonTolerant(`/corporations/${corporationID}/contracts/${contractID}/items/`, {
+    access_token,
+    tolerate: [403, 404],
+    label: `corpContractItems ${corporationID}/${contractID}`,
   })
 
 export const character = (access_token, characterID) =>

@@ -68,6 +68,7 @@ export const STUB_CHARACTERS: Record<string, StubEntityRun[]> = {
   'character-blueprints': characters('character-blueprints'),
   'character-orders': characters('character-orders'),
   'character-wallet-transactions': characters('character-wallet-transactions'),
+  'character-contracts': characters('character-contracts'),
   'character-industry-jobs': characters('character-industry-jobs', { c1: { status: 'running' } }),
   'character-mercenary-dens': characters('character-mercenary-dens', { c2: { lastRunAt: null } }),
   'character-status': characters('character-status'),
@@ -91,6 +92,7 @@ export const STUB_CORPORATIONS: Record<string, StubEntityRun[]> = {
   'corp-assets': corporations('corp-assets'),
   'corp-industry-jobs': corporations('corp-industry-jobs'),
   'corp-wallet-transactions': corporations('corp-wallet-transactions'),
+  'corp-contracts': corporations('corp-contracts'),
   // Neither corp got its last fire — the overdue state, which is about the
   // schedule rather than about one entity lagging.
   'corp-structures': corporations('corp-structures', {

@@ -37,6 +37,7 @@ export const JOBS: readonly JobEntry[] = [
   { job: 'character-blueprints', label: 'blueprints', section: 'character', kickable: 'always' },
   { job: 'character-orders', label: 'orders', section: 'character', kickable: 'always' },
   { job: 'character-wallet-transactions', label: 'transactions', section: 'character', kickable: 'always' },
+  { job: 'character-contracts', label: 'contracts', section: 'character', kickable: 'always' },
   { job: 'character-industry-jobs', label: 'industry', section: 'character', kickable: 'always' },
   { job: 'character-mercenary-dens', label: 'dens', section: 'character', kickable: 'always' },
   // Combined live-state pull: wallet, location, implants, clones, ship, skills
@@ -46,6 +47,7 @@ export const JOBS: readonly JobEntry[] = [
   { job: 'corp-assets', label: 'assets', section: 'corporation', kickable: 'always' },
   { job: 'corp-industry-jobs', label: 'industry', section: 'corporation', kickable: 'always' },
   { job: 'corp-wallet-transactions', label: 'transactions', section: 'corporation', kickable: 'always' },
+  { job: 'corp-contracts', label: 'contracts', section: 'corporation', kickable: 'always' },
   // The three daily whole-corp pulls a per-character fan-out would only ever
   // redo once per character, so they're scheduled-only (see dispatchRefresh.ts).
   { job: 'corp-structures', label: 'structures', section: 'corporation', kickable: 'never' },
