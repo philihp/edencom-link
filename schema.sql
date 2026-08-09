@@ -1,6 +1,16 @@
 -- Canonical schema for edencom-link, in the default `public` schema (PostgREST
 -- exposes it out of the box, so there is no "Exposed schemas" dashboard step).
 --
+-- Nothing here adds a schema to that list, but the list still needs to stay in
+-- sync when one is *dropped*: PostgREST reads it only when building a cold
+-- schema cache, so a stale entry sits harmless for weeks and then takes the
+-- whole Data API down at the next restart. On 2026-08-09 a Postgres upgrade
+-- restarted it, the rebuild hit the long-dropped `evesde` schema, and every
+-- REST request returned PGRST002 for 26 minutes while auth kept working (GoTrue
+-- does not use the schema cache) — so the site looked slow and logged-in users
+-- appeared to have no characters. If you drop a schema, clear it from
+-- Settings -> Data API -> Exposed schemas in the same change.
+--
 -- This file is the single source of truth and a full reset: it DROPs the app's
 -- objects and recreates them from scratch. Re-running it WIPES existing data in
 -- these tables. Apply with `psql ... -f schema.sql` or paste into the Supabase
@@ -4065,10 +4075,29 @@ grant all    on public.gice_account to service_role;
 
 create extension if not exists pg_trgm with schema extensions;
 
+-- Supabase enables pg_graphql by default and `graphql_public` is an exposed
+-- schema, so /graphql/v1 needs it present; without it the endpoint answers
+-- every query with "pg_graphql extension is not enabled." Declared here so a
+-- rebuilt database matches the exposed-schema list (see the header note).
+create extension if not exists pg_graphql;
+
 -- Create (or align) one SDE mirror table. SECURITY DEFINER so the ingest can
 -- call it over PostgREST RPC; execute is service-role only, the stem is
 -- regex-validated, and all DDL goes through format('%I'), so the service role
 -- can only ever mint read-only sde_* mirror tables of this exact shape.
+--
+-- Every step is guarded by a catalog lookup so a table that is already correct
+-- costs zero DDL. sde-mirror calls this once per JSONL file, so an unguarded
+-- body re-applies the whole shape ~560 times a night across 80 tables — and
+-- ALTER TABLE ... ENABLE ROW LEVEL SECURITY and CREATE POLICY each take an
+-- ACCESS EXCLUSIVE lock on a table the app reads on every page hit. It also
+-- bumps pg_graphql's schema version (its ddl_command_end trigger increments
+-- unconditionally, without checking whether anything reflected changed),
+-- invalidating the cached GraphQL schema each time.
+--
+-- The policy check compares the full shape rather than just the name, so a
+-- policy that has drifted by hand is still dropped and recreated — preserving
+-- the self-healing the old unconditional drop-and-recreate gave for free.
 create or replace function public.ensure_sde_mirror_table(p_stem text, p_key_type text default 'bigint')
 returns void
 language plpgsql
@@ -4077,6 +4106,7 @@ set search_path = ''
 as $$
 declare
   v_table text;
+  v_oid oid;
 begin
   if p_stem !~ '^[a-z][a-z0-9_]{0,58}$' then
     raise exception 'invalid SDE mirror table stem: %', p_stem;
@@ -4085,20 +4115,64 @@ begin
     raise exception 'invalid SDE mirror key type: %', p_key_type;
   end if;
   v_table := 'sde_' || p_stem;
-  execute format(
-    'create table if not exists public.%I (_key %s primary key, data jsonb not null, sde_build bigint not null)',
-    v_table,
-    p_key_type
-  );
-  execute format('alter table public.%I enable row level security', v_table);
-  execute format('drop policy if exists "Anyone reads SDE data" on public.%I', v_table);
-  execute format('create policy "Anyone reads SDE data" on public.%I for select using (true)', v_table);
-  execute format('grant select on public.%I to anon, authenticated', v_table);
+  v_oid := to_regclass('public.' || quote_ident(v_table));
+
+  if v_oid is null then
+    execute format(
+      'create table public.%I (_key %s primary key, data jsonb not null, sde_build bigint not null)',
+      v_table,
+      p_key_type
+    );
+    v_oid := to_regclass('public.' || quote_ident(v_table));
+  end if;
+
+  if not exists (
+    select 1 from pg_catalog.pg_class c where c.oid = v_oid and c.relrowsecurity
+  ) then
+    execute format('alter table public.%I enable row level security', v_table);
+  end if;
+
+  if not exists (
+    select 1
+    from pg_catalog.pg_policy p
+    where p.polrelid = v_oid
+      and p.polname = 'Anyone reads SDE data'
+      and p.polcmd = 'r'
+      and p.polpermissive
+      and p.polroles = '{0}'::oid[]
+      and pg_catalog.pg_get_expr(p.polqual, p.polrelid) = 'true'
+  ) then
+    execute format('drop policy if exists "Anyone reads SDE data" on public.%I', v_table);
+    execute format('create policy "Anyone reads SDE data" on public.%I for select using (true)', v_table);
+  end if;
+
+  if not (
+    pg_catalog.has_table_privilege('anon', v_oid, 'select')
+    and pg_catalog.has_table_privilege('authenticated', v_oid, 'select')
+  ) then
+    execute format('grant select on public.%I to anon, authenticated', v_table);
+  end if;
+
   -- The schema's default privileges hand new tables ALL to anon/authenticated;
   -- claw the write privileges back so the mirror is read-only at the grant
   -- layer too, not just via the missing write policies.
-  execute format('revoke insert, update, delete on public.%I from anon, authenticated', v_table);
-  execute format('grant select, insert, update, delete on public.%I to service_role', v_table);
+  if pg_catalog.has_table_privilege('anon', v_oid, 'insert')
+     or pg_catalog.has_table_privilege('anon', v_oid, 'update')
+     or pg_catalog.has_table_privilege('anon', v_oid, 'delete')
+     or pg_catalog.has_table_privilege('authenticated', v_oid, 'insert')
+     or pg_catalog.has_table_privilege('authenticated', v_oid, 'update')
+     or pg_catalog.has_table_privilege('authenticated', v_oid, 'delete') then
+    execute format('revoke insert, update, delete on public.%I from anon, authenticated', v_table);
+  end if;
+
+  if not (
+    pg_catalog.has_table_privilege('service_role', v_oid, 'select')
+    and pg_catalog.has_table_privilege('service_role', v_oid, 'insert')
+    and pg_catalog.has_table_privilege('service_role', v_oid, 'update')
+    and pg_catalog.has_table_privilege('service_role', v_oid, 'delete')
+  ) then
+    execute format('grant select, insert, update, delete on public.%I to service_role', v_table);
+  end if;
 end
 $$;
 
