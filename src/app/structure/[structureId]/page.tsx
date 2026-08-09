@@ -197,6 +197,20 @@ const StructurePage = async ({ params, searchParams }: StructureParams) => {
   const taxTotalIsk = taxRows.reduce((sum, r) => sum + Number(r.isk ?? 0), 0)
   const taxTotalJobs = taxRows.reduce((sum, r) => sum + Number(r.jobs ?? 0), 0)
 
+  // The payer leaderboard above the table: the same rows folded from
+  // (payer, day) down to (payer), ranked by ISK. No extra query — the window's
+  // rows are already in hand, and re-aggregating here keeps the two views
+  // guaranteed consistent with each other.
+  const byPayer = new Map<string, { payerId: string; isk: number; jobs: number }>()
+  for (const r of taxRows) {
+    const payerId = r.payer_id != null ? String(r.payer_id) : 'unknown'
+    const entry = byPayer.get(payerId) ?? { payerId, isk: 0, jobs: 0 }
+    entry.isk += Number(r.isk ?? 0)
+    entry.jobs += Number(r.jobs ?? 0)
+    byPayer.set(payerId, entry)
+  }
+  const leaderboard = [...byPayer.values()].sort((a, b) => b.isk - a.isk)
+
   const typeNames = await fetchTypeNames([
     Number(s.type_id),
     ...rigs.map((r) => Number(r.type_id)),
@@ -326,6 +340,37 @@ const StructurePage = async ({ params, searchParams }: StructureParams) => {
           <WindowSelect days={windowDays} path={`/structure/${s.structure_id}`} />
         </span>
       </div>
+      {leaderboard.length > 0 && (
+        <ol className={structureStyles.payerGrid}>
+          {leaderboard.map((p, i) => {
+            const known = p.payerId !== 'unknown'
+            return (
+              <li key={`payer-${p.payerId}`} className={structureStyles.payerCard}>
+                <span className={structureStyles.payerRank}>#{i + 1}</span>
+                {/* Plain <img>, like the app's other CCP image-server uses, which
+                    keeps images.evetech.net out of next.config.mjs's remote patterns. */}
+                {known ? (
+                  <img
+                    className={structureStyles.payerAvatar}
+                    src={`https://images.evetech.net/characters/${p.payerId}/portrait?size=64`}
+                    alt=""
+                    width={48}
+                    height={48}
+                    loading="lazy"
+                  />
+                ) : (
+                  <span className={structureStyles.payerAvatar} />
+                )}
+                <span className={structureStyles.payerCardName}>
+                  <Name name={known ? payerNames.get(p.payerId) : undefined} id={known ? p.payerId : undefined} />
+                </span>
+                <span className={`${structureStyles.payerTotal} ${retro.num}`}>{formatIskValue(p.isk)}</span>
+              </li>
+            )
+          })}
+        </ol>
+      )}
+
       {taxRows.length > 0 ? (
         <table className={retro.retro}>
           <thead>
