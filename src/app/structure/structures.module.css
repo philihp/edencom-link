@@ -358,3 +358,57 @@
   color: var(--ink-faint);
   font-size: 11px;
 }
+
+/* Payer leaderboard on the structure detail page: the same raised-tile idea as
+   the Structures grid above, shrunk to portrait size and stacked centre-aligned
+   so a row of them reads as a ranking rather than a table. An <ol>, so the
+   ranking survives with styles off and for screen readers; the #n badge is
+   drawn rather than relying on the list marker, which auto-hides with the
+   list-style reset. */
+.payerGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 10px;
+  list-style: none;
+  padding: 0;
+  margin: 12px 0 16px;
+}
+
+.payerCard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 10px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--paper-raised);
+  text-align: center;
+  min-width: 0;
+}
+
+.payerRank {
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+.payerAvatar {
+  width: 48px;
+  height: 48px;
+  flex: none;
+  /* Round, matching the pilot portrait on the ship page. */
+  border-radius: 50%;
+  background: var(--line-soft);
+}
+
+.payerCardName {
+  font-size: 13px;
+  min-width: 0;
+  /* Pilot names are one long token often enough to overflow a 130px card. */
+  overflow-wrap: anywhere;
+}
+
+.payerTotal {
+  font-size: 13px;
+  color: var(--ink-soft);
+}
