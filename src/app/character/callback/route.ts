@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from 'next/server'
 
 import { character } from '@/esi'
 import { createClient } from '@/utils/supabase/server'
+import { createServiceClient } from '@/utils/supabase/service'
 
 import { dispatchRefresh } from '../dispatchRefresh'
 import { sso } from '../sso'
@@ -40,7 +41,11 @@ const ensureMainCharacter = (supabase: SupabaseClient) => async (user_id: string
   if (oldestError) throw new Error(`oldest registration lookup failed: ${JSON.stringify(oldestError)}`)
   if (!oldest?.id) return
 
-  const { error: updateError } = await supabase.from('registration').update({ is_main: true }).eq('id', oldest.id)
+  const { error: updateError } = await supabase
+    .from('registration')
+    .update({ is_main: true })
+    .eq('id', oldest.id)
+    .eq('user_id', user_id)
   if (updateError) throw new Error(`mark main character failed: ${JSON.stringify(updateError)}`)
 }
 
@@ -55,10 +60,10 @@ const upsertToken =
     expires_at: string
     scope: string[]
   }) => {
-    const response = await supabase.from('token').upsert(columns, { onConflict: 'registration_id' }).select()
+    // No .select(): the caller never used the id, and not reading the row back
+    // keeps the refresh_token out of this process's memory a moment longer.
+    const response = await supabase.from('token').upsert(columns, { onConflict: 'registration_id' })
     if (response.error) throw new Error(`upsert token failed: ${JSON.stringify(response.error)}`)
-    if (!response.data?.[0]?.id) throw new Error(`upsert token returned no row: ${JSON.stringify(response)}`)
-    return response.data[0].id
   }
 
 export const GET = async (request: NextRequest) => {
@@ -68,6 +73,23 @@ export const GET = async (request: NextRequest) => {
   } = await supabase.auth.getUser()
   if (!user?.id) throw new Error('no authenticated supabase user on /character/callback')
   const user_id = user.id
+
+  // registration and token are service-role-only at the grant layer, and this
+  // route is their sole writer. The reason is that registration.character_id is
+  // an authorization input — every corp_* policy and
+  // my_corporation_ids()/my_alliance_ids() trust it — but a user-session write
+  // is indistinguishable from a hand-crafted POST claiming someone else's
+  // character. What separates them is the EVE SSO code exchange below, whose
+  // RS256 signature @philihp/eve-sso verifies against CCP's JWKS. That check
+  // can only happen here: no Postgres extension on this project can verify
+  // RS256 (pgjwt is HMAC-only, pgcrypto and pgsodium have no RSA verify), so
+  // the database cannot be handed the proof and left to police itself.
+  //
+  // Service-role clients bypass RLS, so treat this as a deliberate exception,
+  // not a pattern to copy: every write below is scoped to user_id by hand, and
+  // nothing here reads on the caller's behalf. Prefer the session client
+  // (`supabase`) anywhere the caller's own RLS scope is sufficient.
+  const service = createServiceClient()
 
   const { searchParams } = new URL(request.url)
   const code = searchParams.get('code')
@@ -96,15 +118,15 @@ export const GET = async (request: NextRequest) => {
   // upsertCharacter returns registration.id — a uuid — not an EVE id. The
   // `character_id` column it writes is registration's own, which really is the
   // EVE numeric id.
-  const registration_id = await upsertCharacter(supabase)({
+  const registration_id = await upsertCharacter(service)({
     user_id,
     owner,
     name,
     character_id: eve_character_id,
     ...(corporation_id != null ? { corporation_id } : {}),
   })
-  await ensureMainCharacter(supabase)(user_id)
-  await upsertToken(supabase)({
+  await ensureMainCharacter(service)(user_id)
+  await upsertToken(service)({
     user_id,
     registration_id,
     access_token,

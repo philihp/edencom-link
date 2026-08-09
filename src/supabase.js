@@ -109,18 +109,19 @@ export const authenticate = async () => {
   return error ?? data
 }
 
+// registration and token are service-role-only at the grant layer (see the
+// data_api_grant_lockdown migration), so these three use sudoSupabase like the
+// rest of this module's cron helpers. Their only caller is the src/refresh.js
+// CLI utility, which already runs with the service key in the environment —
+// this is the cron/CLI side, not an app-side service query.
 export const upsertCharacter = async (columns) => {
-  const response = await supabase.from('registration').upsert(columns, { onConflict: 'user_id, owner' }).select()
+  const response = await sudoSupabase.from('registration').upsert(columns, { onConflict: 'user_id, owner' }).select()
   return response.data?.[0]?.id
 }
 
 export const upsertToken = async (columns) => {
-  const response = await supabase
-    .from('token')
-    .upsert(columns, { onConflict: ['registration_id'] })
-    .select()
+  const response = await sudoSupabase.from('token').upsert(columns, { onConflict: ['registration_id'] })
   if (response.error) console.error(response.error)
-  return response.data?.[0]?.id
 }
 
 export const upsertAssets = async (assets) => {
@@ -189,7 +190,7 @@ export const groupRegistrationIdsByCorporation = async (scopes) => {
 }
 
 export const selectToken = async (registration_id, scope = []) => {
-  const response = await supabase
+  const response = await sudoSupabase
     .from('token')
     .select('refresh_token, scope')
     .eq('registration_id', registration_id)
