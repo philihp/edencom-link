@@ -1,0 +1,21 @@
+-- Re-enable pg_graphql.
+--
+-- Supabase enables this by default, but it had been dropped from this project.
+-- The giveaway was that the `graphql` and `graphql_public` schemas and the
+-- graphql_public.graphql() wrapper all survived — the fingerprint of a dropped
+-- extension rather than one that was never installed. With it gone, every
+-- request to /graphql/v1 answered:
+--
+--   {"errors": [{"message": "pg_graphql extension is not enabled."}]}
+--
+-- while `graphql_public` stayed listed in the Data API's exposed schemas. That
+-- is the same class of latent config/schema mismatch that took the Data API
+-- down on 2026-08-09: PostgREST held a stale reference to the dropped `evesde`
+-- schema, which only surfaced when a Postgres upgrade restarted it and forced a
+-- cold schema-cache build (PGRST002, 26 minutes of 503s). Rather than leave a
+-- second dangling reference to trip over on the next cold start, the extension
+-- is restored so the exposed schema matches reality.
+--
+-- Applied directly to production ahead of this migration; `if not exists` makes
+-- re-application a no-op.
+create extension if not exists pg_graphql;
