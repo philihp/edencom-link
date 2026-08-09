@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/utils/supabase/server'
 import { DateTime } from '../../DateTime'
 import { ACTIVITY_NAMES } from '../../industry/jobFields'
+import { formatIskValue } from '../../isk'
 import { CharacterName, Name, SystemName } from '../../names'
 import { fetchSystemNames } from '../../systemNames'
 import { fetchTypeNames } from '../../typeNames'
@@ -13,7 +14,10 @@ import {
   INDEX_ACTIVITY_LABELS,
   structureIndexActivities,
 } from '../industryIndex'
+import { WindowSelect } from '../windowSelect'
+import { structureWindowDays } from '../windows'
 import retro from '../../retro.module.css'
+import structureStyles from '../structures.module.css'
 
 type Structure = {
   structure_id: number
@@ -54,16 +58,27 @@ type Rig = {
   type_id: number | string
 }
 
+// One row per (payer, UTC day) from structure_tax_revenue().
+type TaxRow = {
+  payer_id: number | string | null
+  day: string
+  jobs: number | string
+  isk: number | string | null
+}
+
 type StructureParams = {
   params: Promise<{
     structureId: string
   }>
+  searchParams: Promise<{ days?: string }>
 }
 
 const show = (value: string | number | null | undefined) => (value === null || value === undefined ? '—' : value)
 
-const StructurePage = async ({ params }: StructureParams) => {
+const StructurePage = async ({ params, searchParams }: StructureParams) => {
   const { structureId } = await params
+  const { days: daysParam } = await searchParams
+  const windowDays = structureWindowDays(daysParam)
   const supabase = await createClient()
 
   const { data: auth, error: authError } = await supabase.auth.getUser()
@@ -131,6 +146,56 @@ const StructurePage = async ({ params }: StructureParams) => {
     .order('location_flag', { ascending: true })
 
   const rigs = (rigData ?? []) as Rig[]
+
+  // Tax this structure earned over the selected window, grouped by payer and
+  // UTC day. The join to each job's structure happens inside the function —
+  // including, via industry_job_tax_facility(), for jobs installed by players
+  // whose own rows this caller can't read (see the migration comment).
+  const since = new Date(Date.now() - windowDays * 86_400_000).toISOString()
+  const { data: taxData } = await supabase.rpc('structure_tax_revenue', {
+    structure_id: structureId,
+    since,
+  })
+  const taxRows = (taxData ?? []) as TaxRow[]
+
+  // Payer names and the corp they fly for, same sources as /structure/revenue:
+  // universe_name (the universe-names job) and character_affiliation (the
+  // character-directory job).
+  const payerIds = [...new Set(taxRows.map((r) => r.payer_id).filter((p) => p != null))].map(Number)
+  const payerNames = new Map<string, string>()
+  const payerCorps = new Map<string, string>()
+  if (payerIds.length > 0) {
+    const [{ data: charNames }, { data: affiliations }] = await Promise.all([
+      supabase.from('universe_name').select('id, name').in('id', payerIds),
+      supabase.from('character_affiliation').select('character_id, corporation_id').in('character_id', payerIds),
+    ])
+    for (const r of (charNames ?? []) as Array<{ id: number | string; name: string }>) {
+      payerNames.set(String(r.id), r.name)
+    }
+    const corpByPayer = new Map<string, string>()
+    const corpIds = new Set<number>()
+    for (const a of (affiliations ?? []) as Array<{ character_id: number | string; corporation_id: number | string }>) {
+      corpByPayer.set(String(a.character_id), String(a.corporation_id))
+      corpIds.add(Number(a.corporation_id))
+    }
+    if (corpIds.size > 0) {
+      const { data: corpNames } = await supabase
+        .from('universe_name')
+        .select('id, name')
+        .in('id', [...corpIds])
+      const corpNameById = new Map<string, string>()
+      for (const r of (corpNames ?? []) as Array<{ id: number | string; name: string }>) {
+        corpNameById.set(String(r.id), r.name)
+      }
+      for (const [payer, corpId] of corpByPayer) {
+        const name = corpNameById.get(corpId)
+        if (name) payerCorps.set(payer, name)
+      }
+    }
+  }
+
+  const taxTotalIsk = taxRows.reduce((sum, r) => sum + Number(r.isk ?? 0), 0)
+  const taxTotalJobs = taxRows.reduce((sum, r) => sum + Number(r.jobs ?? 0), 0)
 
   const typeNames = await fetchTypeNames([
     Number(s.type_id),
@@ -253,6 +318,56 @@ const StructurePage = async ({ params }: StructureParams) => {
           </tr>
         </tbody>
       </table>
+
+      <div className={structureStyles.header}>
+        <h2>Tax Revenue</h2>
+        <span className={structureStyles.headerControl}>
+          <span className={structureStyles.headerControlLabel}>Window</span>
+          <WindowSelect days={windowDays} path={`/structure/${s.structure_id}`} />
+        </span>
+      </div>
+      {taxRows.length > 0 ? (
+        <table className={retro.retro}>
+          <thead>
+            <tr>
+              <th>Payer</th>
+              <th>Day</th>
+              <th className={retro.num}>Jobs</th>
+              <th className={retro.num}>ISK</th>
+            </tr>
+          </thead>
+          <tbody>
+            {taxRows.map((r) => {
+              const payer = r.payer_id != null ? String(r.payer_id) : undefined
+              return (
+                <tr key={`tax-${payer ?? 'unknown'}-${r.day}`}>
+                  <td>
+                    <span className={structureStyles.payer}>
+                      <Name name={payer ? payerNames.get(payer) : undefined} id={r.payer_id} />
+                      {payer && payerCorps.get(payer) && (
+                        <span className={structureStyles.payerCorp}>{payerCorps.get(payer)}</span>
+                      )}
+                    </span>
+                  </td>
+                  <td className="serif">{r.day}</td>
+                  <td className={retro.num}>{Number(r.jobs)}</td>
+                  <td className={retro.num}>{formatIskValue(r.isk)}</td>
+                </tr>
+              )
+            })}
+          </tbody>
+          <tfoot>
+            <tr>
+              <th>Total</th>
+              <th />
+              <th className={retro.num}>{taxTotalJobs}</th>
+              <th className={retro.num}>{formatIskValue(taxTotalIsk)}</th>
+            </tr>
+          </tfoot>
+        </table>
+      ) : (
+        <p>No industry tax from this structure in the last {windowDays} days.</p>
+      )}
 
       <h2>Industry Jobs</h2>
       {jobs.length > 0 ? (

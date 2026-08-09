@@ -11,7 +11,10 @@ import styles from './structures.module.css'
 // (per-structure Revenue, unaccounted tax, clone revenue) and the industry-index
 // sparklines. The window lives in the URL (?days=N) so the server component
 // refetches exactly the span it needs.
-export const WindowSelect = ({ days }: { days: number }) => {
+//
+// `path` lets the structure detail page reuse the control for its own Tax
+// Revenue table; it defaults to the Structures page it was written for.
+export const WindowSelect = ({ days, path = '/structure' }: { days: number; path?: string }) => {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
 
@@ -22,7 +25,7 @@ export const WindowSelect = ({ days }: { days: number }) => {
         value={days}
         onChange={(e) => {
           const next = Number(e.target.value)
-          startTransition(() => router.replace(`/structure?days=${next}`, { scroll: false }))
+          startTransition(() => router.replace(`${path}?days=${next}`, { scroll: false }))
         }}
       >
         {STRUCTURE_WINDOW_OPTIONS.map((o) => (
