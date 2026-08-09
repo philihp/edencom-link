@@ -13,6 +13,7 @@ export const PER_CHARACTER_JOBS = [
   'character-blueprints',
   'character-orders',
   'character-wallet-transactions',
+  'character-contracts',
   'character-industry-jobs',
   'character-mercenary-dens',
   'character-fittings',
@@ -45,6 +46,7 @@ export const PER_CHARACTER_JOBS = [
 // corp-blueprints, corp-wallet-journal).
 const PER_CORPORATION_JOBS = [
   { job: 'corp-wallet-transactions', loadScope: async () => (await import('@/jobs/corpWalletTransactions.js')).SCOPE },
+  { job: 'corp-contracts', loadScope: async () => (await import('@/jobs/corpContracts.js')).SCOPE },
   { job: 'corp-assets', loadScope: async () => (await import('@/jobs/corpAssets.js')).SCOPE },
   { job: 'corp-industry-jobs', loadScope: async () => (await import('@/jobs/corpIndustryJobs.js')).SCOPE },
 ] as const
@@ -68,6 +70,7 @@ const JOB_WORKFLOWS: Record<string, () => Promise<(target?: OnDemandTarget) => P
   'character-orders': async () => (await import('@/workflows/characterOrders')).characterOrdersWorkflow,
   'character-wallet-transactions': async () =>
     (await import('@/workflows/characterWalletTransactions')).characterWalletTransactionsWorkflow,
+  'character-contracts': async () => (await import('@/workflows/characterContracts')).characterContractsWorkflow,
   'character-industry-jobs': async () =>
     (await import('@/workflows/characterIndustryJobs')).characterIndustryJobsWorkflow,
   'character-mercenary-dens': async () =>
@@ -76,6 +79,7 @@ const JOB_WORKFLOWS: Record<string, () => Promise<(target?: OnDemandTarget) => P
   'character-status': async () => (await import('@/workflows/characterStatus')).characterStatusWorkflow,
   'corp-wallet-transactions': async () =>
     (await import('@/workflows/corpWalletTransactions')).corpWalletTransactionsWorkflow,
+  'corp-contracts': async () => (await import('@/workflows/corpContracts')).corpContractsWorkflow,
   'corp-assets': async () => (await import('@/workflows/corpAssets')).corpAssetsWorkflow,
   'corp-industry-jobs': async () => (await import('@/workflows/corpIndustryJobs')).corpIndustryJobsWorkflow,
   'character-directory': async () => (await import('@/workflows/characterDirectory')).characterDirectoryWorkflow,

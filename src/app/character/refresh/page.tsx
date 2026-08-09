@@ -20,6 +20,7 @@ const CHARACTER_JOBS = [
   ['character-blueprints', 'blueprints'],
   ['character-orders', 'orders'],
   ['character-wallet-transactions', 'transactions'],
+  ['character-contracts', 'contracts'],
   ['character-industry-jobs', 'industry'],
   ['character-mercenary-dens', 'dens'],
   ['character-fittings', 'fittings'],
@@ -35,6 +36,7 @@ const CORP_JOBS = [
   ['corp-assets', 'assets'],
   ['corp-industry-jobs', 'industry'],
   ['corp-wallet-transactions', 'transactions'],
+  ['corp-contracts', 'contracts'],
 ] as const
 
 // Account-wide batch jobs — one run covers every registration at once.

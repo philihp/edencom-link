@@ -56,6 +56,18 @@ export const esiScopes: EsiScope[] = [
     without: 'this character’s market orders will not be shown.',
   },
   {
+    scope: 'esi-contracts.read_character_contracts.v1',
+    name: 'Character contracts',
+    why: 'Records the contracts this character issued or was assigned — courier, item exchange and auction — including what was in them, what they paid, and how they finished.',
+    without: 'this character’s contracts and their contents will not be tracked.',
+  },
+  {
+    scope: 'esi-contracts.read_corporation_contracts.v1',
+    name: 'Corporation contracts',
+    why: 'Records your corporation’s contracts and their contents, so corp hauling and supply contracts are tracked beside personal ones.',
+    without: 'corporation contracts will not be tracked from this character.',
+  },
+  {
     scope: 'esi-corporations.read_structures.v1',
     name: 'Corporation structures',
     why: 'Monitors your corporation’s Upwell structures, including fuel and reinforcement timers. Requires the Station Manager or Director role in game.',
