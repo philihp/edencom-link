@@ -38,11 +38,13 @@ type JournalRow = {
   first_party_id: number | string | null
 }
 
+// runs/product_type_id are null for jobs resolved through
+// industry_job_tax_facility, which discloses only the location (see below).
 type JobRow = {
   job_id: number | string
   station_id: number | string | null
   facility_id: number | string | null
-  runs: number
+  runs: number | null
   product_type_id: number | string | null
 }
 
@@ -108,8 +110,16 @@ const RevenuePage = async ({ searchParams }: RevenueParams) => {
   // corp can run a job here, so corp_industry_job (pulled by a director,
   // covering every corp member) is checked too.
   const jobIds = new Set<string>()
+  // context_ids alone, kept apart from the description tokens below: these are
+  // the only ids the tax-attribution lookup may be asked about (see the
+  // industry_job_tax_facility comment in schema.sql — a loose token colliding
+  // with a real job id would make it an oracle).
+  const contextJobIds = new Set<string>()
   for (const entry of entries) {
-    if (entry.context_id != null) jobIds.add(String(entry.context_id))
+    if (entry.context_id != null) {
+      jobIds.add(String(entry.context_id))
+      contextJobIds.add(String(entry.context_id))
+    }
     for (const token of entry.description?.match(/\d+/g) ?? []) jobIds.add(token)
   }
   const [{ data: characterJobRows }, { data: corpJobRows }] = jobIds.size
@@ -128,6 +138,21 @@ const RevenuePage = async ({ searchParams }: RevenueParams) => {
   const jobById = new Map<string, JobRow>()
   for (const j of [...((characterJobRows ?? []) as JobRow[]), ...((corpJobRows ?? []) as JobRow[])]) {
     jobById.set(String(j.job_id), j)
+  }
+
+  // Anything still unresolved was installed by someone whose jobs this caller
+  // can't read — typically another player using this site, running jobs in the
+  // caller's structure. industry_job_tax_facility returns just the location for
+  // those, and only because the tax for that job was paid into a wallet the
+  // caller can see. The Output column stays empty for them by design.
+  const unresolved = [...contextJobIds].filter((id) => !jobById.has(id))
+  if (unresolved.length > 0) {
+    const { data: taxedJobRows } = await supabase.rpc('industry_job_tax_facility', {
+      job_ids: unresolved,
+    })
+    for (const j of (taxedJobRows ?? []) as Array<Pick<JobRow, 'job_id' | 'station_id' | 'facility_id'>>) {
+      jobById.set(String(j.job_id), { ...j, runs: null, product_type_id: null })
+    }
   }
 
   const jobForEntry = (entry: JournalRow): JobRow | undefined => {
@@ -199,7 +224,10 @@ const RevenuePage = async ({ searchParams }: RevenueParams) => {
   }
 
   const typeNames = await fetchTypeNames(
-    [...jobById.values()].map((j) => Number(j.product_type_id)).filter((id) => Number.isFinite(id))
+    [...jobById.values()]
+      .filter((j) => j.product_type_id != null)
+      .map((j) => Number(j.product_type_id))
+      .filter((id) => Number.isFinite(id))
   )
 
   const dayTotal = entries.reduce((sum, e) => sum + Number(e.amount ?? 0), 0)
