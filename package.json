@@ -90,7 +90,7 @@
     "husky": "9.1.7",
     "lint-staged": "17.3.0",
     "prettier": "3.9.6",
-    "supabase": "2.111.0",
+    "supabase": "2.113.0",
     "typescript": "6.0.3",
     "typescript-eslint": "8.65.0"
   }
