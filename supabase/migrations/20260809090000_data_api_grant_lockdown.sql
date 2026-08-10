@@ -54,9 +54,15 @@ revoke all on public.token from anon, authenticated;
 -- refresh tokens, and stale credentials at rest are a liability whether or not
 -- anything can currently reach them. asset_backup is empty; character_backup
 -- holds 15 rows duplicated from registration.
+--
+-- Order matters: token_backup.token_character_id_fkey and
+-- asset_backup.asset_character_id_fkey both reference character_backup, so the
+-- parent drops last. Deliberately not `cascade` — if some other object ever
+-- grows a dependency on these, this should fail loudly rather than quietly
+-- drop it.
 drop table if exists public.token_backup;
-drop table if exists public.character_backup;
 drop table if exists public.asset_backup;
+drop table if exists public.character_backup;
 
 -- get_user_id_by_email is SECURITY DEFINER over auth.users, has no pinned
 -- search_path, is referenced nowhere in the codebase, and is callable without
