@@ -20,7 +20,7 @@ export const clampLimit = (limit: number | null | undefined, cap: number): numbe
 // listing what's available — same semantics as the MCP resolveOwnerFilter.
 export type OwnerMatch = { ok: true; ids: string[] | null } | { ok: false; message: string }
 
-export const matchOwnerIds = (owner: string | null | undefined, nameById: Map<string, string>): OwnerMatch => {
+export const matchOwnerIds = (owner: string | null | undefined, nameById: ReadonlyMap<string, string>): OwnerMatch => {
   const trimmed = (owner ?? '').trim().toLowerCase()
   if (trimmed === '') return { ok: true, ids: null }
   const ids = [...nameById].filter(([, name]) => name.toLowerCase().includes(trimmed)).map(([id]) => id)
@@ -29,6 +29,82 @@ export const matchOwnerIds = (owner: string | null | undefined, nameById: Map<st
     return { ok: false, message: `No character matched "${owner}". Available: ${available.join(', ')}.` }
   }
   return { ok: true, ids }
+}
+
+// The exact counterpart of the fuzzy `owner` filter: a LIST of characters,
+// each named by whichever id the caller has to hand. An entry is
+//
+//   - all digits          → an EVE character id (Owner.characterId),
+//   - a uuid              → this site's registration id (Owner.id / ownerId),
+//   - anything else       → a character name, matched case-insensitively but
+//                           WHOLE — a list is the exact question, `owner` is
+//                           the fuzzy one, exactly as typeIds is to typeName.
+//
+// Every entry must match, and an unmatched one errors listing what exists,
+// rather than quietly narrowing a lens nobody re-reads for a year. The result
+// is the union, deduped, in the caller's order.
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+export type OwnerDirectory = {
+  // registration uuid → character name
+  nameById: ReadonlyMap<string, string>
+  // registration uuid → EVE character id
+  characterIdById: ReadonlyMap<string, string>
+}
+
+const idsForEntry = (entry: string, { nameById, characterIdById }: OwnerDirectory): string[] => {
+  if (/^\d+$/.test(entry)) {
+    return [...characterIdById].filter(([, characterId]) => characterId === entry).map(([id]) => id)
+  }
+  if (UUID.test(entry)) {
+    return nameById.has(entry) ? [entry] : []
+  }
+  const wanted = entry.toLowerCase()
+  return [...nameById].filter(([, name]) => name.toLowerCase() === wanted).map(([id]) => id)
+}
+
+const availableOwners = ({ nameById, characterIdById }: OwnerDirectory): string =>
+  [...nameById]
+    .map(([id, name]) => {
+      const characterId = characterIdById.get(id)
+      return characterId === undefined ? name : `${name} (${characterId})`
+    })
+    .sort((a, b) => a.localeCompare(b))
+    .join(', ')
+
+export const matchOwnerRefs = (owners: readonly string[] | null | undefined, directory: OwnerDirectory): OwnerMatch => {
+  const entries = (owners ?? []).map((o) => (o ?? '').trim()).filter((o) => o !== '')
+  if (entries.length === 0) return { ok: true, ids: null }
+
+  const matched = entries.map((entry) => ({ entry, ids: idsForEntry(entry, directory) }))
+  const unmatched = matched.filter((m) => m.ids.length === 0).map((m) => m.entry)
+  if (unmatched.length > 0) {
+    return {
+      ok: false,
+      message: `No character matched ${unmatched.map((u) => `"${u}"`).join(', ')}. Available: ${availableOwners(directory)}.`,
+    }
+  }
+  return { ok: true, ids: [...new Set(matched.flatMap((m) => m.ids))] }
+}
+
+// The two ways to name characters, resolved to one filter — mutually exclusive
+// for the same reason typeIds and typeName are: `owner` substring-matches and
+// `owners` matches whole names/ids, and a stored lens that blended both would
+// be unpredictable a year later.
+export const matchOwnerFilter = (
+  owner: string | null | undefined,
+  owners: readonly string[] | null | undefined,
+  directory: OwnerDirectory
+): OwnerMatch => {
+  const listed = (owners ?? []).some((o) => (o ?? '').trim() !== '')
+  if (!listed) return matchOwnerIds(owner, directory.nameById)
+  if ((owner ?? '').trim() !== '') {
+    return {
+      ok: false,
+      message: 'Pass owner or owners, not both — one is a name search, the other an exact list.',
+    }
+  }
+  return matchOwnerRefs(owners, directory)
 }
 
 // Parse the `since` argument (full ISO timestamp or a date prefix) into an
