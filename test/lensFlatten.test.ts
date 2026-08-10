@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { flattenRow, lensRows, primaryRows } from '../src/app/lens/flatten.ts'
+import { csvRows, flattenRow, lensRows, primaryRows } from '../src/app/lens/flatten.ts'
 
 test('a root list field is the primary list', () => {
   const data = {
@@ -53,4 +53,41 @@ test('lensRows flattens the primary list end to end', () => {
     },
   }
   assert.deepEqual(lensRows(data), [{ typeName: 'Tritanium', quantity: '5', 'owner.name': 'A' }])
+})
+
+// csvRows is lensRows squared off for toCsv, which reads its header from the
+// first row alone. A nullable entity edge is what makes the rows ragged.
+test('csvRows gives every row the same columns when an edge is null on some', () => {
+  const data = {
+    assets: {
+      rows: [
+        { itemId: '1', location: null },
+        { itemId: '2', location: { name: 'Jita IV - Moon 4', systemName: 'Jita' } },
+      ],
+    },
+  }
+  const rows = csvRows(data)
+  // The bare `location` key the null row flattened to gives way to the columns
+  // the other row expanded into — otherwise toCsv's header would be
+  // `itemId,location` and row two's real values would never be written.
+  assert.deepEqual(Object.keys(rows[0]), ['itemId', 'location.name', 'location.systemName'])
+  assert.deepEqual(Object.keys(rows[1]), ['itemId', 'location.name', 'location.systemName'])
+  assert.equal(rows[0]['location.name'], null)
+  assert.equal(rows[1]['location.name'], 'Jita IV - Moon 4')
+})
+
+test('csvRows fills a column absent from an earlier row', () => {
+  const rows = csvRows({ marketOrders: [{ orderId: '1' }, { orderId: '2', escrow: 5 }] })
+  assert.deepEqual(rows, [
+    { orderId: '1', escrow: null },
+    { orderId: '2', escrow: 5 },
+  ])
+})
+
+test('csvRows keeps false rather than nulling it', () => {
+  assert.deepEqual(csvRows({ marketOrders: [{ isBuy: false }] }), [{ isBuy: false }])
+})
+
+test('csvRows yields nothing when there is no single row list', () => {
+  assert.deepEqual(csvRows({ a: [], b: [] }), [])
 })
