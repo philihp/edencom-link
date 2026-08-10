@@ -2,11 +2,18 @@
 
 import { useState } from 'react'
 
+import { csvRows } from '@/app/lens/flatten'
+import { toCsv } from '@/utils/csv'
 import styles from './graphql.module.css'
 
 // Deliberately simple in-browser editor (no GraphiQL dependency): a query
 // textarea, an optional variables JSON textarea, and the raw JSON response.
 // Posts same-origin, so the Supabase session cookie authenticates it.
+//
+// GET /api/graphql serves GraphiQL, which is where the schema-aware
+// autocomplete and the docs explorer live. This page keeps the examples, and
+// the CSV download GraphiQL can't offer — sharing the Lens flattening
+// (src/app/lens/flatten.ts), since a lens is a stored query of this same shape.
 
 const EXAMPLES: Array<{ label: string; query: string }> = [
   {
@@ -30,6 +37,35 @@ const EXAMPLES: Array<{ label: string; query: string }> = [
       quantity
       locationName
       ownerName
+    }
+  }
+}`,
+  },
+  {
+    // The edges in anger: group/category and the location's solar system are
+    // reachable only through `type`/`location`, and each nests exactly one
+    // level, so Download CSV still gives one line per row (type.groupName,
+    // location.systemName, …). Open the docs explorer at /api/graphql to see
+    // what else hangs off them.
+    label: 'Stockpile by group (nested)',
+    query: `{
+  assets(typeName: "Tritanium") {
+    rows {
+      quantity
+      type {
+        name
+        groupName
+        categoryName
+        volume
+      }
+      location {
+        name
+        systemName
+      }
+      owner {
+        name
+        corporationName
+      }
     }
   }
 }`,
@@ -72,6 +108,10 @@ export const QueryEditor = () => {
   const [query, setQuery] = useState(EXAMPLES[0].query)
   const [variables, setVariables] = useState('')
   const [result, setResult] = useState('')
+  // The last result as CSV, or '' when the response holds no single row list
+  // (several root fields at once) — which disables the download rather than
+  // handing over a misleading file.
+  const [csv, setCsv] = useState('')
   const [running, setRunning] = useState(false)
 
   const run = async () => {
@@ -94,11 +134,26 @@ export const QueryEditor = () => {
       })
       const json = await response.json()
       setResult(JSON.stringify(json, null, 2))
+      setCsv(toCsv(csvRows(json?.data)))
     } catch (e) {
       setResult(`Request failed: ${e instanceof Error ? e.message : String(e)}`)
+      setCsv('')
     } finally {
       setRunning(false)
     }
+  }
+
+  // Entity edges nest one level (`owner { name }`), which csvRows joins into
+  // `owner.name` columns — so a query written by clicking through the docs
+  // explorer downloads as a spreadsheet with no rewrite into flat scalars.
+  const downloadCsv = () => {
+    if (csv === '') return
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'edencom-link.csv'
+    link.click()
+    URL.revokeObjectURL(url)
   }
 
   const loadExample = (label: string) => {
@@ -141,6 +196,11 @@ export const QueryEditor = () => {
         <button type="button" onClick={run} disabled={running || query.trim() === ''}>
           {running ? 'Running…' : 'Run query'}
         </button>
+        {result !== '' && (
+          <button type="button" onClick={downloadCsv} disabled={csv === ''}>
+            Download CSV
+          </button>
+        )}
       </div>
       {result !== '' && <pre className={styles.result}>{result}</pre>}
     </div>

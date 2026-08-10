@@ -1,6 +1,13 @@
 // Root resolvers for /api/graphql. Flat by design: each Query field returns
 // fully-materialized rows with names resolved here, batched once per result
-// set — no nested resolvers, so no N+1 and no deep-query surface.
+// set.
+//
+// The `owner`/`type`/`location` entity edges (see the SDL header for why they
+// exist) are built RIGHT HERE, in the root resolver, out of data it already
+// had — the SDE type rows and resolved locations it used to mine for a single
+// name each. So the edges add no queries and cannot fan out per row. The one
+// type-level resolver is Owner's corp/alliance block at the bottom, which loads
+// lazily and once per result set.
 //
 // THE LEAK GUARD (see context.ts): every table read filters
 // .in('registration_id', …) from the context. In session mode that's
@@ -11,7 +18,7 @@ import { uniq } from 'ramda'
 
 import { guessLocationRef, resolveTypeFilter } from '@/app/api/mcp/lib'
 import { resolveLocations, type LocationRef, type ResolvedLocations } from '@/app/resolveLocations'
-import { getSdeTypeNames } from '@/sdeTypes'
+import { getSdeTypes, type SdeType } from '@/sdeTypes'
 import { ASSET_CAP, LIST_CAP, clampLimit, matchOwnerIds, parseIdArg, parseSince, parseTypeIdsArg } from './filters'
 import type { GraphqlContext } from './context'
 
@@ -64,8 +71,17 @@ const fetchCapped = async <T>(
   return acc.length >= cap || rows.length < to - from + 1 ? acc : fetchCapped(build, cap, from + PAGE_SIZE, acc)
 }
 
-const typeNamesFor = async (typeIds: Array<number | string | null | undefined>): Promise<Record<number, string>> =>
-  getSdeTypeNames(uniq(typeIds.filter((id): id is number | string => id != null).map(Number)))
+// Batch-resolve the SDE rows behind a result set's type ids. This used to ask
+// for names only; it now keeps the whole row, because getSdeTypes was fetching
+// (and per-process caching) group/category/volume all along — the ItemType edge
+// is those already-paid-for columns stopped being thrown away.
+type SdeTypes = Record<number, SdeType>
+
+const typesFor = async (typeIds: Array<number | string | null | undefined>): Promise<SdeTypes> =>
+  getSdeTypes(uniq(typeIds.filter((id): id is number | string => id != null).map(Number)))
+
+const typeNameOf = (types: SdeTypes, typeId: number | string | null | undefined): string | null =>
+  typeId == null ? null : (types[Number(typeId)]?.name ?? null)
 
 // Batch-resolve display names for a set of location refs (station, structure,
 // solar system, or a container/ship item id that falls back to a raw label).
@@ -75,6 +91,48 @@ const locationNamesFor = async (ctx: GraphqlContext, refs: Array<LocationRef | n
 }
 
 const str = (v: number | string | null | undefined): string | null => (v == null ? null : String(v))
+
+// --- The entity edges -------------------------------------------------------
+// Three pure reshapes of what the root resolver already holds. Each returns a
+// leaf-only object (the SDL invariant that keeps every row CSV-flattenable).
+
+const itemTypeOf = (types: SdeTypes, typeId: number | string | null | undefined) => {
+  if (typeId == null) return null
+  const t: SdeType | undefined = types[Number(typeId)]
+  return {
+    typeId: String(typeId),
+    name: t?.name ?? null,
+    groupId: str(t?.groupID),
+    groupName: t?.groupName ?? null,
+    categoryId: str(t?.categoryID),
+    categoryName: t?.categoryName ?? null,
+    metaGroupId: str(t?.metaGroupID),
+    volume: t?.volume ?? null,
+  }
+}
+
+const locationOf = (locations: ResolvedLocations, ref: LocationRef | null) => {
+  if (ref === null) return null
+  const systemId = locations.systemIdFor(ref)
+  return {
+    locationId: ref.id,
+    name: locations.nameFor(ref),
+    systemId: str(systemId),
+    systemName: locations.systemFor(ref) ?? null,
+  }
+}
+
+// The Owner edge. `scope` is the result set's full owner id list, carried on
+// every Owner of that set BY REFERENCE — it's what the context memoizes the
+// corp/alliance load on, so the whole set resolves in one pass. It isn't in the
+// SDL, so it's invisible to callers.
+type OwnerRef = { id: string; name: string; scope: readonly string[] }
+
+const ownerOf = (names: Map<string, string> | ReadonlyMap<string, string>, id: string, scope: readonly string[]) => ({
+  id,
+  name: names.get(id) ?? id,
+  scope,
+})
 
 // Session-only guard for the shared-data surfaces: the Bearer path runs on the
 // service client, where RLS can't arbitrate a widened filter — the designed
@@ -139,8 +197,12 @@ const assetLocationRef = (row: AssetRow): LocationRef | null =>
 
 export const resolvers = {
   Query: {
-    owners: (_parent: unknown, _args: unknown, ctx: GraphqlContext) =>
-      [...ctx.ownerNameById].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name)),
+    owners: (_parent: unknown, _args: unknown, ctx: GraphqlContext) => {
+      const scope = ctx.registrationIds
+      return [...ctx.ownerNameById]
+        .map(([id, name]) => ({ id, name, scope }))
+        .sort((a, b) => a.name.localeCompare(b.name))
+    },
 
     assets: async (
       _parent: unknown,
@@ -188,14 +250,15 @@ export const resolvers = {
         cap
       )
 
-      const [typeNames, locations, ownerNames] = await Promise.all([
-        typeNamesFor(rows.map((r) => r.type_id)),
+      const [types, locations, ownerNames] = await Promise.all([
+        typesFor(rows.map((r) => r.type_id)),
         locationNamesFor(ctx, rows.map(assetLocationRef)),
         ownerNamesFor(
           ctx,
           rows.map((r) => r.registration_id)
         ),
       ])
+      const ownerScope = uniq(rows.map((r) => r.registration_id))
 
       return {
         totalCount,
@@ -205,7 +268,7 @@ export const resolvers = {
           return {
             itemId: String(r.item_id),
             typeId: String(r.type_id),
-            typeName: typeNames[r.type_id] ?? null,
+            typeName: typeNameOf(types, r.type_id),
             quantity: String(r.quantity ?? 1),
             locationId: str(r.location_id),
             locationFlag: r.location_flag,
@@ -216,6 +279,9 @@ export const resolvers = {
             name: r.name,
             ownerId: r.registration_id,
             ownerName: ownerNames.get(r.registration_id) ?? r.registration_id,
+            owner: ownerOf(ownerNames, r.registration_id, ownerScope),
+            type: itemTypeOf(types, r.type_id),
+            location: locationOf(locations, ref),
           }
         }),
       }
@@ -252,23 +318,26 @@ export const resolvers = {
           Number(i.type_id),
         ])
       )
-      const [typeNames, ownerNames] = await Promise.all([
-        typeNamesFor([...typeByItem.values()]),
+      const [types, ownerNames] = await Promise.all([
+        typesFor([...typeByItem.values()]),
         ownerNamesFor(
           ctx,
           grants.map((g) => g.registration_id)
         ),
       ])
+      const ownerScope = uniq(grants.map((g) => g.registration_id))
 
       return grants.map((g) => {
         const typeId = typeByItem.get(String(g.item_id))
         return {
           shareId: g.id,
           itemId: String(g.item_id),
-          itemTypeName: typeId != null ? (typeNames[typeId] ?? null) : null,
+          itemTypeName: typeNameOf(types, typeId),
           ownerId: g.registration_id,
           ownerName: ownerNames.get(g.registration_id) ?? g.registration_id,
           sharedAt: g.created_at,
+          owner: ownerOf(ownerNames, g.registration_id, ownerScope),
+          itemType: itemTypeOf(types, typeId),
         }
       })
     },
@@ -315,8 +384,8 @@ export const resolvers = {
         cap
       )
 
-      const [typeNames, locations] = await Promise.all([
-        typeNamesFor(rows.map((r) => r.type_id)),
+      const [types, locations] = await Promise.all([
+        typesFor(rows.map((r) => r.type_id)),
         locationNamesFor(
           ctx,
           rows.map((r) => guessLocationRef(r.location_id))
@@ -331,7 +400,7 @@ export const resolvers = {
           return {
             itemId: String(r.item_id),
             typeId: String(r.type_id),
-            typeName: typeNames[r.type_id] ?? null,
+            typeName: typeNameOf(types, r.type_id),
             quantity: String(r.quantity ?? 1),
             locationId: str(r.location_id),
             locationFlag: r.location_flag,
@@ -341,6 +410,9 @@ export const resolvers = {
             runs: r.runs,
             ownerId: r.registration_id,
             ownerName: ctx.ownerNameById.get(r.registration_id) ?? r.registration_id,
+            owner: ownerOf(ctx.ownerNameById, r.registration_id, ownerIds),
+            type: itemTypeOf(types, r.type_id),
+            location: locationOf(locations, ref),
           }
         }),
       }
@@ -377,8 +449,8 @@ export const resolvers = {
         LIST_CAP
       )
 
-      const [typeNames, locations] = await Promise.all([
-        typeNamesFor(rows.map((r) => r.type_id)),
+      const [types, locations] = await Promise.all([
+        typesFor(rows.map((r) => r.type_id)),
         locationNamesFor(
           ctx,
           rows.map((r) => guessLocationRef(r.location_id))
@@ -390,10 +462,13 @@ export const resolvers = {
         return {
           orderId: String(r.order_id),
           typeId: String(r.type_id),
-          typeName: typeNames[r.type_id] ?? null,
+          typeName: typeNameOf(types, r.type_id),
           locationId: String(r.location_id),
           locationName: ref ? locations.nameFor(ref) : null,
           regionId: String(r.region_id),
+          owner: ownerOf(ctx.ownerNameById, r.registration_id, ownerIds),
+          type: itemTypeOf(types, r.type_id),
+          location: locationOf(locations, ref),
           isBuy: r.is_buy,
           price: Number(r.price),
           volumeTotal: String(r.volume_total),
@@ -448,8 +523,8 @@ export const resolvers = {
 
       const jobLocationRef = (r: JobRow): LocationRef | null => guessLocationRef(r.station_id ?? r.facility_id)
 
-      const [typeNames, locations] = await Promise.all([
-        typeNamesFor(rows.flatMap((r) => [r.blueprint_type_id, r.product_type_id])),
+      const [types, locations] = await Promise.all([
+        typesFor(rows.flatMap((r) => [r.blueprint_type_id, r.product_type_id])),
         locationNamesFor(ctx, rows.map(jobLocationRef)),
       ])
 
@@ -459,9 +534,13 @@ export const resolvers = {
           jobId: String(r.job_id),
           activityId: r.activity_id,
           blueprintTypeId: String(r.blueprint_type_id),
-          blueprintTypeName: typeNames[r.blueprint_type_id] ?? null,
+          blueprintTypeName: typeNameOf(types, r.blueprint_type_id),
           productTypeId: str(r.product_type_id),
-          productTypeName: r.product_type_id == null ? null : (typeNames[r.product_type_id] ?? null),
+          productTypeName: typeNameOf(types, r.product_type_id),
+          owner: ownerOf(ctx.ownerNameById, r.registration_id, ownerIds),
+          blueprintType: itemTypeOf(types, r.blueprint_type_id),
+          productType: itemTypeOf(types, r.product_type_id),
+          location: locationOf(locations, ref),
           runs: r.runs,
           licensedRuns: r.licensed_runs,
           probability: r.probability,
@@ -504,6 +583,7 @@ export const resolvers = {
           ownerName: ctx.ownerNameById.get(r.registration_id) ?? r.registration_id,
           balance: Number(r.balance),
           recordedAt: r.recorded_at,
+          owner: ownerOf(ctx.ownerNameById, r.registration_id, ctx.registrationIds),
         }))
         .sort((a, b) => a.ownerName.localeCompare(b.ownerName))
     },
@@ -548,8 +628,8 @@ export const resolvers = {
         return q
       }, cap)
 
-      const [typeNames, locations] = await Promise.all([
-        typeNamesFor(rows.map((r) => r.type_id)),
+      const [types, locations] = await Promise.all([
+        typesFor(rows.map((r) => r.type_id)),
         locationNamesFor(
           ctx,
           rows.map((r) => guessLocationRef(r.location_id))
@@ -562,7 +642,7 @@ export const resolvers = {
           transactionId: String(r.transaction_id),
           date: r.date,
           typeId: String(r.type_id),
-          typeName: typeNames[r.type_id] ?? null,
+          typeName: typeNameOf(types, r.type_id),
           quantity: String(r.quantity),
           unitPrice: Number(r.unit_price),
           isBuy: r.is_buy,
@@ -570,8 +650,29 @@ export const resolvers = {
           locationName: ref ? locations.nameFor(ref) : null,
           ownerId: r.registration_id,
           ownerName: ctx.ownerNameById.get(r.registration_id) ?? r.registration_id,
+          owner: ownerOf(ctx.ownerNameById, r.registration_id, ownerIds),
+          type: itemTypeOf(types, r.type_id),
+          location: locationOf(locations, ref),
         }
       })
     },
+  },
+
+  // The only type-level resolvers in the schema. id/name came with the parent;
+  // these four read, so they stay lazy — a query that doesn't ask for a corp or
+  // alliance issues no query at all, and one that does resolves the whole result
+  // set at once off the memoized scope (context.ts).
+  Owner: {
+    characterId: (parent: OwnerRef, _args: unknown, ctx: GraphqlContext) =>
+      ctx.ownerCharacterIdById.get(parent.id) ??
+      ctx.ownerIdentities(parent.scope).then((m) => m.get(parent.id)?.characterId ?? null),
+    corporationId: (parent: OwnerRef, _args: unknown, ctx: GraphqlContext) =>
+      ctx.ownerIdentities(parent.scope).then((m) => m.get(parent.id)?.corporationId ?? null),
+    corporationName: (parent: OwnerRef, _args: unknown, ctx: GraphqlContext) =>
+      ctx.ownerIdentities(parent.scope).then((m) => m.get(parent.id)?.corporationName ?? null),
+    allianceId: (parent: OwnerRef, _args: unknown, ctx: GraphqlContext) =>
+      ctx.ownerIdentities(parent.scope).then((m) => m.get(parent.id)?.allianceId ?? null),
+    allianceName: (parent: OwnerRef, _args: unknown, ctx: GraphqlContext) =>
+      ctx.ownerIdentities(parent.scope).then((m) => m.get(parent.id)?.allianceName ?? null),
   },
 }

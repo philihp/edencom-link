@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 
 import { toCsv } from '@/utils/csv'
 import { resolveLens } from '../../access'
-import { lensRows } from '../../flatten'
+import { csvRows } from '../../flatten'
 import { runLens } from '../../run'
 
 // The Lens CSV rendering (docs/sharing-layer/07-lens.md): the lens's single
@@ -32,7 +32,10 @@ export const GET = async (
     return NextResponse.json({ error: result.errors.join(' — ') }, { status: 500 })
   }
 
-  return new NextResponse(toCsv(lensRows(result.data)), {
+  // csvRows, not lensRows: a lens selecting a nullable edge (location on an
+  // asset ESI gave no location_id for) returns ragged rows, and toCsv reads its
+  // header off the first one.
+  return new NextResponse(toCsv(csvRows(result.data)), {
     headers: { 'content-type': 'text/csv; charset=utf-8' },
   })
 }

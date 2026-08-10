@@ -17,6 +17,19 @@ import { createServiceClient } from '@/utils/supabase/service'
 // THE LEAK GUARD: every resolver must filter .in('registration_id', ...) from
 // ctx.registrationIds explicitly, in BOTH modes. In session mode that's
 // redundant with RLS (harmless); in token mode it is load-bearing.
+
+// The public identity behind an owner, for the Owner type's corp/alliance
+// fields. Everything here comes from world-readable directory tables, never
+// from `registration` (which RLS hides from non-owners), so a shared row's
+// foreign grantor resolves through exactly the same path as your own character.
+export type OwnerIdentity = {
+  characterId: string | null
+  corporationId: string | null
+  corporationName: string | null
+  allianceId: string | null
+  allianceName: string | null
+}
+
 export type GraphqlContext = {
   supabase: SupabaseClient
   mode: 'session' | 'token'
@@ -24,10 +37,89 @@ export type GraphqlContext = {
   registrationIds: string[]
   // registration uuid → character name, for owner filters and ownerName fields.
   ownerNameById: Map<string, string>
+  // registration uuid → EVE character id, for Owner.characterId on the caller's
+  // own characters (free — it rides along on the context's registration read).
+  ownerCharacterIdById: Map<string, string>
+  // Lazily load the identities for one result set's owners. The Owner type's
+  // corp/alliance fields are the only callers, so an unselected edge costs
+  // nothing; when they are selected, every row of a result set passes the SAME
+  // scope array (the root resolver hands each Owner the same reference), which
+  // this memoizes on — so the edge resolves in one pass, never per row.
+  ownerIdentities: (scope: readonly string[]) => Promise<Map<string, OwnerIdentity>>
 }
 
 const deny = (message: string, status: number): never => {
   throw new GraphQLError(message, { extensions: { http: { status } } })
+}
+
+const str = (v: number | string | null | undefined): string | null => (v == null ? null : String(v))
+
+type DirectoryRow = {
+  character_id: number | string | null
+  corporation_id: number | string | null
+  alliance_id: number | string | null
+  registration_id: string | null
+}
+
+// One pass over the world-readable directory tables for a whole result set's
+// owners: character_directory joins registration uuid → EVE identity, then the
+// corporation/alliance tables put names on those ids. Three small `in()` reads
+// at worst, and only when a query selects an Owner corp/alliance field.
+const loadOwnerIdentities = async (
+  supabase: SupabaseClient,
+  registrationIds: readonly string[]
+): Promise<Map<string, OwnerIdentity>> => {
+  const ids = [...new Set(registrationIds)]
+  if (ids.length === 0) return new Map()
+
+  const { data } = await supabase
+    .from('character_directory')
+    .select('character_id, corporation_id, alliance_id, registration_id')
+    .in('registration_id', ids)
+  const rows = ((data ?? []) as DirectoryRow[]).filter((r) => r.registration_id != null)
+
+  const idsOf = (pick: (row: DirectoryRow) => number | string | null): number[] =>
+    [...new Set(rows.map(pick).filter((v): v is number | string => v != null))].map(Number)
+  const corporationIds = idsOf((r) => r.corporation_id)
+  const allianceIds = idsOf((r) => r.alliance_id)
+
+  const [{ data: corporations }, { data: alliances }] = await Promise.all([
+    corporationIds.length
+      ? supabase.from('corporation').select('corporation_id, name').in('corporation_id', corporationIds)
+      : Promise.resolve({ data: [] }),
+    allianceIds.length
+      ? supabase.from('alliance').select('alliance_id, name').in('alliance_id', allianceIds)
+      : Promise.resolve({ data: [] }),
+  ])
+  const corporationNames = new Map(
+    ((corporations ?? []) as Array<{ corporation_id: number | string; name: string | null }>).map((c) => [
+      String(c.corporation_id),
+      c.name,
+    ])
+  )
+  const allianceNames = new Map(
+    ((alliances ?? []) as Array<{ alliance_id: number | string; name: string | null }>).map((a) => [
+      String(a.alliance_id),
+      a.name,
+    ])
+  )
+
+  return new Map(
+    rows.map((r): [string, OwnerIdentity] => {
+      const corporationId = str(r.corporation_id)
+      const allianceId = str(r.alliance_id)
+      return [
+        r.registration_id as string,
+        {
+          characterId: str(r.character_id),
+          corporationId,
+          corporationName: corporationId == null ? null : (corporationNames.get(corporationId) ?? null),
+          allianceId,
+          allianceName: allianceId == null ? null : (allianceNames.get(allianceId) ?? null),
+        },
+      ]
+    })
+  )
 }
 
 // The context for a given user on a given client — the tail every entry point
@@ -40,16 +132,35 @@ const contextFor = async (
   mode: GraphqlContext['mode'],
   userId: string
 ): Promise<GraphqlContext> => {
-  const { data: registrations, error } = await supabase.from('registration').select('id, name').eq('user_id', userId)
+  const { data: registrations, error } = await supabase
+    .from('registration')
+    .select('id, name, character_id')
+    .eq('user_id', userId)
   if (error) deny('Lookup failed', 500)
 
-  const rows = (registrations ?? []) as Array<{ id: string; name: string }>
+  const rows = (registrations ?? []) as Array<{ id: string; name: string; character_id: number | string | null }>
+
+  // Per-request memo keyed on the scope array's identity, not its contents: a
+  // root resolver hands every Owner in its result set the same array, so the
+  // first field resolver to look starts the load and the rest await it.
+  const identitiesByScope = new WeakMap<readonly string[], Promise<Map<string, OwnerIdentity>>>()
+
   return {
     supabase,
     mode,
     userId,
     registrationIds: rows.map((r) => r.id),
     ownerNameById: new Map(rows.map((r) => [r.id, r.name])),
+    ownerCharacterIdById: new Map(
+      rows.flatMap((r): Array<[string, string]> => (r.character_id == null ? [] : [[r.id, String(r.character_id)]]))
+    ),
+    ownerIdentities: (scope) => {
+      const inFlight = identitiesByScope.get(scope)
+      if (inFlight) return inFlight
+      const loading = loadOwnerIdentities(supabase, scope)
+      identitiesByScope.set(scope, loading)
+      return loading
+    },
   }
 }
 
