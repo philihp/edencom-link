@@ -74,7 +74,7 @@ test('ids stay String — EVE item ids overflow GraphQL Int', () => {
 
 // The invariant the whole entity-edge design rests on: because the entity types
 // bottom out in scalars, a response is at most row → entity → scalar, so
-// src/app/graphql/flatten.ts can flatten any row to one CSV line by joining one
+// src/app/lens/flatten.ts can flatten any row to one CSV line by joining one
 // level of keys. Adding an object field to Owner/ItemType/Location silently
 // breaks CSV export (and opens the deep-query surface the flat design avoids) —
 // so it breaks here first.
