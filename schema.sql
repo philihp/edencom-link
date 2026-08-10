@@ -169,8 +169,16 @@ end $$;
 
 -- ── Schema grants ──────────────────────────────────────────────────────────
 grant usage on schema public to anon, authenticated, service_role;
+-- Deliberately service_role only. Handing `all on tables` to anon/authenticated
+-- here silently overrode every careful per-table `grant select ... to
+-- authenticated` below it: each table ended up writable by the anon key, with
+-- RLS as the only gate, and every table showed up in the pg_graphql schema. One
+-- of those tables (registration) had a FOR ALL policy that made the write
+-- surface a real corp-data escalation. See
+-- supabase/migrations/20260809090000_data_api_grant_lockdown.sql. Each table
+-- now states its own grants.
 alter default privileges in schema public
-  grant all on tables to anon, authenticated, service_role;
+  grant all on tables to service_role;
 alter default privileges in schema public
   grant all on sequences to anon, authenticated, service_role;
 alter default privileges in schema public
@@ -205,8 +213,15 @@ create policy "Users manage own characters"
   using (user_id = (select auth.uid()))
   with check (user_id = (select auth.uid()));
 
-grant select, insert, update, delete on public.registration to authenticated;
-grant all                            on public.registration to service_role;
+-- Written only by the service role, in /character/callback, after the EVE SSO
+-- code exchange has proved the character. character_id is an authorization
+-- input — every corp_* policy and my_corporation_ids()/my_alliance_ids() trust
+-- it — and a user-session write is indistinguishable from a hand-crafted POST
+-- claiming someone else's character. is_main is the one field the browser
+-- legitimately edits, and it feeds no policy.
+grant select           on public.registration to authenticated;
+grant update (is_main) on public.registration to authenticated;
+grant all              on public.registration to service_role;
 
 -- ── token ─────────────────────────────────────────────────────────────────
 -- EVE SSO OAuth tokens, one row per character (refreshed before each fetch).
@@ -240,8 +255,11 @@ create policy "Users manage own tokens"
   using (user_id = (select auth.uid()))
   with check (user_id = (select auth.uid()));
 
-grant select, insert, update, delete on public.token to authenticated;
-grant all                            on public.token to service_role;
+-- Service role only. These are live EVE SSO refresh tokens: no user session
+-- needs them (the callback writes with the service role, and every reader is
+-- cron-side), and a browser that can read its own refresh_token is an
+-- XSS-to-EVE-account bridge for no benefit.
+grant all on public.token to service_role;
 
 -- ── character_asset_over_time ─────────────────────────────────────────────
 -- ESI /characters/{id}/assets/, written by the character-assets job. Assets as
