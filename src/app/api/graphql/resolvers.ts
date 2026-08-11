@@ -24,7 +24,7 @@ import {
   LIST_CAP,
   clampLimit,
   matchCharacterFilter,
-  parseIdArg,
+  parseIdsArg,
   parseSince,
   parseTypeIdsArg,
 } from './filters'
@@ -225,7 +225,7 @@ export const resolvers = {
       args: {
         typeIds?: readonly string[] | null
         typeName?: string | null
-        locationId?: string | null
+        locationIds?: readonly string[] | null
         character?: string | null
         characters?: readonly string[] | null
         limit?: number | null
@@ -243,8 +243,8 @@ export const resolvers = {
       const sharedIds = args.includeShared ? await grantorRegistrationIds(ctx) : []
       const scopedIds = [...ownerIds, ...sharedIds]
       const typeIds = await typeIdsFor(args)
-      const location = parseIdArg(args.locationId, 'locationId')
-      if (!location.ok) return badRequest(location.message)
+      const locationIds = parseIdsArg(args.locationIds, 'locationIds')
+      if (!locationIds.ok) return badRequest(locationIds.message)
       const cap = clampLimit(args.limit, ASSET_CAP)
 
       // The same filter set applies to the head-only count and the row pages.
@@ -252,7 +252,7 @@ export const resolvers = {
       const filtered = (query: any): any => {
         let q = query.in('registration_id', scopedIds)
         if (typeIds !== null) q = q.in('type_id', typeIds)
-        if (location.id !== null) q = q.eq('location_id', location.id)
+        if (locationIds.ids !== null) q = q.in('location_id', locationIds.ids)
         return q
       }
 

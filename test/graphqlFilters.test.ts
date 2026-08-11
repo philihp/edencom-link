@@ -13,7 +13,7 @@ import {
   matchCharacterFilter,
   matchCharacterName,
   matchCharacterRefs,
-  parseIdArg,
+  parseIdsArg,
   parseSince,
   parseTypeIdsArg,
 } from '../src/app/api/graphql/filters.ts'
@@ -131,12 +131,24 @@ test('parseSince accepts ISO timestamps and date prefixes, rejects junk', () => 
   assert.equal(parseSince('yesterday-ish').ok, false)
 })
 
-test('parseIdArg accepts only bare positive integer literals', () => {
-  assert.deepEqual(parseIdArg(undefined, 'locationId'), { ok: true, id: null })
-  assert.deepEqual(parseIdArg(' 60003760 ', 'locationId'), { ok: true, id: '60003760' })
-  assert.equal(parseIdArg('60003760; drop table', 'locationId').ok, false)
-  assert.equal(parseIdArg('-1', 'locationId').ok, false)
-  assert.equal(parseIdArg('1e9', 'locationId').ok, false)
+test('parseIdsArg returns null when no ids are given', () => {
+  assert.deepEqual(parseIdsArg(undefined, 'locationIds'), { ok: true, ids: null })
+  assert.deepEqual(parseIdsArg([], 'locationIds'), { ok: true, ids: null })
+  assert.deepEqual(parseIdsArg(['  '], 'locationIds'), { ok: true, ids: null })
+})
+
+test('parseIdsArg trims and dedupes bare positive integer literals', () => {
+  assert.deepEqual(parseIdsArg([' 60003760 ', '1040000000001', '60003760'], 'locationIds'), {
+    ok: true,
+    ids: ['60003760', '1040000000001'],
+  })
+})
+
+test('parseIdsArg rejects anything that is not a plain id, rather than widening', () => {
+  assert.equal(parseIdsArg(['60003760; drop table'], 'locationIds').ok, false)
+  assert.equal(parseIdsArg(['-1'], 'locationIds').ok, false)
+  assert.equal(parseIdsArg(['1e9'], 'locationIds').ok, false)
+  assert.equal(parseIdsArg(['60003760', 'Jita'], 'locationIds').ok, false)
 })
 
 test('parseTypeIdsArg returns null when no ids are given', () => {

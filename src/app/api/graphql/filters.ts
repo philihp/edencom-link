@@ -130,15 +130,17 @@ export const parseSince = (since: string | null | undefined): SinceParse => {
   return { ok: true, iso: parsed.toISOString() }
 }
 
-// A numeric id argument (GraphQL String, since EVE ids overflow Int). Rejects
-// anything that isn't a plain positive integer literal.
-export type IdParse = { ok: true; id: string | null } | { ok: false; message: string }
+// A list of numeric id arguments (GraphQL String, since EVE ids overflow Int),
+// deduped, or `null` for no filter. Rejects anything that isn't a plain
+// positive integer literal rather than widening the filter to everything.
+export type IdsParse = { ok: true; ids: string[] | null } | { ok: false; message: string }
 
-export const parseIdArg = (raw: string | null | undefined, label: string): IdParse => {
-  const trimmed = (raw ?? '').trim()
-  if (trimmed === '') return { ok: true, id: null }
-  if (!/^\d+$/.test(trimmed)) return { ok: false, message: `${label} must be a numeric id, got "${raw}".` }
-  return { ok: true, id: trimmed }
+export const parseIdsArg = (raw: readonly string[] | null | undefined, label: string): IdsParse => {
+  const ids = (raw ?? []).map((id) => (id ?? '').trim()).filter((id) => id !== '')
+  if (ids.length === 0) return { ok: true, ids: null }
+  const bad = ids.find((id) => !/^\d+$/.test(id))
+  if (bad !== undefined) return { ok: false, message: `${label} must be numeric ids, got "${bad}".` }
+  return { ok: true, ids: [...new Set(ids)] }
 }
 
 // The two ways to name item types, resolved to one filter. They are mutually

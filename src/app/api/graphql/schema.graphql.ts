@@ -37,15 +37,16 @@ export const typeDefs = /* GraphQL */ `
     Current asset rows (live inventory) across your characters. typeIds filters
     on exact SDE type ids; typeName is a fuzzy name search — pass one or the
     other, never both. Likewise characters is an exact list and character a
-    name search — pass one or the other. locationId pins one station,
-    structure or system id. includeShared additionally returns rows other users
-    have shared with you (session auth only — the api_token path is own-data
-    only; a Lens is the way to hand shared data to external tools).
+    name search — pass one or the other. locationIds pins the rows to one or
+    more station, structure or system ids. includeShared additionally returns
+    rows other users have shared with you (session auth only — the api_token
+    path is own-data only; a Lens is the way to hand shared data to external
+    tools).
     """
     assets(
       typeIds: [String!]
       typeName: String
-      locationId: String
+      locationIds: [String!]
       character: String
       characters: [String!]
       limit: Int

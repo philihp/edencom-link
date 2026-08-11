@@ -147,6 +147,15 @@ test('every character-filtered field carries both the fuzzy character and the ex
   }
 })
 
+test('assets filters locations by a list of ids, not a single one', () => {
+  const schema = buildSchema(typeDefs)
+  const args = new Map(
+    (schema.getQueryType() as GraphQLObjectType).getFields().assets.args.map((a) => [a.name, String(a.type)])
+  )
+  assert.equal(args.get('locationIds'), '[String!]')
+  assert.equal(args.get('locationId'), undefined)
+})
+
 test('the type-filtered fields all carry typeIds as a String list', () => {
   const schema = buildSchema(typeDefs)
   const fields = (schema.getQueryType() as GraphQLObjectType).getFields()
