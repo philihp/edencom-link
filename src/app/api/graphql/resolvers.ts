@@ -19,7 +19,7 @@ import { uniq } from 'ramda'
 import { guessLocationRef, resolveTypeFilter } from '@/app/api/mcp/lib'
 import { resolveLocations, type LocationRef, type ResolvedLocations } from '@/app/resolveLocations'
 import { getSdeTypes, type SdeType } from '@/sdeTypes'
-import { ASSET_CAP, LIST_CAP, clampLimit, matchOwnerIds, parseIdArg, parseSince, parseTypeIdsArg } from './filters'
+import { ASSET_CAP, LIST_CAP, clampLimit, matchOwnerFilter, parseIdArg, parseSince, parseTypeIdsArg } from './filters'
 import type { GraphqlContext } from './context'
 
 const badRequest = (message: string): never => {
@@ -30,10 +30,17 @@ const queryFailed = (): never => {
   throw new GraphQLError('Query failed', { extensions: { http: { status: 500 } } })
 }
 
-// The registration ids a field should read for, after the optional owner-name
-// filter — always a subset of the caller's own registrations.
-const scopeIds = (ctx: GraphqlContext, owner: string | null | undefined): string[] => {
-  const match = matchOwnerIds(owner, ctx.ownerNameById)
+// The registration ids a field should read for, after the optional owner
+// filter (`owner` fuzzy by name, `owners` an exact list of names/character
+// ids/registration ids) — always a subset of the caller's own registrations.
+const scopeIds = (
+  ctx: GraphqlContext,
+  args: { owner?: string | null; owners?: readonly string[] | null }
+): string[] => {
+  const match = matchOwnerFilter(args.owner, args.owners, {
+    nameById: ctx.ownerNameById,
+    characterIdById: ctx.ownerCharacterIdById,
+  })
   if (!match.ok) return badRequest(match.message)
   return match.ids ?? ctx.registrationIds
 }
@@ -211,6 +218,7 @@ export const resolvers = {
         typeName?: string | null
         locationId?: string | null
         owner?: string | null
+        owners?: readonly string[] | null
         limit?: number | null
         includeShared?: boolean | null
       },
@@ -222,7 +230,7 @@ export const resolvers = {
       // The owner-name filter still narrows only the caller's own characters;
       // shared rows ride along unfiltered.
       if (args.includeShared) requireSession(ctx)
-      const ownerIds = scopeIds(ctx, args.owner)
+      const ownerIds = scopeIds(ctx, args)
       const sharedIds = args.includeShared ? await grantorRegistrationIds(ctx) : []
       const scopedIds = [...ownerIds, ...sharedIds]
       const typeIds = await typeIdsFor(args)
@@ -348,11 +356,12 @@ export const resolvers = {
         typeIds?: readonly string[] | null
         typeName?: string | null
         owner?: string | null
+        owners?: readonly string[] | null
         limit?: number | null
       },
       ctx: GraphqlContext
     ) => {
-      const ownerIds = scopeIds(ctx, args.owner)
+      const ownerIds = scopeIds(ctx, args)
       const typeIds = await typeIdsFor(args)
       const cap = clampLimit(args.limit, LIST_CAP)
 
@@ -418,8 +427,12 @@ export const resolvers = {
       }
     },
 
-    marketOrders: async (_parent: unknown, args: { owner?: string | null }, ctx: GraphqlContext) => {
-      const ownerIds = scopeIds(ctx, args.owner)
+    marketOrders: async (
+      _parent: unknown,
+      args: { owner?: string | null; owners?: readonly string[] | null },
+      ctx: GraphqlContext
+    ) => {
+      const ownerIds = scopeIds(ctx, args)
 
       type OrderRow = {
         order_id: number
@@ -486,10 +499,10 @@ export const resolvers = {
 
     industryJobs: async (
       _parent: unknown,
-      args: { owner?: string | null; includeDelivered?: boolean | null },
+      args: { owner?: string | null; owners?: readonly string[] | null; includeDelivered?: boolean | null },
       ctx: GraphqlContext
     ) => {
-      const ownerIds = scopeIds(ctx, args.owner)
+      const ownerIds = scopeIds(ctx, args)
 
       type JobRow = {
         job_id: number
@@ -594,12 +607,13 @@ export const resolvers = {
         typeIds?: readonly string[] | null
         typeName?: string | null
         owner?: string | null
+        owners?: readonly string[] | null
         since?: string | null
         limit?: number | null
       },
       ctx: GraphqlContext
     ) => {
-      const ownerIds = scopeIds(ctx, args.owner)
+      const ownerIds = scopeIds(ctx, args)
       const typeIds = await typeIdsFor(args)
       const since = parseSince(args.since)
       if (!since.ok) return badRequest(since.message)

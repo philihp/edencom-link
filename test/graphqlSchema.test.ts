@@ -131,6 +131,18 @@ test('Owner exposes the EVE character id distinctly from the registration id', (
   assert.ok(owner.id.description?.includes('registration id'))
 })
 
+test('every owner-filtered field carries both the fuzzy owner and the exact owners list', () => {
+  const schema = buildSchema(typeDefs)
+  const fields = (schema.getQueryType() as GraphQLObjectType).getFields()
+  for (const name of ['assets', 'blueprints', 'industryJobs', 'marketOrders', 'walletTransactions']) {
+    const args = new Map(fields[name].args.map((a) => [a.name, String(a.type)]))
+    assert.equal(args.get('owner'), 'String', `${name}.owner`)
+    // A list of characters — names, EVE character ids or registration ids —
+    // and String for the same reason typeIds is: EVE ids overflow Int.
+    assert.equal(args.get('owners'), '[String!]', `${name}.owners`)
+  }
+})
+
 test('the type-filtered fields all carry typeIds as a String list', () => {
   const schema = buildSchema(typeDefs)
   const fields = (schema.getQueryType() as GraphQLObjectType).getFields()
