@@ -9,14 +9,15 @@ import { z } from 'zod'
 import { fetchType, resolveProductTypeID } from '@/app/blueprint/api'
 import { rigsForProduct } from '@/app/blueprint/rigs'
 import {
-  ACTIVITY_FAMILY,
   baseSlotMax,
+  countJobSlots,
   emptyCounts,
   SKILL_FAMILY,
   SKILL_NAME,
   SLOT_FAMILIES,
   SLOT_SKILL_IDS,
-  type SlotCounts,
+  type CharacterJobRow,
+  type CorpJobRow,
   type SlotMax,
 } from '@/app/industry/jobSlots'
 import {
@@ -161,31 +162,35 @@ export const registerIndustryTools = (server: McpServer): void => {
       if (!supabase) return textResult('Missing bearer token.')
 
       const owners = await fetchOwnerContext(supabase)
-      const [{ data: jobRows }, { data: skillRows }] = await Promise.all([
-        // Jobs holding a slot: running, or finished but not yet delivered.
-        supabase
-          .from('character_industry_job')
-          .select('registration_id, activity_id, status, end_date')
-          .in('status', ['active', 'ready']),
-        supabase
-          .from('character_skill')
-          .select('registration_id, skill_id, active_skill_level')
-          .in('skill_id', SLOT_SKILL_IDS),
-      ])
+      // Jobs holding a slot: running, or finished but not yet delivered. Corp
+      // jobs consume the installing character's slots too, so both listings are
+      // folded together (cf. /character); `registration` supplies the
+      // installer's EVE id → registration uuid translation.
+      const [{ data: jobRows }, { data: corpJobRows }, { data: registrations }, { data: skillRows }] =
+        await Promise.all([
+          supabase
+            .from('character_industry_job')
+            .select('job_id, registration_id, activity_id, status, end_date')
+            .in('status', ['active', 'ready']),
+          supabase
+            .from('corp_industry_job')
+            .select('job_id, installer_id, activity_id, status, end_date')
+            .in('status', ['active', 'ready']),
+          supabase.from('registration').select('id, character_id'),
+          supabase
+            .from('character_skill')
+            .select('registration_id, skill_id, active_skill_level')
+            .in('skill_id', SLOT_SKILL_IDS),
+        ])
 
-      const now = Date.now()
-      const counts = new Map<string, SlotCounts>()
-      ;(
-        (jobRows ?? []) as Array<{ registration_id: string; activity_id: number; status: string; end_date: string }>
-      ).forEach((j) => {
-        const family = ACTIVITY_FAMILY[Number(j.activity_id)]
-        if (!family) return
-        const entry = counts.get(j.registration_id) ?? emptyCounts()
-        // A job whose timer elapsed still holds its slot until delivered, even
-        // if ESI hasn't flipped its status yet (cf. /character).
-        const finished = j.status === 'ready' || new Date(j.end_date).getTime() <= now
-        entry[family][finished ? 'finished' : 'running'] += 1
-        counts.set(j.registration_id, entry)
+      const counts = countJobSlots({
+        characterJobs: (jobRows ?? []) as CharacterJobRow[],
+        corpJobs: (corpJobRows ?? []) as CorpJobRow[],
+        registrationByCharacterId: new Map(
+          ((registrations ?? []) as Array<{ id: string; character_id: number | null }>)
+            .filter((r) => r.character_id != null)
+            .map((r) => [String(r.character_id), r.id])
+        ),
       })
 
       const maxes = new Map<string, SlotMax>()
@@ -240,7 +245,11 @@ export const registerIndustryTools = (server: McpServer): void => {
         characters,
         total_free_slots: characters.reduce((sum, c) => sum + c.total_free, 0),
         note: "Corporation-installed jobs occupy the installing character's slots, so they are counted here too when that character is one of yours.",
-        data_refreshed: await dataFreshness(supabase, ['character-industry-jobs', 'character-status']),
+        data_refreshed: await dataFreshness(supabase, [
+          'character-industry-jobs',
+          'corp-industry-jobs',
+          'character-status',
+        ]),
       })
     }
   )

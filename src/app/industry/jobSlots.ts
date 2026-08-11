@@ -52,3 +52,56 @@ export const emptyCounts = (): SlotCounts => ({
 
 // One slot per family before any skill is trained.
 export const baseSlotMax = (): SlotMax => ({ manufacturing: 1, research: 1, reaction: 1 })
+
+// A job still holding a slot, from either the character or the corp listing.
+// Only the columns the count needs; both views carry them under these names.
+type JobRow = {
+  job_id: number | string
+  activity_id: number | string
+  status: string
+  end_date: string
+}
+export type CharacterJobRow = JobRow & { registration_id: string }
+export type CorpJobRow = JobRow & { installer_id: number | string }
+
+// Occupied slots per character, folding in corp-owned jobs: a job installed
+// from the corp hangar still consumes the *installing character's* personal
+// slots, so a character running nothing but corp jobs must not read as idle.
+// Corp jobs identify the installer by EVE character id, hence the map back to
+// the registration uuid the callers key on; jobs installed by someone who
+// isn't one of ours drop out. Both callers pass rows already filtered to
+// status active/ready.
+export const countJobSlots = ({
+  characterJobs = [],
+  corpJobs = [],
+  registrationByCharacterId,
+  now = Date.now(),
+}: {
+  characterJobs?: CharacterJobRow[]
+  corpJobs?: CorpJobRow[]
+  registrationByCharacterId: Map<string, string>
+  now?: number
+}): Map<string, SlotCounts> => {
+  const byCharacter = new Map<string, SlotCounts>()
+  // job_id is unique game-wide, so a job appearing in both listings counts once.
+  const seen = new Set<string>()
+
+  const add = (registrationId: string, job: JobRow) => {
+    const family = ACTIVITY_FAMILY[Number(job.activity_id)]
+    if (!family || seen.has(String(job.job_id))) return
+    seen.add(String(job.job_id))
+    const counts = byCharacter.get(registrationId) ?? emptyCounts()
+    // A job whose timer elapsed still holds its slot until delivered, even if
+    // ESI hasn't flipped its status to 'ready' yet.
+    const finished = job.status === 'ready' || new Date(job.end_date).getTime() <= now
+    counts[family][finished ? 'finished' : 'running'] += 1
+    byCharacter.set(registrationId, counts)
+  }
+
+  characterJobs.forEach((j) => add(j.registration_id, j))
+  corpJobs.forEach((j) => {
+    const registrationId = registrationByCharacterId.get(String(j.installer_id))
+    if (registrationId) add(registrationId, j)
+  })
+  return byCharacter
+}
