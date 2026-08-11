@@ -15,44 +15,47 @@ export const clampLimit = (limit: number | null | undefined, cap: number): numbe
   return Math.min(Math.max(1, Math.floor(limit)), cap)
 }
 
-// Case-insensitive substring match of an owner-name filter against the
+// Case-insensitive substring match of the `character:` filter against the
 // caller's characters. Returns the matching registration ids, or an error
 // listing what's available — same semantics as the MCP resolveOwnerFilter.
-export type OwnerMatch = { ok: true; ids: string[] | null } | { ok: false; message: string }
+export type CharacterMatch = { ok: true; ids: string[] | null } | { ok: false; message: string }
 
-export const matchOwnerIds = (owner: string | null | undefined, nameById: ReadonlyMap<string, string>): OwnerMatch => {
-  const trimmed = (owner ?? '').trim().toLowerCase()
+export const matchCharacterName = (
+  character: string | null | undefined,
+  nameById: ReadonlyMap<string, string>
+): CharacterMatch => {
+  const trimmed = (character ?? '').trim().toLowerCase()
   if (trimmed === '') return { ok: true, ids: null }
   const ids = [...nameById].filter(([, name]) => name.toLowerCase().includes(trimmed)).map(([id]) => id)
   if (ids.length === 0) {
     const available = [...nameById.values()].sort((a, b) => a.localeCompare(b))
-    return { ok: false, message: `No character matched "${owner}". Available: ${available.join(', ')}.` }
+    return { ok: false, message: `No character matched "${character}". Available: ${available.join(', ')}.` }
   }
   return { ok: true, ids }
 }
 
-// The exact counterpart of the fuzzy `owner` filter: a LIST of characters,
-// each named by whichever id the caller has to hand. An entry is
+// The exact counterpart of the fuzzy `character:` filter: a LIST of
+// characters, each named by whichever id the caller has to hand. An entry is
 //
 //   - all digits          → an EVE character id (Owner.characterId),
 //   - a uuid              → this site's registration id (Owner.id / ownerId),
 //   - anything else       → a character name, matched case-insensitively but
-//                           WHOLE — a list is the exact question, `owner` is
-//                           the fuzzy one, exactly as typeIds is to typeName.
+//                           WHOLE — a list is the exact question, `character`
+//                           is the fuzzy one, as typeIds is to typeName.
 //
 // Every entry must match, and an unmatched one errors listing what exists,
 // rather than quietly narrowing a lens nobody re-reads for a year. The result
 // is the union, deduped, in the caller's order.
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-export type OwnerDirectory = {
+export type CharacterDirectory = {
   // registration uuid → character name
   nameById: ReadonlyMap<string, string>
   // registration uuid → EVE character id
   characterIdById: ReadonlyMap<string, string>
 }
 
-const idsForEntry = (entry: string, { nameById, characterIdById }: OwnerDirectory): string[] => {
+const idsForEntry = (entry: string, { nameById, characterIdById }: CharacterDirectory): string[] => {
   if (/^\d+$/.test(entry)) {
     return [...characterIdById].filter(([, characterId]) => characterId === entry).map(([id]) => id)
   }
@@ -63,7 +66,7 @@ const idsForEntry = (entry: string, { nameById, characterIdById }: OwnerDirector
   return [...nameById].filter(([, name]) => name.toLowerCase() === wanted).map(([id]) => id)
 }
 
-const availableOwners = ({ nameById, characterIdById }: OwnerDirectory): string =>
+const availableCharacters = ({ nameById, characterIdById }: CharacterDirectory): string =>
   [...nameById]
     .map(([id, name]) => {
       const characterId = characterIdById.get(id)
@@ -72,8 +75,11 @@ const availableOwners = ({ nameById, characterIdById }: OwnerDirectory): string 
     .sort((a, b) => a.localeCompare(b))
     .join(', ')
 
-export const matchOwnerRefs = (owners: readonly string[] | null | undefined, directory: OwnerDirectory): OwnerMatch => {
-  const entries = (owners ?? []).map((o) => (o ?? '').trim()).filter((o) => o !== '')
+export const matchCharacterRefs = (
+  characters: readonly string[] | null | undefined,
+  directory: CharacterDirectory
+): CharacterMatch => {
+  const entries = (characters ?? []).map((c) => (c ?? '').trim()).filter((c) => c !== '')
   if (entries.length === 0) return { ok: true, ids: null }
 
   const matched = entries.map((entry) => ({ entry, ids: idsForEntry(entry, directory) }))
@@ -81,30 +87,30 @@ export const matchOwnerRefs = (owners: readonly string[] | null | undefined, dir
   if (unmatched.length > 0) {
     return {
       ok: false,
-      message: `No character matched ${unmatched.map((u) => `"${u}"`).join(', ')}. Available: ${availableOwners(directory)}.`,
+      message: `No character matched ${unmatched.map((u) => `"${u}"`).join(', ')}. Available: ${availableCharacters(directory)}.`,
     }
   }
   return { ok: true, ids: [...new Set(matched.flatMap((m) => m.ids))] }
 }
 
 // The two ways to name characters, resolved to one filter — mutually exclusive
-// for the same reason typeIds and typeName are: `owner` substring-matches and
-// `owners` matches whole names/ids, and a stored lens that blended both would
-// be unpredictable a year later.
-export const matchOwnerFilter = (
-  owner: string | null | undefined,
-  owners: readonly string[] | null | undefined,
-  directory: OwnerDirectory
-): OwnerMatch => {
-  const listed = (owners ?? []).some((o) => (o ?? '').trim() !== '')
-  if (!listed) return matchOwnerIds(owner, directory.nameById)
-  if ((owner ?? '').trim() !== '') {
+// for the same reason typeIds and typeName are: `character` substring-matches
+// and `characters` matches whole names/ids, and a stored lens that blended both
+// would be unpredictable a year later.
+export const matchCharacterFilter = (
+  character: string | null | undefined,
+  characters: readonly string[] | null | undefined,
+  directory: CharacterDirectory
+): CharacterMatch => {
+  const listed = (characters ?? []).some((c) => (c ?? '').trim() !== '')
+  if (!listed) return matchCharacterName(character, directory.nameById)
+  if ((character ?? '').trim() !== '') {
     return {
       ok: false,
-      message: 'Pass owner or owners, not both — one is a name search, the other an exact list.',
+      message: 'Pass character or characters, not both — one is a name search, the other an exact list.',
     }
   }
-  return matchOwnerRefs(owners, directory)
+  return matchCharacterRefs(characters, directory)
 }
 
 // Parse the `since` argument (full ISO timestamp or a date prefix) into an

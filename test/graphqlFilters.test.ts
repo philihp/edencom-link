@@ -1,8 +1,8 @@
 // Unit coverage for the GraphQL resolvers' pure argument shaping
 // (src/app/api/graphql/filters.ts). What matters here is what the resolvers
 // can't get wrong quietly: limit clamping against the hard caps (the request
-// bound), owner matching (the same substring semantics as the MCP layer), and
-// the argument parsers rejecting rather than silently widening a filter.
+// bound), character matching (the same substring semantics as the MCP layer),
+// and the argument parsers rejecting rather than silently widening a filter.
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
@@ -10,9 +10,9 @@ import {
   ASSET_CAP,
   LIST_CAP,
   clampLimit,
-  matchOwnerFilter,
-  matchOwnerIds,
-  matchOwnerRefs,
+  matchCharacterFilter,
+  matchCharacterName,
+  matchCharacterRefs,
   parseIdArg,
   parseSince,
   parseTypeIdsArg,
@@ -38,21 +38,21 @@ const OWNERS = new Map([
   ['reg-c', 'Someone Else'],
 ])
 
-test('matchOwnerIds passes null through as no filter', () => {
-  assert.deepEqual(matchOwnerIds(undefined, OWNERS), { ok: true, ids: null })
-  assert.deepEqual(matchOwnerIds('   ', OWNERS), { ok: true, ids: null })
+test('matchCharacterName passes null through as no filter', () => {
+  assert.deepEqual(matchCharacterName(undefined, OWNERS), { ok: true, ids: null })
+  assert.deepEqual(matchCharacterName('   ', OWNERS), { ok: true, ids: null })
 })
 
-test('matchOwnerIds matches case-insensitive substrings, possibly several', () => {
-  const match = matchOwnerIds('philihp', OWNERS)
+test('matchCharacterName matches case-insensitive substrings, possibly several', () => {
+  const match = matchCharacterName('philihp', OWNERS)
   assert.ok(match.ok)
   assert.deepEqual(match.ok && match.ids, ['reg-a', 'reg-b'])
-  const exact = matchOwnerIds('someone else', OWNERS)
+  const exact = matchCharacterName('someone else', OWNERS)
   assert.deepEqual(exact.ok && exact.ids, ['reg-c'])
 })
 
-test('matchOwnerIds rejects an unknown owner, listing what exists', () => {
-  const match = matchOwnerIds('nobody', OWNERS)
+test('matchCharacterName rejects an unknown character, listing what exists', () => {
+  const match = matchCharacterName('nobody', OWNERS)
   assert.equal(match.ok, false)
   assert.match(!match.ok ? match.message : '', /Philihp Alt, Philihp Busby, Someone Else/)
 })
@@ -76,48 +76,48 @@ const DIRECTORY = {
   ]),
 }
 
-test('matchOwnerRefs passes an absent or empty list through as no filter', () => {
-  assert.deepEqual(matchOwnerRefs(undefined, DIRECTORY), { ok: true, ids: null })
-  assert.deepEqual(matchOwnerRefs([], DIRECTORY), { ok: true, ids: null })
-  assert.deepEqual(matchOwnerRefs(['  '], DIRECTORY), { ok: true, ids: null })
+test('matchCharacterRefs passes an absent or empty list through as no filter', () => {
+  assert.deepEqual(matchCharacterRefs(undefined, DIRECTORY), { ok: true, ids: null })
+  assert.deepEqual(matchCharacterRefs([], DIRECTORY), { ok: true, ids: null })
+  assert.deepEqual(matchCharacterRefs(['  '], DIRECTORY), { ok: true, ids: null })
 })
 
-test('matchOwnerRefs takes whole names, EVE character ids and registration ids, mixed', () => {
-  const byName = matchOwnerRefs(['philihp busby', 'Someone Else'], DIRECTORY)
+test('matchCharacterRefs takes whole names, EVE character ids and registration ids, mixed', () => {
+  const byName = matchCharacterRefs(['philihp busby', 'Someone Else'], DIRECTORY)
   assert.deepEqual(byName.ok && byName.ids, [REG_A, REG_C])
-  const byCharacterId = matchOwnerRefs(['95465499'], DIRECTORY)
+  const byCharacterId = matchCharacterRefs(['95465499'], DIRECTORY)
   assert.deepEqual(byCharacterId.ok && byCharacterId.ids, [REG_A])
-  const mixed = matchOwnerRefs([REG_B, '95465499', 'Someone Else'], DIRECTORY)
+  const mixed = matchCharacterRefs([REG_B, '95465499', 'Someone Else'], DIRECTORY)
   assert.deepEqual(mixed.ok && mixed.ids, [REG_B, REG_A, REG_C])
 })
 
-test('matchOwnerRefs dedupes a character named twice', () => {
-  const match = matchOwnerRefs(['Philihp Busby', '95465499', REG_A], DIRECTORY)
+test('matchCharacterRefs dedupes a character named twice', () => {
+  const match = matchCharacterRefs(['Philihp Busby', '95465499', REG_A], DIRECTORY)
   assert.deepEqual(match.ok && match.ids, [REG_A])
 })
 
-test('matchOwnerRefs matches names whole, not by substring — that is what owner: is for', () => {
-  const partial = matchOwnerRefs(['philihp'], DIRECTORY)
+test('matchCharacterRefs matches names whole, not by substring — that is what character: is for', () => {
+  const partial = matchCharacterRefs(['philihp'], DIRECTORY)
   assert.equal(partial.ok, false)
   assert.match(!partial.ok ? partial.message : '', /"philihp"/)
 })
 
-test('matchOwnerRefs rejects unknown entries, listing names with their character ids', () => {
-  const match = matchOwnerRefs(['Someone Else', 'Nobody', '12345'], DIRECTORY)
+test('matchCharacterRefs rejects unknown entries, listing names with their character ids', () => {
+  const match = matchCharacterRefs(['Someone Else', 'Nobody', '12345'], DIRECTORY)
   assert.equal(match.ok, false)
   const message = !match.ok ? match.message : ''
   assert.match(message, /"Nobody", "12345"/)
   assert.match(message, /Philihp Busby \(95465499\)/)
 })
 
-test('matchOwnerFilter routes to the fuzzy or the exact matcher, never both', () => {
-  const none = matchOwnerFilter(null, null, DIRECTORY)
+test('matchCharacterFilter routes to the fuzzy or the exact matcher, never both', () => {
+  const none = matchCharacterFilter(null, null, DIRECTORY)
   assert.deepEqual(none, { ok: true, ids: null })
-  const fuzzy = matchOwnerFilter('philihp', null, DIRECTORY)
+  const fuzzy = matchCharacterFilter('philihp', null, DIRECTORY)
   assert.deepEqual(fuzzy.ok && fuzzy.ids, [REG_A, REG_B])
-  const exact = matchOwnerFilter(null, ['Philihp Alt'], DIRECTORY)
+  const exact = matchCharacterFilter(null, ['Philihp Alt'], DIRECTORY)
   assert.deepEqual(exact.ok && exact.ids, [REG_B])
-  const both = matchOwnerFilter('philihp', ['Philihp Alt'], DIRECTORY)
+  const both = matchCharacterFilter('philihp', ['Philihp Alt'], DIRECTORY)
   assert.equal(both.ok, false)
   assert.match(!both.ok ? both.message : '', /not both/)
 })

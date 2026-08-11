@@ -19,7 +19,15 @@ import { uniq } from 'ramda'
 import { guessLocationRef, resolveTypeFilter } from '@/app/api/mcp/lib'
 import { resolveLocations, type LocationRef, type ResolvedLocations } from '@/app/resolveLocations'
 import { getSdeTypes, type SdeType } from '@/sdeTypes'
-import { ASSET_CAP, LIST_CAP, clampLimit, matchOwnerFilter, parseIdArg, parseSince, parseTypeIdsArg } from './filters'
+import {
+  ASSET_CAP,
+  LIST_CAP,
+  clampLimit,
+  matchCharacterFilter,
+  parseIdArg,
+  parseSince,
+  parseTypeIdsArg,
+} from './filters'
 import type { GraphqlContext } from './context'
 
 const badRequest = (message: string): never => {
@@ -30,14 +38,15 @@ const queryFailed = (): never => {
   throw new GraphQLError('Query failed', { extensions: { http: { status: 500 } } })
 }
 
-// The registration ids a field should read for, after the optional owner
-// filter (`owner` fuzzy by name, `owners` an exact list of names/character
-// ids/registration ids) — always a subset of the caller's own registrations.
+// The registration ids a field should read for, after the optional character
+// filter (`character` fuzzy by name, `characters` an exact list of
+// names/character ids/registration ids) — always a subset of the caller's own
+// registrations.
 const scopeIds = (
   ctx: GraphqlContext,
-  args: { owner?: string | null; owners?: readonly string[] | null }
+  args: { character?: string | null; characters?: readonly string[] | null }
 ): string[] => {
-  const match = matchOwnerFilter(args.owner, args.owners, {
+  const match = matchCharacterFilter(args.character, args.characters, {
     nameById: ctx.ownerNameById,
     characterIdById: ctx.ownerCharacterIdById,
   })
@@ -217,8 +226,8 @@ export const resolvers = {
         typeIds?: readonly string[] | null
         typeName?: string | null
         locationId?: string | null
-        owner?: string | null
-        owners?: readonly string[] | null
+        character?: string | null
+        characters?: readonly string[] | null
         limit?: number | null
         includeShared?: boolean | null
       },
@@ -227,7 +236,7 @@ export const resolvers = {
       // includeShared widens the leak-guard filter to own ∪ grantor
       // registrations and lets RLS decide which grantor rows come back — the
       // DB is the authority; the widened .in() is just no longer the barrier.
-      // The owner-name filter still narrows only the caller's own characters;
+      // The character filter still narrows only the caller's own characters;
       // shared rows ride along unfiltered.
       if (args.includeShared) requireSession(ctx)
       const ownerIds = scopeIds(ctx, args)
@@ -355,8 +364,8 @@ export const resolvers = {
       args: {
         typeIds?: readonly string[] | null
         typeName?: string | null
-        owner?: string | null
-        owners?: readonly string[] | null
+        character?: string | null
+        characters?: readonly string[] | null
         limit?: number | null
       },
       ctx: GraphqlContext
@@ -429,7 +438,7 @@ export const resolvers = {
 
     marketOrders: async (
       _parent: unknown,
-      args: { owner?: string | null; owners?: readonly string[] | null },
+      args: { character?: string | null; characters?: readonly string[] | null },
       ctx: GraphqlContext
     ) => {
       const ownerIds = scopeIds(ctx, args)
@@ -499,7 +508,7 @@ export const resolvers = {
 
     industryJobs: async (
       _parent: unknown,
-      args: { owner?: string | null; owners?: readonly string[] | null; includeDelivered?: boolean | null },
+      args: { character?: string | null; characters?: readonly string[] | null; includeDelivered?: boolean | null },
       ctx: GraphqlContext
     ) => {
       const ownerIds = scopeIds(ctx, args)
@@ -606,8 +615,8 @@ export const resolvers = {
       args: {
         typeIds?: readonly string[] | null
         typeName?: string | null
-        owner?: string | null
-        owners?: readonly string[] | null
+        character?: string | null
+        characters?: readonly string[] | null
         since?: string | null
         limit?: number | null
       },

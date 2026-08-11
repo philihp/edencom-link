@@ -36,8 +36,8 @@ export const typeDefs = /* GraphQL */ `
     """
     Current asset rows (live inventory) across your characters. typeIds filters
     on exact SDE type ids; typeName is a fuzzy name search — pass one or the
-    other, never both. Likewise owners is an exact list of characters and owner
-    a name search — pass one or the other. locationId pins one station,
+    other, never both. Likewise characters is an exact list and character a
+    name search — pass one or the other. locationId pins one station,
     structure or system id. includeShared additionally returns rows other users
     have shared with you (session auth only — the api_token path is own-data
     only; a Lens is the way to hand shared data to external tools).
@@ -46,8 +46,8 @@ export const typeDefs = /* GraphQL */ `
       typeIds: [String!]
       typeName: String
       locationId: String
-      owner: String
-      owners: [String!]
+      character: String
+      characters: [String!]
       limit: Int
       includeShared: Boolean = false
     ): AssetPage!
@@ -55,24 +55,30 @@ export const typeDefs = /* GraphQL */ `
     "Asset shares other users have aimed at you (corporation/alliance/public). Session auth only."
     sharedWithMe: [ShareGrant!]!
 
-    "Current blueprint rows (BPOs and BPCs) across your characters. typeIds and typeName are mutually exclusive, as are owners and owner."
-    blueprints(typeIds: [String!], typeName: String, owner: String, owners: [String!], limit: Int): BlueprintPage!
+    "Current blueprint rows (BPOs and BPCs) across your characters. typeIds and typeName are mutually exclusive, as are characters and character."
+    blueprints(
+      typeIds: [String!]
+      typeName: String
+      character: String
+      characters: [String!]
+      limit: Int
+    ): BlueprintPage!
 
     "Open market orders across your characters."
-    marketOrders(owner: String, owners: [String!]): [MarketOrder!]!
+    marketOrders(character: String, characters: [String!]): [MarketOrder!]!
 
     "Industry jobs across your characters. Delivered jobs are excluded unless includeDelivered."
-    industryJobs(owner: String, owners: [String!], includeDelivered: Boolean = false): [IndustryJob!]!
+    industryJobs(character: String, characters: [String!], includeDelivered: Boolean = false): [IndustryJob!]!
 
     "Latest known wallet balance per character."
     walletBalances: [WalletBalance!]!
 
-    "Market transaction history across your characters, newest first. typeIds and typeName are mutually exclusive, as are owners and owner."
+    "Market transaction history across your characters, newest first. typeIds and typeName are mutually exclusive, as are characters and character."
     walletTransactions(
       typeIds: [String!]
       typeName: String
-      owner: String
-      owners: [String!]
+      character: String
+      characters: [String!]
       since: String
       limit: Int
     ): [WalletTransaction!]!
@@ -87,18 +93,18 @@ export const typeDefs = /* GraphQL */ `
   character id — that's \`characterId\`. The corp/alliance fields load only when
   you select them.
 
-  The two owner filters name characters differently. \`owner:\` is a
-  case-insensitive substring of \`name\`. \`owners:\` is an exact list, and each
-  entry may be any of the three ids on this type: a whole \`name\`, an EVE
-  \`characterId\`, or a registration \`id\` — mix them freely. An entry that
+  The two character filters name a row's character differently. \`character:\`
+  is a case-insensitive substring of \`name\`. \`characters:\` is an exact list,
+  and each entry may be any of the three ids on this type: a whole \`name\`, an
+  EVE \`characterId\`, or a registration \`id\` — mix them freely. An entry that
   matches nothing is an error, never a silently narrower result.
   """
   type Owner {
-    "This site's registration id — what ownerId carries, and one of the forms the owners: filter accepts. NOT the EVE character id."
+    "This site's registration id — what ownerId carries, and one of the forms the characters: filter accepts. NOT the EVE character id."
     id: String!
-    "The character's name. The owner: filter substring-matches it; the owners: filter matches it whole."
+    "The character's name. The character: filter substring-matches it; the characters: filter matches it whole."
     name: String!
-    "The EVE character id (what zKillboard, ESI and the image server use), and one of the forms the owners: filter accepts."
+    "The EVE character id (what zKillboard, ESI and the image server use), and one of the forms the characters: filter accepts."
     characterId: String
     corporationId: String
     corporationName: String

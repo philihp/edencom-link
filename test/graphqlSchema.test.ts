@@ -123,7 +123,7 @@ test('the flat scalar beside each edge survives', () => {
 test('Owner exposes the EVE character id distinctly from the registration id', () => {
   const schema = buildSchema(typeDefs)
   const owner = objectType(schema, 'Owner').getFields()
-  // id is the registration uuid (what ownerId carries and `owner:` filters on);
+  // id is the registration uuid (what ownerId carries and `characters:` accepts);
   // characterId is the EVE numeric id. Conflating them is the legacy wart
   // docs/registration-id-rename.md exists to unwind — the schema states it.
   assert.equal(String(owner.id.type), 'String!')
@@ -131,15 +131,19 @@ test('Owner exposes the EVE character id distinctly from the registration id', (
   assert.ok(owner.id.description?.includes('registration id'))
 })
 
-test('every owner-filtered field carries both the fuzzy owner and the exact owners list', () => {
+test('every character-filtered field carries both the fuzzy character and the exact characters list', () => {
   const schema = buildSchema(typeDefs)
   const fields = (schema.getQueryType() as GraphQLObjectType).getFields()
   for (const name of ['assets', 'blueprints', 'industryJobs', 'marketOrders', 'walletTransactions']) {
     const args = new Map(fields[name].args.map((a) => [a.name, String(a.type)]))
-    assert.equal(args.get('owner'), 'String', `${name}.owner`)
+    assert.equal(args.get('character'), 'String', `${name}.character`)
     // A list of characters — names, EVE character ids or registration ids —
     // and String for the same reason typeIds is: EVE ids overflow Int.
-    assert.equal(args.get('owners'), '[String!]', `${name}.owners`)
+    assert.equal(args.get('characters'), '[String!]', `${name}.characters`)
+    // The rows still say owner/ownerId/ownerName; only the FILTER is named for
+    // what it takes. `owner:` as an argument is gone, not deprecated.
+    assert.equal(args.get('owner'), undefined, `${name}.owner`)
+    assert.equal(args.get('owners'), undefined, `${name}.owners`)
   }
 })
 
