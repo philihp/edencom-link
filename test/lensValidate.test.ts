@@ -13,7 +13,7 @@ test('a plain single-field query passes', () => {
 
 test('a named query with variables passes', () => {
   const result = validateLensQuery(`query Stockpile($item: String!) {
-    assets(typeName: $item) { totalCount rows { typeName quantity } }
+    assets(type: $item) { totalCount rows { typeName quantity } }
   }`)
   assert.deepEqual(result, { ok: true })
 })

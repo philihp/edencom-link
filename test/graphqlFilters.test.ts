@@ -13,9 +13,10 @@ import {
   matchCharacterFilter,
   matchCharacterName,
   matchCharacterRefs,
-  parseIdsArg,
+  matchExactNames,
+  parseRefFilter,
   parseSince,
-  parseTypeIdsArg,
+  splitRefEntries,
 } from '../src/app/api/graphql/filters.ts'
 
 test('clampLimit defaults to the cap when absent or not a number', () => {
@@ -131,44 +132,51 @@ test('parseSince accepts ISO timestamps and date prefixes, rejects junk', () => 
   assert.equal(parseSince('yesterday-ish').ok, false)
 })
 
-test('parseIdsArg returns null when no ids are given', () => {
-  assert.deepEqual(parseIdsArg(undefined, 'locationIds'), { ok: true, ids: null })
-  assert.deepEqual(parseIdsArg([], 'locationIds'), { ok: true, ids: null })
-  assert.deepEqual(parseIdsArg(['  '], 'locationIds'), { ok: true, ids: null })
+// The shape every filter dimension shares (character, location, type): a
+// singular name search, a plural exact list, never both.
+test('parseRefFilter reads an absent filter as none', () => {
+  assert.deepEqual(parseRefFilter(undefined, undefined, 'type'), { ok: true, query: { kind: 'none' } })
+  assert.deepEqual(parseRefFilter('  ', [], 'type'), { ok: true, query: { kind: 'none' } })
+  assert.deepEqual(parseRefFilter(null, ['  '], 'type'), { ok: true, query: { kind: 'none' } })
 })
 
-test('parseIdsArg trims and dedupes bare positive integer literals', () => {
-  assert.deepEqual(parseIdsArg([' 60003760 ', '1040000000001', '60003760'], 'locationIds'), {
+test('parseRefFilter reads the singular as a search and the plural as an exact list', () => {
+  assert.deepEqual(parseRefFilter(' Fuel Block ', null, 'type'), {
     ok: true,
-    ids: ['60003760', '1040000000001'],
+    query: { kind: 'search', term: 'Fuel Block' },
+  })
+  assert.deepEqual(parseRefFilter(null, [' 4051 ', 'Nitrogen Fuel Block', '4051'], 'type'), {
+    ok: true,
+    query: { kind: 'exact', entries: ['4051', 'Nitrogen Fuel Block'] },
   })
 })
 
-test('parseIdsArg rejects anything that is not a plain id, rather than widening', () => {
-  assert.equal(parseIdsArg(['60003760; drop table'], 'locationIds').ok, false)
-  assert.equal(parseIdsArg(['-1'], 'locationIds').ok, false)
-  assert.equal(parseIdsArg(['1e9'], 'locationIds').ok, false)
-  assert.equal(parseIdsArg(['60003760', 'Jita'], 'locationIds').ok, false)
-})
-
-test('parseTypeIdsArg returns null when no ids are given', () => {
-  assert.deepEqual(parseTypeIdsArg(undefined, undefined), { ok: true, ids: null })
-  assert.deepEqual(parseTypeIdsArg([], 'Fuel Block'), { ok: true, ids: null })
-  assert.deepEqual(parseTypeIdsArg(['  '], undefined), { ok: true, ids: null })
-})
-
-test('parseTypeIdsArg parses, trims and dedupes exact ids', () => {
-  assert.deepEqual(parseTypeIdsArg([' 4051 ', '4246', '4051'], undefined), { ok: true, ids: [4051, 4246] })
-})
-
-test('parseTypeIdsArg refuses typeIds and typeName together', () => {
-  const both = parseTypeIdsArg(['4051'], 'Fuel Block')
+test('parseRefFilter refuses both, naming the pair it was given', () => {
+  const both = parseRefFilter('jita', ['60003760'], 'location')
   assert.equal(both.ok, false)
-  assert.match(!both.ok ? both.message : '', /not both/)
+  assert.match(!both.ok ? both.message : '', /Pass location or locations, not both/)
 })
 
-test('parseTypeIdsArg rejects non-numeric ids rather than widening', () => {
-  assert.equal(parseTypeIdsArg(['4051', 'Tritanium'], undefined).ok, false)
-  assert.equal(parseTypeIdsArg(['-4051'], undefined).ok, false)
-  assert.equal(parseTypeIdsArg(['4051; drop table'], undefined).ok, false)
+test('splitRefEntries calls a bare integer an id and everything else a name', () => {
+  assert.deepEqual(splitRefEntries(['4051', 'Tritanium', '60003760', '1MN Afterburner II']), {
+    ids: ['4051', '60003760'],
+    names: ['Tritanium', '1MN Afterburner II'],
+  })
+})
+
+test('matchExactNames takes whole names only, keeping every candidate that matches', () => {
+  const candidates = {
+    Tritanium: [
+      { id: '34', name: 'Tritanium' },
+      { id: '35', name: 'Tritanium Bar' },
+    ],
+    jita: [{ id: '30000142', name: 'Jita' }],
+  }
+  const matched = matchExactNames(['Tritanium', 'jita'], (name) => candidates[name] ?? [])
+  assert.deepEqual(matched, { ids: ['34', '30000142'], unmatched: [] })
+})
+
+test('matchExactNames reports what matched nothing, rather than dropping it', () => {
+  const matched = matchExactNames(['Trit'], () => [{ id: '34', name: 'Tritanium' }])
+  assert.deepEqual(matched, { ids: [], unmatched: ['Trit'] })
 })

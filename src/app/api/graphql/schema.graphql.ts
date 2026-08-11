@@ -28,25 +28,31 @@
 // Every entity field is ALSO reachable as a flat scalar on the row itself
 // (ownerName beside owner { name }, typeName beside type { name }). Pick the
 // scalars for a CSV-shaped query, the edges for exploring; both cost the same.
+//
+// FILTERS COME IN SINGULAR/PLURAL PAIRS, one pair per entity type: character/
+// characters, location/locations, type/types. The singular is a
+// case-insensitive substring SEARCH over names; the plural is an EXACT list
+// whose entries are ids or whole names, mixed freely. The two are mutually
+// exclusive, an entry matching nothing is an error, and each entity type's
+// description says which of its fields the pair accepts. See filters.ts.
 export const typeDefs = /* GraphQL */ `
   type Query {
     "Your linked characters. ownerId on every row below is one of these ids."
     owners: [Owner!]!
 
     """
-    Current asset rows (live inventory) across your characters. typeIds filters
-    on exact SDE type ids; typeName is a fuzzy name search — pass one or the
-    other, never both. Likewise characters is an exact list and character a
-    name search — pass one or the other. locationIds pins the rows to one or
-    more station, structure or system ids. includeShared additionally returns
-    rows other users have shared with you (session auth only — the api_token
-    path is own-data only; a Lens is the way to hand shared data to external
-    tools).
+    Current asset rows (live inventory) across your characters. Filters are the
+    schema's singular/plural pairs — type/types, location/locations,
+    character/characters (see each entity type). includeShared additionally
+    returns rows other users have shared with you (session auth only — the
+    api_token path is own-data only; a Lens is the way to hand shared data to
+    external tools).
     """
     assets(
-      typeIds: [String!]
-      typeName: String
-      locationIds: [String!]
+      type: String
+      types: [String!]
+      location: String
+      locations: [String!]
       character: String
       characters: [String!]
       limit: Int
@@ -56,14 +62,8 @@ export const typeDefs = /* GraphQL */ `
     "Asset shares other users have aimed at you (corporation/alliance/public). Session auth only."
     sharedWithMe: [ShareGrant!]!
 
-    "Current blueprint rows (BPOs and BPCs) across your characters. typeIds and typeName are mutually exclusive, as are characters and character."
-    blueprints(
-      typeIds: [String!]
-      typeName: String
-      character: String
-      characters: [String!]
-      limit: Int
-    ): BlueprintPage!
+    "Current blueprint rows (BPOs and BPCs) across your characters, filtered by item type and character."
+    blueprints(type: String, types: [String!], character: String, characters: [String!], limit: Int): BlueprintPage!
 
     "Open market orders across your characters."
     marketOrders(character: String, characters: [String!]): [MarketOrder!]!
@@ -74,10 +74,10 @@ export const typeDefs = /* GraphQL */ `
     "Latest known wallet balance per character."
     walletBalances: [WalletBalance!]!
 
-    "Market transaction history across your characters, newest first. typeIds and typeName are mutually exclusive, as are characters and character."
+    "Market transaction history across your characters, newest first, filtered by item type and character."
     walletTransactions(
-      typeIds: [String!]
-      typeName: String
+      type: String
+      types: [String!]
       character: String
       characters: [String!]
       since: String
@@ -86,19 +86,19 @@ export const typeDefs = /* GraphQL */ `
   }
 
   """
-  The character a row belongs to. Reached as \`owner\` from every row type, and
-  listed on its own by the \`owners\` query. Leaf-only, so \`owner { … }\` still
-  flattens to one CSV line.
+    The character a row belongs to. Reached as \`owner\` from every row type, and
+    listed on its own by the \`owners\` query. Leaf-only, so \`owner { … }\` still
+    flattens to one CSV line.
 
-  \`id\` is this site's registration id (the id \`ownerId\` carries), NOT the EVE
-  character id — that's \`characterId\`. The corp/alliance fields load only when
-  you select them.
+    \`id\` is this site's registration id (the id \`ownerId\` carries), NOT the EVE
+    character id — that's \`characterId\`. The corp/alliance fields load only when
+    you select them.
 
-  The two character filters name a row's character differently. \`character:\`
-  is a case-insensitive substring of \`name\`. \`characters:\` is an exact list,
-  and each entry may be any of the three ids on this type: a whole \`name\`, an
-  EVE \`characterId\`, or a registration \`id\` — mix them freely. An entry that
-  matches nothing is an error, never a silently narrower result.
+  FILTERS: \`character:\` is a case-insensitive substring of \`name\`.
+    \`characters:\` is an exact list, and each entry may be any of the three ids
+    on this type: a whole \`name\`, an EVE \`characterId\`, or a registration
+    \`id\` — mix them freely. An entry that matches nothing is an error, never a
+    silently narrower result.
   """
   type Owner {
     "This site's registration id — what ownerId carries, and one of the forms the characters: filter accepts. NOT the EVE character id."
@@ -119,6 +119,11 @@ export const typeDefs = /* GraphQL */ `
   \`blueprintType\`/\`productType\`) from every row that names an item.
   Leaf-only. Nothing here needs an extra query — the row's \`typeName\` was
   already read from these same SDE rows.
+
+  FILTERS: \`type:\` searches \`name\` the way the site's item search does, and
+  keeps everything it matched (so "Fuel Block" catches all four, and the
+  blueprints); it refuses a term matching too many types to be a filter.
+  \`types:\` is an exact list of \`typeId\`s and whole \`name\`s, mixed.
   """
   type ItemType {
     typeId: String!
@@ -143,6 +148,13 @@ export const typeDefs = /* GraphQL */ `
 
   \`systemId\`/\`systemName\` are the solar system the location is in — null for a
   container or ship whose own location we couldn't walk up to a system.
+
+  FILTERS: \`location:\` substring-searches names across all three sources at
+  once — your corp's structures, the ESI-resolved structure cache, NPC stations
+  and solar systems — and keeps every id it matched, so a system name pulls in
+  that system's rows and a station name that station's. \`locations:\` is an
+  exact list of \`locationId\`s and whole names, mixed. Neither widens what you
+  can read: a name you don't own resolves to an id none of your rows carry.
   """
   type Location {
     locationId: String!

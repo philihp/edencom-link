@@ -131,39 +131,29 @@ test('Owner exposes the EVE character id distinctly from the registration id', (
   assert.ok(owner.id.description?.includes('registration id'))
 })
 
-test('every character-filtered field carries both the fuzzy character and the exact characters list', () => {
+test('every filter dimension is a singular/plural pair, and the old names are gone', () => {
   const schema = buildSchema(typeDefs)
   const fields = (schema.getQueryType() as GraphQLObjectType).getFields()
-  for (const name of ['assets', 'blueprints', 'industryJobs', 'marketOrders', 'walletTransactions']) {
-    const args = new Map(fields[name].args.map((a) => [a.name, String(a.type)]))
-    assert.equal(args.get('character'), 'String', `${name}.character`)
-    // A list of characters — names, EVE character ids or registration ids —
-    // and String for the same reason typeIds is: EVE ids overflow Int.
-    assert.equal(args.get('characters'), '[String!]', `${name}.characters`)
-    // The rows still say owner/ownerId/ownerName; only the FILTER is named for
-    // what it takes. `owner:` as an argument is gone, not deprecated.
-    assert.equal(args.get('owner'), undefined, `${name}.owner`)
-    assert.equal(args.get('owners'), undefined, `${name}.owners`)
+  // Which dimensions each field filters on — the pairs are uniform, the set of
+  // dimensions is per field (only assets carries a location).
+  const dimensions: Record<string, string[]> = {
+    assets: ['type', 'location', 'character'],
+    blueprints: ['type', 'character'],
+    industryJobs: ['character'],
+    marketOrders: ['character'],
+    walletTransactions: ['type', 'character'],
   }
-})
-
-test('assets filters locations by a list of ids, not a single one', () => {
-  const schema = buildSchema(typeDefs)
-  const args = new Map(
-    (schema.getQueryType() as GraphQLObjectType).getFields().assets.args.map((a) => [a.name, String(a.type)])
-  )
-  assert.equal(args.get('locationIds'), '[String!]')
-  assert.equal(args.get('locationId'), undefined)
-})
-
-test('the type-filtered fields all carry typeIds as a String list', () => {
-  const schema = buildSchema(typeDefs)
-  const fields = (schema.getQueryType() as GraphQLObjectType).getFields()
-  for (const name of ['assets', 'blueprints', 'walletTransactions']) {
-    const arg = fields[name].args.find((a) => a.name === 'typeIds')
-    assert.ok(arg, `${name} has a typeIds arg`)
-    // String, not Int: EVE type ids are small today but the schema keeps one
-    // id representation, and Int is 32-bit.
-    assert.equal(String(arg.type), '[String!]')
+  for (const [field, dims] of Object.entries(dimensions)) {
+    const args = new Map(fields[field].args.map((a) => [a.name, String(a.type)]))
+    for (const dim of dims) {
+      assert.equal(args.get(dim), 'String', `${field}.${dim}`)
+      // A list of ids or whole names — String for the same reason every id in
+      // this schema is: EVE ids overflow GraphQL's 32-bit Int.
+      assert.equal(args.get(`${dim}s`), '[String!]', `${field}.${dim}s`)
+    }
+    // The pre-pairing spellings, all removed rather than deprecated.
+    for (const gone of ['owner', 'owners', 'typeIds', 'typeName', 'locationId', 'locationIds']) {
+      assert.equal(args.get(gone), undefined, `${field}.${gone}`)
+    }
   }
 })
