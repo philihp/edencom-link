@@ -65,10 +65,7 @@ test('several migrations added in one PR are fine as long as each sorts after th
 test('ties that already exist on the base branch are not held against a PR', () => {
   // main really does carry two 20260723020000_* and two 20260725000000_* files.
   const tied = [...MERGED, '20260725000000_mercenary_den_alliance_sharing.sql']
-  assert.deepEqual(
-    checkMigrations({ baseFiles: tied, headFiles: [...tied, '20260726000000_new.sql'] }),
-    []
-  )
+  assert.deepEqual(checkMigrations({ baseFiles: tied, headFiles: [...tied, '20260726000000_new.sql'] }), [])
 })
 
 test('an unparseable filename fails', () => {

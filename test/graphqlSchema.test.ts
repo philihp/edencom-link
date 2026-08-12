@@ -17,8 +17,12 @@ import {
 
 import { typeDefs } from '../src/app/api/graphql/schema.graphql.ts'
 
-// The three leaf-only entity types the row types point at.
-const ENTITY_TYPES = ['ItemType', 'Location', 'Owner']
+// The leaf-only entity types the row types point at.
+const ENTITY_TYPES = ['Corporation', 'ItemType', 'Location', 'Owner']
+
+// Rows a corporation can own: their owner edge is nullable and paired with a
+// corporation edge, with ownerType saying which side a row came from.
+const CORP_OWNABLE = ['Asset', 'Blueprint', 'IndustryJob']
 
 // Every type whose values are rows of a result set.
 const ROW_TYPES = [
@@ -37,12 +41,27 @@ const objectType = (schema: GraphQLSchema, name: string): GraphQLObjectType => {
   return type
 }
 
+// Corp market orders have no ESI extract behind them (no corp_order table), so
+// marketOrders deliberately carries no corporation filter — an argument that
+// could never match would be worse than its absence.
+test('marketOrders and walletTransactions stay character-only', () => {
+  const schema = buildSchema(typeDefs)
+  const fields = (schema.getQueryType() as GraphQLObjectType).getFields()
+  for (const name of ['marketOrders', 'walletTransactions']) {
+    const args = fields[name].args.map((a) => a.name)
+    assert.ok(args.includes('character'), `${name}.character`)
+    assert.ok(!args.includes('corporation'), `${name}.corporation`)
+    assert.ok(!args.includes('corporations'), `${name}.corporations`)
+  }
+})
+
 test('the SDL parses and exposes the expected query fields', () => {
   const schema = buildSchema(typeDefs)
   const query = schema.getQueryType() as GraphQLObjectType
   assert.deepEqual(Object.keys(query.getFields()).sort(), [
     'assets',
     'blueprints',
+    'corporations',
     'industryJobs',
     'marketOrders',
     'owners',
@@ -95,7 +114,19 @@ test('every row type carries an owner edge, and every object field on one is an 
   const schema = buildSchema(typeDefs)
   for (const name of ROW_TYPES) {
     const fields = objectType(schema, name).getFields()
-    assert.equal(String(fields.owner?.type), 'Owner!', `${name}.owner`)
+    // A row only a character can own keeps a non-null owner; a corp-ownable
+    // row has exactly one of owner/corporation filled, so both are nullable
+    // and ownerType (never null) says which.
+    if (CORP_OWNABLE.includes(name)) {
+      assert.equal(String(fields.owner?.type), 'Owner', `${name}.owner`)
+      assert.equal(String(fields.corporation?.type), 'Corporation', `${name}.corporation`)
+      assert.equal(String(fields.ownerType?.type), 'String!', `${name}.ownerType`)
+      assert.equal(String(fields.ownerId?.type), 'String!', `${name}.ownerId`)
+      assert.equal(String(fields.ownerName?.type), 'String!', `${name}.ownerName`)
+    } else {
+      assert.equal(String(fields.owner?.type), 'Owner!', `${name}.owner`)
+      assert.equal(fields.corporation, undefined, `${name}.corporation`)
+    }
     for (const field of Object.values(fields)) {
       const target = getNamedType(field.type)
       if (!isObjectType(target)) continue
@@ -137,9 +168,9 @@ test('every filter dimension is a singular/plural pair, and the old names are go
   // Which dimensions each field filters on — the pairs are uniform, the set of
   // dimensions is per field (only assets carries a location).
   const dimensions: Record<string, string[]> = {
-    assets: ['type', 'location', 'character'],
-    blueprints: ['type', 'character'],
-    industryJobs: ['character'],
+    assets: ['type', 'location', 'character', 'corporation'],
+    blueprints: ['type', 'character', 'corporation'],
+    industryJobs: ['character', 'corporation'],
     marketOrders: ['character'],
     walletTransactions: ['type', 'character'],
   }

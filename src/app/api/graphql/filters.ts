@@ -179,6 +179,50 @@ export const matchCharacterFilter = (
   return matchCharacterRefs(parsed.query.entries, directory)
 }
 
+// The corporation dimension, same shape again over the corporations the
+// caller's characters belong to: the singular substring-searches their names,
+// the plural matches whole names and EVE corporation ids. A corporation has
+// only the two id forms (there's no registration uuid behind one), so this is
+// simpler than the character matcher, but the refusals are identical.
+export const matchCorporationFilter = (
+  corporation: string | null | undefined,
+  corporations: readonly string[] | null | undefined,
+  nameById: ReadonlyMap<string, string>
+): CharacterMatch => {
+  const parsed = parseRefFilter(corporation, corporations, 'corporation')
+  if (!parsed.ok) return { ok: false, message: parsed.message }
+  const query = parsed.query
+  if (query.kind === 'none') return { ok: true, ids: null }
+
+  const available = (): string =>
+    [...nameById]
+      .map(([id, name]) => `${name} (${id})`)
+      .sort((a, b) => a.localeCompare(b))
+      .join(', ')
+
+  if (query.kind === 'search') {
+    const wanted = query.term.toLowerCase()
+    const ids = [...nameById].filter(([, name]) => name.toLowerCase().includes(wanted)).map(([id]) => id)
+    if (ids.length === 0) {
+      return { ok: false, message: `No corporation matched "${query.term}". Available: ${available()}.` }
+    }
+    return { ok: true, ids }
+  }
+
+  const { ids, names } = splitRefEntries(query.entries)
+  const candidates = [...nameById].map(([id, name]) => ({ id, name }))
+  const matchedNames = matchExactNames(names, () => candidates)
+  const unknownIds = ids.filter((id) => !nameById.has(id))
+  const unmatched = [...unknownIds, ...matchedNames.unmatched]
+  if (unmatched.length > 0) {
+    return {
+      ok: false,
+      message: `No corporation matched ${unmatched.map((u) => `"${u}"`).join(', ')}. Available: ${available()}.`,
+    }
+  }
+  return { ok: true, ids: [...new Set([...ids, ...matchedNames.ids])] }
+}
+
 // Parse the `since` argument (full ISO timestamp or a date prefix) into an
 // ISO string usable as a >= bound, or reject with a hint.
 export type SinceParse = { ok: true; iso: string | null } | { ok: false; message: string }

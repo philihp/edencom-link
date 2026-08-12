@@ -30,20 +30,24 @@
 // scalars for a CSV-shaped query, the edges for exploring; both cost the same.
 //
 // FILTERS COME IN SINGULAR/PLURAL PAIRS, one pair per entity type: character/
-// characters, location/locations, type/types. The singular is a
+// characters, corporation/corporations, location/locations, type/types. The singular is a
 // case-insensitive substring SEARCH over names; the plural is an EXACT list
 // whose entries are ids or whole names, mixed freely. The two are mutually
 // exclusive, an entry matching nothing is an error, and each entity type's
 // description says which of its fields the pair accepts. See filters.ts.
 export const typeDefs = /* GraphQL */ `
   type Query {
-    "Your linked characters. ownerId on every row below is one of these ids."
+    "Your linked characters. ownerId on a character-owned row below is one of these ids."
     owners: [Owner!]!
 
+    "The corporations your linked characters belong to — what the corporation filters accept, and what ownerId carries on a corp-owned row."
+    corporations: [Corporation!]!
+
     """
-    Current asset rows (live inventory) across your characters. Filters are the
-    schema's singular/plural pairs — type/types, location/locations,
-    character/characters (see each entity type). includeShared additionally
+    Current asset rows (live inventory) across your characters AND the
+    corporations they belong to. Filters are the schema's singular/plural pairs
+    — type/types, location/locations, character/characters,
+    corporation/corporations (see each entity type). includeShared additionally
     returns rows other users have shared with you (session auth only — the
     api_token path is own-data only; a Lens is the way to hand shared data to
     external tools).
@@ -55,6 +59,8 @@ export const typeDefs = /* GraphQL */ `
       locations: [String!]
       character: String
       characters: [String!]
+      corporation: String
+      corporations: [String!]
       limit: Int
       includeShared: Boolean = false
     ): AssetPage!
@@ -62,14 +68,28 @@ export const typeDefs = /* GraphQL */ `
     "Asset shares other users have aimed at you (corporation/alliance/public). Session auth only."
     sharedWithMe: [ShareGrant!]!
 
-    "Current blueprint rows (BPOs and BPCs) across your characters, filtered by item type and character."
-    blueprints(type: String, types: [String!], character: String, characters: [String!], limit: Int): BlueprintPage!
+    "Current blueprint rows (BPOs and BPCs) across your characters and their corporations, filtered by item type and owner."
+    blueprints(
+      type: String
+      types: [String!]
+      character: String
+      characters: [String!]
+      corporation: String
+      corporations: [String!]
+      limit: Int
+    ): BlueprintPage!
 
-    "Open market orders across your characters."
+    "Open market orders across your characters. Character-owned only — corp market orders are not extracted yet, so there is no corporation filter here."
     marketOrders(character: String, characters: [String!]): [MarketOrder!]!
 
-    "Industry jobs across your characters. Delivered jobs are excluded unless includeDelivered."
-    industryJobs(character: String, characters: [String!], includeDelivered: Boolean = false): [IndustryJob!]!
+    "Industry jobs across your characters and their corporations. Delivered jobs are excluded unless includeDelivered."
+    industryJobs(
+      character: String
+      characters: [String!]
+      corporation: String
+      corporations: [String!]
+      includeDelivered: Boolean = false
+    ): [IndustryJob!]!
 
     "Latest known wallet balance per character."
     walletBalances: [WalletBalance!]!
@@ -86,19 +106,19 @@ export const typeDefs = /* GraphQL */ `
   }
 
   """
-    The character a row belongs to. Reached as \`owner\` from every row type, and
-    listed on its own by the \`owners\` query. Leaf-only, so \`owner { … }\` still
-    flattens to one CSV line.
+  The character that owns a row, reached as \`owner\` from every row type, and
+  listed on its own by the \`owners\` query. Leaf-only, so \`owner { … }\` still
+  flattens to one CSV line. Null on a row a CORPORATION owns — see Corporation.
 
-    \`id\` is this site's registration id (the id \`ownerId\` carries), NOT the EVE
-    character id — that's \`characterId\`. The corp/alliance fields load only when
-    you select them.
+  \`id\` is this site's registration id (the id \`ownerId\` carries), NOT the EVE
+  character id — that's \`characterId\`. The corp/alliance fields load only when
+  you select them.
 
   FILTERS: \`character:\` is a case-insensitive substring of \`name\`.
-    \`characters:\` is an exact list, and each entry may be any of the three ids
-    on this type: a whole \`name\`, an EVE \`characterId\`, or a registration
-    \`id\` — mix them freely. An entry that matches nothing is an error, never a
-    silently narrower result.
+  \`characters:\` is an exact list, and each entry may be any of the three ids
+  on this type: a whole \`name\`, an EVE \`characterId\`, or a registration
+  \`id\` — mix them freely. An entry that matches nothing is an error, never a
+  silently narrower result.
   """
   type Owner {
     "This site's registration id — what ownerId carries, and one of the forms the characters: filter accepts. NOT the EVE character id."
@@ -111,6 +131,31 @@ export const typeDefs = /* GraphQL */ `
     corporationName: String
     allianceId: String
     "Null for a character whose corporation is in no alliance."
+    allianceName: String
+  }
+
+  """
+  The corporation that owns a row, reached as \`corporation\` from the row types
+  a corporation can own (assets, blueprints and industry jobs — the ones with
+  a corp-wide ESI endpoint). Leaf-only, like Owner. Null on a row a CHARACTER
+  owns; \`ownerType\` on the row says which side it is, and \`ownerId\`/
+  \`ownerName\` name whichever it is, so a CSV always has one owner column.
+
+  Only corporations your own characters belong to ever appear here — corp rows
+  are scoped to exactly that set.
+
+  FILTERS: \`corporation:\` is a case-insensitive substring of \`name\`.
+  \`corporations:\` is an exact list of whole \`name\`s and \`corporationId\`s,
+  mixed. Naming ONE owner side narrows to it: filtering by corporation drops
+  character-owned rows, filtering by character drops corp-owned rows, giving
+  both unions them, and giving neither returns both.
+  """
+  type Corporation {
+    "The EVE corporation id — what ownerId carries on a corp-owned row."
+    corporationId: String!
+    name: String
+    allianceId: String
+    "Null for a corporation in no alliance."
     allianceName: String
   }
 
@@ -190,9 +235,16 @@ export const typeDefs = /* GraphQL */ `
     isBlueprintCopy: Boolean
     "Player-assigned name (ship/container custom name), if any."
     name: String
+    "Either character or corporation — which side of the union owns this row."
+    ownerType: String!
+    "The registration id (character-owned) or corporation id (corp-owned)."
     ownerId: String!
+    "The character's or the corporation's name — always filled."
     ownerName: String!
-    owner: Owner!
+    "The owning character; null on a corp-owned row."
+    owner: Owner
+    "The owning corporation; null on a character-owned row."
+    corporation: Corporation
     type: ItemType!
     "Null only for a row ESI gave no location_id."
     location: Location
@@ -217,9 +269,15 @@ export const typeDefs = /* GraphQL */ `
     timeEfficiency: Int
     "-1 for an original, remaining licensed runs for a copy."
     runs: Int
+    "Either character or corporation — which side of the union owns this row."
+    ownerType: String!
+    "The registration id (character-owned) or corporation id (corp-owned)."
     ownerId: String!
     ownerName: String!
-    owner: Owner!
+    "The owning character; null on a corp-owned row."
+    owner: Owner
+    "The owning corporation; null on a character-owned row."
+    corporation: Corporation
     "The blueprint's own item type — the product's type is not on this row."
     type: ItemType!
     location: Location
@@ -273,9 +331,17 @@ export const typeDefs = /* GraphQL */ `
     completedDate: String
     stationId: String
     locationName: String
+    "Either character or corporation — which side of the union owns this row."
+    ownerType: String!
+    "The registration id (character-owned) or corporation id (corp-owned)."
     ownerId: String!
     ownerName: String!
-    owner: Owner!
+    "The owning character; null on a corp-owned row."
+    owner: Owner
+    "The owning corporation; null on a character-owned row."
+    corporation: Corporation
+    "The EVE character who installed a CORP job; null on a character's own job, which ESI doesn't stamp."
+    installerId: String
     blueprintType: ItemType!
     "Null for research and copy jobs, which produce no new item type."
     productType: ItemType

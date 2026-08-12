@@ -13,6 +13,7 @@ import {
   matchCharacterFilter,
   matchCharacterName,
   matchCharacterRefs,
+  matchCorporationFilter,
   matchExactNames,
   parseRefFilter,
   parseSince,
@@ -179,4 +180,44 @@ test('matchExactNames takes whole names only, keeping every candidate that match
 test('matchExactNames reports what matched nothing, rather than dropping it', () => {
   const matched = matchExactNames(['Trit'], () => [{ id: '34', name: 'Tritanium' }])
   assert.deepEqual(matched, { ids: [], unmatched: ['Trit'] })
+})
+
+// The corporation dimension: same pair, over the corporations the caller's
+// characters belong to. Two id forms only — there's no registration uuid
+// behind a corporation.
+const CORPORATIONS = new Map([
+  ['98000001', 'Sanctuary of Shadows'],
+  ['98000002', 'Shadow Cartel'],
+  ['1000045', 'Deep Core Mining Inc.'],
+])
+
+test('matchCorporationFilter passes an absent filter through', () => {
+  assert.deepEqual(matchCorporationFilter(null, null, CORPORATIONS), { ok: true, ids: null })
+  assert.deepEqual(matchCorporationFilter('  ', [], CORPORATIONS), { ok: true, ids: null })
+})
+
+test('matchCorporationFilter substring-searches names in the singular', () => {
+  const match = matchCorporationFilter('shadow', null, CORPORATIONS)
+  assert.deepEqual(match.ok && match.ids, ['98000001', '98000002'])
+})
+
+test('matchCorporationFilter takes whole names and corporation ids in the plural', () => {
+  const match = matchCorporationFilter(null, ['shadow cartel', '1000045'], CORPORATIONS)
+  assert.deepEqual(match.ok && match.ids, ['1000045', '98000002'].sort())
+})
+
+test('matchCorporationFilter rejects unknown entries and a partial name, listing what exists', () => {
+  const unknown = matchCorporationFilter(null, ['98009999'], CORPORATIONS)
+  assert.equal(unknown.ok, false)
+  assert.match(!unknown.ok ? unknown.message : '', /Deep Core Mining Inc\. \(1000045\)/)
+  const partial = matchCorporationFilter(null, ['shadow'], CORPORATIONS)
+  assert.equal(partial.ok, false)
+  const missing = matchCorporationFilter('nobody', null, CORPORATIONS)
+  assert.equal(missing.ok, false)
+})
+
+test('matchCorporationFilter refuses the singular and plural together', () => {
+  const both = matchCorporationFilter('shadow', ['Shadow Cartel'], CORPORATIONS)
+  assert.equal(both.ok, false)
+  assert.match(!both.ok ? both.message : '', /Pass corporation or corporations, not both/)
 })
