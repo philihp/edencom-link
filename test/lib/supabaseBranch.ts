@@ -96,6 +96,26 @@ const readBranch = async (parentRef: string, branchId: string): Promise<Branch> 
   return branch
 }
 
+// Supabase runs branch setup (clone → migrate → seed → deploy) as an "action
+// run", and its log says which migration failed and how. Without it a failure
+// reads only as MIGRATIONS_FAILED, which is useless in CI. Best-effort: a
+// failure to read the log must not replace the failure being reported.
+const setupLog = async (parentRef: string, branchId: string) => {
+  try {
+    const runs: { id: string; branch_id: string }[] = await management(`/v1/projects/${parentRef}/actions?limit=20`)
+    const run = runs.find((candidate) => candidate.branch_id === branchId)
+    if (!run) return '(no setup run found for this branch)'
+    const response = await fetch(`${MANAGEMENT_API}/v1/projects/${parentRef}/actions/${run.id}/logs`, {
+      headers: { authorization: `Bearer ${process.env.SUPABASE_ACCESS_TOKEN}` },
+    })
+    const log = await response.text()
+    // Only the tail matters — the failing statement is at the end.
+    return `─ setup log (tail) ─\n${log.split('\n').slice(-40).join('\n')}`
+  } catch (error) {
+    return `(setup log unavailable: ${error instanceof Error ? error.message : error})`
+  }
+}
+
 // Ready means BOTH halves agree: the project itself is ACTIVE_HEALTHY (branch
 // detail) and its migrations/functions landed (the branch listing). Waiting on
 // health alone would hand back a project whose migrations are still running —
@@ -112,7 +132,9 @@ const awaitHealthy = async (parentRef: string, branchId: string, deadline: numbe
   const setup = branch.status
   const where = `branch ${branch.name} (health ${detail.status}, setup ${setup ?? 'n/a'})`
 
-  if (setup && !SETUP_PENDING.includes(setup)) throw new Error(`${where} failed to set up`)
+  if (setup && !SETUP_PENDING.includes(setup)) {
+    throw new Error(`${where} failed to set up\n${await setupLog(parentRef, branchId)}`)
+  }
   if (detail.status !== HEALTH_READY && !HEALTH_PENDING.includes(detail.status)) {
     throw new Error(`${where} entered a terminal state`)
   }
@@ -178,13 +200,21 @@ export const createTestBranch = async (namePrefix: string): Promise<BranchTarget
   })
 
   const deadline = Date.now() + READY_TIMEOUT_MS
-  // The branch's own project ref — `created.project_ref` is populated too, but
-  // the detail response is the authoritative one once it is healthy.
-  const { ref } = await awaitHealthy(parentRef, created.id, deadline)
-  const url = `https://${ref}.supabase.co`
-  const { anonKey, serviceKey } = await fetchKeys(ref)
-  await awaitAuth(url, anonKey, deadline)
-  return { url, anonKey, serviceKey, branchId: created.id }
+  try {
+    // The branch's own project ref — `created.project_ref` is populated too,
+    // but the detail response is the authoritative one once it is healthy.
+    const { ref } = await awaitHealthy(parentRef, created.id, deadline)
+    const url = `https://${ref}.supabase.co`
+    const { anonKey, serviceKey } = await fetchKeys(ref)
+    await awaitAuth(url, anonKey, deadline)
+    return { url, anonKey, serviceKey, branchId: created.id }
+  } catch (error) {
+    // A branch that never came up is still a running, billable project, and
+    // the caller has no handle to tear it down — nothing was returned. Delete
+    // it here, then rethrow the original failure.
+    await deleteTestBranch({ url: '', anonKey: '', serviceKey: '', branchId: created.id })
+    throw error
+  }
 }
 
 // Best-effort teardown: a leaked branch costs money, but a teardown failure
