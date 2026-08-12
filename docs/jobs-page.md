@@ -1,4 +1,8 @@
-# Plan: the extract jobs page (`/jobs`)
+# The extract jobs page (`/jobs`)
+
+> **Shipped.** The page renders live data and `/character/refresh` is gone
+> (permanently redirected). What follows is the design as built; the sections
+> below describe the page that exists, not one that is planned.
 
 One page that answers, for a signed-in user: **which extract jobs feed my
 data, when did each last run, what is it doing right now, and when does it
@@ -260,35 +264,41 @@ account-independent number that means less.
 
 | File                                                       | Change                                                                                                        |
 | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `src/app/jobs/registry.ts`                                 | New — job catalog: label, section, kickable, `cronFor()` over the `vercel.json` import. **(stubbed)**         |
-| `src/app/jobs/schedule.ts`                                 | New — pure `parseCron` / `nextCronRun`, UTC. **(stubbed, with tests)**                                        |
-| `src/app/jobs/page.tsx`                                    | New — the four sections. **(stubbed against mock data)**                                                      |
-| `src/app/jobs/jobs.module.css`                             | New — table/status/countdown styles, lifted from `refresh.module.css`. **(stubbed)**                          |
-| `src/app/jobs/stubData.ts`                                 | Temporary — mock heartbeats/tasks so the layout renders before the queries exist. **Deleted by the real PR.** |
-| `src/app/jobs/actions.ts`                                  | New — `refreshCell` moved, allow-list rebuilt from the registry.                                              |
-| `src/app/jobs/cell.tsx`, `refreshButton.tsx`, `poller.tsx` | Moved from `src/app/character/refresh/`.                                                                      |
-| `src/app/character/refresh/*`                              | Deleted.                                                                                                      |
-| `next.config.mjs`                                          | `/character/refresh` → `/jobs` permanent; retarget `/characters/refresh`.                                     |
-| `src/app/layout/header.tsx`                                | Refresh indicator links to `/jobs`.                                                                           |
-| `test/schedule.test.ts`                                    | New — cron parsing/next-fire assertions. **(stubbed, passing)**                                               |
+| `src/app/jobs/registry.ts`                                       | Job catalog: label, section, kickable, `cronFor()` over the `vercel.json` import, plus `jobEntry()` — the allow-list `refreshCell` gates on. |
+| `src/app/jobs/schedule.ts`                                       | Pure `parseCron` / `nextCronRun` / `previousCronRun`, UTC.                                                                                  |
+| `src/app/jobs/rows.ts`                                           | Pure reductions: oldest/newest run, lagging count, status precedence, activity grouping, the abandoned-task rule.                            |
+| `src/app/jobs/page.tsx`                                          | The four sections, over live queries.                                                                                                       |
+| `src/app/jobs/jobs.module.css`                                   | Table/status/countdown styles, lifted from `refresh.module.css`.                                                                            |
+| `src/app/jobs/actions.ts`                                        | `refreshCell`, allow-list rebuilt from the registry.                                                                                        |
+| `src/app/jobs/refreshButton.tsx`, `poller.tsx`, `loading.tsx`    | Moved from `src/app/character/refresh/`.                                                                                                    |
+| `src/app/character/refresh/*`                                    | Deleted.                                                                                                                                    |
+| `next.config.mjs`                                                | `/character/refresh` → `/jobs` permanent; `/characters/refresh` retargeted straight at `/jobs`.                                             |
+| `src/app/layout/header.tsx`, `src/app/page.tsx`, `fittingMatrix` | Refresh links point at `/jobs`; the character callback lands there after adding a character.                                                 |
+| `test/schedule.test.ts`, `test/jobsRows.test.ts`                 | Cron parsing/next-fire assertions; the row reductions.                                                                                      |
 
-No schema migration. (The optional `heartbeat.ok` column above is a separate
-follow-up PR.)
+One migration, `20260812000000_latest_heartbeats_outcome`: `latest_heartbeats()`
+now returns `ok` and `error` alongside `ended_at`, which is what lets a cell
+render `✗ failed` for a *scheduled* run rather than an undifferentiated stale
+dot. Adding OUT columns changes the return type, so the function is dropped and
+recreated (as in #754); the only other caller reads `job`/`ended_at` and is
+unaffected.
 
-## What is already stubbed in this repo
+## What shipped beyond the plan
 
-The plan ships with a rendering stub so the layout can be argued about before
-the queries are written:
-
-- `schedule.ts` and its tests are **real and complete** — `pnpm test` covers
-  every cron shape `vercel.json` uses plus the general syntax.
-- `registry.ts` is **real** — it reads the actual `vercel.json`, so the Next
-  run column shows true times today.
-- `page.tsx` renders all four sections against `stubData.ts` (three fake
-  characters, two fake corps, real job names). Every place a Supabase query
-  belongs is marked `TODO(jobs-page)`.
-- Nothing is linked from the header yet and `/character/refresh` is untouched,
-  so the stub is reachable only by typing `/jobs`.
+- **Abandoned tasks.** A `refresh_task` left `pending`/`running` for over an
+  hour is rendered as `✗ abandoned` and excluded from the status overlay and
+  from the poller's "anything active" test — otherwise a run that died before
+  flipping its row terminal pins a cell on "running" and the 2s poller on
+  forever. This is the backstop
+  [`cron-to-workflows/06-burn-in.md` §2](cron-to-workflows/06-burn-in.md) asked
+  for, placed here rather than in a sweeper job nobody reads. The rows are left
+  in the table (they are the evidence), just labelled honestly.
+- **`character-fittings`** is a row: the plan's table predated it being a
+  scheduled per-character job.
+- **Two windows over `refresh_task`, not one.** Recent activity reads 24 hours;
+  the per-cell status overlay reads only the last 10 minutes, so an on-demand
+  error from this morning doesn't outrank a scheduled pull that has since
+  succeeded.
 
 ## Verification (no test runner for pages; gates are lint + build + manual)
 

@@ -209,7 +209,7 @@ const Home = async () => {
         <div className={styles.actions}>
           {user ? (
             <>
-              <Link href="/character/refresh" className={styles.primary}>
+              <Link href="/jobs" className={styles.primary}>
                 Review pipeline status
               </Link>
               <Link href="/settings/grants" className={styles.secondary}>

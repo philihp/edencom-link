@@ -123,7 +123,7 @@ const oneCharacterPerCorporation = (characters: Character[], corporationById: Ma
 // Run every on-demand ESI extract for the given characters: insert a
 // refresh_task row per unit of work (a per-character job for one character, or an
 // account-wide job) and start a matching workflow run targeted at that row's
-// id, whose step flips it running -> done/error, live on /character/refresh.
+// id, whose step flips it running -> done/error, live on /jobs.
 // Used when a character is added; the per-cell refresh buttons go through
 // dispatchSingleJob below instead. Uses the service role, so callers must pass
 // a userId they've already authorized.
@@ -217,7 +217,7 @@ export const dispatchRefresh = async (userId: string, characters: Character[]): 
   return batchId
 }
 
-// One cell of the /character/refresh matrix: insert a single refresh_task row
+// One cell of the /jobs page: insert a single refresh_task row
 // and start its one workflow run. `character` is null for the account-wide
 // jobs. For a corp-scoped job the target carries every scoped character in the
 // representative character's corporation — the same grouping dispatchRefresh

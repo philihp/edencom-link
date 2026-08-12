@@ -901,20 +901,29 @@ alter table public.impersonation_log enable row level security;
 grant all on public.impersonation_log to service_role;
 
 -- The most recent completed heartbeat per job per owner (character, corp, or
--- whole-job), driving the freshness dots on /character/refresh. DISTINCT ON
--- over owner_key rather than the two nullable id columns so the account-wide
+-- whole-job), driving the freshness dots and failure states on /jobs. DISTINCT
+-- ON over owner_key rather than the two nullable id columns so the account-wide
 -- rows (both ids null) collapse to one row per job instead of being merged by
 -- null-grouping quirks. Floored to the last 30 days to keep the sort bounded
 -- as heartbeat grows — anything older is stale enough to read as "never".
--- SECURITY INVOKER (the default), so heartbeat's RLS scopes the rows to the
--- caller: their own characters, their corps, and the shared account-wide jobs.
+-- ok/error carry the run's outcome, so a job that last ran is distinguishable
+-- from one that last worked. SECURITY INVOKER (the default), so heartbeat's RLS
+-- scopes the rows to the caller: their own characters, their corps, and the
+-- shared account-wide jobs.
 create or replace function public.latest_heartbeats()
-returns table (job text, registration_id uuid, corporation_id bigint, ended_at timestamptz)
+returns table (
+  job text,
+  registration_id uuid,
+  corporation_id bigint,
+  ended_at timestamptz,
+  ok boolean,
+  error text
+)
 language sql
 stable
 as $$
   select distinct on (h.job, h.owner_key)
-    h.job, h.registration_id, h.corporation_id, h.ended_at
+    h.job, h.registration_id, h.corporation_id, h.ended_at, h.ok, h.error
   from public.heartbeat h
   where h.ended_at is not null
     and h.ended_at > now() - interval '30 days'

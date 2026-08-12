@@ -7,7 +7,7 @@
 // Workflows' bounded retries, visible under Observability → Workflows. The job
 // module (src/jobs/industrySystems.js) is untouched and still CLI-runnable.
 
-// The Chancellor-only refresh row on /character/refresh (refreshCell →
+// The Chancellor-only refresh row on /jobs (refreshCell →
 // dispatchSingleJob) also start()s this workflow, with an OnDemandTarget whose
 // taskId names the refresh_task row the step tracks running → done/error via
 // withRefreshTask.

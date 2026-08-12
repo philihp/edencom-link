@@ -134,7 +134,7 @@ export const fetchAllRows = async <T>(
 
 // When the relevant extract jobs last completed for this user, so the model
 // can caveat answers with how fresh the underlying snapshot is (extracts run
-// on Vercel Cron, not on demand — see /character/refresh).
+// on Vercel Cron, not on demand — see /jobs).
 export const dataFreshness = async (supabase: SupabaseClient, jobs: string[]): Promise<Record<string, string>> => {
   const { data } = await supabase.rpc('latest_heartbeats')
   const rows = (data ?? []) as Array<{ job: string; ended_at: string }>

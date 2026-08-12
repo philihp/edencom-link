@@ -1,6 +1,6 @@
-/* Styles for the /jobs stub (docs/jobs-page.md). Deliberately close to
-   refresh.module.css — this page replaces /character/refresh, and the retro
-   table look should carry over unchanged. */
+/* Styles for /jobs (docs/jobs-page.md). Deliberately close to the
+   refresh.module.css this page inherited from /character/refresh: the retro
+   table look carries over unchanged. */
 
 .table {
   border-collapse: collapse;
@@ -123,15 +123,6 @@
   font-size: 0.8em;
   padding: 0 0.5em;
   cursor: pointer;
-}
-
-.stubBanner {
-  border: 1px dashed var(--border, #444);
-  padding: 0.5rem 0.75rem;
-  margin: 1rem 0;
-  color: var(--ink-faint, #888);
-  font-size: 0.9em;
-  max-width: 60rem;
 }
 
 .errorText {

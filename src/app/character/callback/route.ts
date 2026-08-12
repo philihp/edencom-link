@@ -142,7 +142,7 @@ export const GET = async (request: NextRequest) => {
   await dispatchRefresh(user_id, [{ id: registration_id, name }])
 
   const redirectTo = request.nextUrl.clone()
-  redirectTo.pathname = '/character/refresh'
+  redirectTo.pathname = '/jobs'
   redirectTo.search = ''
   return NextResponse.redirect(redirectTo)
 }

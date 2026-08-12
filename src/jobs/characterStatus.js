@@ -22,7 +22,7 @@ const TAG = 'character-status'
 // token lacks docking access) never aborts the others. The individual
 // character-wallet / character-location / character-implants / character-clones /
 // character-ship / character-skills job modules remain runnable on their own
-// (CLI + queue) for manual use; only their scheduling and the /character/refresh
+// (CLI + queue) for manual use; only their scheduling and the /jobs
 // UI merge into this job.
 export const SCOPES = [WALLET_SCOPE, LOCATION_SCOPE, IMPLANTS_SCOPE, CLONES_SCOPE, SHIP_SCOPE, SKILLS_SCOPE]
 
@@ -45,7 +45,7 @@ export const runCharacterStatus = ({ registrationIds } = {}) => {
     // Run each endpoint the token is authorized for, isolating failures so a
     // partial outage still records the parts that succeeded. The character's
     // single character-status heartbeat is recorded by forEachCharacterAnyScope
-    // regardless, so the /character/refresh cell reflects that the pull ran.
+    // regardless, so the /jobs cell reflects that the pull ran.
     await forEachSequential(parts, async (part) => {
       if (!scopes.includes(part.scope)) return
       try {
