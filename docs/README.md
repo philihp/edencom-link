@@ -12,6 +12,7 @@ honest when a project ships or a new doc lands.
 |---|---|---|
 | [appraisals/](appraisals/) | ISK appraisals via innomin.at: `appraise_items`/`appraise_assets` MCP tools, asset-viewer appraisal with row selection | All five docs shipped; doc 05's selection UI superseded doc 03's per-row column. Future ideas parked in its README |
 | [cron-to-workflows/](cron-to-workflows/) | Move every extract job (scheduled and on-demand) onto Vercel Workflows | All phases done; the crons are thin `start()` triggers. Aftercare tracked in its doc 06 |
+| [fluid-compute-memory-plan/](fluid-compute-memory-plan/) | Reduce Vercel Fluid Compute memory costs | Closed out by #695 (streamed SDE ingest, compact asset reconciles, `job.peak_rss` metric), not by working the staged plan. The plan's premise expired one day before it merged: #676 removed the `memory` settings from `vercel.json`, so under active-CPU billing there is no memory dial left to turn down. Remaining phases deliberately unworked — see its README |
 | [fittings.md](fittings.md) | Read-only saved-fitting extract + `/fitting` page + MCP `list_fittings` | Shipped as #742–#745. ESI has no corp/alliance fittings endpoint — the doc explains why |
 | [gice-auth.md](gice-auth.md) | GICE (Goonfleet OIDC) as an auth method, hand-rolled auth-code client | Live; doubles as the reference for how the flow works |
 | [sde-db-cutover/](sde-db-cutover/) | Stop downloading the SDE at build time; read the nightly-mirrored `sde_*` tables at runtime | Docs 00–04 all done, including the esf-data move into the `sde-mirror` workflow tail |
@@ -37,5 +38,4 @@ honest when a project ships or a new doc lands.
 | [asset-proximity/](asset-proximity/) | Sort `/asset` by stargate jumps from the main character's location | Feasibility validated (the SDE stargate graph is mirrored); no code yet |
 | [custom-fit-ui.md](custom-fit-ui.md) | Replace `@eveshipfit/react` rendering with our own components, keeping the dogma-engine math | Stage 0 (proof-out) done — decoder, engine glue, flag mapping and skills all verified; stages 1–5 not started |
 | [fitting-paging.md](fitting-paging.md) | Treat the game's 500-fit cap as a resident set and this site as the backing store (page fits in/out via ESI) | Plan only; builds on the shipped fittings feature |
-| [fluid-compute-memory-plan/](fluid-compute-memory-plan/) | Reduce Vercel Fluid Compute memory costs | Multi-stage plan; discovery not started |
 | [open-registration.md](open-registration.md) | Drop the invite-code gate: anonymous users on first visit, invites become referral attribution, identities (email / EVE SSO / Discord / GICE) affix in any order | Plan merged 2026-08-12 (#860); implementation not started. Its stage 5 delivers discord-bot stage 06 |

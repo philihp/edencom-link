@@ -1,5 +1,9 @@
 # Fluid Compute Memory Optimization Project
 
+> **Closed 2026-08-12 — the goal was met, the plan below was not the thing that
+> met it.** Read [Outcome](#outcome) first; the staged plan is kept as-is for
+> the analysis in stages 2–3, not as a live work queue.
+
 **Objective:** Reduce memory consumption of Vercel Fluid Compute functions to lower our largest recurring expense.
 
 ## Overview
@@ -121,15 +125,63 @@ Organized by category:
 - [ ] Observability dashboard operational
 - [ ] All changes documented in CLAUDE.md
 
-## Status
+## Outcome
 
-| Stage | Status | Date |
-|-------|--------|------|
-| 1. Discovery | TBD | [FILL IN] |
-| 2. Analysis | TBD | [FILL IN] |
-| 3. Solutions | TBD | [FILL IN] |
-| 4. Roadmap | TBD | [FILL IN] |
-| 5. Monitoring | TBD | [FILL IN] |
+The project shipped its win out of order and then stopped, which is the right
+outcome — recorded here so nobody re-opens it expecting stages 1–5 to run.
+
+**What happened, in order:**
+
+1. **#676 (2026-07-21) removed the `memory` settings from `vercel.json`** — one
+   day *before* this plan merged. Under active-CPU billing Vercel sizes memory
+   from real usage, so the lever this whole plan aims at ("lower peak RSS, then
+   lower the configured limit, then pay less") no longer exists. `vercel.json`
+   still carries no `memory` key today. The stage 1 premise — memory as the
+   largest recurring expense — was already stale on arrival.
+2. **#687 (2026-07-22) merged this plan** (stages 1–5, all boxes unchecked).
+3. **#695 (2026-07-23) did the engineering anyway, on its own terms**, because
+   peak RSS is still worth cutting for headroom and for not OOMing a step:
+   - **Streamed the SDE ingest** (`src/jobs/sdeMirror.js`): the entry's Range
+     fetch pipes through `createInflateRaw` and lines are walked per chunk
+     rather than Range-reading and `inflateRawSync`-ing the entry whole.
+     Measured on `mapMoons.jsonl` (224 MB inflated): **587 MB → 191 MB peak
+     RSS**, ~100 MB of which is baseline Node + modules. The peak no longer
+     scales with entry size. This is roadmap task P2.1, delivered.
+   - **Compacted the asset reconciles** (`characterAssets.js`, `corpAssets.js`):
+     `fetchCurrentByItem` folds each PostgREST page into `item_id → { id, sig }`
+     and discards it, instead of accumulating every open row's full columns.
+     Peak went from ~3–4× the asset set to ~1×. Partially covers P2.2/P2.3.
+   - **Sequenced `encodeEsfData`** (`src/buildEsfData.js`): the six protobuf maps
+     build sequentially, largest-first, each released after its encode.
+   - **Added `recordPeakRss`** (`src/observability.js`) emitting `job.peak_rss`
+     on the same stdout-JSON convention as `esi.conditional_request`. Part of P3.1.
+
+**Net:** the plan's two headline targets (SDE mirror 30–50%, extract jobs 10–20%)
+are the ones that got done. Everything left is small, and its payoff is headroom
+rather than money.
+
+**Deliberately not done, and why:**
+
+| Task | Why it stays undone |
+|---|---|
+| P1.1 chunked bulk inserts | Already true before the plan — every extract job upserts via `splitEvery` (500–1000 rows). Nothing to do |
+| P1.2 bound the SDE loader cache | `src/sdeCache.ts` is still an unbounded `Map` with a 6h TTL. Bounded by the SDE's own size (types/systems/stations), not by traffic, so it plateaus rather than grows |
+| P1.3 stream CSV responses | `/api/{character,corp}/*` still buffer via `toCsv`. Per-request, small next to a mirror ingest |
+| P1.4 TTL tuning | Needs the hit-rate metric that P1.2 would add. Not worth it on its own |
+| P3.1 dashboard + alerts | The metric is emitted; no dashboard or alert rule was built on it |
+| P3.2 batch-size A/B | Speculative without a cost signal to optimize against |
+| Phase 4 (Redis, PG cursors) | Was already deferred |
+
+**Known gaps in the instrumentation**, if this is ever picked back up:
+
+- `recordPeakRss` fires from `runJobWithHeartbeat` (`src/workflows/lib.ts`), which
+  only wraps the **single-step** jobs, plus per-entry from the sde-mirror ingest.
+  The per-character and per-corp fan-out workflows keep their heartbeats inside
+  the job modules, so they emit no `job.peak_rss` — the asset jobs #695 optimized
+  are exactly the ones not reporting.
+- #695 also called it from the innomin.at queue consumer; that call is gone from
+  `src/app/api/queue/innominate/route.ts` today (lost when the route moved to
+  `handleCallback`).
 
 ## Related Documentation
 
@@ -141,6 +193,4 @@ Organized by category:
 
 ---
 
-**Maintainer:** [TBD]  
-**Last Updated:** [2026-07-21]  
-**Next Review:** [TBD]
+**Last Updated:** 2026-08-12 (closed out; see [Outcome](#outcome))
