@@ -23,9 +23,9 @@
 //     node:zlib inflates (zip entries are raw deflate). No unzip binary, no
 //     zip library.
 import { randomInt } from 'node:crypto'
-import { Readable } from 'node:stream'
-import { createInflateRaw, inflateRawSync } from 'node:zlib'
-import { map, splitEvery } from 'ramda'
+import { Readable, Transform } from 'node:stream'
+import { createInflateRaw } from 'node:zlib'
+import { forEach, map, splitEvery } from 'ramda'
 
 import { userAgent } from '../esi.js'
 import { recordPeakRss } from '../observability.js'
@@ -200,6 +200,30 @@ export const listEntries = async (zipUrl) => {
   return files
 }
 
+// Pass through only bytes [start, end] of a stream and end there, so a caller
+// that has been handed more than it asked for (a server that ignored our Range
+// header) still holds one chunk at a time rather than the whole body. Bytes
+// before the window are dropped; once past it the readable side ends and the
+// consumer's abort stops the download.
+const sliceStream = (start, end) => {
+  let pos = 0
+  let ended = false
+  return new Transform({
+    transform(piece, _encoding, done) {
+      if (ended) return done()
+      const from = Math.max(0, start - pos)
+      const to = Math.min(piece.length, end + 1 - pos)
+      pos += piece.length
+      if (to > from) this.push(piece.subarray(from, to))
+      if (pos > end) {
+        ended = true
+        this.push(null)
+      }
+      done()
+    },
+  })
+}
+
 // Open one entry's decompressed bytes as a Node Readable, Range-reading only
 // that entry's compressed bytes and inflating them incrementally — the peak
 // held in memory is a decompression chunk, not the whole entry (typeDogma
@@ -230,12 +254,22 @@ export const openEntryStream = async (zipUrl, file, signal) => {
     source.on('error', (e) => inflate.destroy(e))
     return source.pipe(inflate)
   }
-  // A server ignoring Range replies 200 with the whole zip; fall back to
-  // buffering and slicing locally, as the Range path used to for every entry.
+  // A server ignoring Range replies 200 with the whole zip. Slice it as it
+  // arrives rather than buffering: holding the ~100 MB export in memory and
+  // then inflateRawSync-ing a whole entry (typeDogma inflates to hundreds of
+  // MB) is the one path here whose peak scales with CCP's export instead of
+  // with our chunk size, and it silently undoes the streaming the 206 path
+  // exists for. Loud, because it also means every entry is being re-downloaded.
   if (res.status === 200) {
-    const whole = Buffer.from(await res.arrayBuffer())
-    const raw = whole.subarray(dataStart, dataEnd + 1)
-    return Readable.from([file.method === 0 ? Buffer.from(raw) : inflateRawSync(raw)])
+    console.warn(`[sde-mirror] ${file.entry}: Range ignored (200), stream-slicing the whole zip`)
+    const source = Readable.fromWeb(res.body)
+    const raw = source.pipe(sliceStream(dataStart, dataEnd))
+    // pipe() doesn't forward errors; surface network failures to the consumer.
+    source.on('error', (e) => raw.destroy(e))
+    if (file.method === 0) return raw
+    const inflate = createInflateRaw()
+    raw.on('error', (e) => inflate.destroy(e))
+    return raw.pipe(inflate)
   }
   throw new Error(`sde-mirror: GET ${zipUrl} bytes=${dataStart}-${dataEnd} → ${res.status}`)
 }
@@ -247,9 +281,33 @@ const ensureMirrorTable = async (stem, keyType) => {
   if (error) throw new Error(`sde-mirror: ensure_sde_mirror_table(${stem}) failed: ${error.message}`)
 }
 
-const upsertChunk = async (table, rows) => {
+// PostgREST answers from a cached schema, so a table ensureMirrorTable() just
+// minted is invisible to it until the cache reloads — the first upsert into a
+// brand-new sde_* table comes back as PGRST205, "Could not find the table
+// 'public.<table>' in the schema cache". ensure_sde_mirror_table() asks for the
+// reload on creation (notify pgrst), but delivery is at commit and the reload
+// itself is asynchronous, so the write has to be prepared to wait for it.
+//
+// Waiting here rather than leaning on the workflow's step retries: those fire
+// within a few seconds of each other and then give up, which is precisely how
+// the nightly mirror spent 20 days dying one new table at a time. The backoff
+// sums to ~15 s, which fits the slice budget — a new table's first chunk is
+// always at the very start of its step.
+const SCHEMA_CACHE_MISS = 'PGRST205'
+const RELOAD_BACKOFF_MS = [500, 1000, 2000, 4000, 8000]
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
+const upsertChunk = async (table, rows, attempt = 0) => {
   const { error } = await sudoSupabase.from(table).upsert(rows, { onConflict: '_key' })
-  if (error) throw new Error(`sde-mirror: upsert into ${table} failed: ${error.message}`)
+  if (!error) return
+  if (error.code === SCHEMA_CACHE_MISS && attempt < RELOAD_BACKOFF_MS.length) {
+    const wait = RELOAD_BACKOFF_MS[attempt]
+    console.log(`[sde-mirror] ${table} not in PostgREST's schema cache yet, retrying in ${wait}ms`)
+    await sleep(wait)
+    return upsertChunk(table, rows, attempt + 1)
+  }
+  throw new Error(`sde-mirror: upsert into ${table} failed: ${error.message}`)
 }
 
 // Rows that vanished from the current dump kept their old sde_build stamp;
@@ -371,16 +429,18 @@ export const ingestEntrySlice = async (zipUrl, file, build, startLine = 0, budge
 
 // ── Station names ───────────────────────────────────────────────────────────
 
-const selectAllKeys = async (table, from = 0) => {
+// Tail-recursive paging, push-mutating one accumulator rather than re-spreading
+// it per page (the codebase's accepted exception, and here it also keeps a
+// second copy of every station id off the heap).
+const selectAllKeys = async (table, from = 0, acc = []) => {
   const { data, error } = await sudoSupabase
     .from(table)
     .select('_key')
     .order('_key')
     .range(from, from + PAGE - 1)
   if (error) throw new Error(`sde-mirror: paging ${table} failed: ${error.message}`)
-  const keys = map((r) => r._key, data ?? [])
-  if (keys.length < PAGE) return keys
-  return [...keys, ...(await selectAllKeys(table, from + PAGE))]
+  forEach((row) => acc.push(row._key), data ?? [])
+  return (data ?? []).length < PAGE ? acc : selectAllKeys(table, from + PAGE, acc)
 }
 
 // The SDE carries a station's structure but not its display name (the game

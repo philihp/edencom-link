@@ -219,6 +219,12 @@ create extension if not exists pg_graphql;
 -- The policy check compares the full shape rather than just the name, so a
 -- policy that has drifted by hand is still dropped and recreated — preserving
 -- the self-healing the old unconditional drop-and-recreate gave for free.
+--
+-- That guarding also removed a reload notification the ingest was relying on by
+-- accident (see the `notify pgrst` below): the old unconditional DDL fired
+-- Supabase's ddl_command_end watcher on every call, keeping PostgREST's schema
+-- cache hot enough that a freshly minted table was visible by the time the
+-- first upsert reached it.
 create or replace function public.ensure_sde_mirror_table(p_stem text, p_key_type text default 'bigint')
 returns void
 language plpgsql
@@ -245,6 +251,13 @@ begin
       p_key_type
     );
     v_oid := to_regclass('public.' || quote_ident(v_table));
+    -- New table: PostgREST answers from a cached schema, and the ingest's very
+    -- next act is to write these rows through it. Without this the first upsert
+    -- into a freshly minted table fails with PGRST205 ("Could not find the
+    -- table ... in the schema cache"). NOTIFY is delivered at commit and the
+    -- reload is asynchronous, so upsertChunk (src/jobs/sdeMirror.js) still
+    -- retries on PGRST205; this shortens that wait rather than removing it.
+    notify pgrst, 'reload schema';
   end if;
 
   if not exists (
