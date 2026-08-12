@@ -1,13 +1,13 @@
 # Per-account structure universe
 
-Status: design, not built.
+Status: built (PR #879).
 
 ## Problem
 
 `/structure` today lists exactly one thing: `corp_structure`, the Upwell
 structures owned by corporations the account has a character in (widened to
 alliance-mates by a second policy). That is the set of structures the account
-*owns*, not the set it can *see*.
+_owns_, not the set it can _see_.
 
 Two things are missing: a per-account lever to refresh that set on demand, and
 a name for every structure that shows up elsewhere in the app.
@@ -17,12 +17,12 @@ a name for every structure that shows up elsewhere in the app.
 A genuinely complete list of player-anchored structures **does not exist in any
 data source we can reach**. Measured 2026-08-12:
 
-| Source | Structures |
-|---|---|
-| ESI `GET /universe/structures` | 886 ids, no names |
+| Source                              | Structures                    |
+| ----------------------------------- | ----------------------------- |
+| ESI `GET /universe/structures`      | 886 ids, no names             |
 | EVE Ref `structures-latest.v2.json` | 2,374 rows, 1,444 with a name |
 
-ESI's public list is documented as *fully public* only — "a completely open
+ESI's public list is documented as _fully public_ only — "a completely open
 Access Control List". Everything else in New Eden is invisible to ESI unless one
 of our own characters has access.
 
@@ -72,21 +72,22 @@ For each of the account's characters that holds the in-game role, scan that
 character's corp. This is where everything beyond a name comes from: state,
 services, reinforcement windows, fuel, rigs.
 
-**The trap:** rigs and fuel come from *different jobs*.
+**The trap:** rigs and fuel come from _different jobs_.
 
-| Data | Table | Job |
-|---|---|---|
-| state, services, reinforce, unanchors_at | `corp_structure` | `corp-structures` |
-| **fuel_expires, profile_id** | `corp_structure_status` | `corp-structures` |
-| **fitted rigs** | `corp_structure_rig` | **`corp-assets`** |
+| Data                                     | Table                   | Job               |
+| ---------------------------------------- | ----------------------- | ----------------- |
+| state, services, reinforce, unanchors_at | `corp_structure`        | `corp-structures` |
+| **fuel_expires, profile_id**             | `corp_structure_status` | `corp-structures` |
+| **fitted rigs**                          | `corp_structure_rig`    | **`corp-assets`** |
 
-ESI has no structure-fitting endpoint; rigs are inferred from corp *assets*
+ESI has no structure-fitting endpoint; rigs are inferred from corp _assets_
 whose `location_flag` is a RigSlot (`src/jobs/corpAssets.js`). So a "refresh my
 structures" lever must fan out **both** `corp-structures` and `corp-assets`, or
 the rigs silently stay stale while everything beside them updates.
 
-`corp-assets` is already in `PER_CORPORATION_JOBS`; `corp-structures` is not,
-and needs adding. Both stay **per-corporation, one run per corp** — never one
+`corp-assets` was already in `PER_CORPORATION_JOBS`; `corp-structures` joined it
+(and its workflow moved from the single-step shape to the per-corporation
+fan-out). Both stay **per-corporation, one run per corp** — never one
 run per director. Two directors in the same corp would race a concurrent
 reconcile, which is the failure `dispatchRefresh.ts` already documents at
 length: the loser's INSERT collides with the winner's committed row and can
@@ -104,18 +105,24 @@ this** — it is the path that writes `heartbeat.skipped_reason` so `/jobs` can
 say "not a director" instead of "✗ failed" — and then discards the fact.
 
 ```sql
-create table public.corp_role_grant (
+create table public.corp_job_access (
   registration_id uuid   not null references public.registration (id) on delete cascade,
   corporation_id  bigint not null,
-  role text not null,          -- 'station_manager', later 'director', 'accountant', …
+  job  text not null,          -- the extract tag that proved it, e.g. 'corp-structures'
   observed_at timestamptz not null default now(),
-  primary key (registration_id, corporation_id, role)
+  primary key (registration_id, corporation_id, job)
 );
 ```
 
-Written on success, deleted on role-denial. No new ESI scope, no re-auth. If
-`esi-characters.read_corporation_roles.v1` is ever added it can fill the same
-table with stated rather than inferred roles, and no policy changes.
+Written on success, deleted on role-denial, in `forEachCorporation` itself so
+every corp job records it — best-effort, since bookkeeping must not fail an
+extract that succeeded. No new ESI scope, no re-auth.
+
+Keyed on the **job tag rather than a role name** on purpose: ESI never tells us
+which role the pilot holds, only whether the call was allowed. "Can pull
+`corp-structures` for corp X" is exactly what we observed, and exactly what the
+fuel policy needs. If `esi-characters.read_corporation_roles.v1` is ever added
+it can fill the same table with stated roles and no policy changes.
 
 ### 2. Names — universal, hourly
 
@@ -182,50 +189,58 @@ structure the directory has not learned about yet.
 
 ### Visibility ladder
 
-| Table | Contents | Audience | Change |
-|---|---|---|---|
-| `universe_structure` | name, system, type, owner | any established account | populate far wider |
-| `structure_favorite` | pinned structures | the owning user | **new** |
-| `corp_structure` | state, services, reinforce | own corp + alliance | none — already correct |
-| `corp_structure_rig` | fitted rigs | own corp → **+ alliance** | widen |
-| `corp_structure_status` | fuel, profile_id | own corp → **directors only** | narrow |
+| Table                   | Contents                   | Audience                      | Change                 |
+| ----------------------- | -------------------------- | ----------------------------- | ---------------------- |
+| `universe_structure`    | name, system, type, owner  | any established account       | populate far wider     |
+| `structure_favorite`    | pinned structures          | the owning user               | **new**                |
+| `corp_structure`        | state, services, reinforce | own corp + alliance           | none — already correct |
+| `corp_structure_rig`    | fitted rigs                | own corp → **+ alliance**     | widen                  |
+| `corp_structure_status` | fuel, profile_id           | own corp → **directors only** | narrow                 |
 
 Widening the rigs is a copy of the existing "Alliance members read corp
 structures" policy onto `corp_structure_rig`; a fitted rig is inferable from the
 structure's bonuses in space, so it was never really corp-private.
 
-Narrowing the status gates on `corp_role_grant`. **Consequence to accept:**
+Narrowing the status gates on `corp_job_access`. **Consequence to accept:**
 rank-and-file corp members lose the fuel column. The low-fuel Discord alerts are
 unaffected — that job runs service-role and never sees RLS.
 
 ## Page
 
-`/structure` sorts favorites to the top, then degrades by tier:
+Two tiers, and deliberately no third:
 
-1. **Favorites** — `structure_favorite`, `position` order, whatever tier.
-2. **Ours** — corp/alliance structures, full columns; fuel only for directors.
-3. **Everything else we can name** — identity from `universe_structure`. No
-   state, no revenue, no rigs; we have no data for someone else's structure.
+1. **Favorites** — `structure_favorite`, `position` order.
+2. **Everything else in the alliance** — which is exactly what the existing
+   `corp_structure` select already returns, since its RLS is own-corps OR
+   alliance-mates. Fuel only for directors; rigs now visible alliance-wide.
+3. ~~Everything else we can name~~ — **not shown.** Structures outside the
+   alliance don't belong on this page.
 
-The revenue/index/sparkline machinery stays keyed to tier 2 only.
+Because tier 3 is empty, a favorite is always something the caller can already
+see, and the star only ever re-sorts this list — no "pinned a structure you
+can't view" state to design around.
+
+That does _not_ make the directory pointless: naming structures is what it is
+for. Asset paths, market orders, industry job locations and contract endpoints
+all render structure ids elsewhere in the app, and the hourly job is what turns
+those into names.
 
 NPC stations are excluded by id range, not by a lookup: player structures are
 `>= 100_000_000_000`, NPC stations `<= 64_000_000`. `universeStructures.js`
 already carries the floor as `STRUCTURE_ID_FLOOR`.
 
-## Open questions
+## Decisions
 
-1. Do we take the EVE Ref dependency? It is the only way to name a structure no
-   token can reach, but it is a third-party feed with no SLA — the same bet
+1. **EVE Ref: taken.** It is the only way to name a structure no token of ours
+   can reach. The risk is a third-party feed with no SLA — the same bet
    jEveAssets made, and the same bet that left it with a dead Hammertime source.
-   The fallback is showing the raw id, which is what the SDE rule in `CLAUDE.md`
-   already prescribes for unresolvable lookups.
-2. Does tier 3 mean *every* structure in the directory (~2.4k rows, universe-wide)
-   or only ones the account has touched? "A name for every location that
-   matters" suggests the directory is for resolution and the page stays scoped —
-   worth confirming before building the query.
-3. Do the reinforcement hours in `corp_structure` stay alliance-visible? They are
-   shown in-game to anyone who can see the structure, so probably yes — worth
-   stating deliberately rather than inheriting.
-4. Should a user be able to add a structure id by hand (jEveAssets' `USER`
-   source) for the case where they know a structure exists but nothing resolves it?
+   Contained by `source` precedence: if the feed dies, the rows it wrote stay,
+   and everything a token resolved is untouched.
+2. **Page scope: alliance only.** See above.
+3. **Docking probes: not built.** Dockability is not what the page needs.
+4. Reinforcement hours stay alliance-visible (unchanged from today — they are
+   shown in-game to anyone who can see the structure).
+
+Still open: whether a user should be able to add a structure id by hand
+(jEveAssets' `USER` source) for the case where they know a structure exists but
+nothing resolves it.

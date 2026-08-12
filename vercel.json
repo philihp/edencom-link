@@ -82,6 +82,10 @@
       "schedule": "57 9 * * *"
     },
     {
+      "path": "/api/cron/structure-directory",
+      "schedule": "51 * * * *"
+    },
+    {
       "path": "/api/cron/character-directory",
       "schedule": "41 11 * * *"
     },

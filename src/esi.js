@@ -306,6 +306,16 @@ export const universeStructure = (access_token, structureID) =>
     label: `universeStructure ${structureID}`,
   })
 
+// Public (no token): every *fully public* player structure id — CCP's wording
+// for a completely open access control list, which is why this is a small
+// fraction of what's anchored in New Eden (886 ids as of 2026-08-12). Ids only;
+// naming them still needs a token with access, or EVE Ref. Feeds the
+// structure-directory job.
+export const universeStructures = () =>
+  esiJson(`/universe/structures/`, {
+    label: 'universeStructures',
+  })
+
 // Public (no token): resolve a single NPC station. Returns { system_id, name,
 // type_id, ... }; used to place clones parked in NPC stations in a solar system.
 export const universeStation = (stationID) =>

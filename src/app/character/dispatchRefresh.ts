@@ -49,6 +49,13 @@ const PER_CORPORATION_JOBS = [
   { job: 'corp-contracts', loadScope: async () => (await import('@/jobs/corpContracts.js')).SCOPE },
   { job: 'corp-assets', loadScope: async () => (await import('@/jobs/corpAssets.js')).SCOPE },
   { job: 'corp-industry-jobs', loadScope: async () => (await import('@/jobs/corpIndustryJobs.js')).SCOPE },
+  // Structures joined the on-demand set with the structure-universe work
+  // (docs/structure-universe/design.md). It has to travel with corp-assets:
+  // this job carries a structure's state, services, reinforcement windows and
+  // fuel timer, while its *rigs* come from corp assets (ESI has no
+  // structure-fitting endpoint), so refreshing one without the other leaves
+  // half the row stale.
+  { job: 'corp-structures', loadScope: async () => (await import('@/jobs/corpStructures.js')).SCOPE },
 ] as const
 
 export const PER_CORPORATION_JOB_NAMES = PER_CORPORATION_JOBS.map(({ job }) => job)
@@ -85,6 +92,8 @@ const JOB_WORKFLOWS: Record<string, () => Promise<(target?: OnDemandTarget) => P
   'character-directory': async () => (await import('@/workflows/characterDirectory')).characterDirectoryWorkflow,
   'universe-names': async () => (await import('@/workflows/universeNames')).universeNamesWorkflow,
   'industry-systems': async () => (await import('@/workflows/industrySystems')).industrySystemsWorkflow,
+  'corp-structures': async () => (await import('@/workflows/corpStructures')).corpStructuresWorkflow,
+  'structure-directory': async () => (await import('@/workflows/structureDirectory')).structureDirectoryWorkflow,
 }
 
 // Start one on-demand workflow run: the job's workflow, given the target that

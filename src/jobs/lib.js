@@ -191,6 +191,37 @@ export const forEachCharacterAnyScope = async (tag, { scopes, registrationIds, h
 // skipped_reason naming the character, so /jobs can say "not a director"
 // instead of "✗ failed" (docs/jobs-page.md), and the corp is still left
 // unclaimed so the next character in the group gets its turn.
+// Remember (or forget) that this character was able to pull this corp endpoint.
+// Observed capability, not a stated role: ESI never tells us which role the
+// pilot holds, only whether the call was allowed, and that is exactly what the
+// corp_structure_status fuel policy needs to gate on ("is a director of this
+// corp"). Recording it here rather than in each job module keeps the fact
+// wherever the role denial is already classified.
+//
+// Best-effort on purpose — a bookkeeping failure must not fail an extract that
+// actually succeeded. The worst case is a director briefly losing sight of a
+// fuel timer until the next run.
+const recordCorpJobAccess = async (tag, registration_id, corporation_id, allowed) => {
+  try {
+    const { error } = allowed
+      ? await sudoSupabase
+          .from('corp_job_access')
+          .upsert(
+            { registration_id, corporation_id, job: tag, observed_at: new Date().toISOString() },
+            { onConflict: 'registration_id,corporation_id,job' }
+          )
+      : await sudoSupabase
+          .from('corp_job_access')
+          .delete()
+          .eq('registration_id', registration_id)
+          .eq('corporation_id', corporation_id)
+          .eq('job', tag)
+    if (error) console.warn(`[${tag}] corp_job_access bookkeeping failed: ${error.message}`)
+  } catch (e) {
+    console.warn(`[${tag}] corp_job_access bookkeeping failed: ${e?.message ?? e}`)
+  }
+}
+
 export const forEachCorporation = async (tag, { scope, registrationIds }, handler) => {
   const seenCorps = new Set()
   await forEachCharacter(
@@ -230,10 +261,12 @@ export const forEachCorporation = async (tag, { scope, registrationIds }, handle
         // as FAILED, and it isn't. The corp stays out of seenCorps either way,
         // so a corpmate with the role still gets a turn this run.
         console.log(`[${tag}] ${ctx}: ${skipped} — recorded as a skip, not a failure`)
+        await recordCorpJobAccess(tag, registration_id, corporation_id, false)
         return
       }
       // Only mark the corp as handled once the pull actually succeeds.
       seenCorps.add(corporation_id)
+      await recordCorpJobAccess(tag, registration_id, corporation_id, true)
     }
   )
   return seenCorps

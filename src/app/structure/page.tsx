@@ -6,6 +6,7 @@ import { createClient } from '@/utils/supabase/server'
 
 import { establishedUser } from '../account/lib/establishedUser'
 import { DateTime } from '../DateTime'
+import { FavoriteStar } from './favoriteStar'
 import { formatIsk, formatKisk } from '../isk'
 import { LinkSpinner } from '../linkSpinner'
 import { Name, SystemName } from '../names'
@@ -105,7 +106,36 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
     .order('corporation_id', { ascending: true })
     .order('structure_id', { ascending: true })
 
-  const list = (structures ?? []) as Structure[]
+  // Tier 1 of the page (docs/structure-universe/design.md): the caller's pinned
+  // structures sort above everything else, in their own `position` order.
+  // Tier 2 is every other structure in the alliance — which is exactly what the
+  // select above already returns, since corp_structure's RLS is own-corps OR
+  // alliance-mates. There is no tier 3: structures outside the alliance are
+  // deliberately not shown here, so a favorite is always something the caller
+  // can already see and the star only ever re-sorts this list.
+  const { data: favoriteRows } = await supabase
+    .from('structure_favorite')
+    .select('structure_id, position')
+    .order('position', { ascending: true })
+  const favoritePosition = new Map<string, number>(
+    ((favoriteRows ?? []) as Array<{ structure_id: number | string; position: number }>).map((r) => [
+      String(r.structure_id),
+      r.position,
+    ])
+  )
+  const isFavorite = (s: Structure) => favoritePosition.has(String(s.structure_id))
+
+  // Stable within each block: favorites by their drag order, the rest keeping
+  // the corporation/structure_id order the select asked for.
+  const list = ((structures ?? []) as Structure[]).slice().sort((a, b) => {
+    const aFav = isFavorite(a)
+    const bFav = isFavorite(b)
+    if (aFav !== bFav) return aFav ? -1 : 1
+    if (aFav && bFav) {
+      return (favoritePosition.get(String(a.structure_id)) ?? 0) - (favoritePosition.get(String(b.structure_id)) ?? 0)
+    }
+    return 0
+  })
 
   // Tax revenue each structure generates. Each industry-tax journal entry references its job via
   // context_id (context_id_type = industry_job_id); outer-join those job ids to the industry-job
@@ -382,6 +412,7 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
                       {/* Upwell structures share their structure_id with the station/facility id industry jobs run at. */}
                       <span className={styles.subId}>#{s.structure_id}</span>
                     </div>
+                    <FavoriteStar structureId={String(s.structure_id)} favorite={isFavorite(s)} />
                   </div>
 
                   <div className={styles.fields}>
