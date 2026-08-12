@@ -51,6 +51,13 @@ export const jobSignature = (j) =>
 // again with a changed signature, and it will never appear again. That is why
 // month-old finished research kept rendering on /industry. Terminal rows are
 // still left alone, so the view keeps every job we did see finish.
+/**
+ * @typedef {{ job_id: number, status: string, [column: string]: any }} EsiJob
+ * @typedef {EsiJob & { id: number }} JobRow
+ *
+ * @param {JobRow[]} current
+ * @param {EsiJob[]} fetched
+ */
 export const partitionJobs = (current, fetched) => {
   const currentByJob = new Map(current.map((c) => [Number(c.job_id), c]))
   // ESI could report the same job twice if the set shifts mid-response;
@@ -70,7 +77,12 @@ export const partitionJobs = (current, fetched) => {
       }
       return a
     },
-    { touchIds: [], closeIds: [], openJobs: [], agedOutIds: [] },
+    /** @type {{ touchIds: number[], closeIds: number[], openJobs: EsiJob[], agedOutIds: number[] }} */ ({
+      touchIds: [],
+      closeIds: [],
+      openJobs: [],
+      agedOutIds: [],
+    }),
     [...fetchedByJob.values()]
   )
 

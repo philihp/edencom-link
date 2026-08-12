@@ -78,6 +78,18 @@ export const composeDenPing = ({ planet, planetId, reinforcementEnd }) => {
 // The whole decision: [] unless the den just entered reinforcement, else one
 // insert-ready notification row per linked channel (delivery state is
 // per-message, so detection fans out here rather than in the sender).
+/**
+ * @param {{
+ *   userId: string,
+ *   denId: number,
+ *   planetId: number,
+ *   planet: { system_name?: string | null, celestial_index?: number | null } | null,
+ *   prevObservation: { reinforcement_end?: string | null } | null,
+ *   newObservation: { reinforcement_end?: string | null },
+ *   channels: { id: string }[],
+ *   now?: Date,
+ * }} params
+ */
 export const planDenNotifications = ({
   userId,
   denId,

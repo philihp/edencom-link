@@ -55,7 +55,8 @@ test('matchPlanetTypes is case-insensitive and accepts the full name', () => {
     typeIDs: [LAVA],
     names: ['Planet (Lava)'],
   })
-  assert.deepEqual(matchPlanetTypes(PLANET_TYPES, 'LAVA').typeIDs, [LAVA])
+  const lava = matchPlanetTypes(PLANET_TYPES, 'LAVA')
+  assert.deepEqual(lava.ok ? lava.typeIDs : null, [LAVA])
 })
 
 test('matchPlanetTypes treats a missing query as no filter, not as no matches', () => {
@@ -73,7 +74,8 @@ test('matchPlanetTypes fails a typo and lists what exists', () => {
 
 test('matchPlanetTypes keeps a deliberately broad query broad', () => {
   // "planet" is in every name — the caller asked for everything, so give it.
-  assert.equal(matchPlanetTypes(PLANET_TYPES, 'planet').typeIDs?.length, PLANET_TYPES.length)
+  const broad = matchPlanetTypes(PLANET_TYPES, 'planet')
+  assert.equal(broad.ok ? broad.typeIDs?.length : null, PLANET_TYPES.length)
 })
 
 test('planetTypeName falls back rather than dropping an unmirrored type', () => {
