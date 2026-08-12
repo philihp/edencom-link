@@ -35,7 +35,7 @@ honest when a project ships or a new doc lands.
 | Project | What it will be | Notes |
 |---|---|---|
 | [asset-proximity/](asset-proximity/) | Sort `/asset` by stargate jumps from the main character's location | Feasibility validated (the SDE stargate graph is mirrored); no code yet |
-| [custom-fit-ui.md](custom-fit-ui.md) | Replace `@eveshipfit/react` rendering with our own components, keeping the dogma-engine math | Feasibility assessed; stage 0 (proof-out) not started |
+| [custom-fit-ui.md](custom-fit-ui.md) | Replace `@eveshipfit/react` rendering with our own components, keeping the dogma-engine math | Stage 0 (proof-out) done — decoder, engine glue, flag mapping and skills all verified; stages 1–5 not started |
 | [fitting-paging.md](fitting-paging.md) | Treat the game's 500-fit cap as a resident set and this site as the backing store (page fits in/out via ESI) | Plan only; builds on the shipped fittings feature |
 | [fluid-compute-memory-plan/](fluid-compute-memory-plan/) | Reduce Vercel Fluid Compute memory costs | Multi-stage plan; discovery not started |
 | [open-registration.md](open-registration.md) | Drop the invite-code gate: anonymous users on first visit, invites become referral attribution, identities (email / EVE SSO / Discord / GICE) affix in any order | Plan merged 2026-08-12 (#860); implementation not started. Its stage 5 delivers discord-bot stage 06 |
