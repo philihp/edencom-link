@@ -24,14 +24,14 @@ import {
   ASSET_CAP,
   LIST_CAP,
   clampLimit,
-  matchCharacterFilter,
-  matchCorporationFilter,
   matchExactNames,
+  matchOwnerFilter,
   parseRefFilter,
   parseSince,
   splitRefEntries,
 } from './filters'
 import { searchLocationCandidates } from './locationSearch'
+import type { OwnerScopes } from './filters'
 import type { GraphqlContext } from './context'
 
 const badRequest = (message: string): never => {
@@ -40,22 +40,6 @@ const badRequest = (message: string): never => {
 
 const queryFailed = (): never => {
   throw new GraphQLError('Query failed', { extensions: { http: { status: 500 } } })
-}
-
-// The registration ids a field should read for, after the optional character
-// filter (`character` fuzzy by name, `characters` an exact list of
-// names/character ids/registration ids) — always a subset of the caller's own
-// registrations.
-const scopeIds = (
-  ctx: GraphqlContext,
-  args: { character?: string | null; characters?: readonly string[] | null }
-): string[] => {
-  const match = matchCharacterFilter(args.character, args.characters, {
-    nameById: ctx.ownerNameById,
-    characterIdById: ctx.ownerCharacterIdById,
-  })
-  if (!match.ok) return badRequest(match.message)
-  return match.ids ?? ctx.registrationIds
 }
 
 // The item-type dimension → SDE type ids, or null for no filter. `type` runs
@@ -245,38 +229,39 @@ const ownerFieldsOf = (
         corporation: { corporationId: owned.corporationId } as CorporationRef,
       }
 
-// The two owner scopes a field reads, after the character and corporation
-// filters. Naming ONE side narrows to it and excludes the other — asking for
-// "my alt's assets" shouldn't hand back the corp hangar — while naming both
-// unions them, and naming neither reads everything the caller owns.
+// The two owner scopes a field reads, after the owner filter. One filter spans
+// both kinds of owner (filters.ts), so naming a character narrows to that
+// character and drops the corp hangar, naming a corporation does the reverse,
+// naming both unions them, and naming neither reads everything the caller owns.
 const ownerScopesFor = async (
   ctx: GraphqlContext,
-  args: {
-    character?: string | null
-    characters?: readonly string[] | null
-    corporation?: string | null
-    corporations?: readonly string[] | null
-  }
-): Promise<{ registrationIds: string[]; corporationIds: string[] }> => {
-  const character = matchCharacterFilter(args.character, args.characters, {
-    nameById: ctx.ownerNameById,
-    characterIdById: ctx.ownerCharacterIdById,
+  args: { owner?: string | null; owners?: readonly string[] | null }
+): Promise<OwnerScopes> => {
+  const filtered = args.owner != null || args.owners != null
+  const match = matchOwnerFilter(args.owner, args.owners, {
+    characters: { nameById: ctx.ownerNameById, characterIdById: ctx.ownerCharacterIdById },
+    // Only a filter needs corporation names, so the load stays behind one.
+    corporations: filtered ? await corporationNamesFor(ctx) : new Map(),
   })
-  if (!character.ok) badRequest(character.message)
-  const corporation = matchCorporationFilter(
-    args.corporation,
-    args.corporations,
-    // Only a corporation filter needs the names, so the load stays behind it.
-    args.corporation != null || args.corporations != null ? await corporationNamesFor(ctx) : new Map()
-  )
-  if (!corporation.ok) badRequest(corporation.message)
+  if (!match.ok) badRequest(match.message)
+  const scopes = match.ok ? match.scopes : null
+  return scopes ?? { registrationIds: ctx.registrationIds, corporationIds: ctx.corporationIds }
+}
 
-  const characterIds = character.ok ? character.ids : null
-  const corporationIds = corporation.ok ? corporation.ids : null
-  return {
-    registrationIds: characterIds ?? (corporationIds === null ? ctx.registrationIds : []),
-    corporationIds: corporationIds ?? (characterIds === null ? ctx.corporationIds : []),
+// The character side alone, for the fields with no corp-owned source behind
+// them (market orders and wallet transactions — ESI's corporation endpoints for
+// those aren't extracted). An owner filter naming ONLY corporations can't be
+// honoured there, and saying so beats returning zero rows as if none existed.
+const characterScopeFor = async (
+  ctx: GraphqlContext,
+  args: { owner?: string | null; owners?: readonly string[] | null },
+  what: string
+): Promise<string[]> => {
+  const scopes = await ownerScopesFor(ctx, args)
+  if (scopes.registrationIds.length === 0 && scopes.corporationIds.length > 0) {
+    badRequest(`${what} are extracted per character only, so a corporation-only owner filter matches nothing here.`)
   }
+  return scopes.registrationIds
 }
 
 // Session-only guard for the shared-data surfaces: the Bearer path runs on the
@@ -367,8 +352,8 @@ export const resolvers = {
         types?: readonly string[] | null
         location?: string | null
         locations?: readonly string[] | null
-        character?: string | null
-        characters?: readonly string[] | null
+        owner?: string | null
+        owners?: readonly string[] | null
         limit?: number | null
         includeShared?: boolean | null
       },
@@ -536,10 +521,8 @@ export const resolvers = {
       args: {
         type?: string | null
         types?: readonly string[] | null
-        character?: string | null
-        characters?: readonly string[] | null
-        corporation?: string | null
-        corporations?: readonly string[] | null
+        owner?: string | null
+        owners?: readonly string[] | null
         limit?: number | null
       },
       ctx: GraphqlContext
@@ -634,10 +617,10 @@ export const resolvers = {
 
     marketOrders: async (
       _parent: unknown,
-      args: { character?: string | null; characters?: readonly string[] | null },
+      args: { owner?: string | null; owners?: readonly string[] | null },
       ctx: GraphqlContext
     ) => {
-      const ownerIds = scopeIds(ctx, args)
+      const ownerIds = await characterScopeFor(ctx, args, 'Market orders')
 
       type OrderRow = {
         order_id: number
@@ -705,10 +688,8 @@ export const resolvers = {
     industryJobs: async (
       _parent: unknown,
       args: {
-        character?: string | null
-        characters?: readonly string[] | null
-        corporation?: string | null
-        corporations?: readonly string[] | null
+        owner?: string | null
+        owners?: readonly string[] | null
         includeDelivered?: boolean | null
       },
       ctx: GraphqlContext
@@ -843,14 +824,14 @@ export const resolvers = {
       args: {
         type?: string | null
         types?: readonly string[] | null
-        character?: string | null
-        characters?: readonly string[] | null
+        owner?: string | null
+        owners?: readonly string[] | null
         since?: string | null
         limit?: number | null
       },
       ctx: GraphqlContext
     ) => {
-      const ownerIds = scopeIds(ctx, args)
+      const ownerIds = await characterScopeFor(ctx, args, 'Wallet transactions')
       const typeIds = await typeIdsFor(args)
       const since = parseSince(args.since)
       if (!since.ok) return badRequest(since.message)

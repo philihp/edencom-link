@@ -55,8 +55,8 @@ export const parseRefFilter = (
 }
 
 // An exact-list entry is an id when it's a bare positive integer, and a name
-// otherwise. (A character may also be named by its registration uuid — see
-// matchCharacterRefs, the one dimension with three id forms.)
+// otherwise. (An owner entry may also be a registration uuid — see
+// matchOwnerFilter, the one dimension with three id forms.)
 export const splitRefEntries = (entries: readonly string[]): { ids: string[]; names: string[] } => ({
   ids: entries.filter((e) => /^\d+$/.test(e)),
   names: entries.filter((e) => !/^\d+$/.test(e)),
@@ -86,37 +86,13 @@ export const matchExactNames = (
   }
 }
 
-// Case-insensitive substring match of the `character:` filter against the
-// caller's characters. Returns the matching registration ids, or an error
-// listing what's available — same semantics as the MCP resolveOwnerFilter.
-export type CharacterMatch = { ok: true; ids: string[] | null } | { ok: false; message: string }
-
-export const matchCharacterName = (
-  character: string | null | undefined,
-  nameById: ReadonlyMap<string, string>
-): CharacterMatch => {
-  const trimmed = (character ?? '').trim().toLowerCase()
-  if (trimmed === '') return { ok: true, ids: null }
-  const ids = [...nameById].filter(([, name]) => name.toLowerCase().includes(trimmed)).map(([id]) => id)
-  if (ids.length === 0) {
-    const available = [...nameById.values()].sort((a, b) => a.localeCompare(b))
-    return { ok: false, message: `No character matched "${character}". Available: ${available.join(', ')}.` }
-  }
-  return { ok: true, ids }
-}
-
-// The exact counterpart of the fuzzy `character:` filter: a LIST of
-// characters, each named by whichever id the caller has to hand. An entry is
+// The caller's characters, by the three ids one can be named by. An exact-list
+// entry resolves against these as:
 //
 //   - all digits          → an EVE character id (Owner.characterId),
 //   - a uuid              → this site's registration id (Owner.id / ownerId),
 //   - anything else       → a character name, matched case-insensitively but
-//                           WHOLE — a list is the exact question, `character`
-//                           is the fuzzy one, as typeIds is to typeName.
-//
-// Every entry must match, and an unmatched one errors listing what exists,
-// rather than quietly narrowing a lens nobody re-reads for a year. The result
-// is the union, deduped, in the caller's order.
+//                           WHOLE (the plural asks the exact question).
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 export type CharacterDirectory = {
@@ -137,90 +113,90 @@ const idsForEntry = (entry: string, { nameById, characterIdById }: CharacterDire
   return [...nameById].filter(([, name]) => name.toLowerCase() === wanted).map(([id]) => id)
 }
 
-const availableCharacters = ({ nameById, characterIdById }: CharacterDirectory): string =>
-  [...nameById]
-    .map(([id, name]) => {
-      const characterId = characterIdById.get(id)
+// THE OWNER DIMENSION covers both kinds of owner at once, because that's how
+// the data reads: an asset, a blueprint or an industry job is owned by a
+// character OR by a corporation, and "show me what these three own" shouldn't
+// care which. `owner:` substring-searches character AND corporation names;
+// `owners:` is an exact list mixing character names, EVE character ids,
+// registration ids, corporation names and corporation ids freely.
+//
+// The result is the two scopes the resolvers read with. `null` means no filter
+// at all (read everything the caller owns); a filter that matched only
+// characters leaves corporationIds EMPTY, and vice versa — naming one side
+// narrows to it, exactly as naming one character narrows to that character.
+export type OwnerScopes = { registrationIds: string[]; corporationIds: string[] }
+export type OwnerMatch = { ok: true; scopes: OwnerScopes | null } | { ok: false; message: string }
+
+export type OwnerDirectory = {
+  characters: CharacterDirectory
+  // EVE corporation id → name. A corporation has no registration uuid behind
+  // it, so it carries two id forms to a character's three.
+  corporations: ReadonlyMap<string, string>
+}
+
+const availableOwners = ({ characters, corporations }: OwnerDirectory): string =>
+  [
+    ...[...characters.nameById].map(([id, name]) => {
+      const characterId = characters.characterIdById.get(id)
       return characterId === undefined ? name : `${name} (${characterId})`
-    })
+    }),
+    ...[...corporations].map(([id, name]) => `${name} (${id}, corporation)`),
+  ]
     .sort((a, b) => a.localeCompare(b))
     .join(', ')
 
-export const matchCharacterRefs = (
-  characters: readonly string[] | null | undefined,
-  directory: CharacterDirectory
-): CharacterMatch => {
-  const entries = (characters ?? []).map((c) => (c ?? '').trim()).filter((c) => c !== '')
-  if (entries.length === 0) return { ok: true, ids: null }
-
-  const matched = entries.map((entry) => ({ entry, ids: idsForEntry(entry, directory) }))
-  const unmatched = matched.filter((m) => m.ids.length === 0).map((m) => m.entry)
-  if (unmatched.length > 0) {
-    return {
-      ok: false,
-      message: `No character matched ${unmatched.map((u) => `"${u}"`).join(', ')}. Available: ${availableCharacters(directory)}.`,
-    }
-  }
-  return { ok: true, ids: [...new Set(matched.flatMap((m) => m.ids))] }
+const corporationIdsForEntry = (entry: string, corporations: ReadonlyMap<string, string>): string[] => {
+  if (corporations.has(entry)) return [entry]
+  const wanted = entry.toLowerCase()
+  return [...corporations].filter(([, name]) => name.toLowerCase() === wanted).map(([id]) => id)
 }
 
-// The character dimension of the two-argument shape above: the singular
-// substring-searches the caller's character names, the plural matches whole
-// names / EVE character ids / registration ids.
-export const matchCharacterFilter = (
-  character: string | null | undefined,
-  characters: readonly string[] | null | undefined,
-  directory: CharacterDirectory
-): CharacterMatch => {
-  const parsed = parseRefFilter(character, characters, 'character')
-  if (!parsed.ok) return { ok: false, message: parsed.message }
-  if (parsed.query.kind === 'none') return { ok: true, ids: null }
-  if (parsed.query.kind === 'search') return matchCharacterName(parsed.query.term, directory.nameById)
-  return matchCharacterRefs(parsed.query.entries, directory)
-}
-
-// The corporation dimension, same shape again over the corporations the
-// caller's characters belong to: the singular substring-searches their names,
-// the plural matches whole names and EVE corporation ids. A corporation has
-// only the two id forms (there's no registration uuid behind one), so this is
-// simpler than the character matcher, but the refusals are identical.
-export const matchCorporationFilter = (
-  corporation: string | null | undefined,
-  corporations: readonly string[] | null | undefined,
-  nameById: ReadonlyMap<string, string>
-): CharacterMatch => {
-  const parsed = parseRefFilter(corporation, corporations, 'corporation')
+export const matchOwnerFilter = (
+  owner: string | null | undefined,
+  owners: readonly string[] | null | undefined,
+  directory: OwnerDirectory
+): OwnerMatch => {
+  const parsed = parseRefFilter(owner, owners, 'owner')
   if (!parsed.ok) return { ok: false, message: parsed.message }
   const query = parsed.query
-  if (query.kind === 'none') return { ok: true, ids: null }
-
-  const available = (): string =>
-    [...nameById]
-      .map(([id, name]) => `${name} (${id})`)
-      .sort((a, b) => a.localeCompare(b))
-      .join(', ')
+  if (query.kind === 'none') return { ok: true, scopes: null }
 
   if (query.kind === 'search') {
     const wanted = query.term.toLowerCase()
-    const ids = [...nameById].filter(([, name]) => name.toLowerCase().includes(wanted)).map(([id]) => id)
-    if (ids.length === 0) {
-      return { ok: false, message: `No corporation matched "${query.term}". Available: ${available()}.` }
+    const registrationIds = [...directory.characters.nameById]
+      .filter(([, name]) => name.toLowerCase().includes(wanted))
+      .map(([id]) => id)
+    const corporationIds = [...directory.corporations]
+      .filter(([, name]) => name.toLowerCase().includes(wanted))
+      .map(([id]) => id)
+    if (registrationIds.length === 0 && corporationIds.length === 0) {
+      return { ok: false, message: `No owner matched "${query.term}". Available: ${availableOwners(directory)}.` }
     }
-    return { ok: true, ids }
+    return { ok: true, scopes: { registrationIds, corporationIds } }
   }
 
-  const { ids, names } = splitRefEntries(query.entries)
-  const candidates = [...nameById].map(([id, name]) => ({ id, name }))
-  const matchedNames = matchExactNames(names, () => candidates)
-  const unknownIds = ids.filter((id) => !nameById.has(id))
-  const unmatched = [...unknownIds, ...matchedNames.unmatched]
+  // An entry can be an id on either side (a bare integer is an EVE character
+  // id OR a corporation id) or a whole name on either side, so each is tried
+  // against both and counts as matched if either bites.
+  const matched = query.entries.map((entry) => ({
+    entry,
+    registrationIds: idsForEntry(entry, directory.characters),
+    corporationIds: corporationIdsForEntry(entry, directory.corporations),
+  }))
+  const unmatched = matched.filter((m) => m.registrationIds.length === 0 && m.corporationIds.length === 0)
   if (unmatched.length > 0) {
     return {
       ok: false,
-      message: `No corporation matched ${unmatched.map((u) => `"${u}"`).join(', ')}. Available: ${available()}.`,
+      message: `No owner matched ${unmatched.map((m) => `"${m.entry}"`).join(', ')}. Available: ${availableOwners(directory)}.`,
     }
   }
-  return { ok: true, ids: [...new Set([...ids, ...matchedNames.ids])] }
+  return {
+    ok: true,
+    scopes: {
+      registrationIds: [...new Set(matched.flatMap((m) => m.registrationIds))],
+      corporationIds: [...new Set(matched.flatMap((m) => m.corporationIds))],
+    },
+  }
 }
 
 // Parse the `since` argument (full ISO timestamp or a date prefix) into an

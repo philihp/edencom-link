@@ -41,17 +41,17 @@ const objectType = (schema: GraphQLSchema, name: string): GraphQLObjectType => {
   return type
 }
 
-// Corp market orders have no ESI extract behind them (no corp_order table), so
-// marketOrders deliberately carries no corporation filter — an argument that
-// could never match would be worse than its absence.
-test('marketOrders and walletTransactions stay character-only', () => {
+// The owner pair is uniform even where only characters can own a row: corp
+// market orders have no ESI extract behind them (no corp_order table), so
+// marketOrders takes the same owner filter and REFUSES a corporation-only one
+// at run time (resolvers.ts) rather than dropping the argument.
+test('the owner filter is on every list, including the character-only ones', () => {
   const schema = buildSchema(typeDefs)
   const fields = (schema.getQueryType() as GraphQLObjectType).getFields()
-  for (const name of ['marketOrders', 'walletTransactions']) {
-    const args = fields[name].args.map((a) => a.name)
-    assert.ok(args.includes('character'), `${name}.character`)
-    assert.ok(!args.includes('corporation'), `${name}.corporation`)
-    assert.ok(!args.includes('corporations'), `${name}.corporations`)
+  for (const name of ['assets', 'blueprints', 'industryJobs', 'marketOrders', 'walletTransactions']) {
+    const args = new Map(fields[name].args.map((a) => [a.name, String(a.type)]))
+    assert.equal(args.get('owner'), 'String', `${name}.owner`)
+    assert.equal(args.get('owners'), '[String!]', `${name}.owners`)
   }
 })
 
@@ -166,13 +166,14 @@ test('every filter dimension is a singular/plural pair, and the old names are go
   const schema = buildSchema(typeDefs)
   const fields = (schema.getQueryType() as GraphQLObjectType).getFields()
   // Which dimensions each field filters on — the pairs are uniform, the set of
-  // dimensions is per field (only assets carries a location).
+  // dimensions is per field (only assets carries a location). Owner is one
+  // dimension spanning characters and corporations, not two.
   const dimensions: Record<string, string[]> = {
-    assets: ['type', 'location', 'character', 'corporation'],
-    blueprints: ['type', 'character', 'corporation'],
-    industryJobs: ['character', 'corporation'],
-    marketOrders: ['character'],
-    walletTransactions: ['type', 'character'],
+    assets: ['type', 'location', 'owner'],
+    blueprints: ['type', 'owner'],
+    industryJobs: ['owner'],
+    marketOrders: ['owner'],
+    walletTransactions: ['type', 'owner'],
   }
   for (const [field, dims] of Object.entries(dimensions)) {
     const args = new Map(fields[field].args.map((a) => [a.name, String(a.type)]))
@@ -183,7 +184,16 @@ test('every filter dimension is a singular/plural pair, and the old names are go
       assert.equal(args.get(`${dim}s`), '[String!]', `${field}.${dim}s`)
     }
     // The pre-pairing spellings, all removed rather than deprecated.
-    for (const gone of ['owner', 'owners', 'typeIds', 'typeName', 'locationId', 'locationIds']) {
+    for (const gone of [
+      'character',
+      'characters',
+      'corporation',
+      'corporations',
+      'typeIds',
+      'typeName',
+      'locationId',
+      'locationIds',
+    ]) {
       assert.equal(args.get(gone), undefined, `${field}.${gone}`)
     }
   }
