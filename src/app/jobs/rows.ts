@@ -5,7 +5,10 @@
 
 import { freshnessLevel } from '../freshness.ts'
 
-export type EntityStatus = 'running' | 'queued' | 'failed' | 'idle'
+// 'skipped' is a run that was allowed to do nothing: a corp endpoint the
+// character holds no in-game role for. Not a failure and not a pull — see
+// forEachCorporation (src/jobs/lib.js) and heartbeat.skipped_reason.
+export type EntityStatus = 'running' | 'queued' | 'failed' | 'skipped' | 'idle'
 
 // One owner of a job's data — a registered character, a corporation, or (for
 // the shared jobs) the single implicit account-wide owner.
@@ -17,6 +20,7 @@ export type EntityRun = {
   status: EntityStatus
   // The failure's message, from whichever of the two sources set the status to
   // 'failed' — a refresh_task the caller kicked, or the job's own end heartbeat.
+  // For 'skipped' it's the reason the run was a permitted no-op instead.
   error: string | null
   // Corp rows only: whose token the last pull ran under. runsAsCorpmate means a
   // director on another account in the same corp, visible as a corp-scoped
@@ -25,11 +29,18 @@ export type EntityRun = {
   runsAsCorpmate?: boolean
 }
 
+// An entity we're not permitted to pull has no freshness to speak of: a corp
+// nobody on this account directs would otherwise pin its job's row at "never"
+// forever, which reads as broken data rather than as data that was never ours.
+const pullable = (entities: readonly EntityRun[]): EntityRun[] =>
+  entities.filter((entity) => entity.status !== 'skipped')
+
 // The row's headline freshness is the OLDEST of the caller's entities, not the
 // newest: the question is "is my data fresh", and one character that hasn't
 // pulled since yesterday is the answer even when the other three ran minutes
 // ago. A never-run entity is older than any timestamp.
-export const oldestRun = (entities: readonly EntityRun[]): string | null => {
+export const oldestRun = (all: readonly EntityRun[]): string | null => {
+  const entities = pullable(all)
   if (entities.length === 0) return null
   if (entities.some((entity) => entity.lastRunAt === null)) return null
   return entities.reduce<string | null>(
@@ -55,7 +66,10 @@ const LEVEL_RANK: Record<string, number> = { fresh: 0, aging: 1, stale: 2, none:
 // normal state for a six-hourly job and teaches nothing; what's worth a note is
 // one character lagging the others, which is a real symptom (dead token, missing
 // scope) rather than the cadence doing its job.
-export const laggingCount = (entities: readonly EntityRun[], now: number = Date.now()): number => {
+export const laggingCount = (all: readonly EntityRun[], now: number = Date.now()): number => {
+  // Skipped entities are excluded for the same reason as in oldestRun: never
+  // being allowed to pull isn't lagging behind.
+  const entities = pullable(all)
   if (entities.length === 0) return 0
   const ranks = entities.map((entity) => LEVEL_RANK[freshnessLevel(entity.lastRunAt, now)])
   const best = Math.min(...ranks)
@@ -68,6 +82,9 @@ export const rowStatus = (entities: readonly EntityRun[]): EntityStatus => {
   if (entities.some((e) => e.status === 'running')) return 'running'
   if (entities.some((e) => e.status === 'queued')) return 'queued'
   if (entities.some((e) => e.status === 'failed')) return 'failed'
+  // Only when *every* entity is a no-op: one corp we can't pull shouldn't
+  // relabel a job that ran fine for the other one.
+  if (entities.length > 0 && entities.every((e) => e.status === 'skipped')) return 'skipped'
   return 'idle'
 }
 
@@ -79,8 +96,9 @@ export type StatusInputs = {
   // only ever returns completed rows.
   open?: boolean
   // The newest completed heartbeat's outcome. ok === false is a run that threw;
-  // null means "unknown" (rows predating the column, CLI runs).
-  beat?: { ok: boolean | null; error: string | null }
+  // null means "unknown" (rows predating the column, CLI runs). skippedReason
+  // set (with ok true) is a run that was permitted to do nothing.
+  beat?: { ok: boolean | null; error: string | null; skippedReason?: string | null }
 }
 
 export const statusOf = ({ task, open, beat }: StatusInputs): { status: EntityStatus; error: string | null } => {
@@ -90,6 +108,9 @@ export const statusOf = ({ task, open, beat }: StatusInputs): { status: EntitySt
   // A scheduled run that failed is a failure too, and it's the only way a dead
   // token on one character is distinguishable from a job that simply runs daily.
   if (beat?.ok === false) return { status: 'failed', error: beat.error }
+  // A no-op the character was never permitted to perform. Below 'failed' on
+  // purpose: if the last run actually threw, that's the more urgent fact.
+  if (beat?.skippedReason != null) return { status: 'skipped', error: beat.skippedReason }
   return { status: 'idle', error: null }
 }
 

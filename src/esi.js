@@ -2,6 +2,37 @@ export const userAgent = 'philihp@gmail.com edencom-link discord:philihp'
 
 const ESI_BASE = 'https://esi.evetech.net/latest'
 
+// Every failing ESI response throws this rather than a bare Error, so callers
+// can branch on the status and body instead of regexing a message. The message
+// is byte-for-byte what the plain Error carried before, since it's what lands in
+// heartbeat.error and the logs.
+export class EsiError extends Error {
+  constructor(label, status, statusText, body) {
+    super(`${label}: ${status} ${statusText} body=${body}`)
+    this.name = 'EsiError'
+    this.status = status
+    this.body = body
+  }
+}
+
+const esiError = async (response, path, label) => {
+  const text = await response.text().catch(() => '')
+  return new EsiError(label ?? path, response.status, response.statusText, text.slice(0, 500))
+}
+
+// A 403 that means "this character isn't allowed to ask", not "something broke".
+// The corp endpoints require an in-game role (director, accountant, station
+// manager…) *on top of* the OAuth scope, and CCP answers a role-less character
+// with 403 and a body naming the missing role. That is a permission fact about
+// the pilot, not a failure of the extract — see forEachCorporation in
+// src/jobs/lib.js, which turns it into a recorded no-op.
+//
+// Deliberately matched on the body rather than on the bare status: a 403 also
+// covers an expired or revoked token, which *is* a failure and must keep
+// surfacing as one.
+export const isRoleDenial = (e) =>
+  e instanceof EsiError && e.status === 403 && /role|not in (the |that )?corporation/i.test(e.body ?? '')
+
 const esiFetch = async (path, { access_token, params = {}, method = 'GET', body, label } = {}) => {
   const search = new URLSearchParams({ ...(access_token ? { token: access_token } : {}), ...params })
   const headers = { 'User-Agent': userAgent }
@@ -15,8 +46,7 @@ const esiFetch = async (path, { access_token, params = {}, method = 'GET', body,
     body: body !== undefined ? JSON.stringify(body) : undefined,
   })
   if (!response.ok) {
-    const text = await response.text().catch(() => '')
-    throw new Error(`${label ?? path}: ${response.status} ${response.statusText} body=${text.slice(0, 500)}`)
+    throw await esiError(response, path, label)
   }
   return response
 }
@@ -43,8 +73,7 @@ const esiConditionalJson = async (path, { access_token, params = {}, ifNoneMatch
   const etag = response.headers.get('etag')
   if (response.status === 304) return { status: 304, json: null, etag }
   if (!response.ok) {
-    const text = await response.text().catch(() => '')
-    throw new Error(`${label ?? path}: ${response.status} ${response.statusText} body=${text.slice(0, 500)}`)
+    throw await esiError(response, path, label)
   }
   return { status: 200, json: await response.json(), etag }
 }
@@ -63,8 +92,7 @@ const esiJsonTolerant = async (path, { access_token, params = {}, tolerate = [],
   })
   if (tolerate.includes(response.status)) return { status: response.status, json: null }
   if (!response.ok) {
-    const text = await response.text().catch(() => '')
-    throw new Error(`${label ?? path}: ${response.status} ${response.statusText} body=${text.slice(0, 500)}`)
+    throw await esiError(response, path, label)
   }
   return { status: response.status, json: await response.json() }
 }
@@ -89,8 +117,7 @@ const esiCompatJson = async (path, { access_token, params = {}, label } = {}) =>
   if (access_token) headers.Authorization = `Bearer ${access_token}`
   const response = await fetch(`${ESI_BASE_COMPAT}${path}${qs ? `?${qs}` : ''}`, { headers })
   if (!response.ok) {
-    const text = await response.text().catch(() => '')
-    throw new Error(`${label ?? path}: ${response.status} ${response.statusText} body=${text.slice(0, 500)}`)
+    throw await esiError(response, path, label)
   }
   return response.json()
 }

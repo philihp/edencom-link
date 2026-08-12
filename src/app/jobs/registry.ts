@@ -17,8 +17,10 @@ export type JobSection = 'character' | 'corporation' | 'universe'
 
 // Whether this page offers a refresh button for the job:
 //   always     — anyone may kick it for their own characters/corps
-//   chancellor — gated on isChancellor() server-side (whole-universe pull with
-//                no per-character reason to run it; see refreshCell today)
+//   chancellor — gated on isChancellor() server-side. Every shared-universe job
+//                that can be kicked at all is this: those pulls are game-wide,
+//                so one account's button spends everyone's rate limit and moves
+//                data nobody asked to move. refreshCell re-checks server-side.
 //   never      — whole-corp/whole-universe work whose only trigger is the cron
 //                (its ?force=1 / CRON_SECRET route stays an operator tool)
 export type Kickable = 'always' | 'chancellor' | 'never'
@@ -56,9 +58,9 @@ export const JOBS: readonly JobEntry[] = [
   { job: 'corp-wallet-journal', label: 'wallet journal', section: 'corporation', kickable: 'never' },
 
   { job: 'sde-mirror', label: 'SDE mirror', section: 'universe', kickable: 'never' },
-  { job: 'universe-names', label: 'names', section: 'universe', kickable: 'always' },
+  { job: 'universe-names', label: 'names', section: 'universe', kickable: 'chancellor' },
   { job: 'universe-structures', label: 'structures', section: 'universe', kickable: 'never' },
-  { job: 'character-directory', label: 'character directory', section: 'universe', kickable: 'always' },
+  { job: 'character-directory', label: 'character directory', section: 'universe', kickable: 'chancellor' },
   { job: 'industry-systems', label: 'industry indexes', section: 'universe', kickable: 'chancellor' },
 ]
 

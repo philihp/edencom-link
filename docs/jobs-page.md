@@ -74,8 +74,9 @@ per-character detail is a nested expansion.
   one lagging character must not make the schedule itself look broken.
 - Expanding a row (`<details>`, server-rendered — no client JS needed to open
   it) reveals today's matrix column: one line per registration with its own
-  freshness `Cell` and refresh button. Nothing about per-character refresh
-  changes; it just stops being the page's top-level axis.
+  freshness `Cell` and refresh button, plus a **refresh everyone** button above
+  them that kicks the job for every character in one batch. Nothing about
+  per-character refresh changes; it just stops being the page's top-level axis.
 
 ### 2. Corporations
 
@@ -132,11 +133,14 @@ account-wide jobs that today sit in the refresh page's "Account-wide" table.
   ignore the color. Plain relative text plus the next-run countdown carries it
   — and the countdown is the honest health signal here anyway (a job whose
   _next_ run is in the past is a job that didn't fire).
-- Refresh buttons: `character-directory` and `universe-names` keep theirs
-  (they're in `ACCOUNT_JOBS` today and cheap). `industry-systems` keeps its
-  Chancellor gate (`isChancellor` server-side, per today's `refreshCell`).
-  `sde-mirror`, `universe-structures` get none — the `?force=1` /
-  `CRON_SECRET` cron routes stay operator tools.
+- Refresh buttons: **Chancellor-only, for every job in this section that has
+  one at all.** `character-directory` and `universe-names` shipped as
+  `kickable: 'always'` (they're cheap and were in `ACCOUNT_JOBS`), but cheap
+  isn't the test — these pulls are game-wide, so one account's button spends
+  everyone's rate limit and moves data nobody else asked to move. They now sit
+  behind the same `isChancellor` gate `industry-systems` always had, re-checked
+  server-side in `refreshCell`. `sde-mirror` and `universe-structures` still get
+  none — the `?force=1` / `CRON_SECRET` cron routes stay operator tools.
 - Because these rows are shared, a run kicked by another account shows up
   here as `running` for everyone. That is correct and worth a line of UI copy.
 
@@ -262,23 +266,23 @@ account-independent number that means less.
 
 ## Files
 
-| File                                                       | Change                                                                                                        |
-| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| File                                                             | Change                                                                                                                                       |
+| ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | `src/app/jobs/registry.ts`                                       | Job catalog: label, section, kickable, `cronFor()` over the `vercel.json` import, plus `jobEntry()` — the allow-list `refreshCell` gates on. |
-| `src/app/jobs/schedule.ts`                                       | Pure `parseCron` / `nextCronRun` / `previousCronRun`, UTC.                                                                                  |
+| `src/app/jobs/schedule.ts`                                       | Pure `parseCron` / `nextCronRun` / `previousCronRun`, UTC.                                                                                   |
 | `src/app/jobs/rows.ts`                                           | Pure reductions: oldest/newest run, lagging count, status precedence, activity grouping, the abandoned-task rule.                            |
-| `src/app/jobs/page.tsx`                                          | The four sections, over live queries.                                                                                                       |
-| `src/app/jobs/jobs.module.css`                                   | Table/status/countdown styles, lifted from `refresh.module.css`.                                                                            |
-| `src/app/jobs/actions.ts`                                        | `refreshCell`, allow-list rebuilt from the registry.                                                                                        |
-| `src/app/jobs/refreshButton.tsx`, `poller.tsx`, `loading.tsx`    | Moved from `src/app/character/refresh/`.                                                                                                    |
-| `src/app/character/refresh/*`                                    | Deleted.                                                                                                                                    |
-| `next.config.mjs`                                                | `/character/refresh` → `/jobs` permanent; `/characters/refresh` retargeted straight at `/jobs`.                                             |
+| `src/app/jobs/page.tsx`                                          | The four sections, over live queries.                                                                                                        |
+| `src/app/jobs/jobs.module.css`                                   | Table/status/countdown styles, lifted from `refresh.module.css`.                                                                             |
+| `src/app/jobs/actions.ts`                                        | `refreshCell`, allow-list rebuilt from the registry.                                                                                         |
+| `src/app/jobs/refreshButton.tsx`, `poller.tsx`, `loading.tsx`    | Moved from `src/app/character/refresh/`.                                                                                                     |
+| `src/app/character/refresh/*`                                    | Deleted.                                                                                                                                     |
+| `next.config.mjs`                                                | `/character/refresh` → `/jobs` permanent; `/characters/refresh` retargeted straight at `/jobs`.                                              |
 | `src/app/layout/header.tsx`, `src/app/page.tsx`, `fittingMatrix` | Refresh links point at `/jobs`; the character callback lands there after adding a character.                                                 |
-| `test/schedule.test.ts`, `test/jobsRows.test.ts`                 | Cron parsing/next-fire assertions; the row reductions.                                                                                      |
+| `test/schedule.test.ts`, `test/jobsRows.test.ts`                 | Cron parsing/next-fire assertions; the row reductions.                                                                                       |
 
 One migration, `20260812000000_latest_heartbeats_outcome`: `latest_heartbeats()`
 now returns `ok` and `error` alongside `ended_at`, which is what lets a cell
-render `✗ failed` for a *scheduled* run rather than an undifferentiated stale
+render `✗ failed` for a _scheduled_ run rather than an undifferentiated stale
 dot. Adding OUT columns changes the return type, so the function is dropped and
 recreated (as in #754); the only other caller reads `job`/`ended_at` and is
 unaffected.
@@ -299,6 +303,54 @@ unaffected.
   the per-cell status overlay reads only the last 10 minutes, so an on-demand
   error from this morning doesn't outrank a scheduled pull that has since
   succeeded.
+
+### Closed gap: a corp you don't direct is a no-op, not a failure ✅
+
+The corp endpoints need an **in-game role** (director, accountant, station
+manager) on top of the OAuth scope, and ESI answers a character without it with
+`403 Character does not have required role(s)`. That threw, so the per-corp
+heartbeat closed `ok = false` and the row read `✗ failed` every six hours — for
+something that never was a failure. Nothing broke; the pilot was simply never
+allowed to ask, and re-running earns the same 403.
+
+That outcome is now its own thing, end to end:
+
+- `src/esi.js` throws `EsiError` (status + body) instead of a bare `Error`, and
+  `isRoleDenial(e)` recognises the role 403. Matched on the **body**, not on the
+  bare status: a 403 also covers an expired or revoked token, which _is_ a
+  failure and keeps surfacing as one.
+- `forEachCorporation` (`src/jobs/lib.js`) closes that character's heartbeat
+  `ok = true` with **`heartbeat.skipped_reason`** naming them, logs it as a skip
+  rather than a FAILED, and still leaves the corp unclaimed so a corpmate with
+  the role gets their turn in the same run. `withHeartbeat` takes a
+  `skipReasonOf(e)` classifier for this; nothing else uses it yet.
+- Migration `20260812120000_heartbeat_skipped_reason` adds the column and carries
+  it through `latest_heartbeats()`.
+- The page renders `— not a director` (the reason on hover), offers no refresh
+  button for it, and — the part that matters beyond the label — **excludes
+  skipped entities from `oldestRun` and `laggingCount`**, so a corp nobody on the
+  account directs stops pinning its job's row at "never" forever. A row reads
+  `skipped` only when _every_ entity is one; one unreachable corp doesn't relabel
+  a job that ran fine for the other.
+
+Known limit: the on-demand path still records `refresh_task` as `✓ done` for such
+a run, since nothing threw. Recent activity has no column for "did nothing, on
+purpose"; the cell carries that fact instead.
+
+### Also shipped: two refresh-button changes
+
+- **Shared universe kicks are Chancellor-only.** `universe-names` and
+  `character-directory` were `kickable: 'always'`; both are now `'chancellor'`,
+  like `industry-systems`. These pulls are game-wide — one account's button
+  spends everyone's rate limit and moves data nobody else asked to move —
+  so every kickable job in that section is now gated the same way, and
+  `refreshCell` re-checks server-side.
+- **"Refresh everyone" per character job.** The Characters expansion carries one
+  button that kicks the job for every registered character (`refreshAllCharacters`
+  → `dispatchJobForCharacters`), under a single `batch_id` so Recent activity
+  reads it as the one action it was. Per-character jobs only: a corp job's unit
+  of work is the corporation, and fanning one run per character is the
+  concurrent-reconcile race `PER_CORPORATION_JOBS` exists to avoid.
 
 ## Verification (no test runner for pages; gates are lint + build + manual)
 

@@ -217,6 +217,44 @@ export const dispatchRefresh = async (userId: string, characters: Character[]): 
   return batchId
 }
 
+// One *row* of the /jobs Characters section: the same per-character work
+// dispatchSingleJob does, for every one of the caller's characters at once,
+// under a single batch_id so Recent activity reads it as the one action it was
+// rather than as N unrelated kicks. Per-character jobs only — a corp job's unit
+// of work is the corporation, not the character, and fanning one run per
+// character is exactly the concurrent-reconcile race PER_CORPORATION_JOBS
+// exists to avoid. Uses the service role, so callers must pass a userId they've
+// already authorized, and characters they've confirmed belong to it.
+export const dispatchJobForCharacters = async (
+  userId: string,
+  job: string,
+  characters: Character[]
+): Promise<string> => {
+  const batchId = randomUUID()
+  const { sudoSupabase } = await import('@/supabase.js')
+
+  const { data: inserted, error } = await sudoSupabase
+    .from('refresh_task')
+    .insert(
+      characters.map((c) => ({
+        batch_id: batchId,
+        user_id: userId,
+        job,
+        registration_id: c.id,
+        character_name: c.name,
+      }))
+    )
+    .select('id, registration_id')
+  if (error) throw error
+
+  const started = await Promise.all(
+    (inserted ?? []).map((t) => startJobWorkflow(job, { registrationIds: [t.registration_id], taskId: t.id }))
+  )
+  console.log(`[dispatchJobForCharacters] started ${started.length} ${job} runs`)
+
+  return batchId
+}
+
 // One cell of the /jobs page: insert a single refresh_task row
 // and start its one workflow run. `character` is null for the account-wide
 // jobs. For a corp-scoped job the target carries every scoped character in the
