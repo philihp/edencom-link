@@ -2,8 +2,8 @@
 
 Feasibility assessment and staged plan for rendering the ship-fitting view
 (wheel + statistics) with our own components and look & feel, while keeping
-eveship.fit's calculation model. Nothing here is implemented yet; stage 0 is
-the proof-out.
+eveship.fit's calculation model. **Stage 0 is done** (see its section below);
+stages 1–5 are not started.
 
 ## Verdict
 
@@ -137,6 +137,53 @@ drones, T3 with subsystems), the dumped numbers match what `/ship/[itemId]`
 shows today. That validates decoder, glue, flag mapping, and skills shape in
 one shot. If this fails in a way we can't fix, we stop here having written no
 UI.
+
+#### Outcome — done, no showstoppers
+
+Shipped as `src/app/item/[itemId]/` (page + `fitDebug.tsx`) over
+`src/app/item/[itemId]/esf/`: `protobuf.ts` (schema-driven reader),
+`schema.ts` (the six messages of `src/esf.proto` as data), `eveData.ts`
+(fetch + decode + name→id indexes, cached per page load), `dogma.ts` (the
+seven data callbacks, WASM load, all-V skills), `fit.ts` (flag → slot, ESI fit
+→ engine fit) and `attributes.ts` (the readout's formatting rules and the slot
+count, ported from `ShipAttribute`/`StatisticsProvider`).
+
+Every listed risk cleared, and the proof was stronger than a page dump: the
+whole stack runs headless under Node (the engine's bindings read the callbacks
+off `window`, so a harness only has to alias it), which let the decoder be
+diffed **entry by entry** against `@eveshipfit/react`'s own generated decoder
+over the live `/esf/*.pb2`.
+
+- **Protobuf decode:** all 89 783 entries across the six files decode
+  identically to the vendored decoder (52 848 types, 26 846 typeDogma, 3 454
+  dogmaEffects, 2 919 dogmaAttributes, 2 106 marketGroups, 1 610 groups), down
+  to prototype-vs-own-property placement. The only differences are 321 names
+  that upstream mojibakes — it builds strings byte-per-char, ours decodes UTF-8.
+- **WASM under Turbopack without the react wrapper:** `next build` compiles the
+  route; the existing `turbopack: {}` config was all it needed.
+- **The window-globals ABI:** all seven callbacks are one-line reads, and
+  `type_name_to_id`/`attribute_name_to_id` become index lookups instead of
+  upstream's linear scan per call.
+- **Skills shape:** 588 skill types at L5, and calculated stats land where
+  they should (a 5×HML II Caracal: 18 515 ehp, 9 919 shield, 426.8 dps).
+
+Two things came out of it that weren't in the plan:
+
+- **The current viewer under-reports damage.** Loaded ammunition is a hangar
+  row carrying its *slot's* flag, so a launcher and its missiles both arrive as
+  `HiSlot0`; upstream's ESI import turns each into a module, landing two
+  "modules" in one slot and leaving the weapon unarmed. A fitted, loaded Rifter
+  reads **0 dps** in today's embed and 116.9 dps once the charge is routed onto
+  the module sharing its slot, which `fit.ts` now does. (The claim in
+  `esfFit.ts` that the hook disambiguates charges is wrong — it doesn't.)
+- **Slot counts are not a hull attribute alone.** A T3's slots come entirely
+  from its subsystems' `*SlotModifier` attributes, so anything reading only
+  `calculation.hull` reports a Tengu with zero slots. `calculateSlots` in
+  `attributes.ts` folds in the per-item modifiers, as upstream does.
+
+Left for stage 1: the harness is a scratch script, not a checked-in test — the
+decode comparison needs the multi-MB `.pb2` files, so it wants a fixture
+strategy (or a small hand-built fixture) rather than a copy of the SDE in git.
 
 ### Stage 1 — extract the engine layer into a real module
 
