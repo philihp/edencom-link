@@ -15,44 +15,118 @@ export const clampLimit = (limit: number | null | undefined, cap: number): numbe
   return Math.min(Math.max(1, Math.floor(limit)), cap)
 }
 
-// Case-insensitive substring match of an owner-name filter against the
+// EVERY FILTER DIMENSION IS NAMED THE SAME TWO WAYS — character, location and
+// item type all take a singular and a plural argument:
+//
+//   - the SINGULAR (`character:`, `location:`, `type:`) is a case-insensitive
+//     substring SEARCH over names. It may match several things; that's the
+//     point — it's how you ask a fuzzy question.
+//   - the PLURAL (`characters:`, `locations:`, `types:`) is an EXACT list whose
+//     entries are ids or whole names, freely mixed. Every entry must match
+//     something, and one that doesn't is an error rather than a silently
+//     narrower result.
+//
+// The two are mutually exclusive: one asks a fuzzy question and the other an
+// exact one, and a stored lens that blended them is one nobody can predict a
+// year later. Resolving the names is per-dimension (the caller's characters,
+// the SDE, the structure caches) and lives with the resolvers; the shaping and
+// the refusals are here, where they stay pure and testable.
+export type RefQuery = { kind: 'none' } | { kind: 'search'; term: string } | { kind: 'exact'; entries: string[] }
+
+export type RefParse = { ok: true; query: RefQuery } | { ok: false; message: string }
+
+export const parseRefFilter = (
+  single: string | null | undefined,
+  list: readonly string[] | null | undefined,
+  label: string
+): RefParse => {
+  const term = (single ?? '').trim()
+  const entries = (list ?? []).map((e) => (e ?? '').trim()).filter((e) => e !== '')
+  if (entries.length === 0) {
+    return { ok: true, query: term === '' ? { kind: 'none' } : { kind: 'search', term } }
+  }
+  if (term !== '') {
+    return {
+      ok: false,
+      message: `Pass ${label} or ${label}s, not both — one is a name search, the other an exact list.`,
+    }
+  }
+  return { ok: true, query: { kind: 'exact', entries: [...new Set(entries)] } }
+}
+
+// An exact-list entry is an id when it's a bare positive integer, and a name
+// otherwise. (A character may also be named by its registration uuid — see
+// matchCharacterRefs, the one dimension with three id forms.)
+export const splitRefEntries = (entries: readonly string[]): { ids: string[]; names: string[] } => ({
+  ids: entries.filter((e) => /^\d+$/.test(e)),
+  names: entries.filter((e) => !/^\d+$/.test(e)),
+})
+
+// Whole-name (case-insensitive) matching of exact-list entries against
+// whatever the dimension's resolver turned up, keeping every candidate that
+// matches — two things really can share a name.
+export type NamedRef = { id: string; name: string }
+
+export const matchExactNames = (
+  names: readonly string[],
+  candidatesFor: (name: string) => readonly NamedRef[]
+): { ids: string[]; unmatched: string[] } => {
+  const matched = names.map((name) => {
+    const wanted = name.toLowerCase()
+    return {
+      name,
+      ids: candidatesFor(name)
+        .filter((c) => c.name.toLowerCase() === wanted)
+        .map((c) => c.id),
+    }
+  })
+  return {
+    ids: [...new Set(matched.flatMap((m) => m.ids))],
+    unmatched: matched.filter((m) => m.ids.length === 0).map((m) => m.name),
+  }
+}
+
+// Case-insensitive substring match of the `character:` filter against the
 // caller's characters. Returns the matching registration ids, or an error
 // listing what's available — same semantics as the MCP resolveOwnerFilter.
-export type OwnerMatch = { ok: true; ids: string[] | null } | { ok: false; message: string }
+export type CharacterMatch = { ok: true; ids: string[] | null } | { ok: false; message: string }
 
-export const matchOwnerIds = (owner: string | null | undefined, nameById: ReadonlyMap<string, string>): OwnerMatch => {
-  const trimmed = (owner ?? '').trim().toLowerCase()
+export const matchCharacterName = (
+  character: string | null | undefined,
+  nameById: ReadonlyMap<string, string>
+): CharacterMatch => {
+  const trimmed = (character ?? '').trim().toLowerCase()
   if (trimmed === '') return { ok: true, ids: null }
   const ids = [...nameById].filter(([, name]) => name.toLowerCase().includes(trimmed)).map(([id]) => id)
   if (ids.length === 0) {
     const available = [...nameById.values()].sort((a, b) => a.localeCompare(b))
-    return { ok: false, message: `No character matched "${owner}". Available: ${available.join(', ')}.` }
+    return { ok: false, message: `No character matched "${character}". Available: ${available.join(', ')}.` }
   }
   return { ok: true, ids }
 }
 
-// The exact counterpart of the fuzzy `owner` filter: a LIST of characters,
-// each named by whichever id the caller has to hand. An entry is
+// The exact counterpart of the fuzzy `character:` filter: a LIST of
+// characters, each named by whichever id the caller has to hand. An entry is
 //
 //   - all digits          → an EVE character id (Owner.characterId),
 //   - a uuid              → this site's registration id (Owner.id / ownerId),
 //   - anything else       → a character name, matched case-insensitively but
-//                           WHOLE — a list is the exact question, `owner` is
-//                           the fuzzy one, exactly as typeIds is to typeName.
+//                           WHOLE — a list is the exact question, `character`
+//                           is the fuzzy one, as typeIds is to typeName.
 //
 // Every entry must match, and an unmatched one errors listing what exists,
 // rather than quietly narrowing a lens nobody re-reads for a year. The result
 // is the union, deduped, in the caller's order.
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-export type OwnerDirectory = {
+export type CharacterDirectory = {
   // registration uuid → character name
   nameById: ReadonlyMap<string, string>
   // registration uuid → EVE character id
   characterIdById: ReadonlyMap<string, string>
 }
 
-const idsForEntry = (entry: string, { nameById, characterIdById }: OwnerDirectory): string[] => {
+const idsForEntry = (entry: string, { nameById, characterIdById }: CharacterDirectory): string[] => {
   if (/^\d+$/.test(entry)) {
     return [...characterIdById].filter(([, characterId]) => characterId === entry).map(([id]) => id)
   }
@@ -63,7 +137,7 @@ const idsForEntry = (entry: string, { nameById, characterIdById }: OwnerDirector
   return [...nameById].filter(([, name]) => name.toLowerCase() === wanted).map(([id]) => id)
 }
 
-const availableOwners = ({ nameById, characterIdById }: OwnerDirectory): string =>
+const availableCharacters = ({ nameById, characterIdById }: CharacterDirectory): string =>
   [...nameById]
     .map(([id, name]) => {
       const characterId = characterIdById.get(id)
@@ -72,8 +146,11 @@ const availableOwners = ({ nameById, characterIdById }: OwnerDirectory): string 
     .sort((a, b) => a.localeCompare(b))
     .join(', ')
 
-export const matchOwnerRefs = (owners: readonly string[] | null | undefined, directory: OwnerDirectory): OwnerMatch => {
-  const entries = (owners ?? []).map((o) => (o ?? '').trim()).filter((o) => o !== '')
+export const matchCharacterRefs = (
+  characters: readonly string[] | null | undefined,
+  directory: CharacterDirectory
+): CharacterMatch => {
+  const entries = (characters ?? []).map((c) => (c ?? '').trim()).filter((c) => c !== '')
   if (entries.length === 0) return { ok: true, ids: null }
 
   const matched = entries.map((entry) => ({ entry, ids: idsForEntry(entry, directory) }))
@@ -81,30 +158,25 @@ export const matchOwnerRefs = (owners: readonly string[] | null | undefined, dir
   if (unmatched.length > 0) {
     return {
       ok: false,
-      message: `No character matched ${unmatched.map((u) => `"${u}"`).join(', ')}. Available: ${availableOwners(directory)}.`,
+      message: `No character matched ${unmatched.map((u) => `"${u}"`).join(', ')}. Available: ${availableCharacters(directory)}.`,
     }
   }
   return { ok: true, ids: [...new Set(matched.flatMap((m) => m.ids))] }
 }
 
-// The two ways to name characters, resolved to one filter — mutually exclusive
-// for the same reason typeIds and typeName are: `owner` substring-matches and
-// `owners` matches whole names/ids, and a stored lens that blended both would
-// be unpredictable a year later.
-export const matchOwnerFilter = (
-  owner: string | null | undefined,
-  owners: readonly string[] | null | undefined,
-  directory: OwnerDirectory
-): OwnerMatch => {
-  const listed = (owners ?? []).some((o) => (o ?? '').trim() !== '')
-  if (!listed) return matchOwnerIds(owner, directory.nameById)
-  if ((owner ?? '').trim() !== '') {
-    return {
-      ok: false,
-      message: 'Pass owner or owners, not both — one is a name search, the other an exact list.',
-    }
-  }
-  return matchOwnerRefs(owners, directory)
+// The character dimension of the two-argument shape above: the singular
+// substring-searches the caller's character names, the plural matches whole
+// names / EVE character ids / registration ids.
+export const matchCharacterFilter = (
+  character: string | null | undefined,
+  characters: readonly string[] | null | undefined,
+  directory: CharacterDirectory
+): CharacterMatch => {
+  const parsed = parseRefFilter(character, characters, 'character')
+  if (!parsed.ok) return { ok: false, message: parsed.message }
+  if (parsed.query.kind === 'none') return { ok: true, ids: null }
+  if (parsed.query.kind === 'search') return matchCharacterName(parsed.query.term, directory.nameById)
+  return matchCharacterRefs(parsed.query.entries, directory)
 }
 
 // Parse the `since` argument (full ISO timestamp or a date prefix) into an
@@ -122,38 +194,4 @@ export const parseSince = (since: string | null | undefined): SinceParse => {
     }
   }
   return { ok: true, iso: parsed.toISOString() }
-}
-
-// A numeric id argument (GraphQL String, since EVE ids overflow Int). Rejects
-// anything that isn't a plain positive integer literal.
-export type IdParse = { ok: true; id: string | null } | { ok: false; message: string }
-
-export const parseIdArg = (raw: string | null | undefined, label: string): IdParse => {
-  const trimmed = (raw ?? '').trim()
-  if (trimmed === '') return { ok: true, id: null }
-  if (!/^\d+$/.test(trimmed)) return { ok: false, message: `${label} must be a numeric id, got "${raw}".` }
-  return { ok: true, id: trimmed }
-}
-
-// The two ways to name item types, resolved to one filter. They are mutually
-// EXCLUSIVE rather than unioned: typeIds asks an exact question and typeName a
-// fuzzy one (it substring-matches the SDE, so "Fuel Block" also catches the
-// blueprints), and a lens whose stored query silently blends both is a lens
-// nobody can predict a year later. Returns the exact ids when given, `null`
-// for "no id filter" (the caller then applies its fuzzy typeName path), and an
-// error when both or a malformed id arrive.
-export type TypeIdsParse = { ok: true; ids: number[] | null } | { ok: false; message: string }
-
-export const parseTypeIdsArg = (
-  typeIds: readonly string[] | null | undefined,
-  typeName: string | null | undefined
-): TypeIdsParse => {
-  const ids = (typeIds ?? []).map((id) => (id ?? '').trim()).filter((id) => id !== '')
-  if (ids.length === 0) return { ok: true, ids: null }
-  if ((typeName ?? '').trim() !== '') {
-    return { ok: false, message: 'Pass typeIds or typeName, not both — one is exact, the other is a name search.' }
-  }
-  const bad = ids.find((id) => !/^\d+$/.test(id))
-  if (bad !== undefined) return { ok: false, message: `typeIds must be numeric ids, got "${bad}".` }
-  return { ok: true, ids: [...new Set(ids.map(Number))] }
 }

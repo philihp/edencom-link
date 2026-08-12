@@ -61,7 +61,7 @@ members can _discover_ lenses aimed at them. Public = empty lists + null
 secret, same as everywhere.
 
 `variables` are **fixed by the creator** at save time. Viewers cannot supply
-variables in v1 — a variable substituted into `assets(typeName: $x)` doesn't
+variables in v1 — a variable substituted into `assets(type: $x)` doesn't
 widen access (still the creator's rows), but fixed variables keep the output
 exactly what the creator reviewed. Loosen later if wanted, deliberately.
 

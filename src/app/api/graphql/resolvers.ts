@@ -18,8 +18,18 @@ import { uniq } from 'ramda'
 
 import { guessLocationRef, resolveTypeFilter } from '@/app/api/mcp/lib'
 import { resolveLocations, type LocationRef, type ResolvedLocations } from '@/app/resolveLocations'
-import { getSdeTypes, type SdeType } from '@/sdeTypes'
-import { ASSET_CAP, LIST_CAP, clampLimit, matchOwnerFilter, parseIdArg, parseSince, parseTypeIdsArg } from './filters'
+import { getSdeTypes, searchSdeTypesAll, type SdeType } from '@/sdeTypes'
+import {
+  ASSET_CAP,
+  LIST_CAP,
+  clampLimit,
+  matchCharacterFilter,
+  matchExactNames,
+  parseRefFilter,
+  parseSince,
+  splitRefEntries,
+} from './filters'
+import { searchLocationCandidates } from './locationSearch'
 import type { GraphqlContext } from './context'
 
 const badRequest = (message: string): never => {
@@ -30,14 +40,15 @@ const queryFailed = (): never => {
   throw new GraphQLError('Query failed', { extensions: { http: { status: 500 } } })
 }
 
-// The registration ids a field should read for, after the optional owner
-// filter (`owner` fuzzy by name, `owners` an exact list of names/character
-// ids/registration ids) — always a subset of the caller's own registrations.
+// The registration ids a field should read for, after the optional character
+// filter (`character` fuzzy by name, `characters` an exact list of
+// names/character ids/registration ids) — always a subset of the caller's own
+// registrations.
 const scopeIds = (
   ctx: GraphqlContext,
-  args: { owner?: string | null; owners?: readonly string[] | null }
+  args: { character?: string | null; characters?: readonly string[] | null }
 ): string[] => {
-  const match = matchOwnerFilter(args.owner, args.owners, {
+  const match = matchCharacterFilter(args.character, args.characters, {
     nameById: ctx.ownerNameById,
     characterIdById: ctx.ownerCharacterIdById,
   })
@@ -45,19 +56,65 @@ const scopeIds = (
   return match.ids ?? ctx.registrationIds
 }
 
-// The item-type filter → SDE type ids, or null for no filter. Exact `typeIds`
-// win outright; otherwise the fuzzy name search runs, with the MCP layer's
-// "too many matches" guard. parseTypeIdsArg rejects passing both.
+// The item-type dimension → SDE type ids, or null for no filter. `type` runs
+// the fuzzy SDE search (with the MCP layer's "too many matches" guard);
+// `types` takes exact type ids and whole type names, mixed. parseRefFilter
+// rejects passing both.
 const typeIdsFor = async (args: {
-  typeIds?: readonly string[] | null
-  typeName?: string | null
+  type?: string | null
+  types?: readonly string[] | null
 }): Promise<number[] | null> => {
-  const exact = parseTypeIdsArg(args.typeIds, args.typeName)
-  if (!exact.ok) return badRequest(exact.message)
-  if (exact.ids !== null) return exact.ids
-  const filter = await resolveTypeFilter(args.typeName ?? undefined)
-  if (!filter.ok) return badRequest(filter.message)
-  return filter.matches === null ? null : filter.matches.map((m) => m.typeID)
+  const parsed = parseRefFilter(args.type, args.types, 'type')
+  if (!parsed.ok) return badRequest(parsed.message)
+  const query = parsed.query
+  if (query.kind === 'none') return null
+  if (query.kind === 'search') {
+    const filter = await resolveTypeFilter(query.term)
+    if (!filter.ok) return badRequest(filter.message)
+    return filter.matches === null ? null : filter.matches.map((m) => m.typeID)
+  }
+
+  // A name in the exact list still goes through the ranked SDE search — it's
+  // the only name index there is — but only a WHOLE-name hit counts.
+  const { ids, names } = splitRefEntries(query.entries)
+  const found = await Promise.all(names.map(async (name) => [name, await searchSdeTypesAll(name)] as const))
+  const byName = new Map(
+    found.map(([name, matches]) => [name, matches.map((m) => ({ id: String(m.typeID), name: m.name }))])
+  )
+  const matched = matchExactNames(names, (name) => byName.get(name) ?? [])
+  if (matched.unmatched.length > 0) {
+    return badRequest(`No item type matched ${matched.unmatched.map((u) => `"${u}"`).join(', ')}.`)
+  }
+  return [...new Set([...ids, ...matched.ids])].map(Number)
+}
+
+// The location dimension → location ids, or null for no filter. `location`
+// searches names (station, structure or system — see locationSearch.ts) and
+// keeps everything it matched; `locations` takes exact ids and whole names.
+const locationIdsFor = async (
+  ctx: GraphqlContext,
+  args: { location?: string | null; locations?: readonly string[] | null }
+): Promise<string[] | null> => {
+  const parsed = parseRefFilter(args.location, args.locations, 'location')
+  if (!parsed.ok) return badRequest(parsed.message)
+  const query = parsed.query
+  if (query.kind === 'none') return null
+  if (query.kind === 'search') {
+    const candidates = await searchLocationCandidates(query.term, ctx.supabase)
+    if (candidates.length === 0) return badRequest(`No location matched "${query.term}".`)
+    return candidates.map((c) => c.id)
+  }
+
+  const { ids, names } = splitRefEntries(query.entries)
+  const found = await Promise.all(
+    names.map(async (name) => [name, await searchLocationCandidates(name, ctx.supabase)] as const)
+  )
+  const byName = new Map(found)
+  const matched = matchExactNames(names, (name) => byName.get(name) ?? [])
+  if (matched.unmatched.length > 0) {
+    return badRequest(`No location matched ${matched.unmatched.map((u) => `"${u}"`).join(', ')}.`)
+  }
+  return [...new Set([...ids, ...matched.ids])]
 }
 
 // Page a filtered select up to `cap` rows — PostgREST caps a single request at
@@ -214,11 +271,12 @@ export const resolvers = {
     assets: async (
       _parent: unknown,
       args: {
-        typeIds?: readonly string[] | null
-        typeName?: string | null
-        locationId?: string | null
-        owner?: string | null
-        owners?: readonly string[] | null
+        type?: string | null
+        types?: readonly string[] | null
+        location?: string | null
+        locations?: readonly string[] | null
+        character?: string | null
+        characters?: readonly string[] | null
         limit?: number | null
         includeShared?: boolean | null
       },
@@ -227,15 +285,14 @@ export const resolvers = {
       // includeShared widens the leak-guard filter to own ∪ grantor
       // registrations and lets RLS decide which grantor rows come back — the
       // DB is the authority; the widened .in() is just no longer the barrier.
-      // The owner-name filter still narrows only the caller's own characters;
+      // The character filter still narrows only the caller's own characters;
       // shared rows ride along unfiltered.
       if (args.includeShared) requireSession(ctx)
       const ownerIds = scopeIds(ctx, args)
       const sharedIds = args.includeShared ? await grantorRegistrationIds(ctx) : []
       const scopedIds = [...ownerIds, ...sharedIds]
       const typeIds = await typeIdsFor(args)
-      const location = parseIdArg(args.locationId, 'locationId')
-      if (!location.ok) return badRequest(location.message)
+      const locationIds = await locationIdsFor(ctx, args)
       const cap = clampLimit(args.limit, ASSET_CAP)
 
       // The same filter set applies to the head-only count and the row pages.
@@ -243,7 +300,7 @@ export const resolvers = {
       const filtered = (query: any): any => {
         let q = query.in('registration_id', scopedIds)
         if (typeIds !== null) q = q.in('type_id', typeIds)
-        if (location.id !== null) q = q.eq('location_id', location.id)
+        if (locationIds !== null) q = q.in('location_id', locationIds)
         return q
       }
 
@@ -353,10 +410,10 @@ export const resolvers = {
     blueprints: async (
       _parent: unknown,
       args: {
-        typeIds?: readonly string[] | null
-        typeName?: string | null
-        owner?: string | null
-        owners?: readonly string[] | null
+        type?: string | null
+        types?: readonly string[] | null
+        character?: string | null
+        characters?: readonly string[] | null
         limit?: number | null
       },
       ctx: GraphqlContext
@@ -429,7 +486,7 @@ export const resolvers = {
 
     marketOrders: async (
       _parent: unknown,
-      args: { owner?: string | null; owners?: readonly string[] | null },
+      args: { character?: string | null; characters?: readonly string[] | null },
       ctx: GraphqlContext
     ) => {
       const ownerIds = scopeIds(ctx, args)
@@ -499,7 +556,7 @@ export const resolvers = {
 
     industryJobs: async (
       _parent: unknown,
-      args: { owner?: string | null; owners?: readonly string[] | null; includeDelivered?: boolean | null },
+      args: { character?: string | null; characters?: readonly string[] | null; includeDelivered?: boolean | null },
       ctx: GraphqlContext
     ) => {
       const ownerIds = scopeIds(ctx, args)
@@ -604,10 +661,10 @@ export const resolvers = {
     walletTransactions: async (
       _parent: unknown,
       args: {
-        typeIds?: readonly string[] | null
-        typeName?: string | null
-        owner?: string | null
-        owners?: readonly string[] | null
+        type?: string | null
+        types?: readonly string[] | null
+        character?: string | null
+        characters?: readonly string[] | null
         since?: string | null
         limit?: number | null
       },

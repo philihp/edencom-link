@@ -7,7 +7,7 @@ import { deleteLens, previewLens, saveLens } from './actions'
 import styles from './lens.module.css'
 
 const DEFAULT_QUERY = `{
-  assets(typeName: "Tritanium") {
+  assets(type: "Tritanium") {
     totalCount
     rows {
       typeName

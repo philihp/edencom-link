@@ -29,7 +29,7 @@ const EXAMPLES: Array<{ label: string; query: string }> = [
   {
     label: 'Stockpile by item',
     query: `query Stockpile($item: String!) {
-  assets(typeName: $item) {
+  assets(type: $item) {
     totalCount
     truncated
     rows {
@@ -49,7 +49,7 @@ const EXAMPLES: Array<{ label: string; query: string }> = [
     // what else hangs off them.
     label: 'Stockpile by group (nested)',
     query: `{
-  assets(typeName: "Tritanium") {
+  assets(type: "Tritanium") {
     rows {
       quantity
       type {
