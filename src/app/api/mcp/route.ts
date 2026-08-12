@@ -28,7 +28,23 @@ const handler = createMcpHandler(
     registerExploreTools(server)
     registerLensTools(server)
   },
-  { serverInfo: { name: 'edencom-link', version: '1.0.0' } }
+  {
+    serverInfo: { name: 'edencom-link', version: '1.0.0' },
+    // SEP-2549 cache hints. The SDK emits every cacheable 2026-07-28 result
+    // with `ttlMs: 0` (immediately stale) and `cacheScope: 'private'` unless
+    // told otherwise, so without this every client re-fetches the tool list on
+    // every use. Both of these results are the same for every caller: tools are
+    // registered unconditionally above — the `lens` dark-launch flag is checked
+    // inside the lens handlers, not at registration — so nothing here varies by
+    // who is asking, and `public` is honest even though the endpoint is
+    // authenticated. RLS, not the cache scope, is what scopes the *data* a tool
+    // returns. The TTL is how long a deploy that changes the tool list can take
+    // to reach a client, since we send no `listChanged` notifications.
+    cacheHints: {
+      'tools/list': { ttlMs: 300_000, cacheScope: 'public' },
+      'server/discover': { ttlMs: 300_000, cacheScope: 'public' },
+    },
+  }
 )
 
 // Point the 401 WWW-Authenticate challenge at the path-suffixed protected-
