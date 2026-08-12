@@ -4,11 +4,13 @@ import { ascend, range, reduce, sort, uniq } from 'ramda'
 
 import { createClient } from '@/utils/supabase/server'
 import {
-  ACTIVITY_FAMILY,
   baseSlotMax,
+  countJobSlots,
   emptyCounts,
   SKILL_FAMILY,
   SLOT_SKILL_IDS,
+  type CharacterJobRow,
+  type CorpJobRow,
   type SlotCounts,
   type SlotFamily,
   type SlotMax,
@@ -131,28 +133,26 @@ const CharacterPage = async () => {
   )
 
   // Jobs that still hold a slot: running (status 'active') or ready to deliver
-  // (status 'ready'). A job whose timer elapsed but that ESI still reports as
-  // 'active' is treated as ready too, so the pulsing "deliver me" state doesn't
-  // wait on ESI flipping the status.
-  const nowMs = Date.now()
-  const { data: industryJobs } = await supabase
-    .from('character_industry_job')
-    .select('registration_id, activity_id, status, end_date')
-    .in('status', ['active', 'ready'])
-  const jobSlotCounts = reduce(
-    (acc, j) => {
-      const family = ACTIVITY_FAMILY[Number(j.activity_id)]
-      if (family) {
-        const counts = acc.get(j.registration_id as string) ?? emptyCounts()
-        const finished = j.status === 'ready' || new Date(j.end_date as string).getTime() <= nowMs
-        counts[family][finished ? 'finished' : 'running'] += 1
-        acc.set(j.registration_id as string, counts)
-      }
-      return acc
-    },
-    new Map<string, SlotCounts>(),
-    industryJobs ?? []
-  )
+  // (status 'ready'). Corp jobs count against the installing character's slots
+  // as well, so both listings feed the shared fold; RLS already scopes the corp
+  // view to the caller's corporations.
+  const [{ data: industryJobs }, { data: corpIndustryJobs }] = await Promise.all([
+    supabase
+      .from('character_industry_job')
+      .select('job_id, registration_id, activity_id, status, end_date')
+      .in('status', ['active', 'ready']),
+    supabase
+      .from('corp_industry_job')
+      .select('job_id, installer_id, activity_id, status, end_date')
+      .in('status', ['active', 'ready']),
+  ])
+  const jobSlotCounts = countJobSlots({
+    characterJobs: (industryJobs ?? []) as CharacterJobRow[],
+    corpJobs: (corpIndustryJobs ?? []) as CorpJobRow[],
+    registrationByCharacterId: new Map(
+      (characters ?? []).filter((c) => c.character_id != null).map((c) => [String(c.character_id), c.id as string])
+    ),
+  })
 
   // Per-character slot ceilings, derived from the two skills behind each family.
   const { data: skillRows } = await supabase
