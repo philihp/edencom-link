@@ -30,17 +30,30 @@ export type BranchTarget = {
   branchId: string | null
 }
 
+// GET /v1/projects/{ref}/branches. Its `status` tracks the branch's SETUP
+// (migrations, functions) and never reports the project's health — those are
+// two different enums on two different endpoints, which is the trap here.
 type Branch = {
   id: string
   name: string
   project_ref: string
+  status?: string
+}
+
+// GET /v1/branches/{id}. Its `status` is the project-health enum, the one that
+// actually reaches ACTIVE_HEALTHY.
+type BranchDetail = {
+  ref: string
   status: string
 }
 
-// Statuses the Management API reports while a branch comes up. Anything else
-// (FUNCTIONS_FAILED, MIGRATIONS_FAILED, …) is terminal and fails the run.
-const PENDING = ['CREATING_PROJECT', 'RUNNING_MIGRATIONS', 'MIGRATIONS_PASSED', 'FUNCTIONS_DEPLOYED']
-const READY = 'ACTIVE_HEALTHY'
+// Setup statuses that mean "still working". The two _FAILED members are
+// terminal and fail the run; the field is deprecated upstream, so treat it as
+// advisory — absent means "nothing to object to".
+const SETUP_PENDING = ['CREATING_PROJECT', 'RUNNING_MIGRATIONS', 'MIGRATIONS_PASSED', 'FUNCTIONS_DEPLOYED']
+// Project-health statuses. Anything outside these two is terminal.
+const HEALTH_READY = 'ACTIVE_HEALTHY'
+const HEALTH_PENDING = ['COMING_UP', 'UNKNOWN', 'RESTORING', 'RESTARTING', 'RESIZING', 'UPGRADING']
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -83,30 +96,51 @@ const readBranch = async (parentRef: string, branchId: string): Promise<Branch> 
   return branch
 }
 
-// Poll until the branch reports ACTIVE_HEALTHY. Tail-recursive rather than a
-// while loop, per the repo's iteration style; `deadline` is absolute so the
-// bound covers the whole wait rather than each hop.
-const awaitHealthy = async (parentRef: string, branchId: string, deadline: number): Promise<Branch> => {
-  const branch = await readBranch(parentRef, branchId)
-  if (branch.status === READY) return branch
-  if (!PENDING.includes(branch.status)) {
-    throw new Error(`branch ${branch.name} entered terminal status ${branch.status}`)
+// Ready means BOTH halves agree: the project itself is ACTIVE_HEALTHY (branch
+// detail) and its migrations/functions landed (the branch listing). Waiting on
+// health alone would hand back a project whose migrations are still running —
+// so a test could sign up before invite_code exists — and waiting on setup
+// alone would hand back a project that is not yet answering.
+//
+// Tail-recursive rather than a while loop, per the repo's iteration style;
+// `deadline` is absolute so the bound covers the whole wait, not each hop.
+const awaitHealthy = async (parentRef: string, branchId: string, deadline: number): Promise<BranchDetail> => {
+  const [detail, branch]: [BranchDetail, Branch] = await Promise.all([
+    management(`/v1/branches/${branchId}`),
+    readBranch(parentRef, branchId),
+  ])
+  const setup = branch.status
+  const where = `branch ${branch.name} (health ${detail.status}, setup ${setup ?? 'n/a'})`
+
+  if (setup && !SETUP_PENDING.includes(setup)) throw new Error(`${where} failed to set up`)
+  if (detail.status !== HEALTH_READY && !HEALTH_PENDING.includes(detail.status)) {
+    throw new Error(`${where} entered a terminal state`)
   }
-  if (Date.now() > deadline) {
-    throw new Error(`branch ${branch.name} still ${branch.status} after ${READY_TIMEOUT_MS}ms`)
-  }
+  // FUNCTIONS_DEPLOYED and MIGRATIONS_PASSED both mean the schema is in place;
+  // CREATING_PROJECT / RUNNING_MIGRATIONS do not.
+  const migrated = !setup || setup === 'MIGRATIONS_PASSED' || setup === 'FUNCTIONS_DEPLOYED'
+  if (detail.status === HEALTH_READY && migrated) return detail
+
+  if (Date.now() > deadline) throw new Error(`${where} was not ready after ${READY_TIMEOUT_MS}ms`)
   await delay(POLL_INTERVAL_MS)
   return awaitHealthy(parentRef, branchId, deadline)
 }
 
+type ApiKey = { name: string; api_key: string | null; type?: string | null }
+
+// Projects on legacy keys name them 'anon' and 'service_role'; projects on the
+// newer key system name them freely and distinguish by `type`
+// (publishable ≈ anon, secret ≈ service_role). Match on name first, fall back
+// to type, so the helper works on either vintage of project.
 const fetchKeys = async (projectRef: string) => {
-  const keys: { name: string; api_key: string }[] = await management(`/v1/projects/${projectRef}/api-keys?reveal=true`)
-  const keyNamed = (name: string) => {
-    const key = keys.find((candidate) => candidate.name === name)?.api_key
-    if (!key) throw new Error(`project ${projectRef} exposes no ${name} key`)
+  const keys: ApiKey[] = await management(`/v1/projects/${projectRef}/api-keys?reveal=true`)
+  const pick = (name: string, type: string) => {
+    const key = (keys.find((candidate) => candidate.name === name) ?? keys.find((candidate) => candidate.type === type))
+      ?.api_key
+    if (!key) throw new Error(`project ${projectRef} exposes no ${name} (or ${type}) key`)
     return key
   }
-  return { anonKey: keyNamed('anon'), serviceKey: keyNamed('service_role') }
+  return { anonKey: pick('anon', 'publishable'), serviceKey: pick('service_role', 'secret') }
 }
 
 // GoTrue answers before the project is fully warm often enough to be flaky, so
@@ -138,13 +172,17 @@ export const createTestBranch = async (namePrefix: string): Promise<BranchTarget
   const branchName = `${namePrefix}-${Date.now().toString(36)}${Math.floor(Math.random() * 1e6).toString(36)}`
   const created: Branch = await management(`/v1/projects/${parentRef}/branches`, {
     method: 'POST',
-    body: JSON.stringify({ branch_name: branchName }),
+    // with_data explicitly false: the branch gets the migrations, never a copy
+    // of production's rows.
+    body: JSON.stringify({ branch_name: branchName, with_data: false }),
   })
 
   const deadline = Date.now() + READY_TIMEOUT_MS
-  const branch = await awaitHealthy(parentRef, created.id, deadline)
-  const url = `https://${branch.project_ref}.supabase.co`
-  const { anonKey, serviceKey } = await fetchKeys(branch.project_ref)
+  // The branch's own project ref — `created.project_ref` is populated too, but
+  // the detail response is the authoritative one once it is healthy.
+  const { ref } = await awaitHealthy(parentRef, created.id, deadline)
+  const url = `https://${ref}.supabase.co`
+  const { anonKey, serviceKey } = await fetchKeys(ref)
   await awaitAuth(url, anonKey, deadline)
   return { url, anonKey, serviceKey, branchId: created.id }
 }
