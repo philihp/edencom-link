@@ -28,9 +28,22 @@ async function planRun(): Promise<PlanResult> {
   const { recordHeartbeat } = await import('@/supabase.js')
   const runId = randomInt(1, 2 ** 48)
   await recordHeartbeat('sde-mirror', 'start', { runId, source: 'vercel-workflow' })
-  const { build, zipUrl, commit, skip } = await planMirror()
-  if (!skip) await markBuildStarted(build)
-  return { runId, build, zipUrl, commit, skip }
+  try {
+    const { build, zipUrl, commit, skip } = await planMirror()
+    if (!skip) await markBuildStarted(build)
+    return { runId, build, zipUrl, commit, skip }
+  } catch (e) {
+    // This step owns the only runId that exists so far, so nothing downstream
+    // could close the heartbeat it just opened — do it here, or /jobs reads a
+    // run that never ended (see finalizeFailed).
+    await recordHeartbeat('sde-mirror', 'end', {
+      runId,
+      source: 'vercel-workflow',
+      ok: false,
+      error: e instanceof Error ? e.message : String(e),
+    })
+    throw e
+  }
 }
 
 async function listFiles(zipUrl: string): Promise<SdeFile[]> {
@@ -70,7 +83,21 @@ async function finalize(build: number, runId: number, commit: string): Promise<v
   const { finalizeBuild } = await import('@/jobs/sdeMirror.js')
   const { recordHeartbeat } = await import('@/supabase.js')
   await finalizeBuild(build, commit)
-  await recordHeartbeat('sde-mirror', 'end', { runId, source: 'vercel-workflow' })
+  await recordHeartbeat('sde-mirror', 'end', { runId, source: 'vercel-workflow', ok: true })
+}
+
+// The failure path, and the reason /jobs could report "last run 20 days ago"
+// while the cron fired every night: the heartbeat is opened by planRun and
+// closed only at the end, so a run that died mid-ingest left it open forever
+// and latest_heartbeats() (ended_at is not null) kept answering with the last
+// run that reached finalize. Closing it with ok: false makes the same page read
+// "failed", and rows.ts renders the message. Its own step so the failing run
+// still gets it recorded; the workflow rethrows afterwards, so the run is
+// failed in Observability either way.
+async function finalizeFailed(runId: number, message: string): Promise<void> {
+  'use step'
+  const { recordHeartbeat } = await import('@/supabase.js')
+  await recordHeartbeat('sde-mirror', 'end', { runId, source: 'vercel-workflow', ok: false, error: message })
 }
 
 // The skip path: nothing changed (same build, same deployed commit, < 7 days
@@ -80,7 +107,7 @@ async function finalize(build: number, runId: number, commit: string): Promise<v
 async function finalizeSkipped(build: number, runId: number): Promise<void> {
   'use step'
   const { recordHeartbeat } = await import('@/supabase.js')
-  await recordHeartbeat('sde-mirror', 'end', { runId, source: 'vercel-workflow' })
+  await recordHeartbeat('sde-mirror', 'end', { runId, source: 'vercel-workflow', ok: true })
   console.log(`[sde-mirror] build ${build}: unchanged build + deployment, fresh (< 7 days) — skipping`)
 }
 
@@ -146,61 +173,71 @@ const SHEET_INPUT_STEMS = ['types', 'blueprints']
 export async function sdeMirrorWorkflow() {
   'use workflow'
   const plan = await planRun()
-  // Steady state: CCP's build is unchanged, this deployment already produced the
-  // mirror, and it's < 7 days old. Close out in one cheap step and stop.
-  if (plan.skip) {
-    await finalizeSkipped(plan.build, plan.runId)
-    return
-  }
-  const files = await listFiles(plan.zipUrl)
-
-  // Drain one entry: chase its slice cursor until the entry reports done,
-  // through the file's own named step (ingest_<stem>) so the run tree names each
-  // file instead of showing a wall of "ingestSlice".
-  const drainFile = async (file: SdeFile): Promise<void> => {
-    const step = ingestStepFor(file)
-    let cursor = 0
-    while (cursor !== -1) {
-      cursor = await step(plan.zipUrl, file, plan.build, cursor)
+  // Everything from here on is wrapped so that a run which dies mid-ingest
+  // still closes the heartbeat planRun() opened (finalizeFailed) before the
+  // error is rethrown. Without that the run is invisible to /jobs, which reads
+  // latest_heartbeats() — completed runs only — and so reports the last
+  // *successful* run's age no matter how many nights have failed since.
+  try {
+    // Steady state: CCP's build is unchanged, this deployment already produced
+    // the mirror, and it's < 7 days old. Close out in one cheap step and stop.
+    if (plan.skip) {
+      await finalizeSkipped(plan.build, plan.runId)
+      return
     }
-  }
+    const files = await listFiles(plan.zipUrl)
 
-  // Largest compressed entries first, so the longest slice chains (typeDogma)
-  // start at t=0 and wall clock tracks the longest chain instead of whatever
-  // happened to queue behind it.
-  const ordered = [...files].sort((a, b) => b.compressedSize - a.compressedSize)
-  const lanes: SdeFile[][] = Array.from({ length: INGEST_LANES }, () => [])
-  ordered.forEach((file, i) => lanes[i % INGEST_LANES].push(file))
-
-  // Build each lane's sequential drain chain synchronously, keeping a per-file
-  // completion promise so the tail steps below can start on their actual
-  // inputs rather than on the whole ingest.
-  const drained = new Map<string, Promise<void>>()
-  const laneDone = lanes.map((lane) => {
-    let prev: Promise<void> = Promise.resolve()
-    for (const file of lane) {
-      prev = prev.then(() => drainFile(file))
-      drained.set(file.stem, prev)
+    // Drain one entry: chase its slice cursor until the entry reports done,
+    // through the file's own named step (ingest_<stem>) so the run tree names
+    // each file instead of showing a wall of "ingestSlice".
+    const drainFile = async (file: SdeFile): Promise<void> => {
+      const step = ingestStepFor(file)
+      let cursor = 0
+      while (cursor !== -1) {
+        cursor = await step(plan.zipUrl, file, plan.build, cursor)
+      }
     }
-    return prev
-  })
-  const allDrained = Promise.all(laneDone)
-  // Wait for specific files; if CCP ever renames one away, degrade to waiting
-  // for the full ingest rather than starting a tail step on a missing table.
-  const afterStems = (stems: string[]) => Promise.all(stems.map((stem) => drained.get(stem) ?? allDrained))
 
-  // Tail steps overlap the remaining ingest: station-name resolution needs
-  // only sde_npc_stations, the esf_data re-encode needs only its 7 input
-  // tables, and the sheet_csv re-encode needs only sde_types + sde_blueprints.
-  // All are forced — a non-skipped run always re-does the full ingest, and the
-  // derived encodes re-write to match.
-  const stations = afterStems(['npc_stations']).then(() => stationNames())
-  const esf = afterStems(ESF_INPUT_STEMS).then(() => encodeEsf(plan.build))
-  const sheets = afterStems(SHEET_INPUT_STEMS).then(() => encodeSheets(plan.build))
+    // Largest compressed entries first, so the longest slice chains (typeDogma)
+    // start at t=0 and wall clock tracks the longest chain instead of whatever
+    // happened to queue behind it.
+    const ordered = [...files].sort((a, b) => b.compressedSize - a.compressedSize)
+    const lanes: SdeFile[][] = Array.from({ length: INGEST_LANES }, () => [])
+    ordered.forEach((file, i) => lanes[i % INGEST_LANES].push(file))
 
-  await Promise.all([allDrained, stations, esf, sheets])
-  // Last, once every table has landed: refresh the derived views, stamp the
-  // build completed with this run's commit, and close the heartbeat planRun()
-  // opened.
-  await finalize(plan.build, plan.runId, plan.commit)
+    // Build each lane's sequential drain chain synchronously, keeping a per-file
+    // completion promise so the tail steps below can start on their actual
+    // inputs rather than on the whole ingest.
+    const drained = new Map<string, Promise<void>>()
+    const laneDone = lanes.map((lane) => {
+      let prev: Promise<void> = Promise.resolve()
+      for (const file of lane) {
+        prev = prev.then(() => drainFile(file))
+        drained.set(file.stem, prev)
+      }
+      return prev
+    })
+    const allDrained = Promise.all(laneDone)
+    // Wait for specific files; if CCP ever renames one away, degrade to waiting
+    // for the full ingest rather than starting a tail step on a missing table.
+    const afterStems = (stems: string[]) => Promise.all(stems.map((stem) => drained.get(stem) ?? allDrained))
+
+    // Tail steps overlap the remaining ingest: station-name resolution needs
+    // only sde_npc_stations, the esf_data re-encode needs only its 7 input
+    // tables, and the sheet_csv re-encode needs only sde_types + sde_blueprints.
+    // All are forced — a non-skipped run always re-does the full ingest, and the
+    // derived encodes re-write to match.
+    const stations = afterStems(['npc_stations']).then(() => stationNames())
+    const esf = afterStems(ESF_INPUT_STEMS).then(() => encodeEsf(plan.build))
+    const sheets = afterStems(SHEET_INPUT_STEMS).then(() => encodeSheets(plan.build))
+
+    await Promise.all([allDrained, stations, esf, sheets])
+    // Last, once every table has landed: refresh the derived views, stamp the
+    // build completed with this run's commit, and close the heartbeat planRun()
+    // opened.
+    await finalize(plan.build, plan.runId, plan.commit)
+  } catch (e) {
+    await finalizeFailed(plan.runId, e instanceof Error ? e.message : String(e))
+    throw e
+  }
 }
