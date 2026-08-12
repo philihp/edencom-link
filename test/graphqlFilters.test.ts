@@ -73,7 +73,7 @@ test('splitRefEntries calls a bare integer an id and everything else a name', ()
 })
 
 test('matchExactNames takes whole names only, keeping every candidate that matches', () => {
-  const candidates = {
+  const candidates: Record<string, { id: string; name: string }[]> = {
     Tritanium: [
       { id: '34', name: 'Tritanium' },
       { id: '35', name: 'Tritanium Bar' },

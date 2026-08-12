@@ -10,7 +10,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-// @ts-expect-error — plain JS module with no types, imported by the extracts.
 import { contractFields, contractItemFields, ITEMISED_TYPES } from '../src/jobs/contractFields.js'
 
 const SEEN_AT = '2026-08-09T12:00:00.000Z'

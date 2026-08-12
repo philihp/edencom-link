@@ -73,12 +73,28 @@ export const composeFuelPing = ({ name, systemName, structureId, fuelExpires }) 
   }
 }
 
+/**
+ * @typedef {{ structure_id: number, system_id?: number | null, name?: string | null, fuel_expires?: string | null }} FuelStructure
+ * @typedef {{ fuel_expires?: string | null, updated_at?: string | null }} FuelReading
+ * @typedef {{ id: string, user_id: string }} FuelChannel
+ */
+
 // The whole decision for one structure: [] unless it just crossed under the
 // threshold, else one insert-ready notification row per listening channel
 // (delivery state is per-message, so detection fans out here rather than in the
 // sender). Unlike the den equivalent the channels span *several* accounts —
 // structures are corp-scoped, so every corp member listening gets told — hence
 // user_id comes off each channel rather than being passed in.
+/**
+ * @param {{
+ *   structure: FuelStructure,
+ *   prev: FuelReading | null,
+ *   systemName: string | null,
+ *   channels: FuelChannel[],
+ *   now?: Date,
+ *   thresholdMs?: number,
+ * }} params
+ */
 export const planFuelNotifications = ({
   structure,
   prev,
@@ -105,6 +121,16 @@ export const planFuelNotifications = ({
 // Every row for a run's worth of structures. `prevById` / `systemNames` are
 // Maps keyed by structure id and system id; a miss in either is fine (the
 // former means "never seen", the latter falls back to the bare name).
+/**
+ * @param {{
+ *   structures: FuelStructure[],
+ *   prevById: Map<number, FuelReading>,
+ *   systemNames: Map<number, string>,
+ *   channels: FuelChannel[],
+ *   now?: Date,
+ *   thresholdMs?: number,
+ * }} params
+ */
 export const planAllFuelNotifications = ({
   structures,
   prevById,

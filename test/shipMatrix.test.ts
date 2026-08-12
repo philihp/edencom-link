@@ -29,8 +29,10 @@ const type = (
   groupID: 0,
   categoryID: 6,
   groupName,
+  categoryName: 'Ship',
   raceID,
   metaGroupID,
+  volume: null,
 })
 
 const fit = (fittingId: number, shipTypeId: number, name: string, owner?: string): MatrixEntry => ({
