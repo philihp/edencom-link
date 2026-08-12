@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
-import { concat, filter, forEach, map, uniq } from 'ramda'
+import { chain, concat, filter, forEach, map, splitEvery, uniq } from 'ramda'
 
 import { createClient } from '@/utils/supabase/server'
 import { DateTime } from '../DateTime'
@@ -23,6 +23,11 @@ import { structureWindowDays } from './windows'
 import styles from './structures.module.css'
 
 const PAGE_SIZE = 1000
+
+// Job ids per industry_job_tax_facility() call. The function returns at most one row per id, so any
+// value at or under PostgREST's max_rows keeps a batch's result whole; well under, to leave headroom
+// if that cap is ever lowered.
+const RPC_BATCH = 500
 
 // Drain a PostgREST select past its max_rows (1000) cap by recursing to the
 // next page until a short (or empty/errored) page signals the end — an
@@ -109,20 +114,34 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
   // a director, covering every corp member) is unioned in too, mirroring /structure/revenue.
   // Otherwise a corp-run job's tax lands in "unaccounted" instead of its structure. Bigint ids can
   // come back from PostgREST as strings, so key every map by string.
+  //
+  // Both selects are drained rather than issued once: a corp with any history has far more than
+  // max_rows (1000) jobs across its structures — 3.5k here — and a single request silently returns
+  // an arbitrary 1000 of them, so most jobs failed to resolve and their tax fell into
+  // "unaccounted". Paging needs a total order, hence order by job_id.
   const structureIds = list.map((s) => Number(s.structure_id))
   const jobStructureFilter = `station_id.in.(${structureIds.join(',')}),facility_id.in.(${structureIds.join(',')})`
-  const [{ data: characterJobs }, { data: corpJobs }] = structureIds.length
-    ? await Promise.all([
-        supabase.from('character_industry_job').select('job_id, station_id, facility_id').or(jobStructureFilter),
-        supabase.from('corp_industry_job').select('job_id, station_id, facility_id').or(jobStructureFilter),
-      ])
-    : [{ data: [] }, { data: [] }]
+  const fetchJobs = (table: 'character_industry_job' | 'corp_industry_job') =>
+    fetchAllRows<JobRow>((from, to) =>
+      supabase
+        .from(table)
+        .select('job_id, station_id, facility_id')
+        .or(jobStructureFilter)
+        .order('job_id', { ascending: true })
+        .range(from, to)
+    )
+  const [characterJobs, corpJobs] = structureIds.length
+    ? await Promise.all([fetchJobs('character_industry_job'), fetchJobs('corp_industry_job')])
+    : [[], []]
 
   const structureByJob = new Map<string, string>()
-  for (const j of [...((characterJobs ?? []) as JobRow[]), ...((corpJobs ?? []) as JobRow[])]) {
-    const structureId = j.station_id ?? j.facility_id
-    if (structureId != null) structureByJob.set(String(j.job_id), String(structureId))
-  }
+  forEach(
+    (j: JobRow) => {
+      const structureId = j.station_id ?? j.facility_id
+      if (structureId != null) structureByJob.set(String(j.job_id), String(structureId))
+    },
+    concat(characterJobs, corpJobs)
+  )
 
   // Fuel timers live in corp_structure_status now (own-corp only). RLS returns a
   // row only for structures the caller's corp owns, so an alliance-mate's
@@ -176,11 +195,17 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
     { days: windowDays, bucketHours: Math.max(1, Math.ceil((windowDays * 24) / 180)) }
   )
 
+  // Receipts only. industry_job_tax cuts both ways in a corp wallet: a positive entry is tax someone
+  // paid to run a job in one of our structures, a negative one is tax WE paid to run a job in
+  // someone else's. Only the first is revenue. Summing both netted a corp's own industry spend
+  // against its landlord income — and a corp that rents slots without owning any occupied structure
+  // showed a negative figure under a heading that reads "Revenue".
   const journal = await fetchAllRows<JournalRow>((from, to) =>
     supabase
       .from('corp_wallet_journal')
       .select('amount, context_id, description, first_party_id')
       .eq('ref_type', 'industry_job_tax')
+      .gt('amount', 0)
       .gte('date', windowStart)
       .order('date', { ascending: false })
       .range(from, to)
@@ -199,19 +224,33 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
   const needsLookup = (entry: JournalRow) => entry.context_id != null && !structureByJob.has(String(entry.context_id))
   const unresolvedJobIds = uniq(map((entry: JournalRow) => String(entry.context_id), filter(needsLookup, journal)))
 
-  if (unresolvedJobIds.length > 0) {
-    const { data: taxedJobs } = await supabase.rpc('industry_job_tax_facility', { job_ids: unresolvedJobIds })
-    // Keep the invariant the structure-seeded queries above establish: every value in the map is a
-    // structure on this page. A job taxed into our wallet from somewhere not in `list` (an NPC
-    // station, a structure we've stopped monitoring) stays unaccounted rather than accruing to a
-    // row nothing renders — as does one ESI gave no location at all.
-    const onPage = new Set(map(String, structureIds))
-    const locationOf = (j: JobRow) => j.station_id ?? j.facility_id
-    forEach(
-      (j) => structureByJob.set(String(j.job_id), String(locationOf(j))),
-      filter((j: JobRow) => locationOf(j) != null && onPage.has(String(locationOf(j))), (taxedJobs ?? []) as JobRow[])
+  //
+  // Asked in batches, because a set-returning function is capped by max_rows (1000) like any other
+  // select and the rows past the cap are dropped silently. The function returns at most one row per
+  // job id (distinct on), so a batch of RPC_BATCH ids can never come back truncated — no paging
+  // needed, and no dependence on the cap's value. Widening the window used to make revenue *fall*:
+  // past ~1000 resolvable jobs the function's `order by job_id` meant the surviving rows were the
+  // oldest jobs, so every recent one stopped resolving and its tax slid into "unaccounted".
+  const taxedBatches = await Promise.all(
+    map(
+      (batch: string[]) => supabase.rpc('industry_job_tax_facility', { job_ids: batch }),
+      splitEvery(RPC_BATCH, unresolvedJobIds)
     )
-  }
+  )
+
+  // Keep the invariant the structure-seeded queries above establish: every value in the map is a
+  // structure on this page. A job taxed into our wallet from somewhere not in `list` (an NPC
+  // station, a structure we've stopped monitoring) stays unaccounted rather than accruing to a
+  // row nothing renders — as does one ESI gave no location at all.
+  const onPage = new Set(map(String, structureIds))
+  const locationOf = (j: JobRow) => j.station_id ?? j.facility_id
+  forEach(
+    (j) => structureByJob.set(String(j.job_id), String(locationOf(j))),
+    filter(
+      (j: JobRow) => locationOf(j) != null && onPage.has(String(locationOf(j))),
+      chain(({ data }) => (data ?? []) as JobRow[], taxedBatches)
+    )
+  )
 
   const totalByStructure = new Map<string, number>()
   // Unaccounted tax broken down by the party that paid it (the character/corp that ran the job).
