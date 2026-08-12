@@ -144,3 +144,36 @@ test('a task stuck non-terminal is abandoned, a terminal one never is', () => {
   assert.equal(isAbandoned(task({ status: 'error', created_at: minutesAgo(600) }), NOW), false)
   assert.equal(isAbandoned(task({ status: 'done', created_at: minutesAgo(600) }), NOW), false)
 })
+
+test('a corp nobody directs reads as a no-op, not a failure', () => {
+  // The heartbeat closed ok=true with a reason: the character was never
+  // permitted to ask, so nothing ran and nothing broke.
+  assert.deepEqual(
+    statusOf({ beat: { ok: true, error: null, skippedReason: "Philihp Boeing doesn't hold the in-game role" } }),
+    { status: 'skipped', error: "Philihp Boeing doesn't hold the in-game role" }
+  )
+  // A run that actually threw still outranks it.
+  assert.deepEqual(statusOf({ beat: { ok: false, error: '500', skippedReason: 'stale note' } }), {
+    status: 'failed',
+    error: '500',
+  })
+})
+
+test('a skipped entity drags neither the row freshness nor the lagging count', () => {
+  const entities = [
+    run({ id: 'ours', lastRunAt: minutesAgo(5) }),
+    // Never pulled and never will be — without the exclusion this pins the row
+    // at "never" for good, which reads as broken rather than as not ours.
+    run({ id: 'theirs', lastRunAt: null, status: 'skipped', error: 'no director role' }),
+  ]
+  assert.equal(oldestRun(entities), minutesAgo(5))
+  assert.equal(laggingCount(entities, NOW), 0)
+  // One skipped corp doesn't relabel a job that ran fine for the other.
+  assert.equal(rowStatus(entities), 'idle')
+})
+
+test('the row reads skipped only when every entity is one', () => {
+  const skipped = (id: string) => run({ id, lastRunAt: minutesAgo(30), status: 'skipped', error: 'no role' })
+  assert.equal(rowStatus([skipped('a'), skipped('b')]), 'skipped')
+  assert.equal(rowStatus([skipped('a'), run({ id: 'b', status: 'failed', error: 'boom' })]), 'failed')
+})

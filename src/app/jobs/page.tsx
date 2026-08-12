@@ -21,7 +21,7 @@ import { CharacterName, Name } from '../names'
 import styles from './jobs.module.css'
 import { NextRun } from './nextRun'
 import { RefreshPoller } from './poller'
-import { RefreshButton } from './refreshButton'
+import { RefreshAllButton, RefreshButton } from './refreshButton'
 import { type JobEntry, type Kickable, isOverdue, jobsInSection, nextRunFor } from './registry'
 import {
   type ActivityTask,
@@ -47,6 +47,9 @@ type Beat = {
   ended_at: string
   ok: boolean | null
   error: string | null
+  // Set (with ok true) when the run was a permitted no-op: a corp endpoint the
+  // character holds no in-game role for. See heartbeat.skipped_reason.
+  skipped_reason: string | null
 }
 
 type OpenBeat = { job: string; registration_id: string | null; corporation_id: number | null }
@@ -59,6 +62,9 @@ const STATUS_LABEL: Record<string, string> = {
   running: '● running',
   queued: '· queued',
   failed: '✗ failed',
+  // Not a failure: nothing was pulled because nothing was permitted to be. The
+  // reason (which character, which role) rides along as the title.
+  skipped: '— not a director',
   idle: 'idle',
   pending: '· pending',
   done: '✓ done',
@@ -100,10 +106,12 @@ const Cell = ({
   const offerRefresh =
     kickable !== 'never' &&
     !inFlight &&
+    // Re-kicking a run we're not permitted to make just re-earns the same 403.
+    entity.status !== 'skipped' &&
     (!showFreshness || entity.status === 'failed' || freshnessLevel(entity.lastRunAt) !== 'fresh')
   return (
     <span className={styles.cell}>
-      {inFlight || entity.status === 'failed' ? (
+      {inFlight || entity.status === 'failed' || entity.status === 'skipped' ? (
         <Status status={entity.status} error={entity.error} />
       ) : showFreshness ? (
         <Freshness at={entity.lastRunAt} />
@@ -128,6 +136,7 @@ const EntityJobTable = ({
   entityNoun,
   kickableOf,
   showRunsAs = false,
+  offerRefreshAll = false,
 }: {
   entries: readonly JobEntry[]
   entitiesByJob: Record<string, EntityRun[]>
@@ -136,6 +145,10 @@ const EntityJobTable = ({
   entityNoun: string
   kickableOf: (entry: JobEntry) => Kickable
   showRunsAs?: boolean
+  // Characters only: offer one button that kicks the job for every character,
+  // so the answer to "they're all stale" isn't four clicks. Corp jobs dispatch
+  // per corporation, which the per-corp cells already do one at a time.
+  offerRefreshAll?: boolean
 }) => (
   <table className={styles.table}>
     <thead>
@@ -164,6 +177,11 @@ const EntityJobTable = ({
                   {entities.length} {entityNoun}
                   {lagging > 0 && <span className={styles.lagging}> · {lagging} lagging</span>}
                 </summary>
+                {offerRefreshAll && kickable === 'always' && entities.length > 1 && (
+                  <div className={styles.breakdownActions}>
+                    <RefreshAllButton job={entry.job} />
+                  </div>
+                )}
                 <ul className={styles.breakdownList}>
                   {entities.map((entity) => (
                     <li key={entity.id}>
@@ -279,8 +297,13 @@ const JobsPage = async () => {
         const key = `${b.job}:${b.corporation_id}`
         const prev = acc.corpBeats.get(key)
         if (!prev || prev.ended_at < b.ended_at) acc.corpBeats.set(key, b)
-        const prevRun = acc.corpRunsAs.get(b.corporation_id)
-        if (!prevRun || prevRun.ended_at < b.ended_at) acc.corpRunsAs.set(b.corporation_id, b)
+        // Whose token *worked*. A skipped row names a character who was turned
+        // away for want of the in-game role, which is precisely who didn't run
+        // it, so those never claim the Runs as column.
+        if (b.skipped_reason == null) {
+          const prevRun = acc.corpRunsAs.get(b.corporation_id)
+          if (!prevRun || prevRun.ended_at < b.ended_at) acc.corpRunsAs.set(b.corporation_id, b)
+        }
       } else if (b.registration_id != null) {
         acc.charBeats.set(`${b.job}:${b.registration_id}`, b)
       } else {
@@ -337,7 +360,11 @@ const JobsPage = async () => {
 
   const runFor = (job: string, key: string, beat: Beat | undefined): Omit<EntityRun, 'id' | 'name'> => ({
     lastRunAt: beat?.ended_at ?? null,
-    ...statusOf({ task: taskByCell.get(`${job}:${key}`), open: openCells.has(`${job}:${key}`), beat }),
+    ...statusOf({
+      task: taskByCell.get(`${job}:${key}`),
+      open: openCells.has(`${job}:${key}`),
+      beat: beat && { ok: beat.ok, error: beat.error, skippedReason: beat.skipped_reason },
+    }),
   })
 
   const characterEntities: Record<string, EntityRun[]> = Object.fromEntries(
@@ -398,13 +425,15 @@ const JobsPage = async () => {
           <h2>Characters</h2>
           <p>
             Last run is <em>the oldest of your characters</em>&nbsp;— one character that hasn&apos;t pulled is what
-            makes the data stale, even when the others just ran. Open a row for the per-character breakdown.
+            makes the data stale, even when the others just ran. Open a row for the per-character breakdown, and for the
+            button that refreshes every character at once.
           </p>
           <EntityJobTable
             entries={jobsInSection('character')}
             entitiesByJob={characterEntities}
             entityNoun="characters"
             kickableOf={(entry) => entry.kickable}
+            offerRefreshAll
           />
 
           {corporations.size > 0 && (
@@ -414,6 +443,8 @@ const JobsPage = async () => {
                 Corp extracts run once per corporation, under the token of a character holding the in-game role —
                 director, accountant — that the endpoint requires. <em>Runs as</em> names whose token the last pull
                 actually used, so a corp going stale because its only director token stopped working is visible as such.
+                A corp where none of your characters holds the role reads <em>not a director</em>: nothing was pulled,
+                but nothing failed either, and there is nothing to retry.
               </p>
               <EntityJobTable
                 entries={jobsInSection('corporation')}
@@ -431,7 +462,8 @@ const JobsPage = async () => {
       <p>
         Game-wide data every account shares — the SDE mirror, structure and name resolution, industry cost indices.
         These run once for everyone, so a run someone else kicked shows here as running for you too. Relative times
-        only: a nightly job would sit permanently red against the six-hourly freshness scale.
+        only: a nightly job would sit permanently red against the six-hourly freshness scale. Kicking one of these is a
+        Chancellor's call — the pull is game-wide, not yours.
       </p>
       <table className={styles.table}>
         <thead>

@@ -747,6 +747,13 @@ create table public.heartbeat (
   ok boolean,
   -- The failure's message (truncated), null when ok.
   error text,
+  -- Why the run was a permitted no-op rather than a pull: a corp endpoint needs
+  -- an in-game role (director, accountant) on top of the OAuth scope, and a
+  -- character without it gets a 403 that means "you were never allowed to ask",
+  -- not "the extract broke". Those rows close with ok=true, error null and this
+  -- sentence set, so /jobs can say "not a director" instead of "✗ failed".
+  -- Null on real runs, open rows, and rows predating the column.
+  skipped_reason text,
   started_at timestamptz,
   ended_at timestamptz,
   -- How long the run took for that job/entity; null until ended_at lands.
@@ -917,13 +924,14 @@ returns table (
   corporation_id bigint,
   ended_at timestamptz,
   ok boolean,
-  error text
+  error text,
+  skipped_reason text
 )
 language sql
 stable
 as $$
   select distinct on (h.job, h.owner_key)
-    h.job, h.registration_id, h.corporation_id, h.ended_at, h.ok, h.error
+    h.job, h.registration_id, h.corporation_id, h.ended_at, h.ok, h.error, h.skipped_reason
   from public.heartbeat h
   where h.ended_at is not null
     and h.ended_at > now() - interval '30 days'

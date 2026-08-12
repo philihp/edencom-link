@@ -62,6 +62,13 @@
   color: #ff4040;
 }
 
+/* A run that was permitted to do nothing (no in-game role). Deliberately the
+   same muted grey as idle rather than the failure red: nothing is wrong. */
+.status[data-status='skipped'] {
+  color: var(--ink-faint, #888);
+  font-style: italic;
+}
+
 .status[data-status='idle'] {
   color: var(--ink-faint, #888);
 }
@@ -92,6 +99,12 @@
 .breakdown summary {
   cursor: pointer;
   white-space: nowrap;
+}
+
+/* The row-wide "refresh everyone" button, above the per-character lines it
+   stands in for. */
+.breakdownActions {
+  margin: 0.4rem 0 0;
 }
 
 .breakdownList {

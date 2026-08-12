@@ -2,7 +2,7 @@ import { randomInt } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { range, reduce } from 'ramda'
 
-import { character as fetchCharacter } from '../esi.js'
+import { character as fetchCharacter, isRoleDenial } from '../esi.js'
 import { recordHeartbeat, sudoSupabase } from '../supabase.js'
 import { refreshAccessToken } from '../tokenRefresh.js'
 
@@ -14,7 +14,13 @@ import { refreshAccessToken } from '../tokenRefresh.js'
 // (a GitHub Actions cron) or just one (a Vercel queue message dispatched for a
 // single character). Runs fn even if the heartbeat write fails; always records
 // the end heartbeat, success or failure, so a thrown error still has a duration.
-const withHeartbeat = async (tag, owner, fn) => {
+//
+// `skipReasonOf(e)` lets a caller classify some throws as *not failures*: return
+// a reason string and the end row lands with ok=true and skipped_reason set,
+// instead of ok=false. The error still propagates — forEachCorporation uses this
+// for the in-game-role denial, where the corp must stay unclaimed so a later
+// character can try, but nothing has actually gone wrong.
+const withHeartbeat = async (tag, owner, fn, { skipReasonOf } = {}) => {
   const runId = randomInt(1, 2 ** 48)
   await recordHeartbeat(tag, 'start', { runId, ...owner })
   try {
@@ -22,9 +28,17 @@ const withHeartbeat = async (tag, owner, fn) => {
     await recordHeartbeat(tag, 'end', { runId, ...owner, ok: true })
     return result
   } catch (e) {
-    // Stamp the failure on the end row (heartbeat.ok/error) and rethrow — the
-    // caller's catch still logs and skips to the next character/corp as before.
-    await recordHeartbeat(tag, 'end', { runId, ...owner, ok: false, error: e?.message ?? e })
+    const skippedReason = skipReasonOf?.(e) ?? null
+    // Stamp the outcome on the end row (heartbeat.ok/error/skipped_reason) and
+    // rethrow — the caller's catch still logs and skips to the next
+    // character/corp as before.
+    await recordHeartbeat(
+      tag,
+      'end',
+      skippedReason !== null
+        ? { runId, ...owner, ok: true, skippedReason }
+        : { runId, ...owner, ok: false, error: e?.message ?? e }
+    )
     throw e
   }
 }
@@ -170,12 +184,19 @@ export const forEachCharacterAnyScope = async (tag, { scopes, registrationIds, h
 // the character whose token authorized the pull, so "which user" is derivable
 // too); the inner forEachCharacter's own per-character heartbeat is disabled to
 // avoid a redundant second row for the same unit of work.
+//
+// A role denial is a **no-op, not a failure**: a pilot who isn't a director
+// simply can't be asked for the corp's hangar, which is a fact about the pilot
+// rather than a broken extract. Its heartbeat closes ok=true with a
+// skipped_reason naming the character, so /jobs can say "not a director"
+// instead of "✗ failed" (docs/jobs-page.md), and the corp is still left
+// unclaimed so the next character in the group gets its turn.
 export const forEachCorporation = async (tag, { scope, registrationIds }, handler) => {
   const seenCorps = new Set()
   await forEachCharacter(
     tag,
     { scope, registrationIds, heartbeat: false },
-    async ({ access_token, characterID, registration_id, userId, ctx }) => {
+    async ({ access_token, characterID, registration_id, userId, name, ctx }) => {
       const info = await fetchCharacter(access_token, characterID)
       const corporation_id = info?.corporation_id
       if (!corporation_id) {
@@ -193,9 +214,24 @@ export const forEachCorporation = async (tag, { scope, registrationIds }, handle
         console.log(`[${tag}] ${ctx}: corp ${corporation_id} already pulled this run, skipping`)
         return
       }
-      await withHeartbeat(tag, { registrationId: registration_id, corporationId: corporation_id, userId }, () =>
-        handler({ access_token, corporation_id, registration_id, ctx })
-      )
+      const skipReasonOf = (e) =>
+        isRoleDenial(e) ? `${name} doesn't hold the in-game role this corp endpoint requires` : null
+      try {
+        await withHeartbeat(
+          tag,
+          { registrationId: registration_id, corporationId: corporation_id, userId },
+          () => handler({ access_token, corporation_id, registration_id, ctx }),
+          { skipReasonOf }
+        )
+      } catch (e) {
+        const skipped = skipReasonOf(e)
+        if (skipped === null) throw e
+        // Swallowed rather than rethrown: runTokenLoop's catch would log this
+        // as FAILED, and it isn't. The corp stays out of seenCorps either way,
+        // so a corpmate with the role still gets a turn this run.
+        console.log(`[${tag}] ${ctx}: ${skipped} — recorded as a skip, not a failure`)
+        return
+      }
       // Only mark the corp as handled once the pull actually succeeds.
       seenCorps.add(corporation_id)
     }

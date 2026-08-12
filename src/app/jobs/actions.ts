@@ -6,7 +6,7 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/utils/supabase/server'
 
 import { isChancellor } from '../account/settings/chancellor/chancellor'
-import { dispatchSingleJob } from '../character/dispatchRefresh'
+import { PER_CHARACTER_JOBS, dispatchJobForCharacters, dispatchSingleJob } from '../character/dispatchRefresh'
 import { jobEntry } from './registry'
 
 // Kick one cell of /jobs: one job for one character (or for one corporation,
@@ -50,5 +50,42 @@ export const refreshCell = async (job: string, characterId: string | null) => {
   }
 
   await dispatchSingleJob(user.id, job, character)
+  revalidatePath('/jobs')
+}
+
+// Kick one job for every character the caller has registered — the "refresh
+// all" button inside a Characters row's expansion, for when the answer to "why
+// is this stale" is "all of them", and clicking four cells in turn is just
+// clicking four cells in turn. One batch, so Recent activity groups it.
+//
+// Per-character jobs only: a corp job is dispatched per corporation (see
+// dispatchJobForCharacters), and the shared jobs have a single cell already.
+export const refreshAllCharacters = async (job: string) => {
+  const supabase = await createClient()
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user?.id) {
+    redirect('/account/login')
+  }
+
+  const entry = jobEntry(job)
+  if (!entry || entry.section !== 'character' || entry.kickable === 'never') {
+    throw new Error(`not an on-demand per-character job: ${job}`)
+  }
+  if (!(PER_CHARACTER_JOBS as readonly string[]).includes(job)) {
+    throw new Error(`no per-character dispatch for: ${job}`)
+  }
+
+  // RLS scopes this to the caller's own registrations, which is what makes the
+  // service-role dispatch below safe.
+  const { data: characters } = await supabase
+    .from('registration')
+    .select('id, name')
+    .order('created_at', { ascending: true })
+  if (!characters?.length) return
+
+  await dispatchJobForCharacters(user.id, job, characters)
   revalidatePath('/jobs')
 }

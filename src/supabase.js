@@ -87,6 +87,13 @@ export const recordHeartbeat = async (job, phase = 'end', opts = {}) => {
     ...(phase === 'end' && opts.ok != null
       ? { ok: opts.ok, error: opts.error != null ? String(opts.error).slice(0, 500) : null }
       : {}),
+    // A run that didn't do the work because the caller isn't permitted to (a
+    // corp endpoint the character lacks the in-game role for). Not a failure —
+    // ok stays true — but not a pull either, so the reason is recorded and /jobs
+    // renders it instead of an undifferentiated stale dot.
+    ...(phase === 'end' && opts.skippedReason != null
+      ? { skipped_reason: String(opts.skippedReason).slice(0, 500) }
+      : {}),
   }
   const table = sudoSupabase.from('heartbeat')
   const { error } =
