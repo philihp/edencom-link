@@ -4,7 +4,6 @@ import { setTimeout as delay } from 'node:timers/promises'
 
 import { cookies } from 'next/headers'
 
-import { createClient } from '@/utils/supabase/server'
 import { createServiceClient } from '@/utils/supabase/service'
 
 import { mintSession } from '../../lib/mintSession'
@@ -27,23 +26,14 @@ export const completeGiceRegistration = async (formData: FormData): Promise<stri
   const inviteCode = `${formData.get('invite') ?? ''}`.trim()
   if (!inviteCode) return 'An invite code is required to register.'
 
-  // The visitor is riding the anonymous session the root layout minted, so a
-  // code they arrived with may already be affixed to it as referral
-  // attribution — still theirs to spend (docs/open-registration.md).
-  const supabase = await createClient()
-  const {
-    data: { user: caller },
-  } = await supabase.auth.getUser()
-
   const service = createServiceClient()
   const { data: invite } = await service
     .from('invite_code')
-    .select('id, redeemed_by')
+    .select('id')
     .eq('code', inviteCode)
+    .is('redeemed_by', null)
     .maybeSingle()
-  if (!invite || (invite.redeemed_by !== null && invite.redeemed_by !== caller?.id)) {
-    return 'That invite code is invalid or has already been used.'
-  }
+  if (!invite) return 'That invite code is invalid or has already been used.'
 
   // Someone may have linked this GICE account since the callback ran (another
   // tab finishing first) — just sign into the account that won.
@@ -73,15 +63,13 @@ export const completeGiceRegistration = async (formData: FormData): Promise<stri
     })
     if (linkError) return `Could not link your GICE account: ${linkError.message}`
 
-    // Move the referral onto the account that was just created. Guard on the
-    // code still sitting where we found it — unclaimed, or on the anonymous
-    // account this registrant arrived with — so two simultaneous sign-ups
-    // can't share one code.
-    const claim = service
+    // Burn the code for the new account. Guard on it still being unredeemed so
+    // two simultaneous sign-ups can't share one code.
+    await service
       .from('invite_code')
       .update({ redeemed_by: userId, redeemed_at: new Date().toISOString() })
       .eq('id', invite.id)
-    await (caller ? claim.or(`redeemed_by.is.null,redeemed_by.eq.${caller.id}`) : claim.is('redeemed_by', null))
+      .is('redeemed_by', null)
   }
 
   const error = await mintSession(userId)

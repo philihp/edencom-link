@@ -1,22 +1,22 @@
--- Open registration, stage 1: every visitor arrives on an anonymous account,
--- and an invite code becomes referral attribution rather than a gate
--- (docs/open-registration.md).
+-- Open registration, stage 1: an account can now come into existence before its
+-- owner has an identity to hang on it, so that EVE SSO, email, Discord and GICE
+-- can each start one (docs/open-registration.md). The account is a Supabase
+-- anonymous user, minted lazily — when someone starts adding a character or
+-- signing up, never on a page view.
 --
 -- Three things happen here:
---   1. invite_code.redeemed_by changes meaning, and gains the constraint that
---      meaning implies — one referral per account;
---   2. the RLS audit that anonymous sign-ins force: `authenticated` no longer
---      means "a member", so the three tables readable by any authenticated user
---      learn to ask our question instead;
+--   1. invite_code.redeemed_by gains the constraint its meaning always implied
+--      — one referral per account;
+--   2. the RLS audit that anonymous users force: `authenticated` no longer
+--      means "a member", so the three tables readable by any authenticated
+--      caller learn to ask our question instead;
 --   3. the sweep query behind the nightly anon-sweep job.
 
 -- ── 1. one referral per account ───────────────────────────────────────────
--- redeemed_by used to be "the account this code admitted" and was written once,
--- at sign-up. It is now "the account this code referred", written on arrival at
--- /account/register?invite=… — before the visitor has decided to sign up at
--- all. The affixing action checks for an existing referral first; this index is
--- what makes the check honest under a race, and it is also the reason first
--- referral wins rather than last.
+-- redeemed_by names the account a code referred. Nothing enforced "at most one
+-- per account" while the only writer was sign-up, which writes it once; as the
+-- later stages let an account be created by any of four identity flows and
+-- referred separately, the index is what keeps that true.
 --
 -- Partial, because unredeemed codes (the pool) are all null and must stay
 -- freely duplicable.
@@ -25,13 +25,9 @@ create unique index if not exists invite_code_redeemed_by_key
   where redeemed_by is not null;
 
 comment on column public.invite_code.redeemed_by is
-  'The account this code referred (open registration: attribution, not admission). '
-  'Affixed on arrival at /account/register?invite=…, usually to the anonymous account the '
-  'visitor was just signed in as; unique, so an account carries at most one referral. '
+  'The account this code referred. Unique, so an account carries at most one referral. '
   'Null while the code is still to give out — `on delete set null` returns it to the pool '
   'when a never-converted anonymous account is swept.';
-comment on column public.invite_code.redeemed_at is
-  'When the code was affixed to redeemed_by — arrival time, not sign-up time.';
 
 -- ── 2. "is this a real account?", in SQL ──────────────────────────────────
 -- The TS twin is isEstablishedAccount() in src/app/account/lib/accountStatus.ts,

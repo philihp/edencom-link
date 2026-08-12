@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 
 import { requireCronSecret } from '@/utils/cron'
 
-// Vercel Cron trigger for anon-sweep: deletes the anonymous accounts every
-// visitor arrives on and never converts (docs/open-registration.md). Thin
+// Vercel Cron trigger for anon-sweep: deletes the anonymous accounts started by
+// a character add or a sign-up and never converted (docs/open-registration.md). Thin
 // trigger — it start()s the workflow (src/workflows/anonSweep.ts), which owns
 // retries and records the heartbeat pair.
 export const runtime = 'nodejs'

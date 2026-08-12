@@ -159,7 +159,7 @@ Full column detail lives in `schema.sql`. SCD-2 tables (`*_over_time`) each have
 - `shared_asset_token` — public share links for own assets (`/ship/[itemId]?token=…`); resolved server-side via service client scoped to the sharer's characters/corps — no anon RLS policy. `token` PK (16 random bytes hex), unique `(user_id, item_id)`
 - `gice_account` — GICE ↔ Supabase link; written only by service role after verified OAuth callback (`gice_id` = OIDC `sub`)
 - `user_settings` — `user_id`, `enabled_scopes[]`, `api_token` (unique), `flags[]`
-- `invite_code` — referrals (open registration, `docs/open-registration.md`): `redeemed_by` is the account a code referred, affixed on arrival at `/account/register?invite=…` and unique per account; `is_chancellor` codes confer admin
+- `invite_code` — invite-gated registration, becoming referrals (`docs/open-registration.md`): `redeemed_by` is the account a code referred, unique per account; `is_chancellor` codes confer admin
 - `refresh_task` — on-demand job tracking (`batch_id`, `job`, `registration_id`, `status`)
 - `heartbeat` — job monitoring (`job`, `run_id`, start/end, generated `duration` and `owner_key`)
 - `esi_etag` — ETag per conditional-request cache key (`<job>:<registration uuid>`); service-role only (RLS on, no policy)
@@ -178,7 +178,7 @@ Key Postgres functions (RPC or SQL):
 
 ## Design patterns
 
-- **Anonymous sessions / "is this a real account?":** every visitor is signed in anonymously by the root layout (`src/app/layout/anonymousSession.tsx`), so a Supabase user existing does **not** mean a member is present — and `is_anonymous` can't be inverted either, since an EVE-SSO-only account stays anonymous forever. Gates call `establishedUser()` (`src/app/account/lib/establishedUser.ts`) instead of `auth.getUser()`; the predicate is the pure `isEstablishedAccount()` next door, twinned in SQL as `is_established_account()` for RLS. See `docs/open-registration.md`.
+- **Anonymous sessions / "is this a real account?":** an account can exist before its owner has an identity — starting an EVE SSO character add mints a Supabase anonymous user first (`ensureSession()` in `src/app/account/lib/anonymousSession.ts`, called from a server action so the cookies stick; never on a page view), so a Supabase user existing does **not** mean a member is present — and `is_anonymous` can't be inverted either, since an EVE-SSO-only account stays anonymous forever. Gates call `establishedUser()` (`src/app/account/lib/establishedUser.ts`) instead of `auth.getUser()`; the predicate is the pure `isEstablishedAccount()` next door, twinned in SQL as `is_established_account()` for RLS. See `docs/open-registration.md`.
 - **Prefer ramda over `for`/`while`:** sync iteration uses ramda (`map`/`filter`/`reduce`/`pipe`/`chain`/`reject`/`forEach`, …). Sequential async iteration uses `forEachSequential(items, fn)`. Unbounded pagination becomes a small **tail-recursive** async function carrying `(from, acc)` — fetch one page, recurse while full. Canonical shape (prefer over the `for`-loop generator still in `src/buildEsfData.js`, to migrate when next touched):
 
   ```js

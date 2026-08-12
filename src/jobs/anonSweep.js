@@ -9,10 +9,10 @@ const TAG = 'anon-sweep'
 const MAX_AGE = '30 days'
 const MAX_PER_RUN = 500
 
-// Anonymous accounts that never became anything → deleted. Every visitor gets a
-// Supabase anonymous user on arrival (docs/open-registration.md), so most of
-// auth.users is people who looked at the front page once; this is what keeps
-// that bounded.
+// Anonymous accounts that never became anything → deleted. An account is minted
+// the moment someone starts adding a character or signing up
+// (docs/open-registration.md), so auth.users collects everyone who began one of
+// those and walked away; this is what keeps that bounded.
 //
 // The "never became anything" test lives in sweepable_anonymous_users(): no
 // character, no GICE link, no Supabase identity beyond the anonymous one. It is

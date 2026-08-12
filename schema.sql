@@ -2411,9 +2411,10 @@ as $$
   );
 $$;
 
--- "Is this a real account?" — our question, not Supabase's. Every visitor is
--- signed in anonymously on arrival (docs/open-registration.md), so the
--- `authenticated` role no longer means "a member". The flag can't simply be
+-- "Is this a real account?" — our question, not Supabase's. An account starts as
+-- a Supabase anonymous user, minted when someone begins adding a character or
+-- signing up (docs/open-registration.md), so the `authenticated` role no longer
+-- means "a member" — it can also be an account still mid-flow. The flag can't simply be
 -- inverted either: an account whose only identity is an EVE SSO character stays
 -- is_anonymous = true forever (EVE SSO is not a Supabase identity — it writes a
 -- registration row), so the predicate is "Supabase considers it permanent, OR
@@ -3633,8 +3634,8 @@ create table public.universe_structure (
 );
 
 alter table public.universe_structure enable row level security;
--- Readable by any *established* account — a member, not the anonymous session
--- every visitor now arrives on (see is_established_account() above).
+-- Readable by any *established* account — a member, not an account still
+-- mid-flow on an anonymous session (see is_established_account() above).
 create policy "Established accounts read universe_structure"
   on public.universe_structure
   for select
@@ -4242,8 +4243,8 @@ create table public.universe_name (
 );
 
 alter table public.universe_name enable row level security;
--- Readable by any *established* account — a member, not the anonymous session
--- every visitor now arrives on (see is_established_account() above).
+-- Readable by any *established* account — a member, not an account still
+-- mid-flow on an anonymous session (see is_established_account() above).
 create policy "Established accounts read universe_name"
   on public.universe_name
   for select
@@ -4263,8 +4264,8 @@ create table public.character_affiliation (
 );
 
 alter table public.character_affiliation enable row level security;
--- Readable by any *established* account — a member, not the anonymous session
--- every visitor now arrives on (see is_established_account() above).
+-- Readable by any *established* account — a member, not an account still
+-- mid-flow on an anonymous session (see is_established_account() above).
 create policy "Established accounts read character_affiliation"
   on public.character_affiliation
   for select
@@ -4339,16 +4340,17 @@ grant select, insert, update, delete on public.watched_system to authenticated;
 grant all                            on public.watched_system to service_role;
 
 -- ── invite_code ───────────────────────────────────────────────────────────
--- Referrals. Users earn the ability to mint codes over time (the first a week
+-- Invite-only registration (open registration is staged in
+-- docs/open-registration.md; the gate is still on). A new account can only be
+-- created by redeeming an unused code, and users earn the ability to mint codes
+-- over time (the first a week
 -- after adding their first character via SSO, then after 2, 4, 8, … weeks — the
 -- gap doubling each time; see src/app/account/invite).
 -- `created_by` is null for seed codes inserted by hand to bootstrap the system.
--- `redeemed_by` is the account the code referred — affixed on arrival at
--- /account/register?invite=…, usually to the anonymous account the visitor was
--- just signed in as, and unique so an account carries at most one referral
--- (docs/open-registration.md). It no longer admits anyone: registration is open.
--- Null while the code is still "to give out", and `on delete set null` returns
--- it to the pool when a never-converted anonymous account is swept.
+-- `redeemed_by` is the account the code referred, unique so an account carries
+-- at most one referral (docs/open-registration.md). Null while the code is
+-- still "to give out", and `on delete set null` returns it to the pool when a
+-- never-converted anonymous account is swept.
 -- `is_chancellor` marks a code that confers Chancellor
 -- powers: the account that redeems such a code is a Chancellor (see
 -- src/app/account/chancellor), which lets it mint invite codes without waiting on
@@ -4366,9 +4368,7 @@ create table public.invite_code (
   is_chancellor boolean not null default false
 );
 create index invite_code_created_by_idx on public.invite_code (created_by);
--- One referral per account. Partial, because the unredeemed pool is all nulls;
--- it is also what keeps the affixing action's "already referred?" check honest
--- under a race, and so what makes first referral win rather than last.
+-- One referral per account. Partial, because the unredeemed pool is all nulls.
 create unique index invite_code_redeemed_by_key
   on public.invite_code (redeemed_by)
   where redeemed_by is not null;

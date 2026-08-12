@@ -1,6 +1,6 @@
 // Unit coverage for the one question the whole app now has to ask about a
-// session: is this a member, or the anonymous account every visitor arrives on
-// (docs/open-registration.md)?
+// session: is this a member, or an account still mid-flow on the anonymous
+// session a character add or sign-up minted (docs/open-registration.md)?
 //
 // It looks trivial, and its two clauses are exactly the two mistakes worth
 // pinning: reading Supabase's is_anonymous flag as the answer (which evicts
@@ -20,6 +20,6 @@ test('an EVE-SSO-only account is established despite staying anonymous to Supaba
   assert.equal(isEstablishedAccount({ isAnonymous: true, hasRegistration: true }), true)
 })
 
-test('a drive-by visitor is not', () => {
+test('an account that started a flow and walked away is not', () => {
   assert.equal(isEstablishedAccount({ isAnonymous: true, hasRegistration: false }), false)
 })

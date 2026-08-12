@@ -5,10 +5,11 @@ import { createClient } from '@/utils/supabase/server'
 
 import { isEstablishedAccount } from './accountStatus'
 
-// The signed-in *member*, or null for a visitor riding the anonymous session
-// the root layout mints on arrival (docs/open-registration.md). Drop-in for
-// `auth.getUser()` at every gate that read "a user exists" as "a member is
-// here" — which, since anonymous sign-ins, is no longer the same statement.
+// The signed-in *member*, or null for an account still mid-flow on the
+// anonymous session a character add or sign-up minted
+// (docs/open-registration.md). Drop-in for `auth.getUser()` at every gate that
+// read "a user exists" as "a member is here" — which, since anonymous users,
+// is no longer the same statement.
 //
 // Cached per request: the gate, the header, and any nested layout asking the
 // same question share one round trip.

@@ -4,11 +4,12 @@
 
 Registration stops being invite-gated. Instead:
 
-- Every first-time visitor gets a Supabase **anonymous user** essentially
-  instantly. That user id is the account from that moment on.
+- The moment someone **starts adding a character or signing up**, they get a
+  Supabase **anonymous user**. That user id is the account from then on. It is
+  minted lazily, at the flow that needs it — reading the site mints nothing.
 - An invite code, when present (usually via a shared
-  `/account/register?invite=…` link), is **affixed to the anonymous user on
-  arrival** as referral attribution — it no longer gates anything.
+  `/account/register?invite=…` link), is **referral attribution** recorded on
+  that account — it no longer gates anything.
 - The visitor then attaches identities to that same account **in any order**:
   email/password, an EVE Online SSO character, Discord, or GICE. Any one of
   them is sufficient; the others can follow later.
@@ -41,39 +42,41 @@ and all RLS stay as they are.
 
 - Supabase dashboard: enable **Anonymous sign-ins** and **manual identity
   linking**. (An earlier draft of this plan put a Turnstile captcha in front of
-  the anonymous sign-in; Turnstile is deprecated here, so the sweep job below is
-  what bounds junk accounts.) Enable the **Discord provider**
+  the anonymous sign-in; Turnstile is deprecated here. Lazy minting plus the
+  sweep job is what bounds junk accounts instead.) Enable the **Discord provider**
   (per the stage-06 doc: app id + client secret, Supabase callback URL in the
   Discord portal, scopes `identify email`).
 - Install the Supabase **GitHub integration** for branching and the
   **Vercel integration** so preview deployments point at branch databases
   (details in Stage 6).
 
-## Stage 1 — anonymous bootstrap + invite affixing
+## Stage 1 — lazy anonymous bootstrap
 
 **PR size:** medium — **landed.** What shipped, where it differed, and what the
 RLS audit found is recorded at the end of this section.
 
-- `src/app/layout/AnonymousSession.tsx` (client component mounted in the root
-  layout): if `getSession()` is empty, call
-  `supabase.auth.signInAnonymously()`. Client component rather than
-  middleware: the repo has no middleware today, the call belongs in the
-  browser, and it keeps `/xrpc`, `/api/*`, `/esf`, `/sheets` traffic from
-  minting users.
-- **Affix on arrival:** the register page (and any page we later decorate)
-  reads `?invite=<code>`; a server action `affixInvite(code)` validates the
-  code exactly like today's redeem (`INVITE_CODE_PATTERN`, exists,
-  `redeemed_by is null`) and sets `redeemed_by = auth.uid()`,
-  `redeemed_at = now()`, still guarded `.is('redeemed_by', null)` against
-  races. No-op if the caller already redeemed a code (first referral wins).
+- **Lazy anonymous bootstrap:** a server-side `ensureSession()` that calls
+  `supabase.auth.signInAnonymously()` when the caller has no session, invoked
+  from the Server Actions that begin an identity flow — today the character-add
+  action, since `/character/callback` can only attach a character to a session
+  that already exists. Not the root layout and not middleware: a page view must
+  not mint an account, and a Server Action is where the SSR client's cookie
+  writes actually stick.
+- **Referral attribution:** with the account minted lazily, there is nothing to
+  affix a code to on arrival, so attribution happens where the account is
+  created. Sign-up already redeems the code onto the account it mints; the
+  later stages carry that forward (and stage 2's in-place conversion is what
+  makes the id stable enough for a code to be affixed earlier, should we want
+  a shared link to survive an EVE-first sign-up).
 - **Migration** (plus the `schema.sql` twin):
   - partial unique index `invite_code (redeemed_by) where redeemed_by is not
     null` — one referral per account, enforced where the race can't cheat it;
-  - comment updates recording the semantic change.
+  - comment updates recording what the column means.
   `redeemed_by … on delete set null` already returns a code to the pool when
   a never-converted anonymous user is deleted.
 - **Anon hygiene:** a nightly `anon-sweep` job (single-step Vercel Workflow
-  shape, like the other daily jobs) deletes `auth.users` rows where
+  shape, like the other daily jobs) — abandoning a half-finished flow leaves an
+  account behind — deletes `auth.users` rows where
   `is_anonymous` **and** older than ~30 days **and** the account owns nothing:
   no `registration` row, no `gice_account` row, no non-anonymous identity.
   The ownership guard matters because an EVE-SSO-only account stays
@@ -81,7 +84,7 @@ RLS audit found is recorded at the end of this section.
   identity) — see Stage 3.
 - **RLS audit (security, do not skip):** Supabase anonymous users carry role
   `authenticated` with an `is_anonymous` JWT claim. Every policy or check
-  that means "any signed-in human" now includes drive-by visitors. Known hot
+  that means "any signed-in human" now includes accounts still mid-flow. Known hot
   spot: the `public` fitting-share level (`fitting_shared_with_caller()`),
   documented as "any signed-in user" — decide whether that now means truly
   public, or add
@@ -92,23 +95,27 @@ RLS audit found is recorded at the end of this section.
 
 ### What stage 1 actually landed
 
-- `src/app/layout/anonymousSession.tsx`, mounted in the root layout, as
-  planned, minus the captcha — Turnstile is deprecated, so the sign-in is
-  unguarded and `anon-sweep` carries the volume argument alone.
-- **The seam the plan only implied:** with every visitor holding a session,
-  "a user exists" stopped meaning "a member is signed in", and roughly thirty
-  gates read it that way. `isEstablishedAccount()`
+- **Minting is lazy, and server-side.** The plan's root-layout client component
+  is gone: an account is minted by `ensureSession()`
+  (`src/app/account/lib/anonymousSession.ts`) from the character-add Server
+  Action, where the SSR client's cookie writes stick, so there is no client
+  round trip and no page view mints anything. Until stage 3 puts an EVE
+  entry point in front of signed-out visitors, that action is reachable only
+  from `/character`, so in practice stage 1 mints for a member who lost their
+  cookies mid-flow — the mechanism is what stage 3 plugs into. The captcha is
+  gone too (Turnstile is deprecated), which lazy minting makes easier to live
+  with: there is no unauthenticated page view that creates a row.
+- **The seam the plan only implied:** once any account can hold a session
+  before it has an identity, "a user exists" stops meaning "a member is signed
+  in", and roughly thirty gates read it that way. `isEstablishedAccount()`
   (`src/app/account/lib/accountStatus.ts`, pure + tested) answers *our*
   question — permanent to Supabase, **or** owns a character — and
   `establishedUser()` next door is the drop-in those gates now call instead of
   `auth.getUser()`. `is_established_account()` in SQL is its twin.
-- Affixing runs client-side (`affixInviteOnArrival.tsx`) rather than from the
-  page body: the page renders before the anonymous sign-in resolves, so there
-  is no session for the server to attribute the code to yet.
-- Stage 1 keeps the invite *gate* on both sign-up paths (stage 2 and stage 4
-  remove it); it only teaches them that a code already affixed to the arriving
-  anonymous account is still that registrant's to spend, and moves the referral
-  onto the account `signUp`/`createUser` mints.
+- **No affix-on-arrival.** It presupposed an account existing at page-view
+  time, which lazy minting deliberately removes. Both sign-up paths are
+  unchanged: they still require an unused code and redeem it onto the account
+  they create. The gate comes off in stages 2 and 4.
 - `anon-sweep` runs daily at 04:13 UTC over `sweepable_anonymous_users()`,
   ≤500 accounts per run. SQL coverage for the whole migration —
   predicate, policies, index, sweep set — is `test/sql/open_registration.sql`.
@@ -261,13 +268,15 @@ GICE via `/account/gice` — all keyed on the stable `auth.uid()`.
 
 ## Risks / open edges
 
-- **Anon-user volume:** with the captcha dropped, the sweep job is the only
-  thing bounding it, and Supabase's own sign-in rate limits are the only thing
-  in front of a bot. Watch `auth.users` growth after launch; if it runs away,
-  the answers are a shorter sweep cutoff or a captcha that isn't Turnstile.
-- **Two tabs, two anonymous users:** each tab may bootstrap separately until
-  cookies settle; harmless (one converts, the other gets swept), but worth
-  knowing when reading auth logs.
+- **Anon-user volume:** bounded first by lazy minting — no page view creates an
+  account — then by the sweep job. The captcha is gone (Turnstile deprecated),
+  so Supabase's own rate limits are what stand in front of a bot that drives
+  the sign-up flow itself. Watch `auth.users` growth after launch; if it runs
+  away, the answers are a shorter sweep cutoff or a captcha that isn't
+  Turnstile.
+- **Two tabs, two anonymous users:** two flows started at once can mint
+  separately; harmless (one converts, the other gets swept), but worth knowing
+  when reading auth logs.
 - **`is_anonymous` semantics drift:** EVE-only accounts are permanent to us
   but anonymous to Supabase. Every "is this a real account?" check must ask
   *our* question (has identity or registration), not Supabase's flag — the
