@@ -1,7 +1,8 @@
 // Ephemeral Supabase preview branches (a Pro-plan feature) for tests that need
 // a real Postgres + GoTrue rather than a stand-in. A branch is a full, isolated
-// project cloned from the parent's migrations, so a test may sign users up,
-// write rows, and never touch production data.
+// project, so a test may sign users up, write rows, and never touch production
+// data. Its schema comes from schema.sql, applied here — see applySchema for
+// why the branch's own migration run can't provide it.
 //
 // Two ways in, both env-driven, both optional — with neither set the caller
 // skips (see requireBranchEnv):
@@ -15,12 +16,12 @@
 //
 // The Management API surface used here is documented at
 // https://supabase.com/docs/reference/api/v1-create-a-branch.
-import { readdir } from 'node:fs/promises'
+import { readFile } from 'node:fs/promises'
 
 const MANAGEMENT_API = 'https://api.supabase.com'
-// Resolved from this file, not the cwd, so the diagnosis works wherever the
-// runner invokes node from.
-const MIGRATIONS_DIR = new URL('../../supabase/migrations/', import.meta.url)
+// Resolved from this file, not the cwd, so it works wherever node is invoked
+// from.
+const SCHEMA_SQL = new URL('../../schema.sql', import.meta.url)
 
 // Provisioning genuinely takes minutes: project create, then migrations.
 const READY_TIMEOUT_MS = 10 * 60 * 1000
@@ -52,10 +53,10 @@ type BranchDetail = {
   status: string
 }
 
-// Setup statuses that mean "still working". The two _FAILED members are
-// terminal and fail the run; the field is deprecated upstream, so treat it as
-// advisory — absent means "nothing to object to".
-const SETUP_PENDING = ['CREATING_PROJECT', 'RUNNING_MIGRATIONS', 'MIGRATIONS_PASSED', 'FUNCTIONS_DEPLOYED']
+// Setup statuses that mean "still working". Everything else — passed, failed,
+// deployed — means setup has stopped moving. The field is deprecated upstream,
+// so treat it as advisory: absent means "nothing to wait for".
+const SETUP_RUNNING = ['CREATING_PROJECT', 'RUNNING_MIGRATIONS']
 // Project-health statuses. Anything outside these two is terminal.
 const HEALTH_READY = 'ACTIVE_HEALTHY'
 const HEALTH_PENDING = ['COMING_UP', 'UNKNOWN', 'RESTORING', 'RESTARTING', 'RESIZING', 'UPGRADING']
@@ -72,10 +73,12 @@ const management = async (path: string, init: RequestInit = {}) => {
       ...(init.headers ?? {}),
     },
   })
+  const body = await response.text()
   if (!response.ok) {
-    throw new Error(`${init.method ?? 'GET'} ${path} failed: ${response.status} ${await response.text()}`)
+    throw new Error(`${init.method ?? 'GET'} ${path} failed: ${response.status} ${body}`)
   }
-  return response.json()
+  // Some endpoints (the SQL runner among them) answer with an empty body.
+  return body ? JSON.parse(body) : null
 }
 
 // Why the run is skipping, or null when it can proceed. Callers pass this
@@ -103,23 +106,27 @@ const readBranch = async (parentRef: string, branchId: string): Promise<Branch> 
 
 const shrug = (error: unknown) => (error instanceof Error ? error.message : `${error}`)
 
-// Which migration broke. The branch reports how far it got, and the repo says
-// what comes next in filename order — so the first unapplied file IS the one
-// that failed. More reliable than the setup log, which is only sometimes
-// reachable, and it names a file you can open.
-const failedMigration = async (childRef: string) => {
-  try {
-    const applied: { version: string }[] = await management(`/v1/projects/${childRef}/database/migrations`)
-    const versions = new Set(applied.map(({ version }) => version))
-    const files = (await readdir(MIGRATIONS_DIR)).filter((file) => file.endsWith('.sql')).sort()
-    const pending = files.filter((file) => !versions.has(file.split('_')[0]))
-    const howFar = `${applied.length} migration(s) applied, last ${applied.at(-1)?.version ?? 'none'}`
-    return pending.length === 0
-      ? `${howFar}; every migration in the repo applied (the failure is after migrate)`
-      : `${howFar}; first unapplied — the one that failed — is ${pending[0]}`
-  } catch (error) {
-    return `(could not list the branch's migrations: ${shrug(error)})`
-  }
+// Build the branch's schema from schema.sql — the repo's single source of
+// truth — rather than from supabase/migrations.
+//
+// Supabase's own branch setup runs the migrations, and here that ALWAYS fails
+// at the first file: `20260602000000_add_asset_name.sql` alters
+// `asset_over_time`, a table only schema.sql creates (and which later
+// migrations renamed). That is by design in this repo — production was built
+// from schema.sql and the migrations are incremental patches on top of it, so
+// the migration set has never been able to build a database from nothing. A
+// branch therefore comes up ACTIVE_HEALTHY with an empty public schema, and
+// MIGRATIONS_FAILED on a fresh branch says nothing about this PR.
+//
+// Applying schema.sql ourselves gives the tests the schema the app actually
+// runs on, and incidentally proves schema.sql still applies cleanly to an
+// empty database.
+const applySchema = async (childRef: string) => {
+  const sql = await readFile(SCHEMA_SQL, 'utf8')
+  await management(`/v1/projects/${childRef}/database/query`, {
+    method: 'POST',
+    body: JSON.stringify({ query: sql }),
+  })
 }
 
 // Supabase records branch setup (clone → migrate → seed → deploy) as an
@@ -148,11 +155,14 @@ const setupLog = async (parentRef: string, childRef: string, branchId: string) =
   }
 }
 
-// Ready means BOTH halves agree: the project itself is ACTIVE_HEALTHY (branch
-// detail) and its migrations/functions landed (the branch listing). Waiting on
-// health alone would hand back a project whose migrations are still running —
-// so a test could sign up before invite_code exists — and waiting on setup
-// alone would hand back a project that is not yet answering.
+// Wait until the project answers (ACTIVE_HEALTHY) AND its setup has stopped
+// moving. Two different enums on two different endpoints, which is the trap
+// here: the listing's `status` tracks setup (migrations, functions) and never
+// reports health, while branch detail's reports health and never setup.
+//
+// Setup ending in MIGRATIONS_FAILED is the norm for this repo, not a failure
+// to report — see applySchema. What matters is that it has finished, so the
+// schema we then apply isn't racing a migrate step.
 //
 // Tail-recursive rather than a while loop, per the repo's iteration style;
 // `deadline` is absolute so the bound covers the whole wait, not each hop.
@@ -164,17 +174,11 @@ const awaitHealthy = async (parentRef: string, branchId: string, deadline: numbe
   const setup = branch.status
   const where = `branch ${branch.name} (health ${detail.status}, setup ${setup ?? 'n/a'})`
 
-  if (setup && !SETUP_PENDING.includes(setup)) {
-    const [which, log] = await Promise.all([failedMigration(detail.ref), setupLog(parentRef, detail.ref, branchId)])
-    throw new Error(`${where} failed to set up\n${which}\n${log}`)
-  }
   if (detail.status !== HEALTH_READY && !HEALTH_PENDING.includes(detail.status)) {
-    throw new Error(`${where} entered a terminal state`)
+    throw new Error(`${where} entered a terminal state\n${await setupLog(parentRef, detail.ref, branchId)}`)
   }
-  // FUNCTIONS_DEPLOYED and MIGRATIONS_PASSED both mean the schema is in place;
-  // CREATING_PROJECT / RUNNING_MIGRATIONS do not.
-  const migrated = !setup || setup === 'MIGRATIONS_PASSED' || setup === 'FUNCTIONS_DEPLOYED'
-  if (detail.status === HEALTH_READY && migrated) return detail
+  const settled = !setup || !SETUP_RUNNING.includes(setup)
+  if (detail.status === HEALTH_READY && settled) return detail
 
   if (Date.now() > deadline) throw new Error(`${where} was not ready after ${READY_TIMEOUT_MS}ms`)
   await delay(POLL_INTERVAL_MS)
@@ -237,6 +241,7 @@ export const createTestBranch = async (namePrefix: string): Promise<BranchTarget
     // The branch's own project ref — `created.project_ref` is populated too,
     // but the detail response is the authoritative one once it is healthy.
     const { ref } = await awaitHealthy(parentRef, created.id, deadline)
+    await applySchema(ref)
     const url = `https://${ref}.supabase.co`
     const { anonKey, serviceKey } = await fetchKeys(ref)
     await awaitAuth(url, anonKey, deadline)
