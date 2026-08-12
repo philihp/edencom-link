@@ -186,6 +186,38 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
       .range(from, to)
   )
 
+  // Both job tables above are RLS-scoped to the caller, so a job installed by another player who
+  // uses this site — a renting corp's rows live under their own registration — resolves to nothing
+  // here and its tax lands in "unaccounted", even though it ran in one of these structures and the
+  // tax is sitting in this caller's wallet. industry_job_tax_facility (security definer) closes
+  // that gap the same way /structure/revenue and structure_tax_revenue() already do: it discloses
+  // only the location, and only for a job the caller can prove they were taxed for.
+  //
+  // Only context_ids may be asked about — never the description tokens scraped below. A loose token
+  // colliding with a real job id would turn the function into an oracle for jobs the caller was
+  // never taxed for (see the migration comment).
+  const unresolvedJobIds = [
+    ...new Set(
+      (journal ?? [])
+        .map((entry) => (entry.context_id == null ? null : String(entry.context_id)))
+        .filter((id): id is string => id != null && !structureByJob.has(id))
+    ),
+  ]
+  if (unresolvedJobIds.length > 0) {
+    const { data: taxedJobs } = await supabase.rpc('industry_job_tax_facility', { job_ids: unresolvedJobIds })
+    // Keep the invariant the structure-seeded queries above establish: every value in the map is a
+    // structure on this page. A job taxed into our wallet from somewhere not in `list` (an NPC
+    // station, a structure we've stopped monitoring) stays unaccounted rather than accruing to a
+    // row nothing renders.
+    const onPage = new Set(structureIds.map(String))
+    for (const j of (taxedJobs ?? []) as JobRow[]) {
+      const structureId = j.station_id ?? j.facility_id
+      if (structureId != null && onPage.has(String(structureId))) {
+        structureByJob.set(String(j.job_id), String(structureId))
+      }
+    }
+  }
+
   const totalByStructure = new Map<string, number>()
   // Unaccounted tax broken down by the party that paid it (the character/corp that ran the job).
   const unaccountedByParty = new Map<string, number>()
