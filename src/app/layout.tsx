@@ -2,6 +2,7 @@ import { Analytics } from '@vercel/analytics/react'
 import { SpeedInsights } from '@vercel/speed-insights/next'
 import type { Metadata } from 'next'
 import './globals.css'
+import AnonymousSession from './layout/anonymousSession'
 import Header from './layout/header'
 import Footer from './layout/footer'
 
@@ -38,6 +39,7 @@ const RootLayout = ({
   return (
     <html lang="en">
       <body>
+        <AnonymousSession />
         <Header />
         <hr />
         {children}

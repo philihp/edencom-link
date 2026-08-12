@@ -5,6 +5,8 @@ import { Suspense } from 'react'
 import { getSdeSystem } from '@/sdeSystems'
 import { getSdeType } from '@/sdeTypes'
 import { createClient } from '@/utils/supabase/server'
+
+import { establishedUser } from '../../account/lib/establishedUser'
 import { createServiceClient } from '@/utils/supabase/service'
 import { parseShareParam } from '@/shareToken'
 import { AssetPath, fetchAssetPath, regionSystemCrumbs, type Crumb } from '../../assetPath'
@@ -184,8 +186,8 @@ const AssetLocationPage = async ({
 
   const supabase = scope ? createServiceClient() : await createClient()
   if (!scope) {
-    const { data: auth, error: authError } = await supabase.auth.getUser()
-    if (authError || !auth?.user) {
+    const user = await establishedUser(supabase)
+    if (!user) {
       redirect('/')
     }
   }

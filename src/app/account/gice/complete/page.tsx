@@ -3,6 +3,8 @@ import { redirect } from 'next/navigation'
 
 import { createClient } from '@/utils/supabase/server'
 
+import { establishedUser } from '../../lib/establishedUser'
+
 import { decodePendingIdentity, PENDING_COOKIE } from '../oidc'
 import CompleteForm from './completeForm'
 
@@ -11,9 +13,7 @@ import CompleteForm from './completeForm'
 // invite-only, so an unused invite code is still required to mint the account.
 const CompletePage = async () => {
   const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const user = await establishedUser(supabase)
   if (user) redirect('/')
 
   const cookieStore = await cookies()

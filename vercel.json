@@ -88,6 +88,10 @@
     {
       "path": "/api/cron/sde-mirror",
       "schedule": "21 12 * * *"
+    },
+    {
+      "path": "/api/cron/anon-sweep",
+      "schedule": "13 4 * * *"
     }
   ],
   "functions": {

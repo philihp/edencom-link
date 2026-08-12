@@ -1,5 +1,7 @@
 import Link from 'next/link'
 import { createClient } from '@/utils/supabase/server'
+
+import { establishedUser } from './account/lib/establishedUser'
 import styles from './home.module.css'
 
 // The module suite, pitched the way an ERP vendor would pitch NetSuite or SAP:
@@ -86,9 +88,7 @@ const STEPS = [
 
 const Home = async () => {
   const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const user = await establishedUser(supabase)
 
   return (
     <main className={styles.page}>

@@ -1,5 +1,7 @@
 import Link from 'next/link'
 import { createClient } from '@/utils/supabase/server'
+
+import { establishedUser } from '../account/lib/establishedUser'
 import { Freshness } from '../Freshness'
 import { CharacterName } from '../names'
 import styles from './header.module.css'
@@ -7,9 +9,7 @@ import styles from './header.module.css'
 const Header = async () => {
   const supabase = await createClient()
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const user = await establishedUser(supabase)
 
   // Label the signed-in user by their main character, falling back to their
   // earliest one, and to their email if they haven't registered a character yet.

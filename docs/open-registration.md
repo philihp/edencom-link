@@ -50,7 +50,8 @@ and all RLS stay as they are.
 
 ## Stage 1 — anonymous bootstrap + invite affixing
 
-**PR size:** medium
+**PR size:** medium — **landed.** What shipped, where it differed, and what the
+RLS audit found is recorded at the end of this section.
 
 - `src/app/layout/AnonymousSession.tsx` (client component mounted in the root
   layout): if `getSession()` is empty, run Turnstile invisibly and call
@@ -87,6 +88,54 @@ and all RLS stay as they are.
   branch. Sweep the other `to authenticated` policies and `withMcpAuth` the
   same way; most extract tables are keyed to the caller's own rows and are
   naturally empty for anon users, so the audit should be short.
+
+### What stage 1 actually landed
+
+- `src/app/layout/anonymousSession.tsx`, mounted in the root layout, as
+  planned. Turnstile is loaded on demand and skipped when
+  `NEXT_PUBLIC_TURNSTILE_SITE_KEY` is unset, which is what makes local dev and
+  a captcha-less project behave the same.
+- **The seam the plan only implied:** with every visitor holding a session,
+  "a user exists" stopped meaning "a member is signed in", and roughly thirty
+  gates read it that way. `isEstablishedAccount()`
+  (`src/app/account/lib/accountStatus.ts`, pure + tested) answers *our*
+  question — permanent to Supabase, **or** owns a character — and
+  `establishedUser()` next door is the drop-in those gates now call instead of
+  `auth.getUser()`. `is_established_account()` in SQL is its twin.
+- Affixing runs client-side (`affixInviteOnArrival.tsx`) rather than from the
+  page body: the page renders before the anonymous sign-in resolves, so there
+  is no session for the server to attribute the code to yet.
+- Stage 1 keeps the invite *gate* on both sign-up paths (stage 2 and stage 4
+  remove it); it only teaches them that a code already affixed to the arriving
+  anonymous account is still that registrant's to spend, and moves the referral
+  onto the account `signUp`/`createUser` mints.
+- `anon-sweep` runs daily at 04:13 UTC over `sweepable_anonymous_users()`,
+  ≤500 accounts per run. SQL coverage for the whole migration —
+  predicate, policies, index, sweep set — is `test/sql/open_registration.sql`.
+
+### RLS audit findings
+
+Three tables were readable by any authenticated caller (`using (true)`):
+`universe_name`, `character_affiliation`, `universe_structure`. All three now
+require `is_established_account()`. Everything else was left alone, deliberately:
+
+- per-owner extract tables key on the caller's own registrations, so they are
+  naturally empty for an account that owns nothing;
+- the fitting/asset/den/lens share audiences go through
+  `share_audience_matches()`, which needs overlapping corp or alliance
+  membership — except its deliberately public branch (no secret, no audience
+  lists), which the sharing-layer docs define as *public*, so anonymous callers
+  reading it is the intended semantic, not a leak. (The plan flagged the
+  level-era `public` share as the hot spot; Revision 3 had already made the
+  answer explicit.);
+- world-readable tables were already granted to the `anon` role, so anonymous
+  sign-ins change nothing about them;
+- write policies pin `created_by`/`user_id` to `auth.uid()`, and
+  `mercenary_den_enemy_intel` additionally requires owning a registration —
+  which is the established test by another name.
+
+The MCP surface needs nothing: `withMcpAuth` hands every tool an RLS-scoped
+bearer client, so an anonymous caller's tools return their own (empty) data.
 
 ## Stage 2 — email/password from the anonymous session
 

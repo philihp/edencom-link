@@ -4,16 +4,16 @@ import { redirect } from 'next/navigation'
 
 import { createClient } from '@/utils/supabase/server'
 
+import { establishedUser } from '../account/lib/establishedUser'
+
 import { sso } from './sso'
 import { getEnabledScopes } from './userScopes'
 
 export const register = async (_formData: FormData) => {
   const supabase = await createClient()
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-  if (!user?.id) {
+  const user = await establishedUser(supabase)
+  if (!user) {
     redirect('/account/login')
   }
 

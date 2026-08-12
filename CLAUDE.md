@@ -35,7 +35,7 @@ EVE Online hangar/wallet/industry tracker, deployed on Vercel.
 - **Id naming — `character_id` means the EVE numeric (bigint) id; the registration uuid is `registration_id`.** **Most existing `character_*` extract tables get this wrong** — their owner column is declared `character_id uuid references registration(id)`, so it holds the registration uuid despite the name (legacy wart; why the fitting route has a uuid first segment). `character_directory` does it right. Name new columns/params correctly even next to a legacy one, and read existing `character_id` for what it actually holds. Don't fold the rename into unrelated work — `docs/registration-id-rename.md` stages that cleanup.
 - ESI base `https://esi.evetech.net/latest` via `src/esi.js`. Tokens live in `token`; `refreshAccessToken()` refreshes via EVE SSO before any ESI call.
 - **Data flow:** ESI → DB (extract jobs) → server components read DB. Server components must NOT call ESI directly.
-- Env vars (`.env.example`): `EVE_*` (SSO), `SUPABASE_*`, `NEXT_PUBLIC_SUPABASE_*`, `GICE_*` (Goonfleet SSO; start route 503s when unset), Turnstile keys, `CRON_SECRET`.
+- Env vars (`.env.example`): `EVE_*` (SSO), `SUPABASE_*`, `NEXT_PUBLIC_SUPABASE_*`, `GICE_*` (Goonfleet SSO; start route 503s when unset), Turnstile keys (`NEXT_PUBLIC_TURNSTILE_SITE_KEY` guards the anonymous sign-in; unset skips the challenge), `CRON_SECRET`.
 
 # Workflow
 
@@ -124,7 +124,7 @@ Shared UI helpers: `src/app/isk.ts`, `DateTime.tsx`, `typeName.tsx`/`typeNames.t
 
 One job per ESI endpoint, sharing the token loops in `src/jobs/lib.js`; entry point is the camelCased file under `src/jobs/` exporting `run<PascalCase>()`, self-runnable as a CLI. Job names double as npm script, heartbeat label, and workflow file name; every job is scheduled by a like-named Vercel Cron entry (`vercel.json` crons + `src/app/api/cron/<job>/route.ts`).
 
-Each job pulls its like-named ESI endpoint into its like-named table (exact schedules in `vercel.json`). Every 6h at staggered minutes: the per-character jobs, `corp-wallet-journal`, `corp-industry-jobs`, `corp-wallet-transactions`, `corp-contracts`, `universe-names`, `industry-systems`. Daily: `corp-blueprints`, `corp-structures`, `corp-assets` (also writes `corp_structure_rig`), `universe-structures`, `character-directory` (writes `character_directory`, `corporation`, `alliance`, `character_affiliation`, `registration.corporation_id`), `sde-mirror` 12:21.
+Each job pulls its like-named ESI endpoint into its like-named table (exact schedules in `vercel.json`). Every 6h at staggered minutes: the per-character jobs, `corp-wallet-journal`, `corp-industry-jobs`, `corp-wallet-transactions`, `corp-contracts`, `universe-names`, `industry-systems`. Daily: `corp-blueprints`, `corp-structures`, `corp-assets` (also writes `corp_structure_rig`), `universe-structures`, `character-directory` (writes `character_directory`, `corporation`, `alliance`, `character_affiliation`, `registration.corporation_id`), `sde-mirror` 12:21, `anon-sweep` 04:13 (deletes never-converted anonymous accounts; the one job whose "endpoint" is `auth.users`).
 
 `character-status` (`src/jobs/characterStatus.js`) is the one exception to "one job per endpoint": it folds six cheap per-character pulls (wallet, location, implants, clones, ship, skills) into one extract, writes to each endpoint's original table, keeps separate scopes (`forEachCharacterAnyScope`; a character runs only endpoints its token carries), and fault-isolates each endpoint. The individual six modules still run standalone via CLI — each exports a `sync*` helper `characterStatus.js` calls — but only `character-status` is scheduled.
 
@@ -159,7 +159,7 @@ Full column detail lives in `schema.sql`. SCD-2 tables (`*_over_time`) each have
 - `shared_asset_token` — public share links for own assets (`/ship/[itemId]?token=…`); resolved server-side via service client scoped to the sharer's characters/corps — no anon RLS policy. `token` PK (16 random bytes hex), unique `(user_id, item_id)`
 - `gice_account` — GICE ↔ Supabase link; written only by service role after verified OAuth callback (`gice_id` = OIDC `sub`)
 - `user_settings` — `user_id`, `enabled_scopes[]`, `api_token` (unique), `flags[]`
-- `invite_code` — invite-only registration; `is_chancellor` codes confer admin
+- `invite_code` — referrals (open registration, `docs/open-registration.md`): `redeemed_by` is the account a code referred, affixed on arrival at `/account/register?invite=…` and unique per account; `is_chancellor` codes confer admin
 - `refresh_task` — on-demand job tracking (`batch_id`, `job`, `registration_id`, `status`)
 - `heartbeat` — job monitoring (`job`, `run_id`, start/end, generated `duration` and `owner_key`)
 - `esi_etag` — ETag per conditional-request cache key (`<job>:<registration uuid>`); service-role only (RLS on, no policy)
@@ -178,6 +178,7 @@ Key Postgres functions (RPC or SQL):
 
 ## Design patterns
 
+- **Anonymous sessions / "is this a real account?":** every visitor is signed in anonymously by the root layout (`src/app/layout/anonymousSession.tsx`, Turnstile-guarded), so a Supabase user existing does **not** mean a member is present — and `is_anonymous` can't be inverted either, since an EVE-SSO-only account stays anonymous forever. Gates call `establishedUser()` (`src/app/account/lib/establishedUser.ts`) instead of `auth.getUser()`; the predicate is the pure `isEstablishedAccount()` next door, twinned in SQL as `is_established_account()` for RLS. See `docs/open-registration.md`.
 - **Prefer ramda over `for`/`while`:** sync iteration uses ramda (`map`/`filter`/`reduce`/`pipe`/`chain`/`reject`/`forEach`, …). Sequential async iteration uses `forEachSequential(items, fn)`. Unbounded pagination becomes a small **tail-recursive** async function carrying `(from, acc)` — fetch one page, recurse while full. Canonical shape (prefer over the `for`-loop generator still in `src/buildEsfData.js`, to migrate when next touched):
 
   ```js

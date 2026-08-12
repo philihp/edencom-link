@@ -2,6 +2,8 @@ import { redirect } from 'next/navigation'
 import { filter } from 'ramda'
 
 import { createClient } from '@/utils/supabase/server'
+
+import { establishedUser } from '../account/lib/establishedUser'
 import { fetchOwners } from '../owners'
 import { fetchStationNames } from '../stationNames'
 import { fetchTypeNames } from '../typeNames'
@@ -26,8 +28,8 @@ const JOB_COLUMNS =
 const IndustryPage = async () => {
   const supabase = await createClient()
 
-  const { data, error: authError } = await supabase.auth.getUser()
-  if (authError || !data?.user) {
+  const user = await establishedUser(supabase)
+  if (!user) {
     redirect('/')
   }
 

@@ -2,6 +2,8 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 
 import { createClient } from '@/utils/supabase/server'
+
+import { establishedUser } from '../../account/lib/establishedUser'
 import { DateTime } from '../../DateTime'
 import { ACTIVITY_NAMES } from '../../industry/jobFields'
 import { formatIskValue } from '../../isk'
@@ -81,8 +83,8 @@ const StructurePage = async ({ params, searchParams }: StructureParams) => {
   const windowDays = structureWindowDays(daysParam)
   const supabase = await createClient()
 
-  const { data: auth, error: authError } = await supabase.auth.getUser()
-  if (authError || !auth?.user) {
+  const user = await establishedUser(supabase)
+  if (!user) {
     redirect('/')
   }
 

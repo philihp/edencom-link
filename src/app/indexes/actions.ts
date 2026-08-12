@@ -6,6 +6,8 @@ import { redirect } from 'next/navigation'
 import { getSdeSystem, searchSdeSystems } from '@/sdeSystems'
 import { createClient } from '@/utils/supabase/server'
 
+import { establishedUser } from '../account/lib/establishedUser'
+
 // Autocomplete backing the "watch a system" search box. Resolved from the
 // nightly-mirrored SDE tables (src/sdeSystems.ts) — no ESI call.
 export const searchSystems = async (query: string): Promise<[systemID: number, name: string, security: number][]> =>
@@ -13,10 +15,8 @@ export const searchSystems = async (query: string): Promise<[systemID: number, n
 
 const requireUser = async () => {
   const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-  if (!user?.id) redirect('/account/login')
+  const user = await establishedUser(supabase)
+  if (!user) redirect('/account/login')
   return { supabase, userId: user.id }
 }
 

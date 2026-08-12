@@ -54,6 +54,7 @@
     "corp-wallet-transactions": "node src/jobs/corpWalletTransactions.js",
     "corp-contracts": "node src/jobs/corpContracts.js",
     "corp-industry-jobs": "node src/jobs/corpIndustryJobs.js",
+    "anon-sweep": "node src/jobs/anonSweep.js",
     "industry-systems": "node src/jobs/industrySystems.js",
     "universe-names": "node src/jobs/universeNames.js",
     "universe-structures": "node src/jobs/universeStructures.js",

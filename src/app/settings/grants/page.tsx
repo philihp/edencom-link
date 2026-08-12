@@ -2,6 +2,8 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 
 import { createClient } from '@/utils/supabase/server'
+
+import { establishedUser } from '../../account/lib/establishedUser'
 import { esiScopes } from '@/app/character/scopes'
 
 import Grants from './grants'
@@ -13,8 +15,8 @@ type GrantsPageProps = {
 const GrantsPage = async ({ searchParams }: GrantsPageProps) => {
   const supabase = await createClient()
 
-  const { data, error } = await supabase.auth.getUser()
-  if (error || !data?.user) {
+  const user = await establishedUser(supabase)
+  if (!user) {
     redirect('/account/login')
   }
 
@@ -26,7 +28,7 @@ const GrantsPage = async ({ searchParams }: GrantsPageProps) => {
   const { data: settings } = await supabase
     .from('user_settings')
     .select('enabled_scopes')
-    .eq('user_id', data.user.id)
+    .eq('user_id', user.id)
     .maybeSingle()
   const enabledScopes: string[] = settings?.enabled_scopes ?? []
 

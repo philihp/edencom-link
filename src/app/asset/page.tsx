@@ -3,6 +3,8 @@ import { redirect } from 'next/navigation'
 import { map, reduce } from 'ramda'
 
 import { createClient } from '@/utils/supabase/server'
+
+import { establishedUser } from '../account/lib/establishedUser'
 import { DateTime } from '../DateTime'
 import { fetchOwners } from '../owners'
 import { resolveLocations, type LocationRef } from '../resolveLocations'
@@ -38,8 +40,8 @@ type SummaryRow = {
 const AssetsPage = async () => {
   const supabase = await createClient()
 
-  const { data: auth, error: authError } = await supabase.auth.getUser()
-  if (authError || !auth?.user) {
+  const user = await establishedUser(supabase)
+  if (!user) {
     redirect('/')
   }
 

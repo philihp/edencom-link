@@ -3,6 +3,8 @@ import { redirect } from 'next/navigation'
 import { ascend, range, reduce, sort, uniq } from 'ramda'
 
 import { createClient } from '@/utils/supabase/server'
+
+import { establishedUser } from '../account/lib/establishedUser'
 import {
   baseSlotMax,
   countJobSlots,
@@ -56,8 +58,8 @@ const JobSlots = ({ counts, max }: { counts: SlotCounts; max: SlotMax }) => (
 const CharacterPage = async () => {
   const supabase = await createClient()
 
-  const { data, error: authError } = await supabase.auth.getUser()
-  if (authError || !data?.user) {
+  const user = await establishedUser(supabase)
+  if (!user) {
     redirect('/')
   }
 
@@ -175,7 +177,7 @@ const CharacterPage = async () => {
 
   // If the player has turned off every optional ESI scope, characters they add
   // grant nothing beyond identification, so almost no features will work.
-  const enabledScopes = await getEnabledScopes(supabase, data.user.id)
+  const enabledScopes = await getEnabledScopes(supabase, user.id)
   const hasNoOptionalScopes = enabledScopes.every((scope) => requiredScopes.includes(scope))
 
   return (

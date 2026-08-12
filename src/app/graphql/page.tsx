@@ -2,6 +2,8 @@ import { redirect } from 'next/navigation'
 
 import { GRAPHQL_FLAG, hasFlag } from '@/flags'
 import { createClient } from '@/utils/supabase/server'
+
+import { establishedUser } from '../account/lib/establishedUser'
 import { QueryEditor } from './queryEditor'
 import styles from './graphql.module.css'
 
@@ -13,11 +15,11 @@ export const dynamic = 'force-dynamic'
 const GraphqlPage = async () => {
   const supabase = await createClient()
 
-  const { data, error } = await supabase.auth.getUser()
-  if (error || !data?.user) {
+  const user = await establishedUser(supabase)
+  if (!user) {
     redirect('/account/login')
   }
-  if (!(await hasFlag(data.user.id, GRAPHQL_FLAG))) {
+  if (!(await hasFlag(user.id, GRAPHQL_FLAG))) {
     redirect('/')
   }
 
@@ -25,7 +27,7 @@ const GraphqlPage = async () => {
   const { data: settings } = await supabase
     .from('user_settings')
     .select('api_token')
-    .eq('user_id', data.user.id)
+    .eq('user_id', user.id)
     .maybeSingle()
   const apiToken = settings?.api_token ?? null
 

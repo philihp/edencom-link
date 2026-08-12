@@ -2,6 +2,8 @@ import { redirect } from 'next/navigation'
 
 import { getSdeTypes } from '@/sdeTypes'
 import { createClient } from '@/utils/supabase/server'
+
+import { establishedUser } from '../account/lib/establishedUser'
 import type { Owner } from '../ownerFilter'
 import { fittingRoute, type FittingRow } from './fit'
 import { FittingMatrix, type FittingEntry } from './fittingMatrix'
@@ -20,9 +22,7 @@ import { fetchFittingOwners } from './resolveCharacter'
 // the matrix stays honest about whose fit it's showing.
 const FittingPage = async () => {
   const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const user = await establishedUser(supabase)
   if (!user) redirect('/')
 
   const { data: fittings } = await supabase
