@@ -11,80 +11,15 @@ import { createClient } from '@/utils/supabase/client'
 // identity can all be affixed to it later, in any order
 // (docs/open-registration.md).
 //
-// A client component rather than middleware: the repo runs no middleware, the
-// Turnstile challenge needs a browser, and mounting it in the root layout keeps
-// the machine traffic — /xrpc, /api/*, /esf, /sheets — from minting users, since
-// none of those render HTML.
+// A client component rather than middleware: the repo runs no middleware, and
+// mounting it in the root layout keeps the machine traffic — /xrpc, /api/*,
+// /esf, /sheets — from minting users, since none of those render HTML.
 //
 // Nothing renders; the component exists for its effect.
-
-// The Turnstile sitekey is public by design. Unset (local dev, preview
-// deployments without the key), the challenge is skipped — Supabase only
-// demands a token when captcha protection is switched on for the project.
-const SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY
-const TURNSTILE_SRC = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit'
-
-type Turnstile = {
-  render: (
-    container: HTMLElement,
-    options: {
-      sitekey: string
-      size?: string
-      callback: (token: string) => void
-      'error-callback'?: () => void
-    }
-  ) => string
-  remove: (widgetId: string) => void
-}
-
-declare global {
-  interface Window {
-    turnstile?: Turnstile
-  }
-}
 
 // One bootstrap per page load, however many times React remounts the effect
 // (StrictMode double-invokes it in development).
 let bootstrapped = false
-
-const loadTurnstile = (): Promise<Turnstile | null> =>
-  new Promise((resolve) => {
-    if (window.turnstile) return resolve(window.turnstile)
-    const existing = document.querySelector<HTMLScriptElement>(`script[src="${TURNSTILE_SRC}"]`)
-    const script = existing ?? document.createElement('script')
-    script.addEventListener('load', () => resolve(window.turnstile ?? null))
-    script.addEventListener('error', () => resolve(null))
-    if (!existing) {
-      script.src = TURNSTILE_SRC
-      script.async = true
-      document.head.appendChild(script)
-    }
-  })
-
-// An invisible widget solves itself as soon as it renders, so this is just
-// "give me a token, or nothing if the challenge can't run".
-const captchaToken = async (): Promise<string | undefined> => {
-  if (!SITE_KEY) return undefined
-  const turnstile = await loadTurnstile()
-  if (!turnstile) return undefined
-
-  const container = document.createElement('div')
-  document.body.appendChild(container)
-  const token = await new Promise<string | undefined>((resolve) => {
-    try {
-      turnstile.render(container, {
-        sitekey: SITE_KEY,
-        size: 'invisible',
-        callback: (value) => resolve(value),
-        'error-callback': () => resolve(undefined),
-      })
-    } catch {
-      resolve(undefined)
-    }
-  })
-  container.remove()
-  return token
-}
 
 const AnonymousSession = () => {
   const router = useRouter()
@@ -102,12 +37,10 @@ const AnonymousSession = () => {
       } = await supabase.auth.getSession()
       if (session) return
 
-      const { error } = await supabase.auth.signInAnonymously({
-        options: { captchaToken: await captchaToken() },
-      })
+      const { error } = await supabase.auth.signInAnonymously()
       if (error) {
-        // Anonymous sign-ins disabled, captcha rejected, rate limited: the site
-        // still works signed-out, so this is a log, not an error state.
+        // Anonymous sign-ins disabled, rate limited: the site still works
+        // signed-out, so this is a log, not an error state.
         console.warn(`[anonymous-session] ${error.message}`)
         bootstrapped = false
         return

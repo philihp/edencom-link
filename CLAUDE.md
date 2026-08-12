@@ -35,7 +35,7 @@ EVE Online hangar/wallet/industry tracker, deployed on Vercel.
 - **Id naming — `character_id` means the EVE numeric (bigint) id; the registration uuid is `registration_id`.** **Most existing `character_*` extract tables get this wrong** — their owner column is declared `character_id uuid references registration(id)`, so it holds the registration uuid despite the name (legacy wart; why the fitting route has a uuid first segment). `character_directory` does it right. Name new columns/params correctly even next to a legacy one, and read existing `character_id` for what it actually holds. Don't fold the rename into unrelated work — `docs/registration-id-rename.md` stages that cleanup.
 - ESI base `https://esi.evetech.net/latest` via `src/esi.js`. Tokens live in `token`; `refreshAccessToken()` refreshes via EVE SSO before any ESI call.
 - **Data flow:** ESI → DB (extract jobs) → server components read DB. Server components must NOT call ESI directly.
-- Env vars (`.env.example`): `EVE_*` (SSO), `SUPABASE_*`, `NEXT_PUBLIC_SUPABASE_*`, `GICE_*` (Goonfleet SSO; start route 503s when unset), Turnstile keys (`NEXT_PUBLIC_TURNSTILE_SITE_KEY` guards the anonymous sign-in; unset skips the challenge), `CRON_SECRET`.
+- Env vars (`.env.example`): `EVE_*` (SSO), `SUPABASE_*`, `NEXT_PUBLIC_SUPABASE_*`, `GICE_*` (Goonfleet SSO; start route 503s when unset), `CRON_SECRET`.
 
 # Workflow
 
@@ -178,7 +178,7 @@ Key Postgres functions (RPC or SQL):
 
 ## Design patterns
 
-- **Anonymous sessions / "is this a real account?":** every visitor is signed in anonymously by the root layout (`src/app/layout/anonymousSession.tsx`, Turnstile-guarded), so a Supabase user existing does **not** mean a member is present — and `is_anonymous` can't be inverted either, since an EVE-SSO-only account stays anonymous forever. Gates call `establishedUser()` (`src/app/account/lib/establishedUser.ts`) instead of `auth.getUser()`; the predicate is the pure `isEstablishedAccount()` next door, twinned in SQL as `is_established_account()` for RLS. See `docs/open-registration.md`.
+- **Anonymous sessions / "is this a real account?":** every visitor is signed in anonymously by the root layout (`src/app/layout/anonymousSession.tsx`), so a Supabase user existing does **not** mean a member is present — and `is_anonymous` can't be inverted either, since an EVE-SSO-only account stays anonymous forever. Gates call `establishedUser()` (`src/app/account/lib/establishedUser.ts`) instead of `auth.getUser()`; the predicate is the pure `isEstablishedAccount()` next door, twinned in SQL as `is_established_account()` for RLS. See `docs/open-registration.md`.
 - **Prefer ramda over `for`/`while`:** sync iteration uses ramda (`map`/`filter`/`reduce`/`pipe`/`chain`/`reject`/`forEach`, …). Sequential async iteration uses `forEachSequential(items, fn)`. Unbounded pagination becomes a small **tail-recursive** async function carrying `(from, acc)` — fetch one page, recurse while full. Canonical shape (prefer over the `for`-loop generator still in `src/buildEsfData.js`, to migrate when next touched):
 
   ```js

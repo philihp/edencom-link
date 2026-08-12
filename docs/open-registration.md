@@ -39,9 +39,10 @@ and all RLS stay as they are.
 
 ## Stage 0 — platform configuration (no code)
 
-- Supabase dashboard: enable **Anonymous sign-ins**; turn on the **Turnstile
-  captcha** for them (keys already in `.env.example`) so bots don't mint junk
-  users. Enable **manual identity linking**. Enable the **Discord provider**
+- Supabase dashboard: enable **Anonymous sign-ins** and **manual identity
+  linking**. (An earlier draft of this plan put a Turnstile captcha in front of
+  the anonymous sign-in; Turnstile is deprecated here, so the sweep job below is
+  what bounds junk accounts.) Enable the **Discord provider**
   (per the stage-06 doc: app id + client secret, Supabase callback URL in the
   Discord portal, scopes `identify email`).
 - Install the Supabase **GitHub integration** for branching and the
@@ -54,11 +55,11 @@ and all RLS stay as they are.
 RLS audit found is recorded at the end of this section.
 
 - `src/app/layout/AnonymousSession.tsx` (client component mounted in the root
-  layout): if `getSession()` is empty, run Turnstile invisibly and call
-  `supabase.auth.signInAnonymously({ options: { captchaToken } })`. Client
-  component rather than middleware: the repo has no middleware today, the
-  call needs a browser (Turnstile), and it keeps `/xrpc`, `/api/*`, `/esf`,
-  `/sheets` traffic from minting users.
+  layout): if `getSession()` is empty, call
+  `supabase.auth.signInAnonymously()`. Client component rather than
+  middleware: the repo has no middleware today, the call belongs in the
+  browser, and it keeps `/xrpc`, `/api/*`, `/esf`, `/sheets` traffic from
+  minting users.
 - **Affix on arrival:** the register page (and any page we later decorate)
   reads `?invite=<code>`; a server action `affixInvite(code)` validates the
   code exactly like today's redeem (`INVITE_CODE_PATTERN`, exists,
@@ -92,9 +93,8 @@ RLS audit found is recorded at the end of this section.
 ### What stage 1 actually landed
 
 - `src/app/layout/anonymousSession.tsx`, mounted in the root layout, as
-  planned. Turnstile is loaded on demand and skipped when
-  `NEXT_PUBLIC_TURNSTILE_SITE_KEY` is unset, which is what makes local dev and
-  a captcha-less project behave the same.
+  planned, minus the captcha — Turnstile is deprecated, so the sign-in is
+  unguarded and `anon-sweep` carries the volume argument alone.
 - **The seam the plan only implied:** with every visitor holding a session,
   "a user exists" stopped meaning "a member is signed in", and roughly thirty
   gates read it that way. `isEstablishedAccount()`
@@ -261,8 +261,10 @@ GICE via `/account/gice` — all keyed on the stable `auth.uid()`.
 
 ## Risks / open edges
 
-- **Anon-user volume:** Turnstile plus the sweep job bound it; watch
-  `auth.users` growth after launch.
+- **Anon-user volume:** with the captcha dropped, the sweep job is the only
+  thing bounding it, and Supabase's own sign-in rate limits are the only thing
+  in front of a bot. Watch `auth.users` growth after launch; if it runs away,
+  the answers are a shorter sweep cutoff or a captcha that isn't Turnstile.
 - **Two tabs, two anonymous users:** each tab may bootstrap separately until
   cookies settle; harmless (one converts, the other gets swept), but worth
   knowing when reading auth logs.
