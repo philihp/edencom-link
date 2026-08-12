@@ -1,0 +1,102 @@
+name: Tests
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  # The offline suite: `node --test` over the pure-logic modules, plus lint.
+  # Cheap and unconditional — it runs on every PR, including forks.
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run lint
+      - run: pnpm test
+
+  # The signup test against a real Supabase preview branch. Provisioning one
+  # takes minutes and costs money, so this is gated three ways:
+  #   - fork PRs can't have the secrets, so they're skipped outright;
+  #   - it only runs when the PR touches something the test actually covers
+  #     (migrations, the schema, the account/auth surface, the test itself);
+  #   - runs are serialized, so two PRs never provision branches at once.
+  branch:
+    needs: unit
+    # A fork PR has no access to secrets, so the job would only ever skip;
+    # don't spend a runner discovering that.
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    # Never cancel-in-progress: a cancelled run leaks the branch it created
+    # (teardown never gets to run), which the sweep below then has to reap.
+    concurrency:
+      group: supabase-branch-test
+      cancel-in-progress: false
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          # The relevance check diffs against the base branch, so it needs both.
+          fetch-depth: 0
+
+      # Plain git rather than a paths-filter action: the same question the
+      # workflow-level `paths:` key would answer, asked per-job so the unit
+      # suite still runs on every PR. A manual dispatch always runs.
+      - id: relevant
+        name: Decide whether this PR needs a branch
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = 'workflow_dispatch' ]; then
+            echo 'run=true' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          changed=$(git diff --name-only "origin/$BASE_REF...HEAD")
+          echo "changed files:"; echo "$changed"
+          if echo "$changed" | grep -Eq '^(supabase/migrations/|schema\.sql$|src/app/account/|src/utils/supabase/|test/signupBranch\.test\.ts$|test/lib/|\.github/workflows/test\.yml$)'; then
+            echo 'run=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'run=false' >> "$GITHUB_OUTPUT"
+            echo 'nothing the branch test covers changed — skipping'
+          fi
+        env:
+          BASE_REF: ${{ github.base_ref }}
+
+      # The test itself skips (green) when these are unset, which would quietly
+      # report "passed" for a run that checked nothing. Fail loudly instead.
+      - name: Require Supabase credentials
+        if: steps.relevant.outputs.run == 'true'
+        run: |
+          if [ -z "$SUPABASE_ACCESS_TOKEN" ] || [ -z "$SUPABASE_PROJECT_REF" ]; then
+            echo 'SUPABASE_ACCESS_TOKEN (secret) and SUPABASE_PROJECT_REF (variable) must both be set' >&2
+            exit 1
+          fi
+
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+        if: steps.relevant.outputs.run == 'true'
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        if: steps.relevant.outputs.run == 'true'
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+        if: steps.relevant.outputs.run == 'true'
+
+      - name: Sign up on a Supabase branch
+        if: steps.relevant.outputs.run == 'true'
+        # Generous but bounded: provisioning is minutes, and the test's own
+        # timeouts fire first in the normal case.
+        timeout-minutes: 25
+        run: pnpm run test:branch
+
+      # Reap branches a cancelled or crashed run left behind (older than an
+      # hour, so a concurrent run's branch is never touched). Never fails the
+      # job — cleanup must not turn a green run red.
+      - name: Sweep leaked branches
+        if: always() && steps.relevant.outputs.run == 'true'
+        run: node .github/scripts/sweep-test-branches.mjs

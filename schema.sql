@@ -184,6 +184,419 @@ alter default privileges in schema public
 alter default privileges in schema public
   grant all on functions to anon, authenticated, service_role;
 
+-- ── SDE mirror ───────────────────────────────────────────────────────────────────
+-- Nightly-refreshed mirror of CCP's official Static Data Export, populated by
+-- the `sde-mirror` Vercel Workflow (src/workflows/sdeMirror.ts /
+-- src/jobs/sdeMirror.js, scheduled 12:21 UTC). One sde_<stem> table per JSONL
+-- file in the export, minted at ingest via ensure_sde_mirror_table(); the
+-- app-critical ones are pre-created so the views exist before the first run.
+-- Readable by anyone (RLS with a bare SELECT policy, SELECT-only grants — no
+-- write policies or grants for anon/authenticated); only the service-role
+-- ingest writes.
+
+create extension if not exists pg_trgm with schema extensions;
+
+-- Supabase enables pg_graphql by default and `graphql_public` is an exposed
+-- schema, so /graphql/v1 needs it present; without it the endpoint answers
+-- every query with "pg_graphql extension is not enabled." Declared here so a
+-- rebuilt database matches the exposed-schema list (see the header note).
+create extension if not exists pg_graphql;
+
+-- Create (or align) one SDE mirror table. SECURITY DEFINER so the ingest can
+-- call it over PostgREST RPC; execute is service-role only, the stem is
+-- regex-validated, and all DDL goes through format('%I'), so the service role
+-- can only ever mint read-only sde_* mirror tables of this exact shape.
+--
+-- Every step is guarded by a catalog lookup so a table that is already correct
+-- costs zero DDL. sde-mirror calls this once per JSONL file, so an unguarded
+-- body re-applies the whole shape ~560 times a night across 80 tables — and
+-- ALTER TABLE ... ENABLE ROW LEVEL SECURITY and CREATE POLICY each take an
+-- ACCESS EXCLUSIVE lock on a table the app reads on every page hit. It also
+-- bumps pg_graphql's schema version (its ddl_command_end trigger increments
+-- unconditionally, without checking whether anything reflected changed),
+-- invalidating the cached GraphQL schema each time.
+--
+-- The policy check compares the full shape rather than just the name, so a
+-- policy that has drifted by hand is still dropped and recreated — preserving
+-- the self-healing the old unconditional drop-and-recreate gave for free.
+create or replace function public.ensure_sde_mirror_table(p_stem text, p_key_type text default 'bigint')
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_table text;
+  v_oid oid;
+begin
+  if p_stem !~ '^[a-z][a-z0-9_]{0,58}$' then
+    raise exception 'invalid SDE mirror table stem: %', p_stem;
+  end if;
+  if p_key_type not in ('bigint', 'text') then
+    raise exception 'invalid SDE mirror key type: %', p_key_type;
+  end if;
+  v_table := 'sde_' || p_stem;
+  v_oid := to_regclass('public.' || quote_ident(v_table));
+
+  if v_oid is null then
+    execute format(
+      'create table public.%I (_key %s primary key, data jsonb not null, sde_build bigint not null)',
+      v_table,
+      p_key_type
+    );
+    v_oid := to_regclass('public.' || quote_ident(v_table));
+  end if;
+
+  if not exists (
+    select 1 from pg_catalog.pg_class c where c.oid = v_oid and c.relrowsecurity
+  ) then
+    execute format('alter table public.%I enable row level security', v_table);
+  end if;
+
+  if not exists (
+    select 1
+    from pg_catalog.pg_policy p
+    where p.polrelid = v_oid
+      and p.polname = 'Anyone reads SDE data'
+      and p.polcmd = 'r'
+      and p.polpermissive
+      and p.polroles = '{0}'::oid[]
+      and pg_catalog.pg_get_expr(p.polqual, p.polrelid) = 'true'
+  ) then
+    execute format('drop policy if exists "Anyone reads SDE data" on public.%I', v_table);
+    execute format('create policy "Anyone reads SDE data" on public.%I for select using (true)', v_table);
+  end if;
+
+  if not (
+    pg_catalog.has_table_privilege('anon', v_oid, 'select')
+    and pg_catalog.has_table_privilege('authenticated', v_oid, 'select')
+  ) then
+    execute format('grant select on public.%I to anon, authenticated', v_table);
+  end if;
+
+  -- The schema's default privileges hand new tables ALL to anon/authenticated;
+  -- claw the write privileges back so the mirror is read-only at the grant
+  -- layer too, not just via the missing write policies.
+  if pg_catalog.has_table_privilege('anon', v_oid, 'insert')
+     or pg_catalog.has_table_privilege('anon', v_oid, 'update')
+     or pg_catalog.has_table_privilege('anon', v_oid, 'delete')
+     or pg_catalog.has_table_privilege('authenticated', v_oid, 'insert')
+     or pg_catalog.has_table_privilege('authenticated', v_oid, 'update')
+     or pg_catalog.has_table_privilege('authenticated', v_oid, 'delete') then
+    execute format('revoke insert, update, delete on public.%I from anon, authenticated', v_table);
+  end if;
+
+  if not (
+    pg_catalog.has_table_privilege('service_role', v_oid, 'select')
+    and pg_catalog.has_table_privilege('service_role', v_oid, 'insert')
+    and pg_catalog.has_table_privilege('service_role', v_oid, 'update')
+    and pg_catalog.has_table_privilege('service_role', v_oid, 'delete')
+  ) then
+    execute format('grant select, insert, update, delete on public.%I to service_role', v_table);
+  end if;
+end
+$$;
+
+revoke execute on function public.ensure_sde_mirror_table(text, text) from public, anon, authenticated;
+grant execute on function public.ensure_sde_mirror_table(text, text) to service_role;
+
+-- Pre-create the tables the app-facing views project from.
+select public.ensure_sde_mirror_table(stem)
+from unnest(
+  array['types', 'groups', 'categories', 'map_solar_systems', 'map_constellations', 'map_regions',
+        'npc_stations', 'blueprints', 'map_planets']
+) as stem;
+
+-- One row per SDE build the ingest has seen; completed_at set only when every
+-- file landed, commit_sha records which code deployment produced that mirror.
+-- The nightly run short-circuits (a ~5 s no-op) only when CCP's current build
+-- already has a completed row, produced by the currently-deployed commit, and
+-- less than 7 days old — so a new SDE build, a new deployment (transform
+-- change), or 7-day staleness each force a full re-ingest.
+create table public.sde_mirror_state (
+  build_number bigint primary key,
+  started_at timestamptz not null default now(),
+  completed_at timestamptz,
+  commit_sha text
+);
+alter table public.sde_mirror_state enable row level security;
+create policy "Anyone reads SDE data" on public.sde_mirror_state for select using (true);
+grant select on public.sde_mirror_state to anon, authenticated;
+revoke insert, update, delete on public.sde_mirror_state from anon, authenticated;
+grant select, insert, update, delete on public.sde_mirror_state to service_role;
+
+-- NPC station display names. The SDE carries a station's structure (system,
+-- type, owning corp, operation) but not its name — that's generated in-game
+-- from those pieces — so the ingest resolves names via ESI /universe/names/
+-- into this side table. Never swept by build: a failed ESI resolve degrades
+-- to the previous run's names rather than an empty table.
+create table public.sde_npc_station_name (
+  station_id bigint primary key,
+  name text not null,
+  updated_at timestamptz not null default now()
+);
+alter table public.sde_npc_station_name enable row level security;
+create policy "Anyone reads SDE data" on public.sde_npc_station_name for select using (true);
+grant select on public.sde_npc_station_name to anon, authenticated;
+revoke insert, update, delete on public.sde_npc_station_name from anon, authenticated;
+grant select, insert, update, delete on public.sde_npc_station_name to service_role;
+
+-- Storage for the eveship.fit protobuf data (the 6 files @eveshipfit/react's
+-- EveDataProvider reads). The sde-mirror workflow encodes the .pb2 from the
+-- sde_* mirror after each SDE build and upserts them here (src/jobs/esfData.js),
+-- so the ship-fitting data refreshes when the SDE changes without a redeploy.
+-- `data` is the base64-encoded protobuf bytes (text moves through PostgREST far
+-- more simply than bytea; the serving route base64-decodes it). Public read
+-- (non-sensitive static game data, same as the sde_* mirror); writes are
+-- service-role only (the workflow).
+create table public.esf_data (
+  name text primary key,
+  data text not null,
+  sde_build bigint not null,
+  updated_at timestamptz not null default now()
+);
+alter table public.esf_data enable row level security;
+create policy "Everyone reads esf data" on public.esf_data for select to anon, authenticated using (true);
+grant select on public.esf_data to anon, authenticated;
+grant all    on public.esf_data to service_role;
+
+-- The industry-planning spreadsheet's static CSVs (StaticInputs / StaticOutputs /
+-- invention / types, in both twines and miros label modes), derived from the
+-- sde_* mirror by the sde-mirror workflow's encodeSheets step (src/jobs/sheetCsv.js
+-- -> encodeSheetCsv() in src/buildSheetCsv.js) after each SDE build, and served at
+-- /sheets/[file] for Google Sheets =IMPORTDATA(). `data` is the CSV text itself
+-- (no base64: CSV is already text, unlike esf_data's binary protobufs). Public
+-- read (SDE-derived, no player data, identical for every caller); writes are
+-- service-role only (the workflow).
+create table public.sheet_csv (
+  name text primary key,
+  data text not null,
+  sde_build bigint not null,
+  updated_at timestamptz not null default now()
+);
+alter table public.sheet_csv enable row level security;
+create policy "Everyone reads sheet csv" on public.sheet_csv for select to anon, authenticated using (true);
+grant select on public.sheet_csv to anon, authenticated;
+grant all    on public.sheet_csv to service_role;
+
+-- Trigram indexes backing the ILIKE '%…%' in sde_search_type/sde_search_system.
+create index sde_types_name_trgm on public.sde_types
+  using gin ((data -> 'name' ->> 'en') extensions.gin_trgm_ops);
+create index sde_map_solar_systems_name_trgm on public.sde_map_solar_systems
+  using gin ((data -> 'name' ->> 'en') extensions.gin_trgm_ops);
+
+-- ── App-shaped projections ──────────────────────────────────────────────────
+-- The tuple shapes the app's SDE loaders (src/sde*.ts) use today, as views
+-- over the raw jsonb mirror — the JOIN targets for the loader cutover and for
+-- pushing name resolution into the asset/search functions later.
+
+-- Published, named types with their group/category — mirrors buildSde.js's
+-- buildTypes() cut. group_name/category_name added for the MCP exploration
+-- tools (migration 20260723000000_sde_taxonomy_views); race_id/meta_group_id
+-- for the /fitting ship matrix (migration 20260728120000_sde_type_race_meta).
+create view public.sde_published_type
+with (security_invoker = true) as
+select
+  t._key as type_id,
+  t.data -> 'name' ->> 'en' as name,
+  (t.data ->> 'groupID')::bigint as group_id,
+  (g.data ->> 'categoryID')::bigint as category_id,
+  g.data -> 'name' ->> 'en' as group_name,
+  c.data -> 'name' ->> 'en' as category_name,
+  (t.data ->> 'raceID')::bigint as race_id,
+  (t.data ->> 'metaGroupID')::bigint as meta_group_id,
+  -- m³ per unit (migration 20260804000000). Assembled singletons carry their
+  -- assembled volume — the SDE has no packaged figure for them.
+  (t.data ->> 'volume')::double precision as volume
+from public.sde_types t
+left join public.sde_groups g on g._key = (t.data ->> 'groupID')::bigint
+left join public.sde_categories c on c._key = (g.data ->> 'categoryID')::bigint
+where (t.data ->> 'published')::boolean
+  and coalesce(trim(t.data -> 'name' ->> 'en'), '') <> '';
+
+-- Known-space systems (30M id band): wormhole/abyssal systems never appear in
+-- the industry cost-index feed — mirrors buildSde.js's buildSystems() cut. The
+-- constellation/region columns come from migration 20260719120000.
+create view public.sde_kspace_system
+with (security_invoker = true) as
+select
+  s._key as system_id,
+  s.data -> 'name' ->> 'en' as name,
+  (s.data ->> 'securityStatus')::real as security,
+  c._key as constellation_id,
+  c.data -> 'name' ->> 'en' as constellation_name,
+  r._key as region_id,
+  r.data -> 'name' ->> 'en' as region_name
+from public.sde_map_solar_systems s
+left join public.sde_map_constellations c on c._key = (s.data ->> 'constellationID')::bigint
+left join public.sde_map_regions r on r._key = (c.data ->> 'regionID')::bigint
+where s._key >= 30000000
+  and s._key < 31000000
+  and coalesce(trim(s.data -> 'name' ->> 'en'), '') <> '';
+
+-- NPC stations joined to their ESI-resolved display names.
+create view public.sde_station
+with (security_invoker = true) as
+select
+  s._key as station_id,
+  n.name,
+  (s.data ->> 'solarSystemID')::bigint as system_id
+from public.sde_npc_stations s
+join public.sde_npc_station_name n on n.station_id = s._key;
+
+-- Planets with their system name (planets carry no display name in the SDE;
+-- consumers derive "<system> <roman(celestial_index)>"). security + region_*
+-- added for the MCP exploration tools (migration 20260723000000).
+create view public.sde_planet
+with (security_invoker = true) as
+select
+  p._key as planet_id,
+  (p.data ->> 'solarSystemID')::bigint as system_id,
+  (p.data ->> 'celestialIndex')::int as celestial_index,
+  (p.data ->> 'typeID')::bigint as type_id,
+  sys.data -> 'name' ->> 'en' as system_name,
+  (sys.data ->> 'securityStatus')::real as security,
+  r._key as region_id,
+  r.data -> 'name' ->> 'en' as region_name
+from public.sde_map_planets p
+left join public.sde_map_solar_systems sys on sys._key = (p.data ->> 'solarSystemID')::bigint
+left join public.sde_map_constellations con on con._key = (sys.data ->> 'constellationID')::bigint
+left join public.sde_map_regions r on r._key = (con.data ->> 'regionID')::bigint;
+
+-- Groups with their category, and categories/regions — the taxonomy + universe
+-- browsers for the MCP exploration tools (migration 20260723000000).
+create view public.sde_group
+with (security_invoker = true) as
+select
+  g._key as group_id,
+  g.data -> 'name' ->> 'en' as name,
+  (g.data ->> 'categoryID')::bigint as category_id,
+  c.data -> 'name' ->> 'en' as category_name,
+  (g.data ->> 'published')::boolean as published
+from public.sde_groups g
+left join public.sde_categories c on c._key = (g.data ->> 'categoryID')::bigint;
+
+create view public.sde_category
+with (security_invoker = true) as
+select
+  _key as category_id,
+  data -> 'name' ->> 'en' as name,
+  (data ->> 'published')::boolean as published
+from public.sde_categories;
+
+-- K-space regions (10M id band), mirroring sde_kspace_system's exclusion of
+-- wormhole (11M) and abyssal (12M+) space; Pochven is in-band.
+create view public.sde_region
+with (security_invoker = true) as
+select
+  _key as region_id,
+  data -> 'name' ->> 'en' as name
+from public.sde_map_regions
+where _key >= 10000000
+  and _key < 11000000
+  and coalesce(trim(data -> 'name' ->> 'en'), '') <> '';
+
+grant select on public.sde_published_type, public.sde_kspace_system, public.sde_station, public.sde_planet,
+  public.sde_group, public.sde_category, public.sde_region
+  to anon, authenticated, service_role;
+revoke insert, update, delete on public.sde_published_type, public.sde_kspace_system, public.sde_station,
+  public.sde_planet, public.sde_group, public.sde_category, public.sde_region from anon, authenticated;
+
+-- Blueprint "consume materials → produce output" bill, unnested from the
+-- activities jsonb once per ingest rather than per query: manufacturing (1)
+-- and reactions (11) only, one row per (blueprint, activity, product) —
+-- mirrors buildSde.js's buildBlueprints() cut. Materialized because the
+-- lateral unnest over every blueprint is too slow to run per lookup; the
+-- ingest's finalize step refreshes it via sde_refresh_views(). Created
+-- populated-but-empty (sde_blueprints has no rows yet), which is what lets
+-- the concurrent refresh below work on first run.
+create materialized view public.sde_blueprint_product as
+select
+  b._key as blueprint_type_id,
+  a.activity_id,
+  (prod ->> 'typeID')::bigint as product_type_id,
+  (prod ->> 'quantity')::bigint as product_quantity,
+  coalesce(a.activity -> 'materials', '[]'::jsonb) as materials
+from public.sde_blueprints b
+cross join lateral (
+  values (1, b.data -> 'activities' -> 'manufacturing'), (11, b.data -> 'activities' -> 'reaction')
+) as a (activity_id, activity)
+cross join lateral jsonb_array_elements(a.activity -> 'products') as prod
+where jsonb_typeof(a.activity -> 'products') = 'array';
+
+-- Unique index required by REFRESH MATERIALIZED VIEW CONCURRENTLY.
+create unique index sde_blueprint_product_uq
+  on public.sde_blueprint_product (product_type_id, blueprint_type_id, activity_id);
+create index sde_blueprint_product_bp_idx on public.sde_blueprint_product (blueprint_type_id);
+-- jsonb_path_ops GIN so "what consumes type X" is a @> containment probe.
+create index sde_blueprint_product_materials_idx
+  on public.sde_blueprint_product using gin (materials jsonb_path_ops);
+
+-- Materialized views can't carry RLS; SELECT-only grants give the same
+-- anyone-can-read, nobody-can-write access as the tables above.
+grant select on public.sde_blueprint_product to anon, authenticated, service_role;
+
+create or replace function public.sde_refresh_views()
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  refresh materialized view concurrently public.sde_blueprint_product;
+end
+$$;
+
+revoke execute on function public.sde_refresh_views() from public, anon, authenticated;
+grant execute on function public.sde_refresh_views() to service_role;
+
+-- ── Search ──────────────────────────────────────────────────────────────────
+-- Case-insensitive substring search ranked exactly like src/sdeTypes.ts's
+-- searchSdeTypesAll: coverage = query length / name length (a tighter match
+-- ranks above a longer name containing the same term), tie-broken by shorter
+-- name then id. ILIKE metacharacters in the query are escaped so they match
+-- literally, mirroring the loaders' plain indexOf semantics.
+
+create or replace function public.sde_search_type(q text, lim int default 25)
+returns table (type_id bigint, name text, group_id bigint, category_id bigint, coverage real)
+language sql
+stable
+set search_path = ''
+as $$
+  select
+    t.type_id,
+    t.name,
+    t.group_id,
+    t.category_id,
+    char_length(btrim(q))::real / char_length(t.name) as coverage
+  from public.sde_published_type t
+  where btrim(q) <> ''
+    and t.name ilike '%' || replace(replace(replace(btrim(q), '\', '\\'), '%', '\%'), '_', '\_') || '%'
+  order by coverage desc, char_length(t.name), t.type_id
+  limit least(greatest(lim, 1), 1000)
+$$;
+
+create or replace function public.sde_search_system(q text, lim int default 25)
+returns table (system_id bigint, name text, security real, coverage real)
+language sql
+stable
+set search_path = ''
+as $$
+  select
+    s.system_id,
+    s.name,
+    s.security,
+    char_length(btrim(q))::real / char_length(s.name) as coverage
+  from public.sde_kspace_system s
+  where btrim(q) <> ''
+    and s.name ilike '%' || replace(replace(replace(btrim(q), '\', '\\'), '%', '\%'), '_', '\_') || '%'
+  order by coverage desc, char_length(s.name), s.system_id
+  limit least(greatest(lim, 1), 1000)
+$$;
+
+grant execute on function public.sde_search_type(text, int) to anon, authenticated, service_role;
+grant execute on function public.sde_search_system(text, int) to anon, authenticated, service_role;
+
 -- ── registration ──────────────────────────────────────────────────────────
 -- One row per linked EVE character (a user may link several).
 create table public.registration (
@@ -1844,6 +2257,85 @@ create table public.character_mercenary_den_share (
 
 alter table public.character_mercenary_den_share enable row level security;
 
+-- ── alliance / corporation ────────────────────────────────────────────────
+-- Universal id→name directories, not siloed by user — the same shape as
+-- industry_system_index: whoever's data we're extracting, we all share one
+-- copy. Populated whenever an alliance/corp is seen anywhere (a linked
+-- character's own corp/alliance, corpmates, structure owners, wallet/journal
+-- counterparties, ...), not just for corps/alliances a user has registered.
+create table public.alliance (
+  alliance_id bigint primary key,
+  -- Nullable: the character-directory job records the id from an affiliation
+  -- pull and backfills the name from a bulk universe/names lookup, which may lag
+  -- a run. A directory keyed by id shouldn't drop the id when the name misses.
+  name text,
+  updated_at timestamptz not null default now()
+);
+
+alter table public.alliance enable row level security;
+create policy "Everyone reads alliances"
+  on public.alliance
+  for select
+  to anon, authenticated
+  using (true);
+
+grant select on public.alliance to anon, authenticated;
+grant all    on public.alliance to service_role;
+
+create table public.corporation (
+  corporation_id bigint primary key,
+  name text,   -- nullable for the same reason as alliance.name (above)
+  alliance_id bigint references public.alliance (alliance_id),
+  updated_at timestamptz not null default now()
+);
+create index corporation_alliance_id_idx on public.corporation (alliance_id);
+
+alter table public.corporation enable row level security;
+create policy "Everyone reads corporations"
+  on public.corporation
+  for select
+  to anon, authenticated
+  using (true);
+
+grant select on public.corporation to anon, authenticated;
+grant all    on public.corporation to service_role;
+
+-- ── character (directory) ─────────────────────────────────────────────────
+-- World-readable directory of EVE characters: public identity only (name,
+-- corporation, alliance) plus the registration uuid the extract tables key
+-- owners by. This is the "character" table in docs/sharing-layer/design.md;
+-- named character_directory because "character" is a SQL reserved word, and to
+-- stay distinct from the character_* extract tables (owned data). It carries NO
+-- user_id — that would let anyone correlate a user's alts — so it can be public
+-- while registration (the account binding) stays owner-only, letting the sharing
+-- layer resolve a shared row's owner via a plain RLS join instead of a SECURITY
+-- DEFINER bridge. Populated by the character-directory extract job (which also
+-- fills corporation.alliance_id and the alliance/corporation name rows from the
+-- same affiliation pull).
+create table public.character_directory (
+  character_id bigint primary key,
+  name text,
+  corporation_id bigint,
+  alliance_id bigint,
+  -- The registration this character is linked to, if any (unique: a character
+  -- links to at most one account). Extract tables key owners by registration
+  -- uuid, so this is the join back to a public name/corp/alliance. on delete set
+  -- null keeps the public directory row when an account unlinks the character.
+  registration_id uuid unique references public.registration (id) on delete set null,
+  updated_at timestamptz not null default now()
+);
+create index character_directory_corporation_id_idx on public.character_directory (corporation_id);
+
+alter table public.character_directory enable row level security;
+create policy "Everyone reads the character directory"
+  on public.character_directory
+  for select
+  to anon, authenticated
+  using (true);
+
+grant select on public.character_directory to anon, authenticated;
+grant all    on public.character_directory to service_role;
+
 -- ── Sharing audience helpers ─────────────────────────────────────────────────
 -- Plain stable SQL functions on INVOKER rights — deliberately NOT SECURITY
 -- DEFINER. They read only what the caller may already read: their own
@@ -1881,27 +2373,6 @@ as $$
   where r.user_id = (select auth.uid()) and r.corporation_id is not null;
 $$;
 
--- True when the given registration shares its Mercenary Den data with an
--- alliance the caller has a character in. The single definition of the
--- audience — the den policy and the enemy-intel policy both go through it, so
--- they can't drift apart.
-create or replace function public.mercenary_den_shared_with_caller(reg_id uuid)
-returns boolean
-language sql
-stable
-as $$
-  select exists (
-    select 1
-    from public.character_mercenary_den_share s
-    where s.registration_id = reg_id
-      and public.share_audience_matches(s.corporation_ids, s.alliance_ids, s.secret)
-  );
-$$;
-
-grant execute on function public.my_alliance_ids() to authenticated;
-grant execute on function public.my_corporation_ids() to authenticated;
-grant execute on function public.mercenary_den_shared_with_caller(uuid) to authenticated;
-
 -- The one audience matcher every Revision 3 share table goes through
 -- (character_asset_share, character_fitting_share; see docs/sharing-layer/):
 -- (a)/(b) membership by array overlap with the caller's affiliations, (d)
@@ -1922,6 +2393,27 @@ as $$
 $$;
 
 grant execute on function public.share_audience_matches(bigint[], bigint[], text) to anon, authenticated;
+
+-- True when the given registration shares its Mercenary Den data with an
+-- alliance the caller has a character in. The single definition of the
+-- audience — the den policy and the enemy-intel policy both go through it, so
+-- they can't drift apart.
+create or replace function public.mercenary_den_shared_with_caller(reg_id uuid)
+returns boolean
+language sql
+stable
+as $$
+  select exists (
+    select 1
+    from public.character_mercenary_den_share s
+    where s.registration_id = reg_id
+      and public.share_audience_matches(s.corporation_ids, s.alliance_ids, s.secret)
+  );
+$$;
+
+grant execute on function public.my_alliance_ids() to authenticated;
+grant execute on function public.my_corporation_ids() to authenticated;
+grant execute on function public.mercenary_den_shared_with_caller(uuid) to authenticated;
 
 -- Members of the audience read the share rows aimed at them — the array/anon
 -- form every Revision 3 share table uses. This is also what keeps the
@@ -2084,7 +2576,6 @@ create policy "Authenticated soft-delete own enemy den intel"
     reporter_id in (select id from public.registration where user_id = (select auth.uid()))
     or (reporter_id is null and created_by = (select auth.uid()))
   );
-
 
 grant select, insert, update, delete on public.mercenary_den_enemy_intel to authenticated;
 grant all                    on public.mercenary_den_enemy_intel to service_role;
@@ -2496,85 +2987,6 @@ create policy "Everyone reads industry indexes"
 
 grant select on public.industry_system_index to anon, authenticated;
 grant all    on public.industry_system_index to service_role;
-
--- ── alliance / corporation ────────────────────────────────────────────────
--- Universal id→name directories, not siloed by user — the same shape as
--- industry_system_index: whoever's data we're extracting, we all share one
--- copy. Populated whenever an alliance/corp is seen anywhere (a linked
--- character's own corp/alliance, corpmates, structure owners, wallet/journal
--- counterparties, ...), not just for corps/alliances a user has registered.
-create table public.alliance (
-  alliance_id bigint primary key,
-  -- Nullable: the character-directory job records the id from an affiliation
-  -- pull and backfills the name from a bulk universe/names lookup, which may lag
-  -- a run. A directory keyed by id shouldn't drop the id when the name misses.
-  name text,
-  updated_at timestamptz not null default now()
-);
-
-alter table public.alliance enable row level security;
-create policy "Everyone reads alliances"
-  on public.alliance
-  for select
-  to anon, authenticated
-  using (true);
-
-grant select on public.alliance to anon, authenticated;
-grant all    on public.alliance to service_role;
-
-create table public.corporation (
-  corporation_id bigint primary key,
-  name text,   -- nullable for the same reason as alliance.name (above)
-  alliance_id bigint references public.alliance (alliance_id),
-  updated_at timestamptz not null default now()
-);
-create index corporation_alliance_id_idx on public.corporation (alliance_id);
-
-alter table public.corporation enable row level security;
-create policy "Everyone reads corporations"
-  on public.corporation
-  for select
-  to anon, authenticated
-  using (true);
-
-grant select on public.corporation to anon, authenticated;
-grant all    on public.corporation to service_role;
-
--- ── character (directory) ─────────────────────────────────────────────────
--- World-readable directory of EVE characters: public identity only (name,
--- corporation, alliance) plus the registration uuid the extract tables key
--- owners by. This is the "character" table in docs/sharing-layer/design.md;
--- named character_directory because "character" is a SQL reserved word, and to
--- stay distinct from the character_* extract tables (owned data). It carries NO
--- user_id — that would let anyone correlate a user's alts — so it can be public
--- while registration (the account binding) stays owner-only, letting the sharing
--- layer resolve a shared row's owner via a plain RLS join instead of a SECURITY
--- DEFINER bridge. Populated by the character-directory extract job (which also
--- fills corporation.alliance_id and the alliance/corporation name rows from the
--- same affiliation pull).
-create table public.character_directory (
-  character_id bigint primary key,
-  name text,
-  corporation_id bigint,
-  alliance_id bigint,
-  -- The registration this character is linked to, if any (unique: a character
-  -- links to at most one account). Extract tables key owners by registration
-  -- uuid, so this is the join back to a public name/corp/alliance. on delete set
-  -- null keeps the public directory row when an account unlinks the character.
-  registration_id uuid unique references public.registration (id) on delete set null,
-  updated_at timestamptz not null default now()
-);
-create index character_directory_corporation_id_idx on public.character_directory (corporation_id);
-
-alter table public.character_directory enable row level security;
-create policy "Everyone reads the character directory"
-  on public.character_directory
-  for select
-  to anon, authenticated
-  using (true);
-
-grant select on public.character_directory to anon, authenticated;
-grant all    on public.character_directory to service_role;
 
 -- ── character_fitting_share: audience + widening policies ─────────────────
 -- Placed after character_directory (not beside the share table) because these
@@ -3182,6 +3594,29 @@ as $$
 $$;
 
 grant execute on function public.corp_assets(uuid[]) to service_role;
+
+-- ── universe_structure ────────────────────────────────────────────────────
+-- ESI /universe/structures/{id}, written by the universe-structures job: cache
+-- of player Upwell structure details (name, system) resolved from the
+-- authenticated endpoint. Lets the assets UI show a name/system for structures
+-- that aren't our own corp's (those live in corp_structure).
+create table public.universe_structure (
+  structure_id bigint primary key,
+  name text,
+  system_id bigint,
+  type_id bigint,
+  resolved_at timestamptz not null default now()
+);
+
+alter table public.universe_structure enable row level security;
+create policy "Authenticated read universe_structure"
+  on public.universe_structure
+  for select
+  to authenticated
+  using (true);
+
+grant select on public.universe_structure to authenticated;
+grant all    on public.universe_structure to service_role;
 
 -- ── corp_blueprint_over_time ──────────────────────────────────────────────
 -- ESI /corporations/{id}/blueprints/, written by the corp-blueprints job. SCD
@@ -3809,29 +4244,6 @@ create policy "Authenticated read character_affiliation"
 grant select on public.character_affiliation to authenticated;
 grant all    on public.character_affiliation to service_role;
 
--- ── universe_structure ────────────────────────────────────────────────────
--- ESI /universe/structures/{id}, written by the universe-structures job: cache
--- of player Upwell structure details (name, system) resolved from the
--- authenticated endpoint. Lets the assets UI show a name/system for structures
--- that aren't our own corp's (those live in corp_structure).
-create table public.universe_structure (
-  structure_id bigint primary key,
-  name text,
-  system_id bigint,
-  type_id bigint,
-  resolved_at timestamptz not null default now()
-);
-
-alter table public.universe_structure enable row level security;
-create policy "Authenticated read universe_structure"
-  on public.universe_structure
-  for select
-  to authenticated
-  using (true);
-
-grant select on public.universe_structure to authenticated;
-grant all    on public.universe_structure to service_role;
-
 -- ── user_settings ─────────────────────────────────────────────────────────
 -- Per-user preferences. `enabled_scopes` is the set of ESI OAuth scopes the
 -- user has opted into requesting when they add a character; an absent row means
@@ -4156,416 +4568,3 @@ create policy "Users read own GICE link"
 
 grant select on public.gice_account to authenticated;
 grant all    on public.gice_account to service_role;
-
--- ── SDE mirror ───────────────────────────────────────────────────────────────────
--- Nightly-refreshed mirror of CCP's official Static Data Export, populated by
--- the `sde-mirror` Vercel Workflow (src/workflows/sdeMirror.ts /
--- src/jobs/sdeMirror.js, scheduled 12:21 UTC). One sde_<stem> table per JSONL
--- file in the export, minted at ingest via ensure_sde_mirror_table(); the
--- app-critical ones are pre-created so the views exist before the first run.
--- Readable by anyone (RLS with a bare SELECT policy, SELECT-only grants — no
--- write policies or grants for anon/authenticated); only the service-role
--- ingest writes.
-
-create extension if not exists pg_trgm with schema extensions;
-
--- Supabase enables pg_graphql by default and `graphql_public` is an exposed
--- schema, so /graphql/v1 needs it present; without it the endpoint answers
--- every query with "pg_graphql extension is not enabled." Declared here so a
--- rebuilt database matches the exposed-schema list (see the header note).
-create extension if not exists pg_graphql;
-
--- Create (or align) one SDE mirror table. SECURITY DEFINER so the ingest can
--- call it over PostgREST RPC; execute is service-role only, the stem is
--- regex-validated, and all DDL goes through format('%I'), so the service role
--- can only ever mint read-only sde_* mirror tables of this exact shape.
---
--- Every step is guarded by a catalog lookup so a table that is already correct
--- costs zero DDL. sde-mirror calls this once per JSONL file, so an unguarded
--- body re-applies the whole shape ~560 times a night across 80 tables — and
--- ALTER TABLE ... ENABLE ROW LEVEL SECURITY and CREATE POLICY each take an
--- ACCESS EXCLUSIVE lock on a table the app reads on every page hit. It also
--- bumps pg_graphql's schema version (its ddl_command_end trigger increments
--- unconditionally, without checking whether anything reflected changed),
--- invalidating the cached GraphQL schema each time.
---
--- The policy check compares the full shape rather than just the name, so a
--- policy that has drifted by hand is still dropped and recreated — preserving
--- the self-healing the old unconditional drop-and-recreate gave for free.
-create or replace function public.ensure_sde_mirror_table(p_stem text, p_key_type text default 'bigint')
-returns void
-language plpgsql
-security definer
-set search_path = ''
-as $$
-declare
-  v_table text;
-  v_oid oid;
-begin
-  if p_stem !~ '^[a-z][a-z0-9_]{0,58}$' then
-    raise exception 'invalid SDE mirror table stem: %', p_stem;
-  end if;
-  if p_key_type not in ('bigint', 'text') then
-    raise exception 'invalid SDE mirror key type: %', p_key_type;
-  end if;
-  v_table := 'sde_' || p_stem;
-  v_oid := to_regclass('public.' || quote_ident(v_table));
-
-  if v_oid is null then
-    execute format(
-      'create table public.%I (_key %s primary key, data jsonb not null, sde_build bigint not null)',
-      v_table,
-      p_key_type
-    );
-    v_oid := to_regclass('public.' || quote_ident(v_table));
-  end if;
-
-  if not exists (
-    select 1 from pg_catalog.pg_class c where c.oid = v_oid and c.relrowsecurity
-  ) then
-    execute format('alter table public.%I enable row level security', v_table);
-  end if;
-
-  if not exists (
-    select 1
-    from pg_catalog.pg_policy p
-    where p.polrelid = v_oid
-      and p.polname = 'Anyone reads SDE data'
-      and p.polcmd = 'r'
-      and p.polpermissive
-      and p.polroles = '{0}'::oid[]
-      and pg_catalog.pg_get_expr(p.polqual, p.polrelid) = 'true'
-  ) then
-    execute format('drop policy if exists "Anyone reads SDE data" on public.%I', v_table);
-    execute format('create policy "Anyone reads SDE data" on public.%I for select using (true)', v_table);
-  end if;
-
-  if not (
-    pg_catalog.has_table_privilege('anon', v_oid, 'select')
-    and pg_catalog.has_table_privilege('authenticated', v_oid, 'select')
-  ) then
-    execute format('grant select on public.%I to anon, authenticated', v_table);
-  end if;
-
-  -- The schema's default privileges hand new tables ALL to anon/authenticated;
-  -- claw the write privileges back so the mirror is read-only at the grant
-  -- layer too, not just via the missing write policies.
-  if pg_catalog.has_table_privilege('anon', v_oid, 'insert')
-     or pg_catalog.has_table_privilege('anon', v_oid, 'update')
-     or pg_catalog.has_table_privilege('anon', v_oid, 'delete')
-     or pg_catalog.has_table_privilege('authenticated', v_oid, 'insert')
-     or pg_catalog.has_table_privilege('authenticated', v_oid, 'update')
-     or pg_catalog.has_table_privilege('authenticated', v_oid, 'delete') then
-    execute format('revoke insert, update, delete on public.%I from anon, authenticated', v_table);
-  end if;
-
-  if not (
-    pg_catalog.has_table_privilege('service_role', v_oid, 'select')
-    and pg_catalog.has_table_privilege('service_role', v_oid, 'insert')
-    and pg_catalog.has_table_privilege('service_role', v_oid, 'update')
-    and pg_catalog.has_table_privilege('service_role', v_oid, 'delete')
-  ) then
-    execute format('grant select, insert, update, delete on public.%I to service_role', v_table);
-  end if;
-end
-$$;
-
-revoke execute on function public.ensure_sde_mirror_table(text, text) from public, anon, authenticated;
-grant execute on function public.ensure_sde_mirror_table(text, text) to service_role;
-
--- Pre-create the tables the app-facing views project from.
-select public.ensure_sde_mirror_table(stem)
-from unnest(
-  array['types', 'groups', 'categories', 'map_solar_systems', 'map_constellations', 'map_regions',
-        'npc_stations', 'blueprints', 'map_planets']
-) as stem;
-
--- One row per SDE build the ingest has seen; completed_at set only when every
--- file landed, commit_sha records which code deployment produced that mirror.
--- The nightly run short-circuits (a ~5 s no-op) only when CCP's current build
--- already has a completed row, produced by the currently-deployed commit, and
--- less than 7 days old — so a new SDE build, a new deployment (transform
--- change), or 7-day staleness each force a full re-ingest.
-create table public.sde_mirror_state (
-  build_number bigint primary key,
-  started_at timestamptz not null default now(),
-  completed_at timestamptz,
-  commit_sha text
-);
-alter table public.sde_mirror_state enable row level security;
-create policy "Anyone reads SDE data" on public.sde_mirror_state for select using (true);
-grant select on public.sde_mirror_state to anon, authenticated;
-revoke insert, update, delete on public.sde_mirror_state from anon, authenticated;
-grant select, insert, update, delete on public.sde_mirror_state to service_role;
-
--- NPC station display names. The SDE carries a station's structure (system,
--- type, owning corp, operation) but not its name — that's generated in-game
--- from those pieces — so the ingest resolves names via ESI /universe/names/
--- into this side table. Never swept by build: a failed ESI resolve degrades
--- to the previous run's names rather than an empty table.
-create table public.sde_npc_station_name (
-  station_id bigint primary key,
-  name text not null,
-  updated_at timestamptz not null default now()
-);
-alter table public.sde_npc_station_name enable row level security;
-create policy "Anyone reads SDE data" on public.sde_npc_station_name for select using (true);
-grant select on public.sde_npc_station_name to anon, authenticated;
-revoke insert, update, delete on public.sde_npc_station_name from anon, authenticated;
-grant select, insert, update, delete on public.sde_npc_station_name to service_role;
-
--- Storage for the eveship.fit protobuf data (the 6 files @eveshipfit/react's
--- EveDataProvider reads). The sde-mirror workflow encodes the .pb2 from the
--- sde_* mirror after each SDE build and upserts them here (src/jobs/esfData.js),
--- so the ship-fitting data refreshes when the SDE changes without a redeploy.
--- `data` is the base64-encoded protobuf bytes (text moves through PostgREST far
--- more simply than bytea; the serving route base64-decodes it). Public read
--- (non-sensitive static game data, same as the sde_* mirror); writes are
--- service-role only (the workflow).
-create table public.esf_data (
-  name text primary key,
-  data text not null,
-  sde_build bigint not null,
-  updated_at timestamptz not null default now()
-);
-alter table public.esf_data enable row level security;
-create policy "Everyone reads esf data" on public.esf_data for select to anon, authenticated using (true);
-grant select on public.esf_data to anon, authenticated;
-grant all    on public.esf_data to service_role;
-
--- The industry-planning spreadsheet's static CSVs (StaticInputs / StaticOutputs /
--- invention / types, in both twines and miros label modes), derived from the
--- sde_* mirror by the sde-mirror workflow's encodeSheets step (src/jobs/sheetCsv.js
--- -> encodeSheetCsv() in src/buildSheetCsv.js) after each SDE build, and served at
--- /sheets/[file] for Google Sheets =IMPORTDATA(). `data` is the CSV text itself
--- (no base64: CSV is already text, unlike esf_data's binary protobufs). Public
--- read (SDE-derived, no player data, identical for every caller); writes are
--- service-role only (the workflow).
-create table public.sheet_csv (
-  name text primary key,
-  data text not null,
-  sde_build bigint not null,
-  updated_at timestamptz not null default now()
-);
-alter table public.sheet_csv enable row level security;
-create policy "Everyone reads sheet csv" on public.sheet_csv for select to anon, authenticated using (true);
-grant select on public.sheet_csv to anon, authenticated;
-grant all    on public.sheet_csv to service_role;
-
--- Trigram indexes backing the ILIKE '%…%' in sde_search_type/sde_search_system.
-create index sde_types_name_trgm on public.sde_types
-  using gin ((data -> 'name' ->> 'en') extensions.gin_trgm_ops);
-create index sde_map_solar_systems_name_trgm on public.sde_map_solar_systems
-  using gin ((data -> 'name' ->> 'en') extensions.gin_trgm_ops);
-
--- ── App-shaped projections ──────────────────────────────────────────────────
--- The tuple shapes the app's SDE loaders (src/sde*.ts) use today, as views
--- over the raw jsonb mirror — the JOIN targets for the loader cutover and for
--- pushing name resolution into the asset/search functions later.
-
--- Published, named types with their group/category — mirrors buildSde.js's
--- buildTypes() cut. group_name/category_name added for the MCP exploration
--- tools (migration 20260723000000_sde_taxonomy_views); race_id/meta_group_id
--- for the /fitting ship matrix (migration 20260728120000_sde_type_race_meta).
-create view public.sde_published_type
-with (security_invoker = true) as
-select
-  t._key as type_id,
-  t.data -> 'name' ->> 'en' as name,
-  (t.data ->> 'groupID')::bigint as group_id,
-  (g.data ->> 'categoryID')::bigint as category_id,
-  g.data -> 'name' ->> 'en' as group_name,
-  c.data -> 'name' ->> 'en' as category_name,
-  (t.data ->> 'raceID')::bigint as race_id,
-  (t.data ->> 'metaGroupID')::bigint as meta_group_id,
-  -- m³ per unit (migration 20260804000000). Assembled singletons carry their
-  -- assembled volume — the SDE has no packaged figure for them.
-  (t.data ->> 'volume')::double precision as volume
-from public.sde_types t
-left join public.sde_groups g on g._key = (t.data ->> 'groupID')::bigint
-left join public.sde_categories c on c._key = (g.data ->> 'categoryID')::bigint
-where (t.data ->> 'published')::boolean
-  and coalesce(trim(t.data -> 'name' ->> 'en'), '') <> '';
-
--- Known-space systems (30M id band): wormhole/abyssal systems never appear in
--- the industry cost-index feed — mirrors buildSde.js's buildSystems() cut. The
--- constellation/region columns come from migration 20260719120000.
-create view public.sde_kspace_system
-with (security_invoker = true) as
-select
-  s._key as system_id,
-  s.data -> 'name' ->> 'en' as name,
-  (s.data ->> 'securityStatus')::real as security,
-  c._key as constellation_id,
-  c.data -> 'name' ->> 'en' as constellation_name,
-  r._key as region_id,
-  r.data -> 'name' ->> 'en' as region_name
-from public.sde_map_solar_systems s
-left join public.sde_map_constellations c on c._key = (s.data ->> 'constellationID')::bigint
-left join public.sde_map_regions r on r._key = (c.data ->> 'regionID')::bigint
-where s._key >= 30000000
-  and s._key < 31000000
-  and coalesce(trim(s.data -> 'name' ->> 'en'), '') <> '';
-
--- NPC stations joined to their ESI-resolved display names.
-create view public.sde_station
-with (security_invoker = true) as
-select
-  s._key as station_id,
-  n.name,
-  (s.data ->> 'solarSystemID')::bigint as system_id
-from public.sde_npc_stations s
-join public.sde_npc_station_name n on n.station_id = s._key;
-
--- Planets with their system name (planets carry no display name in the SDE;
--- consumers derive "<system> <roman(celestial_index)>"). security + region_*
--- added for the MCP exploration tools (migration 20260723000000).
-create view public.sde_planet
-with (security_invoker = true) as
-select
-  p._key as planet_id,
-  (p.data ->> 'solarSystemID')::bigint as system_id,
-  (p.data ->> 'celestialIndex')::int as celestial_index,
-  (p.data ->> 'typeID')::bigint as type_id,
-  sys.data -> 'name' ->> 'en' as system_name,
-  (sys.data ->> 'securityStatus')::real as security,
-  r._key as region_id,
-  r.data -> 'name' ->> 'en' as region_name
-from public.sde_map_planets p
-left join public.sde_map_solar_systems sys on sys._key = (p.data ->> 'solarSystemID')::bigint
-left join public.sde_map_constellations con on con._key = (sys.data ->> 'constellationID')::bigint
-left join public.sde_map_regions r on r._key = (con.data ->> 'regionID')::bigint;
-
--- Groups with their category, and categories/regions — the taxonomy + universe
--- browsers for the MCP exploration tools (migration 20260723000000).
-create view public.sde_group
-with (security_invoker = true) as
-select
-  g._key as group_id,
-  g.data -> 'name' ->> 'en' as name,
-  (g.data ->> 'categoryID')::bigint as category_id,
-  c.data -> 'name' ->> 'en' as category_name,
-  (g.data ->> 'published')::boolean as published
-from public.sde_groups g
-left join public.sde_categories c on c._key = (g.data ->> 'categoryID')::bigint;
-
-create view public.sde_category
-with (security_invoker = true) as
-select
-  _key as category_id,
-  data -> 'name' ->> 'en' as name,
-  (data ->> 'published')::boolean as published
-from public.sde_categories;
-
--- K-space regions (10M id band), mirroring sde_kspace_system's exclusion of
--- wormhole (11M) and abyssal (12M+) space; Pochven is in-band.
-create view public.sde_region
-with (security_invoker = true) as
-select
-  _key as region_id,
-  data -> 'name' ->> 'en' as name
-from public.sde_map_regions
-where _key >= 10000000
-  and _key < 11000000
-  and coalesce(trim(data -> 'name' ->> 'en'), '') <> '';
-
-grant select on public.sde_published_type, public.sde_kspace_system, public.sde_station, public.sde_planet,
-  public.sde_group, public.sde_category, public.sde_region
-  to anon, authenticated, service_role;
-revoke insert, update, delete on public.sde_published_type, public.sde_kspace_system, public.sde_station,
-  public.sde_planet, public.sde_group, public.sde_category, public.sde_region from anon, authenticated;
-
--- Blueprint "consume materials → produce output" bill, unnested from the
--- activities jsonb once per ingest rather than per query: manufacturing (1)
--- and reactions (11) only, one row per (blueprint, activity, product) —
--- mirrors buildSde.js's buildBlueprints() cut. Materialized because the
--- lateral unnest over every blueprint is too slow to run per lookup; the
--- ingest's finalize step refreshes it via sde_refresh_views(). Created
--- populated-but-empty (sde_blueprints has no rows yet), which is what lets
--- the concurrent refresh below work on first run.
-create materialized view public.sde_blueprint_product as
-select
-  b._key as blueprint_type_id,
-  a.activity_id,
-  (prod ->> 'typeID')::bigint as product_type_id,
-  (prod ->> 'quantity')::bigint as product_quantity,
-  coalesce(a.activity -> 'materials', '[]'::jsonb) as materials
-from public.sde_blueprints b
-cross join lateral (
-  values (1, b.data -> 'activities' -> 'manufacturing'), (11, b.data -> 'activities' -> 'reaction')
-) as a (activity_id, activity)
-cross join lateral jsonb_array_elements(a.activity -> 'products') as prod
-where jsonb_typeof(a.activity -> 'products') = 'array';
-
--- Unique index required by REFRESH MATERIALIZED VIEW CONCURRENTLY.
-create unique index sde_blueprint_product_uq
-  on public.sde_blueprint_product (product_type_id, blueprint_type_id, activity_id);
-create index sde_blueprint_product_bp_idx on public.sde_blueprint_product (blueprint_type_id);
--- jsonb_path_ops GIN so "what consumes type X" is a @> containment probe.
-create index sde_blueprint_product_materials_idx
-  on public.sde_blueprint_product using gin (materials jsonb_path_ops);
-
--- Materialized views can't carry RLS; SELECT-only grants give the same
--- anyone-can-read, nobody-can-write access as the tables above.
-grant select on public.sde_blueprint_product to anon, authenticated, service_role;
-
-create or replace function public.sde_refresh_views()
-returns void
-language plpgsql
-security definer
-set search_path = ''
-as $$
-begin
-  refresh materialized view concurrently public.sde_blueprint_product;
-end
-$$;
-
-revoke execute on function public.sde_refresh_views() from public, anon, authenticated;
-grant execute on function public.sde_refresh_views() to service_role;
-
--- ── Search ──────────────────────────────────────────────────────────────────
--- Case-insensitive substring search ranked exactly like src/sdeTypes.ts's
--- searchSdeTypesAll: coverage = query length / name length (a tighter match
--- ranks above a longer name containing the same term), tie-broken by shorter
--- name then id. ILIKE metacharacters in the query are escaped so they match
--- literally, mirroring the loaders' plain indexOf semantics.
-
-create or replace function public.sde_search_type(q text, lim int default 25)
-returns table (type_id bigint, name text, group_id bigint, category_id bigint, coverage real)
-language sql
-stable
-set search_path = ''
-as $$
-  select
-    t.type_id,
-    t.name,
-    t.group_id,
-    t.category_id,
-    char_length(btrim(q))::real / char_length(t.name) as coverage
-  from public.sde_published_type t
-  where btrim(q) <> ''
-    and t.name ilike '%' || replace(replace(replace(btrim(q), '\', '\\'), '%', '\%'), '_', '\_') || '%'
-  order by coverage desc, char_length(t.name), t.type_id
-  limit least(greatest(lim, 1), 1000)
-$$;
-
-create or replace function public.sde_search_system(q text, lim int default 25)
-returns table (system_id bigint, name text, security real, coverage real)
-language sql
-stable
-set search_path = ''
-as $$
-  select
-    s.system_id,
-    s.name,
-    s.security,
-    char_length(btrim(q))::real / char_length(s.name) as coverage
-  from public.sde_kspace_system s
-  where btrim(q) <> ''
-    and s.name ilike '%' || replace(replace(replace(btrim(q), '\', '\\'), '%', '\%'), '_', '\_') || '%'
-  order by coverage desc, char_length(s.name), s.system_id
-  limit least(greatest(lim, 1), 1000)
-$$;
-
-grant execute on function public.sde_search_type(text, int) to anon, authenticated, service_role;
-grant execute on function public.sde_search_system(text, int) to anon, authenticated, service_role;
