@@ -4,6 +4,8 @@ import { redirect } from 'next/navigation'
 import { getSdePlanets } from '@/sdePlanets'
 import { createClient } from '@/utils/supabase/server'
 
+import { establishedUser } from '../account/lib/establishedUser'
+
 import { Countdown } from './countdown'
 import CopyDiscordPing from './copyDiscordPing'
 import { TEMPERATE_PLANETS } from './data'
@@ -56,8 +58,8 @@ const colorOf = (row: MergedRow): NodeColor | null => {
 const MercenaryDensPage = async () => {
   const supabase = await createClient()
 
-  const { data, error: authError } = await supabase.auth.getUser()
-  if (authError || !data?.user) {
+  const user = await establishedUser(supabase)
+  if (!user) {
     redirect('/')
   }
 
@@ -157,7 +159,7 @@ const MercenaryDensPage = async () => {
     notes: row.notes,
     reportedBy: row.reported_by,
     createdAt: row.created_at,
-    mine: row.created_by === data.user.id,
+    mine: row.created_by === user.id,
   }))
   const defaultReportedBy = [...ownRegById.values()][0]?.name ?? ''
   // Reinforcement time input defaults to 24h out (a den reinforces for roughly a

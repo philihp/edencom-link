@@ -2,6 +2,8 @@ import { redirect } from 'next/navigation'
 
 import { createClient } from '@/utils/supabase/server'
 
+import { establishedUser } from '../../account/lib/establishedUser'
+
 import { approveAuthorization, denyAuthorization } from './actions'
 
 // OAuth 2.1 consent page. Supabase Auth (acting as the authorization server
@@ -17,8 +19,8 @@ const ConsentPage = async ({ searchParams }: { searchParams: Promise<{ authoriza
   }
 
   const supabase = await createClient()
-  const { data: auth, error: authError } = await supabase.auth.getUser()
-  if (authError || !auth?.user) {
+  const user = await establishedUser(supabase)
+  if (!user) {
     redirect(`/account/login?next=${encodeURIComponent(`/oauth/consent?authorization_id=${authorizationId}`)}`)
   }
 

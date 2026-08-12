@@ -1,16 +1,15 @@
 import { Suspense } from 'react'
 import { redirect } from 'next/navigation'
 
-import { createClient } from '@/utils/supabase/server'
+import { establishedUser } from '../lib/establishedUser'
 
 import RegisterForm from './registerForm'
 
 // useSearchParams() in the form requires a Suspense boundary for prerender.
+// Only a member is sent away — an account still mid-flow (anonymous, no
+// character yet) belongs here, since this page is where it becomes real.
 const RegisterPage = async () => {
-  const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const user = await establishedUser()
   if (user) {
     redirect('/')
   }

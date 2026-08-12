@@ -4,6 +4,8 @@ import { notFound, redirect } from 'next/navigation'
 import { FIT_UI_FLAG, hasFlag } from '@/flags'
 import { getSdeType } from '@/sdeTypes'
 import { createClient } from '@/utils/supabase/server'
+
+import { establishedUser } from '../../account/lib/establishedUser'
 import { toEsiFit } from '../../ship/[itemId]/esfFit'
 import { SHIP_CATEGORY_ID, fittingOrder } from '../../ship/[itemId]/shipRows'
 import { FitDebugDynamic } from './fitDebugDynamic'
@@ -39,11 +41,11 @@ const ItemFitPage = async ({ params }: { params: Promise<{ itemId: string }> }) 
   const { itemId } = await params
 
   const supabase = await createClient()
-  const { data: auth, error: authError } = await supabase.auth.getUser()
-  if (authError || !auth?.user) redirect('/')
+  const user = await establishedUser(supabase)
+  if (!user) redirect('/')
   // A visitor without the flag gets the same answer as a visitor to a route
   // that doesn't exist.
-  if (!(await hasFlag(auth.user.id, FIT_UI_FLAG))) notFound()
+  if (!(await hasFlag(user.id, FIT_UI_FLAG))) notFound()
 
   // Both hangars probed at once, character wins — the same shape /ship uses,
   // minus everything this page doesn't render (owner, location, breadcrumb).

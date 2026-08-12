@@ -5,6 +5,8 @@ import { pluck, reduce, uniq } from 'ramda'
 import { createServiceClient } from '@/utils/supabase/service'
 import { createClient } from '@/utils/supabase/server'
 
+import { establishedUser } from '../../lib/establishedUser'
+
 import { isChancellor } from './chancellor'
 import FlagForm from './flagForm'
 import GrantForm from './grantForm'
@@ -13,13 +15,13 @@ import RevokeButton from './revokeButton'
 const ChancellorPage = async () => {
   const supabase = await createClient()
 
-  const { data: auth, error } = await supabase.auth.getUser()
-  if (error || !auth?.user) {
+  const user = await establishedUser(supabase)
+  if (!user) {
     redirect('/account/login')
   }
 
   // Gate: only Chancellors may view this page.
-  if (!(await isChancellor(auth.user.id))) {
+  if (!(await isChancellor(user.id))) {
     redirect('/account/settings')
   }
 
@@ -74,7 +76,7 @@ const ChancellorPage = async () => {
         {ids.map((id) => (
           <li key={id}>
             {labelFor(id)}
-            {id === auth.user.id && ' (you)'} <RevokeButton userId={id} self={id === auth.user.id} />
+            {id === user.id && ' (you)'} <RevokeButton userId={id} self={id === user.id} />
           </li>
         ))}
       </ul>

@@ -5,6 +5,8 @@ import { pluck, uniq } from 'ramda'
 import { createServiceClient } from '@/utils/supabase/service'
 import { createClient } from '@/utils/supabase/server'
 
+import { establishedUser } from '../lib/establishedUser'
+
 import { DateTime } from '../../DateTime'
 import { isChancellor } from '../settings/chancellor/chancellor'
 import { mainCharacterNameForUser, mainCharacterNamesForUsers } from '../lib/inviter'
@@ -15,8 +17,8 @@ import { earnedCount, unlockDate, weeksToUnlock } from './schedule'
 const InvitesPage = async () => {
   const supabase = await createClient()
 
-  const { data, error } = await supabase.auth.getUser()
-  if (error || !data?.user) {
+  const user = await establishedUser(supabase)
+  if (!user) {
     redirect('/account/login')
   }
 
@@ -37,7 +39,7 @@ const InvitesPage = async () => {
     .select('code, redeemed_by, redeemed_at, created_at')
     .order('created_at', { ascending: true })
 
-  const chancellor = await isChancellor(data.user.id)
+  const chancellor = await isChancellor(user.id)
 
   // Who invited this account: the code they redeemed names its creator. The user
   // can't read that row under RLS (it's the inviter's code), and the inviter's
@@ -48,7 +50,7 @@ const InvitesPage = async () => {
   const { data: redeemedCode } = await service
     .from('invite_code')
     .select('created_by')
-    .eq('redeemed_by', data.user.id)
+    .eq('redeemed_by', user.id)
     .maybeSingle()
   const inviterName = redeemedCode?.created_by ? await mainCharacterNameForUser(redeemedCode.created_by) : null
 

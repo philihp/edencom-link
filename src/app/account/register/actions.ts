@@ -36,8 +36,10 @@ export const lookupInvite = async (rawCode: string): Promise<InviteLookup> => {
 }
 
 // Registration is invite-only: the form must carry an unused invite code. We
-// validate and redeem it with the service role, since the registrant has no
-// Supabase session yet and so can't see invite_code rows under RLS.
+// validate and redeem it with the service role, since a registrant can't see
+// invite_code rows under RLS — not even the one they were sent. (Stage 2 of
+// docs/open-registration.md drops the requirement and converts the anonymous
+// account in place instead of minting a second one.)
 export const register = async (formData: FormData) => {
   await delay(5000)
 
@@ -66,8 +68,8 @@ export const register = async (formData: FormData) => {
     return { data, error }
   }
 
-  // Burn the code for the new account. Guard on it still being unredeemed so two
-  // simultaneous sign-ups can't share one code.
+  // Record the referral against the new account. Guard on the code still being
+  // unredeemed so two simultaneous sign-ups can't share one.
   await service
     .from('invite_code')
     .update({ redeemed_by: data.user.id, redeemed_at: new Date().toISOString() })

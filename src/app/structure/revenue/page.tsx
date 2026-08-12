@@ -2,6 +2,8 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 
 import { createClient } from '@/utils/supabase/server'
+
+import { establishedUser } from '../../account/lib/establishedUser'
 import { DateTime } from '../../DateTime'
 import { formatIskValue } from '../../isk'
 import { Name } from '../../names'
@@ -61,8 +63,8 @@ const RevenuePage = async ({ searchParams }: RevenueParams) => {
   const { day: dayParam } = await searchParams
   const supabase = await createClient()
 
-  const { data: auth, error: authError } = await supabase.auth.getUser()
-  if (authError || !auth?.user) {
+  const user = await establishedUser(supabase)
+  if (!user) {
     redirect('/')
   }
 

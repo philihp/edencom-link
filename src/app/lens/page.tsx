@@ -5,6 +5,8 @@ import { ShareDialog } from '@/app/asset/shareDialog'
 import { fetchShareAudiences, shareRowToState, type OwnRegistration } from '@/app/asset/shareData'
 import { LENS_FLAG, hasFlag } from '@/flags'
 import { createClient } from '@/utils/supabase/server'
+
+import { establishedUser } from '../account/lib/establishedUser'
 import { revokeLensShare, saveLensShare } from './actions'
 import { shortLensId } from './shortId'
 import { LensEditor } from './lensEditor'
@@ -20,18 +22,18 @@ export const dynamic = 'force-dynamic'
 const LensPage = async () => {
   const supabase = await createClient()
 
-  const { data: auth, error } = await supabase.auth.getUser()
-  if (error || !auth?.user) {
+  const user = await establishedUser(supabase)
+  if (!user) {
     redirect('/account/login')
   }
-  if (!(await hasFlag(auth.user.id, LENS_FLAG))) {
+  if (!(await hasFlag(user.id, LENS_FLAG))) {
     redirect('/')
   }
 
   // RLS also shows lenses others shared with the caller; the editor lists
   // only their own.
   const [{ data: lensRows }, { data: regs }] = await Promise.all([
-    supabase.from('lens').select('*').eq('user_id', auth.user.id).order('created_at'),
+    supabase.from('lens').select('*').eq('user_id', user.id).order('created_at'),
     supabase.from('registration').select('id, corporation_id'),
   ])
   const lenses = (lensRows ?? []) as LensRecord[]

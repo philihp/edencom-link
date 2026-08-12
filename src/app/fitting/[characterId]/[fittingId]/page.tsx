@@ -2,6 +2,8 @@ import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
 
 import { createClient } from '@/utils/supabase/server'
+
+import { establishedUser } from '../../../account/lib/establishedUser'
 import { createServiceClient } from '@/utils/supabase/service'
 import { ShipFitViewDynamic } from '../../../ship/[itemId]/shipFitViewDynamic'
 import { Name } from '../../../names'
@@ -43,9 +45,7 @@ const FittingDetailPage = async ({
   const { share } = await searchParams
 
   const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const user = await establishedUser(supabase)
   // Anonymous visitors may still open a signed share link; anyone else signs in.
   if (!user && !share) redirect('/')
 

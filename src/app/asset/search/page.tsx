@@ -7,6 +7,8 @@ import { getSdeTypes, searchSdeTypesAll } from '@/sdeTypes'
 import { BLUEPRINT_CATEGORY_ID } from '@/utils/sdeCategories'
 import { createClient } from '@/utils/supabase/server'
 
+import { establishedUser } from '../../account/lib/establishedUser'
+
 import { LinkSpinner } from '../../linkSpinner'
 import { fetchOwners } from '../../owners'
 import { resolveLocations, type LocationRef } from '../../resolveLocations'
@@ -80,8 +82,8 @@ const AssetSearchPage = async ({ searchParams }: { searchParams: Promise<{ q?: s
   const includeBlueprints = blueprints === '1'
 
   const supabase = await createClient()
-  const { data: auth, error: authError } = await supabase.auth.getUser()
-  if (authError || !auth?.user) {
+  const user = await establishedUser(supabase)
+  if (!user) {
     redirect('/')
   }
 

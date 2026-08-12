@@ -1,6 +1,8 @@
 import { redirect } from 'next/navigation'
 
 import { createClient } from '@/utils/supabase/server'
+
+import { establishedUser } from '../account/lib/establishedUser'
 import { fetchTypeNames } from '../typeNames'
 import { MarketView } from './marketView'
 import type { Sale } from './recentSales'
@@ -36,8 +38,8 @@ type CorpRow = {
 const MarketPage = async () => {
   const supabase = await createClient()
 
-  const { data, error: authError } = await supabase.auth.getUser()
-  if (authError || !data?.user) {
+  const user = await establishedUser(supabase)
+  if (!user) {
     redirect('/')
   }
 

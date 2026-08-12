@@ -3,6 +3,8 @@ import { redirect } from 'next/navigation'
 import { formatSecurity, getSdeSystems } from '@/sdeSystems'
 import { createClient } from '@/utils/supabase/server'
 
+import { establishedUser } from '../account/lib/establishedUser'
+
 import { fetchLatestSystemIndexes, fetchSystemIndexHistory, type Activity } from '../structure/industryIndex'
 import { SystemSearch } from './systemSearch'
 import { WatchedSystemsTable, type WatchedRow } from './watchedSystemsTable'
@@ -30,8 +32,8 @@ const IndexesPage = async ({ searchParams }: { searchParams: Promise<{ days?: st
 
   const supabase = await createClient()
 
-  const { data, error: authError } = await supabase.auth.getUser()
-  if (authError || !data?.user) {
+  const user = await establishedUser(supabase)
+  if (!user) {
     redirect('/')
   }
 

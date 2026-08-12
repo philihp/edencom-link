@@ -5,6 +5,8 @@ import { redirect } from 'next/navigation'
 
 import { createClient } from '@/utils/supabase/server'
 
+import { establishedUser } from '../account/lib/establishedUser'
+
 import { isChancellor } from '../account/settings/chancellor/chancellor'
 import { PER_CHARACTER_JOBS, dispatchJobForCharacters, dispatchSingleJob } from '../character/dispatchRefresh'
 import { jobEntry } from './registry'
@@ -20,10 +22,8 @@ import { jobEntry } from './registry'
 export const refreshCell = async (job: string, characterId: string | null) => {
   const supabase = await createClient()
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-  if (!user?.id) {
+  const user = await establishedUser(supabase)
+  if (!user) {
     redirect('/account/login')
   }
 

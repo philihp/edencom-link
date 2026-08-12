@@ -2411,8 +2411,33 @@ as $$
   );
 $$;
 
+-- "Is this a real account?" — our question, not Supabase's. An account starts as
+-- a Supabase anonymous user, minted when someone begins adding a character or
+-- signing up (docs/open-registration.md), so the `authenticated` role no longer
+-- means "a member" — it can also be an account still mid-flow. The flag can't simply be
+-- inverted either: an account whose only identity is an EVE SSO character stays
+-- is_anonymous = true forever (EVE SSO is not a Supabase identity — it writes a
+-- registration row), so the predicate is "Supabase considers it permanent, OR
+-- it owns a character". The TS twin is isEstablishedAccount() in
+-- src/app/account/lib/accountStatus.ts.
+--
+-- Invoker rights: the registration probe runs as the caller, whose policy is
+-- keyed to auth.uid(), so it can only see their own rows. auth.jwt() is null
+-- outside a request, reading as "not anonymous" — correct for the service role,
+-- which bypasses RLS anyway.
+create or replace function public.is_established_account()
+returns boolean
+language sql
+stable
+as $$
+  select
+    coalesce((select (auth.jwt() ->> 'is_anonymous')::boolean), false) is not true
+    or exists (select 1 from public.registration r where r.user_id = (select auth.uid()));
+$$;
+
 grant execute on function public.my_alliance_ids() to authenticated;
 grant execute on function public.my_corporation_ids() to authenticated;
+grant execute on function public.is_established_account() to authenticated;
 grant execute on function public.mercenary_den_shared_with_caller(uuid) to authenticated;
 
 -- Members of the audience read the share rows aimed at them — the array/anon
@@ -3609,11 +3634,13 @@ create table public.universe_structure (
 );
 
 alter table public.universe_structure enable row level security;
-create policy "Authenticated read universe_structure"
+-- Readable by any *established* account — a member, not an account still
+-- mid-flow on an anonymous session (see is_established_account() above).
+create policy "Established accounts read universe_structure"
   on public.universe_structure
   for select
   to authenticated
-  using (true);
+  using ((select public.is_established_account()));
 
 grant select on public.universe_structure to authenticated;
 grant all    on public.universe_structure to service_role;
@@ -4216,11 +4243,13 @@ create table public.universe_name (
 );
 
 alter table public.universe_name enable row level security;
-create policy "Authenticated read universe_name"
+-- Readable by any *established* account — a member, not an account still
+-- mid-flow on an anonymous session (see is_established_account() above).
+create policy "Established accounts read universe_name"
   on public.universe_name
   for select
   to authenticated
-  using (true);
+  using ((select public.is_established_account()));
 
 grant select on public.universe_name to authenticated;
 grant all    on public.universe_name to service_role;
@@ -4235,11 +4264,13 @@ create table public.character_affiliation (
 );
 
 alter table public.character_affiliation enable row level security;
-create policy "Authenticated read character_affiliation"
+-- Readable by any *established* account — a member, not an account still
+-- mid-flow on an anonymous session (see is_established_account() above).
+create policy "Established accounts read character_affiliation"
   on public.character_affiliation
   for select
   to authenticated
-  using (true);
+  using ((select public.is_established_account()));
 
 grant select on public.character_affiliation to authenticated;
 grant all    on public.character_affiliation to service_role;
@@ -4309,13 +4340,18 @@ grant select, insert, update, delete on public.watched_system to authenticated;
 grant all                            on public.watched_system to service_role;
 
 -- ── invite_code ───────────────────────────────────────────────────────────
--- Invite-only registration. A new account can only be created by redeeming an
--- unused code, and users earn the ability to mint codes over time (the first a
--- week after adding their first character via SSO, then after 2, 4, 8, … weeks
--- — the gap doubling each time; see src/app/account/invite).
+-- Invite-only registration (open registration is staged in
+-- docs/open-registration.md; the gate is still on). A new account can only be
+-- created by redeeming an unused code, and users earn the ability to mint codes
+-- over time (the first a week
+-- after adding their first character via SSO, then after 2, 4, 8, … weeks — the
+-- gap doubling each time; see src/app/account/invite).
 -- `created_by` is null for seed codes inserted by hand to bootstrap the system.
--- `redeemed_by` is the account that signed up with the code; null while the code
--- is still "to give out". `is_chancellor` marks a code that confers Chancellor
+-- `redeemed_by` is the account the code referred, unique so an account carries
+-- at most one referral (docs/open-registration.md). Null while the code is
+-- still "to give out", and `on delete set null` returns it to the pool when a
+-- never-converted anonymous account is swept.
+-- `is_chancellor` marks a code that confers Chancellor
 -- powers: the account that redeems such a code is a Chancellor (see
 -- src/app/account/chancellor), which lets it mint invite codes without waiting on
 -- the earning schedule. Set only by the service role — authenticated users have a
@@ -4332,6 +4368,10 @@ create table public.invite_code (
   is_chancellor boolean not null default false
 );
 create index invite_code_created_by_idx on public.invite_code (created_by);
+-- One referral per account. Partial, because the unredeemed pool is all nulls.
+create unique index invite_code_redeemed_by_key
+  on public.invite_code (redeemed_by)
+  where redeemed_by is not null;
 
 alter table public.invite_code enable row level security;
 -- Users may read the codes they own; minting and redeeming both run server-side
@@ -4568,3 +4608,37 @@ create policy "Users read own GICE link"
 
 grant select on public.gice_account to authenticated;
 grant all    on public.gice_account to service_role;
+
+-- ── anon-sweep ────────────────────────────────────────────────────────────
+-- Anonymous accounts that never became anything: older than the cutoff, owning
+-- no character, no GICE link, and carrying no Supabase identity beyond the
+-- anonymous one. The last two conditions are why this can't be a plain
+-- is_anonymous filter (see is_established_account()). Feeds the nightly
+-- anon-sweep job (src/jobs/anonSweep.js), which deletes what it names.
+--
+-- SECURITY DEFINER because auth.users and auth.identities aren't reachable
+-- from PostgREST; service-role-only, and the revoke is load-bearing — the
+-- default privileges at the top of this file hand every function to
+-- anon/authenticated.
+create or replace function public.sweepable_anonymous_users(
+  older_than interval default interval '30 days',
+  max_rows integer default 500
+)
+returns setof uuid
+language sql
+security definer
+set search_path = public, auth, pg_temp
+as $$
+  select u.id
+  from auth.users u
+  where u.is_anonymous
+    and u.created_at < now() - older_than
+    and not exists (select 1 from public.registration r where r.user_id = u.id)
+    and not exists (select 1 from public.gice_account g where g.user_id = u.id)
+    and not exists (select 1 from auth.identities i where i.user_id = u.id and i.provider <> 'anonymous')
+  order by u.created_at
+  limit max_rows;
+$$;
+
+revoke execute on function public.sweepable_anonymous_users(interval, integer) from public, anon, authenticated;
+grant   execute on function public.sweepable_anonymous_users(interval, integer) to service_role;

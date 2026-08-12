@@ -2,6 +2,8 @@ import { redirect } from 'next/navigation'
 
 import { createClient } from '@/utils/supabase/server'
 
+import { establishedUser } from '../lib/establishedUser'
+
 import { isSsoPlaceholderEmail } from '../lib/ssoEmail'
 import EmailForm from './emailForm'
 
@@ -11,9 +13,7 @@ import EmailForm from './emailForm'
 // unlocks email/password login and password reset as a fallback.
 const EmailPage = async () => {
   const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const user = await establishedUser(supabase)
   if (!user) redirect('/account/login?next=/account/email')
 
   const placeholder = isSsoPlaceholderEmail(user.email)

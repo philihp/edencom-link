@@ -3,6 +3,8 @@ import { redirect } from 'next/navigation'
 
 import { createClient } from '@/utils/supabase/server'
 
+import { establishedUser } from '../lib/establishedUser'
+
 import { isChancellor } from './chancellor/chancellor'
 import { isSsoPlaceholderEmail } from '../lib/ssoEmail'
 import ApiToken from './apiToken'
@@ -15,8 +17,8 @@ const SettingsPage = async ({ searchParams }: { searchParams: Promise<{ gice?: s
   const { gice: giceParam } = await searchParams
   const supabase = await createClient()
 
-  const { data, error } = await supabase.auth.getUser()
-  if (error || !data?.user) {
+  const user = await establishedUser(supabase)
+  if (!user) {
     redirect('/account/login')
   }
 
@@ -27,9 +29,9 @@ const SettingsPage = async ({ searchParams }: { searchParams: Promise<{ gice?: s
     .order('is_main', { ascending: false })
     .order('name', { ascending: true })
   const mainId = characters?.find((c) => c.is_main)?.id ?? null
-  const chancellor = await isChancellor(data.user.id)
+  const chancellor = await isChancellor(user.id)
   const { data: giceAccount } = await supabase.from('gice_account').select('gice_id, name').maybeSingle()
-  const placeholderEmail = isSsoPlaceholderEmail(data.user.email)
+  const placeholderEmail = isSsoPlaceholderEmail(user.email)
   const { data: discordChannels } = await supabase
     .from('discord_channel')
     .select('id, guild_id, channel_id, guild_name, channel_name, created_at, disabled_at')
@@ -48,7 +50,7 @@ const SettingsPage = async ({ searchParams }: { searchParams: Promise<{ gice?: s
           </>
         ) : (
           <>
-            <strong>{data.user.email}</strong> — <Link href="/account/email">change</Link>
+            <strong>{user.email}</strong> — <Link href="/account/email">change</Link>
           </>
         )}
       </p>
