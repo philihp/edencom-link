@@ -15,7 +15,12 @@
 //
 // The Management API surface used here is documented at
 // https://supabase.com/docs/reference/api/v1-create-a-branch.
+import { readdir } from 'node:fs/promises'
+
 const MANAGEMENT_API = 'https://api.supabase.com'
+// Resolved from this file, not the cwd, so the diagnosis works wherever the
+// runner invokes node from.
+const MIGRATIONS_DIR = new URL('../../supabase/migrations/', import.meta.url)
 
 // Provisioning genuinely takes minutes: project create, then migrations.
 const READY_TIMEOUT_MS = 10 * 60 * 1000
@@ -96,23 +101,50 @@ const readBranch = async (parentRef: string, branchId: string): Promise<Branch> 
   return branch
 }
 
-// Supabase runs branch setup (clone → migrate → seed → deploy) as an "action
-// run", and its log says which migration failed and how. Without it a failure
-// reads only as MIGRATIONS_FAILED, which is useless in CI. Best-effort: a
-// failure to read the log must not replace the failure being reported.
-const setupLog = async (parentRef: string, branchId: string) => {
+const shrug = (error: unknown) => (error instanceof Error ? error.message : `${error}`)
+
+// Which migration broke. The branch reports how far it got, and the repo says
+// what comes next in filename order — so the first unapplied file IS the one
+// that failed. More reliable than the setup log, which is only sometimes
+// reachable, and it names a file you can open.
+const failedMigration = async (childRef: string) => {
   try {
-    const runs: { id: string; branch_id: string }[] = await management(`/v1/projects/${parentRef}/actions?limit=20`)
-    const run = runs.find((candidate) => candidate.branch_id === branchId)
-    if (!run) return '(no setup run found for this branch)'
-    const response = await fetch(`${MANAGEMENT_API}/v1/projects/${parentRef}/actions/${run.id}/logs`, {
+    const applied: { version: string }[] = await management(`/v1/projects/${childRef}/database/migrations`)
+    const versions = new Set(applied.map(({ version }) => version))
+    const files = (await readdir(MIGRATIONS_DIR)).filter((file) => file.endsWith('.sql')).sort()
+    const pending = files.filter((file) => !versions.has(file.split('_')[0]))
+    const howFar = `${applied.length} migration(s) applied, last ${applied.at(-1)?.version ?? 'none'}`
+    return pending.length === 0
+      ? `${howFar}; every migration in the repo applied (the failure is after migrate)`
+      : `${howFar}; first unapplied — the one that failed — is ${pending[0]}`
+  } catch (error) {
+    return `(could not list the branch's migrations: ${shrug(error)})`
+  }
+}
+
+// Supabase records branch setup (clone → migrate → seed → deploy) as an
+// "action run" whose log carries the Postgres error itself. The run is filed
+// under one of the two projects depending on how the branch was created, so
+// try both. Best-effort throughout: failing to read a log must never replace
+// the failure being reported.
+const setupLog = async (parentRef: string, childRef: string, branchId: string) => {
+  const runFor = async (ref: string) => {
+    const runs: { id: string; branch_id: string }[] = await management(`/v1/projects/${ref}/actions?limit=20`)
+    const run = runs.find((candidate) => candidate.branch_id === branchId) ?? runs[0]
+    return run ? { ref, id: run.id } : null
+  }
+
+  try {
+    const found = (await runFor(childRef).catch(() => null)) ?? (await runFor(parentRef).catch(() => null))
+    if (!found) return '(no setup run found for this branch)'
+    const response = await fetch(`${MANAGEMENT_API}/v1/projects/${found.ref}/actions/${found.id}/logs`, {
       headers: { authorization: `Bearer ${process.env.SUPABASE_ACCESS_TOKEN}` },
     })
-    const log = await response.text()
+    if (!response.ok) return `(setup log unavailable: ${response.status})`
     // Only the tail matters — the failing statement is at the end.
-    return `─ setup log (tail) ─\n${log.split('\n').slice(-40).join('\n')}`
+    return `─ setup log (tail) ─\n${(await response.text()).split('\n').slice(-40).join('\n')}`
   } catch (error) {
-    return `(setup log unavailable: ${error instanceof Error ? error.message : error})`
+    return `(setup log unavailable: ${shrug(error)})`
   }
 }
 
@@ -133,7 +165,8 @@ const awaitHealthy = async (parentRef: string, branchId: string, deadline: numbe
   const where = `branch ${branch.name} (health ${detail.status}, setup ${setup ?? 'n/a'})`
 
   if (setup && !SETUP_PENDING.includes(setup)) {
-    throw new Error(`${where} failed to set up\n${await setupLog(parentRef, branchId)}`)
+    const [which, log] = await Promise.all([failedMigration(detail.ref), setupLog(parentRef, detail.ref, branchId)])
+    throw new Error(`${where} failed to set up\n${which}\n${log}`)
   }
   if (detail.status !== HEALTH_READY && !HEALTH_PENDING.includes(detail.status)) {
     throw new Error(`${where} entered a terminal state`)
