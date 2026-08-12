@@ -15,6 +15,57 @@ and, strictly, per character, since docking is an ACL evaluated per pilot. It
 overlaps heavily between accounts in the same alliance but is never identical,
 so it cannot be a single global table.
 
+## What is actually obtainable
+
+A genuinely complete list of player-anchored structures **does not exist in any
+data source we can reach**, and it is worth stating that before designing
+around it.
+
+Measured 2026-08-12:
+
+| Source | Structures |
+|---|---|
+| ESI `GET /universe/structures` | 886 ids |
+| EVE Ref `structures-latest.v2.json` | 2,374 rows, 1,444 with a name |
+
+ESI's public list is documented as *fully public* only — "a completely open
+Access Control List". Everything else in New Eden is invisible to ESI unless one
+of your own characters has access to it. EVE Ref does better (it scrapes the
+public endpoints continuously and backfills from Adam4EVE) but is still under
+2.5k rows, which is nowhere near the anchored total.
+
+So "complete" has to be redefined as **everything your characters can see**,
+which *is* obtainable and is what the job should target:
+
+    own corp + alliance structures
+  ∪ every structure id already present in the account's extracted data
+  ∪ the publicly-listed structures
+  ∪ EVE Ref's snapshot, as an identity fallback only
+
+### How jEveAssets does it
+
+It does not enumerate. `CitadelSource` is a **prioritised resolver**, not a
+discovery mechanism — ESI corp structures ("certified fresh") over ESI
+locations ("good source") over planet/moon derivation over user-entered data,
+with zKillboard and the Hammertime Citadel Hunt API ranked last and explicitly
+labelled "outdated source". It learns about a structure because an id showed up
+in the player's own data, then races several sources to put a name on it.
+
+The Hammertime API is dead as of this writing (connection refused), which is
+why jEveAssets demoted it. EVE Ref is its live successor.
+
+### The search endpoint is off the table
+
+`GET /characters/{id}/search?categories=structure` is ACL-filtered and looks
+like the answer. It is not, for two reasons:
+
+- `minLength: 3` makes exhaustive enumeration combinatorially impossible.
+- **CCP has publicly warned that using `/search/` as a discovery endpoint —
+  citadel discovery named specifically — is an API-policy violation that gets
+  developers banned from ESI.**
+
+Do not add `esi-search.search_structures.v1` for this.
+
 ## The three axes the current schema conflates
 
 A structure carries three independent kinds of fact, each with its own
@@ -168,36 +219,65 @@ service-role and never sees RLS.
 
 ## Jobs
 
-Split by cost and by who owns the result:
+Two jobs, split by who owns the result and what it costs.
 
-- **`structure-directory`** — account-wide, daily. Pulls `GET /universe/structures`
-  (no auth, ~9k ids), upserts identity rows into `universe_structure`, flags
-  `is_public`. Single-step workflow; cheap; shared by every account.
-- **`structure-access`** — **per-character**, the lever. Probes candidates with
-  `GET /universe/structures/{id}` per token; a 200 writes `can_dock = true` plus
-  refreshed identity, a 403 writes `can_dock = false`. Per-character fan-out
-  shape, so it lands in `PER_CHARACTER_JOBS` and inherits a `/jobs` row and a
-  per-cell refresh button for free — that *is* the "refresh my universe" lever,
-  plus a shortcut button on `/structure` itself.
+### `structure-directory` — account-wide, daily
 
-Candidate pool per character, in priority order: own corp + alliance structures
-→ locations of their assets, clones, orders, industry jobs and contracts →
-public structures in systems they have ever been in → the rest of the public
-list.
+Identity only, shared by every account, no per-character work:
+
+- `GET /universe/structures` → upsert ids, set `is_public`.
+- EVE Ref `structures-latest.v2.json` → name, owner, system, type, region for
+  ids ESI will not resolve for us. Lowest priority: never overwrite a field we
+  resolved ourselves from ESI, exactly as jEveAssets ranks its sources.
+
+Single-step workflow, cheap, one heartbeat. Nothing here is per-user, so it does
+not need a refresh lever.
+
+### `structure-access` — per-character, daily, **and the lever**
+
+This is the job the user pulls. Per-character fan-out shape, so registering it
+in `PER_CHARACTER_JOBS` gives it a `/jobs` row with a per-character refresh
+button and `refresh_task` tracking for free — that is the "refresh my
+structures" control, with a shortcut button on `/structure` pointing at the same
+dispatch. Daily on the cron otherwise.
+
+For each of the account's characters:
+
+1. **Harvest candidates from data we already hold.** No ESI calls at all — every
+   one of these tables is already extracted and sitting in Postgres, and a
+   structure id in them is proof the character has been there:
+   - `character_asset` / `corp_asset` — `location_id`
+   - `character_clone_over_time` — `location_id` where `location_type='structure'`
+   - `character_order` / market orders — `location_id`
+   - `character_industry_job` / `corp_industry_job` — `station_id`, `facility_id`,
+     `blueprint_location_id`, `output_location_id`
+   - `character_contract` / `corp_contract` — `start_location_id`, `end_location_id`
+   - `character_wallet_transaction` / `corp_wallet_transaction` — `location_id`
+   - `corp_structure` — own corp and alliance
+   This is where the great majority of a real account's universe comes from, and
+   it costs nothing.
+2. **Add the public list** from `universe_structure where is_public`.
+3. **Probe** each candidate not already decided (or past its TTL) with
+   `GET /universe/structures/{id}` on that character's token. 200 → `can_dock =
+   true` plus fresh identity into `universe_structure`; 403 → `can_dock = false`.
+
+Filtering NPC stations out is free: player structures are `structure_id >=
+100_000_000_000` and NPC stations are `<= 64_000_000`. `universeStructures.js`
+already carries that floor as `STRUCTURE_ID_FLOOR`.
 
 ### ESI error budget
 
-**403s count against ESI's 100-errors-per-60s limit.** A blind sweep of the
-public list against a token that can dock at few of them will trip it and get
-the whole app throttled. The probe therefore must:
+**403s count against ESI's 100-errors-per-60s limit.** Probing a large candidate
+set against a token that can dock at few of them will trip it and throttle the
+whole deployment. The probe must:
 
 - read `X-Esi-Error-Limit-Remain` / `-Reset` and back off before exhausting it;
 - run under a bounded per-run probe budget with a persisted cursor, so a large
-  candidate set drains across runs instead of in one burst;
-- never re-probe a `can_dock = false` row inside its TTL.
+  candidate set drains across days rather than in one burst;
+- never re-probe inside its TTL — short for `can_dock = true`, long for `false`.
 
-This is the single hardest constraint in the whole feature, and it is why the
-negative rows exist.
+This is the single hardest constraint in the feature, and it is why
+`structure_access` stores negative rows.
 
 ## Page
 
@@ -213,13 +293,18 @@ The revenue/index/sparkline machinery stays keyed to tier 2 only.
 
 ## Open questions
 
-1. Does "everything" include public structures the account has never been near,
-   or only those in systems it has touched? The former is ~9k probes per
-   character; the latter is a few hundred and covers nearly the same practical
-   set.
-2. Do the reinforcement hours in `corp_structure` stay alliance-visible? They
-   are shown in-game to anyone who can see the structure, so probably yes — but
-   it is worth stating deliberately rather than inheriting.
-3. Is `esi-search.search_structures.v1` worth adding as a fourth candidate
-   source? Its `minLength: 3` makes exhaustive enumeration impossible, so it
-   only helps as a per-system-name sweep, and it costs a re-auth.
+1. Do we take the EVE Ref dependency? It is the only way to name a structure we
+   cannot dock at, but it is a third-party feed with no SLA — the same bet
+   jEveAssets made, and the same bet that left it with a dead Hammertime source.
+   The alternative is showing the raw id, which is what the SDE rule in
+   `CLAUDE.md` already prescribes for unresolvable lookups.
+2. Do the reinforcement hours in `corp_structure` stay alliance-visible? They are
+   shown in-game to anyone who can see the structure, so probably yes — worth
+   stating deliberately rather than inheriting.
+3. Should `structure_access` be probed for *every* character, or only one
+   character per corp? Docking ACLs are usually granted at corp/alliance level,
+   so probing one pilot per corp would cut the ESI cost by the number of alts at
+   the price of missing personally-granted access.
+4. Should a user be able to add a structure id by hand (jEveAssets' `USER`
+   source) for the case where they know a structure exists but nothing can
+   resolve it?
