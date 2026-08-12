@@ -1,7 +1,38 @@
 # Stage 07 — Low structure fuel alerts
 
 **PR size:** small · **Depends on:** 04 (outbox table), 05 (sender), 03
-(linked channels)
+(linked channels) · **Status: shipped**
+
+## Implementation notes (what the code does differently)
+
+The scoping below is accurate except on three points the code had to settle:
+
+- **`fuel_expires` moved.** It now lives in `corp_structure_status`
+  (own-corp-only, while `corp_structure` opened up to alliance-mates), not
+  on `corp_structure`. Detection reads that table's previous row — before
+  the extract's upsert overwrites it — and enqueues after the write lands,
+  so a failed upsert can't leave an alert whose dedupe state was never
+  stored.
+- **The dedup rule needed a second clock.** "Compare against the previous
+  observation" is not enough on its own: while nobody refuels, the stored
+  `fuel_expires` and the fresh one are the *same instant*, so both sides of
+  a naive comparison read the same remaining time and the alert never
+  fires. The previous reading has to be judged against
+  `corp_structure_status.updated_at` — the time it was taken. Yesterday's
+  "7.5 days left" over today's "6.5 days left" is the crossing. The
+  `structure-fuel:<structure_id>:<expiry unix>` source key is a backstop
+  under that, not a substitute: the outbox's unique index only guards rows
+  that haven't been sent yet.
+- **Formatting lives with detection**, not with the sender as suggested
+  below. Stage 04 set that precedent and the outbox stores a fully composed
+  `body`, so the sender stays source-agnostic — it posts rows, it doesn't
+  know what a mercenary den or a fuel bay is.
+
+Silent by design: a structure with no fuel timer at all, and one already
+dry. A daily extract against a 7-day threshold always warns a live
+structure first, so reaching "expired" unannounced means nobody was
+listening yet — and back-dated obituaries for long-dead structures are
+noise on the first run after a channel is linked.
 
 ## Goal
 

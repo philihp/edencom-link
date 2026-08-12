@@ -14,7 +14,7 @@ Scope for making edencom.link double as a Discord application. Two goals
    `/mercenary-dens` 📋 button, `copyDiscordPing.tsx`) and low structure
    fuel (promoted from the follow-ups list to stage 07).
 
-## Status (2026-08-01)
+## Status (2026-08-12)
 
 - **Stage 01 — shipped.** `/privacy` and `/terms` are live
   (`src/app/privacy/`, `src/app/terms/`), linked from the footer.
@@ -51,7 +51,21 @@ Scope for making edencom.link double as a Discord application. Two goals
   cron → Workflows migration. Settings grew a per-channel "Send test
   message" button. Sending needs `DISCORD_BOT_TOKEN` set in Vercel; without
   it the sweep is a logged no-op.
-- **Stages 06–07 — not started.**
+- **Stage 06 — superseded, not started.** Its invite-gating question was
+  answered elsewhere: [open-registration.md](../open-registration.md) drops
+  the invite gate entirely, and its stage 5 now delivers Discord sign-in on
+  top of an anonymous-session bootstrap that doesn't exist yet. Implement it
+  from there, not from 06-discord-sign-in.md alone — that doc stands as the
+  provider-configuration reference.
+- **Stage 07 — shipped.** Low-fuel detection rides inside the
+  `corp-structures` extract (`src/jobs/corpStructures.js` reads the fuel
+  timers the previous run stored before overwriting them; the pure
+  crossing/format seam is `src/jobs/structureFuel.js`, the enqueue I/O is
+  `src/jobs/structureFuelNotification.js`), enqueueing onto the stage-04
+  outbox for the stage-05 sender. Threshold 7 days, corp-wide audience.
+  Formatting lives with detection (as stage 04 does) rather than with the
+  sender as this doc's stage-07 sketch guessed — the outbox stores a composed
+  body, so the sender never needs to know a message's source.
 
 This is a scoping document set, not an implementation spec. Each stage is
 one PR with its own milestone; do them **in order** (each builds on the
@@ -69,9 +83,11 @@ against the code as it stands then.
 | [06-discord-sign-in.md](06-discord-sign-in.md) | medium | Discord as a Supabase Auth provider: sign in / sign up with Discord, link Discord to an email account, add email later | A Discord-only account exists and works; an email account shows a linked Discord identity in settings |
 | [07-structure-fuel-alerts.md](07-structure-fuel-alerts.md) | small | Low-fuel detection on the `corp-structures` extract, riding the stage-04 outbox and stage-05 sender | A structure crossing the fuel threshold produces exactly one channel message |
 
-Stage 06 is independent of 03–05 and can land any time after 02 (it wants
-the same Discord application, plus a second OAuth2 redirect for Supabase).
-Stage 07 depends on 04+05 (outbox + sender).
+Stage 06 was written as independent of 03–05 (it wants the same Discord
+application, plus a second OAuth2 redirect for Supabase) — but it is now
+sequenced behind [open-registration.md](../open-registration.md)'s stages
+1–4, which decide the account model it has to plug into. Stage 07 depended
+on 04+05 (outbox + sender) and shipped after them.
 
 Follow-ups (out of scope for all five stages) are collected at the bottom of
 this file.

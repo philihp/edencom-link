@@ -1,6 +1,11 @@
 import { corpStructures } from '../esi.js'
 import { sudoSupabase } from '../supabase.js'
 import { cli, fetchAllPages, forEachCorporation } from './lib.js'
+import {
+  enqueueLowFuelAlerts,
+  selectCorpDiscordChannels,
+  selectPreviousFuelStatuses,
+} from './structureFuelNotification.js'
 
 const TAG = 'corp-structures'
 const SCOPE = 'esi-corporations.read_structures.v1'
@@ -41,6 +46,14 @@ export const runCorpStructures = ({ registrationIds } = {}) =>
       updated_at: now,
     }))
 
+    // Low-fuel detection (docs/discord-bot/07-structure-fuel-alerts.md) judges
+    // the fresh fuel timer against the one the previous run stored, so read the
+    // old statuses before the upsert below overwrites them — and only when
+    // someone in the corp is actually listening.
+    const channels = await selectCorpDiscordChannels(corporation_id)
+    const prevById =
+      channels.length > 0 ? await selectPreviousFuelStatuses(statusRows.map((s) => s.structure_id)) : new Map()
+
     if (rows.length > 0) {
       const { error } = await sudoSupabase.from('corp_structure').upsert(rows, { onConflict: 'structure_id' })
       if (error) throw error
@@ -49,7 +62,28 @@ export const runCorpStructures = ({ registrationIds } = {}) =>
         .upsert(statusRows, { onConflict: 'structure_id' })
       if (statusError) throw statusError
     }
-    console.log(`[${TAG}] ${ctx}: corp ${corporation_id} ${rows.length} structure(s) in ${Date.now() - t0}ms`)
+
+    // After the upsert: an alert must never outlive a failed write of the state
+    // that makes it dedupe (a re-run would then ping the same crossing twice).
+    const alerts =
+      channels.length > 0
+        ? await enqueueLowFuelAlerts({
+            structures: all.map((s) => ({
+              structure_id: s.structure_id,
+              system_id: s.system_id,
+              name: s.name ?? null,
+              fuel_expires: s.fuel_expires ?? null,
+            })),
+            prevById,
+            channels,
+            now: new Date(now),
+          })
+        : 0
+
+    const alertNote = alerts > 0 ? `, ${alerts} low-fuel alert(s)` : ''
+    console.log(
+      `[${TAG}] ${ctx}: corp ${corporation_id} ${rows.length} structure(s)${alertNote} in ${Date.now() - t0}ms`
+    )
   })
 
 cli(import.meta.url, TAG, runCorpStructures)
