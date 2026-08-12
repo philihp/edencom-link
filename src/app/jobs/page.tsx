@@ -1,76 +1,59 @@
-// STUB — the /jobs page design (docs/jobs-page.md), rendering against mock data
-// so the layout can be argued about before the queries exist. Nothing here
-// touches Supabase yet; every place a query belongs is marked TODO(jobs-page).
+// /jobs — every extract job that feeds this site's data: when it last ran for
+// the caller, what it's doing right now, and when it runs next (docs/jobs-page.md).
+// Replaces the /character/refresh matrix, which could only answer the first of
+// those three and only for on-demand runs.
 //
-// What IS real: the registry, and the whole "Next run" column — those read
-// vercel.json's actual cron entries through ./schedule.ts, so the times on
-// screen are the times these jobs really fire.
-//
-// The implementing PR (blocked on cron-to-workflows phase 5 — see the plan)
-// deletes ./stubData.ts, wires the four TODOs, moves Cell/RefreshButton/
-// RefreshPoller over from src/app/character/refresh/, and retires that route.
+// Everything here is read from our own tables — heartbeats (completed and open),
+// the caller's refresh_task rows — plus vercel.json's cron entries for the
+// schedule. RLS scopes all of it: own registrations, own characters' and corps'
+// heartbeats, the shared user_id-null rows every signed-in account sees.
 
-import { Fragment } from 'react'
+import Link from 'next/link'
+import { redirect } from 'next/navigation'
+import { reduce } from 'ramda'
 
+import { createClient } from '@/utils/supabase/server'
+
+import { isChancellor } from '../account/settings/chancellor/chancellor'
 import { Freshness } from '../Freshness'
 import { freshnessLevel, relativeTime } from '../freshness'
 import { CharacterName, Name } from '../names'
 import styles from './jobs.module.css'
 import { NextRun } from './nextRun'
-import { type JobEntry, isOverdue, jobsInSection, nextRunFor } from './registry'
-import { STUB_ACTIVITY, STUB_CHARACTERS, STUB_CORPORATIONS, STUB_UNIVERSE, type StubEntityRun } from './stubData'
+import { RefreshPoller } from './poller'
+import { RefreshButton } from './refreshButton'
+import { type JobEntry, type Kickable, isOverdue, jobsInSection, nextRunFor } from './registry'
+import {
+  type ActivityTask,
+  type EntityRun,
+  OVERLAY_MINUTES,
+  activityRows,
+  isAbandoned,
+  laggingCount,
+  newestRun,
+  oldestRun,
+  rowStatus,
+  statusOf,
+} from './rows'
 
+// Always read fresh — the poller re-requests this server component every couple
+// of seconds while any kicked-off job is still in flight.
 export const dynamic = 'force-dynamic'
 
+type Beat = {
+  job: string
+  registration_id: string | null
+  corporation_id: number | null
+  ended_at: string
+  ok: boolean | null
+  error: string | null
+}
+
+type OpenBeat = { job: string; registration_id: string | null; corporation_id: number | null }
+
+type Task = ActivityTask & { registration_id: string | null }
+
 const iso = (at: Date | null) => (at === null ? null : at.toISOString())
-
-// The row's headline freshness is the OLDEST of the caller's entities, not the
-// newest: the question is "is my data fresh", and one character that hasn't
-// pulled since yesterday is the answer even when the other three ran minutes
-// ago. A never-run entity is older than any timestamp.
-const oldestRun = (entities: StubEntityRun[]): string | null => {
-  if (entities.length === 0) return null
-  // One entity that has never run makes the whole row "never" — nothing is
-  // older than not having happened.
-  if (entities.some((entity) => entity.lastRunAt === null)) return null
-  return entities.reduce<string | null>(
-    (oldest, entity) => (oldest === null || (entity.lastRunAt as string) < oldest ? entity.lastRunAt : oldest),
-    null
-  )
-}
-
-// The newest run across the caller's entities — the opposite end from
-// oldestRun, and the right input to the overdue check: "did this job fire at
-// all" is a different question from "is every one of my characters current".
-// One lagging character must not make the *schedule* look broken.
-const newestRun = (entities: StubEntityRun[]): string | null =>
-  entities.reduce<string | null>(
-    (newest, entity) =>
-      entity.lastRunAt !== null && (newest === null || entity.lastRunAt > newest) ? entity.lastRunAt : newest,
-    null
-  )
-
-const LEVEL_RANK: Record<string, number> = { fresh: 0, aging: 1, stale: 2, none: 3 }
-
-// How many entities are behind the best-off one. "0 of 4 fresh" would be the
-// normal state for a six-hourly job and teaches nothing; what's worth a note is
-// one character lagging the others, which is a real symptom (dead token, missing
-// scope) rather than the cadence doing its job.
-const laggingCount = (entities: StubEntityRun[]): number => {
-  const ranks = entities.map((entity) => LEVEL_RANK[freshnessLevel(entity.lastRunAt)])
-  const best = Math.min(...ranks)
-  return ranks.filter((rank) => rank > best).length
-}
-
-// First match wins, mirroring the status table in the plan. In the real page
-// `queued`/`running`/`failed` come from the caller's refresh_task rows and from
-// open heartbeats (started_at set, ended_at null); here they come from the stub.
-const rowStatus = (entities: StubEntityRun[]): 'running' | 'queued' | 'failed' | 'idle' => {
-  if (entities.some((e) => e.status === 'running')) return 'running'
-  if (entities.some((e) => e.status === 'queued')) return 'queued'
-  if (entities.some((e) => e.status === 'failed')) return 'failed'
-  return 'idle'
-}
 
 const STATUS_LABEL: Record<string, string> = {
   running: '● running',
@@ -80,10 +63,11 @@ const STATUS_LABEL: Record<string, string> = {
   pending: '· pending',
   done: '✓ done',
   error: '✗ error',
+  abandoned: '✗ abandoned',
 }
 
-const Status = ({ status }: { status: string }) => (
-  <span className={styles.status} data-status={status}>
+const Status = ({ status, error }: { status: string; error?: string | null }) => (
+  <span className={styles.status} data-status={status} title={error ?? undefined}>
     {STATUS_LABEL[status] ?? status}
   </span>
 )
@@ -95,23 +79,44 @@ const JobLabel = ({ entry }: { entry: JobEntry }) => (
   </>
 )
 
-// Placeholder for the real RefreshButton (src/app/character/refresh/refreshButton.tsx),
-// which posts to the refreshCell server action. Disabled here — the stub kicks
-// nothing.
-const RefreshStub = ({ kickable }: { kickable: JobEntry['kickable'] }) =>
-  kickable === 'never' ? null : (
-    <button
-      className={styles.refreshButton}
-      disabled
-      title={
-        kickable === 'chancellor'
-          ? 'Chancellor accounts only (gated server-side in refreshCell)'
-          : 'Stub — the real button dispatches a refresh_task'
-      }
-    >
-      refresh
-    </button>
+// One entity's state for one job: whatever it's doing now if that's anything,
+// otherwise its freshness dot — with a refresh button once the dot is off green
+// (or the last run failed), for the jobs this account may kick.
+const Cell = ({
+  job,
+  entity,
+  kickable,
+  showFreshness = true,
+}: {
+  job: string
+  entity: EntityRun
+  kickable: Kickable
+  // The shared jobs deliberately render plain relative text instead: the
+  // freshness scale is tuned to the six-hourly per-character cadence, and a
+  // nightly job would sit red ~23 hours a day (docs/jobs-page.md).
+  showFreshness?: boolean
+}) => {
+  const inFlight = entity.status === 'running' || entity.status === 'queued'
+  const offerRefresh =
+    kickable !== 'never' &&
+    !inFlight &&
+    (!showFreshness || entity.status === 'failed' || freshnessLevel(entity.lastRunAt) !== 'fresh')
+  return (
+    <span className={styles.cell}>
+      {inFlight || entity.status === 'failed' ? (
+        <Status status={entity.status} error={entity.error} />
+      ) : showFreshness ? (
+        <Freshness at={entity.lastRunAt} />
+      ) : (
+        <PlainAge at={entity.lastRunAt} />
+      )}
+      {offerRefresh && <RefreshButton job={job} characterId={entity.id === '' ? null : entity.id} />}
+    </span>
   )
+}
+
+// Relative time without the freshness dot, for the shared-universe rows.
+const PlainAge = ({ at }: { at: string | null }) => <>{at === null ? '—' : relativeTime(at, Date.now())}</>
 
 // One section of job rows over a set of owned entities (characters or corps).
 // The per-entity breakdown lives collapsed inside the count cell, so the page
@@ -121,19 +126,16 @@ const EntityJobTable = ({
   entries,
   entitiesByJob,
   entityNoun,
+  kickableOf,
   showRunsAs = false,
-  openFirst = false,
 }: {
   entries: readonly JobEntry[]
-  entitiesByJob: Record<string, StubEntityRun[]>
+  entitiesByJob: Record<string, EntityRun[]>
   // Plural noun for the owned entities — heads the count column and labels the
   // expander ("4 characters", "2 corporations").
   entityNoun: string
+  kickableOf: (entry: JobEntry) => Kickable
   showRunsAs?: boolean
-  // Stub-only: start the first row expanded so the per-entity breakdown (and
-  // the per-corp Runs as) is visible in a screenshot. The real page starts them
-  // all collapsed.
-  openFirst?: boolean
 }) => (
   <table className={styles.table}>
     <thead>
@@ -149,15 +151,15 @@ const EntityJobTable = ({
     <tbody>
       {entries.map((entry) => {
         const entities = entitiesByJob[entry.job] ?? []
-        const last = oldestRun(entities)
         const lagging = laggingCount(entities)
+        const kickable = kickableOf(entry)
         return (
           <tr key={entry.job}>
             <td>
               <JobLabel entry={entry} />
             </td>
             <td>
-              <details className={styles.breakdown} open={openFirst && entry.job === entries[0]?.job}>
+              <details className={styles.breakdown}>
                 <summary>
                   {entities.length} {entityNoun}
                   {lagging > 0 && <span className={styles.lagging}> · {lagging} lagging</span>}
@@ -166,7 +168,7 @@ const EntityJobTable = ({
                   {entities.map((entity) => (
                     <li key={entity.id}>
                       <span className={styles.breakdownName}>
-                        {showRunsAs ? <Name name={entity.name} /> : <CharacterName name={entity.name} />}
+                        <Name name={entity.name} />
                       </span>
                       {showRunsAs && (
                         <span className={styles.breakdownRunsAs}>
@@ -177,10 +179,7 @@ const EntityJobTable = ({
                           )}
                         </span>
                       )}
-                      <span className={styles.cell}>
-                        {entity.status ? <Status status={entity.status} /> : <Freshness at={entity.lastRunAt} />}
-                        <RefreshStub kickable={entry.kickable} />
-                      </span>
+                      <Cell job={entry.job} entity={entity} kickable={kickable} />
                     </li>
                   ))}
                 </ul>
@@ -201,7 +200,7 @@ const EntityJobTable = ({
               </td>
             )}
             <td>
-              <Freshness at={last} />
+              <Freshness at={oldestRun(entities)} />
             </td>
             <td>
               <Status status={rowStatus(entities)} />
@@ -223,19 +222,163 @@ const EntityJobTable = ({
 )
 
 const JobsPage = async () => {
-  // TODO(jobs-page): redirect to /account/login when there's no session, and
-  // read registrations + corporations the way src/app/character/refresh/page.tsx
-  // does today (RLS scopes both to the caller).
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user?.id) {
+    redirect('/account/login')
+  }
 
-  // TODO(jobs-page): replace the four STUB_* imports with
-  //   1. latest_heartbeats() reduced to charBeats / corpBeats / accountBeats /
-  //      corpRunsAs (lift the reduction out of the refresh page verbatim),
-  //   2. a `heartbeat` select for OPEN rows (started_at set, ended_at null,
-  //      ran_at within the hour) → the `running` status for scheduled runs,
-  //   3. refresh_task rows from the last 24h → queued/running/failed overlay
-  //      AND the activity section below,
-  //   4. isChancellor(user.id) to decide whether industry-systems is kickable.
-  const now = new Date()
+  const chancellor = await isChancellor(user.id)
+
+  const now = Date.now()
+  const openFloor = new Date(now - 60 * 60_000).toISOString()
+  // Recent activity keeps a day; the per-cell overlay is much tighter, so an
+  // on-demand error from this morning doesn't outrank a scheduled pull that has
+  // since succeeded.
+  const activityFloor = new Date(now - 24 * 60 * 60_000).toISOString()
+  const overlayFloor = new Date(now - OVERLAY_MINUTES * 60_000).toISOString()
+
+  const [{ data: registrationsData }, { data: beatsData }, { data: openData }, { data: tasksData }] = await Promise.all(
+    [
+      supabase.from('registration').select('id, name, corporation_id').order('created_at', { ascending: true }),
+      supabase.rpc('latest_heartbeats'),
+      // Open runs — started, not yet ended. This is what makes a *scheduled* run
+      // visible as running; latest_heartbeats() returns completed rows only. The
+      // floor drops rows whose end step never landed, which would otherwise read
+      // as permanently running.
+      supabase
+        .from('heartbeat')
+        .select('job, registration_id, corporation_id')
+        .is('ended_at', null)
+        .not('started_at', 'is', null)
+        .gte('ran_at', openFloor),
+      supabase
+        .from('refresh_task')
+        .select('id, batch_id, job, registration_id, character_name, status, error, created_at, started_at, ended_at')
+        .gte('created_at', activityFloor)
+        .order('created_at', { ascending: true }),
+    ]
+  )
+
+  const registrations = registrationsData ?? []
+  const beats = (beatsData ?? []) as Beat[]
+  const openBeats = (openData ?? []) as OpenBeat[]
+  const tasks = (tasksData ?? []) as Task[]
+
+  const corporationOf = new Map(registrations.map((r) => [r.id, r.corporation_id]))
+
+  // latest_heartbeats returns one row per job per owner. Character- and
+  // account-scoped rows are already unique per cell; corp rows can appear once
+  // per character that has ever run the corp's pull, so keep the newest — its
+  // registration_id is whose token the extract actually ran under last time.
+  const { charBeats, corpBeats, accountBeats, corpRunsAs } = reduce(
+    (acc, b: Beat) => {
+      if (b.corporation_id != null) {
+        const key = `${b.job}:${b.corporation_id}`
+        const prev = acc.corpBeats.get(key)
+        if (!prev || prev.ended_at < b.ended_at) acc.corpBeats.set(key, b)
+        const prevRun = acc.corpRunsAs.get(b.corporation_id)
+        if (!prevRun || prevRun.ended_at < b.ended_at) acc.corpRunsAs.set(b.corporation_id, b)
+      } else if (b.registration_id != null) {
+        acc.charBeats.set(`${b.job}:${b.registration_id}`, b)
+      } else {
+        acc.accountBeats.set(b.job, b)
+      }
+      return acc
+    },
+    {
+      charBeats: new Map<string, Beat>(),
+      corpBeats: new Map<string, Beat>(),
+      accountBeats: new Map<string, Beat>(),
+      corpRunsAs: new Map<number, Beat>(),
+    },
+    beats
+  )
+
+  // Same keying for the open rows: a corp run's heartbeat carries the
+  // corporation, a per-character run its registration, a shared run neither.
+  const openCells = new Set(openBeats.map((b) => `${b.job}:${b.corporation_id ?? b.registration_id ?? ''}`))
+
+  // Index the just-kicked tasks by cell, later rows winning. A corp job's task
+  // row carries its representative character, so key those by the corp instead.
+  const corpJobNames = new Set(jobsInSection('corporation').map((entry) => entry.job))
+  const taskByCell = reduce(
+    (acc, t) => {
+      if (t.created_at < overlayFloor || isAbandoned(t, now)) return acc
+      const corpId = corpJobNames.has(t.job) && t.registration_id != null ? corporationOf.get(t.registration_id) : null
+      return acc.set(`${t.job}:${corpId ?? t.registration_id ?? ''}`, t)
+    },
+    new Map<string, Task>(),
+    tasks
+  )
+  const anyActive = tasks.some((t) => (t.status === 'pending' || t.status === 'running') && !isAbandoned(t, now))
+
+  // The user's corporations, each with the registered characters in it (in
+  // registration order — the representative dispatchRefresh would pick first).
+  const corporations = reduce(
+    (acc, r) => {
+      if (r.corporation_id == null) return acc
+      const group = acc.get(r.corporation_id)
+      if (group) group.push(r)
+      else acc.set(r.corporation_id, [r])
+      return acc
+    },
+    new Map<number, typeof registrations>(),
+    registrations
+  )
+
+  const corporationIds = [...corporations.keys()]
+  const { data: corpNamesData } = corporationIds.length
+    ? await supabase.from('universe_name').select('id, name').in('id', corporationIds)
+    : { data: [] }
+  const corpName = new Map((corpNamesData ?? []).map((n) => [Number(n.id), n.name as string]))
+
+  const runFor = (job: string, key: string, beat: Beat | undefined): Omit<EntityRun, 'id' | 'name'> => ({
+    lastRunAt: beat?.ended_at ?? null,
+    ...statusOf({ task: taskByCell.get(`${job}:${key}`), open: openCells.has(`${job}:${key}`), beat }),
+  })
+
+  const characterEntities: Record<string, EntityRun[]> = Object.fromEntries(
+    jobsInSection('character').map((entry) => [
+      entry.job,
+      registrations.map((r) => ({
+        id: r.id,
+        name: r.name,
+        ...runFor(entry.job, r.id, charBeats.get(`${entry.job}:${r.id}`)),
+      })),
+    ])
+  )
+
+  const corporationEntities: Record<string, EntityRun[]> = Object.fromEntries(
+    jobsInSection('corporation').map((entry) => [
+      entry.job,
+      [...corporations.entries()].map(([corporationId, members]) => {
+        const runsAs = corpRunsAs.get(corporationId)
+        const owned = members.find((m) => m.id === runsAs?.registration_id)
+        // Kick new pulls as the character the last one succeeded under when
+        // it's ours; the workflow target carries the whole corp group either
+        // way, so this only picks the row's representative.
+        const representative = owned ?? members[0]
+        // Nobody has run it here yet → name who *would* run it, so the column
+        // still answers "under whose token" instead of blanking.
+        const runsAsCorpmate = runsAs != null && owned == null
+        return {
+          // The refresh button dispatches against a registration of ours, so
+          // the entity's id is the representative character's — the corp id is
+          // only how its heartbeats are keyed.
+          id: representative.id,
+          name: corpName.get(corporationId) ?? `#${corporationId}`,
+          runsAs: runsAsCorpmate ? null : representative.name,
+          runsAsCorpmate,
+          ...runFor(entry.job, String(corporationId), corpBeats.get(`${entry.job}:${corporationId}`)),
+        }
+      }),
+    ])
+  )
+
+  const activity = activityRows(tasks)
 
   return (
     <>
@@ -246,32 +389,43 @@ const JobsPage = async () => {
         rows can be refreshed one at a time, and a refresh you kick shows up under Recent activity.
       </p>
 
-      <p className={styles.stubBanner}>
-        <strong>Design stub.</strong> Rows below are mock data — three invented characters and two invented corps. The{' '}
-        <em>Next run</em> column is real: it&apos;s computed from <code>vercel.json</code>&apos;s cron entries. See{' '}
-        <code>docs/jobs-page.md</code>; the page is blocked on <code>cron-to-workflows</code> phase 5.
-      </p>
+      {registrations.length === 0 ? (
+        <p>
+          No characters registered yet. Add one on the <Link href="/character">Characters</Link> page.
+        </p>
+      ) : (
+        <>
+          <h2>Characters</h2>
+          <p>
+            Last run is <em>the oldest of your characters</em>&nbsp;— one character that hasn&apos;t pulled is what
+            makes the data stale, even when the others just ran. Open a row for the per-character breakdown.
+          </p>
+          <EntityJobTable
+            entries={jobsInSection('character')}
+            entitiesByJob={characterEntities}
+            entityNoun="characters"
+            kickableOf={(entry) => entry.kickable}
+          />
 
-      <h2>Characters</h2>
-      <p>
-        Last run is <em>the oldest of your characters</em>&nbsp;— one character that hasn&apos;t pulled is what makes
-        the data stale, even when the others just ran. Open a row for the per-character breakdown.
-      </p>
-      <EntityJobTable entries={jobsInSection('character')} entitiesByJob={STUB_CHARACTERS} entityNoun="characters" />
-
-      <h2>Corporations</h2>
-      <p>
-        Corp extracts run once per corporation, under the token of a character holding the in-game role — director,
-        accountant — that the endpoint requires. <em>Runs as</em> names whose token the last pull actually used, so a
-        corp going stale because its only director token stopped working is visible as such.
-      </p>
-      <EntityJobTable
-        entries={jobsInSection('corporation')}
-        entitiesByJob={STUB_CORPORATIONS}
-        entityNoun="corporations"
-        showRunsAs
-        openFirst
-      />
+          {corporations.size > 0 && (
+            <>
+              <h2>Corporations</h2>
+              <p>
+                Corp extracts run once per corporation, under the token of a character holding the in-game role —
+                director, accountant — that the endpoint requires. <em>Runs as</em> names whose token the last pull
+                actually used, so a corp going stale because its only director token stopped working is visible as such.
+              </p>
+              <EntityJobTable
+                entries={jobsInSection('corporation')}
+                entitiesByJob={corporationEntities}
+                entityNoun="corporations"
+                kickableOf={(entry) => entry.kickable}
+                showRunsAs
+              />
+            </>
+          )}
+        </>
+      )}
 
       <h2>Shared universe</h2>
       <p>
@@ -290,31 +444,30 @@ const JobsPage = async () => {
         </thead>
         <tbody>
           {jobsInSection('universe').map((entry) => {
-            const last = STUB_UNIVERSE[entry.job] ?? null
+            const beat = accountBeats.get(entry.job)
+            const entity: EntityRun = { id: '', name: entry.label, ...runFor(entry.job, '', beat) }
+            // industry-systems pulls the whole game's cost indices in one shot;
+            // its on-demand kick stays a Chancellor tool (and refreshCell
+            // re-checks server-side).
+            const kickable = entry.kickable === 'chancellor' && !chancellor ? 'never' : entry.kickable
             return (
               <tr key={entry.job}>
                 <td>
                   <JobLabel entry={entry} />
                 </td>
                 <td>
-                  <span className={styles.cell}>
-                    {/* No freshness dot here on purpose — see the plan. The real
-                        page should take a `plain` prop on <Freshness> so this
-                        text keeps ticking; the stub renders it server-side. */}
-                    {last === null ? '—' : relativeTime(last, now.getTime())}
-                    <RefreshStub kickable={entry.kickable} />
-                  </span>
+                  <Cell job={entry.job} entity={entity} kickable={kickable} showFreshness={false} />
                 </td>
                 <td>
-                  <Status status="idle" />
+                  <Status status={entity.status} error={entity.error} />
                 </td>
                 <td>
-                  {isOverdue(entry.job, last, now) ? (
+                  {isOverdue(entry.job, entity.lastRunAt) ? (
                     <span className={styles.overdue} title="The previous scheduled fire didn't produce a run">
                       overdue
                     </span>
                   ) : (
-                    <NextRun at={iso(nextRunFor(entry.job, now))} />
+                    <NextRun at={iso(nextRunFor(entry.job))} />
                   )}
                 </td>
               </tr>
@@ -328,44 +481,39 @@ const JobsPage = async () => {
         Refreshes you kicked in the last 24 hours, newest first, grouped by the batch that dispatched them. This is the
         only place an on-demand run that failed while you were away is visible.
       </p>
-      <table className={styles.table}>
-        <thead>
-          <tr>
-            <th>Enqueued</th>
-            <th>Job</th>
-            <th>For</th>
-            <th>Status</th>
-            <th>Took</th>
-          </tr>
-        </thead>
-        <tbody>
-          {STUB_ACTIVITY.map((task, index) => (
-            <Fragment key={task.id}>
-              <tr>
-                <td>
-                  {STUB_ACTIVITY[index - 1]?.batchId === task.batchId
-                    ? ''
-                    : relativeTime(task.enqueuedAt, now.getTime())}
-                </td>
+      {activity.length === 0 ? (
+        <p>Nothing kicked in the last 24 hours.</p>
+      ) : (
+        <table className={styles.table}>
+          <thead>
+            <tr>
+              <th>Enqueued</th>
+              <th>Job</th>
+              <th>For</th>
+              <th>Status</th>
+              <th>Took</th>
+            </tr>
+          </thead>
+          <tbody>
+            {activity.map((task) => (
+              <tr key={task.id}>
+                <td>{task.firstOfBatch ? relativeTime(task.created_at, now) : ''}</td>
                 <td>
                   <code className={styles.jobName}>{task.job}</code>
                 </td>
-                <td>{task.forWhom === null ? '—' : <Name name={task.forWhom} />}</td>
+                <td>{task.character_name === null ? '—' : <Name name={task.character_name} />}</td>
                 <td>
-                  <Status status={task.status} />
+                  <Status status={isAbandoned(task, now) ? 'abandoned' : task.status} error={task.error} />
                   {task.error !== null && <div className={styles.errorText}>{task.error}</div>}
                 </td>
                 <td>{task.durationSeconds === null ? '—' : `${task.durationSeconds}s`}</td>
               </tr>
-            </Fragment>
-          ))}
-        </tbody>
-      </table>
+            ))}
+          </tbody>
+        </table>
+      )}
 
-      {/* TODO(jobs-page): <RefreshPoller done={!anyActive} /> — moved from
-          src/app/character/refresh/poller.tsx. Polls every 2s only while a task
-          is pending/running; the Next run countdowns tick client-side and need
-          no server round trip. */}
+      <RefreshPoller done={!anyActive} />
     </>
   )
 }

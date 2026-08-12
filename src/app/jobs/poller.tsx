@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation'
 import { useEffect } from 'react'
 
 // Re-render the server page on an interval until every task has reached a terminal
-// state, so the matrix updates live without a manual reload.
+// state, so the page updates live without a manual reload.
 export const RefreshPoller = ({ done }: { done: boolean }) => {
   const router = useRouter()
   useEffect(() => {

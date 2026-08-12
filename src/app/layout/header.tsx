@@ -56,7 +56,7 @@ const Header = async () => {
             <span className={styles.refresh}>
               <Freshness at={lastRefreshedAt} prefix="Refreshed" never="never refreshed" />
               <span className={styles.bracket}>[</span>
-              <Link href="/character/refresh">refresh</Link>
+              <Link href="/jobs">refresh</Link>
               <span className={styles.bracket}>]</span>
             </span>
           )}

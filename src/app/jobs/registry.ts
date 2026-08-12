@@ -40,6 +40,7 @@ export const JOBS: readonly JobEntry[] = [
   { job: 'character-contracts', label: 'contracts', section: 'character', kickable: 'always' },
   { job: 'character-industry-jobs', label: 'industry', section: 'character', kickable: 'always' },
   { job: 'character-mercenary-dens', label: 'dens', section: 'character', kickable: 'always' },
+  { job: 'character-fittings', label: 'fittings', section: 'character', kickable: 'always' },
   // Combined live-state pull: wallet, location, implants, clones, ship, skills
   // in one invocation (src/jobs/characterStatus.js).
   { job: 'character-status', label: 'status', section: 'character', kickable: 'always' },
@@ -62,6 +63,10 @@ export const JOBS: readonly JobEntry[] = [
 ]
 
 export const jobsInSection = (section: JobSection) => JOBS.filter((entry) => entry.section === section)
+
+// The catalog entry for a job name, or undefined for anything this page doesn't
+// list — which is also what makes it unkickable (see ./actions.ts).
+export const jobEntry = (job: string): JobEntry | undefined => JOBS.find((entry) => entry.job === job)
 
 // vercel.json's cron paths are all /api/cron/<job>, so the last segment is the
 // job name this page keys everything else by.

@@ -33,7 +33,7 @@ export type OnDemandTarget = { registrationIds?: string[]; taskId?: string }
 // Wrap a job run in refresh_task status tracking, preserving the retired queue
 // consumer's exact best-effort semantics: flip the row to running before the
 // job, done after, error on a throw — recorded and swallowed, never rethrown,
-// so a tracked run isn't retried and the /character/refresh poller always
+// so a tracked run isn't retried and the /jobs poller always
 // settles on a terminal state the user can see. Without a taskId (the
 // scheduled path) it just runs the job, letting a throw propagate into the
 // step's bounded retries. Plain helper, NOT a step — import it dynamically

@@ -60,7 +60,11 @@ const nextConfig = {
     { source: '/api/assets', destination: '/api/character/assets', permanent: true },
     { source: '/api/orders', destination: '/api/character/orders', permanent: true },
     { source: '/api/industry', destination: '/api/character/jobs', permanent: true },
-    { source: '/characters/refresh', destination: '/character/refresh', permanent: true },
+    // The refresh matrix became /jobs, which answers the same question plus
+    // "what is running" and "when does it run next". The old /characters plural
+    // form points straight at the new page rather than chaining through.
+    { source: '/characters/refresh', destination: '/jobs', permanent: true },
+    { source: '/character/refresh', destination: '/jobs', permanent: true },
     // The short-lived bare fit view moved when ships got their own page.
     { source: '/asset/:itemId/fit', destination: '/ship/:itemId', permanent: false },
     // The Chancellor tools became a settings subpage.
