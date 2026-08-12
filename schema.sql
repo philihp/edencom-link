@@ -4075,7 +4075,9 @@ grant all            on public.discord_channel to service_role;
 create table public.notification (
   id bigint generated always as identity primary key,
   user_id uuid not null references auth.users(id) on delete cascade,
-  source text not null,                 -- 'mercenary-den:<den_id>:<end unix>'
+  source text not null,                 -- '<kind>:<subject>:<timer unix>', e.g.
+                                        -- 'mercenary-den:<den_id>:<end unix>'
+                                        -- 'structure-fuel:<structure_id>:<expiry unix>'
   transport text not null,              -- 'discord' | (future) 'ntfy'
   discord_channel_id uuid references public.discord_channel(id) on delete cascade,
   subject text not null,

@@ -4,28 +4,16 @@
 // insert them into the notification outbox. Called from
 // characterMercenaryDens.js at extract time, so the cron, queue, and CLI paths
 // all detect for free.
-import { createClient } from '@supabase/supabase-js'
-
 import { sudoSupabase } from '../supabase.js'
 import { isNewlyReinforced, planDenNotifications } from './denReinforcement.js'
 import { forEachSequential } from './lib.js'
+import { sdeAnon } from './sdeAnon.js'
 
-// Lazy anon client for the public-read sde_planet view (same env fallbacks as
-// src/buildEsfData.js). Missing env or a failed lookup degrades to the
-// planet-id fallback body rather than failing the extract — a ping with a raw
-// id beats no ping.
-let sdeClient
-const sde = () => {
-  if (sdeClient === undefined) {
-    const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL
-    const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? process.env.SUPABASE_KEY
-    sdeClient = url && key ? createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } }) : null
-  }
-  return sdeClient
-}
-
+// The public-read sde_planet view. Missing env or a failed lookup degrades to
+// the planet-id fallback body rather than failing the extract — a ping with a
+// raw id beats no ping.
 const selectPlanet = async (planetId) => {
-  const client = sde()
+  const client = sdeAnon()
   if (!client) return null
   const { data, error } = await client
     .from('sde_planet')

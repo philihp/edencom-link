@@ -22,7 +22,7 @@ honest when a project ships or a new doc lands.
 
 | Project | What it is | Where it stands |
 |---|---|---|
-| [discord-bot/](discord-bot/) | Discord sign-in + a bot posting alerts to configured channels | Stages 01–05 shipped (legal pages, interactions endpoint, `/edencom link`, reinforcement detection, notification sender — the MVP alert loop is closed). Stages 06 (Discord sign-in) and 07 (fuel alerts) not started; 06 is folded into [open-registration.md](open-registration.md)'s stage 5 |
+| [discord-bot/](discord-bot/) | Discord sign-in + a bot posting alerts to configured channels | Stages 01–05 and 07 shipped (legal pages, interactions endpoint, `/edencom link`, reinforcement detection, notification sender, low-fuel alerts — the alert loop is closed and proven to carry a second source). Only stage 06 (Discord sign-in) is left, folded into [open-registration.md](open-registration.md)'s stage 5 |
 | [jobs-page.md](jobs-page.md) | `/jobs`: one page for job freshness, live activity, next scheduled run; replaces `/character/refresh` | `/jobs` page exists but renders stub data (`src/app/jobs/stubData.ts`); the real queries and the `/character/refresh` replacement are still to come |
 | [mcp-search-exploration.md](mcp-search-exploration.md) | MCP static-data exploration tools (planets, regions, type taxonomy) | DB views + the planet slice shipped (`list_planets`, `sdeRegions.ts`); type-taxonomy tools (`get_type`, `list_item_groups`, `list_types`), `explore_region`, and PR 4 still open |
 | [mcp-tools-spec.md](mcp-tools-spec.md) | Tool gaps found by real MCP sessions: blueprint scoping, structures, readiness | §1 `list_blueprints`/`blueprint_search` and §3 `list_structures` shipped; §2 `research_backlog` and §4 `build_readiness` not built |
