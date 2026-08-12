@@ -99,7 +99,7 @@ Functions take `(accessToken, id, ...)`; return raw ESI JSON (paged wrappers ret
 - `queue.ts` — region-pinned `@vercel/queue` client (default `sfo1`) + `send`/`handleCallback`
 - `cron.ts` — `requireCronSecret`; `runDirectCronJob` kept only for the `esf-data`/`sheet-csv` bootstrap routes
 - `escapeLike.ts` — escapes `%`/`_`/`\` before `.ilike()`; `sdeCategories.ts` — `BLUEPRINT_CATEGORY_ID` (9). Both in `utils/` because their callers sit in layers that must not import each other (`structureQuery.ts` re-exports `escapeLike`)
-- `supabase/client.ts`/`server.ts`/`service.ts`/`bearer.ts`/`sde.ts` — browser / server-cookie / service-role / OAuth-bearer client factories; `sde.ts` is a lazy **anon** client for the public-read `sde_*` tables, usable in every context, never for writes
+- `supabase/server.ts`/`service.ts`/`bearer.ts`/`sde.ts` — server-cookie / service-role / OAuth-bearer client factories; `sde.ts` is a lazy **anon** client for the public-read `sde_*` tables, usable in every context, never for writes. **There is no browser client** — session cookies are httpOnly (`supabase/cookieOptions.ts`, applied by `server.ts` and `src/proxy.ts`), so `createBrowserClient` would see no session. Every Supabase call is server-side
 
 ## App routes → files
 
