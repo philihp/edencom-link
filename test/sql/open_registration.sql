@@ -84,7 +84,7 @@ create policy "Authenticated read character_affiliation" on public.character_aff
 create policy "Authenticated read universe_structure" on public.universe_structure for select to authenticated using (true);
 grant select on public.universe_name, public.character_affiliation, public.universe_structure to authenticated;
 
-\i supabase/migrations/20260812000000_open_registration_anon.sql
+\i supabase/migrations/20260812130000_open_registration_anon.sql
 
 -- ── fixtures ──────────────────────────────────────────────────────────────
 -- drive-by: anonymous, nothing owned, old enough to sweep
