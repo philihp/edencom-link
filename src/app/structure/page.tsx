@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
-import { concat } from 'ramda'
+import { concat, filter, forEach, map, uniq } from 'ramda'
 
 import { createClient } from '@/utils/supabase/server'
 import { DateTime } from '../DateTime'
@@ -196,26 +196,21 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
   // Only context_ids may be asked about — never the description tokens scraped below. A loose token
   // colliding with a real job id would turn the function into an oracle for jobs the caller was
   // never taxed for (see the migration comment).
-  const unresolvedJobIds = [
-    ...new Set(
-      (journal ?? [])
-        .map((entry) => (entry.context_id == null ? null : String(entry.context_id)))
-        .filter((id): id is string => id != null && !structureByJob.has(id))
-    ),
-  ]
+  const needsLookup = (entry: JournalRow) => entry.context_id != null && !structureByJob.has(String(entry.context_id))
+  const unresolvedJobIds = uniq(map((entry: JournalRow) => String(entry.context_id), filter(needsLookup, journal)))
+
   if (unresolvedJobIds.length > 0) {
     const { data: taxedJobs } = await supabase.rpc('industry_job_tax_facility', { job_ids: unresolvedJobIds })
     // Keep the invariant the structure-seeded queries above establish: every value in the map is a
     // structure on this page. A job taxed into our wallet from somewhere not in `list` (an NPC
     // station, a structure we've stopped monitoring) stays unaccounted rather than accruing to a
-    // row nothing renders.
-    const onPage = new Set(structureIds.map(String))
-    for (const j of (taxedJobs ?? []) as JobRow[]) {
-      const structureId = j.station_id ?? j.facility_id
-      if (structureId != null && onPage.has(String(structureId))) {
-        structureByJob.set(String(j.job_id), String(structureId))
-      }
-    }
+    // row nothing renders — as does one ESI gave no location at all.
+    const onPage = new Set(map(String, structureIds))
+    const locationOf = (j: JobRow) => j.station_id ?? j.facility_id
+    forEach(
+      (j) => structureByJob.set(String(j.job_id), String(locationOf(j))),
+      filter((j: JobRow) => locationOf(j) != null && onPage.has(String(locationOf(j))), (taxedJobs ?? []) as JobRow[])
+    )
   }
 
   const totalByStructure = new Map<string, number>()
