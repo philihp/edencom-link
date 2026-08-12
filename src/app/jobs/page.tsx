@@ -14,6 +14,8 @@ import { reduce } from 'ramda'
 
 import { createClient } from '@/utils/supabase/server'
 
+import { establishedUser } from '../account/lib/establishedUser'
+
 import { isChancellor } from '../account/settings/chancellor/chancellor'
 import { Freshness } from '../Freshness'
 import { freshnessLevel, relativeTime } from '../freshness'
@@ -241,10 +243,8 @@ const EntityJobTable = ({
 
 const JobsPage = async () => {
   const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-  if (!user?.id) {
+  const user = await establishedUser(supabase)
+  if (!user) {
     redirect('/account/login')
   }
 
