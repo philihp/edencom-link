@@ -30,6 +30,15 @@ export type OwnerIdentity = {
   allianceName: string | null
 }
 
+// The public identity behind a corporation that owns rows, for the
+// Corporation entity edge. World-readable tables only, exactly like
+// OwnerIdentity above.
+export type CorporationIdentity = {
+  name: string | null
+  allianceId: string | null
+  allianceName: string | null
+}
+
 export type GraphqlContext = {
   supabase: SupabaseClient
   mode: 'session' | 'token'
@@ -40,6 +49,17 @@ export type GraphqlContext = {
   // registration uuid → EVE character id, for Owner.characterId on the caller's
   // own characters (free — it rides along on the context's registration read).
   ownerCharacterIdById: Map<string, string>
+  // The corporations the caller's characters belong to. Corp-owned rows
+  // (corp_asset, corp_blueprint, corp_industry_job) are RLS-scoped to exactly
+  // this set in session mode; in token mode the service client bypasses RLS, so
+  // this list IS the leak guard on the corp side — the corp equivalent of
+  // registrationIds. Ids are strings for the same reason every id in the schema
+  // is: EVE ids overflow 32-bit Int.
+  corporationIds: string[]
+  // Lazily load the caller's corporation identities (name, alliance) — only the
+  // Corporation edge reads them, and there are a handful at most, so one memo
+  // per request covers every result set.
+  corporationIdentities: () => Promise<Map<string, CorporationIdentity>>
   // Lazily load the identities for one result set's owners. The Owner type's
   // corp/alliance fields are the only callers, so an unselected edge costs
   // nothing; when they are selected, every row of a result set passes the SAME
@@ -122,6 +142,49 @@ const loadOwnerIdentities = async (
   )
 }
 
+// The caller's corporations, named. `corporation` and `alliance` are both
+// world-readable, so this resolves identically in session and token mode.
+const loadCorporationIdentities = async (
+  supabase: SupabaseClient,
+  corporationIds: readonly string[]
+): Promise<Map<string, CorporationIdentity>> => {
+  if (corporationIds.length === 0) return new Map()
+  const { data } = await supabase
+    .from('corporation')
+    .select('corporation_id, name, alliance_id')
+    .in('corporation_id', corporationIds.map(Number))
+  const rows = (data ?? []) as Array<{
+    corporation_id: number | string
+    name: string | null
+    alliance_id: number | string | null
+  }>
+
+  const allianceIds = [...new Set(rows.map((r) => r.alliance_id).filter((id): id is number | string => id != null))]
+  const { data: alliances } = allianceIds.length
+    ? await supabase.from('alliance').select('alliance_id, name').in('alliance_id', allianceIds.map(Number))
+    : { data: [] }
+  const allianceNames = new Map(
+    ((alliances ?? []) as Array<{ alliance_id: number | string; name: string | null }>).map((a) => [
+      String(a.alliance_id),
+      a.name,
+    ])
+  )
+
+  return new Map(
+    rows.map((r): [string, CorporationIdentity] => {
+      const allianceId = str(r.alliance_id)
+      return [
+        String(r.corporation_id),
+        {
+          name: r.name,
+          allianceId,
+          allianceName: allianceId == null ? null : (allianceNames.get(allianceId) ?? null),
+        },
+      ]
+    })
+  )
+}
+
 // The context for a given user on a given client — the tail every entry point
 // shares once auth has produced a (client, userId) pair. Owner names come from
 // the user's own registration rows, scoped by user_id here rather than through
@@ -134,16 +197,23 @@ const contextFor = async (
 ): Promise<GraphqlContext> => {
   const { data: registrations, error } = await supabase
     .from('registration')
-    .select('id, name, character_id')
+    .select('id, name, character_id, corporation_id')
     .eq('user_id', userId)
   if (error) deny('Lookup failed', 500)
 
-  const rows = (registrations ?? []) as Array<{ id: string; name: string; character_id: number | string | null }>
+  const rows = (registrations ?? []) as Array<{
+    id: string
+    name: string
+    character_id: number | string | null
+    corporation_id: number | string | null
+  }>
+  const corporationIds = [...new Set(rows.map((r) => str(r.corporation_id)).filter((id): id is string => id != null))]
 
   // Per-request memo keyed on the scope array's identity, not its contents: a
   // root resolver hands every Owner in its result set the same array, so the
   // first field resolver to look starts the load and the rest await it.
   const identitiesByScope = new WeakMap<readonly string[], Promise<Map<string, OwnerIdentity>>>()
+  let corporationIdentities: Promise<Map<string, CorporationIdentity>> | null = null
 
   return {
     supabase,
@@ -154,6 +224,11 @@ const contextFor = async (
     ownerCharacterIdById: new Map(
       rows.flatMap((r): Array<[string, string]> => (r.character_id == null ? [] : [[r.id, String(r.character_id)]]))
     ),
+    corporationIds,
+    corporationIdentities: () => {
+      corporationIdentities ??= loadCorporationIdentities(supabase, corporationIds)
+      return corporationIdentities
+    },
     ownerIdentities: (scope) => {
       const inFlight = identitiesByScope.get(scope)
       if (inFlight) return inFlight

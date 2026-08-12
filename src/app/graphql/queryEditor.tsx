@@ -62,7 +62,7 @@ const EXAMPLES: Array<{ label: string; query: string }> = [
         name
         systemName
       }
-      owner {
+      character {
         name
         corporationName
       }
@@ -143,7 +143,7 @@ export const QueryEditor = () => {
     }
   }
 
-  // Entity edges nest one level (`owner { name }`), which csvRows joins into
+  // Entity edges nest one level (`character { name }`), which csvRows joins into
   // `owner.name` columns — so a query written by clicking through the docs
   // explorer downloads as a spreadsheet with no rewrite into flat scalars.
   const downloadCsv = () => {

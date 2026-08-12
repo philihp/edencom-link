@@ -5,14 +5,15 @@
 // The `owner`/`type`/`location` entity edges (see the SDL header for why they
 // exist) are built RIGHT HERE, in the root resolver, out of data it already
 // had — the SDE type rows and resolved locations it used to mine for a single
-// name each. So the edges add no queries and cannot fan out per row. The one
-// type-level resolver is Owner's corp/alliance block at the bottom, which loads
-// lazily and once per result set.
+// name each. So the edges add no queries and cannot fan out per row. The only
+// type-level resolvers are Owner's and Corporation's identity blocks at the
+// bottom, which load lazily and once per result set.
 //
-// THE LEAK GUARD (see context.ts): every table read filters
-// .in('registration_id', …) from the context. In session mode that's
-// redundant with RLS; in token mode the client is service-role and the filter
-// is the only barrier between users.
+// THE LEAK GUARD (see context.ts): every table read filters by owner from the
+// context — .in('registration_id', …) on the character tables, and
+// .in('corporation_id', …) from ctx.corporationIds on the corp ones. In session
+// mode that's redundant with RLS; in token mode the client is service-role and
+// these filters are the only barrier between users.
 import { GraphQLError } from 'graphql'
 import { uniq } from 'ramda'
 
@@ -23,13 +24,14 @@ import {
   ASSET_CAP,
   LIST_CAP,
   clampLimit,
-  matchCharacterFilter,
   matchExactNames,
+  matchOwnerFilter,
   parseRefFilter,
   parseSince,
   splitRefEntries,
 } from './filters'
 import { searchLocationCandidates } from './locationSearch'
+import type { OwnerScopes } from './filters'
 import type { GraphqlContext } from './context'
 
 const badRequest = (message: string): never => {
@@ -38,22 +40,6 @@ const badRequest = (message: string): never => {
 
 const queryFailed = (): never => {
   throw new GraphQLError('Query failed', { extensions: { http: { status: 500 } } })
-}
-
-// The registration ids a field should read for, after the optional character
-// filter (`character` fuzzy by name, `characters` an exact list of
-// names/character ids/registration ids) — always a subset of the caller's own
-// registrations.
-const scopeIds = (
-  ctx: GraphqlContext,
-  args: { character?: string | null; characters?: readonly string[] | null }
-): string[] => {
-  const match = matchCharacterFilter(args.character, args.characters, {
-    nameById: ctx.ownerNameById,
-    characterIdById: ctx.ownerCharacterIdById,
-  })
-  if (!match.ok) return badRequest(match.message)
-  return match.ids ?? ctx.registrationIds
 }
 
 // The item-type dimension → SDE type ids, or null for no filter. `type` runs
@@ -186,17 +172,126 @@ const locationOf = (locations: ResolvedLocations, ref: LocationRef | null) => {
   }
 }
 
-// The Owner edge. `scope` is the result set's full owner id list, carried on
-// every Owner of that set BY REFERENCE — it's what the context memoizes the
-// corp/alliance load on, so the whole set resolves in one pass. It isn't in the
-// SDL, so it's invisible to callers.
-type OwnerRef = { id: string; name: string; scope: readonly string[] }
+// The Character edge. `scope` is the result set's full registration id list,
+// carried on every Character of that set BY REFERENCE — it's what the context
+// memoizes the corp/alliance load on, so the whole set resolves in one pass. It
+// isn't in the SDL, so it's invisible to callers.
+type CharacterRef = { id: string; name: string; scope: readonly string[] }
 
-const ownerOf = (names: Map<string, string> | ReadonlyMap<string, string>, id: string, scope: readonly string[]) => ({
-  id,
-  name: names.get(id) ?? id,
-  scope,
-})
+// The Corporation edge, for rows a CORPORATION owns rather than a character.
+// Only the id comes from the row; name and alliance load lazily and once per
+// request off the context memo.
+type CorporationRef = { corporationId: string }
+
+// corporation id → name, off the context's per-request memo. Used both to
+// match the owner filter and to fill the corporation columns on corp rows.
+const corporationNamesFor = async (ctx: GraphqlContext): Promise<Map<string, string>> => {
+  const identities = await ctx.corporationIdentities()
+  return new Map(
+    [...identities].flatMap(([id, identity]): Array<[string, string]> =>
+      identity.name == null ? [] : [[id, identity.name]]
+    )
+  )
+}
+
+// Who owns a row. Corp-owned rows have no registration behind them, so the
+// two sides are a discriminated union rather than a nullable column.
+type OwnedBy = { kind: 'character'; registrationId: string } | { kind: 'corporation'; corporationId: string }
+
+// The name and EVE id behind a registration, for the character columns.
+export type CharacterIdentity = { name: string; characterId: string | null }
+
+// The caller's own characters as identities — no query, it's all on the
+// context already. Rows that can only be owned by the caller's characters
+// (everything but a shared asset) resolve their owner block from this.
+const ownCharacters = (ctx: GraphqlContext): ReadonlyMap<string, CharacterIdentity> =>
+  new Map(
+    [...ctx.ownerNameById].map(([id, name]): [string, CharacterIdentity] => [
+      id,
+      { name, characterId: ctx.ownerCharacterIdById.get(id) ?? null },
+    ])
+  )
+
+// THE OWNER BLOCK every row type carries. The character and corporation columns
+// are each filled only on their own side, and the owner columns are the
+// COALESCE of the two — so `ownerName` always has a value while
+// `characterName`/`corporationName` say which kind it is, and `ownerType`
+// states it outright. The two typed edges follow the same split.
+//
+// `characterId` is the EVE character id, not the registration uuid, so
+// `ownerId` is an EVE id whichever side a row came from; the registration uuid
+// is still reachable as `character { id }`. It falls back to the uuid only if
+// a registration somehow has no character id recorded.
+const ownerFieldsOf = (
+  owned: OwnedBy,
+  characters: ReadonlyMap<string, CharacterIdentity>,
+  corporationNames: ReadonlyMap<string, string>,
+  ownerScope: readonly string[]
+) => {
+  if (owned.kind === 'corporation') {
+    const name = corporationNames.get(owned.corporationId) ?? owned.corporationId
+    return {
+      ownerType: 'corporation',
+      ownerId: owned.corporationId,
+      ownerName: name,
+      characterId: null,
+      characterName: null,
+      corporationId: owned.corporationId,
+      corporationName: name,
+      character: null,
+      corporation: { corporationId: owned.corporationId } as CorporationRef,
+    }
+  }
+  const identity = characters.get(owned.registrationId)
+  const characterId = identity?.characterId ?? owned.registrationId
+  const characterName = identity?.name ?? owned.registrationId
+  return {
+    ownerType: 'character',
+    ownerId: characterId,
+    ownerName: characterName,
+    characterId,
+    characterName,
+    corporationId: null,
+    corporationName: null,
+    character: { id: owned.registrationId, name: characterName, scope: ownerScope } as CharacterRef,
+    corporation: null,
+  }
+}
+
+// The two owner scopes a field reads, after the owner filter. One filter spans
+// both kinds of owner (filters.ts), so naming a character narrows to that
+// character and drops the corp hangar, naming a corporation does the reverse,
+// naming both unions them, and naming neither reads everything the caller owns.
+const ownerScopesFor = async (
+  ctx: GraphqlContext,
+  args: { owner?: string | null; owners?: readonly string[] | null }
+): Promise<OwnerScopes> => {
+  const filtered = args.owner != null || args.owners != null
+  const match = matchOwnerFilter(args.owner, args.owners, {
+    characters: { nameById: ctx.ownerNameById, characterIdById: ctx.ownerCharacterIdById },
+    // Only a filter needs corporation names, so the load stays behind one.
+    corporations: filtered ? await corporationNamesFor(ctx) : new Map(),
+  })
+  if (!match.ok) badRequest(match.message)
+  const scopes = match.ok ? match.scopes : null
+  return scopes ?? { registrationIds: ctx.registrationIds, corporationIds: ctx.corporationIds }
+}
+
+// The character side alone, for the fields with no corp-owned source behind
+// them (market orders and wallet transactions — ESI's corporation endpoints for
+// those aren't extracted). An owner filter naming ONLY corporations can't be
+// honoured there, and saying so beats returning zero rows as if none existed.
+const characterScopeFor = async (
+  ctx: GraphqlContext,
+  args: { owner?: string | null; owners?: readonly string[] | null },
+  what: string
+): Promise<string[]> => {
+  const scopes = await ownerScopesFor(ctx, args)
+  if (scopes.registrationIds.length === 0 && scopes.corporationIds.length > 0) {
+    badRequest(`${what} are extracted per character only, so a corporation-only owner filter matches nothing here.`)
+  }
+  return scopes.registrationIds
+}
 
 // Session-only guard for the shared-data surfaces: the Bearer path runs on the
 // service client, where RLS can't arbitrate a widened filter — the designed
@@ -220,27 +315,46 @@ const grantorRegistrationIds = async (ctx: GraphqlContext): Promise<string[]> =>
   )
 }
 
-// Owner display names for a mixed set of registration ids: the caller's own
-// from the context, foreign grantors through the world-readable
+// Name and EVE character id for a mixed set of registration ids: the caller's
+// own from the context, foreign grantors through the world-readable
 // character_directory (never registration, which RLS hides to non-owners).
-const ownerNamesFor = async (ctx: GraphqlContext, registrationIds: Iterable<string>): Promise<Map<string, string>> => {
-  const names = new Map(ctx.ownerNameById)
-  const foreign = [...new Set([...registrationIds])].filter((id) => !names.has(id))
+const characterIdentitiesFor = async (
+  ctx: GraphqlContext,
+  registrationIds: Iterable<string>
+): Promise<Map<string, CharacterIdentity>> => {
+  const identities = new Map(
+    [...ctx.ownerNameById].map(([id, name]): [string, CharacterIdentity] => [
+      id,
+      { name, characterId: ctx.ownerCharacterIdById.get(id) ?? null },
+    ])
+  )
+  const foreign = [...new Set([...registrationIds])].filter((id) => !identities.has(id))
   if (foreign.length > 0) {
     const { data } = await ctx.supabase
       .from('character_directory')
-      .select('registration_id, name')
+      .select('registration_id, name, character_id')
       .in('registration_id', foreign)
-    for (const row of (data ?? []) as Array<{ registration_id: string | null; name: string | null }>) {
-      if (row.registration_id != null && row.name != null) names.set(row.registration_id, row.name)
+    const rows = (data ?? []) as Array<{
+      registration_id: string | null
+      name: string | null
+      character_id: number | string | null
+    }>
+    for (const row of rows) {
+      if (row.registration_id != null && row.name != null) {
+        identities.set(row.registration_id, { name: row.name, characterId: str(row.character_id) })
+      }
     }
   }
-  return names
+  return identities
 }
 
+// One shape for both asset sources: character_asset keys on registration_id and
+// carries a player-assigned name, corp_asset keys on corporation_id and has
+// neither — the columns each source lacks simply arrive undefined.
 type AssetRow = {
   item_id: number
   registration_id: string
+  corporation_id?: number | string
   type_id: number
   location_id: number | null
   location_flag: string | null
@@ -248,7 +362,7 @@ type AssetRow = {
   quantity: number | null
   is_singleton: boolean | null
   is_blueprint_copy: boolean | null
-  name: string | null
+  name?: string | null
 }
 
 const assetLocationRef = (row: AssetRow): LocationRef | null =>
@@ -261,10 +375,17 @@ const assetLocationRef = (row: AssetRow): LocationRef | null =>
 
 export const resolvers = {
   Query: {
-    owners: (_parent: unknown, _args: unknown, ctx: GraphqlContext) => {
+    characters: (_parent: unknown, _args: unknown, ctx: GraphqlContext) => {
       const scope = ctx.registrationIds
       return [...ctx.ownerNameById]
         .map(([id, name]) => ({ id, name, scope }))
+        .sort((a, b) => a.name.localeCompare(b.name))
+    },
+
+    corporations: async (_parent: unknown, _args: unknown, ctx: GraphqlContext) => {
+      const names = await corporationNamesFor(ctx)
+      return ctx.corporationIds
+        .map((corporationId) => ({ corporationId, name: names.get(corporationId) ?? corporationId }))
         .sort((a, b) => a.name.localeCompare(b.name))
     },
 
@@ -275,8 +396,8 @@ export const resolvers = {
         types?: readonly string[] | null
         location?: string | null
         locations?: readonly string[] | null
-        character?: string | null
-        characters?: readonly string[] | null
+        owner?: string | null
+        owners?: readonly string[] | null
         limit?: number | null
         includeShared?: boolean | null
       },
@@ -288,47 +409,81 @@ export const resolvers = {
       // The character filter still narrows only the caller's own characters;
       // shared rows ride along unfiltered.
       if (args.includeShared) requireSession(ctx)
-      const ownerIds = scopeIds(ctx, args)
-      const sharedIds = args.includeShared ? await grantorRegistrationIds(ctx) : []
-      const scopedIds = [...ownerIds, ...sharedIds]
+      const scopes = await ownerScopesFor(ctx, args)
+      // Shared rows ride the character side, so a corporation-only filter (which
+      // empties that side) excludes them along with your own character rows.
+      const sharedIds = args.includeShared && scopes.registrationIds.length > 0 ? await grantorRegistrationIds(ctx) : []
+      const scopedIds = [...scopes.registrationIds, ...sharedIds]
       const typeIds = await typeIdsFor(args)
       const locationIds = await locationIdsFor(ctx, args)
       const cap = clampLimit(args.limit, ASSET_CAP)
 
-      // The same filter set applies to the head-only count and the row pages.
-      // The builder is untyped (no generated DB types in this repo), so `any`.
-      const filtered = (query: any): any => {
-        let q = query.in('registration_id', scopedIds)
+      // The same filter set applies to the head-only count and the row pages,
+      // on both sides — only the owner column differs. The builder is untyped
+      // (no generated DB types in this repo), so `any`.
+      const filtered = (query: any, ownerColumn: string, ownerIds: string[]): any => {
+        let q = query.in(ownerColumn, ownerIds)
         if (typeIds !== null) q = q.in('type_id', typeIds)
         if (locationIds !== null) q = q.in('location_id', locationIds)
         return q
       }
 
-      const { count, error: countError } = await filtered(
-        ctx.supabase.from('character_asset').select('item_id', { count: 'exact', head: true })
-      )
-      if (countError) return queryFailed()
-      const totalCount = count ?? 0
+      // One source per owner side, each skipped entirely when the filters
+      // excluded it. character_asset carries a player-assigned `name`;
+      // corp_asset has no such column, so those rows report null.
+      const read = async (
+        table: string,
+        ownerColumn: string,
+        ownerIds: string[]
+      ): Promise<{ count: number; rows: AssetRow[] }> => {
+        if (ownerIds.length === 0) return { count: 0, rows: [] }
+        const { count, error } = await filtered(
+          ctx.supabase.from(table).select('item_id', { count: 'exact', head: true }),
+          ownerColumn,
+          ownerIds
+        )
+        if (error) return queryFailed()
+        const rows = await fetchCapped<AssetRow>(
+          (from, to) =>
+            filtered(ctx.supabase.from(table).select('*'), ownerColumn, ownerIds).order('item_id').range(from, to),
+          cap
+        )
+        return { count: count ?? 0, rows }
+      }
 
-      const rows = await fetchCapped<AssetRow>(
-        (from, to) => filtered(ctx.supabase.from('character_asset').select('*')).order('item_id').range(from, to),
-        cap
-      )
-
-      const [types, locations, ownerNames] = await Promise.all([
-        typesFor(rows.map((r) => r.type_id)),
-        locationNamesFor(ctx, rows.map(assetLocationRef)),
-        ownerNamesFor(
-          ctx,
-          rows.map((r) => r.registration_id)
-        ),
+      const [own, corp] = await Promise.all([
+        read('character_asset', 'registration_id', scopedIds),
+        read('corp_asset', 'corporation_id', scopes.corporationIds),
       ])
-      const ownerScope = uniq(rows.map((r) => r.registration_id))
+      const totalCount = own.count + corp.count
+      // The cap bounds the MERGED set, so a caller asking for 50 rows across
+      // both sides gets 50 rows, not 50 of each.
+      const rows = [
+        ...own.rows.map((r) => ({ row: r, owned: { kind: 'character' as const, registrationId: r.registration_id } })),
+        ...corp.rows.map((r) => ({
+          row: r,
+          owned: { kind: 'corporation' as const, corporationId: String(r.corporation_id) },
+        })),
+      ].slice(0, cap)
+
+      const [types, locations, characters, corporationNames] = await Promise.all([
+        typesFor(rows.map(({ row }) => row.type_id)),
+        locationNamesFor(
+          ctx,
+          rows.map(({ row }) => assetLocationRef(row))
+        ),
+        characterIdentitiesFor(
+          ctx,
+          own.rows.map((r) => r.registration_id)
+        ),
+        corp.rows.length > 0 ? corporationNamesFor(ctx) : Promise.resolve(new Map<string, string>()),
+      ])
+      const ownerScope = uniq(own.rows.map((r) => r.registration_id))
 
       return {
         totalCount,
         truncated: totalCount > rows.length,
-        rows: rows.map((r) => {
+        rows: rows.map(({ row: r, owned }) => {
           const ref = assetLocationRef(r)
           return {
             itemId: String(r.item_id),
@@ -341,10 +496,8 @@ export const resolvers = {
             locationName: ref ? locations.nameFor(ref) : null,
             isSingleton: r.is_singleton,
             isBlueprintCopy: r.is_blueprint_copy,
-            name: r.name,
-            ownerId: r.registration_id,
-            ownerName: ownerNames.get(r.registration_id) ?? r.registration_id,
-            owner: ownerOf(ownerNames, r.registration_id, ownerScope),
+            name: r.name ?? null,
+            ...ownerFieldsOf(owned, characters, corporationNames, ownerScope),
             type: itemTypeOf(types, r.type_id),
             location: locationOf(locations, ref),
           }
@@ -383,9 +536,9 @@ export const resolvers = {
           Number(i.type_id),
         ])
       )
-      const [types, ownerNames] = await Promise.all([
+      const [types, characters] = await Promise.all([
         typesFor([...typeByItem.values()]),
-        ownerNamesFor(
+        characterIdentitiesFor(
           ctx,
           grants.map((g) => g.registration_id)
         ),
@@ -398,10 +551,8 @@ export const resolvers = {
           shareId: g.id,
           itemId: String(g.item_id),
           itemTypeName: typeNameOf(types, typeId),
-          ownerId: g.registration_id,
-          ownerName: ownerNames.get(g.registration_id) ?? g.registration_id,
           sharedAt: g.created_at,
-          owner: ownerOf(ownerNames, g.registration_id, ownerScope),
+          ...ownerFieldsOf({ kind: 'character', registrationId: g.registration_id }, characters, new Map(), ownerScope),
           itemType: itemTypeOf(types, typeId),
         }
       })
@@ -412,19 +563,20 @@ export const resolvers = {
       args: {
         type?: string | null
         types?: readonly string[] | null
-        character?: string | null
-        characters?: readonly string[] | null
+        owner?: string | null
+        owners?: readonly string[] | null
         limit?: number | null
       },
       ctx: GraphqlContext
     ) => {
-      const ownerIds = scopeIds(ctx, args)
+      const scopes = await ownerScopesFor(ctx, args)
       const typeIds = await typeIdsFor(args)
       const cap = clampLimit(args.limit, LIST_CAP)
 
       type BlueprintRow = {
         item_id: number
         registration_id: string
+        corporation_id?: number | string
         type_id: number
         location_id: number | null
         location_flag: string | null
@@ -434,34 +586,57 @@ export const resolvers = {
         runs: number | null
       }
 
-      const filtered = (query: any): any => {
-        const q = query.in('registration_id', ownerIds)
+      const filtered = (query: any, ownerColumn: string, ownerIds: string[]): any => {
+        const q = query.in(ownerColumn, ownerIds)
         return typeIds !== null ? q.in('type_id', typeIds) : q
       }
 
-      const { count, error: countError } = await filtered(
-        ctx.supabase.from('character_blueprint').select('item_id', { count: 'exact', head: true })
-      )
-      if (countError) return queryFailed()
-      const totalCount = count ?? 0
+      const read = async (
+        table: string,
+        ownerColumn: string,
+        ownerIds: string[]
+      ): Promise<{ count: number; rows: BlueprintRow[] }> => {
+        if (ownerIds.length === 0) return { count: 0, rows: [] }
+        const { count, error } = await filtered(
+          ctx.supabase.from(table).select('item_id', { count: 'exact', head: true }),
+          ownerColumn,
+          ownerIds
+        )
+        if (error) return queryFailed()
+        const rows = await fetchCapped<BlueprintRow>(
+          (from, to) =>
+            filtered(ctx.supabase.from(table).select('*'), ownerColumn, ownerIds).order('item_id').range(from, to),
+          cap
+        )
+        return { count: count ?? 0, rows }
+      }
 
-      const rows = await fetchCapped<BlueprintRow>(
-        (from, to) => filtered(ctx.supabase.from('character_blueprint').select('*')).order('item_id').range(from, to),
-        cap
-      )
+      const [own, corp] = await Promise.all([
+        read('character_blueprint', 'registration_id', scopes.registrationIds),
+        read('corp_blueprint', 'corporation_id', scopes.corporationIds),
+      ])
+      const totalCount = own.count + corp.count
+      const rows = [
+        ...own.rows.map((r) => ({ row: r, owned: { kind: 'character' as const, registrationId: r.registration_id } })),
+        ...corp.rows.map((r) => ({
+          row: r,
+          owned: { kind: 'corporation' as const, corporationId: String(r.corporation_id) },
+        })),
+      ].slice(0, cap)
 
-      const [types, locations] = await Promise.all([
-        typesFor(rows.map((r) => r.type_id)),
+      const [types, locations, corporationNames] = await Promise.all([
+        typesFor(rows.map(({ row }) => row.type_id)),
         locationNamesFor(
           ctx,
-          rows.map((r) => guessLocationRef(r.location_id))
+          rows.map(({ row }) => guessLocationRef(row.location_id))
         ),
+        corp.rows.length > 0 ? corporationNamesFor(ctx) : Promise.resolve(new Map<string, string>()),
       ])
 
       return {
         totalCount,
         truncated: totalCount > rows.length,
-        rows: rows.map((r) => {
+        rows: rows.map(({ row: r, owned }) => {
           const ref = guessLocationRef(r.location_id)
           return {
             itemId: String(r.item_id),
@@ -474,9 +649,7 @@ export const resolvers = {
             materialEfficiency: r.material_efficiency,
             timeEfficiency: r.time_efficiency,
             runs: r.runs,
-            ownerId: r.registration_id,
-            ownerName: ctx.ownerNameById.get(r.registration_id) ?? r.registration_id,
-            owner: ownerOf(ctx.ownerNameById, r.registration_id, ownerIds),
+            ...ownerFieldsOf(owned, ownCharacters(ctx), corporationNames, scopes.registrationIds),
             type: itemTypeOf(types, r.type_id),
             location: locationOf(locations, ref),
           }
@@ -486,10 +659,10 @@ export const resolvers = {
 
     marketOrders: async (
       _parent: unknown,
-      args: { character?: string | null; characters?: readonly string[] | null },
+      args: { owner?: string | null; owners?: readonly string[] | null },
       ctx: GraphqlContext
     ) => {
-      const ownerIds = scopeIds(ctx, args)
+      const ownerIds = await characterScopeFor(ctx, args, 'Market orders')
 
       type OrderRow = {
         order_id: number
@@ -536,7 +709,6 @@ export const resolvers = {
           locationId: String(r.location_id),
           locationName: ref ? locations.nameFor(ref) : null,
           regionId: String(r.region_id),
-          owner: ownerOf(ctx.ownerNameById, r.registration_id, ownerIds),
           type: itemTypeOf(types, r.type_id),
           location: locationOf(locations, ref),
           isBuy: r.is_buy,
@@ -556,14 +728,20 @@ export const resolvers = {
 
     industryJobs: async (
       _parent: unknown,
-      args: { character?: string | null; characters?: readonly string[] | null; includeDelivered?: boolean | null },
+      args: {
+        owner?: string | null
+        owners?: readonly string[] | null
+        includeDelivered?: boolean | null
+      },
       ctx: GraphqlContext
     ) => {
-      const ownerIds = scopeIds(ctx, args)
+      const scopes = await ownerScopesFor(ctx, args)
 
       type JobRow = {
         job_id: number
         registration_id: string
+        corporation_id?: number | string
+        installer_id?: number | string
         activity_id: number
         blueprint_type_id: number
         product_type_id: number | null
@@ -581,24 +759,47 @@ export const resolvers = {
         facility_id: number
       }
 
-      const rows = await fetchCapped<JobRow>((from, to) => {
-        const q = ctx.supabase
-          .from('character_industry_job')
-          .select('*')
-          .in('registration_id', ownerIds)
-          .order('start_date', { ascending: false })
-          .range(from, to)
-        return args.includeDelivered ? q : q.neq('status', 'delivered')
-      }, LIST_CAP)
+      const read = async (table: string, ownerColumn: string, ownerIds: string[]): Promise<JobRow[]> => {
+        if (ownerIds.length === 0) return []
+        return fetchCapped<JobRow>((from, to) => {
+          const q = ctx.supabase
+            .from(table)
+            .select('*')
+            .in(ownerColumn, ownerIds)
+            .order('start_date', { ascending: false })
+            .range(from, to)
+          return args.includeDelivered ? q : q.neq('status', 'delivered')
+        }, LIST_CAP)
+      }
+
+      const [own, corp] = await Promise.all([
+        read('character_industry_job', 'registration_id', scopes.registrationIds),
+        read('corp_industry_job', 'corporation_id', scopes.corporationIds),
+      ])
+      // Newest first across BOTH sides, then capped — each side came back
+      // sorted, so the merged list only needs one sort before the cap.
+      const rows = [
+        ...own.map((r) => ({ row: r, owned: { kind: 'character' as const, registrationId: r.registration_id } })),
+        ...corp.map((r) => ({
+          row: r,
+          owned: { kind: 'corporation' as const, corporationId: String(r.corporation_id) },
+        })),
+      ]
+        .sort((a, b) => b.row.start_date.localeCompare(a.row.start_date))
+        .slice(0, LIST_CAP)
 
       const jobLocationRef = (r: JobRow): LocationRef | null => guessLocationRef(r.station_id ?? r.facility_id)
 
-      const [types, locations] = await Promise.all([
-        typesFor(rows.flatMap((r) => [r.blueprint_type_id, r.product_type_id])),
-        locationNamesFor(ctx, rows.map(jobLocationRef)),
+      const [types, locations, corporationNames] = await Promise.all([
+        typesFor(rows.flatMap(({ row }) => [row.blueprint_type_id, row.product_type_id])),
+        locationNamesFor(
+          ctx,
+          rows.map(({ row }) => jobLocationRef(row))
+        ),
+        corp.length > 0 ? corporationNamesFor(ctx) : Promise.resolve(new Map<string, string>()),
       ])
 
-      return rows.map((r) => {
+      return rows.map(({ row: r, owned }) => {
         const ref = jobLocationRef(r)
         return {
           jobId: String(r.job_id),
@@ -607,7 +808,7 @@ export const resolvers = {
           blueprintTypeName: typeNameOf(types, r.blueprint_type_id),
           productTypeId: str(r.product_type_id),
           productTypeName: typeNameOf(types, r.product_type_id),
-          owner: ownerOf(ctx.ownerNameById, r.registration_id, ownerIds),
+          ...ownerFieldsOf(owned, ownCharacters(ctx), corporationNames, scopes.registrationIds),
           blueprintType: itemTypeOf(types, r.blueprint_type_id),
           productType: itemTypeOf(types, r.product_type_id),
           location: locationOf(locations, ref),
@@ -623,8 +824,9 @@ export const resolvers = {
           completedDate: r.completed_date,
           stationId: str(r.station_id),
           locationName: ref ? locations.nameFor(ref) : null,
-          ownerId: r.registration_id,
-          ownerName: ctx.ownerNameById.get(r.registration_id) ?? r.registration_id,
+          // Corp jobs name the character who installed them; character jobs
+          // are always installed by their owner, so ESI doesn't repeat it.
+          installerId: str(r.installer_id ?? null),
         }
       })
     },
@@ -649,11 +851,14 @@ export const resolvers = {
       return latest
         .filter((r): r is NonNullable<typeof r> => r != null)
         .map((r) => ({
-          ownerId: r.registration_id,
-          ownerName: ctx.ownerNameById.get(r.registration_id) ?? r.registration_id,
           balance: Number(r.balance),
           recordedAt: r.recorded_at,
-          owner: ownerOf(ctx.ownerNameById, r.registration_id, ctx.registrationIds),
+          ...ownerFieldsOf(
+            { kind: 'character', registrationId: r.registration_id },
+            ownCharacters(ctx),
+            new Map(),
+            ctx.registrationIds
+          ),
         }))
         .sort((a, b) => a.ownerName.localeCompare(b.ownerName))
     },
@@ -663,14 +868,14 @@ export const resolvers = {
       args: {
         type?: string | null
         types?: readonly string[] | null
-        character?: string | null
-        characters?: readonly string[] | null
+        owner?: string | null
+        owners?: readonly string[] | null
         since?: string | null
         limit?: number | null
       },
       ctx: GraphqlContext
     ) => {
-      const ownerIds = scopeIds(ctx, args)
+      const ownerIds = await characterScopeFor(ctx, args, 'Wallet transactions')
       const typeIds = await typeIdsFor(args)
       const since = parseSince(args.since)
       if (!since.ok) return badRequest(since.message)
@@ -719,9 +924,12 @@ export const resolvers = {
           isBuy: r.is_buy,
           locationId: String(r.location_id),
           locationName: ref ? locations.nameFor(ref) : null,
-          ownerId: r.registration_id,
-          ownerName: ctx.ownerNameById.get(r.registration_id) ?? r.registration_id,
-          owner: ownerOf(ctx.ownerNameById, r.registration_id, ownerIds),
+          ...ownerFieldsOf(
+            { kind: 'character', registrationId: r.registration_id },
+            ownCharacters(ctx),
+            new Map(),
+            ownerIds
+          ),
           type: itemTypeOf(types, r.type_id),
           location: locationOf(locations, ref),
         }
@@ -729,21 +937,33 @@ export const resolvers = {
     },
   },
 
+  // The Corporation edge's fields, lazy for the same reason Owner's are: a row
+  // hands over only the id, and the identities load once per request off the
+  // context memo — the caller has a handful of corporations at most.
+  Corporation: {
+    name: (parent: CorporationRef, _args: unknown, ctx: GraphqlContext) =>
+      ctx.corporationIdentities().then((m) => m.get(parent.corporationId)?.name ?? null),
+    allianceId: (parent: CorporationRef, _args: unknown, ctx: GraphqlContext) =>
+      ctx.corporationIdentities().then((m) => m.get(parent.corporationId)?.allianceId ?? null),
+    allianceName: (parent: CorporationRef, _args: unknown, ctx: GraphqlContext) =>
+      ctx.corporationIdentities().then((m) => m.get(parent.corporationId)?.allianceName ?? null),
+  },
+
   // The only type-level resolvers in the schema. id/name came with the parent;
   // these four read, so they stay lazy — a query that doesn't ask for a corp or
   // alliance issues no query at all, and one that does resolves the whole result
   // set at once off the memoized scope (context.ts).
-  Owner: {
-    characterId: (parent: OwnerRef, _args: unknown, ctx: GraphqlContext) =>
+  Character: {
+    characterId: (parent: CharacterRef, _args: unknown, ctx: GraphqlContext) =>
       ctx.ownerCharacterIdById.get(parent.id) ??
       ctx.ownerIdentities(parent.scope).then((m) => m.get(parent.id)?.characterId ?? null),
-    corporationId: (parent: OwnerRef, _args: unknown, ctx: GraphqlContext) =>
+    corporationId: (parent: CharacterRef, _args: unknown, ctx: GraphqlContext) =>
       ctx.ownerIdentities(parent.scope).then((m) => m.get(parent.id)?.corporationId ?? null),
-    corporationName: (parent: OwnerRef, _args: unknown, ctx: GraphqlContext) =>
+    corporationName: (parent: CharacterRef, _args: unknown, ctx: GraphqlContext) =>
       ctx.ownerIdentities(parent.scope).then((m) => m.get(parent.id)?.corporationName ?? null),
-    allianceId: (parent: OwnerRef, _args: unknown, ctx: GraphqlContext) =>
+    allianceId: (parent: CharacterRef, _args: unknown, ctx: GraphqlContext) =>
       ctx.ownerIdentities(parent.scope).then((m) => m.get(parent.id)?.allianceId ?? null),
-    allianceName: (parent: OwnerRef, _args: unknown, ctx: GraphqlContext) =>
+    allianceName: (parent: CharacterRef, _args: unknown, ctx: GraphqlContext) =>
       ctx.ownerIdentities(parent.scope).then((m) => m.get(parent.id)?.allianceName ?? null),
   },
 }

@@ -10,10 +10,8 @@ import {
   ASSET_CAP,
   LIST_CAP,
   clampLimit,
-  matchCharacterFilter,
-  matchCharacterName,
-  matchCharacterRefs,
   matchExactNames,
+  matchOwnerFilter,
   parseRefFilter,
   parseSince,
   splitRefEntries,
@@ -31,96 +29,6 @@ test('clampLimit bounds into [1, cap] and floors fractions', () => {
   assert.equal(clampLimit(2.9, LIST_CAP), 2)
   assert.equal(clampLimit(250, LIST_CAP), 250)
   assert.equal(clampLimit(999999, ASSET_CAP), ASSET_CAP)
-})
-
-const OWNERS = new Map([
-  ['reg-a', 'Philihp Busby'],
-  ['reg-b', 'Philihp Alt'],
-  ['reg-c', 'Someone Else'],
-])
-
-test('matchCharacterName passes null through as no filter', () => {
-  assert.deepEqual(matchCharacterName(undefined, OWNERS), { ok: true, ids: null })
-  assert.deepEqual(matchCharacterName('   ', OWNERS), { ok: true, ids: null })
-})
-
-test('matchCharacterName matches case-insensitive substrings, possibly several', () => {
-  const match = matchCharacterName('philihp', OWNERS)
-  assert.ok(match.ok)
-  assert.deepEqual(match.ok && match.ids, ['reg-a', 'reg-b'])
-  const exact = matchCharacterName('someone else', OWNERS)
-  assert.deepEqual(exact.ok && exact.ids, ['reg-c'])
-})
-
-test('matchCharacterName rejects an unknown character, listing what exists', () => {
-  const match = matchCharacterName('nobody', OWNERS)
-  assert.equal(match.ok, false)
-  assert.match(!match.ok ? match.message : '', /Philihp Alt, Philihp Busby, Someone Else/)
-})
-
-// The list filter resolves against both maps the context carries: registration
-// uuid → name, and registration uuid → EVE character id.
-const REG_A = '11111111-1111-4111-8111-111111111111'
-const REG_B = '22222222-2222-4222-8222-222222222222'
-const REG_C = '33333333-3333-4333-8333-333333333333'
-
-const DIRECTORY = {
-  nameById: new Map([
-    [REG_A, 'Philihp Busby'],
-    [REG_B, 'Philihp Alt'],
-    [REG_C, 'Someone Else'],
-  ]),
-  characterIdById: new Map([
-    [REG_A, '95465499'],
-    [REG_B, '90000001'],
-    [REG_C, '90000002'],
-  ]),
-}
-
-test('matchCharacterRefs passes an absent or empty list through as no filter', () => {
-  assert.deepEqual(matchCharacterRefs(undefined, DIRECTORY), { ok: true, ids: null })
-  assert.deepEqual(matchCharacterRefs([], DIRECTORY), { ok: true, ids: null })
-  assert.deepEqual(matchCharacterRefs(['  '], DIRECTORY), { ok: true, ids: null })
-})
-
-test('matchCharacterRefs takes whole names, EVE character ids and registration ids, mixed', () => {
-  const byName = matchCharacterRefs(['philihp busby', 'Someone Else'], DIRECTORY)
-  assert.deepEqual(byName.ok && byName.ids, [REG_A, REG_C])
-  const byCharacterId = matchCharacterRefs(['95465499'], DIRECTORY)
-  assert.deepEqual(byCharacterId.ok && byCharacterId.ids, [REG_A])
-  const mixed = matchCharacterRefs([REG_B, '95465499', 'Someone Else'], DIRECTORY)
-  assert.deepEqual(mixed.ok && mixed.ids, [REG_B, REG_A, REG_C])
-})
-
-test('matchCharacterRefs dedupes a character named twice', () => {
-  const match = matchCharacterRefs(['Philihp Busby', '95465499', REG_A], DIRECTORY)
-  assert.deepEqual(match.ok && match.ids, [REG_A])
-})
-
-test('matchCharacterRefs matches names whole, not by substring — that is what character: is for', () => {
-  const partial = matchCharacterRefs(['philihp'], DIRECTORY)
-  assert.equal(partial.ok, false)
-  assert.match(!partial.ok ? partial.message : '', /"philihp"/)
-})
-
-test('matchCharacterRefs rejects unknown entries, listing names with their character ids', () => {
-  const match = matchCharacterRefs(['Someone Else', 'Nobody', '12345'], DIRECTORY)
-  assert.equal(match.ok, false)
-  const message = !match.ok ? match.message : ''
-  assert.match(message, /"Nobody", "12345"/)
-  assert.match(message, /Philihp Busby \(95465499\)/)
-})
-
-test('matchCharacterFilter routes to the fuzzy or the exact matcher, never both', () => {
-  const none = matchCharacterFilter(null, null, DIRECTORY)
-  assert.deepEqual(none, { ok: true, ids: null })
-  const fuzzy = matchCharacterFilter('philihp', null, DIRECTORY)
-  assert.deepEqual(fuzzy.ok && fuzzy.ids, [REG_A, REG_B])
-  const exact = matchCharacterFilter(null, ['Philihp Alt'], DIRECTORY)
-  assert.deepEqual(exact.ok && exact.ids, [REG_B])
-  const both = matchCharacterFilter('philihp', ['Philihp Alt'], DIRECTORY)
-  assert.equal(both.ok, false)
-  assert.match(!both.ok ? both.message : '', /not both/)
 })
 
 test('parseSince accepts ISO timestamps and date prefixes, rejects junk', () => {
@@ -179,4 +87,67 @@ test('matchExactNames takes whole names only, keeping every candidate that match
 test('matchExactNames reports what matched nothing, rather than dropping it', () => {
   const matched = matchExactNames(['Trit'], () => [{ id: '34', name: 'Tritanium' }])
   assert.deepEqual(matched, { ids: [], unmatched: ['Trit'] })
+})
+
+// The owner dimension spans both kinds of owner at once: the caller's
+// characters (three id forms) and their corporations (two).
+const REG_A = '11111111-1111-4111-8111-111111111111'
+const REG_B = '22222222-2222-4222-8222-222222222222'
+
+const DIRECTORY = {
+  characters: {
+    nameById: new Map([
+      [REG_A, 'Philihp Busby'],
+      [REG_B, 'Philihp Alt'],
+    ]),
+    characterIdById: new Map([
+      [REG_A, '95465499'],
+      [REG_B, '90000001'],
+    ]),
+  },
+  corporations: new Map([
+    ['98000001', 'Sanctuary of Shadows'],
+    ['1000045', 'Deep Core Mining Inc.'],
+  ]),
+}
+
+test('matchOwnerFilter passes an absent filter through as no scoping at all', () => {
+  assert.deepEqual(matchOwnerFilter(null, null, DIRECTORY), { ok: true, scopes: null })
+  assert.deepEqual(matchOwnerFilter('  ', [], DIRECTORY), { ok: true, scopes: null })
+})
+
+test('matchOwnerFilter searches character and corporation names together', () => {
+  const characters = matchOwnerFilter('philihp', null, DIRECTORY)
+  assert.deepEqual(characters.ok && characters.scopes, { registrationIds: [REG_A, REG_B], corporationIds: [] })
+  const corporations = matchOwnerFilter('sanctuary', null, DIRECTORY)
+  assert.deepEqual(corporations.ok && corporations.scopes, { registrationIds: [], corporationIds: ['98000001'] })
+})
+
+test('matchOwnerFilter mixes characters and corporations in one exact list', () => {
+  const match = matchOwnerFilter(null, ['Philihp Alt', '98000001', '95465499'], DIRECTORY)
+  assert.deepEqual(match.ok && match.scopes, {
+    registrationIds: [REG_B, REG_A],
+    corporationIds: ['98000001'],
+  })
+})
+
+test('matchOwnerFilter narrows to the side that matched, leaving the other empty', () => {
+  const match = matchOwnerFilter(null, ['Deep Core Mining Inc.'], DIRECTORY)
+  assert.deepEqual(match.ok && match.scopes, { registrationIds: [], corporationIds: ['1000045'] })
+})
+
+test('matchOwnerFilter rejects what matched neither side, listing both', () => {
+  const match = matchOwnerFilter(null, ['Nobody'], DIRECTORY)
+  assert.equal(match.ok, false)
+  const message = !match.ok ? match.message : ''
+  assert.match(message, /"Nobody"/)
+  assert.match(message, /Philihp Busby \(95465499\)/)
+  assert.match(message, /Sanctuary of Shadows \(98000001, corporation\)/)
+  assert.equal(matchOwnerFilter('nobody', null, DIRECTORY).ok, false)
+})
+
+test('matchOwnerFilter refuses the singular and plural together', () => {
+  const both = matchOwnerFilter('philihp', ['Philihp Alt'], DIRECTORY)
+  assert.equal(both.ok, false)
+  assert.match(!both.ok ? both.message : '', /Pass owner or owners, not both/)
 })
