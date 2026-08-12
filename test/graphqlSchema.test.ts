@@ -18,7 +18,7 @@ import {
 import { typeDefs } from '../src/app/api/graphql/schema.graphql.ts'
 
 // The leaf-only entity types the row types point at.
-const ENTITY_TYPES = ['Corporation', 'ItemType', 'Location', 'Owner']
+const ENTITY_TYPES = ['Character', 'Corporation', 'ItemType', 'Location']
 
 // Rows a corporation can own: their owner edge is nullable and paired with a
 // corporation edge, with ownerType saying which side a row came from.
@@ -61,10 +61,10 @@ test('the SDL parses and exposes the expected query fields', () => {
   assert.deepEqual(Object.keys(query.getFields()).sort(), [
     'assets',
     'blueprints',
+    'characters',
     'corporations',
     'industryJobs',
     'marketOrders',
-    'owners',
     'sharedWithMe',
     'walletBalances',
     'walletTransactions',
@@ -110,23 +110,31 @@ test('the entity types are leaf-only, which is what keeps rows CSV-flattenable',
   }
 })
 
-test('every row type carries an owner edge, and every object field on one is an entity type', () => {
+test('every row spells out its owner the same way, and points only at entity types', () => {
   const schema = buildSchema(typeDefs)
   for (const name of ROW_TYPES) {
     const fields = objectType(schema, name).getFields()
-    // A row only a character can own keeps a non-null owner; a corp-ownable
-    // row has exactly one of owner/corporation filled, so both are nullable
-    // and ownerType (never null) says which.
+    // The flat block is uniform: ownerType/ownerId/ownerName always filled,
+    // the character columns filled only on a character-owned row.
+    assert.equal(String(fields.ownerType?.type), 'String!', `${name}.ownerType`)
+    assert.equal(String(fields.ownerId?.type), 'String!', `${name}.ownerId`)
+    assert.equal(String(fields.ownerName?.type), 'String!', `${name}.ownerName`)
+    assert.equal(String(fields.characterId?.type), 'String', `${name}.characterId`)
+    assert.equal(String(fields.characterName?.type), 'String', `${name}.characterName`)
+    assert.equal(String(fields.character?.type), 'Character', `${name}.character`)
+    // The corporation columns exist only where a corporation can own the row —
+    // a column that could never be filled would be worse than its absence.
     if (CORP_OWNABLE.includes(name)) {
-      assert.equal(String(fields.owner?.type), 'Owner', `${name}.owner`)
+      assert.equal(String(fields.corporationId?.type), 'String', `${name}.corporationId`)
+      assert.equal(String(fields.corporationName?.type), 'String', `${name}.corporationName`)
       assert.equal(String(fields.corporation?.type), 'Corporation', `${name}.corporation`)
-      assert.equal(String(fields.ownerType?.type), 'String!', `${name}.ownerType`)
-      assert.equal(String(fields.ownerId?.type), 'String!', `${name}.ownerId`)
-      assert.equal(String(fields.ownerName?.type), 'String!', `${name}.ownerName`)
     } else {
-      assert.equal(String(fields.owner?.type), 'Owner!', `${name}.owner`)
+      assert.equal(fields.corporationId, undefined, `${name}.corporationId`)
       assert.equal(fields.corporation, undefined, `${name}.corporation`)
     }
+    // `owner` as an EDGE is gone: it meant the character while ownerName meant
+    // either, one field apart. The scalars are the umbrella now.
+    assert.equal(fields.owner, undefined, `${name}.owner`)
     for (const field of Object.values(fields)) {
       const target = getNamedType(field.type)
       if (!isObjectType(target)) continue
@@ -143,7 +151,7 @@ test('every row type carries an owner edge, and every object field on one is an 
 test('the flat scalar beside each edge survives', () => {
   const schema = buildSchema(typeDefs)
   const asset = objectType(schema, 'Asset').getFields()
-  assert.equal(String(asset.ownerName.type), 'String!')
+  assert.equal(String(asset.characterName.type), 'String')
   assert.equal(String(asset.typeName.type), 'String')
   assert.equal(String(asset.locationName.type), 'String')
   const job = objectType(schema, 'IndustryJob').getFields()
@@ -151,15 +159,16 @@ test('the flat scalar beside each edge survives', () => {
   assert.equal(String(job.productTypeName.type), 'String')
 })
 
-test('Owner exposes the EVE character id distinctly from the registration id', () => {
+test('Character exposes the EVE character id distinctly from the registration id', () => {
   const schema = buildSchema(typeDefs)
-  const owner = objectType(schema, 'Owner').getFields()
-  // id is the registration uuid (what ownerId carries and `characters:` accepts);
-  // characterId is the EVE numeric id. Conflating them is the legacy wart
-  // docs/registration-id-rename.md exists to unwind — the schema states it.
-  assert.equal(String(owner.id.type), 'String!')
-  assert.equal(String(owner.characterId.type), 'String')
-  assert.ok(owner.id.description?.includes('registration id'))
+  const character = objectType(schema, 'Character').getFields()
+  // id is the registration uuid (an owner filter accepts it); characterId is
+  // the EVE numeric id, and what the row's characterId/ownerId carry.
+  // Conflating them is the legacy wart docs/registration-id-rename.md exists to
+  // unwind — the schema states it.
+  assert.equal(String(character.id.type), 'String!')
+  assert.equal(String(character.characterId.type), 'String')
+  assert.ok(character.id.description?.includes('registration id'))
 })
 
 test('every filter dimension is a singular/plural pair, and the old names are gone', () => {

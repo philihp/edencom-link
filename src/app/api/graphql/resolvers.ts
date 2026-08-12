@@ -172,25 +172,19 @@ const locationOf = (locations: ResolvedLocations, ref: LocationRef | null) => {
   }
 }
 
-// The Owner edge. `scope` is the result set's full owner id list, carried on
-// every Owner of that set BY REFERENCE — it's what the context memoizes the
-// corp/alliance load on, so the whole set resolves in one pass. It isn't in the
-// SDL, so it's invisible to callers.
-type OwnerRef = { id: string; name: string; scope: readonly string[] }
+// The Character edge. `scope` is the result set's full registration id list,
+// carried on every Character of that set BY REFERENCE — it's what the context
+// memoizes the corp/alliance load on, so the whole set resolves in one pass. It
+// isn't in the SDL, so it's invisible to callers.
+type CharacterRef = { id: string; name: string; scope: readonly string[] }
 
-const ownerOf = (names: Map<string, string> | ReadonlyMap<string, string>, id: string, scope: readonly string[]) => ({
-  id,
-  name: names.get(id) ?? id,
-  scope,
-})
-
-// The Corporation edge, for rows a CORPORATION owns rather than a character
-// (corp assets, blueprints and industry jobs). Only the id comes from the row;
-// name and alliance load lazily and once per request off the context memo.
+// The Corporation edge, for rows a CORPORATION owns rather than a character.
+// Only the id comes from the row; name and alliance load lazily and once per
+// request off the context memo.
 type CorporationRef = { corporationId: string }
 
 // corporation id → name, off the context's per-request memo. Used both to
-// match the corporation filter and to fill ownerName on corp-owned rows.
+// match the owner filter and to fill the corporation columns on corp rows.
 const corporationNamesFor = async (ctx: GraphqlContext): Promise<Map<string, string>> => {
   const identities = await ctx.corporationIdentities()
   return new Map(
@@ -204,30 +198,65 @@ const corporationNamesFor = async (ctx: GraphqlContext): Promise<Map<string, str
 // two sides are a discriminated union rather than a nullable column.
 type OwnedBy = { kind: 'character'; registrationId: string } | { kind: 'corporation'; corporationId: string }
 
-// The owner block every row type carries. `ownerId`/`ownerName` name WHOEVER
-// owns the row, so a CSV always has one filled owner column; `ownerType` says
-// which side it is, and exactly one of the two edges is non-null.
+// The name and EVE id behind a registration, for the character columns.
+export type CharacterIdentity = { name: string; characterId: string | null }
+
+// The caller's own characters as identities — no query, it's all on the
+// context already. Rows that can only be owned by the caller's characters
+// (everything but a shared asset) resolve their owner block from this.
+const ownCharacters = (ctx: GraphqlContext): ReadonlyMap<string, CharacterIdentity> =>
+  new Map(
+    [...ctx.ownerNameById].map(([id, name]): [string, CharacterIdentity] => [
+      id,
+      { name, characterId: ctx.ownerCharacterIdById.get(id) ?? null },
+    ])
+  )
+
+// THE OWNER BLOCK every row type carries. The character and corporation columns
+// are each filled only on their own side, and the owner columns are the
+// COALESCE of the two — so `ownerName` always has a value while
+// `characterName`/`corporationName` say which kind it is, and `ownerType`
+// states it outright. The two typed edges follow the same split.
+//
+// `characterId` is the EVE character id, not the registration uuid, so
+// `ownerId` is an EVE id whichever side a row came from; the registration uuid
+// is still reachable as `character { id }`. It falls back to the uuid only if
+// a registration somehow has no character id recorded.
 const ownerFieldsOf = (
   owned: OwnedBy,
-  ownerNames: ReadonlyMap<string, string>,
+  characters: ReadonlyMap<string, CharacterIdentity>,
   corporationNames: ReadonlyMap<string, string>,
   ownerScope: readonly string[]
-) =>
-  owned.kind === 'character'
-    ? {
-        ownerType: 'character',
-        ownerId: owned.registrationId,
-        ownerName: ownerNames.get(owned.registrationId) ?? owned.registrationId,
-        owner: ownerOf(ownerNames, owned.registrationId, ownerScope),
-        corporation: null,
-      }
-    : {
-        ownerType: 'corporation',
-        ownerId: owned.corporationId,
-        ownerName: corporationNames.get(owned.corporationId) ?? owned.corporationId,
-        owner: null,
-        corporation: { corporationId: owned.corporationId } as CorporationRef,
-      }
+) => {
+  if (owned.kind === 'corporation') {
+    const name = corporationNames.get(owned.corporationId) ?? owned.corporationId
+    return {
+      ownerType: 'corporation',
+      ownerId: owned.corporationId,
+      ownerName: name,
+      characterId: null,
+      characterName: null,
+      corporationId: owned.corporationId,
+      corporationName: name,
+      character: null,
+      corporation: { corporationId: owned.corporationId } as CorporationRef,
+    }
+  }
+  const identity = characters.get(owned.registrationId)
+  const characterId = identity?.characterId ?? owned.registrationId
+  const characterName = identity?.name ?? owned.registrationId
+  return {
+    ownerType: 'character',
+    ownerId: characterId,
+    ownerName: characterName,
+    characterId,
+    characterName,
+    corporationId: null,
+    corporationName: null,
+    character: { id: owned.registrationId, name: characterName, scope: ownerScope } as CharacterRef,
+    corporation: null,
+  }
+}
 
 // The two owner scopes a field reads, after the owner filter. One filter spans
 // both kinds of owner (filters.ts), so naming a character narrows to that
@@ -286,22 +315,37 @@ const grantorRegistrationIds = async (ctx: GraphqlContext): Promise<string[]> =>
   )
 }
 
-// Owner display names for a mixed set of registration ids: the caller's own
-// from the context, foreign grantors through the world-readable
+// Name and EVE character id for a mixed set of registration ids: the caller's
+// own from the context, foreign grantors through the world-readable
 // character_directory (never registration, which RLS hides to non-owners).
-const ownerNamesFor = async (ctx: GraphqlContext, registrationIds: Iterable<string>): Promise<Map<string, string>> => {
-  const names = new Map(ctx.ownerNameById)
-  const foreign = [...new Set([...registrationIds])].filter((id) => !names.has(id))
+const characterIdentitiesFor = async (
+  ctx: GraphqlContext,
+  registrationIds: Iterable<string>
+): Promise<Map<string, CharacterIdentity>> => {
+  const identities = new Map(
+    [...ctx.ownerNameById].map(([id, name]): [string, CharacterIdentity] => [
+      id,
+      { name, characterId: ctx.ownerCharacterIdById.get(id) ?? null },
+    ])
+  )
+  const foreign = [...new Set([...registrationIds])].filter((id) => !identities.has(id))
   if (foreign.length > 0) {
     const { data } = await ctx.supabase
       .from('character_directory')
-      .select('registration_id, name')
+      .select('registration_id, name, character_id')
       .in('registration_id', foreign)
-    for (const row of (data ?? []) as Array<{ registration_id: string | null; name: string | null }>) {
-      if (row.registration_id != null && row.name != null) names.set(row.registration_id, row.name)
+    const rows = (data ?? []) as Array<{
+      registration_id: string | null
+      name: string | null
+      character_id: number | string | null
+    }>
+    for (const row of rows) {
+      if (row.registration_id != null && row.name != null) {
+        identities.set(row.registration_id, { name: row.name, characterId: str(row.character_id) })
+      }
     }
   }
-  return names
+  return identities
 }
 
 // One shape for both asset sources: character_asset keys on registration_id and
@@ -331,7 +375,7 @@ const assetLocationRef = (row: AssetRow): LocationRef | null =>
 
 export const resolvers = {
   Query: {
-    owners: (_parent: unknown, _args: unknown, ctx: GraphqlContext) => {
+    characters: (_parent: unknown, _args: unknown, ctx: GraphqlContext) => {
       const scope = ctx.registrationIds
       return [...ctx.ownerNameById]
         .map(([id, name]) => ({ id, name, scope }))
@@ -422,13 +466,13 @@ export const resolvers = {
         })),
       ].slice(0, cap)
 
-      const [types, locations, ownerNames, corporationNames] = await Promise.all([
+      const [types, locations, characters, corporationNames] = await Promise.all([
         typesFor(rows.map(({ row }) => row.type_id)),
         locationNamesFor(
           ctx,
           rows.map(({ row }) => assetLocationRef(row))
         ),
-        ownerNamesFor(
+        characterIdentitiesFor(
           ctx,
           own.rows.map((r) => r.registration_id)
         ),
@@ -453,7 +497,7 @@ export const resolvers = {
             isSingleton: r.is_singleton,
             isBlueprintCopy: r.is_blueprint_copy,
             name: r.name ?? null,
-            ...ownerFieldsOf(owned, ownerNames, corporationNames, ownerScope),
+            ...ownerFieldsOf(owned, characters, corporationNames, ownerScope),
             type: itemTypeOf(types, r.type_id),
             location: locationOf(locations, ref),
           }
@@ -492,9 +536,9 @@ export const resolvers = {
           Number(i.type_id),
         ])
       )
-      const [types, ownerNames] = await Promise.all([
+      const [types, characters] = await Promise.all([
         typesFor([...typeByItem.values()]),
-        ownerNamesFor(
+        characterIdentitiesFor(
           ctx,
           grants.map((g) => g.registration_id)
         ),
@@ -507,10 +551,8 @@ export const resolvers = {
           shareId: g.id,
           itemId: String(g.item_id),
           itemTypeName: typeNameOf(types, typeId),
-          ownerId: g.registration_id,
-          ownerName: ownerNames.get(g.registration_id) ?? g.registration_id,
           sharedAt: g.created_at,
-          owner: ownerOf(ownerNames, g.registration_id, ownerScope),
+          ...ownerFieldsOf({ kind: 'character', registrationId: g.registration_id }, characters, new Map(), ownerScope),
           itemType: itemTypeOf(types, typeId),
         }
       })
@@ -607,7 +649,7 @@ export const resolvers = {
             materialEfficiency: r.material_efficiency,
             timeEfficiency: r.time_efficiency,
             runs: r.runs,
-            ...ownerFieldsOf(owned, ctx.ownerNameById, corporationNames, scopes.registrationIds),
+            ...ownerFieldsOf(owned, ownCharacters(ctx), corporationNames, scopes.registrationIds),
             type: itemTypeOf(types, r.type_id),
             location: locationOf(locations, ref),
           }
@@ -667,7 +709,6 @@ export const resolvers = {
           locationId: String(r.location_id),
           locationName: ref ? locations.nameFor(ref) : null,
           regionId: String(r.region_id),
-          owner: ownerOf(ctx.ownerNameById, r.registration_id, ownerIds),
           type: itemTypeOf(types, r.type_id),
           location: locationOf(locations, ref),
           isBuy: r.is_buy,
@@ -767,7 +808,7 @@ export const resolvers = {
           blueprintTypeName: typeNameOf(types, r.blueprint_type_id),
           productTypeId: str(r.product_type_id),
           productTypeName: typeNameOf(types, r.product_type_id),
-          ...ownerFieldsOf(owned, ctx.ownerNameById, corporationNames, scopes.registrationIds),
+          ...ownerFieldsOf(owned, ownCharacters(ctx), corporationNames, scopes.registrationIds),
           blueprintType: itemTypeOf(types, r.blueprint_type_id),
           productType: itemTypeOf(types, r.product_type_id),
           location: locationOf(locations, ref),
@@ -810,11 +851,14 @@ export const resolvers = {
       return latest
         .filter((r): r is NonNullable<typeof r> => r != null)
         .map((r) => ({
-          ownerId: r.registration_id,
-          ownerName: ctx.ownerNameById.get(r.registration_id) ?? r.registration_id,
           balance: Number(r.balance),
           recordedAt: r.recorded_at,
-          owner: ownerOf(ctx.ownerNameById, r.registration_id, ctx.registrationIds),
+          ...ownerFieldsOf(
+            { kind: 'character', registrationId: r.registration_id },
+            ownCharacters(ctx),
+            new Map(),
+            ctx.registrationIds
+          ),
         }))
         .sort((a, b) => a.ownerName.localeCompare(b.ownerName))
     },
@@ -880,9 +924,12 @@ export const resolvers = {
           isBuy: r.is_buy,
           locationId: String(r.location_id),
           locationName: ref ? locations.nameFor(ref) : null,
-          ownerId: r.registration_id,
-          ownerName: ctx.ownerNameById.get(r.registration_id) ?? r.registration_id,
-          owner: ownerOf(ctx.ownerNameById, r.registration_id, ownerIds),
+          ...ownerFieldsOf(
+            { kind: 'character', registrationId: r.registration_id },
+            ownCharacters(ctx),
+            new Map(),
+            ownerIds
+          ),
           type: itemTypeOf(types, r.type_id),
           location: locationOf(locations, ref),
         }
@@ -906,17 +953,17 @@ export const resolvers = {
   // these four read, so they stay lazy — a query that doesn't ask for a corp or
   // alliance issues no query at all, and one that does resolves the whole result
   // set at once off the memoized scope (context.ts).
-  Owner: {
-    characterId: (parent: OwnerRef, _args: unknown, ctx: GraphqlContext) =>
+  Character: {
+    characterId: (parent: CharacterRef, _args: unknown, ctx: GraphqlContext) =>
       ctx.ownerCharacterIdById.get(parent.id) ??
       ctx.ownerIdentities(parent.scope).then((m) => m.get(parent.id)?.characterId ?? null),
-    corporationId: (parent: OwnerRef, _args: unknown, ctx: GraphqlContext) =>
+    corporationId: (parent: CharacterRef, _args: unknown, ctx: GraphqlContext) =>
       ctx.ownerIdentities(parent.scope).then((m) => m.get(parent.id)?.corporationId ?? null),
-    corporationName: (parent: OwnerRef, _args: unknown, ctx: GraphqlContext) =>
+    corporationName: (parent: CharacterRef, _args: unknown, ctx: GraphqlContext) =>
       ctx.ownerIdentities(parent.scope).then((m) => m.get(parent.id)?.corporationName ?? null),
-    allianceId: (parent: OwnerRef, _args: unknown, ctx: GraphqlContext) =>
+    allianceId: (parent: CharacterRef, _args: unknown, ctx: GraphqlContext) =>
       ctx.ownerIdentities(parent.scope).then((m) => m.get(parent.id)?.allianceId ?? null),
-    allianceName: (parent: OwnerRef, _args: unknown, ctx: GraphqlContext) =>
+    allianceName: (parent: CharacterRef, _args: unknown, ctx: GraphqlContext) =>
       ctx.ownerIdentities(parent.scope).then((m) => m.get(parent.id)?.allianceName ?? null),
   },
 }
