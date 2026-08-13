@@ -5,7 +5,14 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { describeRoute, resolveShippingRoute } from '../src/app/api/mcp/shippingQuery.ts'
+import {
+  basisMarket,
+  basisValue,
+  COLLATERAL_BASES,
+  DEFAULT_COLLATERAL_BASIS,
+  describeRoute,
+  resolveShippingRoute,
+} from '../src/app/api/mcp/shippingQuery.ts'
 
 // The real lanes as of writing: every origin appears as a destination too, so
 // a one-endpoint query is genuinely ambiguous.
@@ -67,4 +74,22 @@ test('no endpoints and no id asks for them', () => {
 test('describeRoute shows the collateral fee only when charged', () => {
   assert.equal(describeRoute(ROUTES[1]), '#2 Jita → C-J6MT (700 ISK/m³)')
   assert.equal(describeRoute(ROUTES[0]), '#1 C-J6MT → Jita (900 ISK/m³ + 0.5% collateral)')
+})
+
+// Every basis must map to exactly the market and total its name says — a
+// mis-pick here silently mis-collateralizes real courier contracts.
+test('collateral bases pick the named market and total', () => {
+  const totals = { totalSellValue: 300, totalBuyValue: 100, priceSplit: 200 }
+  assert.equal(DEFAULT_COLLATERAL_BASIS, 'jita_sell')
+  assert.deepEqual(
+    COLLATERAL_BASES.map((b) => [b, basisMarket(b), basisValue(b, totals)]),
+    [
+      ['jita_sell', 'jita', 300],
+      ['jita_buy', 'jita', 100],
+      ['jita_split', 'jita', 200],
+      ['cj6mt_sell', 'cj6mt', 300],
+      ['cj6mt_buy', 'cj6mt', 100],
+      ['cj6mt_split', 'cj6mt', 200],
+    ]
+  )
 })

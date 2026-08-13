@@ -36,6 +36,48 @@ export const textResult = (payload: unknown): ToolResult => ({
   content: [{ type: 'text', text: typeof payload === 'string' ? payload : JSON.stringify(payload) }],
 })
 
+// Resolve a fuzzy item name to the single best-matching SDE type (highest
+// coverage rank), surfacing the runner-up names so the model can correct a
+// mis-pick. Used by the blueprint tools (which each act on one type) and the
+// appraisal-fed manifests (appraise_items, shipping_quote).
+export type ResolvedType =
+  { ok: true; typeID: number; name: string; alsoMatched: string[] } | { ok: false; message: string }
+
+export const resolveOneType = async (query: string): Promise<ResolvedType> => {
+  const matches = await searchSdeTypesAll(query.trim())
+  if (matches.length === 0) return { ok: false, message: `No item type matched "${query}".` }
+  const [best, ...rest] = matches
+  return { ok: true, typeID: best.typeID, name: best.name, alsoMatched: rest.slice(0, 4).map((m) => m.name) }
+}
+
+// Canonicalize a manifest of fuzzy item names for the appraisal service: each
+// entry resolves to its SDE name when possible (noting when that differs from
+// what was typed — a miss keeps the raw name so the API's own fuzzy handling
+// can return possible_matches), and duplicate resolved names merge, since the
+// API prices distinct lines separately, which would double-count the batch.
+export type ManifestEntry = { item: string; quantity?: number }
+
+export const resolveManifest = async (
+  items: ManifestEntry[]
+): Promise<{ lines: Array<{ name: string; quantity: number }>; notes: string[] }> => {
+  const resolved = await Promise.all(
+    items.map(async ({ item, quantity }) => {
+      const match = await resolveOneType(item)
+      const name = match.ok ? match.name : item.trim()
+      return { input: item.trim(), name, quantity: quantity ?? 1 }
+    })
+  )
+  const notes = resolved
+    .filter((r) => r.name.toLowerCase() !== r.input.toLowerCase())
+    .map((r) => `Interpreted "${r.input}" as ${r.name}.`)
+  const merged = new Map<string, { name: string; quantity: number }>()
+  resolved.forEach((r) => {
+    const existing = merged.get(r.name)
+    merged.set(r.name, { name: r.name, quantity: (existing?.quantity ?? 0) + r.quantity })
+  })
+  return { lines: [...merged.values()], notes }
+}
+
 // Resolve a fuzzy item-name query to SDE type ids, with the same "too many
 // matches" guard as /asset/search so a broad substring can't walk a large
 // chunk of the hangar (or bloat a `.in()` list). `null` query means no filter.

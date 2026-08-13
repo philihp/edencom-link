@@ -61,3 +61,34 @@ export const resolveShippingRoute = <R extends ShippingRouteLike>(
         : `${matches.length} routes match ${asked}: ${routeList(matches)}. Name both endpoints (or a route_id).`,
   }
 }
+
+// ── Collateral basis ──────────────────────────────────────────────────────
+
+// When the caller sends a cargo manifest instead of a collateral figure, the
+// tool appraises it (innomin.at) and collateralizes at one of these prices.
+// Jita sell is the default: it's what replacing lost cargo actually costs at
+// the market everything ultimately comes from.
+export const COLLATERAL_BASES = [
+  'jita_sell',
+  'jita_buy',
+  'jita_split',
+  'cj6mt_sell',
+  'cj6mt_buy',
+  'cj6mt_split',
+] as const
+export type CollateralBasis = (typeof COLLATERAL_BASES)[number]
+
+export const DEFAULT_COLLATERAL_BASIS: CollateralBasis = 'jita_sell'
+
+// Which appraisal market a basis prices against — the names match the
+// appraise_items market enum ('cj6mt' is the C-J6MT player market).
+export const basisMarket = (basis: CollateralBasis): 'jita' | 'cj6mt' => (basis.startsWith('cj6mt') ? 'cj6mt' : 'jita')
+
+export type AppraisalTotalsLike = { totalSellValue: number; totalBuyValue: number; priceSplit: number }
+
+// Pick the appraisal total a basis collateralizes at.
+export const basisValue = (basis: CollateralBasis, totals: AppraisalTotalsLike): number => {
+  if (basis.endsWith('_sell')) return totals.totalSellValue
+  if (basis.endsWith('_buy')) return totals.totalBuyValue
+  return totals.priceSplit
+}
