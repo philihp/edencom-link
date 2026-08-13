@@ -13,25 +13,78 @@ const SCOPE = 'esi-universe.read_structures.v1'
 // characters' own items is a ship/container, not a structure.
 const STRUCTURE_ID_FLOOR = 100_000_000_000
 
-// PostgREST caps a single select; page through character_asset_over_time so a
-// large hangar doesn't silently truncate the candidate/own-item sets.
+// PostgREST caps a single select; page through the source tables so a large
+// hangar doesn't silently truncate the candidate/own-item sets.
 const ASSET_PAGE = 1000
 
-// Order by the primary key so range paging is stable: PostgREST gives no row
-// order without an explicit sort, so an unordered .range() can skip or repeat
-// rows across pages and silently drop a structure from the candidate set. The
-// assets extract pages the same table and orders by id for exactly this reason.
-const fetchAssetLocationRows = async (from = 0) => {
-  const { data: rows, error: assetsErr } = await sudoSupabase
+// Every table we already extract that records *where* something was, and the
+// columns holding that location. A structure id in any of them is proof one of
+// our characters has been there, which makes it worth a name — and it costs no
+// ESI calls to harvest, since the rows are already in Postgres
+// (docs/structure-universe/design.md).
+//
+// `orderBy` is the table's primary key (or its first component): range paging
+// without an explicit sort is unstable in PostgREST and can skip or repeat rows
+// across pages, silently dropping a structure from the candidate set.
+// `current` marks the SCD-2 tables, whose live snapshot is is_current rows.
+//
+// Contracts are the quiet win here: a courier contract's start/end locations
+// are often the only record of a structure a character docks at but keeps
+// nothing in.
+const LOCATION_SOURCES = [
+  { table: 'character_asset_over_time', columns: ['location_id'], orderBy: 'id', current: true },
+  { table: 'corp_asset_over_time', columns: ['location_id'], orderBy: 'id', current: true },
+  { table: 'character_order_over_time', columns: ['location_id'], orderBy: 'id', current: true },
+  {
+    table: 'character_industry_job_over_time',
+    columns: ['facility_id', 'station_id', 'blueprint_location_id', 'output_location_id'],
+    orderBy: 'id',
+    current: true,
+  },
+  {
+    table: 'corp_industry_job_over_time',
+    columns: ['facility_id', 'station_id', 'blueprint_location_id', 'output_location_id'],
+    orderBy: 'id',
+    current: true,
+  },
+  {
+    table: 'character_contract',
+    columns: ['start_location_id', 'end_location_id'],
+    orderBy: 'contract_id',
+    current: false,
+  },
+  { table: 'corp_contract', columns: ['start_location_id', 'end_location_id'], orderBy: 'contract_id', current: false },
+  { table: 'character_wallet_transaction', columns: ['location_id'], orderBy: 'transaction_id', current: false },
+  { table: 'corp_wallet_transaction', columns: ['location_id'], orderBy: 'transaction_id', current: false },
+]
+
+// One source table's location columns, drained past the PostgREST row cap by
+// recursing to the next page until a short page signals the end.
+const fetchLocationRows = async ({ table, columns, orderBy, current }, from = 0, acc = []) => {
+  let query = sudoSupabase.from(table).select(columns.join(', '))
+  if (current) query = query.eq('is_current', true)
+  const { data: rows, error } = await query.order(orderBy, { ascending: true }).range(from, from + ASSET_PAGE - 1)
+  if (error) throw new Error(`reading ${table} failed: ${error.message}`)
+  const page = rows ?? []
+  forEach((row) => acc.push(row), page)
+  if (page.length < ASSET_PAGE) return acc
+  return fetchLocationRows({ table, columns, orderBy, current }, from + ASSET_PAGE, acc)
+}
+
+// The item ids of everything our characters own. A location in the structure id
+// range that's also one of these is a ship or container, not a structure.
+const fetchOwnedItemIds = async (from = 0, acc = []) => {
+  const { data: rows, error } = await sudoSupabase
     .from('character_asset_over_time')
-    .select('item_id, location_id')
+    .select('item_id')
     .eq('is_current', true)
     .order('id', { ascending: true })
     .range(from, from + ASSET_PAGE - 1)
-  if (assetsErr) throw assetsErr
+  if (error) throw error
   const page = rows ?? []
-  if (page.length < ASSET_PAGE) return page
-  return [...page, ...(await fetchAssetLocationRows(from + ASSET_PAGE))]
+  forEach((row) => acc.push(Number(row.item_id)), page)
+  if (page.length < ASSET_PAGE) return acc
+  return fetchOwnedItemIds(from + ASSET_PAGE, acc)
 }
 
 // GET /universe/structures/{id} → universe_structure. Resolves and caches the
@@ -52,27 +105,38 @@ export const runUniverseStructures = async () => {
   console.log(`[${TAG}] ${tokens?.length ?? 0} token(s) with ${SCOPE}`)
   if (!tokens || tokens.length === 0) return
 
-  // Ids we don't need to resolve: our own corp structures and anything already cached.
+  // Ids we don't need to resolve: our own corp structures and anything already
+  // *named*. Rows without a name don't count as resolved — the hourly
+  // structure-directory job seeds ids straight from ESI's public list with
+  // nothing to call them, and treating those as done would mean nothing ever
+  // put a name on them.
   const { data: corpStructs } = await sudoSupabase.from('corp_structure').select('structure_id')
-  const { data: knownStructs } = await sudoSupabase.from('universe_structure').select('structure_id')
+  const { data: knownStructs } = await sudoSupabase
+    .from('universe_structure')
+    .select('structure_id')
+    .not('name', 'is', null)
   const resolved = new Set(map(pipe(prop('structure_id'), Number), [...(corpStructs ?? []), ...(knownStructs ?? [])]))
 
-  // Pool candidate structure ids from every character's live assets. itemIds is
-  // the union of all owned item ids across characters: a location in the
-  // structure range that's also someone's item is a ship/container, not a
-  // structure. Read character_asset_over_time (the base table service_role can
-  // reach) filtered to live rows, rather than the character_asset view (granted
-  // to authenticated).
-  const itemIds = new Set()
+  // Pool candidate structure ids from every location column we already extract
+  // (LOCATION_SOURCES). itemIds is the union of all owned item ids across
+  // characters: a location in the structure range that's also someone's item is
+  // a ship/container, not a structure. Read the *_over_time base tables (what
+  // service_role can reach) filtered to live rows, rather than the views
+  // (granted to authenticated).
+  const itemIds = new Set(await fetchOwnedItemIds())
   const locationIds = new Set()
-  forEach(
-    (r) => {
-      itemIds.add(Number(r.item_id))
-      const id = Number(r.location_id)
-      if (Number.isFinite(id) && id >= STRUCTURE_ID_FLOOR) locationIds.add(id)
-    },
-    await fetchAssetLocationRows()
-  )
+  await forEachSequential(LOCATION_SOURCES, async (source) => {
+    const before = locationIds.size
+    forEach(
+      (row) =>
+        forEach((column) => {
+          const id = Number(row[column])
+          if (Number.isFinite(id) && id >= STRUCTURE_ID_FLOOR) locationIds.add(id)
+        }, source.columns),
+      await fetchLocationRows(source)
+    )
+    console.log(`[${TAG}] ${source.table}: ${locationIds.size - before} new candidate id(s)`)
+  })
 
   // Clones parked in player structures are candidates too — the character-clones
   // job resolves what it can with each clone's own token, but only a character
@@ -145,6 +209,11 @@ export const runUniverseStructures = async () => {
         name: info?.name ?? null,
         system_id: info?.solar_system_id ?? null,
         type_id: info?.type_id ?? null,
+        owner_corporation_id: info?.owner_id ?? null,
+        // Outranks 'everef' and 'public-list', so the hourly directory job
+        // never overwrites a name we resolved with real docking access — this
+        // is the only source that can name a *private* structure.
+        source: 'esi-token',
         resolved_at: new Date().toISOString(),
       },
       { onConflict: 'structure_id' }

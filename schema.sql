@@ -86,6 +86,7 @@ drop table if exists public.alliance             cascade;
 drop table if exists public.corp_structure_status cascade;
 drop table if exists public.corp_structure_rig   cascade;
 drop table if exists public.corp_structure       cascade;
+drop table if exists public.corp_job_access      cascade;
 drop table if exists public.corp_wallet_journal  cascade;
 drop table if exists public.corp_wallet_transaction cascade;
 drop table if exists public.corp_contract_item      cascade;
@@ -122,6 +123,7 @@ drop table if exists public.mercenary_den_enemy_intel           cascade;
 drop table if exists public.universe_name        cascade;
 drop table if exists public.universe_structure   cascade;
 drop table if exists public.invite_code          cascade;
+drop table if exists public.structure_favorite   cascade;
 drop table if exists public.watched_system       cascade;
 drop table if exists public.user_settings        cascade;
 drop table if exists public.refresh_task         cascade;
@@ -2881,6 +2883,50 @@ create policy "Users read own clone state"
 grant select on public.character_clone_state to authenticated;
 grant all    on public.character_clone_state to service_role;
 
+-- ── corp_job_access ───────────────────────────────────────────────────────
+-- Observed capability, not a stated role. Every corp ESI endpoint needs an
+-- in-game role on top of the OAuth scope (corp-structures wants Station
+-- Manager, corp-assets wants Director, the wallet endpoints want Accountant),
+-- and forEachCorporation (src/jobs/lib.js) already classifies the role-denial
+-- 403 in order to write heartbeat.skipped_reason — it just discarded the fact
+-- afterwards. This table keeps it, which is what lets the fuel policy below
+-- gate on "is a director" without a new ESI scope.
+--
+-- Keyed on the job tag rather than a role name on purpose: we never learn which
+-- role a character holds, only which endpoint it was able to pull. Reading
+-- roles properly would need esi-characters.read_corporation_roles.v1 and a
+-- re-auth of every already-linked character; if that's ever added it can fill
+-- this same table and no policy has to change.
+--
+-- Defined before corp_structure_status because a policy expression is parsed
+-- and validated at creation time (same reason my_alliance_ids() sits above the
+-- sharing policies).
+create table public.corp_job_access (
+  registration_id uuid   not null references public.registration (id) on delete cascade,
+  corporation_id  bigint not null,
+  -- The extract tag that proved it, e.g. 'corp-structures'.
+  job  text not null,
+  observed_at timestamptz not null default now(),
+  primary key (registration_id, corporation_id, job)
+);
+create index corp_job_access_corporation_id_idx on public.corp_job_access (corporation_id, job);
+
+alter table public.corp_job_access enable row level security;
+-- Users see their own characters' grants; that's all /jobs and the fuel policy
+-- need. Written only by the extract jobs, under the service role.
+create policy "Users read own corp job access"
+  on public.corp_job_access
+  for select
+  to authenticated
+  using (
+    registration_id in (
+      select id from public.registration where user_id = (select auth.uid())
+    )
+  );
+
+grant select on public.corp_job_access to authenticated;
+grant all    on public.corp_job_access to service_role;
+
 -- ── corp_structure ────────────────────────────────────────────────────────
 -- ESI /corporations/{id}/structures/, written by the corp-structures job.
 create table public.corp_structure (
@@ -2955,14 +3001,25 @@ create table public.corp_structure_status (
 create index corp_structure_status_corporation_id_idx on public.corp_structure_status (corporation_id);
 
 alter table public.corp_structure_status enable row level security;
-create policy "Users read structure status for own corps"
+-- Directors only — narrower than the corp_structure policies above. A fuel
+-- expiry is a countdown to when the structure stops shooting back, so it goes
+-- to accounts that actually hold the role on that corp rather than to every
+-- corp member. "Holds the role" is observed capability, not a stated role: see
+-- corp_job_access above. Rank-and-file members lose the fuel column on
+-- /structure as a result; the low-fuel Discord alerts are unaffected, since
+-- that job runs service-role and never sees RLS.
+create policy "Directors read structure status for own corps"
   on public.corp_structure_status
   for select
   to authenticated
   using (
-    corporation_id in (
-      select corporation_id from public.registration
-      where user_id = (select auth.uid()) and corporation_id is not null
+    exists (
+      select 1
+      from public.corp_job_access a
+      join public.registration r on r.id = a.registration_id
+      where a.corporation_id = corp_structure_status.corporation_id
+        and a.job = 'corp-structures'
+        and r.user_id = (select auth.uid())
     )
   );
 
@@ -2993,6 +3050,31 @@ create policy "Users read structure rigs for own corps"
     corporation_id in (
       select corporation_id from public.registration
       where user_id = (select auth.uid()) and corporation_id is not null
+    )
+  );
+
+-- Open rigs to alliance-mates on the same terms as corp_structure itself: a
+-- fitted rig is inferable from the structure's own bonuses in space, so it was
+-- never really corp-private, and the /structure page shows rigs beside
+-- structures the alliance can already see. Additive — OR'd with the own-corps
+-- policy above.
+create policy "Alliance members read corp structure rigs"
+  on public.corp_structure_rig
+  for select
+  to authenticated
+  using (
+    exists (
+      select 1
+      from public.corporation owner_corp
+      where owner_corp.corporation_id = corp_structure_rig.corporation_id
+        and owner_corp.alliance_id is not null
+        and owner_corp.alliance_id in (
+          select member_corp.alliance_id
+          from public.registration r
+          join public.corporation member_corp on member_corp.corporation_id = r.corporation_id
+          where r.user_id = (select auth.uid())
+            and member_corp.alliance_id is not null
+        )
     )
   );
 
@@ -3643,6 +3725,16 @@ create table public.universe_structure (
   name text,
   system_id bigint,
   type_id bigint,
+  -- Free on every /universe/structures/{id} resolve and present in EVE Ref's
+  -- dump, so structure ownership doesn't need a corp token to learn.
+  owner_corporation_id bigint,
+  -- In ESI's public list, i.e. a completely open access control list.
+  is_public boolean not null default false,
+  -- Which of the three feeds last wrote this row: 'esi-token' (resolved by a
+  -- character with docking access), 'everef', or 'public-list'. Makes
+  -- precedence explicit instead of last-write-wins — a name we resolved
+  -- ourselves outranks EVE Ref's copy, and EVE Ref never overwrites it.
+  source text,
   resolved_at timestamptz not null default now()
 );
 
@@ -4351,6 +4443,36 @@ create policy "Users manage own watched systems"
 
 grant select, insert, update, delete on public.watched_system to authenticated;
 grant all                            on public.watched_system to service_role;
+
+-- ── structure_favorite ────────────────────────────────────────────────────
+-- Per-user pinned structures, sorted to the top of /structure. Deliberately
+-- shaped like watched_system above (same key, same position column, same
+-- policy): a favorite is a UI preference belonging to the account, not a fact
+-- about a character, so it keys on user_id rather than registration_id.
+--
+-- No FK to universe_structure on purpose: a user may pin a structure id before
+-- the directory has learned a name for it, and losing the pin when a sweep
+-- drops the directory row would be worse than showing the raw id.
+create table public.structure_favorite (
+  user_id      uuid   not null references auth.users(id) on delete cascade,
+  structure_id bigint not null,
+  created_at timestamptz not null default now(),
+  -- Drag order (lower sorts first), mirroring watched_system.position.
+  position   integer not null default 0,
+  primary key (user_id, structure_id)
+);
+create index structure_favorite_user_id_idx on public.structure_favorite (user_id);
+
+alter table public.structure_favorite enable row level security;
+create policy "Users manage own structure favorites"
+  on public.structure_favorite
+  for all
+  to authenticated
+  using (user_id = (select auth.uid()))
+  with check (user_id = (select auth.uid()));
+
+grant select, insert, update, delete on public.structure_favorite to authenticated;
+grant all                            on public.structure_favorite to service_role;
 
 -- ── invite_code ───────────────────────────────────────────────────────────
 -- Invite-only registration (open registration is staged in

@@ -57,6 +57,7 @@
     "anon-sweep": "node src/jobs/anonSweep.js",
     "industry-systems": "node src/jobs/industrySystems.js",
     "universe-names": "node src/jobs/universeNames.js",
+    "structure-directory": "node src/jobs/structureDirectory.js",
     "universe-structures": "node src/jobs/universeStructures.js",
     "sde-mirror": "node src/jobs/sdeMirror.js",
     "esf-data": "node src/jobs/esfData.js",

@@ -49,6 +49,28 @@
   gap: 8px;
 }
 
+/* The pin control, pushed to the tile's trailing edge by the auto margin so it
+   sits clear of a long structure name rather than wrapping under it. */
+.favorite {
+  margin-left: auto;
+  flex: none;
+  padding: 0 2px;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--ink-faint);
+}
+
+.favorite[aria-pressed='true'] {
+  color: var(--accent);
+}
+
+.favorite[data-pending] {
+  opacity: 0.5;
+}
+
 .name {
   font-family: var(--serif);
   font-size: 16px;

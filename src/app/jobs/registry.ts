@@ -51,15 +51,21 @@ export const JOBS: readonly JobEntry[] = [
   { job: 'corp-industry-jobs', label: 'industry', section: 'corporation', kickable: 'always' },
   { job: 'corp-wallet-transactions', label: 'transactions', section: 'corporation', kickable: 'always' },
   { job: 'corp-contracts', label: 'contracts', section: 'corporation', kickable: 'always' },
-  // The three daily whole-corp pulls a per-character fan-out would only ever
-  // redo once per character, so they're scheduled-only (see dispatchRefresh.ts).
-  { job: 'corp-structures', label: 'structures', section: 'corporation', kickable: 'never' },
+  // Kickable since the structure-universe work: "refresh my structures" is the
+  // lever the /structure page hangs off, and it dispatches this per corporation
+  // alongside corp-assets, which carries the rigs (docs/structure-universe/design.md).
+  { job: 'corp-structures', label: 'structures', section: 'corporation', kickable: 'always' },
+  // The two remaining daily whole-corp pulls a per-character fan-out would only
+  // ever redo once per character, so they're scheduled-only (see dispatchRefresh.ts).
   { job: 'corp-blueprints', label: 'blueprints', section: 'corporation', kickable: 'never' },
   { job: 'corp-wallet-journal', label: 'wallet journal', section: 'corporation', kickable: 'never' },
 
   { job: 'sde-mirror', label: 'SDE mirror', section: 'universe', kickable: 'never' },
   { job: 'universe-names', label: 'names', section: 'universe', kickable: 'chancellor' },
   { job: 'universe-structures', label: 'structures', section: 'universe', kickable: 'never' },
+  // Hourly public-feed pull (ESI's public structure list + EVE Ref). Names
+  // structures no token of ours can reach; see docs/structure-universe/design.md.
+  { job: 'structure-directory', label: 'structure directory', section: 'universe', kickable: 'chancellor' },
   { job: 'character-directory', label: 'character directory', section: 'universe', kickable: 'chancellor' },
   { job: 'industry-systems', label: 'industry indexes', section: 'universe', kickable: 'chancellor' },
 ]

@@ -8,7 +8,10 @@ import {
 } from './structureFuelNotification.js'
 
 const TAG = 'corp-structures'
-const SCOPE = 'esi-corporations.read_structures.v1'
+// Exported for the on-demand dispatch (PER_CORPORATION_JOBS in
+// src/app/character/dispatchRefresh.ts), which groups the account's characters
+// carrying this scope by corporation.
+export const SCOPE = 'esi-corporations.read_structures.v1'
 
 // GET /corporations/{id}/structures/ → corp_structure. Upserts the corp's
 // Upwell structures (state, fuel, reinforcement windows, services).
