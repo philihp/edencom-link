@@ -287,6 +287,37 @@ export const fetchAllPages = async (fetchPage) => {
   return [...(firstPage ?? []), ...rest]
 }
 
+// PostgREST answers from a cached schema, so a table it hasn't reloaded yet is
+// simply absent — the write comes back as PGRST205, "Could not find the table
+// 'public.<name>' in the schema cache". Two ways to land in that window:
+//
+//   * writing to a table the same run just minted (sde-mirror creating an
+//     sde_* table for a JSONL file CCP added), and
+//   * writing to a long-standing table while PostgREST is mid-reload, which is
+//     how the sde-mirror run of 2026-08-13 failed on `sheet_csv` — a table
+//     that has existed for months — after minting several new ones earlier in
+//     the same run.
+//
+// Both are transient, so wait the reload out rather than failing the job. The
+// workflow's own step retries don't cover this: they fire within a few seconds
+// of each other and then give up. The backoff sums to ~15s.
+const SCHEMA_CACHE_MISS = 'PGRST205'
+const RELOAD_BACKOFF_MS = [500, 1000, 2000, 4000, 8000]
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
+// Run a PostgREST write, retrying while it reports a schema-cache miss, and
+// return its final result unchanged so the caller keeps its own error message.
+// `write` is a thunk (not a promise) because each attempt needs a fresh request.
+export const writeWithSchemaRetry = async (label, write, attempt = 0) => {
+  const result = await write()
+  if (result.error?.code !== SCHEMA_CACHE_MISS || attempt >= RELOAD_BACKOFF_MS.length) return result
+  const wait = RELOAD_BACKOFF_MS[attempt]
+  console.log(`[schema-cache] ${label} not in PostgREST's schema cache yet, retrying in ${wait}ms`)
+  await sleep(wait)
+  return writeWithSchemaRetry(label, write, attempt + 1)
+}
+
 // Self-run a job when its module is invoked directly as a CLI
 // (npm run <job> / the scheduled workflow). When the module is imported by the
 // Next.js queue consumer instead, the top-level run must not fire.

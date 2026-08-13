@@ -12,7 +12,7 @@
 // and stamps the rows with the latest completed sde_build.
 import { encodeEsfData, ESF_FILE_NAMES } from '../buildEsfData.js'
 import { sudoSupabase } from '../supabase.js'
-import { cli } from './lib.js'
+import { cli, writeWithSchemaRetry } from './lib.js'
 
 // The build the encoded data corresponds to. The workflow passes the build it
 // just ingested; the CLI falls back to the latest fully-mirrored build.
@@ -54,7 +54,11 @@ export const runEsfData = async ({ build, force = false } = {}) => {
     sde_build: sdeBuild,
     updated_at: updatedAt,
   }))
-  const { error } = await sudoSupabase.from('esf_data').upsert(rows, { onConflict: 'name' })
+  // Same schema-cache retry as its sibling tail step (see sheetCsv.js): this
+  // runs inside an sde-mirror run that may be minting tables concurrently.
+  const { error } = await writeWithSchemaRetry('esf_data', () =>
+    sudoSupabase.from('esf_data').upsert(rows, { onConflict: 'name' })
+  )
   if (error) throw new Error(`esf-data: upsert failed: ${error.message}`)
   console.log(`esf-data: upserted ${rows.length} files at sde_build ${sdeBuild}`)
   return { files: rows.length, build: sdeBuild }
