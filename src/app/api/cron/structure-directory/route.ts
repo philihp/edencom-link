@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 
 import { requireCronSecret } from '@/utils/cron'
 
-// Vercel Cron trigger for structure-directory (hourly). Fire-and-forget: the
+// Vercel Cron trigger for structure-directory (daily). Fire-and-forget: the
 // workflow owns retries, its run/step status shows under Observability →
 // Workflows, and the heartbeat pair is recorded by the workflow's step
 // (source: 'vercel-workflow').

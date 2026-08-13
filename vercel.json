@@ -83,7 +83,7 @@
     },
     {
       "path": "/api/cron/structure-directory",
-      "schedule": "51 * * * *"
+      "schedule": "47 9 * * *"
     },
     {
       "path": "/api/cron/character-directory",
