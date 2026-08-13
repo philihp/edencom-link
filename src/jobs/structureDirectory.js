@@ -66,7 +66,9 @@ const upsertChunks = async (rows, label) => {
 // Two public feeds → universe_structure. Names every structure that can be
 // named without a token, so the rest of the app (asset paths, market orders,
 // industry jobs, contract endpoints) has something better than a raw id to
-// show. Hourly: both feeds are small, unauthenticated and cheap.
+// show. Daily, just ahead of universe-structures: this seeds ids and names
+// them where it can, so the token probe that follows spends its attempts only
+// on what the public feeds couldn't name.
 //
 // This does NOT replace universe-structures, the token-probe job. That one is
 // the only thing that can name a *non-public* structure — one of ours, or one

@@ -124,16 +124,18 @@ which role the pilot holds, only whether the call was allowed. "Can pull
 fuel policy needs. If `esi-characters.read_corporation_roles.v1` is ever added
 it can fill the same table with stated roles and no policy changes.
 
-### 2. Names — universal, hourly
+### 2. Names — universal, daily
 
 `structure-directory`, a new single-step job with no per-user work at all:
 
 - `GET /universe/structures` → ids, set `is_public`.
 - EVE Ref `structures-latest.v2.json` → name, `owner_id`, system, type, region.
 
-Both are small and unauthenticated (~874 KB total), so hourly is comfortable.
-One heartbeat, a `/jobs` "shared universe" row, no refresh lever — nothing about
-it is per-account.
+Both are small and unauthenticated (~874 KB total). Daily at 09:47, ten minutes
+ahead of `universe-structures`: the directory seeds ids and names what it can,
+so the token probe that follows spends its attempts only on what the public
+feeds couldn't name. One heartbeat, a `/jobs` "shared universe" row, no refresh
+lever — nothing about it is per-account.
 
 Rows carry a `source` so precedence is explicit, following jEveAssets: a name we
 resolved ourselves from ESI with a real token outranks EVE Ref's, and EVE Ref
@@ -150,7 +152,7 @@ It is not a sweep: it only resolves ids that already appear in our own extracted
 data, pooled across characters and tried against each token until one succeeds.
 That is precisely jEveAssets' ESI_LOCATIONS source, and it is already built.
 
-Between the three sources — corp structures, the token probe, and the hourly
+Between the three sources — corp structures, the token probe, and the daily
 directory — every structure id the app can display should resolve to a name.
 
 ## Schema
@@ -222,7 +224,7 @@ can't view" state to design around.
 
 That does _not_ make the directory pointless: naming structures is what it is
 for. Asset paths, market orders, industry job locations and contract endpoints
-all render structure ids elsewhere in the app, and the hourly job is what turns
+all render structure ids elsewhere in the app, and the daily job is what turns
 those into names.
 
 NPC stations are excluded by id range, not by a lookup: player structures are

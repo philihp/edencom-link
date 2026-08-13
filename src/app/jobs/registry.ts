@@ -63,7 +63,7 @@ export const JOBS: readonly JobEntry[] = [
   { job: 'sde-mirror', label: 'SDE mirror', section: 'universe', kickable: 'never' },
   { job: 'universe-names', label: 'names', section: 'universe', kickable: 'chancellor' },
   { job: 'universe-structures', label: 'structures', section: 'universe', kickable: 'never' },
-  // Hourly public-feed pull (ESI's public structure list + EVE Ref). Names
+  // Daily public-feed pull (ESI's public structure list + EVE Ref). Names
   // structures no token of ours can reach; see docs/structure-universe/design.md.
   { job: 'structure-directory', label: 'structure directory', section: 'universe', kickable: 'chancellor' },
   { job: 'character-directory', label: 'character directory', section: 'universe', kickable: 'chancellor' },
