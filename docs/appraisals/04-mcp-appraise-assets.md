@@ -15,7 +15,7 @@ That left "what is my Jita hangar worth" answerable in a browser but not over
 MCP, where the only path was `browse_assets` → read the stacks back → retype
 them into `appraise_items`. That path is lossy (it sees one level, not the
 subtree, and `appraise_items` caps at 100 entries against the walk's 500) and
-spends more of the shared 200/hour budget than the one request the job needs.
+spends more of the shared request budget than the one request the job needs.
 
 ## What shipped
 

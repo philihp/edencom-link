@@ -1565,7 +1565,7 @@ export const registerTools = (server: McpServer): void => {
     },
     // No Supabase client and no bearer token: this tool reads nothing from the
     // DB. It still only runs for authenticated MCP callers (the whole server is
-    // behind withMcpAuth), which is what gates the shared 200/hour budget.
+    // behind withMcpAuth), which is what gates the shared appraisal request budget.
     async ({ items, market }) => {
       // Canonicalize the fuzzy manifest against the SDE (resolveManifest in
       // lib.ts — shared with shipping_quote) before sending it to the API.

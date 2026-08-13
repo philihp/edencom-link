@@ -380,7 +380,7 @@ export const LocationAssets = ({ rows, owners, typeNamesPromise, canAppraise }: 
           </table>
           {canAppraise && (
             // One appraisal for the whole selection rather than one per row:
-            // the provider budget is 200 requests an hour for the deployment,
+            // the provider request budget is shared by the whole deployment,
             // so a column of buttons was always the wrong shape.
             <div className={styles.tableFooter}>
               <AppraisalPanel

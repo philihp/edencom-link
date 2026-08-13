@@ -1,7 +1,7 @@
 // Queue consumer for the innomin.at appraisal throttle (topic "innominate", wired
 // up in vercel.json via experimentalTriggers). Every appraisal request is
-// enqueued here so the whole deployment sends at most one request every 2
-// seconds — deliberately above the provider's 200/hour, see the throttle
+// enqueued here so the whole deployment stays inside the authorized budget
+// (150/minute; we drain at 120/minute as buffer) — see the throttle
 // explanation in src/innominate.ts. This route is the ONLY thing that drains the topic; the
 // producer (appraise()) enqueues and blocks polling the shared DB row this
 // consumer fills in.

@@ -74,7 +74,7 @@ Server flow:
    returns `200` with all 500 appraisals present and no truncation, so the
    constant stands. The true ceiling is somewhere above 500 and was
    deliberately not probed — finding it would cost several more requests out
-   of the 200/hour budget to raise a limit no real hangar has hit.
+   of the shared request budget to raise a limit no real hangar has hit.
 5. **Resolve names and appraise.** `getSdeTypeNames` over the type ids;
    types the SDE can't name are dropped into an `unpriced` list (the API is
    name-keyed, so an unnamed type can't be priced). One `appraise(lines,
