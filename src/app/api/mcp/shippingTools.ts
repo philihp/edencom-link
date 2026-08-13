@@ -43,7 +43,9 @@ const valueManifest = async (
   basis: CollateralBasis
 ): Promise<ManifestValuation> => {
   const { lines, notes } = await resolveManifest(items)
-  const result = await appraise(lines, basisMarket(basis) as Market)
+  // save: false — the valuation must stay stateless on innomin.at's side;
+  // no appraisal record is minted for a shipping quote.
+  const result = await appraise(lines, basisMarket(basis) as Market, false)
   if (!result.ok) {
     if (result.kind === 'unconfigured')
       return { ok: false, message: "Appraisals aren't configured on this deployment (missing INNOMINATE_API_KEY)." }
