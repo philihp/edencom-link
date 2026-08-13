@@ -1239,10 +1239,11 @@ grant all on public.esi_etag to service_role;
 
 -- ── innominate_throttle / innominate_appraisal ──────────────────────────────
 -- Global throttle for the innomin.at appraisal API (see src/innominate.ts). The
--- provider allows 200 requests/hour for the whole deployment, so appraisals are
--- funnelled through a Vercel queue (topic "innominate", consumer at
--- /api/queue/innominate) draining at most one request every 2 seconds across
--- ALL lambda instances. Separate instances don't share memory, so the throttle
+-- provider has authorized up to 150 requests/minute for the whole deployment,
+-- so appraisals are funnelled through a Vercel queue (topic "innominate",
+-- consumer at /api/queue/innominate) draining at most one request every 0.5
+-- seconds (120/minute — the difference is the buffer) across ALL lambda
+-- instances. Separate instances don't share memory, so the throttle
 -- timestamp and the pending/finished results live here. Internal service-role
 -- bookkeeping only: RLS on with no policy, so only the service role (the queue
 -- consumer and the MCP tool) reaches them.
@@ -1287,7 +1288,7 @@ grant all on public.innominate_appraisal to service_role;
 -- min_interval_seconds have elapsed, returning acquired=true; otherwise return
 -- acquired=false with wait_seconds until the next slot. The guarded UPDATE is a
 -- single atomic statement, so concurrent consumers can't both take the same slot.
-create or replace function public.innominate_try_acquire(min_interval_seconds integer default 18)
+create or replace function public.innominate_try_acquire(min_interval_seconds double precision default 0.5)
 returns table (acquired boolean, wait_seconds double precision)
 language plpgsql
 as $$
@@ -1316,7 +1317,7 @@ begin
 end;
 $$;
 
-grant execute on function public.innominate_try_acquire(integer) to service_role;
+grant execute on function public.innominate_try_acquire(double precision) to service_role;
 
 -- ── impersonation_log ──────────────────────────────────────────────────────
 -- Chancellor-impersonation audit trail: one row per magic-link impersonation

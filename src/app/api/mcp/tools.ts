@@ -20,7 +20,7 @@ import { z } from 'zod'
 
 import { rigAppliesToProduct } from '@/app/blueprint/rigs'
 import { ACTIVITY_NAMES } from '@/app/industry/jobFields'
-import { appraise, MARKETS, type AppraisalItemInput, type Market } from '@/innominate'
+import { appraise, MARKETS, type Market } from '@/innominate'
 import { resolveLocations, type LocationRef } from '@/app/resolveLocations'
 import { fetchSystemNames } from '@/app/systemNames'
 import {
@@ -31,7 +31,7 @@ import {
   type Blueprint,
 } from '@/sdeBlueprints'
 import { formatSecurity, getSdeSystem, getSdeSystemNames, getSdeSystems, searchSdeSystems } from '@/sdeSystems'
-import { getSdeType, getSdeTypeNames, getSdeTypes, searchSdeTypesAll } from '@/sdeTypes'
+import { getSdeType, getSdeTypeNames, getSdeTypes } from '@/sdeTypes'
 import { AT_PARAM_ERROR, parseAtParam } from '@/utils/atParam'
 import { createBearerClient } from '@/utils/supabase/bearer'
 
@@ -62,6 +62,8 @@ import {
   fetchOwnerContext,
   guessLocationRef,
   MAX_ROWS,
+  resolveManifest,
+  resolveOneType,
   resolveOwnerFilter,
   resolveTypeFilter,
   textResult,
@@ -129,18 +131,6 @@ const resolveStructures = async (supabase: SupabaseClient, structure: string | u
     structureIds: matches.map((m) => Number(m.structure_id)),
     name: matches.length === 1 ? (matches[0].name ?? trimmed) : `${trimmed} (${matches.length} structures)`,
   }
-}
-
-// Resolve a fuzzy item name to the single best-matching SDE type (highest
-// coverage rank), surfacing the runner-up names so the model can correct a
-// mis-pick. Used by the blueprint tools, which each act on one type.
-type ResolvedType = { ok: true; typeID: number; name: string; alsoMatched: string[] } | { ok: false; message: string }
-
-const resolveOneType = async (query: string): Promise<ResolvedType> => {
-  const matches = await searchSdeTypesAll(query.trim())
-  if (matches.length === 0) return { ok: false, message: `No item type matched "${query}".` }
-  const [best, ...rest] = matches
-  return { ok: true, typeID: best.typeID, name: best.name, alsoMatched: rest.slice(0, 4).map((m) => m.name) }
 }
 
 // The industry material-efficiency modifiers exposed on the blueprint tools,
@@ -1575,33 +1565,13 @@ export const registerTools = (server: McpServer): void => {
     },
     // No Supabase client and no bearer token: this tool reads nothing from the
     // DB. It still only runs for authenticated MCP callers (the whole server is
-    // behind withMcpAuth), which is what gates the shared 200/hour budget.
+    // behind withMcpAuth), which is what gates the shared appraisal request budget.
     async ({ items, market }) => {
-      // Canonicalize each fuzzy input against the SDE the way the blueprint
-      // tools do. A match sends the canonical name (noting when it differs from
-      // what was typed); a miss sends the raw name anyway so the API's own fuzzy
-      // handling can return possible_matches — better than failing locally.
-      const resolved = await Promise.all(
-        items.map(async ({ item, quantity }) => {
-          const match = await resolveOneType(item)
-          const name = match.ok ? match.name : item.trim()
-          return { input: item.trim(), name, quantity: quantity ?? 1 }
-        })
-      )
+      // Canonicalize the fuzzy manifest against the SDE (resolveManifest in
+      // lib.ts — shared with shipping_quote) before sending it to the API.
+      const { lines, notes } = await resolveManifest(items)
 
-      const notes = resolved
-        .filter((r) => r.name.toLowerCase() !== r.input.toLowerCase())
-        .map((r) => `Interpreted "${r.input}" as ${r.name}.`)
-
-      // Merge duplicate resolved names before sending — the API prices distinct
-      // lines separately, which would double-count and inflate the batch.
-      const merged = new Map<string, AppraisalItemInput>()
-      resolved.forEach((r) => {
-        const existing = merged.get(r.name)
-        merged.set(r.name, { name: r.name, quantity: (existing?.quantity ?? 0) + r.quantity })
-      })
-
-      const result = await appraise([...merged.values()], (market ?? 'jita') as Market)
+      const result = await appraise(lines, (market ?? 'jita') as Market)
       if (!result.ok) {
         if (result.kind === 'unconfigured')
           return textResult("Appraisals aren't configured on this deployment (missing INNOMINATE_API_KEY).")

@@ -12,7 +12,7 @@ import { forEach } from 'ramda'
 // stripped-types loader, which resolves no path aliases.
 import { BLUEPRINT_CATEGORY_ID } from '../../../utils/sdeCategories.ts'
 
-// One appraisal is always exactly one upstream request — the 200/hour budget is
+// One appraisal is always exactly one upstream request — the request budget is
 // deployment-wide, so looping per item is never an option. A hangar with more
 // distinct types than a single batch can carry is therefore refused outright
 // rather than truncated: a partial total still looks authoritative, and being

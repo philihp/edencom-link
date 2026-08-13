@@ -6,14 +6,14 @@
 // exception to the "UI/MCP read the DB, never call a third-party" rule: market
 // prices aren't in our DB at all, so we call innomin.at server-side at request
 // time. Nothing is persisted, and we still never call ESI. See
-// docs/appraisals/README.md for the API reference and the 200 req/hour budget.
+// docs/appraisals/README.md for the API reference and the request budget.
 //
-// Global throttle: the provider's 200 requests/hour is a budget for the WHOLE
-// deployment, not per user or per lambda. In-process state can't enforce that —
-// separate serverless instances don't share memory — so on Vercel every call is
+// Global throttle: the provider's request budget covers the WHOLE deployment,
+// not per user or per lambda. In-process state can't enforce that — separate
+// serverless instances don't share memory — so on Vercel every call is
 // funnelled through a Vercel queue (topic "innominate", consumer at
-// /api/queue/innominate) that drains at most one request every 2 seconds via an
-// atomic Postgres leaky bucket (see THROTTLE_SECONDS). The MCP tool stays
+// /api/queue/innominate) that drains at a fixed global rate via an atomic
+// Postgres leaky bucket (see THROTTLE_SECONDS). The MCP tool stays
 // synchronous: appraise() enqueues the request and BLOCKS polling a shared
 // Supabase row until the consumer fills it in (or a ~50s budget elapses). Local
 // dev (no VERCEL) skips the queue and calls directly — a single developer isn't
@@ -69,23 +69,13 @@ const ENDPOINT = 'https://innomin.at/api/v1/appraise/'
 const USER_AGENT = 'edencom-link (philihp@gmail.com)'
 const TIMEOUT_MS = 10_000
 
-// The global drain rate: one request every 2 seconds.
+// The global drain rate: one request every 0.5 seconds (120/minute).
 //
-// Deliberately faster than the provider's documented 200/hour (which works out
-// to one per 18s, what this used to be). At 18s the throttle was the dominant
-// cost of using the feature: the asset viewer puts an appraise button on every
-// row, so a handful of clicks queued for a minute or more and the later ones
-// timed out against the poll budget having never been sent at all. Draining at
-// 2s serves a normal burst of clicks in a few seconds.
-//
-// The trade: this permits up to 1800/hour, so sustained heavy use can spend the
-// real 200/hour budget in ~7 minutes and start collecting genuine 429s from
-// innomin.at. That's an accepted risk at this deployment's traffic — a handful
-// of players clicking occasionally, with the 5-minute result cache absorbing
-// repeats — and a real 429 is surfaced to the user rather than retried. If it
-// starts biting, the fix isn't a slower drip but an hourly token bucket: burst
-// freely, then refuse once 200 have gone out in the trailing hour.
-const THROTTLE_SECONDS = 2
+// We are authorized by the provider to send up to 150 requests/minute; the
+// throttle drains at 120/minute so the difference is the buffer, covering
+// clock skew and any request the leaky bucket doesn't see. A genuine 429 from
+// innomin.at is still surfaced to the user rather than retried.
+const THROTTLE_SECONDS = 0.5
 // How long appraise() blocks polling the shared row before giving up — kept
 // under the MCP route's 60s function limit (src/app/api/mcp/route.ts).
 const POLL_BUDGET_MS = 50_000
@@ -203,14 +193,14 @@ const callInnominate = async (items: AppraisalItemInput[], market: Market, save:
   }
 
   if (response.status === 429) {
-    // 200/hour is a hard budget; the throttle should keep us under it, but if
-    // the provider still 429s, surface the wait — never retry automatically.
+    // The throttle should keep us inside the authorized budget, but if the
+    // provider still 429s, surface the wait — never retry automatically.
     const resetAfter = response.headers.get('x-ratelimit-reset-after')
     const retryAfterSeconds = resetAfter != null && resetAfter !== '' ? Number(resetAfter) : null
     return {
       ok: false,
       kind: 'rate_limited',
-      message: 'The appraisal service is rate limited (200 requests/hour, shared).',
+      message: 'The appraisal service is rate limited (the request budget is shared by the whole deployment).',
       retryAfterSeconds: Number.isFinite(retryAfterSeconds) ? retryAfterSeconds : null,
     }
   }

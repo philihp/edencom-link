@@ -3,7 +3,7 @@
 **Milestone 1.** One PR. Adds the single shared client for the Innominate
 Appraisal API and the first consumer: an MCP tool that appraises a batch of
 items by name. Read the [README](README.md) first — the API reference, the
-`save: false` invariant, and the 200 req/hour rate limit all live there.
+`save: false` invariant, and the shared rate limit all live there.
 
 ## Deliverables
 
@@ -76,7 +76,7 @@ Implementation requirements:
 - If `INNOMINATE_API_KEY` is unset/empty, return `kind: 'unconfigured'`
   without attempting a request (keeps local dev without the key working).
 - On `429`, parse `x-ratelimit-reset-after` into `retryAfterSeconds`
-  (null if absent). **No automatic retries** — with a 200/hour budget a
+  (null if absent). **No automatic retries** — with a shared, finite budget a
   retry loop is how the budget dies.
 - On any other non-200, or a network error, return `kind: 'upstream'` with
   the response's `error` field when parseable (never throw). Apply an
@@ -127,7 +127,7 @@ appraise_items
 
 No Supabase client and no auth-token use — the tool reads nothing from the
 DB. (It still only runs for authenticated MCP callers because the whole
-server sits behind `withMcpAuth`; that's what gates our 200/hour budget.)
+server sits behind `withMcpAuth`; that's what gates our shared request budget.)
 
 ### Name canonicalization (before calling the API)
 
