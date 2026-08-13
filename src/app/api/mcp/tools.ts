@@ -55,11 +55,13 @@ import {
   REFINERY_GROUP,
   type StructureRow,
 } from './structureQuery'
+import { parseIdList, scopesToQuery, splitOwnerIds } from './assetFilterQuery'
 import {
   capNote,
   dataFreshness,
   fetchAllRows,
   fetchOwnerContext,
+  fetchOwnerDirectory,
   guessLocationRef,
   MAX_ROWS,
   resolveManifest,
@@ -523,6 +525,168 @@ export const registerTools = (server: McpServer): void => {
           system: systemName,
           station: stationName,
           hangar: row.flag,
+          ...(row.customName != null && { custom_name: row.customName }),
+          ...(row.contents > 0 && { contains_items: row.contents }),
+        })),
+        ...(capNote(located.length, shown.length, 'stacks') && {
+          note: capNote(located.length, shown.length, 'stacks'),
+        }),
+        data_refreshed: await dataFreshness(supabase, ['character-assets', 'corp-assets']),
+      })
+    }
+  )
+
+  server.registerTool(
+    'list_assets',
+    {
+      title: 'List assets by id',
+      description:
+        'Exact, id-driven asset lookup across the user\'s character and corporation hangars. Takes any combination of EVE type ids, location ids and owner ids and returns the items matching ALL of the lists given (an omitted list means "any"); at least one list is required. A location id matches items sitting directly in that station, structure, solar system or container AND anything nested deeper inside it, so a station id returns what is stowed in the cans and ships parked there too. Owner ids may be EVE character ids, registration uuids or corporation ids. Use search_assets instead when you have names rather than ids; unlike that tool this one does not exclude blueprints.',
+      annotations: { readOnlyHint: true, openWorldHint: false },
+      inputSchema: z.object({
+        type_ids: z
+          .array(z.union([z.number(), z.string()]))
+          .optional()
+          .describe('EVE inventory type ids, e.g. [4247, 34] for Nitrogen Fuel Block and Tritanium'),
+        location_ids: z
+          .array(z.union([z.number(), z.string()]))
+          .optional()
+          .describe(
+            'Station, structure, solar-system or container ids, e.g. ["60003760", "1050603051889"]. Pass ids as strings — they exceed what JSON numbers hold exactly.'
+          ),
+        owner_ids: z
+          .array(z.union([z.number(), z.string()]))
+          .optional()
+          .describe('EVE character ids, registration uuids or corporation ids of the owners to include'),
+      }),
+    },
+    async ({ type_ids, location_ids, owner_ids }, ctx) => {
+      const supabase = clientFor(ctx)
+      if (!supabase) return textResult('Missing bearer token.')
+
+      const types = parseIdList(type_ids, 'type_ids')
+      if (!types.ok) return textResult(types.message)
+      const locations = parseIdList(location_ids, 'location_ids')
+      if (!locations.ok) return textResult(locations.message)
+
+      const { owners, directory } = await fetchOwnerDirectory(supabase)
+      const ownerSplit = splitOwnerIds(owner_ids, directory)
+      if (!ownerSplit.ok) return textResult(ownerSplit.message)
+
+      const named = ownerSplit.registrationIds.length + ownerSplit.corporationIds.length
+      if (types.ids.length === 0 && locations.ids.length === 0 && named === 0) {
+        return textResult(
+          'Give at least one of type_ids, location_ids or owner_ids — with all three empty this would list every asset you own.'
+        )
+      }
+
+      // An owner list naming only one scope makes the other scope's query
+      // pointless: nothing it returned could pass the filter.
+      const scopes = scopesToQuery(ownerSplit)
+      // Empty arrays travel as null so the functions read them as "no filter"
+      // (cardinality of an empty array is null, not 0, which is why they use
+      // coalesce rather than comparing directly).
+      const orNull = (ids: string[]) => (ids.length > 0 ? ids : null)
+
+      const [{ data: characterRows }, { data: corpRows }] = await Promise.all([
+        scopes.character
+          ? supabase.rpc('character_asset_filter', {
+              type_ids: orNull(types.ids),
+              location_ids: orNull(locations.ids),
+              registration_ids: orNull(ownerSplit.registrationIds),
+            })
+          : Promise.resolve({ data: [] }),
+        scopes.corp
+          ? supabase.rpc('corp_asset_filter', {
+              type_ids: orNull(types.ids),
+              location_ids: orNull(locations.ids),
+              corporation_ids: orNull(ownerSplit.corporationIds),
+            })
+          : Promise.resolve({ data: [] }),
+      ])
+
+      type CharacterFilterRow = {
+        item_id: number | string
+        registration_id: string
+        type_id: number | string
+        quantity: number | string | null
+        is_singleton: boolean | null
+        name: string | null
+        location_flag: string | null
+        root_location_id: number | string | null
+        root_location_type: string | null
+        contents: number | string
+        parent_id: number | string | null
+      }
+      type CorpFilterRow = Omit<CharacterFilterRow, 'registration_id' | 'name'> & { corporation_id: number | string }
+
+      const rows = [
+        ...((characterRows ?? []) as CharacterFilterRow[]).map((r) => ({ ...r, ownerId: r.registration_id })),
+        ...((corpRows ?? []) as CorpFilterRow[]).map((r) => ({ ...r, name: null, ownerId: String(r.corporation_id) })),
+      ].map((r) => ({
+        itemId: String(r.item_id),
+        ownerId: r.ownerId,
+        typeId: Number(r.type_id),
+        customName: r.name,
+        // Singletons (assembled ships, containers, …) report a null/1 quantity.
+        quantity: r.is_singleton ? 1 : Number(r.quantity ?? 1),
+        flag: r.location_flag,
+        parentId: r.parent_id != null ? String(r.parent_id) : null,
+        root:
+          r.root_location_id != null
+            ? ({ id: String(r.root_location_id), type: r.root_location_type } as LocationRef)
+            : null,
+        contents: Number(r.contents),
+      }))
+
+      const rootRefs = uniqBy(
+        prop('id'),
+        rows.map((r) => r.root).filter((r): r is LocationRef => r != null)
+      )
+      const [{ nameFor, systemFor }, typeNames] = await Promise.all([
+        resolveLocations(rootRefs, supabase),
+        getSdeTypeNames(rows.map((r) => r.typeId)),
+      ])
+
+      const located = rows
+        .map((row) => {
+          const floating = row.root?.type === 'solar_system'
+          const stationName = row.root && !floating ? nameFor(row.root) : null
+          const systemName = row.root ? (systemFor(row.root) ?? (floating ? nameFor(row.root) : null)) : null
+          return { row, stationName, systemName }
+        })
+        .sort(
+          (a, b) =>
+            (a.systemName ?? '').localeCompare(b.systemName ?? '') ||
+            (a.stationName ?? '').localeCompare(b.stationName ?? '') ||
+            typeName(typeNames, a.row.typeId).localeCompare(typeName(typeNames, b.row.typeId))
+        )
+
+      const totalsByItem: Record<string, number> = {}
+      located.forEach(({ row }) => {
+        const name = typeName(typeNames, row.typeId)
+        totalsByItem[name] = (totalsByItem[name] ?? 0) + row.quantity
+      })
+
+      const shown = located.slice(0, MAX_ROWS)
+      return textResult({
+        filters: {
+          ...(types.ids.length > 0 && { type_ids: types.ids }),
+          ...(locations.ids.length > 0 && { location_ids: locations.ids }),
+          ...(ownerSplit.names.length > 0 && { owners: ownerSplit.names }),
+        },
+        total_stacks: located.length,
+        totals_by_item: totalsByItem,
+        items: shown.map(({ row, stationName, systemName }) => ({
+          item_id: row.itemId,
+          type_id: row.typeId,
+          item: typeName(typeNames, row.typeId),
+          quantity: row.quantity,
+          owner: owners.nameById.get(row.ownerId) ?? row.ownerId,
+          system: systemName,
+          station: stationName,
+          hangar: row.flag,
+          ...(row.parentId != null && { location_id: row.parentId }),
           ...(row.customName != null && { custom_name: row.customName }),
           ...(row.contents > 0 && { contains_items: row.contents }),
         })),
