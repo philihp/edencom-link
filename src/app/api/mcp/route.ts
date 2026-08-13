@@ -11,6 +11,7 @@ import { registerEstateTools } from './estateTools'
 import { registerExploreTools } from './exploreTools'
 import { registerIndustryTools } from './industryTools'
 import { registerLensTools } from './lensTools'
+import { registerShippingTools } from './shippingTools'
 import { registerTools } from './tools'
 
 // mcp-handler 2.x serves the 2026-07-28 spec (stateless, no sessions), falling
@@ -26,6 +27,7 @@ const handler = createMcpHandler(
     registerEstateTools(server)
     registerIndustryTools(server)
     registerExploreTools(server)
+    registerShippingTools(server)
     registerLensTools(server)
   },
   {
