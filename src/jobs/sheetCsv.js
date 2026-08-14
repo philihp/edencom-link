@@ -58,10 +58,13 @@ export const runSheetCsv = async ({ build, force = false } = {}) => {
     updated_at: updatedAt,
   }))
   // Retried on a schema-cache miss like every other PostgREST write here: this
-  // step runs as the tail of an sde-mirror run that may have just minted new
-  // sde_* tables, and a reload triggered by one of those is enough to make even
-  // this long-standing table momentarily invisible (it failed exactly that way
-  // on 2026-08-13, one step from finalize).
+  // step is the tail of an sde-mirror run that may have just minted new sde_*
+  // tables, so it can be writing while PostgREST reloads.
+  //
+  // Note this is NOT what broke the 2026-08-13 run. That PGRST205 on sheet_csv
+  // was a missing table, not a stale cache — its migration was recorded as
+  // applied but never ran (20260814000000_repair_sheet_csv.sql). The retry
+  // cannot fix an absent table; it just delays the same failure by ~15s.
   const { error } = await writeWithSchemaRetry('sheet_csv', () =>
     sudoSupabase.from('sheet_csv').upsert(rows, { onConflict: 'name' })
   )

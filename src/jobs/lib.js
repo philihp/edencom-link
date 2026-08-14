@@ -293,14 +293,18 @@ export const fetchAllPages = async (fetchPage) => {
 //
 //   * writing to a table the same run just minted (sde-mirror creating an
 //     sde_* table for a JSONL file CCP added), and
-//   * writing to a long-standing table while PostgREST is mid-reload, which is
-//     how the sde-mirror run of 2026-08-13 failed on `sheet_csv` — a table
-//     that has existed for months — after minting several new ones earlier in
-//     the same run.
+//   * writing to any table while PostgREST is mid-reload, which minting one of
+//     those tables triggers.
 //
 // Both are transient, so wait the reload out rather than failing the job. The
 // workflow's own step retries don't cover this: they fire within a few seconds
 // of each other and then give up. The backoff sums to ~15s.
+//
+// PGRST205 has a second, non-transient cause worth knowing when reading logs: a
+// table that genuinely does not exist. `sheet_csv` produced this exact error for
+// three weeks because its migration was recorded as applied but never ran (see
+// 20260814000000_repair_sheet_csv.sql). No retry helps there — the ladder just
+// runs out and the caller reports the same failure ~15s later.
 const SCHEMA_CACHE_MISS = 'PGRST205'
 const RELOAD_BACKOFF_MS = [500, 1000, 2000, 4000, 8000]
 
