@@ -15,7 +15,7 @@
 // and stamps the rows with the latest completed sde_build.
 import { encodeSheetCsv, SHEET_FILE_NAMES } from '../buildSheetCsv.js'
 import { sudoSupabase } from '../supabase.js'
-import { cli } from './lib.js'
+import { cli, writeWithSchemaRetry } from './lib.js'
 
 // The build the encoded data corresponds to. The workflow passes the build it
 // just ingested; the CLI falls back to the latest fully-mirrored build.
@@ -57,7 +57,17 @@ export const runSheetCsv = async ({ build, force = false } = {}) => {
     sde_build: sdeBuild,
     updated_at: updatedAt,
   }))
-  const { error } = await sudoSupabase.from('sheet_csv').upsert(rows, { onConflict: 'name' })
+  // Retried on a schema-cache miss like every other PostgREST write here: this
+  // step is the tail of an sde-mirror run that may have just minted new sde_*
+  // tables, so it can be writing while PostgREST reloads.
+  //
+  // Note this is NOT what broke the 2026-08-13 run. That PGRST205 on sheet_csv
+  // was a missing table, not a stale cache — its migration was recorded as
+  // applied but never ran (20260814000000_repair_sheet_csv.sql). The retry
+  // cannot fix an absent table; it just delays the same failure by ~15s.
+  const { error } = await writeWithSchemaRetry('sheet_csv', () =>
+    sudoSupabase.from('sheet_csv').upsert(rows, { onConflict: 'name' })
+  )
   if (error) throw new Error(`sheet-csv: upsert failed: ${error.message}`)
   console.log(`sheet-csv: upserted ${rows.length} files at sde_build ${sdeBuild}`)
   return { files: rows.length, build: sdeBuild }

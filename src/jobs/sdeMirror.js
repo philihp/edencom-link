@@ -31,7 +31,7 @@ import { userAgent } from '../esi.js'
 import { recordPeakRss } from '../observability.js'
 import { resolveAllIds } from '../resolveNames.js'
 import { recordHeartbeat, sudoSupabase } from '../supabase.js'
-import { cli, forEachSequential } from './lib.js'
+import { cli, forEachSequential, writeWithSchemaRetry } from './lib.js'
 
 const SDE_LATEST_URL = 'https://developers.eveonline.com/static-data/eve-online-static-data-latest-jsonl.zip'
 
@@ -281,33 +281,16 @@ const ensureMirrorTable = async (stem, keyType) => {
   if (error) throw new Error(`sde-mirror: ensure_sde_mirror_table(${stem}) failed: ${error.message}`)
 }
 
-// PostgREST answers from a cached schema, so a table ensureMirrorTable() just
-// minted is invisible to it until the cache reloads — the first upsert into a
-// brand-new sde_* table comes back as PGRST205, "Could not find the table
-// 'public.<table>' in the schema cache". ensure_sde_mirror_table() asks for the
-// reload on creation (notify pgrst), but delivery is at commit and the reload
-// itself is asynchronous, so the write has to be prepared to wait for it.
-//
-// Waiting here rather than leaning on the workflow's step retries: those fire
-// within a few seconds of each other and then give up, which is precisely how
-// the nightly mirror spent 20 days dying one new table at a time. The backoff
-// sums to ~15 s, which fits the slice budget — a new table's first chunk is
-// always at the very start of its step.
-const SCHEMA_CACHE_MISS = 'PGRST205'
-const RELOAD_BACKOFF_MS = [500, 1000, 2000, 4000, 8000]
-
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
-
-const upsertChunk = async (table, rows, attempt = 0) => {
-  const { error } = await sudoSupabase.from(table).upsert(rows, { onConflict: '_key' })
-  if (!error) return
-  if (error.code === SCHEMA_CACHE_MISS && attempt < RELOAD_BACKOFF_MS.length) {
-    const wait = RELOAD_BACKOFF_MS[attempt]
-    console.log(`[sde-mirror] ${table} not in PostgREST's schema cache yet, retrying in ${wait}ms`)
-    await sleep(wait)
-    return upsertChunk(table, rows, attempt + 1)
-  }
-  throw new Error(`sde-mirror: upsert into ${table} failed: ${error.message}`)
+// ensure_sde_mirror_table() mints a table over SQL and the very next act is to
+// write its first rows over PostgREST, which can't see it until its schema
+// cache reloads — writeWithSchemaRetry waits that window out. A new table's
+// first chunk is always at the start of its step, so its ~15s ceiling fits the
+// slice budget.
+const upsertChunk = async (table, rows) => {
+  const { error } = await writeWithSchemaRetry(table, () =>
+    sudoSupabase.from(table).upsert(rows, { onConflict: '_key' })
+  )
+  if (error) throw new Error(`sde-mirror: upsert into ${table} failed: ${error.message}`)
 }
 
 // Rows that vanished from the current dump kept their old sde_build stamp;
@@ -454,7 +437,9 @@ export const resolveStationNames = async () => {
   const now = new Date().toISOString()
   const rows = map(({ id, name }) => ({ station_id: id, name, updated_at: now }), resolved)
   await forEachSequential(splitEvery(PAGE, rows), async (batch) => {
-    const { error } = await sudoSupabase.from('sde_npc_station_name').upsert(batch, { onConflict: 'station_id' })
+    const { error } = await writeWithSchemaRetry('sde_npc_station_name', () =>
+      sudoSupabase.from('sde_npc_station_name').upsert(batch, { onConflict: 'station_id' })
+    )
     if (error) throw new Error(`sde-mirror: station name upsert failed: ${error.message}`)
   })
   console.log(`[sde-mirror] station names: ${rows.length} resolved`)
@@ -469,10 +454,14 @@ export const resolveStationNames = async () => {
 export const finalizeBuild = async (build, commit = currentCommitSha()) => {
   const { error: refreshError } = await sudoSupabase.rpc('sde_refresh_views')
   if (refreshError) throw new Error(`sde-mirror: sde_refresh_views failed: ${refreshError.message}`)
-  const { error } = await sudoSupabase
-    .from('sde_mirror_state')
-    .update({ completed_at: new Date().toISOString(), commit_sha: commit })
-    .eq('build_number', build)
+  // Retried too: this is the write that decides whether the whole run counts as
+  // complete, and it lands after a run that may have minted several tables.
+  const { error } = await writeWithSchemaRetry('sde_mirror_state', () =>
+    sudoSupabase
+      .from('sde_mirror_state')
+      .update({ completed_at: new Date().toISOString(), commit_sha: commit })
+      .eq('build_number', build)
+  )
   if (error) throw new Error(`sde-mirror: mirror_state completion failed: ${error.message}`)
   console.log(`[sde-mirror] build ${build} complete (commit ${commit})`)
 }
