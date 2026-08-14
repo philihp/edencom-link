@@ -177,19 +177,25 @@ export const isSinkSmtpHost = (host: unknown): boolean =>
 export const mailIsDisabled = (config: Record<string, unknown> | null | undefined): boolean =>
   !!config && config.mailer_autoconfirm === true && isSinkSmtpHost(config.smtp_host)
 
-// Additionally clamp GoTrue's outbound-mail rate limit to zero — the one
-// switch that also covers mail sent through Supabase's built-in service rather
-// than SMTP. Best-effort and sent separately: the field has a minimum on some
-// project vintages, and a rejection there must not stop the locks that did
-// apply.
+// Additionally floor GoTrue's outbound-mail rate limit — the one switch that
+// also covers mail sent through Supabase's built-in service rather than SMTP,
+// so it is the only layer that would still bite if both locks above were
+// somehow undone.
+//
+// One per hour, not zero: the API rejects zero outright ("rate_limit_email_sent:
+// Too small: expected number to be >=1"), which is how the first version of
+// this failed on every run. Best-effort and sent separately from the locks —
+// a rejection here must not stop the ones that would otherwise apply.
+const EMAIL_RATE_LIMIT_FLOOR = 1
+
 const clampEmailRateLimit = async (childRef: string) => {
   try {
     await management(`/v1/projects/${childRef}/config/auth`, {
       method: 'PATCH',
-      body: JSON.stringify({ rate_limit_email_sent: 0 }),
+      body: JSON.stringify({ rate_limit_email_sent: EMAIL_RATE_LIMIT_FLOOR }),
     })
   } catch (error) {
-    console.warn(`could not zero the branch email rate limit (mail is still disabled): ${shrug(error)}`)
+    console.warn(`could not floor the branch email rate limit (mail is still disabled): ${shrug(error)}`)
   }
 }
 
