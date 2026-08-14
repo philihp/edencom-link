@@ -67,26 +67,43 @@ const FLAG_REFUSAL =
 // result into a data dump — the lens's own page and CSV are where the rows live.
 const PREVIEW_ROWS = 5
 
-// Worked examples beat prose for query shape, and these two cover the joints a
-// model actually gets wrong: filtering to a container (locationId is the item
-// id of the container, which search_assets / browse_assets resolve) and
-// filtering to a set of types (typeIds are SDE type ids, as strings).
+// Worked examples beat prose for query shape, and these cover the joints a
+// model actually gets wrong: filtering to a container (the plural `locations:`
+// takes the item id of the container, which search_assets / browse_assets
+// resolve), filtering to a set of types (`types:` takes SDE type ids or whole
+// names), and the restock list, whose targets live in the variables.
+//
+// Every filter is a SINGULAR/PLURAL pair — `location:` searches names,
+// `locations:` is an exact list — so an example using one of the pre-pairing
+// spellings (locationId:, typeIds:) no longer validates against the schema.
 const EXAMPLES = [
   {
     intent: 'Everything sitting in one container or ship, by its item id.',
     query:
-      'query { assets(locationId: "1046809423988", limit: 500) { totalCount truncated rows { itemId typeId typeName quantity locationFlag ownerName } } }',
+      'query { assets(locations: ["1046809423988"], limit: 500) { totalCount truncated rows { itemId typeId typeName quantity locationFlag ownerName } } }',
   },
   {
     intent: 'Only certain item types, wherever they are — e.g. the inputs to a fuel block.',
     query:
-      'query { assets(typeIds: ["16273", "17887", "16275", "9832", "44"], limit: 500) { totalCount rows { typeId typeName quantity locationName ownerName } } }',
+      'query { assets(types: ["16273", "17887", "16275", "9832", "44"], limit: 500) { totalCount rows { typeId typeName quantity locationName ownerName } } }',
   },
   {
     intent: 'Both at once: those types, but only inside that container. Variables keep the ids out of the query text.',
     query:
-      'query Stock($container: String!, $types: [String!]) { assets(locationId: $container, typeIds: $types, limit: 500) { totalCount rows { typeId typeName quantity } } }',
-    variables: { container: '1046809423988', types: ['16273', '17887'] },
+      'query Stock($container: [String!], $types: [String!]) { assets(locations: $container, types: $types, limit: 500) { totalCount rows { typeId typeName quantity } } }',
+    variables: { container: ['1046809423988'], types: ['16273', '17887'] },
+  },
+  {
+    intent:
+      "A restock list: how much to buy of each item to get back up to a supply buffer. The targets ARE the lens — a viewer cannot change them, so the buffer levels stay the creator's.",
+    query:
+      'query Restock($targets: [RestockTarget!]!) { restock(targets: $targets, location: "1DQ1-A") { typeName groupName target onHand delta toBuy } }',
+    variables: {
+      targets: [
+        { type: 'Nitrogen Fuel Block', quantity: 10000 },
+        { type: 'Tritanium', quantity: 1000000 },
+      ],
+    },
   },
 ]
 

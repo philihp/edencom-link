@@ -9,6 +9,7 @@ import test from 'node:test'
 import {
   buildSchema,
   getNamedType,
+  isInputObjectType,
   isObjectType,
   type GraphQLNamedType,
   type GraphQLObjectType,
@@ -24,7 +25,10 @@ const ENTITY_TYPES = ['Character', 'Corporation', 'ItemType', 'Location']
 // corporation edge, with ownerType saying which side a row came from.
 const CORP_OWNABLE = ['Asset', 'Blueprint', 'IndustryJob']
 
-// Every type whose values are rows of a result set.
+// Every type whose values are rows of a result set — except RestockLine, which
+// is deliberately absent: it's the schema's one AGGREGATE row, summing stacks
+// that may span two characters and a corp hangar, so it carries no owner block
+// for the uniformity test below to check. See the restock tests at the bottom.
 const ROW_TYPES = [
   'Asset',
   'Blueprint',
@@ -48,7 +52,7 @@ const objectType = (schema: GraphQLSchema, name: string): GraphQLObjectType => {
 test('the owner filter is on every list, including the character-only ones', () => {
   const schema = buildSchema(typeDefs)
   const fields = (schema.getQueryType() as GraphQLObjectType).getFields()
-  for (const name of ['assets', 'blueprints', 'industryJobs', 'marketOrders', 'walletTransactions']) {
+  for (const name of ['assets', 'blueprints', 'industryJobs', 'marketOrders', 'restock', 'walletTransactions']) {
     const args = new Map(fields[name].args.map((a) => [a.name, String(a.type)]))
     assert.equal(args.get('owner'), 'String', `${name}.owner`)
     assert.equal(args.get('owners'), '[String!]', `${name}.owners`)
@@ -65,6 +69,7 @@ test('the SDL parses and exposes the expected query fields', () => {
     'corporations',
     'industryJobs',
     'marketOrders',
+    'restock',
     'sharedWithMe',
     'walletBalances',
     'walletTransactions',
@@ -171,6 +176,48 @@ test('Character exposes the EVE character id distinctly from the registration id
   assert.ok(character.id.description?.includes('registration id'))
 })
 
+// restock is the first field to take a structured input and the first to
+// return an aggregate. Both are easy to erode: an extra object field on
+// RestockLine would break CSV flattening, and a widened target input would let
+// a lens ask for a sum nobody can reproduce.
+test('restock takes a required list of RestockTargets and defaults to below-target only', () => {
+  const schema = buildSchema(typeDefs)
+  const field = (schema.getQueryType() as GraphQLObjectType).getFields().restock
+  assert.equal(String(field.type), '[RestockLine!]!')
+
+  const args = new Map(field.args.map((a) => [a.name, a]))
+  assert.equal(String(args.get('targets')?.type), '[RestockTarget!]!')
+  // Read the default off the SDL ast, like the includeShared test above.
+  const defaultNode = args.get('onlyBelowTarget')?.astNode?.defaultValue
+  assert.ok(defaultNode?.kind === 'BooleanValue' && defaultNode.value === true)
+
+  const target = schema.getType('RestockTarget')
+  assert.ok(target && isInputObjectType(target), 'RestockTarget is an input type')
+  const fields = target.getFields()
+  assert.equal(String(fields.type.type), 'String!')
+  // The wanted quantity is an Int (a caller types it); the SUMS are strings,
+  // since on-hand of a mineral overflows 32 bits long before the target does.
+  assert.equal(String(fields.quantity.type), 'Int!')
+})
+
+test('a restock line is an aggregate: no owner block, and its sums are strings', () => {
+  const schema = buildSchema(typeDefs)
+  const fields = objectType(schema, 'RestockLine').getFields()
+  for (const column of ['target', 'onHand', 'delta', 'toBuy']) {
+    assert.equal(String(fields[column]?.type), 'String!', `RestockLine.${column}`)
+  }
+  // A summed line spans owners, so naming one would be a lie.
+  for (const absent of ['ownerType', 'ownerId', 'ownerName', 'character', 'corporation']) {
+    assert.equal(fields[absent], undefined, `RestockLine.${absent}`)
+  }
+  // The CSV invariant: one object edge, pointing at a leaf-only entity type.
+  const edges = Object.values(fields).filter((f) => isObjectType(getNamedType(f.type)))
+  assert.deepEqual(
+    edges.map((f) => `${f.name}: ${getNamedType(f.type).name}`),
+    ['type: ItemType']
+  )
+})
+
 test('every filter dimension is a singular/plural pair, and the old names are gone', () => {
   const schema = buildSchema(typeDefs)
   const fields = (schema.getQueryType() as GraphQLObjectType).getFields()
@@ -182,6 +229,9 @@ test('every filter dimension is a singular/plural pair, and the old names are go
     blueprints: ['type', 'owner'],
     industryJobs: ['owner'],
     marketOrders: ['owner'],
+    // No type pair on restock — its targets carry the types, and a second way
+    // to name them would be a filter that silently disagreed with the list.
+    restock: ['location', 'owner'],
     walletTransactions: ['type', 'owner'],
   }
   for (const [field, dims] of Object.entries(dimensions)) {

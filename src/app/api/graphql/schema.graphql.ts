@@ -71,6 +71,26 @@ export const typeDefs = /* GraphQL */ `
       includeShared: Boolean = false
     ): AssetPage!
 
+    """
+    A restock (shopping) list. You give TARGETS — an item type and the quantity
+    you want on hand — and each line sums your current stacks of that type
+    (across your characters AND their corporations, like assets) and reports
+    what you're missing. location/locations and owner/owners narrow which
+    hangars count as "on hand", exactly as they do on assets; the types come
+    from the targets, so there is no type filter here.
+
+    By default only lines below target come back; onlyBelowTarget: false keeps
+    every target, including the covered ones.
+    """
+    restock(
+      targets: [RestockTarget!]!
+      location: String
+      locations: [String!]
+      owner: String
+      owners: [String!]
+      onlyBelowTarget: Boolean = true
+    ): [RestockLine!]!
+
     "Asset shares other users have aimed at you (corporation/alliance/public). Session auth only."
     sharedWithMe: [ShareGrant!]!
 
@@ -268,6 +288,44 @@ export const typeDefs = /* GraphQL */ `
     "Rows matching the filters, before the limit."
     totalCount: Int!
     truncated: Boolean!
+  }
+
+  """
+  One entry of a restock list: an item type and how many of it you want on
+  hand. Like an entry of a \`types:\` list, \`type\` is an SDE typeId or a WHOLE
+  item name (case-insensitive) — a name matching nothing, or matching two
+  types at once, is an error rather than a line summed over the wrong
+  denominator. Naming the same type twice is an error for the same reason.
+  """
+  input RestockTarget {
+    type: String!
+    "How many you want on hand. A whole number above zero, up to 2147483647 — GraphQL Int is 32-bit."
+    quantity: Int!
+  }
+
+  """
+  One line of a restock list. This is the schema's one AGGREGATE row — it sums
+  stacks — so unlike every other row type it carries no owner block: "on hand"
+  may span two of your characters and a corp hangar at once, and there'd be no
+  single owner to name. Narrow with \`owner:\` to ask per owner instead.
+
+  Leaf-only apart from the \`type\` edge, so a line still flattens to one CSV
+  line like every other row.
+  """
+  type RestockLine {
+    typeId: String!
+    typeName: String
+    "e.g. \\"Mineral\\", \\"Fuel Block\\" — handy for grouping a shopping list."
+    groupName: String
+    "The quantity you asked for, as given in targets."
+    target: String!
+    "Sum of your matching stacks of this type, under the filters given."
+    onHand: String!
+    "onHand - target: NEGATIVE when you're short, positive when overstocked."
+    delta: String!
+    "max(0, target - onHand) — the number to buy, never negative."
+    toBuy: String!
+    type: ItemType!
   }
 
   type Blueprint {

@@ -1,5 +1,15 @@
 # Restock lens: `restock` GraphQL root field
 
+**Status: ✅ done** — `restock` ships in `schema.graphql.ts`/`resolvers.ts`
+over the pure seam `restock.ts`, with `test/graphqlRestock.test.ts` and the
+`test/graphqlSchema.test.ts` drift guard covering it.
+
+One amendment to the design below: the line carries **both** computed columns,
+not just `toBuy`. `delta` is signed (`onHand - target`, negative when short) so
+overstock reads as readily as shortfall; `toBuy` is the clamped shopping
+number. They only disagree above target, which is exactly where a lens author
+wants the choice.
+
 ## Context
 
 Goal: a **shareable lens** that tells its audience "here's what I want to buy" — for each item
@@ -28,8 +38,8 @@ Decisions:
   for: empty targets, non-positive/non-integer quantity, unmatched name, ambiguous name (list
   candidates), duplicate resolved typeId across targets.
 - `restockLines(targets, stacks, onlyBelowTarget)` — ramda fold summing `quantity ?? 1` per
-  `type_id`, producing `{typeId, target, onHand, toBuy: max(0, target - onHand)}` in target
-  input order; `onlyBelowTarget` drops covered lines (default true).
+  `type_id`, producing `{typeId, target, onHand, delta: onHand - target, toBuy: max(0, target -
+  onHand)}` in target input order; `onlyBelowTarget` drops covered lines (default true).
 
 ### 2. SDL — `src/app/api/graphql/schema.graphql.ts`
 
@@ -55,6 +65,9 @@ type RestockLine {
   groupName: String
   target: String!
   onHand: String!
+  "onHand - target; negative when short."
+  delta: String!
+  "max(0, target - onHand) — what to buy."
   toBuy: String!
   type: ItemType!
 }
@@ -122,6 +135,7 @@ New `Query.restock`, reusing existing helpers (`ownerScopesFor`, `locationIdsFor
        groupName
        target
        onHand
+       delta
        toBuy
      }
    }

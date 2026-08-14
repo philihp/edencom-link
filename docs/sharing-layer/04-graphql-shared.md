@@ -46,6 +46,24 @@ requires a session; use a Lens"), and phase 7's Lens is the designed answer
 for external tools consuming shared data (the creator's context does the
 authorizing instead).
 
+## Later addition: `restock`
+
+`restock` (see `08-restock-lens.md`) is the schema's first **aggregate** root
+field — it sums asset stacks per item type against per-type targets, rather
+than returning rows one-to-one. Three things about it are worth knowing here,
+because they're where it departs from every other field:
+
+- **`RestockLine` carries no owner block.** A summed line may span two of your
+  characters and a corp hangar, so there is no single owner to name; the
+  `owner:` filter is how you ask per owner instead. It's therefore absent from
+  `ROW_TYPES` in `test/graphqlSchema.test.ts`.
+- **Targets come from the caller, not the schema.** They ride in a lens's
+  frozen `variables`, which is what makes a restock lens a shareable shopping
+  list: viewers can't supply variables, so the buffer levels stay the
+  creator's.
+- **It's token-mode safe**, and deliberately takes no `includeShared` — shared
+  rows would double-count into someone else's total.
+
 ## Deliverables
 
 - `schema.graphql.ts` + `resolvers.ts` changes; `test/graphqlSchema.test.ts`
