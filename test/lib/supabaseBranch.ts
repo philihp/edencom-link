@@ -156,12 +156,15 @@ const MAILER_OFF = {
 
 // Tried in order, first one that applies AND verifies wins. The variants exist
 // because the Management API's typing of smtp_port has moved between project
-// vintages, and a rejection there must not leave mail switched on: the last
-// resort drops the SMTP fields entirely and relies on mailer_autoconfirm, which
-// only passes verification if the branch had no custom SMTP to begin with.
+// vintages, and a rejection there must not leave mail switched on. A string is
+// what it wants today ("smtp_port: Invalid input: expected string, received
+// number" on the numeric form), so that goes first and the numeric form is the
+// hedge. The last resort drops the SMTP fields entirely and relies on
+// mailer_autoconfirm, which only passes verification if the branch had no
+// custom SMTP to begin with.
 export const EMAIL_DISABLED_ATTEMPTS = [
-  { ...MAILER_OFF, ...SINK_SMTP, smtp_port: 1025 },
   { ...MAILER_OFF, ...SINK_SMTP, smtp_port: '1025' },
+  { ...MAILER_OFF, ...SINK_SMTP, smtp_port: 1025 },
   MAILER_OFF,
 ] as const
 
