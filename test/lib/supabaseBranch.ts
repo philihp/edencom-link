@@ -117,68 +117,123 @@ const shrug = (error: unknown) => (error instanceof Error ? error.message : `${e
 // schema, and that includes the parent's custom SMTP credentials and mail
 // templates. So a branch will happily send real mail, from the real sender, to
 // whatever address a test hands GoTrue — signUp confirmations, and password
-// recoveries for an address that already exists. Test addresses are not
-// deliverable, so every one of those is a bounce charged against the
-// production domain's reputation.
+// recoveries for an address that already exists. Test addresses are
+// @edencom.test, a reserved TLD with no MX, so every one of those was a hard
+// bounce charged against the production domain's reputation.
 //
 // Nothing about the tests needs mail, so mail is turned off on the branch
 // before a single auth call is made against it. Two independent locks, because
 // one silently-renamed field must not put mail back on the wire:
-//   - mailer_autoconfirm skips the confirmation mail on sign-up entirely,
-//   - the inherited SMTP credentials are cleared, so there is no sender left
-//     to send through.
-export const EMAIL_DISABLED_CONFIG = {
+//   - mailer_autoconfirm skips the confirmation mail on sign-up entirely, so
+//     nothing is even generated on the path the tests take;
+//   - SMTP is pointed at a loopback sink, so anything generated on some other
+//     path has nowhere to go — the connection is to the branch container's own
+//     127.0.0.1 and simply fails.
+//
+// The sink rather than blank fields is deliberate: clearing them outright is
+// what the first attempt did, and the Management API rejects the whole PATCH
+// with `smtp_admin_email: Invalid email address` (the field is format-checked
+// even when empty). Null is not a safe substitute either — the API reads null
+// on these fields as "leave unchanged", which would quietly leave production's
+// sender in place. A syntactically valid address at a reserved, unroutable
+// domain satisfies the validator and can still never receive anything.
+const SINK_SMTP = {
+  smtp_host: '127.0.0.1',
+  smtp_user: 'disabled',
+  smtp_pass: 'disabled',
+  // .invalid is reserved (RFC 2606) and never resolves, so even this sender
+  // address is undeliverable by construction.
+  smtp_admin_email: 'devnull@edencom-branch-test.invalid',
+  smtp_sender_name: 'edencom-link branch test (mail disabled)',
+}
+
+const MAILER_OFF = {
   // Sign-up confirms itself: no "confirm your email" mail.
   mailer_autoconfirm: true,
   // An email change would otherwise mail *both* the old and new address.
   mailer_secure_email_change_enabled: false,
-  // Drop the parent's custom SMTP. Empty strings rather than nulls: the
-  // Management API treats null as "leave unchanged" on these fields.
-  smtp_host: '',
-  smtp_port: '',
-  smtp_user: '',
-  smtp_pass: '',
-  smtp_admin_email: '',
-  smtp_sender_name: '',
-} as const
+}
+
+// Tried in order, first one that applies AND verifies wins. The variants exist
+// because the Management API's typing of smtp_port has moved between project
+// vintages, and a rejection there must not leave mail switched on. A string is
+// what it wants today ("smtp_port: Invalid input: expected string, received
+// number" on the numeric form), so that goes first and the numeric form is the
+// hedge. The last resort drops the SMTP fields entirely and relies on
+// mailer_autoconfirm, which only passes verification if the branch had no
+// custom SMTP to begin with.
+export const EMAIL_DISABLED_ATTEMPTS = [
+  { ...MAILER_OFF, ...SINK_SMTP, smtp_port: '1025' },
+  { ...MAILER_OFF, ...SINK_SMTP, smtp_port: 1025 },
+  MAILER_OFF,
+] as const
+
+// A host mail can never leave through: unset, or the branch's own loopback.
+export const isSinkSmtpHost = (host: unknown): boolean =>
+  !host || ['localhost', '127.0.0.1', '::1', '0.0.0.0'].includes(`${host}`.trim().toLowerCase())
 
 // What the config has to look like before the branch may be used. Pure, so the
 // offline suite can pin it (test/branchEmail.test.ts).
 export const mailIsDisabled = (config: Record<string, unknown> | null | undefined): boolean =>
-  !!config && config.mailer_autoconfirm === true && !config.smtp_host
+  !!config && config.mailer_autoconfirm === true && isSinkSmtpHost(config.smtp_host)
 
-// Additionally clamp GoTrue's outbound-mail rate limit to zero — the only
-// switch that also covers recovery mail sent through Supabase's built-in
-// service. Best-effort and separate from the PATCH above: the field has a
-// minimum on some project vintages, and a rejection there must not stop the
-// locks that did apply.
+// Additionally floor GoTrue's outbound-mail rate limit — the one switch that
+// also covers mail sent through Supabase's built-in service rather than SMTP,
+// so it is the only layer that would still bite if both locks above were
+// somehow undone.
+//
+// One per hour, not zero: the API rejects zero outright ("rate_limit_email_sent:
+// Too small: expected number to be >=1"), which is how the first version of
+// this failed on every run. Best-effort and sent separately from the locks —
+// a rejection here must not stop the ones that would otherwise apply.
+const EMAIL_RATE_LIMIT_FLOOR = 1
+
 const clampEmailRateLimit = async (childRef: string) => {
   try {
     await management(`/v1/projects/${childRef}/config/auth`, {
       method: 'PATCH',
-      body: JSON.stringify({ rate_limit_email_sent: 0 }),
+      body: JSON.stringify({ rate_limit_email_sent: EMAIL_RATE_LIMIT_FLOOR }),
     })
   } catch (error) {
-    console.warn(`could not zero the branch email rate limit (mail is still disabled): ${shrug(error)}`)
+    console.warn(`could not floor the branch email rate limit (mail is still disabled): ${shrug(error)}`)
   }
 }
 
-// Turn mail off on a branch and prove it took. Throws otherwise — a branch we
-// cannot silence is a branch no test may touch.
-export const disableBranchEmail = async (childRef: string) => {
-  await management(`/v1/projects/${childRef}/config/auth`, {
-    method: 'PATCH',
-    body: JSON.stringify(EMAIL_DISABLED_CONFIG),
-  })
-  await clampEmailRateLimit(childRef)
-
-  const config = await management(`/v1/projects/${childRef}/config/auth`)
-  if (!mailIsDisabled(config)) {
-    throw new Error(
-      `refusing to run against project ${childRef}: outbound email is still enabled ` +
-        `(mailer_autoconfirm=${config?.mailer_autoconfirm}, smtp_host=${config?.smtp_host || 'unset'})`
-    )
+// Apply one candidate payload and report whether the branch now reads as
+// silent. A rejected PATCH is not fatal here — the caller has more candidates —
+// but it is worth printing, since a run that needed the fallback means the API
+// shape moved.
+const tryDisable = async (childRef: string, attempt: Record<string, unknown>): Promise<boolean> => {
+  try {
+    await management(`/v1/projects/${childRef}/config/auth`, {
+      method: 'PATCH',
+      body: JSON.stringify(attempt),
+    })
+  } catch (error) {
+    console.warn(`disabling branch email via ${Object.keys(attempt).join(', ')} was rejected: ${shrug(error)}`)
+    return false
   }
+  return mailIsDisabled(await management(`/v1/projects/${childRef}/config/auth`))
+}
+
+// Tail-recursive rather than a loop, per the repo's iteration style.
+const attemptDisable = async (childRef: string, index = 0): Promise<boolean> => {
+  if (index >= EMAIL_DISABLED_ATTEMPTS.length) return false
+  return (await tryDisable(childRef, EMAIL_DISABLED_ATTEMPTS[index])) || attemptDisable(childRef, index + 1)
+}
+
+// Turn mail off on a branch and prove it took, by reading the config back
+// rather than trusting the write. Throws otherwise — a branch that cannot be
+// silenced is a branch no test may touch, and failing here costs a red build
+// while failing open costs someone's inbox.
+export const disableBranchEmail = async (childRef: string) => {
+  await clampEmailRateLimit(childRef)
+  if (await attemptDisable(childRef)) return
+  const config = await management(`/v1/projects/${childRef}/config/auth`).catch(() => null)
+  throw new Error(
+    `refusing to run against project ${childRef}: outbound email is still enabled ` +
+      `(mailer_autoconfirm=${config?.mailer_autoconfirm}, smtp_host=${config?.smtp_host || 'unset'})`
+  )
 }
 
 // The project ref behind a branch URL (https://<ref>.supabase.co), so a
