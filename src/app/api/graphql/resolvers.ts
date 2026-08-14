@@ -31,6 +31,7 @@ import {
   splitRefEntries,
 } from './filters'
 import { searchLocationCandidates } from './locationSearch'
+import { resolveTargets, restockLines, type Stack } from './restock'
 import type { OwnerScopes } from './filters'
 import type { GraphqlContext } from './context'
 
@@ -503,6 +504,92 @@ export const resolvers = {
           }
         }),
       }
+    },
+
+    restock: async (
+      _parent: unknown,
+      args: {
+        targets: ReadonlyArray<{ type: string; quantity: number }>
+        location?: string | null
+        locations?: readonly string[] | null
+        owner?: string | null
+        owners?: readonly string[] | null
+        onlyBelowTarget?: boolean | null
+      },
+      ctx: GraphqlContext
+    ) => {
+      // Target names resolve the way an exact `types:` list does — through the
+      // ranked SDE search, counting only whole-name hits (see typeIdsFor).
+      const names = uniq(args.targets.map((t) => (t.type ?? '').trim()).filter((t) => t !== '' && !/^\d+$/.test(t)))
+      const found = await Promise.all(names.map(async (name) => [name, await searchSdeTypesAll(name)] as const))
+      const byName = new Map(
+        found.map(([name, matches]) => [name, matches.map((m) => ({ id: String(m.typeID), name: m.name }))])
+      )
+      const resolved = resolveTargets(args.targets, (name) => byName.get(name) ?? [])
+      if (!resolved.ok) return badRequest(resolved.message)
+      const targetTypeIds = resolved.targets.map((t) => t.typeId)
+
+      // One SDE batch covers three needs: the line names, the ItemType edge,
+      // and existence-checking the targets given as bare ids — an id the SDE
+      // doesn't know is an error, not a phantom line reading zero on hand.
+      const types = await typesFor(targetTypeIds)
+      const unknown = targetTypeIds.filter((id) => types[id] === undefined)
+      if (unknown.length > 0) {
+        return badRequest(`No item type matched ${unknown.map((id) => `"${id}"`).join(', ')}.`)
+      }
+
+      const scopes = await ownerScopesFor(ctx, args)
+      const locationIds = await locationIdsFor(ctx, args)
+
+      // A TARGETED read: only the target types, only the two columns the sum
+      // needs. Filtering by type keeps this far below the cap that paging the
+      // whole hangar would hit — and a truncated read here wouldn't look
+      // truncated, it would look like a smaller stockpile.
+      const filtered = (query: any, ownerColumn: string, ownerIds: string[]): any => {
+        let q = query.in(ownerColumn, ownerIds).in('type_id', targetTypeIds)
+        if (locationIds !== null) q = q.in('location_id', locationIds)
+        return q
+      }
+
+      const read = async (table: string, ownerColumn: string, ownerIds: string[]): Promise<Stack[]> => {
+        if (ownerIds.length === 0) return []
+        const { count, error } = await filtered(
+          ctx.supabase.from(table).select('item_id', { count: 'exact', head: true }),
+          ownerColumn,
+          ownerIds
+        )
+        if (error) return queryFailed()
+        // Refuse rather than sum a truncated read: a wrong total here is a
+        // wrong number to buy, and nothing downstream could tell.
+        if ((count ?? 0) > ASSET_CAP) {
+          return badRequest(
+            `Too many stacks to sum reliably (${count} in ${table}) — narrow the owner or location filter.`
+          )
+        }
+        return fetchCapped<Stack>(
+          (from, to) =>
+            filtered(ctx.supabase.from(table).select('type_id, quantity'), ownerColumn, ownerIds)
+              .order('item_id')
+              .range(from, to),
+          ASSET_CAP
+        )
+      }
+
+      const [own, corp] = await Promise.all([
+        read('character_asset', 'registration_id', scopes.registrationIds),
+        read('corp_asset', 'corporation_id', scopes.corporationIds),
+      ])
+
+      return restockLines(resolved.targets, [...own, ...corp], args.onlyBelowTarget !== false).map((line) => ({
+        typeId: String(line.typeId),
+        typeName: typeNameOf(types, line.typeId),
+        groupName: types[line.typeId]?.groupName ?? null,
+        target: String(line.target),
+        onHand: String(line.onHand),
+        delta: String(line.delta),
+        toBuy: String(line.toBuy),
+        type: itemTypeOf(types, line.typeId),
+      }))
     },
 
     sharedWithMe: async (_parent: unknown, _args: unknown, ctx: GraphqlContext) => {
