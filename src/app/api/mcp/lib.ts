@@ -11,6 +11,8 @@ import type { LocationRef } from '@/app/resolveLocations'
 import { searchSdeTypesAll, type SdeSearchResult } from '@/sdeTypes'
 import { BLUEPRINT_CATEGORY_ID } from '@/utils/sdeCategories'
 
+import type { OwnerDirectory } from './assetFilterQuery'
+
 // Above this, the substring is too broad to be a useful item filter — same
 // threshold (and rationale) as /asset/search.
 export const MAX_TYPES = 100
@@ -128,6 +130,34 @@ export const fetchOwnerContext = async (supabase: SupabaseClient): Promise<Owner
     nameById: new Map([...owners.characters, ...owners.corporations].map((o) => [o.id, o.name])),
     registrationIds: owners.characters.map((o) => o.id),
     corporationIds: owners.corporations.map((o) => o.id),
+  }
+}
+
+// The same owners, plus the EVE numeric character id alongside each
+// registration uuid, so a caller can name a character by either id (see
+// splitOwnerIds). Kept out of fetchOwners itself, which is shared with the web
+// pages and only ever needs the uuid the asset rows are keyed on.
+export const fetchOwnerDirectory = async (
+  supabase: SupabaseClient
+): Promise<{ owners: OwnerContext; directory: OwnerDirectory }> => {
+  const [owners, { data }] = await Promise.all([
+    fetchOwnerContext(supabase),
+    supabase.from('registration').select('id, character_id'),
+  ])
+  const rows = (data ?? []) as Array<{ id: string; character_id: number | string | null }>
+  return {
+    owners,
+    directory: {
+      registrations: rows.map((r) => ({
+        registrationId: r.id,
+        characterId: String(r.character_id ?? ''),
+        name: owners.nameById.get(r.id) ?? r.id,
+      })),
+      corporations: owners.corporationIds.map((id) => ({
+        corporationId: id,
+        name: owners.nameById.get(id) ?? id,
+      })),
+    },
   }
 }
 
