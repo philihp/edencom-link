@@ -12,7 +12,13 @@
 //      Costs a few minutes of wall clock while it provisions.
 //   2. Reuse:     SUPABASE_TEST_BRANCH_URL + _ANON_KEY + _SERVICE_KEY, pointing
 //      at a branch someone already spun up (a persistent `develop` branch, or
-//      one created by the CI workflow). Nothing is created or deleted.
+//      one created by the CI workflow). Nothing is created or deleted, but
+//      SUPABASE_ACCESS_TOKEN is still required — see disableBranchEmail.
+//
+// Either way, outbound email is disabled on the branch and the change is
+// verified before the branch is handed to a test. A branch inherits the parent
+// project's SMTP credentials, so this is the only thing standing between a test
+// signup and a real message leaving the production sender.
 //
 // The Management API surface used here is documented at
 // https://supabase.com/docs/reference/api/v1-create-a-branch.
@@ -87,9 +93,17 @@ const management = async (path: string, init: RequestInit = {}) => {
 export const branchSkipReason = (): string | null => {
   const reused = process.env.SUPABASE_TEST_BRANCH_URL
   if (reused) {
-    return process.env.SUPABASE_TEST_BRANCH_ANON_KEY && process.env.SUPABASE_TEST_BRANCH_SERVICE_KEY
+    if (!process.env.SUPABASE_TEST_BRANCH_ANON_KEY || !process.env.SUPABASE_TEST_BRANCH_SERVICE_KEY) {
+      return 'SUPABASE_TEST_BRANCH_URL is set without SUPABASE_TEST_BRANCH_ANON_KEY / _SERVICE_KEY'
+    }
+    // A branch nobody can silence is a branch that mails real people, so the
+    // reuse path needs the Management API too — see disableBranchEmail.
+    if (!process.env.SUPABASE_ACCESS_TOKEN) {
+      return 'SUPABASE_TEST_BRANCH_URL needs SUPABASE_ACCESS_TOKEN as well, to disable outbound email on the branch'
+    }
+    return refFromUrl(reused)
       ? null
-      : 'SUPABASE_TEST_BRANCH_URL is set without SUPABASE_TEST_BRANCH_ANON_KEY / _SERVICE_KEY'
+      : `cannot derive a project ref from SUPABASE_TEST_BRANCH_URL (${reused}), so outbound email cannot be disabled`
   }
   if (!process.env.SUPABASE_ACCESS_TOKEN || !process.env.SUPABASE_PROJECT_REF) {
     return 'needs SUPABASE_ACCESS_TOKEN + SUPABASE_PROJECT_REF (or SUPABASE_TEST_BRANCH_* for a pre-made branch)'
@@ -97,14 +111,86 @@ export const branchSkipReason = (): string | null => {
   return null
 }
 
+const shrug = (error: unknown) => (error instanceof Error ? error.message : `${error}`)
+
+// A branch is a clone of the parent project's *configuration* as well as its
+// schema, and that includes the parent's custom SMTP credentials and mail
+// templates. So a branch will happily send real mail, from the real sender, to
+// whatever address a test hands GoTrue — signUp confirmations, and password
+// recoveries for an address that already exists. Test addresses are not
+// deliverable, so every one of those is a bounce charged against the
+// production domain's reputation.
+//
+// Nothing about the tests needs mail, so mail is turned off on the branch
+// before a single auth call is made against it. Two independent locks, because
+// one silently-renamed field must not put mail back on the wire:
+//   - mailer_autoconfirm skips the confirmation mail on sign-up entirely,
+//   - the inherited SMTP credentials are cleared, so there is no sender left
+//     to send through.
+export const EMAIL_DISABLED_CONFIG = {
+  // Sign-up confirms itself: no "confirm your email" mail.
+  mailer_autoconfirm: true,
+  // An email change would otherwise mail *both* the old and new address.
+  mailer_secure_email_change_enabled: false,
+  // Drop the parent's custom SMTP. Empty strings rather than nulls: the
+  // Management API treats null as "leave unchanged" on these fields.
+  smtp_host: '',
+  smtp_port: '',
+  smtp_user: '',
+  smtp_pass: '',
+  smtp_admin_email: '',
+  smtp_sender_name: '',
+} as const
+
+// What the config has to look like before the branch may be used. Pure, so the
+// offline suite can pin it (test/branchEmail.test.ts).
+export const mailIsDisabled = (config: Record<string, unknown> | null | undefined): boolean =>
+  !!config && config.mailer_autoconfirm === true && !config.smtp_host
+
+// Additionally clamp GoTrue's outbound-mail rate limit to zero — the only
+// switch that also covers recovery mail sent through Supabase's built-in
+// service. Best-effort and separate from the PATCH above: the field has a
+// minimum on some project vintages, and a rejection there must not stop the
+// locks that did apply.
+const clampEmailRateLimit = async (childRef: string) => {
+  try {
+    await management(`/v1/projects/${childRef}/config/auth`, {
+      method: 'PATCH',
+      body: JSON.stringify({ rate_limit_email_sent: 0 }),
+    })
+  } catch (error) {
+    console.warn(`could not zero the branch email rate limit (mail is still disabled): ${shrug(error)}`)
+  }
+}
+
+// Turn mail off on a branch and prove it took. Throws otherwise — a branch we
+// cannot silence is a branch no test may touch.
+export const disableBranchEmail = async (childRef: string) => {
+  await management(`/v1/projects/${childRef}/config/auth`, {
+    method: 'PATCH',
+    body: JSON.stringify(EMAIL_DISABLED_CONFIG),
+  })
+  await clampEmailRateLimit(childRef)
+
+  const config = await management(`/v1/projects/${childRef}/config/auth`)
+  if (!mailIsDisabled(config)) {
+    throw new Error(
+      `refusing to run against project ${childRef}: outbound email is still enabled ` +
+        `(mailer_autoconfirm=${config?.mailer_autoconfirm}, smtp_host=${config?.smtp_host || 'unset'})`
+    )
+  }
+}
+
+// The project ref behind a branch URL (https://<ref>.supabase.co), so a
+// handed-to-us branch can be silenced the same way one we created is.
+export const refFromUrl = (url: string): string | null => /^https:\/\/([a-z0-9-]+)\.supabase\./.exec(url)?.[1] ?? null
+
 const readBranch = async (parentRef: string, branchId: string): Promise<Branch> => {
   const branches: Branch[] = await management(`/v1/projects/${parentRef}/branches`)
   const branch = branches.find(({ id }) => id === branchId)
   if (!branch) throw new Error(`branch ${branchId} vanished from project ${parentRef}`)
   return branch
 }
-
-const shrug = (error: unknown) => (error instanceof Error ? error.message : `${error}`)
 
 // Build the branch's schema from schema.sql — the repo's single source of
 // truth — rather than from supabase/migrations.
@@ -217,6 +303,9 @@ const awaitAuth = async (url: string, anonKey: string, deadline: number): Promis
 export const createTestBranch = async (namePrefix: string): Promise<BranchTarget> => {
   const reusedUrl = process.env.SUPABASE_TEST_BRANCH_URL
   if (reusedUrl) {
+    const reusedRef = refFromUrl(reusedUrl)
+    if (!reusedRef) throw new Error(`cannot derive a project ref from ${reusedUrl}`)
+    await disableBranchEmail(reusedRef)
     return {
       url: reusedUrl,
       anonKey: `${process.env.SUPABASE_TEST_BRANCH_ANON_KEY}`,
@@ -241,6 +330,9 @@ export const createTestBranch = async (namePrefix: string): Promise<BranchTarget
     // The branch's own project ref — `created.project_ref` is populated too,
     // but the detail response is the authoritative one once it is healthy.
     const { ref } = await awaitHealthy(parentRef, created.id, deadline)
+    // Before anything can authenticate against it, and so before GoTrue has
+    // any chance to mail: the branch cloned production's SMTP settings.
+    await disableBranchEmail(ref)
     await applySchema(ref)
     const url = `https://${ref}.supabase.co`
     const { anonKey, serviceKey } = await fetchKeys(ref)

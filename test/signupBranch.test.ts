@@ -8,6 +8,13 @@
 // reuse a branch someone else provisioned). So `pnpm test` stays offline by
 // default; `pnpm run test:branch` is the same file with credentials in hand.
 //
+// The signUp below is a real GoTrue signup and would mail the address it is
+// given: a branch inherits production's SMTP, so those bounced off the real
+// sender. createTestBranch now disables outbound mail on the branch and
+// verifies it before returning, and refuses the branch otherwise — so nothing
+// here can reach an inbox. Keep it that way: no auth call in this file may
+// depend on mail being sent.
+//
 // What it asserts, mirroring src/app/account/register/actions.ts (which can't be
 // imported here — it is a 'use server' module reading cookies):
 //   1. an unused invite code gates registration,
@@ -100,9 +107,10 @@ describe('signing up on a Supabase branch', { skip: skip ?? false, timeout: SETU
     return { user: data.user, session: data.session, email, password, reason: null }
   }
 
-  // A client acting AS the new account. signUp only returns a session when the
-  // branch has email confirmations off, so confirm with the service role and
-  // sign in when it doesn't — the point here is RLS, not the mail settings.
+  // A client acting AS the new account. signUp returns a session outright now
+  // that the branch autoconfirms (that is what keeps mail off the wire), but
+  // the service-role confirm stays as a fallback for a branch configured some
+  // other way — the point here is RLS, not the mail settings.
   const signedInClient = async (registered: Registration) => {
     const client = anonClient()
     if (registered.user && !registered.session) {
