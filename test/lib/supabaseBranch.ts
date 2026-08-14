@@ -138,7 +138,17 @@ export const EMAIL_DISABLED_CONFIG = {
   smtp_port: '',
   smtp_user: '',
   smtp_pass: '',
-  smtp_admin_email: '',
+  // …except this one, which the API validates as an email address and rejects
+  // empty, failing the whole PATCH:
+  //
+  //   PATCH /v1/projects/<ref>/config/auth failed: 400
+  //   {"message":"smtp_admin_email: Invalid email address"}
+  //
+  // and a rejected PATCH means no locks applied at all. So hand it something
+  // syntactically valid and permanently undeliverable instead: .test is
+  // reserved by RFC 2606 and resolves nowhere. Harmless either way — with
+  // smtp_host cleared there is no server left for a sender to send through.
+  smtp_admin_email: 'noreply@edencom.test',
   smtp_sender_name: '',
 } as const
 

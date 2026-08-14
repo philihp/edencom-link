@@ -22,8 +22,20 @@ test('the branch config skips signup confirmation mail', () => {
 test('the branch config clears every inherited SMTP credential', () => {
   // Empty strings, not nulls: the Management API reads null as "unchanged",
   // which would leave production's sender in place on the branch.
-  const smtp = ['smtp_host', 'smtp_port', 'smtp_user', 'smtp_pass', 'smtp_admin_email', 'smtp_sender_name'] as const
+  const smtp = ['smtp_host', 'smtp_port', 'smtp_user', 'smtp_pass', 'smtp_sender_name'] as const
   smtp.forEach((field) => assert.equal(EMAIL_DISABLED_CONFIG[field], '', `${field} must be cleared, not left null`))
+})
+
+test('the admin address is valid but undeliverable', () => {
+  // smtp_admin_email is the one field the Management API validates as an email
+  // address, so clearing it the way the others are cleared 400s the entire
+  // PATCH and leaves mail ON. It has to be a well-formed address, and the only
+  // safe well-formed address is one that can never reach a real inbox: .test is
+  // reserved by RFC 2606. Anything routable here — @edencom.link above all —
+  // puts a real domain back in the loop, which is the bug this file exists for.
+  const admin = EMAIL_DISABLED_CONFIG.smtp_admin_email
+  assert.notEqual(admin, '', 'an empty admin address is rejected by the Management API')
+  assert.match(admin, /^[^@\s]+@[^@\s]+\.test$/, 'the admin address must be well-formed and in the reserved .test TLD')
 })
 
 test('a silenced branch passes the check', () => {
