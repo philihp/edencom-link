@@ -26,6 +26,20 @@ export const metadata: Metadata = {
         sizes: '32x32',
         url: '/favicon-32x32.png',
       },
+      // Scrapers that want a larger tile — Google's s2 favicon service,
+      // which is what Claude renders next to the MCP connector — pick the
+      // biggest linked icon, so give them one rather than a blurry upscale
+      // of the 32.
+      {
+        type: 'image/png',
+        sizes: '48x48',
+        url: '/favicon-48x48.png',
+      },
+      {
+        type: 'image/png',
+        sizes: '192x192',
+        url: '/android-chrome-192x192.png',
+      },
     ],
   },
 }
