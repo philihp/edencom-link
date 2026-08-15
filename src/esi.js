@@ -7,17 +7,35 @@ const ESI_BASE = 'https://esi.evetech.net/latest'
 // is byte-for-byte what the plain Error carried before, since it's what lands in
 // heartbeat.error and the logs.
 export class EsiError extends Error {
-  constructor(label, status, statusText, body) {
+  constructor(label, status, statusText, body, errorLimit = {}) {
     super(`${label}: ${status} ${statusText} body=${body}`)
     this.name = 'EsiError'
     this.status = status
     this.body = body
+    // ESI's error budget, as reported on the failing response itself: how many
+    // errors are left in the current window and how many seconds until it
+    // resets. Carried on the error so a caller issuing many requests can stand
+    // down *before* CCP starts answering 420 (see shouldStandDown in
+    // src/jobs/structureResolution.js). Null when the response omitted them.
+    this.errorLimitRemain = errorLimit.remain ?? null
+    this.errorLimitReset = errorLimit.reset ?? null
   }
+}
+
+// The error budget headers, as numbers. Absent or unparseable reads as null —
+// "unknown", never "zero", so a missing header can't look like an exhausted
+// budget and stop a job that was fine.
+const errorLimitOf = (response) => {
+  const num = (name) => {
+    const value = Number(response.headers.get(name))
+    return Number.isFinite(value) ? value : null
+  }
+  return { remain: num('x-esi-error-limit-remain'), reset: num('x-esi-error-limit-reset') }
 }
 
 const esiError = async (response, path, label) => {
   const text = await response.text().catch(() => '')
-  return new EsiError(label ?? path, response.status, response.statusText, text.slice(0, 500))
+  return new EsiError(label ?? path, response.status, response.statusText, text.slice(0, 500), errorLimitOf(response))
 }
 
 // A 403 that means "this character isn't allowed to ask", not "something broke".

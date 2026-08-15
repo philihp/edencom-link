@@ -3968,8 +3968,19 @@ create table public.universe_structure (
   -- precedence explicit instead of last-write-wins — a name we resolved
   -- ourselves outranks EVE Ref's copy, and EVE Ref never overwrites it.
   source text,
-  resolved_at timestamptz not null default now()
+  resolved_at timestamptz not null default now(),
+  -- When a pass last got a definitive "no" from ESI about this structure — 403
+  -- (no docking access for any of our characters) or 404 (gone). The
+  -- universe-structures job skips these for UNRESOLVED_TTL_DAYS instead of
+  -- re-asking every scoped token nightly, which is what used to push it past
+  -- the function's 800s budget. A pause, not a blacklist: access does get
+  -- granted, and a successful resolve clears this back to null. Never set from
+  -- a 420 or a 5xx — those say nothing about the structure.
+  unresolved_at timestamptz
 );
+create index universe_structure_unresolved_at_idx
+  on public.universe_structure (unresolved_at)
+  where unresolved_at is not null;
 
 alter table public.universe_structure enable row level security;
 -- Readable by any *established* account — a member, not an account still
