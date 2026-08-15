@@ -4,6 +4,7 @@ import { universeStructure } from '../esi.js'
 import { sudoSupabase } from '../supabase.js'
 import { refreshAccessToken } from '../tokenRefresh.js'
 import { cli, forEachSequential } from './lib.js'
+import { isDefinitiveFailure, shouldStandDown, UNRESOLVED_TTL_DAYS, unresolvedCutoff } from './structureResolution.js'
 
 const TAG = 'universe-structures'
 const SCOPE = 'esi-universe.read_structures.v1'
@@ -153,8 +154,24 @@ export const runUniverseStructures = async () => {
     if (Number.isFinite(id) && id >= STRUCTURE_ID_FLOOR) locationIds.add(id)
   }, cloneRows ?? [])
 
-  const candidates = reject((id) => itemIds.has(id) || resolved.has(id), [...locationIds])
-  console.log(`[${TAG}] ${candidates.length} candidate player structure(s) to resolve`)
+  // Structures a recent pass already established nobody can resolve. Re-asking
+  // every token about each of these nightly is what pushed the job past its
+  // function budget, so they're parked for UNRESOLVED_TTL_DAYS — long enough to
+  // stop the churn, short enough that newly granted docking access is picked up
+  // within the week.
+  const { data: parkedRows, error: parkedErr } = await sudoSupabase
+    .from('universe_structure')
+    .select('structure_id')
+    .is('name', null)
+    .gt('unresolved_at', unresolvedCutoff())
+  if (parkedErr) throw parkedErr
+  const parkedIds = new Set(map(pipe(prop('structure_id'), Number), parkedRows ?? []))
+
+  const candidates = reject((id) => itemIds.has(id) || resolved.has(id) || parkedIds.has(id), [...locationIds])
+  console.log(
+    `[${TAG}] ${candidates.length} candidate player structure(s) to resolve ` +
+      `(${parkedIds.size} parked as unresolvable within the last ${UNRESOLVED_TTL_DAYS} day(s))`
+  )
   if (candidates.length === 0) return
 
   // Refresh each token's access token at most once and remember the result, so
@@ -174,11 +191,17 @@ export const runUniverseStructures = async () => {
     return access
   }
 
+  // Set once ESI's error budget runs low (or it starts answering 420). Every
+  // remaining candidate is then left for the next run rather than spending the
+  // rest of the function's lifetime collecting 420s — which is precisely how
+  // this job used to die at the 800s timeout, recording nothing.
+  let standDown = null
+
   // Try resolving `structureID` against tokens in order, stopping at the first
   // one that succeeds. `lastError` carries the most recent failure forward so a
   // structure nobody can resolve still reports why.
   const resolveAgainstTokens = async (structureID, remainingTokens, lastError) => {
-    if (remainingTokens.length === 0) return { info: null, lastError }
+    if (standDown || remainingTokens.length === 0) return { info: null, lastError }
     const [tokenRow, ...rest] = remainingTokens
     const access = await getAccess(tokenRow)
     if (!access) return resolveAgainstTokens(structureID, rest, lastError)
@@ -186,6 +209,13 @@ export const runUniverseStructures = async () => {
       const info = await universeStructure(access, structureID)
       return { info, lastError }
     } catch (e) {
+      // Stop the whole pass, not just this structure: the error budget is
+      // shared across every job, and pushing past it turns other characters'
+      // legitimate lookups into 420s too.
+      if (shouldStandDown(e)) {
+        standDown = e
+        return { info: null, lastError: e }
+      }
       // Usually 403 = this character can't dock here; another linked character
       // might, so try the next token before giving up on this structure.
       return resolveAgainstTokens(structureID, rest, e)
@@ -193,11 +223,30 @@ export const runUniverseStructures = async () => {
   }
 
   let upserted = 0
+  let parked = 0
+  let skipped = 0
   await forEachSequential(candidates, async (structureID) => {
+    if (standDown) {
+      skipped += 1
+      return
+    }
     const { info, lastError } = await resolveAgainstTokens(structureID, tokens, undefined)
     if (!info) {
-      // No linked character can resolve it (e.g. nobody has docking access). Don't
-      // cache — a later pass may succeed if access is granted.
+      // Nobody could resolve it. If ESI answered definitively about the
+      // structure (403 no docking access / 404 gone), park it for
+      // UNRESOLVED_TTL_DAYS so tomorrow's pass doesn't spend another ~77 calls
+      // being told the same thing. A stand-down or any other failure says
+      // nothing about the structure, so it stays a candidate.
+      if (isDefinitiveFailure(lastError)) {
+        const { error: parkErr } = await sudoSupabase
+          .from('universe_structure')
+          .upsert(
+            { structure_id: structureID, unresolved_at: new Date().toISOString() },
+            { onConflict: 'structure_id' }
+          )
+        if (parkErr) console.warn(`[${TAG}] structure ${structureID} park failed: ${parkErr.message}`)
+        else parked += 1
+      }
       console.warn(
         `[${TAG}] structure ${structureID} unresolved by any token: ${lastError?.message ?? 'no scoped token'}`
       )
@@ -215,6 +264,9 @@ export const runUniverseStructures = async () => {
         // is the only source that can name a *private* structure.
         source: 'esi-token',
         resolved_at: new Date().toISOString(),
+        // Access was granted (or restored): clear any park so the row reads as
+        // resolved rather than resolved-but-parked.
+        unresolved_at: null,
       },
       { onConflict: 'structure_id' }
     )
@@ -225,7 +277,19 @@ export const runUniverseStructures = async () => {
     resolved.add(structureID)
     upserted += 1
   })
-  console.log(`[${TAG}] resolved ${upserted} player structure name(s)`)
+  console.log(
+    `[${TAG}] resolved ${upserted} player structure name(s), parked ${parked} for ${UNRESOLVED_TTL_DAYS} day(s)`
+  )
+  if (standDown) {
+    // Not a failure: a partial pass is the designed behaviour under a shared
+    // error budget, and the parked ids mean the next run starts further along.
+    // Logged loudly because a run that stands down every night means the
+    // candidate set is growing faster than it can be worked through.
+    console.warn(
+      `[${TAG}] stood down on ESI's error budget with ${skipped} candidate(s) unattempted ` +
+        `(${standDown.message}); they stay candidates for the next run`
+    )
+  }
 }
 
 cli(import.meta.url, TAG, runUniverseStructures)
