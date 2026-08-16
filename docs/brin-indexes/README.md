@@ -80,6 +80,43 @@ moment. (Tables with no snapshot function yet — clone/skill/ship/fitting/
 mercenary-den — are included for the same reason: the index is the cheap half;
 the RPC, when someone wants one, is the expensive half.)
 
+### Where `pages_per_range = 32` comes from, and how to recalibrate it
+
+**Provenance, honestly:** 32 is inherited from the `market_price_over_time`
+precedent. The market-prices sizing work ran its benchmarks *with* 32 — the
+5.1 ms / 181 ms numbers above were measured at that setting — but never A/B'd
+it against PostgreSQL's default of 128. It is a reasonable value carried
+forward, not a measured optimum, and the standard keeps it for uniformity
+until a measurement says otherwise.
+
+**What the knob trades.** A BRIN entry is one min/max summary per
+`pages_per_range` heap pages. At 32 that's one summary per 256 kB of heap —
+4× finer than the default. Finer granularity means a range predicate matches
+fewer irrelevant blocks, so the lossy recheck reads fewer heap pages per
+query; the cost is proportionally more summary entries, which at BRIN scale
+(~tens of bytes each) keeps the index in kilobytes at any plausible table
+size. That asymmetry — recheck I/O is the real cost, index bytes are nearly
+free — is why the standard errs fine rather than coarse.
+
+**Recalibrating, when the numbers ask for it:**
+
+- Run `EXPLAIN (ANALYZE, BUFFERS)` on the table's time-travel query at
+  production row counts and read the `Buffers: shared hit/read` line against
+  the rows the query actually returned. Heap pages read ≫ what the result
+  warrants means the summaries are too coarse for how the predicate selects —
+  **halve** `pages_per_range` and re-measure. (A BRIN rebuild is a cheap,
+  single-pass migration; ship it like any index change, numbers in the
+  comment.)
+- The index itself showing up meaningfully in the sizing query — which takes
+  extreme row counts at these entry sizes — is the signal to **raise** it.
+- Re-check whenever the periodic `pg_stats.correlation` health check runs (a
+  degrading correlation and a wrong granularity present the same way: more
+  blocks scanned per query), and after any change to a reconcile's write
+  order.
+- A per-table value is allowed when measured — the standard is "recorded and
+  reasoned", not "identical forever" — but the migration comment must carry
+  the before/after numbers like every other index choice here.
+
 ### What stays, what might go
 
 - **Keep** the `(<entity>_id, valid_until desc)` btrees: high-cardinality
