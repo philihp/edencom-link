@@ -3,6 +3,7 @@
 import { useState } from 'react'
 
 import { csvRows } from '@/app/lens/flatten'
+import { LENS_TEMPLATES } from '@/app/lens/templates'
 import { toCsv } from '@/utils/csv'
 import styles from './graphql.module.css'
 
@@ -11,98 +12,12 @@ import styles from './graphql.module.css'
 // Posts same-origin, so the Supabase session cookie authenticates it.
 //
 // GET /api/graphql serves GraphiQL, which is where the schema-aware
-// autocomplete and the docs explorer live. This page keeps the examples, and
-// the CSV download GraphiQL can't offer — sharing the Lens flattening
-// (src/app/lens/flatten.ts), since a lens is a stored query of this same shape.
+// autocomplete and the docs explorer live. This page keeps the examples —
+// the shared lens template list (src/app/lens/templates.ts), since a lens IS
+// a stored query of this same shape — and the CSV download GraphiQL can't
+// offer, via the same Lens flattening (src/app/lens/flatten.ts).
 
-const EXAMPLES: Array<{ label: string; query: string }> = [
-  {
-    label: 'Wallet balances',
-    query: `{
-  walletBalances {
-    ownerName
-    balance
-    recordedAt
-  }
-}`,
-  },
-  {
-    label: 'Stockpile by item',
-    query: `query Stockpile($item: String!) {
-  assets(type: $item) {
-    totalCount
-    truncated
-    rows {
-      typeName
-      quantity
-      locationName
-      ownerName
-    }
-  }
-}`,
-  },
-  {
-    // The edges in anger: group/category and the location's solar system are
-    // reachable only through `type`/`location`, and each nests exactly one
-    // level, so Download CSV still gives one line per row (type.groupName,
-    // location.systemName, …). Open the docs explorer at /api/graphql to see
-    // what else hangs off them.
-    label: 'Stockpile by group (nested)',
-    query: `{
-  assets(type: "Tritanium") {
-    rows {
-      quantity
-      type {
-        name
-        groupName
-        categoryName
-        volume
-      }
-      location {
-        name
-        systemName
-      }
-      character {
-        name
-        corporationName
-      }
-    }
-  }
-}`,
-  },
-  {
-    label: 'Open orders',
-    query: `{
-  marketOrders {
-    typeName
-    isBuy
-    price
-    volumeRemain
-    locationName
-    ownerName
-  }
-}`,
-  },
-  {
-    label: 'Industry jobs',
-    query: `{
-  industryJobs {
-    blueprintTypeName
-    productTypeName
-    activityId
-    runs
-    status
-    endDate
-    locationName
-    ownerName
-  }
-}`,
-  },
-]
-
-const EXAMPLE_VARIABLES: Record<string, string> = {
-  'Stockpile by item': `{ "item": "Tritanium" }`,
-}
+const EXAMPLES = LENS_TEMPLATES
 
 export const QueryEditor = () => {
   const [query, setQuery] = useState(EXAMPLES[0].query)
@@ -160,7 +75,7 @@ export const QueryEditor = () => {
     const example = EXAMPLES.find((e) => e.label === label)
     if (!example) return
     setQuery(example.query)
-    setVariables(EXAMPLE_VARIABLES[label] ?? '')
+    setVariables(example.variables ? JSON.stringify(example.variables, null, 2) : '')
   }
 
   return (

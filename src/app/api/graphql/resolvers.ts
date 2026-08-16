@@ -20,16 +20,7 @@ import { uniq } from 'ramda'
 import { guessLocationRef, resolveTypeFilter } from '@/app/api/mcp/lib'
 import { resolveLocations, type LocationRef, type ResolvedLocations } from '@/app/resolveLocations'
 import { getSdeTypes, searchSdeTypesAll, type SdeType } from '@/sdeTypes'
-import {
-  ASSET_CAP,
-  LIST_CAP,
-  clampLimit,
-  matchExactNames,
-  matchOwnerFilter,
-  parseRefFilter,
-  parseSince,
-  splitRefEntries,
-} from './filters'
+import { clampLimit, matchExactNames, matchOwnerFilter, parseRefFilter, parseSince, splitRefEntries } from './filters'
 import { searchLocationCandidates } from './locationSearch'
 import { resolveTargets, restockLines, type Stack } from './restock'
 import type { OwnerScopes } from './filters'
@@ -417,7 +408,7 @@ export const resolvers = {
       const scopedIds = [...scopes.registrationIds, ...sharedIds]
       const typeIds = await typeIdsFor(args)
       const locationIds = await locationIdsFor(ctx, args)
-      const cap = clampLimit(args.limit, ASSET_CAP)
+      const cap = clampLimit(args.limit, ctx.caps.asset)
 
       // The same filter set applies to the head-only count and the row pages,
       // on both sides — only the owner column differs. The builder is untyped
@@ -561,7 +552,7 @@ export const resolvers = {
         if (error) return queryFailed()
         // Refuse rather than sum a truncated read: a wrong total here is a
         // wrong number to buy, and nothing downstream could tell.
-        if ((count ?? 0) > ASSET_CAP) {
+        if ((count ?? 0) > ctx.caps.asset) {
           return badRequest(
             `Too many stacks to sum reliably (${count} in ${table}) — narrow the owner or location filter.`
           )
@@ -571,7 +562,7 @@ export const resolvers = {
             filtered(ctx.supabase.from(table).select('type_id, quantity'), ownerColumn, ownerIds)
               .order('item_id')
               .range(from, to),
-          ASSET_CAP
+          ctx.caps.asset
         )
       }
 
@@ -658,7 +649,7 @@ export const resolvers = {
     ) => {
       const scopes = await ownerScopesFor(ctx, args)
       const typeIds = await typeIdsFor(args)
-      const cap = clampLimit(args.limit, LIST_CAP)
+      const cap = clampLimit(args.limit, ctx.caps.list)
 
       type BlueprintRow = {
         item_id: number
@@ -759,6 +750,7 @@ export const resolvers = {
         location_id: number
         range: string
         is_buy: boolean
+        is_corporation: boolean
         price: number
         volume_total: number
         volume_remain: number
@@ -776,7 +768,7 @@ export const resolvers = {
             .in('registration_id', ownerIds)
             .order('issued', { ascending: false })
             .range(from, to),
-        LIST_CAP
+        ctx.caps.list
       )
 
       const [types, locations] = await Promise.all([
@@ -799,6 +791,7 @@ export const resolvers = {
           type: itemTypeOf(types, r.type_id),
           location: locationOf(locations, ref),
           isBuy: r.is_buy,
+          isCorporation: r.is_corporation,
           price: Number(r.price),
           volumeTotal: String(r.volume_total),
           volumeRemain: String(r.volume_remain),
@@ -830,7 +823,10 @@ export const resolvers = {
         corporation_id?: number | string
         installer_id?: number | string
         activity_id: number
+        blueprint_id: number
         blueprint_type_id: number
+        blueprint_location_id: number
+        output_location_id: number
         product_type_id: number | null
         runs: number
         licensed_runs: number | null
@@ -841,7 +837,9 @@ export const resolvers = {
         duration: number
         start_date: string
         end_date: string
+        pause_date: string | null
         completed_date: string | null
+        completed_character_id: number | null
         station_id: number | null
         facility_id: number
       }
@@ -856,7 +854,7 @@ export const resolvers = {
             .order('start_date', { ascending: false })
             .range(from, to)
           return args.includeDelivered ? q : q.neq('status', 'delivered')
-        }, LIST_CAP)
+        }, ctx.caps.list)
       }
 
       const [own, corp] = await Promise.all([
@@ -873,7 +871,7 @@ export const resolvers = {
         })),
       ]
         .sort((a, b) => b.row.start_date.localeCompare(a.row.start_date))
-        .slice(0, LIST_CAP)
+        .slice(0, ctx.caps.list)
 
       const jobLocationRef = (r: JobRow): LocationRef | null => guessLocationRef(r.station_id ?? r.facility_id)
 
@@ -908,8 +906,14 @@ export const resolvers = {
           duration: r.duration,
           startDate: r.start_date,
           endDate: r.end_date,
+          pauseDate: r.pause_date,
           completedDate: r.completed_date,
+          completedCharacterId: str(r.completed_character_id),
           stationId: str(r.station_id),
+          blueprintId: String(r.blueprint_id),
+          blueprintLocationId: String(r.blueprint_location_id),
+          outputLocationId: String(r.output_location_id),
+          facilityId: String(r.facility_id),
           locationName: ref ? locations.nameFor(ref) : null,
           // Corp jobs name the character who installed them; character jobs
           // are always installed by their owner, so ESI doesn't repeat it.
@@ -966,7 +970,7 @@ export const resolvers = {
       const typeIds = await typeIdsFor(args)
       const since = parseSince(args.since)
       if (!since.ok) return badRequest(since.message)
-      const cap = clampLimit(args.limit, LIST_CAP)
+      const cap = clampLimit(args.limit, ctx.caps.list)
 
       type TransactionRow = {
         transaction_id: number

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 
+import { RequestTiming, withRequestTiming } from '@/app/api/requestTiming'
 import { TRACKED_MARKETS } from '@/gnfMarket.js'
 import { AT_PARAM_ERROR, parseAtParam } from '@/utils/atParam'
 import { toCsv } from '@/utils/csv'
@@ -46,9 +47,10 @@ const HEADER = 'TypeID,Updated,Buy,Sell,Since,Strategy'
 // "nothing has ever recorded it".
 const MARKETS = new Set<string>(TRACKED_MARKETS)
 
-export const GET = async (
+const handler = async (
   request: NextRequest,
-  { params }: { params: Promise<{ market: string }> }
+  { params }: { params: Promise<{ market: string }> },
+  timing: RequestTiming
 ): Promise<NextResponse> => {
   const market = stripExtension(decodeURIComponent((await params).market))
   if (!MARKETS.has(market)) {
@@ -106,6 +108,8 @@ export const GET = async (
   // "live" and must not be.
   const historical = at !== null && at.ok && at.iso < new Date().toISOString()
 
+  timing.rows = (rows ?? []).length
+  if (historical) timing.served = 'historical'
   return new NextResponse(body, {
     headers: {
       'Content-Type': 'text/csv; charset=utf-8',
@@ -113,3 +117,11 @@ export const GET = async (
     },
   })
 }
+
+// The one public CSV in the timing metric: market_price_over_time is the table
+// whose BRIN index the others are standardizing toward, so its live/historical
+// split is the control the comparison reads (docs/brin-indexes/README.md).
+export const GET = withRequestTiming(
+  { route: '/sheets/market/[market]', surface: 'public_csv', field: 'market_price_snapshot' },
+  handler
+)

@@ -5,6 +5,7 @@ import { GRAPHQL_FLAG, hasFlag } from '@/flags'
 import { createClient } from '@/utils/supabase/server'
 import { buildContext } from './context'
 import { schema } from './schema'
+import { timingPlugin } from './timingPlugin'
 
 // The dark-launched GraphQL endpoint (see /graphql for the in-browser editor).
 // Auth is either the Supabase session cookie (same-origin, the editor page) or
@@ -44,6 +45,8 @@ const { handleRequest } = createYoga({
     ),
   landingPage: false,
   batching: false,
+  // One request.timing metric per executed operation (src/observability.js).
+  plugins: [timingPlugin],
   // Wildcard origin with credentials OFF is the safe pairing: external UIs
   // authenticate with the Bearer token, and the session cookie only ever rides
   // same-origin requests (which need no CORS at all).

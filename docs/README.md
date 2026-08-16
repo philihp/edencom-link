@@ -16,7 +16,7 @@ honest when a project ships or a new doc lands.
 | [fittings.md](fittings.md) | Read-only saved-fitting extract + `/fitting` page + MCP `list_fittings` | Shipped as #742–#745. ESI has no corp/alliance fittings endpoint — the doc explains why |
 | [gice-auth.md](gice-auth.md) | GICE (Goonfleet OIDC) as an auth method, hand-rolled auth-code client | Live; doubles as the reference for how the flow works |
 | [sde-db-cutover/](sde-db-cutover/) | Stop downloading the SDE at build time; read the nightly-mirrored `sde_*` tables at runtime | Docs 00–04 all done, including the esf-data move into the `sde-mirror` workflow tail |
-| [sharing-layer/](sharing-layer/) | Unified recursive asset shares + folding fitting/den shares into one audience model + Lenses | Docs 01–07 all done; the `/lens` editor sits behind the `lens` dark-launch flag |
+| [sharing-layer/](sharing-layer/) | Unified recursive asset shares + folding fitting/den shares into one audience model + Lenses | Docs 01–08 all done; 09 (lenses supersede the api_token Sheets CSV routes: drop-in templates, export caps, deprecation) in progress. The `/lens` editor sits behind the `lens` dark-launch flag |
 | [sheet-csv/](sheet-csv/) | Nightly industry CSVs from the SDE mirror, served at `/sheets/[file]` for `=IMPORTDATA()` | Runs as a tail step of the `sde-mirror` workflow |
 
 ## In progress
@@ -36,7 +36,7 @@ honest when a project ships or a new doc lands.
 | Project | What it will be | Notes |
 |---|---|---|
 | [asset-proximity/](asset-proximity/) | Sort `/asset` by stargate jumps from the main character's location | Feasibility validated (the SDE stargate graph is mirrored); no code yet |
-| [brin-indexes/](brin-indexes/) | Survey whether the append-ordered growth tables should follow `market_price_over_time` onto BRIN indexes | Prompted by the market-prices sizing work, where BRIN cut a 60 MB btree to 40 kB for ~2.5 ms. Phase 1 is measurement and may legitimately conclude nothing else is big enough to bother |
+| [brin-indexes/](brin-indexes/) | Standardize the SCD-2 `*_over_time` tables on a BRIN `(valid_from)` time-travel index, measured on live endpoint timings | Adopted (supersedes the measure-and-maybe-stop survey). The `request.timing` instrumentation is live; index migrations roll out one table per PR, gains read off the `served=historical` series plus EXPLAIN at production row counts |
 | [custom-fit-ui.md](custom-fit-ui.md) | Replace `@eveshipfit/react` rendering with our own components, keeping the dogma-engine math | Stage 0 (proof-out) done — decoder, engine glue, flag mapping and skills all verified; stages 1–5 not started |
 | [fitting-paging.md](fitting-paging.md) | Treat the game's 500-fit cap as a resident set and this site as the backing store (page fits in/out via ESI) | Plan only; builds on the shipped fittings feature |
 | [open-registration.md](open-registration.md) | Drop the invite-code gate: anonymous users on first visit, invites become referral attribution, identities (email / EVE SSO / Discord / GICE) affix in any order | Plan merged 2026-08-12 (#860); implementation not started. Its stage 5 delivers discord-bot stage 06 |

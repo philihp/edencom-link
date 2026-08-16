@@ -1,10 +1,13 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
+import { LENS_FLAG, hasFlag } from '@/flags'
 import { parseShareParam } from '@/shareToken'
+import { createClient } from '@/utils/supabase/server'
 import { ShareUrlCleanup } from '../../shareUrlCleanup'
 import { resolveLens } from '../access'
-import { lensRows } from '../flatten'
+import { CopyLensButton } from '../copyButton'
+import { LensTable } from '../lensTable'
 import { runLens } from '../run'
 import styles from '../lens.module.css'
 
@@ -30,12 +33,15 @@ const LensViewerPage = async ({
   if (!resolved) notFound()
   const { lens, viewerIsOwner } = resolved
 
-  const result = await runLens(lens)
-  const rows = lensRows(result.data)
-  const headers = rows.length > 0 ? Object.keys(rows[0]) : []
+  const result = await runLens(lens, { timing: { surface: 'lens_view', route: '/lens/[id]' } })
   // Hand the CSV link the short token, whichever generation arrived here.
   const cleanShare = share ? parseShareParam(share).signature : undefined
   const csvHref = `/lens/${lens.id}/csv${cleanShare ? `?share=${encodeURIComponent(cleanShare)}` : ''}`
+
+  // "Save a copy" forks the query (not the data) into the viewer's own lens
+  // list — that's what a lens shared with you being a "prewritten query" means.
+  const { data: auth } = await (await createClient()).auth.getUser()
+  const canCopy = !viewerIsOwner && auth?.user != null && (await hasFlag(auth.user.id, LENS_FLAG))
 
   return (
     <>
@@ -45,35 +51,13 @@ const LensViewerPage = async ({
         <div className={styles.buttons}>
           <a href={csvHref}>CSV</a>
           {viewerIsOwner && <Link href="/lens">Edit</Link>}
+          {canCopy && <CopyLensButton lensId={lens.id} share={cleanShare} />}
         </div>
       </div>
 
       {result.errors.length > 0 && <p className={styles.error}>{result.errors.join(' — ')}</p>}
 
-      {rows.length === 0 ? (
-        <p className={styles.note}>No rows.</p>
-      ) : (
-        <div className={styles.tableWrap}>
-          <table className={styles.table}>
-            <thead>
-              <tr>
-                {headers.map((h) => (
-                  <th key={h}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row, i) => (
-                <tr key={i}>
-                  {headers.map((h) => (
-                    <td key={h}>{row[h] == null ? '' : String(row[h])}</td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <LensTable data={result.data} />
 
       <details>
         <summary className={styles.note}>Raw result</summary>

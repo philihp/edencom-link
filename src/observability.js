@@ -61,6 +61,47 @@ export const recordPeakRss = ({ job, entry = null }) => {
   })
 }
 
+// One inbound data-serving request — the CSV/lens/GraphQL surfaces (see
+// src/app/api/requestTiming.ts and docs/brin-indexes/README.md, whose
+// measurement protocol reads these). Group by (route, field, served) and chart
+// p50/p95 duration_ms; `served` splits live reads from SCD-2 time travel
+// (`at=`), which is the axis the BRIN index work moves.
+//   route: the static route template (/api/character/assets, /lens/[id]/csv,
+//     /api/graphql) — never a per-lens id, so cardinality stays flat
+//   surface: 'legacy_csv' | 'lens_csv' | 'lens_view' | 'graphql' | 'public_csv'
+//   field: the GraphQL root field a lens/graphql request selected, or the
+//     Postgres function a CSV route called
+//   served: 'live' (current rows) | 'historical' (an explicit at= / time travel)
+//   outcome: 'ok' | 'bad_request' | 'unauthorized' | 'not_found' | 'query_failed'
+//   status: the HTTP status answered, or null where the emitter never sees it
+//     (the in-process lens run, the GraphQL execution phase)
+//   rows: rows in the response, or null when the request never produced any
+/**
+ * @param {{ route: string, surface: string, field?: string | null,
+ *   served?: 'live' | 'historical', outcome: string, status?: number | null,
+ *   rows?: number | null, durationMs: number }} request
+ */
+export const recordRequest = ({
+  route,
+  surface,
+  field = null,
+  served = 'live',
+  outcome,
+  status = null,
+  rows = null,
+  durationMs,
+}) =>
+  recordMetric('request.timing', {
+    route,
+    surface,
+    field,
+    served,
+    outcome,
+    status,
+    rows,
+    duration_ms: durationMs,
+  })
+
 // One Discord interaction outcome — see src/app/api/discord/interactions/route.ts.
 // Group by (type, outcome) to watch signature rejections (portal validation and
 // spoof attempts) and, later, command traffic.

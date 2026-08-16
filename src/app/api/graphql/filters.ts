@@ -8,6 +8,12 @@
 // filters, not paging, are how callers narrow further.
 export const ASSET_CAP = 5000
 export const LIST_CAP = 1000
+// The lens CSV surface serves whole result sets — a Sheets =IMPORTDATA() tab
+// can't page or narrow — so its context raises both caps to this bound
+// (docs/sharing-layer/09-sheets-parity.md). Sized to what the uncapped legacy
+// CSV routes already serve inside the same 60s budget; a result that still
+// hits it is refused by the route rather than silently shortened.
+export const EXPORT_CAP = 50000
 
 // Clamp a caller-supplied limit into [1, cap]; absent means the cap itself.
 export const clampLimit = (limit: number | null | undefined, cap: number): number => {

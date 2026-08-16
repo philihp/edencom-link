@@ -1,39 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 
+import { CHARACTER_JOB_COLUMNS } from '@/app/api/csvColumns'
+import { RequestTiming, withRequestTiming } from '@/app/api/requestTiming'
 import { resolvePlayer } from '@/utils/apiToken'
 import { AT_PARAM_ERROR, parseAtParam } from '@/utils/atParam'
 import { parseColumnsParam, selectColumns } from '@/utils/columnsParam'
 import { toCsv } from '@/utils/csv'
 
-// Column set/order returned when ?columns= is omitted, matching
-// character_industry_jobs()'s json_build_object in schema.sql.
-const DEFAULT_COLUMNS = [
-  'activity_id',
-  'blueprint_id',
-  'blueprint_location_id',
-  'blueprint_type_id',
-  'completed_character_id',
-  'completed_date',
-  'cost',
-  'duration',
-  'end_date',
-  'facility_id',
-  'installer_id',
-  'job_id',
-  'licensed_runs',
-  'output_location_id',
-  'pause_date',
-  'probability',
-  'product_type_id',
-  'runs',
-  'start_date',
-  'station_id',
-  'status',
-  'successful_runs',
-  'character_name',
-  'blueprint_type_name',
-  'product_type_name',
-] as const
+// Column set/order returned when ?columns= is omitted (src/app/api/
+// csvColumns.ts, shared with the lens drop-in templates).
+const DEFAULT_COLUMNS = CHARACTER_JOB_COLUMNS
 
 // Every column ?columns= may select, in any order/subset: DEFAULT_COLUMNS plus
 // fields that exist in the json_build_object but are opt-in only (excluded
@@ -50,11 +26,12 @@ export const dynamic = 'force-dynamic'
 // Headroom over Vercel's default function timeout.
 export const maxDuration = 60
 
-export const GET = async (request: NextRequest): Promise<NextResponse> => {
+const handler = async (request: NextRequest, _context: unknown, timing: RequestTiming): Promise<NextResponse> => {
   const { searchParams } = new URL(request.url)
 
   // `at` time-travels the SCD-2 history (character_industry_job_over_time) to the
   // job versions valid at that moment; default now is the live set.
+  if (searchParams.get('at') !== null) timing.served = 'historical'
   const at = parseAtParam(searchParams.get('at'))
   if (!at.ok) {
     return NextResponse.json({ error: AT_PARAM_ERROR }, { status: 400 })
@@ -87,7 +64,13 @@ export const GET = async (request: NextRequest): Promise<NextResponse> => {
     return NextResponse.json({ error: 'Query failed' }, { status: 500 })
   }
 
+  timing.rows = (rows ?? []).length
   return new NextResponse(toCsv(selectColumns(rows ?? [], columnsResult.columns ?? DEFAULT_COLUMNS)), {
     headers: { 'Content-Type': 'text/csv; charset=utf-8' },
   })
 }
+
+export const GET = withRequestTiming(
+  { route: '/api/character/jobs', surface: 'legacy_csv', field: 'character_industry_jobs', deprecated: true },
+  handler
+)

@@ -1,106 +1,201 @@
-# BRIN indexes for the append-ordered tables: survey and plan
+# BRIN as the standard time-travel index for the SCD-2 tables
 
-> **Status: proposed, nothing done.** `market_price_over_time` is the only
-> table in the schema using BRIN today (added with the market-prices capture —
-> [docs/market-prices/README.md](../market-prices/README.md) "Storage"). This
-> doc asks whether the same trick applies to the other growth tables, and
-> deliberately does **not** answer it: the first phase is measurement, because
-> the answer depends on production row counts nobody has looked at.
+> **Status: adopted, rollout pending.** This doc supersedes the earlier
+> "survey and plan" version, whose posture was "measure, and possibly stop."
+> The posture is now **standardize, measured**: every `*_over_time` table gets
+> a BRIN on `valid_from`, one migration PR at a time, with the gains (and any
+> regressions) read off live endpoint timings — the `request.timing` metric
+> (`src/observability.js`) that instruments the CSV/lens/GraphQL surfaces —
+> plus `EXPLAIN` evidence at production row counts. What changed since the
+> survey: the SCD tables now have a uniform, user-facing time-travel access
+> path worth serving well, and the instrumentation to watch it exists.
 
-## The finding that prompted this
+## The finding that anchors this
 
 While sizing `market_price_over_time`, swapping its as-of index from btree to
 BRIN measured, at 2M rows:
 
-| | btree `(market, valid_from desc)` | BRIN `(valid_from)` |
-|---|---|---|
-| Size | 60 MB | **40 kB** |
-| Deep-history query (0.6% of rows) | 2.6 ms | 5.1 ms |
-| Mid-history query (74% of rows) | 166 ms (index unused) | 181 ms |
+|                                   | btree `(market, valid_from desc)` | BRIN `(valid_from)` |
+| --------------------------------- | --------------------------------- | ------------------- |
+| Size                              | 60 MB                             | **40 kB**           |
+| Deep-history query (0.6% of rows) | 2.6 ms                            | 5.1 ms              |
+| Mid-history query (74% of rows)   | 166 ms (index unused)             | 181 ms              |
 
-A **1500× smaller index for ~2.5 ms**. And it survives churn: after 60 simulated
-hourly cycles running the job's real touch/close/insert statements,
-`valid_from`'s correlation with physical order was still **0.9996**, so the
-`is_current` flips that move tuples do not scatter the index.
+A **1500× smaller index for ~2.5 ms**. And it survives churn: after 60
+simulated hourly cycles running the job's real touch/close/insert statements,
+`valid_from`'s correlation with physical order was still **0.9996** — the
+`is_current` flips that move tuples do not scatter the index. Full method in
+[docs/market-prices/README.md](../market-prices/README.md) "Storage".
 
-## Why it worked there, which is the whole question
+## Why this generalizes to every SCD-2 table
 
-BRIN stores one min/max summary per *range of blocks* instead of one entry per
-row. That is only useful when the table's **physical order correlates with the
-indexed column**, and only for **range** predicates. `market_price_over_time`
-satisfies both by construction: every run appends its changed rows at the end of
-the heap, so `valid_from` climbs with block number, and time travel asks
-`valid_from <= X`.
+The tables share one write pattern and one read pattern, by construction:
 
-Two things it is *not*:
+- **Writes append.** Every reconcile bumps `valid_until` on unchanged rows in
+  place, closes vanished rows in place, and *appends* new versions — so
+  `valid_from` climbs with block number on every `*_over_time` table, exactly
+  the correlation BRIN needs.
+- **Time travel is a range predicate the btrees can't serve.** Every snapshot
+  function (`character_asset_snapshot_at`, `character_orders`,
+  `character_industry_jobs`, `corp_industry_jobs`, `market_price_snapshot`)
+  asks the same shape:
 
-- **Not a general btree replacement.** An equality lookup on a high-cardinality
-  column (`item_id`, `job_id`, `order_id`) has no correlation to exploit and
-  gets a lossy scan of many blocks instead of a direct probe. Those indexes must
-  stay btree.
-- **Not free on a leading equality column.** `(registration_id, date desc)` is
-  efficient because the btree seeks straight to one owner's rows. A BRIN on
-  `date` alone loses that seek and filters every candidate block on recheck.
-  Whether that is a win depends entirely on how many rows the owner filter
-  removes — i.e. on how many registrations exist, which is a production fact.
+  ```sql
+  where <owner> = any(...)
+    and valid_from <= as_of
+    and (is_current or valid_until >= as_of)
+  ```
 
-## Survey: every index on a table that grows without bound
+  The `or` defeats a btree on `(entity_id, valid_until desc)`; the
+  `valid_from <= as_of` half is a textbook BRIN range scan. Today **no
+  `*_over_time` table except `market_price_over_time` has any index on
+  `valid_from` at all** — the time-travel branch seq-scans.
 
-Grouped by whether BRIN could plausibly apply. **No sizes here on purpose** —
-see Phase 1.
+## The standard
 
-### Group A — plausible candidates: append-ordered, range-queried
+Every `*_over_time` table carries:
 
-| Table | Index today | Correlated column | Note |
-|---|---|---|---|
-| `heartbeat` | `heartbeat_ran_at_idx (ran_at desc)` | `ran_at` | Purely append-only, never updated. The cleanest candidate in the schema. |
-| `heartbeat` | `heartbeat_job_ended_at_idx (job, ended_at desc)` | `ended_at` | Leading equality on `job` (low cardinality — one value per extract job), so a BRIN on `ended_at` plus a recheck on `job` may beat it. Backs `latest_heartbeats()`. |
-| `industry_system_index` | `(system_id, activity, recorded_at desc)` | `recorded_at` | Explicitly append-only ("so the indices' drift over time can be charted"). Point lookups by system+activity are the current shape though — see Phase 2. |
-| `character_mercenary_den_status` | `character_mercenary_den_status_den_idx` | `observed_at` | Append-only observations. |
-| `character_wallet` | `(registration_id, recorded_at desc)` | `recorded_at` | Balance history, append-only. |
-| `character_wallet_transaction` | `(registration_id, date desc)` | `date` | ESI returns transactions newest-first and they are inserted as fetched, so `date` correlates well but not perfectly. |
-| `corp_wallet_journal` | `(corporation_id, date desc)` | `date` | Same shape. Already range-paged by `/structure/revenue`, which is the one query here known to page past PostgREST's row cap. |
-| `corp_wallet_transaction` | `(registration_id, date desc)` | `date` | Same shape. |
+```sql
+-- Time travel: valid_from climbs with physical order (the reconcile appends),
+-- so a BRIN serves `valid_from <= as_of` at ~kB size. Measured precedent and
+-- churn-survival numbers: docs/brin-indexes/README.md.
+create index <table>_asof_idx on public.<table>
+  using brin (valid_from) with (pages_per_range = 32);
+```
 
-### Group B — the SCD-2 histories: possible, but each needs its own answer
-
-Every `*_over_time` table carries three index shapes:
-
-1. `(<owner>_id)` — a bare btree over a **very low cardinality** column (one
-   value per registration or corporation). 18 of these exist. On a large table
-   this is the classic BRIN candidate *if* rows for one owner land contiguously
-   — which they do, because the per-character fan-out runs one character per
-   step, so a run appends that character's rows in a block. Worth measuring.
-2. `(<entity>_id, valid_until desc)` — high-cardinality equality on the leading
-   column. **Leave as btree.**
-3. `... where is_current` partial uniques — these only index the *current*
-   rows, so they are already small and are the identity constraint besides.
-   **Leave alone.**
-
-Tables in this group: `character_asset_over_time`, `character_blueprint_over_time`,
+All 13 tables — the 12 without one today plus `market_price_over_time`, the
+precedent: `character_asset_over_time`, `character_blueprint_over_time`,
 `character_order_over_time`, `character_industry_job_over_time`,
 `character_clone_over_time`, `character_skill_over_time`,
 `character_ship_over_time`, `character_fitting_over_time`,
-`character_mercenary_den_over_time`, and the `corp_*` mirrors
-(`corp_asset_over_time`, `corp_blueprint_over_time`, `corp_industry_job_over_time`).
+`character_mercenary_den_over_time`, `corp_asset_over_time`,
+`corp_blueprint_over_time`, `corp_industry_job_over_time`.
 
-### Group C — explicitly out of scope
+**Small tables get one too.** The earlier plan gated on "> ~1 GB", reasoning
+that small tables don't matter. Inverted: a BRIN on a 50k-row table costs
+kilobytes and near-zero write overhead, and standardizing means every table is
+already correct when it grows and every time-travel query plans the same way —
+uniformity is cheaper than a per-table debate nobody re-opens at the right
+moment. (Tables with no snapshot function yet — clone/skill/ship/fitting/
+mercenary-den — are included for the same reason: the index is the cheap half;
+the RPC, when someone wants one, is the expensive half.)
 
-`universe_name`, `universe_structure`, `esi_etag`, `sde_*`, `sheet_csv`,
-`esf_data`: bounded by the size of New Eden or by one row per key, not by time.
-Contract tables (`character_contract`, `corp_contract`) upsert in place and are
-bounded by contracts seen. `registration`, `token`, `user_settings` and friends
-are bounded by account count.
+### What stays, what might go
 
-## Phases
+- **Keep** the `(<entity>_id, valid_until desc)` btrees: high-cardinality
+  equality probes (`asset_share_covers`'s per-node lateral lookup, the
+  `distinct on (item_id)` walkers) have no correlation to exploit — BRIN is
+  wrong for them.
+- **Keep** the `where is_current` partial uniques: they are the identity
+  constraint, the reconcile's conflict target, and the live-path index.
+- **Owner btrees (`(registration_id)` / `(corporation_id)`) are drop
+  candidates, not conversion candidates.** Very low cardinality; RLS and the
+  snapshot functions filter on them, but usually alongside predicates the
+  other indexes serve. Decide per table from `pg_stat_user_indexes.idx_scan`
+  over a real window (the third Phase-1 query below); each drop is its **own
+  PR, never bundled with a BRIN add** — a plan regression must be
+  attributable to exactly one change. The market-prices work already found one
+  60 MB btree the planner never chose; expect more.
 
-### Phase 1 — measure, and possibly stop
+### Migration mechanics
 
-Nothing below is worth doing on a table with 50k rows. **This phase may
-legitimately conclude that `market_price_over_time` was the only table big
-enough to care about**, and that is a fine outcome to write down and close.
+- Plain `create index` in a normal migration. The Supabase CLI applies
+  migrations transactionally, so `concurrently` is unavailable — and
+  unnecessary: a BRIN build is one sequential heap pass, and the writers it
+  would briefly block are the 6-hourly extract jobs. Merge away from the
+  busiest cron minutes (`vercel.json`) for the large tables.
+- Every migration edits `schema.sql` too (source of truth), never renames an
+  existing migration, and **records the measured numbers in its comment** the
+  way `20260816040000_market_price.sql` does — a future reader must be able to
+  tell whether the choice was reasoned or copied.
+- Naming: `<table>_asof_idx`, matching the precedent.
 
-Against production (read-only):
+## Measurement protocol (per table PR)
+
+The point of standardizing *measured* is that every claim below is checkable
+in Vercel Observability, not a rerun of someone's laptop benchmark.
+
+### 1. Baseline window
+
+≥7 days of `request.timing` (metric emitted by `src/observability.js`,
+ingested from function logs) before the migration merges, grouped by
+`route` + `field`, split on `served`:
+
+- `served='historical'` — requests that exercised the time-travel predicate
+  (an explicit `at=`). Record p50/p95 `duration_ms` and typical `rows`.
+- `served='live'` — the current-rows path (lens CSV, GraphQL, legacy without
+  `at=`). This is the regression guard: the BRIN must not change these plans.
+
+Organic historical traffic may be thin — lenses are deliberately current-only
+(docs/sharing-layer/09-sheets-parity.md), so `at=` arrives only through the
+legacy CSV routes and `/sheets/market/[market]`. So each PR also runs a
+**synthetic probe**: a scripted loop hitting the table's `at=` endpoint at
+fixed offsets (1 day / 30 days / 90 days back) a few dozen times, from the
+same region, before and after — enough samples for a stable p50 either side.
+The probe's requests land in the same metric with `served='historical'`;
+nothing special to build.
+
+### 2. Plan-level evidence
+
+`EXPLAIN (ANALYZE, BUFFERS)` of the serving RPC's query at **production row
+counts**, before and after, plus `pg_relation_size` of every index touched.
+Use a production read-only session or a restored copy — a Supabase preview
+branch clones schema, not data, and an empty table's plan proves nothing.
+
+### 3. Apply, compare, accept
+
+Merge the migration, run an equal-length comparison window (and re-run the
+synthetic probe). Acceptance:
+
+- `served='live'` p50/p95 not regressed for the routes reading this table;
+- `served='historical'` improved or neutral (the market-price precedent says
+  "a few ms slower deep-history is fine" — the win is the index size, which
+  gets recorded);
+- index sizes recorded in the migration comment closed out with the real
+  numbers.
+
+A regression reverts the one migration — which is why each table ships alone.
+
+### 4. Health, ongoing
+
+- **BRIN degrades silently**: correlation drops, queries slow, nothing
+  errors. Re-run the correlation query below periodically (fold it into
+  whatever check next touches this area) and re-check after any change to a
+  reconcile's write order.
+- **Summarisation lags inserts**: new heap blocks aren't summarised until
+  autovacuum runs or `brin_summarize_new_values()` is called, so the newest
+  rows fall back to a scan. Harmless for history queries, which is all this
+  index serves. `autosummarize=on` is the recorded open question — the
+  market-price index doesn't set it; revisit if p95 on fresh-history probes
+  looks worse than stale-history ones.
+
+## Table → probe map
+
+Which timing series measures which table. `field` is the metric's dimension.
+
+| Table                               | Historical probe                                        | `field`                      |
+| ----------------------------------- | ------------------------------------------------------- | ---------------------------- |
+| `character_asset_over_time`         | `/api/character/assets?at=`                             | `character_asset_snapshot_at`|
+| `character_order_over_time`         | `/api/character/orders?at=`                             | `character_orders`           |
+| `character_industry_job_over_time`  | `/api/character/jobs?at=`                               | `character_industry_jobs`    |
+| `corp_industry_job_over_time`       | `/api/corp/jobs?at=`                                    | `corp_industry_jobs`         |
+| `market_price_over_time`            | `/sheets/market/[market]?at=` (the control — BRIN'd already) | `market_price_snapshot` |
+| `character_blueprint_over_time`, `corp_asset_over_time`, `corp_blueprint_over_time` | none — their RPCs are live-only | EXPLAIN-only evidence, stated honestly in the PR |
+| `character_clone/skill/ship/fitting/mercenary_den_over_time` | none — no snapshot RPC exists | EXPLAIN-only evidence |
+
+The live-path guard for every table is the same tables' `served='live'`
+series: `lens_csv`/`graphql` (`assets`, `blueprints`, `industryJobs`,
+`marketOrders`) and the legacy routes without `at=`.
+
+The MCP `list_market_orders`/`list_industry_jobs` tools take `as_of` and call
+the same RPCs — they benefit identically but aren't instrumented; the CSV
+routes are the measured proxy.
+
+## Pre-flight queries (kept from the survey)
+
+Still the right first move before each PR — sizing, correlation, and the
+index-usage read that decides owner-btree drops. Against production,
+read-only:
 
 ```sql
 -- Which tables are actually large, and how much of each is index?
@@ -114,17 +209,17 @@ where n.nspname = 'public' and c.relkind = 'r'
 order by pg_total_relation_size(c.oid) desc
 limit 25;
 
--- Is the candidate column actually correlated with physical order?
--- Below ~0.9 and BRIN is not worth trying.
+-- Is valid_from actually correlated with physical order? Below ~0.9,
+-- investigate the table's reconcile before indexing it — that would mean the
+-- append assumption broke somewhere.
 select tablename, attname, correlation, n_distinct
 from pg_stats
 where schemaname = 'public'
-  and attname in ('ran_at','ended_at','recorded_at','date','observed_at',
-                  'valid_from','registration_id','corporation_id')
+  and attname in ('valid_from','valid_until','registration_id','corporation_id')
 order by tablename, attname;
 
--- Which indexes is nobody using? A never-scanned index is a pure write tax,
--- and dropping it beats converting it.
+-- Which indexes is nobody using? A never-scanned owner btree on a big table
+-- is a drop candidate (its own PR).
 select relname, indexrelname, idx_scan,
        pg_size_pretty(pg_relation_size(indexrelid)) as size
 from pg_stat_user_indexes
@@ -133,62 +228,51 @@ order by pg_relation_size(indexrelid) desc
 limit 30;
 ```
 
-The third query matters as much as the other two. The market-prices work found a
-60 MB btree the planner **never chose** — for that index the right change was not
-"convert to BRIN" but "this should not exist". Expect more of those.
+## Sequencing
 
-Gate to Phase 2: a table is a candidate only if it is **> ~1 GB**, its column
-correlation is **> 0.9**, and the index in question is **either large and
-unused, or large and serving range scans**.
+1. ~~Instrument the serving endpoints~~ — done: `request.timing` covers the
+   seven CSV routes, `/sheets/market/[market]`, the lens viewer/CSV, and
+   `/api/graphql`, with the `served` live/historical split.
+2. **PR: small-table batch.** One migration adding the BRIN to the tables the
+   sizing query shows as small (expected: clone, skill, ship, fitting,
+   mercenary-den, and possibly blueprints). EXPLAIN evidence only; batching is
+   safe exactly because these can't regress anything measurable.
+3. **One PR per large table**, in descending size order (expected: assets,
+   then orders/industry jobs — confirm with the sizing query), each running
+   the full protocol above.
+4. **Owner-btree drops**, per `idx_scan` evidence, one PR each, after the
+   BRIN adds have settled.
+5. **Fillfactor experiment** (below), last and independent.
 
-### Phase 2 — one table, end to end, as the template
+## The adjacent project: churn, not indexes
 
-Take the single best candidate from Phase 1 (`heartbeat` is the likely winner:
-purely append-only, never updated, and `latest_heartbeats()` is a known query).
-For it:
+Kept from the survey because the numbers were striking: the market-prices
+simulation measured 267k live rows occupying 143 MB — dead tuples from the
+hourly `valid_until` touch, not row width. **Every SCD-2 table does that same
+touch every 6 hours.** If the sizing query shows heap ≫ live-row estimate on
+the big tables, the higher-value fix is a measured `fillfactor` experiment on
+one mid-size table:
 
-1. Write down the queries that touch the index, from the calling code, not from
-   imagination.
-2. Restore a production-shaped copy locally and measure `EXPLAIN (ANALYZE,
-   BUFFERS)` for each, before and after, at real row counts. The market-prices
-   method — build both variants side by side in one database and compare
-   `pg_total_relation_size` plus plans — is in
-   [docs/market-prices/README.md](../market-prices/README.md).
-3. Only then write the migration. `create index concurrently` for anything on a
-   live table; the migration runner applies on push to `main`, so a long index
-   build blocks deploys.
-4. Record the measured numbers in the migration comment, the way the
-   market-price migration does. A future reader must be able to tell whether the
-   choice was reasoned or copied.
+- `alter table <t> set (fillfactor = 90)` affects only future pages;
+  reclaiming existing bloat needs `vacuum full`/`pg_repack`, which is out of
+  scope here.
+- Track `pg_stat_user_tables.n_dead_tup` and heap size over two weeks against
+  an untouched sibling table.
+- HOT updates are the mechanism to verify: with free space per page, the
+  `valid_until` touch can stay on-page instead of appending a dead tuple —
+  which *also* protects the BRIN correlation, since fewer relocations means
+  the append order stays clean.
 
-### Phase 3 — roll out to whatever else Phase 1 justified
+Separate follow-up; does not block the index rollout.
 
-One PR per table. Do not batch: each conversion changes query plans, and a
-regression is much easier to attribute when it arrives alone.
+## Risks and non-goals (unchanged in spirit)
 
-### Phase 4 — the adjacent finding, if it survives Phase 1
-
-The market-prices churn simulation measured 267k live rows occupying 143 MB —
-the excess being dead tuples from the hourly `valid_until` touch, not row width.
-**Every SCD-2 table here does that same touch on every run.** If Phase 1 shows
-the big tables are mostly bloat rather than data, the higher-value project is
-not indexes at all; it is revisiting the touch, or `fillfactor`, or autovacuum
-settings (no table in `schema.sql` sets a `fillfactor` today). Worth a doc of its
-own if the numbers point that way.
-
-## Risks and non-goals
-
-- **BRIN degrades silently.** It has no health metric a dashboard would show:
-  correlation drops, queries get slower, nothing errors. Any table converted
-  should have its `pg_stats.correlation` re-checked periodically — worth folding
-  into whatever Phase 1 tooling gets written.
-- **Summarisation lags inserts.** New heap blocks are not summarised until
-  autovacuum runs or `brin_summarize_new_values()` is called, so freshly
-  inserted rows fall back to a scan. Harmless for history queries, bad for
-  anything reading the newest rows through the BRIN.
-- **Not a substitute for retention.** BRIN shrinks the *index*. If a table is
-  large because it keeps everything forever, the honest fix is a retention
-  policy; BRIN just makes the table cheaper to keep.
-- **Non-goal: converting anything on read-path latency grounds.** Every
-  conversion here trades a little query time for a lot of space. If a table is
-  small enough that its indexes do not matter, leave it alone.
+- **Not a btree replacement** for high-cardinality equality (`item_id`,
+  `job_id`, `order_id` probes stay btree).
+- **Not a substitute for retention.** BRIN shrinks the index; a table large
+  because it keeps everything forever still wants a retention policy —
+  cheaper to keep is not the same as worth keeping.
+- **Non-goal: latency wins.** The measured precedent trades a few ms on
+  deep-history reads for three orders of magnitude of index size. The
+  acceptance bar is "no live-path regression, historical neutral-or-better",
+  not "faster".
