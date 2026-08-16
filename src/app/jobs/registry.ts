@@ -68,6 +68,10 @@ export const JOBS: readonly JobEntry[] = [
   { job: 'structure-directory', label: 'structure directory', section: 'universe', kickable: 'chancellor' },
   { job: 'character-directory', label: 'character directory', section: 'universe', kickable: 'chancellor' },
   { job: 'industry-systems', label: 'industry indexes', section: 'universe', kickable: 'chancellor' },
+  // Hourly third-party price feed (appraise.gnf.lt), not ESI. Chancellor-kickable
+  // like the other shared-universe pulls: one account's button spends everyone's
+  // goodwill with someone else's bandwidth.
+  { job: 'market-prices', label: 'market prices', section: 'universe', kickable: 'chancellor' },
 ]
 
 export const jobsInSection = (section: JobSection) => JOBS.filter((entry) => entry.section === section)

@@ -66,6 +66,10 @@
       "schedule": "10 */6 * * *"
     },
     {
+      "path": "/api/cron/market-prices",
+      "schedule": "3 * * * *"
+    },
+    {
       "path": "/api/cron/corp-blueprints",
       "schedule": "7 9 * * *"
     },

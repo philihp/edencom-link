@@ -57,6 +57,7 @@ drop function if exists public.corp_industry_jobs(uuid[], boolean)              
 drop function if exists public.corp_industry_jobs(uuid[], boolean, timestamptz)     cascade;
 drop function if exists public.character_orders(uuid[])                  cascade;
 drop function if exists public.character_orders(uuid[], timestamptz)     cascade;
+drop function if exists public.market_price_snapshot(text, timestamptz)  cascade;
 drop function if exists public.latest_heartbeats()                       cascade;
 drop view  if exists public.asset                cascade;
 drop table if exists public.asset_over_time      cascade;
@@ -83,6 +84,8 @@ drop table if exists public.character_industry_job_over_time    cascade;
 drop table if exists public.character_affiliation         cascade;
 drop table if exists public.character_directory   cascade;
 drop table if exists public.industry_system_index cascade;
+drop view  if exists public.market_price               cascade;
+drop table if exists public.market_price_over_time     cascade;
 drop table if exists public.corporation          cascade;
 drop table if exists public.alliance             cascade;
 drop table if exists public.corp_structure_status cascade;
@@ -3235,6 +3238,105 @@ create policy "Everyone reads industry indexes"
 
 grant select on public.industry_system_index to anon, authenticated;
 grant all    on public.industry_system_index to service_role;
+
+-- ── market_price_over_time (SCD type 2) ───────────────────────────────────
+-- https://appraise.gnf.lt/market/<market>/prices.json, written hourly by the
+-- market-prices job: the best bid and best ask for every type the GNF
+-- appraisal service prices, in each market we track. Public third-party data
+-- about the game world (no player data, identical for every caller), so it's
+-- world-readable like industry_system_index above.
+--
+-- The industry spreadsheet used to fetch this feed straight from an Apps
+-- Script on every recalculation, which meant it only ever saw "now". Capturing
+-- it as SCD Type 2 makes past prices recoverable, and /sheets/market/<market>
+-- serves the same TypeID/Updated/Buy/Sell CSV the script produced with an
+-- optional `at` for time travel (docs/market-prices/README.md).
+--
+-- Only the best bid, best ask and pricing strategy are versioned. The feed's
+-- volume/order_count/avg fields and its per-type `updated` stamp churn hourly
+-- for essentially every type, so versioning them would open ~20k rows per
+-- market per hour and make this append-only in all but name. What's kept
+-- compresses hard: a price nobody moved writes nothing but a valid_until bump.
+create table public.market_price_over_time (
+  id bigint generated always as identity primary key,
+  -- The service's own market id ('C-J6MT', 'jita', …), not an EVE region or
+  -- structure id: these are appraisal presets, some spanning several stations.
+  market text not null,
+  type_id bigint not null,
+  -- Best bid / best ask, null when that side of the book is empty (which is
+  -- distinct from a real price of zero).
+  buy_max numeric,
+  sell_min numeric,
+  -- How the service derived the price: 'orders' (that market's own book),
+  -- 'orders_universe' (widened to New Eden), or 'ccp' (CCP's adjusted price,
+  -- i.e. no live orders at all). Versioned because it's stable and changes how
+  -- the number should be read.
+  strategy text,
+  is_current boolean not null default true,
+  valid_from timestamptz not null default now(),
+  valid_until timestamptz not null default now()
+);
+-- The reconcile's hot path: every open row for one market, paged by id.
+create index market_price_over_time_market_current_idx
+  on public.market_price_over_time (market, id) where is_current;
+-- One open row per (market, type) — the invariant the reconcile closes before
+-- inserting to preserve.
+create unique index market_price_over_time_current_idx
+  on public.market_price_over_time (market, type_id) where is_current;
+-- Point-in-time reconstruction: market_price_snapshot() seeks by market and
+-- validity window.
+create index market_price_over_time_asof_idx
+  on public.market_price_over_time (market, valid_from desc);
+
+create view public.market_price as
+  select id, market, type_id, buy_max, sell_min, strategy, valid_from, valid_until
+  from public.market_price_over_time
+  where is_current;
+
+alter table public.market_price_over_time enable row level security;
+create policy "Everyone reads market prices"
+  on public.market_price_over_time
+  for select
+  to anon, authenticated
+  using (true);
+
+grant select on public.market_price_over_time to anon, authenticated;
+grant select on public.market_price            to anon, authenticated;
+grant all    on public.market_price_over_time to service_role;
+
+-- One market's prices as of a moment, as a single json array — the same shape
+-- (and the same reason) as character_orders(): 20k+ rows would otherwise be
+-- truncated by PostgREST's max-rows cap, and building it here fixes the column
+-- order the sheet's headers are derived from. SECURITY INVOKER like every
+-- other function here; safe because the table is world-readable by design.
+create or replace function public.market_price_snapshot(market_id text, as_of timestamptz default now())
+returns json
+language sql
+stable
+as $$
+  select coalesce(
+    json_agg(
+      json_build_object(
+        'type_id',  p.type_id,
+        'buy_max',  p.buy_max,
+        'sell_min', p.sell_min,
+        'strategy', p.strategy,
+        -- When this price took effect (how long it has stood unchanged) and
+        -- when a run last confirmed it still stands.
+        'since',    p.valid_from,
+        'updated',  p.valid_until
+      )
+      order by p.type_id
+    ),
+    '[]'::json
+  )
+  from public.market_price_over_time p
+  where p.market = market_id
+    and p.valid_from <= as_of
+    and (p.is_current or p.valid_until >= as_of);
+$$;
+
+grant execute on function public.market_price_snapshot(text, timestamptz) to anon, authenticated, service_role;
 
 -- ── character_fitting_share: audience + widening policies ─────────────────
 -- Placed after character_directory (not beside the share table) because these
