@@ -18,16 +18,18 @@ const TAG = 'market-prices'
 
 // PostgREST caps a single select; page through every open row so a market's
 // 20k+ types don't silently truncate the "current" set (which would read as a
-// mass delisting to the reconcile).
+// mass delisting to the reconcile). Ordered by type_id — the table has no
+// surrogate id, and (market, type_id) where is_current is exactly the partial
+// unique index, so this paging is an index-order walk.
 const PAGE = 1000
 
 const fetchCurrentRows = async (market, from = 0) => {
   const { data, error } = await sudoSupabase
     .from('market_price_over_time')
-    .select('id, type_id, buy_max, sell_min, strategy')
+    .select('type_id, buy_max, sell_min, strategy')
     .eq('market', market)
     .eq('is_current', true)
-    .order('id', { ascending: true })
+    .order('type_id', { ascending: true })
     .range(from, from + PAGE - 1)
   if (error) throw error
   const page = data ?? []
@@ -35,19 +37,31 @@ const fetchCurrentRows = async (market, from = 0) => {
   return [...page, ...(await fetchCurrentRows(market, from + PAGE))]
 }
 
+// Both updates below address rows by type id rather than by a surrogate key:
+// (market, type_id) is unique among is_current rows, so the three filters
+// together name exactly the intended rows. The is_current filter is what makes
+// it exact — without it the same type ids would also match every closed version
+// in that market's history.
 // Apply one market's classified changes. Ordered exactly like the other SCD-2
 // reconciles: touch, then close, then insert — closing before inserting so the
 // one-open-row-per-(market, type) unique index never collides mid-run.
-const applyChanges = async (now, { touchIds, closeIds, inserts }) => {
-  await forEachSequential(splitEvery(1000, touchIds), async (ids) => {
-    const { error } = await sudoSupabase.from('market_price_over_time').update({ valid_until: now }).in('id', ids)
+const applyChanges = async (market, now, { touchIds, closeIds, inserts }) => {
+  await forEachSequential(splitEvery(1000, touchIds), async (typeIds) => {
+    const { error } = await sudoSupabase
+      .from('market_price_over_time')
+      .update({ valid_until: now })
+      .eq('market', market)
+      .eq('is_current', true)
+      .in('type_id', typeIds)
     if (error) throw error
   })
-  await forEachSequential(splitEvery(1000, closeIds), async (ids) => {
+  await forEachSequential(splitEvery(1000, closeIds), async (typeIds) => {
     const { error } = await sudoSupabase
       .from('market_price_over_time')
       .update({ is_current: false, valid_until: now })
-      .in('id', ids)
+      .eq('market', market)
+      .eq('is_current', true)
+      .in('type_id', typeIds)
     if (error) throw error
   })
   await forEachSequential(splitEvery(1000, inserts), async (rows) => {
@@ -64,7 +78,7 @@ export const syncMarketPrices = async (market) => {
   const fetched = normalizePrices(feed)
   const current = await fetchCurrentRows(market)
   const changes = partitionPrices(market, current, fetched)
-  await applyChanges(new Date().toISOString(), changes)
+  await applyChanges(market, new Date().toISOString(), changes)
   console.log(
     `[${TAG}] ${market}: ${fetched.length} type(s); ${changes.touchIds.length} unchanged, ${changes.inserts.length} opened, ${changes.closeIds.length} closed`
   )

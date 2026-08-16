@@ -13,7 +13,11 @@ import { normalizePrices, partitionPrices, signature } from '../src/jobs/marketP
 // fetchCurrentRows selects. The job module is plain JS like its siblings, so
 // the shapes are named here rather than inferred through ramda's combinators.
 type PriceRow = { type_id: number; buy_max: number | null; sell_min: number | null; strategy: string | null }
-type OpenRow = PriceRow & { id: number }
+// An open row as fetchCurrentRows selects it. There is no surrogate id: among a
+// market's is_current rows (market, type_id) is unique, so the classifier's
+// touch/close lists are type ids, and the job addresses rows with
+// market + is_current + type_id.
+type OpenRow = PriceRow
 type Partition = { touchIds: number[]; closeIds: number[]; inserts: (PriceRow & { market: string })[] }
 
 const partition = (market: string, current: OpenRow[] | undefined, fetched: PriceRow[] | undefined): Partition =>
@@ -94,20 +98,20 @@ test('a change of pricing strategy opens a new version', () => {
 })
 
 test('an unchanged price is touched, never rewritten', () => {
-  const current = [{ id: 1, type_id: 34, buy_max: 5, sell_min: 6, strategy: 'orders' }]
+  const current = [{ type_id: 34, buy_max: 5, sell_min: 6, strategy: 'orders' }]
   const fetched = normalizePrices([entry(34, { buy: 5, sell: 6 })])
   const { touchIds, closeIds, inserts } = partition('jita', current, fetched)
-  assert.deepEqual(touchIds, [1])
+  assert.deepEqual(touchIds, [34])
   assert.deepEqual(closeIds, [])
   assert.deepEqual(inserts, [])
 })
 
 test('a moved price closes the old version and opens a new one', () => {
-  const current = [{ id: 1, type_id: 34, buy_max: 5, sell_min: 6, strategy: 'orders' }]
+  const current = [{ type_id: 34, buy_max: 5, sell_min: 6, strategy: 'orders' }]
   const fetched = normalizePrices([entry(34, { buy: 5.5, sell: 6 })])
   const { touchIds, closeIds, inserts } = partition('jita', current, fetched)
   assert.deepEqual(touchIds, [])
-  assert.deepEqual(closeIds, [1])
+  assert.deepEqual(closeIds, [34])
   assert.deepEqual(inserts, [{ market: 'jita', type_id: 34, buy_max: 5.5, sell_min: 6, strategy: 'orders' }])
 })
 
@@ -124,26 +128,26 @@ test('a type seen for the first time is inserted without closing anything', () =
 // pricing it.
 test('a type the feed no longer prices is closed with no replacement', () => {
   const current = [
-    { id: 1, type_id: 34, buy_max: 5, sell_min: 6, strategy: 'orders' },
-    { id: 2, type_id: 35, buy_max: 7, sell_min: 8, strategy: 'orders' },
+    { type_id: 34, buy_max: 5, sell_min: 6, strategy: 'orders' },
+    { type_id: 35, buy_max: 7, sell_min: 8, strategy: 'orders' },
   ]
   const { touchIds, closeIds, inserts } = partition('jita', current, normalizePrices([entry(34, { buy: 5, sell: 6 })]))
-  assert.deepEqual(touchIds, [1])
-  assert.deepEqual(closeIds, [2])
+  assert.deepEqual(touchIds, [34])
+  assert.deepEqual(closeIds, [35])
   assert.deepEqual(inserts, [])
 })
 
 test('a moved price is closed once, not once per reason', () => {
-  const current = [{ id: 1, type_id: 34, buy_max: 5, sell_min: 6, strategy: 'orders' }]
+  const current = [{ type_id: 34, buy_max: 5, sell_min: 6, strategy: 'orders' }]
   const { closeIds } = partition('jita', current, normalizePrices([entry(34, { buy: 9, sell: 9, strategy: 'ccp' })]))
-  assert.deepEqual(closeIds, [1])
+  assert.deepEqual(closeIds, [34])
 })
 
 test('every row is classified into exactly one bucket', () => {
   const current = [
-    { id: 1, type_id: 34, buy_max: 5, sell_min: 6, strategy: 'orders' }, // unchanged
-    { id: 2, type_id: 35, buy_max: 7, sell_min: 8, strategy: 'orders' }, // moved
-    { id: 3, type_id: 36, buy_max: 1, sell_min: 2, strategy: 'orders' }, // gone
+    { type_id: 34, buy_max: 5, sell_min: 6, strategy: 'orders' }, // unchanged
+    { type_id: 35, buy_max: 7, sell_min: 8, strategy: 'orders' }, // moved
+    { type_id: 36, buy_max: 1, sell_min: 2, strategy: 'orders' }, // gone
   ]
   const fetched = normalizePrices([
     entry(34, { buy: 5, sell: 6 }),
@@ -151,8 +155,8 @@ test('every row is classified into exactly one bucket', () => {
     entry(37, { buy: 3, sell: 4 }), // new
   ])
   const { touchIds, closeIds, inserts } = partition('jita', current, fetched)
-  assert.deepEqual(touchIds, [1])
-  assert.deepEqual(closeIds.sort(), [2, 3])
+  assert.deepEqual(touchIds, [34])
+  assert.deepEqual(closeIds.sort(), [35, 36])
   assert.deepEqual(inserts.map((r) => r.type_id).sort(), [35, 37])
 })
 

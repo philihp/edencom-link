@@ -72,6 +72,13 @@ export const signature = (row) => JSON.stringify([round2(row.buy_max), round2(ro
 // responsible for only reaching this with a plausibly-complete feed
 // (MIN_PLAUSIBLE_TYPES in src/gnfMarket.js) — a truncated response would
 // otherwise read as a mass delisting.
+//
+// The two id lists are **type ids, not row ids**. This table carries no
+// surrogate key: among a market's is_current rows (market, type_id) is unique,
+// which the partial unique index enforces, so a type id plus the caller's
+// market and is_current filter addresses exactly one row. That saves the bigint
+// and its btree — ~19% of the largest table in the database — for no loss of
+// addressability (docs/market-prices/README.md "Storage").
 export const partitionPrices = (market, current, fetched) => {
   const currentByType = new Map(map((row) => [Number(row.type_id), row], current ?? []))
   const seen = new Set()
@@ -83,9 +90,9 @@ export const partitionPrices = (market, current, fetched) => {
       seen.add(row.type_id)
       const open = currentByType.get(row.type_id)
       if (open && signature(open) === signature(row)) {
-        acc.touchIds.push(open.id)
+        acc.touchIds.push(row.type_id)
       } else {
-        if (open) acc.closeIds.push(open.id)
+        if (open) acc.closeIds.push(row.type_id)
         // valid_from is left to its `default now()` so it marks this version's debut.
         acc.inserts.push({ market, ...row })
       }
@@ -97,8 +104,8 @@ export const partitionPrices = (market, current, fetched) => {
 
   // Types the feed no longer prices: close the open row, open nothing.
   const goneIds = pipe(
-    filter((row) => !seen.has(Number(row.type_id))),
-    map((row) => row.id)
+    map((row) => Number(row.type_id)),
+    filter((typeId) => !seen.has(typeId))
   )(current ?? [])
 
   return { touchIds, closeIds: [...closeIds, ...goneIds], inserts }

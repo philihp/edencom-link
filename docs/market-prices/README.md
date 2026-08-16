@@ -110,17 +110,97 @@ from opening a new version for a price nobody moved.
 
 ## Storage
 
-Unknown until it has run for a day, and deliberately not guessed at in code.
-The arithmetic: 2 markets × ~20.5k types = ~41k rows on the first run, then
-`churn × 41k` rows an hour. At 10% hourly churn that's ~36M rows a year; at
-20%, ~72M. Roughly 100 bytes a row plus three indexes.
+This is expected to become the largest table in the database, so its physical
+shape was measured rather than reasoned about: four candidate layouts, 2M rows
+each, real Postgres 16, comparing `pg_total_relation_size`.
 
-Retention is currently **keep everything**. If the rate turns out
-uncomfortable, a sweep of closed (`is_current = false`) rows past some age is
-additive — no schema change, no effect on the current snapshot, and the tail
-of history is the cheap part to lose.
+| Layout | Bytes/row | vs. baseline |
+|---|---|---|
+| Baseline: surrogate `id`, btree as-of index, text columns | 158.2 | — |
+| `market` normalised to a `smallint` FK | 158.2 | **0.0%** |
+| `market` *and* `strategy` normalised | 150.9 | −4.6% |
+| Columns reordered, text kept | 155.7 | −1.6% |
+| No surrogate `id` | 121.5 | −23% |
+| No `id` + BRIN as-of index | 90.0 | **−43%** |
 
-Worth measuring after the first day:
+The counter-intuitive row is the second one. **Normalising `market` into a
+lookup table saves exactly zero bytes.** `'C-J6MT'` is a 7-byte short varlena;
+replacing it with a 2-byte `smallint` frees 5 bytes that immediately become
+alignment padding ahead of the next `bigint`. The join, the FK, and the extra
+table would buy nothing. (`strategy` is a slightly better candidate —
+`'orders_universe'` is 16 bytes on 54% of rows — but 4.6% doesn't pay for a
+lookup table either.)
+
+What does pay:
+
+- **No surrogate key (−23%).** A `bigint id` plus its btree costs ~30 bytes a
+  row, ~19% of the table, purely to address rows. It isn't needed: among a
+  market's `is_current` rows `(market, type_id)` is unique, which the partial
+  unique index already enforces, so the reconcile addresses rows with
+  `market = ? and is_current and type_id in (?)`. The `is_current` filter is
+  what makes it exact — without it the same type ids match every closed version
+  in that market's history.
+- **BRIN for the as-of index (−20% more).** Every run appends its changed rows
+  at the end of the heap, so `valid_from` is near-perfectly correlated with
+  physical position — the one condition BRIN needs. At 2M rows the btree was
+  60 MB against BRIN's 40 kB, costing ~2.5 ms on a deep-history query (2.6 ms →
+  5.1 ms). `market` is deliberately *not* in the BRIN: rows from both markets
+  interleave within a block, so summarising it would match every range; it is
+  filtered on the recheck instead.
+- **Column order (−1.6%, free).** Fixed-width 8-byte columns first, so no
+  padding holes open between them.
+
+At the measured 90 bytes/row: ~3.2 GB/year at 10% hourly churn, ~6.5 GB at 20%
+— against 5.7/11.4 GB for the naive layout.
+
+### The live query is the one that had to be fixed
+
+Storage was the smaller problem. The snapshot predicate
+`valid_from <= as_of and (is_current or valid_until >= as_of)` cannot use any
+index because of the OR, so *every sheet refresh* was a sequential scan of the
+whole table — 97 ms at 2M rows, and linear in table size from there.
+
+At `as_of = now()` that predicate is just "the current rows" anyway (a closed
+row's `valid_until` is stamped at close time, so it can only satisfy
+`valid_until >= now()` within the same instant). So `market_price_snapshot`
+takes `as_of` defaulting to **null**, meaning live, and branches: the live
+branch is `market = ? and is_current`, answered by the partial unique index as
+an index-only scan in **4.5 ms** instead of 97 — and, unlike the scan, it stays
+flat as the table grows. The route passes null whenever `at=` is absent rather
+than resolving it to `now()`.
+
+The row projection is duplicated across the function's two branches on purpose:
+sharing it means one predicate, and one predicate means the slow plan for both.
+
+### Update bloat, not row width, may end up dominating
+
+Measured over 60 simulated hourly cycles at 20% churn (the job's real
+touch/close/insert statements): 267k live rows occupied **143 MB**, against
+~24 MB of actual row data. The difference is dead tuples from the hourly touch —
+every run rewrites ~20k rows to bump `valid_until`, and each rewrite leaves a
+dead version behind. Autovacuum reclaims the space for reuse so this reaches a
+steady state rather than growing without bound, but the steady state is several
+times the live-row arithmetic above.
+
+The same run answered the question that prompted the BRIN choice: does closing
+rows (an `is_current` flip, which cannot be a HOT update, so the tuple moves)
+scatter old `valid_from` values into new blocks and degrade the index?
+Measured correlation of `valid_from` with physical order after those 60 cycles:
+**0.9996**. It does not. A row that changes often was opened recently, so its
+moved tuple carries a recent `valid_from`; a row that never changes never moves.
+The BRIN stayed at 32 kB and a deep-history query at 8 ms.
+
+If bloat does become the binding constraint, the lever is the touch itself: it
+exists only to keep the CSV's `Updated` column truthful. Recording one
+"confirmed at" row per (market, run) in a tiny side table and joining it in
+would remove ~20k UPDATEs an hour outright. Not done here — it changes what
+`valid_until` means on this table, and the churn should be measured on real data
+first.
+
+### Measuring the real churn
+
+Still unknown until it has run for a day — the numbers above scale whatever it
+turns out to be:
 
 ```sql
 select market,
@@ -129,6 +209,10 @@ select market,
        count(*) filter (where valid_from > now() - interval '1 hour') as opened_last_hour
 from market_price_over_time group by market;
 ```
+
+Retention is **keep everything**. If the rate turns out uncomfortable, a sweep
+of closed rows past some age is additive — no schema change, no effect on the
+current snapshot, and the tail of history is the cheap part to lose.
 
 ## Pieces
 
@@ -140,7 +224,7 @@ from market_price_over_time group by market;
 | `src/workflows/marketPrices.ts` | one step per market, heartbeat opened and closed by their own steps |
 | `src/app/api/cron/market-prices/route.ts` | hourly Vercel Cron trigger (`3 * * * *`) |
 | `src/app/sheets/market/[market]/route.ts` | the public CSV |
-| `market_price_over_time` + `market_price` + `market_price_snapshot()` | `supabase/migrations/20260816040000_market_price.sql`, mirrored into `schema.sql` |
+| `market_price_over_time` + `market_price` + `market_price_snapshot()` | `supabase/migrations/20260816040000_market_price.sql`, mirrored into `schema.sql`. No surrogate key; one partial unique index doing identity, paging and the live query; BRIN for time travel |
 
 ## Decisions taken (revisit if wrong)
 
@@ -168,6 +252,10 @@ from market_price_over_time group by market;
    briefly. A moment that has already passed can't gain or lose rows: a later
    run only writes versions with a newer `valid_from`, and closing a row leaves
    its `valid_until` past the asked-for instant.
+7. **No surrogate key, BRIN as-of index, live/time-travel branches** — all three
+   measured, see Storage above. The first two are why the table is 43% smaller
+   than the obvious layout; the third is why a sheet refresh is 20× faster and
+   stops degrading as history accumulates.
 
 ## Open questions
 

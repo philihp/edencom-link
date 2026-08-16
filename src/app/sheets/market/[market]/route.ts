@@ -59,18 +59,22 @@ export const GET = async (
   }
 
   const { searchParams } = new URL(request.url)
-  const rawAt = searchParams.get('at')
+  const rawAt = searchParams.get('at')?.trim()
   // Same `at` grammar as the Sheets API endpoints: a partial ISO date is padded
-  // out, an absent one means now.
-  const at = parseAtParam(rawAt)
-  if (!at.ok) return NextResponse.json({ error: AT_PARAM_ERROR }, { status: 400 })
+  // out. Unlike them, an absent `at` is NOT resolved to now() and passed down —
+  // it stays null, which market_price_snapshot() reads as "live" and answers
+  // from the partial is_current index. Asking for now() instead would send the
+  // time-travel predicate, whose OR is unindexable and scans the whole table
+  // (4.5 ms vs 97 ms at 2M rows, widening with every row).
+  const at = rawAt ? parseAtParam(rawAt) : null
+  if (at !== null && !at.ok) return NextResponse.json({ error: AT_PARAM_ERROR }, { status: 400 })
 
   // Built and returned as one json array by Postgres, which fixes the column
   // order and sidesteps PostgREST's max-rows cap — a market carries 20k+ types,
   // so a plain select would silently return the first 1000.
   const { data: rows, error } = await sdeSupabase().rpc('market_price_snapshot', {
     market_id: market,
-    as_of: at.iso,
+    as_of: at === null ? null : at.iso,
   })
   // Surfaced verbatim, like /sheets/[file] and /esf/[file] rather than the
   // opaque 'Query failed' the per-user endpoints answer with: everything here
@@ -100,12 +104,12 @@ export const GET = async (
   // its valid_until past the asked-for instant — so a historical answer is
   // immutable and cacheable hard. An `at` at or after now is just a spelling of
   // "live" and must not be.
-  const historical = at.iso < new Date().toISOString()
+  const historical = at !== null && at.ok && at.iso < new Date().toISOString()
 
   return new NextResponse(body, {
     headers: {
       'Content-Type': 'text/csv; charset=utf-8',
-      'Cache-Control': rawAt?.trim() && historical ? HISTORICAL_CACHE : LIVE_CACHE,
+      'Cache-Control': historical ? HISTORICAL_CACHE : LIVE_CACHE,
     },
   })
 }
