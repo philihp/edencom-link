@@ -17,6 +17,7 @@
     "@vercel/speed-insights": "2.0.0",
     "eve-industry": "0.1.0",
     "fast-shuffle": "^6.2.0",
+    "flags": "^4.3.0",
     "graphql": "^17.0.2",
     "graphql-yoga": "^5.21.2",
     "mcp-handler": "^2.1.0",
