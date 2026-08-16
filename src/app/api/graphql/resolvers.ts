@@ -287,10 +287,10 @@ const characterScopeFor = async (
 
 // Session-only guard for the shared-data surfaces: the Bearer path runs on the
 // service client, where RLS can't arbitrate a widened filter — the designed
-// answer for external tools consuming shared data is a Lens (phase 7).
+// answer for external tools consuming shared data is a Link (phase 7).
 const requireSession = (ctx: GraphqlContext): void => {
   if (ctx.mode !== 'session') {
-    badRequest('Shared data requires a session — the api_token path is own-data only. Use a Lens instead.')
+    badRequest('Shared data requires a session — the api_token path is own-data only. Use a Link instead.')
   }
 }
 

@@ -9,7 +9,7 @@ import { recordRequest } from '@/observability'
 // auth failures never reach onExecute, so a rejected bearer emits nothing;
 // that keeps the series to queries that actually touched data.
 
-// Ad-hoc GraphQL callers may select several root fields (lenses are held to
+// Ad-hoc GraphQL callers may select several root fields (links are held to
 // one). Joined sorted so "assets+characters" is one series however the query
 // ordered them; the schema bounds the vocabulary, so cardinality stays flat.
 const rootFieldsOf = (document: DocumentNode): string | null => {

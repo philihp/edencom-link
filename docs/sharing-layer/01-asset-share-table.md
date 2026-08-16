@@ -127,8 +127,8 @@ recomputes and compares with `timingSafeEqual`. Revoking a link = nulling
 revokes everything.
 
 **Superseded — the token is now just `?share=<signature>`.** Carrying the id
-was redundant: the URL's own path already identifies the share row (a lens
-share IS the lens, so `/lens/<id>?share=<id>.<sig>` said it twice; a fitting
+was redundant: the URL's own path already identifies the share row (a link
+share IS the link, so `/link/<id>?share=<id>.<sig>` said it twice; a fitting
 share is the path's `(registration, fitting)` pair; an asset share is one of
 the ≤16 shares covering the requested item's ancestry, and the signature says
 which). Resolvers look the row up from the path and verify the signature

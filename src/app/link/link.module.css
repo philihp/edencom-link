@@ -59,13 +59,13 @@
   font-size: 9pt;
 }
 
-.lens {
+.link {
   margin-top: 16pt;
   padding-top: 8pt;
   border-top: 1px solid var(--line);
 }
 
-.lensHeading {
+.linkHeading {
   display: flex;
   gap: 8pt;
   align-items: baseline;

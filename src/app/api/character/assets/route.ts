@@ -7,7 +7,7 @@ import { AT_PARAM_ERROR, parseAtParam } from '@/utils/atParam'
 import { parseColumnsParam, selectColumns } from '@/utils/columnsParam'
 import { toCsv } from '@/utils/csv'
 
-// Default column set/order (src/app/api/csvColumns.ts, shared with the lens
+// Default column set/order (src/app/api/csvColumns.ts, shared with the link
 // drop-in templates). ?columns= can reorder/subset these.
 const ALLOWED_COLUMNS = CHARACTER_ASSET_COLUMNS
 

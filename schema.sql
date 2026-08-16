@@ -133,7 +133,7 @@ drop table if exists public.watched_system       cascade;
 drop table if exists public.user_settings        cascade;
 drop table if exists public.refresh_task         cascade;
 drop table if exists public.shared_asset_token   cascade;
-drop table if exists public.lens                 cascade;
+drop table if exists public.link                 cascade;
 drop table if exists public.discord_link_code    cascade;
 drop table if exists public.notification         cascade;
 drop table if exists public.discord_channel      cascade;
@@ -2930,28 +2930,28 @@ create policy "Audience reads shared assets"
 grant select on public.character_asset_over_time to anon;
 grant select on public.character_asset           to anon;
 
--- ── lens ───────────────────────────────────────────────────────────────────
--- Sharing layer Revision 3, phase 7 (docs/sharing-layer/07-lens.md). A Lens is
+-- ── link ───────────────────────────────────────────────────────────────────
+-- Sharing layer Revision 3, phase 7 (docs/sharing-layer/07-link.md). A Link is
 -- a saved GraphQL query that runs under the CREATOR's security context when a
 -- viewer opens it — the viewer receives results, never access. Shared with the
 -- standard Revision 3 audience row (corporation_ids / alliance_ids / secret;
 -- fully public = the row that names no one), and user_id-keyed rather than
--- registration-keyed because a Lens spans all the creator's registrations the
+-- registration-keyed because a Link spans all the creator's registrations the
 -- way their GraphQL context does.
 --
 -- The audience-read policy exposes the row — including the query text — to the
 -- audience: discovery is the point, and the query IS what they may run. The
 -- secret rides along like on every share table; harmless by design, since a
 -- URL token is an HMAC keyed by secret AND the env-only TOKEN_SALT.
-create table public.lens (
+create table public.link (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
   name text not null,
   query text not null,
   variables jsonb not null default '{}',
-  -- Unlike the sibling share tables, the lens row IS the share row — so the
+  -- Unlike the sibling share tables, the link row IS the share row — so the
   -- Revision 3 "empty audience = public" reading would make a freshly created
-  -- lens public by default. `enabled` keeps "not shared yet" (the no-row state
+  -- link public by default. `enabled` keeps "not shared yet" (the no-row state
   -- the other tables get for free) distinct from "shared with everyone".
   enabled boolean not null default false,
   corporation_ids bigint[] not null default '{}',
@@ -2960,31 +2960,31 @@ create table public.lens (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
-create index lens_user_id_idx on public.lens (user_id);
+create index link_user_id_idx on public.link (user_id);
 
-alter table public.lens enable row level security;
+alter table public.link enable row level security;
 
--- Owner manages their lenses outright (the shared_asset_token FOR ALL shape —
+-- Owner manages their links outright (the shared_asset_token FOR ALL shape —
 -- the owner is a user, not a registration, so the predicate is direct).
-create policy "Users manage own lenses"
-  on public.lens
+create policy "Users manage own links"
+  on public.link
   for all
   to authenticated
   using (user_id = (select auth.uid()))
   with check (user_id = (select auth.uid()));
 
 -- Audience discovery, the load-bearing array/anon policy every Revision 3
--- share table carries. Link-only lenses match no one under RLS — the signed
+-- share table carries. Link-only links match no one under RLS — the signed
 -- ?share= link is resolved at the app layer.
-create policy "Audience reads lenses aimed at them"
-  on public.lens
+create policy "Audience reads links aimed at them"
+  on public.link
   for select
   to anon, authenticated
   using (enabled and public.share_audience_matches(corporation_ids, alliance_ids, secret));
 
-grant select                         on public.lens to anon;
-grant select, insert, update, delete on public.lens to authenticated;
-grant all                            on public.lens to service_role;
+grant select                         on public.link to anon;
+grant select, insert, update, delete on public.link to authenticated;
+grant all                            on public.link to service_role;
 
 -- ── character_clone_state ──────────────────────────────────────────────────
 -- Character-level fields from ESI /characters/{id}/clones/, written by the

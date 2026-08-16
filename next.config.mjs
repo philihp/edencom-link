@@ -69,6 +69,12 @@ const nextConfig = {
     { source: '/asset/:itemId/fit', destination: '/ship/:itemId', permanent: false },
     // The Chancellor tools became a settings subpage.
     { source: '/account/chancellor', destination: '/account/settings/chancellor', permanent: true },
+    // "Lens" became "Link" — the product's own noun. Signed share URLs are
+    // issued to people outside this deployment and outlive any rename, so the
+    // old paths keep resolving, query string (?share=) included.
+    { source: '/lens', destination: '/link', permanent: true },
+    { source: '/lens/:id', destination: '/link/:id', permanent: true },
+    { source: '/lens/:id/csv', destination: '/link/:id/csv', permanent: true },
   ],
 }
 

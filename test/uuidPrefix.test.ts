@@ -1,11 +1,11 @@
-// Unit coverage for the truncated-lens-id seam (src/app/lens/uuidPrefix.ts).
+// Unit coverage for the truncated-link-id seam (src/app/link/uuidPrefix.ts).
 // What's worth pinning: a prefix expands to the exact uuid range that a
 // bytewise (= hex-string-wise) comparison scans, only canonical-format
 // prefixes qualify, and the 8-hex-digit floor holds.
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { shortestUuidPrefix, uuidPrefixRange } from '../src/app/lens/uuidPrefix.ts'
+import { shortestUuidPrefix, uuidPrefixRange } from '../src/app/link/uuidPrefix.ts'
 
 test('a bare first group pads to the full range', () => {
   assert.deepEqual(uuidPrefixRange('da204490'), {

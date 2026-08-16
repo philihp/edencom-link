@@ -1,10 +1,10 @@
-// CSV flattening for Lens results (src/app/lens/flatten.ts): primary-list
+// CSV flattening for Link results (src/app/link/flatten.ts): primary-list
 // discovery under the one-top-level-field guarantee, and one-level row
 // flattening (dot-pathed nested objects, joined scalar lists).
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { csvRows, flattenRow, lensRows, primaryRows } from '../src/app/lens/flatten.ts'
+import { csvRows, flattenRow, linkRows, primaryRows } from '../src/app/link/flatten.ts'
 
 test('a root list field is the primary list', () => {
   const data = {
@@ -45,17 +45,17 @@ test('lists of objects are left for the CSV JSON fallback', () => {
   assert.deepEqual(flat, { items: [{ typeId: 1 }] })
 })
 
-test('lensRows flattens the primary list end to end', () => {
+test('linkRows flattens the primary list end to end', () => {
   const data = {
     assets: {
       totalCount: 1,
       rows: [{ typeName: 'Tritanium', quantity: '5', owner: { name: 'A' } }],
     },
   }
-  assert.deepEqual(lensRows(data), [{ typeName: 'Tritanium', quantity: '5', 'owner.name': 'A' }])
+  assert.deepEqual(linkRows(data), [{ typeName: 'Tritanium', quantity: '5', 'owner.name': 'A' }])
 })
 
-// csvRows is lensRows squared off for toCsv, which reads its header from the
+// csvRows is linkRows squared off for toCsv, which reads its header from the
 // first row alone. A nullable entity edge is what makes the rows ragged.
 test('csvRows gives every row the same columns when an edge is null on some', () => {
   const data = {

@@ -1,4 +1,4 @@
-# Restock lens: `restock` GraphQL root field
+# Restock link: `restock` GraphQL root field
 
 **Status: ✅ done** — `restock` ships in `schema.graphql.ts`/`resolvers.ts`
 over the pure seam `restock.ts`, with `test/graphqlRestock.test.ts` and the
@@ -7,24 +7,24 @@ over the pure seam `restock.ts`, with `test/graphqlRestock.test.ts` and the
 One amendment to the design below: the line carries **both** computed columns,
 not just `toBuy`. `delta` is signed (`onHand - target`, negative when short) so
 overstock reads as readily as shortfall; `toBuy` is the clamped shopping
-number. They only disagree above target, which is exactly where a lens author
+number. They only disagree above target, which is exactly where a link author
 wants the choice.
 
 ## Context
 
-Goal: a **shareable lens** that tells its audience "here's what I want to buy" — for each item
+Goal: a **shareable link** that tells its audience "here's what I want to buy" — for each item
 type with a desired supply-buffer target, when on-hand stock falls below the target, show
 `toBuy = target - onHand`.
 
 This is not expressible in the GraphQL schema today: it has no aggregation (assets return raw
 stacks), no arithmetic, and no quantity thresholds. The change is purely additive to the
-hand-written schema (`src/app/api/graphql/schema.graphql.ts` + `resolvers.ts`); lenses pick up
-any new root field automatically, since `validateLensQuery` (`src/app/lens/validate.ts`) only
+hand-written schema (`src/app/api/graphql/schema.graphql.ts` + `resolvers.ts`); links pick up
+any new root field automatically, since `validateLinkQuery` (`src/app/link/validate.ts`) only
 enforces one-operation / one-top-level-field / no-session-only.
 
 Decisions:
 
-- **Targets live in the lens's frozen `variables` jsonb** — no new table, no migration. Viewers
+- **Targets live in the link's frozen `variables` jsonb** — no new table, no migration. Viewers
   cannot change variables, so the buffer levels are always the creator's.
 - **Stock scope is filterable** via the existing owner/location filter pairs, defaulting to
   everything the caller owns (character + corp assets).
@@ -80,7 +80,7 @@ type RestockLine {
   has no single owner. Per-owner breakdown is answered by the `owner:` filter instead.
 - Only object edge is `type: ItemType!` (entity types stay leaf-only → CSV flattening stays one
   line per row).
-- No `includeShared` (shared rows would double-count; keeps the field lens-safe with zero
+- No `includeShared` (shared rows would double-count; keeps the field link-safe with zero
   `validate.ts` changes).
 
 ### 3. Resolver — `src/app/api/graphql/resolvers.ts`
@@ -95,7 +95,7 @@ New `Query.restock`, reusing existing helpers (`ownerScopesFor`, `locationIdsFor
 3. **Targeted read, not the assets machinery**: query `character_asset` (by `registration_id`)
    and `corp_asset` (by `corporation_id`) selecting only `type_id, quantity`, filtered
    `.in('type_id', targetTypeIds)` + optional `.in('location_id', locationIds)` + the mandatory
-   `.in(ownerColumn, ownerIds)` leak guard (critical — lenses run token-mode via
+   `.in(ownerColumn, ownerIds)` leak guard (critical — links run token-mode via
    `contextForUser`). This avoids the `ASSET_CAP=5000` truncation distorting sums.
 4. Belt-and-braces: `head:true` count check first; if filtered stacks would exceed `ASSET_CAP`,
    refuse with a "narrow the filters" 400 rather than sum a truncated read.
@@ -113,20 +113,20 @@ New `Query.restock`, reusing existing helpers (`ownerScopesFor`, `locationIdsFor
   `targets: [RestockTarget!]!`, `onlyBelowTarget` default `true`, `RestockLine`'s only object
   field is `type: ItemType!`.
 
-### 5. Discoverability — `src/app/api/mcp/lensTools.ts` + docs
+### 5. Discoverability — `src/app/api/mcp/linkTools.ts` + docs
 
 - Append a fourth `EXAMPLES` entry:
   `query Restock($targets: [RestockTarget!]!) { restock(targets: $targets) { typeName groupName target onHand toBuy } }`
   with variables `{ targets: [{ type: "Nitrogen Fuel Block", quantity: 10000 }, ...] }`.
 - **Fix confirmed drift in the same touch**: the three existing examples still use pre-pairing
   arg names `locationId:`/`typeIds:` which no longer exist in the schema — they would fail the
-  `create_lens` preflight today. Rewrite them to the current `location:`/`types:` args.
+  `create_link` preflight today. Rewrite them to the current `location:`/`types:` args.
 - Short "restock" subsection in `docs/sharing-layer/04-graphql-shared.md` (targets frozen in
   variables; aggregate rows carry no owner; token-mode safe).
 
 ## End-to-end usage
 
-1. With the `graphql` + `lens` flags, run in `/graphql`:
+1. With the `graphql` + `link` flags, run in `/graphql`:
 
    ```graphql
    query Restock($targets: [RestockTarget!]!) {
@@ -144,21 +144,21 @@ New `Query.restock`, reusing existing helpers (`ownerScopesFor`, `locationIdsFor
    variables
    `{ "targets": [ { "type": "Nitrogen Fuel Block", "quantity": 10000 }, { "type": "34", "quantity": 1000000 } ] }`.
 
-2. Save as a lens (editor at `/lens`, or MCP `create_lens` — its preflight runs the query, so a
+2. Save as a link (editor at `/link`, or MCP `create_link` — its preflight runs the query, so a
    bad target name is refused at save time).
-3. Share: corp/alliance audience (RLS `share_audience_matches`) at `/lens/<id>`, or signed link
-   `/lens/<id>?share=…`; spreadsheet via `/lens/<id>/csv?share=…`.
+3. Share: corp/alliance audience (RLS `share_audience_matches`) at `/link/<id>`, or signed link
+   `/link/<id>?share=…`; spreadsheet via `/link/<id>/csv?share=…`.
 
 ## Verification
 
 - `pnpm run lint`, `pnpm test` (new + updated suites), `pnpm run build` (the typecheck).
 - Manual: the `/graphql` editor flow above, cross-checking sums against `/asset`; then create a
-  link-shared restock lens and open `/lens/<id>?share=…` signed out.
+  link-shared restock link and open `/link/<id>?share=…` signed out.
 
 ## Sequencing
 
 1. `restock.ts` seam + `test/graphqlRestock.test.ts`
 2. SDL + `test/graphqlSchema.test.ts`
 3. Resolver
-4. `lensTools.ts` examples (incl. drift fix) + docs
+4. `linkTools.ts` examples (incl. drift fix) + docs
 5. Lint / test / build; manual check

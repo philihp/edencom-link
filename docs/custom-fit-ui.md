@@ -110,7 +110,7 @@ New route **`/item/[itemId]`** (mirroring `/ship/[itemId]`, whose data fetch —
 `shipRows.ts`, `toEsiFit` in `esfFit.ts` — it reuses verbatim). Nothing links
 to it, and it's additionally gated behind a `user_settings.flags` dark-launch
 flag (`fit-ui`, added to `KNOWN_FLAGS` in `src/flags.ts` so Chancellors can
-grant it from `/account/settings/chancellor`), same as `graphql`/`lens` —
+grant it from `/account/settings/chancellor`), same as `graphql`/`link` —
 non-flagged visitors get a 404, so obscurity isn't the only gate. Access
 control is unchanged from `/ship`: same RLS-scoped fetch, same share-token
 handling if we mirror it.

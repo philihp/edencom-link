@@ -1,5 +1,5 @@
 // Pure target resolution and shortfall arithmetic for the `restock` root field
-// (docs/sharing-layer/08-restock-lens.md). No I/O imports, so
+// (docs/sharing-layer/08-restock-link.md). No I/O imports, so
 // test/graphqlRestock.test.ts can exercise it under the node test runner — the
 // same split filters.ts makes for the argument shaping.
 //

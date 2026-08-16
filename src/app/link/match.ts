@@ -1,9 +1,9 @@
 // Picking one thing out of a list from what a person called it.
 //
-// The MCP lens tools take names, not identifiers: a model relays "Karmafleet",
-// "my fuel lens", an id pasted from somewhere. Two places need to turn that
+// The MCP link tools take names, not identifiers: a model relays "Karmafleet",
+// "my fuel link", an id pasted from somewhere. Two places need to turn that
 // into exactly one row — which corporation an audience names (./audience.ts)
-// and which lens an edit is aimed at (./lensRef.ts) — and getting the same
+// and which link an edit is aimed at (./linkRef.ts) — and getting the same
 // answer from both matters more than either one's specifics, so the algorithm
 // lives here once.
 //

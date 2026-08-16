@@ -19,7 +19,7 @@
 //     Location contain scalars and nothing else, so a response is at most
 //     row → entity → scalar. Every row therefore flattens to exactly one CSV
 //     line (character { name } becomes a character_name column) — see
-//     src/app/lens/flatten.ts, which the /graphql page's "Copy as CSV" uses.
+//     src/app/link/flatten.ts, which the /graphql page's "Copy as CSV" uses.
 //     There is no deep-query surface.
 //  2. NO EDGE FANS OUT PER ROW. `type` and `location` are pure reshapes of data
 //     the root resolver already fetched (it was resolving names from the full
@@ -57,7 +57,7 @@ export const typeDefs = /* GraphQL */ `
     character OR a corporation (see Owner and Corporation). includeShared
     additionally
     returns rows other users have shared with you (session auth only — the
-    api_token path is own-data only; a Lens is the way to hand shared data to
+    api_token path is own-data only; a Link is the way to hand shared data to
     external tools).
     """
     assets(

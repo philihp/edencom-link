@@ -11,29 +11,27 @@ import { KNOWN_FLAGS } from '@/flags'
 // actually uses, so the dashboard lists KNOWN_FLAGS instead of stale
 // hand-entered ones. Metadata only — evaluation stays per-user in
 // user_settings.flags via hasFlag(); the Flags Explorer can't override it.
-export const GET = createFlagsDiscoveryEndpoint(
-  async (): Promise<ApiData> => ({
-    definitions: fromPairs(
-      map(
-        ({ flag, label }) => [
-          flag,
-          {
-            description: label,
-            origin: 'https://edencom.link/account/settings/chancellor',
-            options: [
-              { value: false, label: 'Off' },
-              { value: true, label: 'On' },
-            ],
-          },
-        ],
-        KNOWN_FLAGS
-      )
-    ),
-    hints: [
-      {
-        key: 'per-user',
-        text: 'Flags are dark-launched per account in user_settings.flags; toggle them on /account/settings/chancellor, not here.',
-      },
-    ],
-  })
-)
+export const GET = createFlagsDiscoveryEndpoint(async (): Promise<ApiData> => ({
+  definitions: fromPairs(
+    map(
+      ({ flag, label }) => [
+        flag,
+        {
+          description: label,
+          origin: 'https://edencom.link/account/settings/chancellor',
+          options: [
+            { value: false, label: 'Off' },
+            { value: true, label: 'On' },
+          ],
+        },
+      ],
+      KNOWN_FLAGS
+    )
+  ),
+  hints: [
+    {
+      key: 'per-user',
+      text: 'Flags are dark-launched per account in user_settings.flags; toggle them on /account/settings/chancellor, not here.',
+    },
+  ],
+}))

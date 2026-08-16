@@ -7,7 +7,7 @@ fully public. The data structure and RLS shape follow the pattern that already
 works for mercenary dens and fittings: a `_share` sibling table plus additional
 **SELECT policies** that widen what the audience can read — never a parallel
 read path, never a copy of the data. Later phases fold the fitting and
-mercenary-den share mechanisms into the same model, and add **Lenses**: shared
+mercenary-den share mechanisms into the same model, and add **Links**: shared
 GraphQL queries that run under the _creator's_ security context and render to
 CSV, superseding the `api_token` Google Sheets endpoints.
 
@@ -76,7 +76,7 @@ The ordering runs safest-first:
 3. UI on top of a proven substrate.
 4. Read-side surfaces (GraphQL) that only consume what RLS already grants.
 5. Migrations of working mechanisms (fittings, dens) last — they have users.
-6. Lens, which builds on both the share model and the GraphQL API.
+6. Link, which builds on both the share model and the GraphQL API.
 
 ## The plan
 
@@ -88,7 +88,7 @@ The ordering runs safest-first:
 | [04-graphql-shared.md](04-graphql-shared.md)                     | Shared rows in GraphQL — session mode only, current views only, opt-in                                                                            | ✅ **Done** — `assets(includeShared:)` + `sharedWithMe`                                   |
 | [05-supersede-fittings.md](05-supersede-fittings.md)             | Fold `character_fitting_share` into the unified audience model, keep the fitting page UI                                                          | ✅ **Done** — migration `20260805130000`, `test/sql/fitting_share.sql`                    |
 | [06-supersede-mercenary-dens.md](06-supersede-mercenary-dens.md) | Fold `character_mercenary_den_share` into the unified model                                                                                       | ✅ **Done** — migration `20260806000000`, `test/sql/den_share.sql`                        |
-| [07-lens.md](07-lens.md)                                         | Lenses: shared GraphQL queries under the creator's context, CSV rendering to supersede the Sheets endpoints; `/lens` editor behind a feature flag | ✅ **Done** — migration `20260806130000`, `test/sql/lens.sql`                            |
+| [07-link.md](07-link.md)                                         | Links: shared GraphQL queries under the creator's context, CSV rendering to supersede the Sheets endpoints; `/link` editor behind a feature flag | ✅ **Done** — migration `20260806130000`, `test/sql/link.sql`                            |
 
 Since then the URL token dropped its `<shareId>.` prefix — see the superseded
 note in [01-asset-share-table.md](01-asset-share-table.md#token-signing--srcsharetokents--token_salt).
@@ -114,7 +114,7 @@ Old links still resolve and rewrite themselves to the short form.
   `actions.ts`) — working create/revoke server actions on the cookie-session
   client. The share dialog copies their approach, not the service role.
 - `src/utils/csv.ts` `toCsv()` and the `/api/*` CSV route shape — what the
-  Lens CSV rendering reuses.
+  Link CSV rendering reuses.
 
 ## Invariants (unchanged from Revision 2, plus new ones)
 
@@ -125,7 +125,7 @@ Old links still resolve and rewrite themselves to the short form.
 - **`user_id` is never world-readable**; alt correlation stays impossible.
 - **Current rows only.** Widening policies carry `is_current`; shares never
   expose SCD-2 history. GraphQL exposes only the current views — never the
-  `_over_time` tables (this holds for every phase, including Lens).
+  `_over_time` tables (this holds for every phase, including Link).
 - Shares widen exactly the shared subject; wallets, tokens, settings, and
   unrelated tables are never touched by any policy in this layer.
 

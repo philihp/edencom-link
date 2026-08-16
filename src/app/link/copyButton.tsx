@@ -3,13 +3,13 @@
 import { useRouter } from 'next/navigation'
 import { useState, useTransition } from 'react'
 
-import { copyLens } from './actions'
-import styles from './lens.module.css'
+import { copyLink } from './actions'
+import styles from './link.module.css'
 
-// "Save a copy": fork a shared lens's query into the viewer's own list, then
+// "Save a copy": fork a shared link's query into the viewer's own list, then
 // land them in the editor. Rendered on the viewer page for flagged non-owners
-// and in the shared-with-me list on /lens.
-export const CopyLensButton = ({ lensId, share }: { lensId: string; share?: string }) => {
+// and in the shared-with-me list on /link.
+export const CopyLinkButton = ({ linkId, share }: { linkId: string; share?: string }) => {
   const router = useRouter()
   const [error, setError] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
@@ -17,9 +17,9 @@ export const CopyLensButton = ({ lensId, share }: { lensId: string; share?: stri
   const copy = () =>
     startTransition(async () => {
       setError(null)
-      const copied = await copyLens(lensId, share)
+      const copied = await copyLink(linkId, share)
       if (copied.error) setError(copied.error)
-      else router.push('/lens')
+      else router.push('/link')
     })
 
   return (

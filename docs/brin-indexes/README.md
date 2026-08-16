@@ -5,7 +5,7 @@
 > The posture is now **standardize, measured**: every `*_over_time` table gets
 > a BRIN on `valid_from`, one migration PR at a time, with the gains (and any
 > regressions) read off live endpoint timings — the `request.timing` metric
-> (`src/observability.js`) that instruments the CSV/lens/GraphQL surfaces —
+> (`src/observability.js`) that instruments the CSV/link/GraphQL surfaces —
 > plus `EXPLAIN` evidence at production row counts. What changed since the
 > survey: the SCD tables now have a uniform, user-facing time-travel access
 > path worth serving well, and the instrumentation to watch it exists.
@@ -123,10 +123,10 @@ ingested from function logs) before the migration merges, grouped by
 
 - `served='historical'` — requests that exercised the time-travel predicate
   (an explicit `at=`). Record p50/p95 `duration_ms` and typical `rows`.
-- `served='live'` — the current-rows path (lens CSV, GraphQL, legacy without
+- `served='live'` — the current-rows path (link CSV, GraphQL, legacy without
   `at=`). This is the regression guard: the BRIN must not change these plans.
 
-Organic historical traffic may be thin — lenses are deliberately current-only
+Organic historical traffic may be thin — links are deliberately current-only
 (docs/sharing-layer/09-sheets-parity.md), so `at=` arrives only through the
 legacy CSV routes and `/sheets/market/[market]`. So each PR also runs a
 **synthetic probe**: a scripted loop hitting the table's `at=` endpoint at
@@ -184,7 +184,7 @@ Which timing series measures which table. `field` is the metric's dimension.
 | `character_clone/skill/ship/fitting/mercenary_den_over_time` | none — no snapshot RPC exists | EXPLAIN-only evidence |
 
 The live-path guard for every table is the same tables' `served='live'`
-series: `lens_csv`/`graphql` (`assets`, `blueprints`, `industryJobs`,
+series: `link_csv`/`graphql` (`assets`, `blueprints`, `industryJobs`,
 `marketOrders`) and the legacy routes without `at=`.
 
 The MCP `list_market_orders`/`list_industry_jobs` tools take `as_of` and call
@@ -231,7 +231,7 @@ limit 30;
 ## Sequencing
 
 1. ~~Instrument the serving endpoints~~ — done: `request.timing` covers the
-   seven CSV routes, `/sheets/market/[market]`, the lens viewer/CSV, and
+   seven CSV routes, `/sheets/market/[market]`, the link viewer/CSV, and
    `/api/graphql`, with the `served` live/historical split.
 2. **PR: small-table batch.** One migration adding the BRIN to the tables the
    sizing query shows as small (expected: clone, skill, ship, fitting,

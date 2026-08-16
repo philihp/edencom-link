@@ -1,6 +1,6 @@
-// The shared template list (src/app/lens/templates.ts) is the load-bearing
-// drift guard between three surfaces — the /lens picker, the /graphql example
-// buttons, and the MCP lens_schema examples — and the legacy CSV routes it
+// The shared template list (src/app/link/templates.ts) is the load-bearing
+// drift guard between three surfaces — the /link picker, the /graphql example
+// buttons, and the MCP link_schema examples — and the legacy CSV routes it
 // supersedes: a schema change that breaks a template, or a column drifting
 // from its legacy counterpart, fails here before a user pastes a dead formula.
 import assert from 'node:assert/strict'
@@ -17,8 +17,8 @@ import {
   CORP_BLUEPRINT_COLUMNS,
   CORP_JOB_COLUMNS,
 } from '../src/app/api/csvColumns.ts'
-import { LENS_TEMPLATES } from '../src/app/lens/templates.ts'
-import { validateLensQuery } from '../src/app/lens/validate.ts'
+import { LINK_TEMPLATES } from '../src/app/link/templates.ts'
+import { validateLinkQuery } from '../src/app/link/validate.ts'
 
 // The CSV header a template produces: response keys follow the selection
 // aliases in order, so this is the root field's selections — or its `rows`
@@ -37,23 +37,23 @@ const csvColumnsOf = (query: string): string[] => {
 }
 
 const templateById = (id: string) => {
-  const found = LENS_TEMPLATES.find((t) => t.id === id)
+  const found = LINK_TEMPLATES.find((t) => t.id === id)
   assert.ok(found, `template ${id} exists`)
   return found
 }
 
 test('template ids are unique', () => {
-  assert.equal(new Set(LENS_TEMPLATES.map((t) => t.id)).size, LENS_TEMPLATES.length)
+  assert.equal(new Set(LINK_TEMPLATES.map((t) => t.id)).size, LINK_TEMPLATES.length)
 })
 
-test('every template passes lens validation against the live schema', () => {
-  for (const t of LENS_TEMPLATES) {
-    assert.deepEqual(validateLensQuery(t.query), { ok: true }, t.id)
+test('every template passes link validation against the live schema', () => {
+  for (const t of LINK_TEMPLATES) {
+    assert.deepEqual(validateLinkQuery(t.query), { ok: true }, t.id)
   }
 })
 
 test('every labelled field names a variable its query declares', () => {
-  for (const t of LENS_TEMPLATES) {
+  for (const t of LINK_TEMPLATES) {
     const declared = new Set(
       (
         parse(t.query).definitions.find((d): d is OperationDefinitionNode => d.kind === Kind.OPERATION_DEFINITION)
@@ -67,7 +67,7 @@ test('every labelled field names a variable its query declares', () => {
 })
 
 // The Sheets drop-ins: alias-for-alias equal to the legacy routes' default
-// column lists, so the lens CSV's header row is byte-identical and an existing
+// column lists, so the link CSV's header row is byte-identical and an existing
 // =IMPORTDATA() tab re-points cleanly (docs/sharing-layer/09-sheets-parity.md).
 test('the drop-in templates match the legacy CSV columns exactly', () => {
   const parity: Array<[string, readonly string[]]> = [

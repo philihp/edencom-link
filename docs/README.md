@@ -16,7 +16,7 @@ honest when a project ships or a new doc lands.
 | [fittings.md](fittings.md) | Read-only saved-fitting extract + `/fitting` page + MCP `list_fittings` | Shipped as #742–#745. ESI has no corp/alliance fittings endpoint — the doc explains why |
 | [gice-auth.md](gice-auth.md) | GICE (Goonfleet OIDC) as an auth method, hand-rolled auth-code client | Live; doubles as the reference for how the flow works |
 | [sde-db-cutover/](sde-db-cutover/) | Stop downloading the SDE at build time; read the nightly-mirrored `sde_*` tables at runtime | Docs 00–04 all done, including the esf-data move into the `sde-mirror` workflow tail |
-| [sharing-layer/](sharing-layer/) | Unified recursive asset shares + folding fitting/den shares into one audience model + Lenses | Docs 01–08 all done; 09 (lenses supersede the api_token Sheets CSV routes: drop-in templates, export caps, deprecation) in progress. The `/lens` editor sits behind the `lens` dark-launch flag |
+| [sharing-layer/](sharing-layer/) | Unified recursive asset shares + folding fitting/den shares into one audience model + Links | Docs 01–08 all done; 09 (links supersede the api_token Sheets CSV routes: drop-in templates, export caps, deprecation) in progress. The `/link` editor sits behind the `link` dark-launch flag |
 | [sheet-csv/](sheet-csv/) | Nightly industry CSVs from the SDE mirror, served at `/sheets/[file]` for `=IMPORTDATA()` | Runs as a tail step of the `sde-mirror` workflow |
 
 ## In progress

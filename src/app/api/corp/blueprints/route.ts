@@ -6,7 +6,7 @@ import { resolvePlayer } from '@/utils/apiToken'
 import { parseColumnsParam, selectColumns } from '@/utils/columnsParam'
 import { toCsv } from '@/utils/csv'
 
-// Default column set/order (src/app/api/csvColumns.ts, shared with the lens
+// Default column set/order (src/app/api/csvColumns.ts, shared with the link
 // drop-in templates). ?columns= can reorder/subset these.
 const ALLOWED_COLUMNS = CORP_BLUEPRINT_COLUMNS
 

@@ -1,15 +1,15 @@
 // Turning "share it with my corp and anyone who has the link" into the
-// audience columns a lens row carries.
+// audience columns a link row carries.
 //
 // The web editor doesn't need this: its share dialog offers checkboxes built
 // from the caller's own corporations and alliances, so the ids are picked, not
-// typed. The MCP `create_lens` tool has the opposite problem — a model relays
+// typed. The MCP `create_link` tool has the opposite problem — a model relays
 // what a human said in words ("my corp", "Karmafleet", an id pasted from
 // somewhere) and something has to decide which of those, if any, name an
 // audience this user may actually aim at.
 //
 // Pure module (ramda only), so the matching and the exclusivity rules are
-// unit-tested without a Supabase client — see test/lensAudience.test.ts.
+// unit-tested without a Supabase client — see test/linkAudience.test.ts.
 import { reduce } from 'ramda'
 
 // Relative + .ts, like the other pure modules: `pnpm test` runs Node's
@@ -36,8 +36,8 @@ export type ResolvedAudience = {
   allianceIds: number[]
   link: boolean
   isPublic: boolean
-  // False means "saved but not shared with anyone" — the state a lens starts
-  // in. It matters because the lens row IS its own share row: an empty
+  // False means "saved but not shared with anyone" — the state a link starts
+  // in. It matters because the link row IS its own share row: an empty
   // audience with sharing on would read as public.
   shared: boolean
 }
@@ -110,7 +110,7 @@ export const resolveAudience = (request: AudienceRequest, own: OwnAudiences): Au
     return {
       ok: false,
       message:
-        "A public lens is already visible to everyone, so it can't also be narrowed to a corporation, alliance or link. Ask for one or the other.",
+        "A public link is already visible to everyone, so it can't also be narrowed to a corporation, alliance or link. Ask for one or the other.",
     }
   }
 

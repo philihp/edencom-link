@@ -3,10 +3,10 @@
 import { useRouter } from 'next/navigation'
 import { useState, useTransition } from 'react'
 
-import { deleteLens, previewLens, saveLens } from './actions'
-import { LensTable } from './lensTable'
-import { LENS_TEMPLATES, type LensTemplate } from './templates'
-import styles from './lens.module.css'
+import { deleteLink, previewLink, saveLink } from './actions'
+import { LinkTable } from './linkTable'
+import { LINK_TEMPLATES, type LinkTemplate } from './templates'
+import styles from './link.module.css'
 
 const DEFAULT_QUERY = `{
   assets(type: "Tritanium") {
@@ -24,7 +24,7 @@ const DEFAULT_QUERY = `{
 // accept — the fields are a friendlier pen for the same ink. Empty fields are
 // omitted (that's what makes an optional $owners mean "everything I own");
 // list fields split on commas.
-const serializeFields = (template: LensTemplate, values: Record<string, string>): string => {
+const serializeFields = (template: LinkTemplate, values: Record<string, string>): string => {
   const entries: Array<[string, unknown]> = (template.variableFields ?? []).flatMap(
     (field): Array<[string, unknown]> => {
       const raw = (values[field.name] ?? '').trim()
@@ -48,7 +48,7 @@ const serializeFields = (template: LensTemplate, values: Record<string, string>)
 
 // Seed the fields from the template's example variables, so picking one shows
 // a shape that runs (lists joined back to comma-separated text).
-const fieldValuesOf = (template: LensTemplate): Record<string, string> =>
+const fieldValuesOf = (template: LinkTemplate): Record<string, string> =>
   Object.fromEntries(
     (template.variableFields ?? []).map((f) => {
       const v = template.variables?.[f.name]
@@ -56,32 +56,32 @@ const fieldValuesOf = (template: LensTemplate): Record<string, string> =>
     })
   )
 
-type LensEditorProps = {
-  // null = the create-new editor; otherwise the lens being edited.
-  lens: { id: string; name: string; query: string; variables: string } | null
+type LinkEditorProps = {
+  // null = the create-new editor; otherwise the link being edited.
+  link: { id: string; name: string; query: string; variables: string } | null
 }
 
 type PreviewResult = { data: unknown; errors: string[] }
 
-// Create/edit form for one lens: a template picker seeding the query, name,
+// Create/edit form for one link: a template picker seeding the query, name,
 // the query text, variables (as labelled fields when the active template
 // declares them, raw JSON otherwise), a run-as-me preview rendered as the same
 // table the viewer page shows, save, and delete. Sharing lives in the
 // ShareDialog the server component renders beside this.
-export const LensEditor = ({ lens }: LensEditorProps) => {
+export const LinkEditor = ({ link }: LinkEditorProps) => {
   const router = useRouter()
-  const [open, setOpen] = useState(lens === null)
-  const [name, setName] = useState(lens?.name ?? '')
-  const [query, setQuery] = useState(lens?.query ?? DEFAULT_QUERY)
-  const [variables, setVariables] = useState(lens?.variables ?? '')
-  const [template, setTemplate] = useState<LensTemplate | null>(null)
+  const [open, setOpen] = useState(link === null)
+  const [name, setName] = useState(link?.name ?? '')
+  const [query, setQuery] = useState(link?.query ?? DEFAULT_QUERY)
+  const [variables, setVariables] = useState(link?.variables ?? '')
+  const [template, setTemplate] = useState<LinkTemplate | null>(null)
   const [fieldValues, setFieldValues] = useState<Record<string, string>>({})
   const [result, setResult] = useState<PreviewResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
 
   const pickTemplate = (id: string) => {
-    const picked = LENS_TEMPLATES.find((t) => t.id === id) ?? null
+    const picked = LINK_TEMPLATES.find((t) => t.id === id) ?? null
     setTemplate(picked)
     setResult(null)
     if (!picked) return
@@ -108,10 +108,10 @@ export const LensEditor = ({ lens }: LensEditorProps) => {
   const save = () =>
     startTransition(async () => {
       setError(null)
-      const saved = await saveLens(lens?.id ?? null, { name, query, variables })
+      const saved = await saveLink(link?.id ?? null, { name, query, variables })
       if (saved.error) setError(saved.error)
       else {
-        if (lens === null) {
+        if (link === null) {
           setName('')
           setQuery(DEFAULT_QUERY)
           setVariables('')
@@ -127,7 +127,7 @@ export const LensEditor = ({ lens }: LensEditorProps) => {
   const preview = () =>
     startTransition(async () => {
       setError(null)
-      const ran = await previewLens({ query, variables })
+      const ran = await previewLink({ query, variables })
       if (ran.error) setError(ran.error)
       else setResult({ data: ran.data ?? null, errors: ran.errors ?? [] })
     })
@@ -135,7 +135,7 @@ export const LensEditor = ({ lens }: LensEditorProps) => {
   const remove = () =>
     startTransition(async () => {
       setError(null)
-      const removed = await deleteLens(lens!.id)
+      const removed = await deleteLink(link!.id)
       if (removed.error) setError(removed.error)
       else router.refresh()
     })
@@ -143,7 +143,7 @@ export const LensEditor = ({ lens }: LensEditorProps) => {
   if (!open) {
     return (
       <button type="button" onClick={() => setOpen(true)}>
-        {lens === null ? 'New lens' : 'Edit'}
+        {link === null ? 'Register a Link' : 'Edit'}
       </button>
     )
   }
@@ -153,10 +153,10 @@ export const LensEditor = ({ lens }: LensEditorProps) => {
   return (
     <div className={styles.editor}>
       <label className={styles.field}>
-        Start from a prewritten query
+        Start from a filed query
         <select className={styles.name} value={template?.id ?? ''} onChange={(e) => pickTemplate(e.target.value)}>
           <option value="">Custom query</option>
-          {LENS_TEMPLATES.map((t) => (
+          {LINK_TEMPLATES.map((t) => (
             <option key={t.id} value={t.id}>
               {t.label}
             </option>
@@ -194,7 +194,7 @@ export const LensEditor = ({ lens }: LensEditorProps) => {
         ))
       ) : (
         <label className={styles.field}>
-          Variables (JSON, fixed — viewers can&apos;t change them)
+          Variables (JSON, fixed at registration — whoever the Link is issued to cannot change them)
           <textarea
             className={styles.variables}
             value={variables}
@@ -211,7 +211,7 @@ export const LensEditor = ({ lens }: LensEditorProps) => {
         <button type="button" onClick={preview} disabled={pending || query.trim() === ''}>
           Preview
         </button>
-        {lens !== null && (
+        {link !== null && (
           <>
             <button type="button" onClick={remove} disabled={pending}>
               Delete
@@ -226,7 +226,7 @@ export const LensEditor = ({ lens }: LensEditorProps) => {
       {result !== null && (
         <>
           {result.errors.length > 0 && <p className={styles.error}>{result.errors.join(' — ')}</p>}
-          <LensTable data={result.data} />
+          <LinkTable data={result.data} />
           <details>
             <summary className={styles.note}>Raw result</summary>
             <pre className={styles.result}>{JSON.stringify({ data: result.data }, null, 2)}</pre>

@@ -1,5 +1,5 @@
-// Save-time validation for a Lens query (docs/sharing-layer/07-lens.md). A
-// Lens runs its stored query under the CREATOR's context whenever a viewer
+// Save-time validation for a Link query (docs/sharing-layer/07-link.md). A
+// Link runs its stored query under the CREATOR's context whenever a viewer
 // opens it, so everything that can be rejected is rejected when the creator
 // saves, not when a viewer runs:
 //
@@ -10,12 +10,12 @@
 // - it must be a single query operation with exactly ONE top-level field, so
 //   the CSV rendering's "primary list" is unambiguous;
 // - it must not touch the session-only surfaces (`sharedWithMe`,
-//   `includeShared:`): a Lens executes in token mode where those reject at
+//   `includeShared:`): a Link executes in token mode where those reject at
 //   run time anyway, but failing at save time is a clear message instead of a
 //   broken share.
 //
 // Pure module: `graphql` + the SDL only (relative .ts import so `node --test`
-// can load it — see test/lensValidate.test.ts).
+// can load it — see test/linkValidate.test.ts).
 import {
   buildSchema,
   parse,
@@ -34,9 +34,9 @@ import { typeDefs } from '../api/graphql/schema.graphql.ts'
 export const SESSION_ONLY_FIELDS = ['sharedWithMe']
 export const SESSION_ONLY_ARGUMENTS = ['includeShared']
 
-export type LensValidation = { ok: true } | { ok: false; message: string }
+export type LinkValidation = { ok: true } | { ok: false; message: string }
 
-const invalid = (message: string): LensValidation => ({ ok: false, message })
+const invalid = (message: string): LinkValidation => ({ ok: false, message })
 
 const schema = buildSchema(typeDefs)
 
@@ -57,7 +57,7 @@ const sessionOnlyUse = (document: DocumentNode): string | null => {
   return found
 }
 
-export const validateLensQuery = (query: string): LensValidation => {
+export const validateLinkQuery = (query: string): LinkValidation => {
   let document: DocumentNode
   try {
     document = parse(query)
@@ -67,11 +67,11 @@ export const validateLensQuery = (query: string): LensValidation => {
 
   const operations = document.definitions.filter((d) => d.kind === Kind.OPERATION_DEFINITION)
   if (operations.length !== 1) {
-    return invalid('A lens holds exactly one operation.')
+    return invalid('A Link holds exactly one operation.')
   }
   const [operation] = operations
   if (operation.operation !== 'query') {
-    return invalid('A lens must be a query operation.')
+    return invalid('A Link must be a query operation.')
   }
 
   const errors = validate(schema, document)
@@ -81,22 +81,22 @@ export const validateLensQuery = (query: string): LensValidation => {
 
   const topLevel = operation.selectionSet.selections.filter((s) => s.kind === Kind.FIELD)
   if (operation.selectionSet.selections.length !== topLevel.length || topLevel.length !== 1) {
-    return invalid('A lens selects exactly one top-level field, so its CSV rendering is unambiguous.')
+    return invalid('A Link selects exactly one top-level field, so its CSV rendering is unambiguous.')
   }
 
   const sessionOnly = sessionOnlyUse(document)
   if (sessionOnly !== null) {
     return invalid(
-      `A lens cannot use ${sessionOnly} — that surface is session-only. A lens already runs in its creator's context.`
+      `A Link cannot use ${sessionOnly} — that surface is session-only. A Link already runs in its creator's context.`
     )
   }
 
   return { ok: true }
 }
 
-// The single top-level field a lens query selects — the `field` dimension of
+// The single top-level field a link query selects — the `field` dimension of
 // the request.timing metric (src/observability.js). Total on any query that
-// passed validateLensQuery (which enforces exactly one top-level field);
+// passed validateLinkQuery (which enforces exactly one top-level field);
 // answers null rather than throwing on anything else, since a metric label is
 // never worth failing a request over.
 export const topLevelFieldOf = (query: string): string | null => {
@@ -114,7 +114,7 @@ export const topLevelFieldOf = (query: string): string | null => {
 
 // The stored variables must be a JSON object (fixed by the creator at save
 // time; viewers never supply variables).
-export const parseLensVariables = (
+export const parseLinkVariables = (
   raw: string
 ): { ok: true; variables: Record<string, unknown> } | { ok: false; message: string } => {
   const trimmed = raw.trim()

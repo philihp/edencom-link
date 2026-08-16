@@ -1,4 +1,4 @@
-// Unit coverage for turning a described audience into a lens's share columns.
+// Unit coverage for turning a described audience into a link's share columns.
 //
 // This is the seam where a model's words become who can see someone's data, so
 // what's pinned here is the refusals as much as the matches: an audience the
@@ -9,7 +9,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { resolveAudience, type OwnAudiences } from '../src/app/lens/audience.ts'
+import { resolveAudience, type OwnAudiences } from '../src/app/link/audience.ts'
 
 const ONE_CORP: OwnAudiences = {
   corporations: [{ id: 98000001, name: 'KarmaFleet' }],

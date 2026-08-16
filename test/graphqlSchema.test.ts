@@ -98,7 +98,7 @@ test('ids stay String — EVE item ids overflow GraphQL Int', () => {
 
 // The invariant the whole entity-edge design rests on: because the entity types
 // bottom out in scalars, a response is at most row → entity → scalar, so
-// src/app/lens/flatten.ts can flatten any row to one CSV line by joining one
+// src/app/link/flatten.ts can flatten any row to one CSV line by joining one
 // level of keys. Adding an object field to Owner/ItemType/Location silently
 // breaks CSV export (and opens the deep-query surface the flat design avoids) —
 // so it breaks here first.
@@ -165,7 +165,7 @@ test('the flat scalar beside each edge survives', () => {
 })
 
 // The columns the legacy /api/{character,corp}/jobs CSV routes serve and the
-// lens drop-in templates select (docs/sharing-layer/09-sheets-parity.md).
+// link drop-in templates select (docs/sharing-layer/09-sheets-parity.md).
 // output_count is deliberately absent: it's an SQL join against
 // sde_blueprint_product in the RPCs, and opt-in-only on the legacy routes.
 test('IndustryJob carries the Sheets-parity columns', () => {
@@ -196,7 +196,7 @@ test('Character exposes the EVE character id distinctly from the registration id
 // restock is the first field to take a structured input and the first to
 // return an aggregate. Both are easy to erode: an extra object field on
 // RestockLine would break CSV flattening, and a widened target input would let
-// a lens ask for a sum nobody can reproduce.
+// a link ask for a sum nobody can reproduce.
 test('restock takes a required list of RestockTargets and defaults to below-target only', () => {
   const schema = buildSchema(typeDefs)
   const field = (schema.getQueryType() as GraphQLObjectType).getFields().restock
