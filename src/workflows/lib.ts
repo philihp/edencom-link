@@ -43,28 +43,45 @@ export async function withRefreshTask(taskId: string | undefined, run: () => Pro
     await run()
     return
   }
+  await markTaskRunning(taskId)
+  try {
+    await run()
+    await markTaskSettled(taskId)
+  } catch (e) {
+    await markTaskSettled(taskId, e)
+  }
+}
+
+// The two halves of withRefreshTask, usable on their own by a workflow whose
+// run is a fan-out rather than a single call (market-prices): there is no one
+// function to wrap, so the row is flipped to running alongside the heartbeat
+// that opens the run and settled alongside the one that closes it. Same
+// best-effort semantics — a tracked run always reaches a terminal state the
+// /jobs poller can see. Plain helpers, NOT steps: import them dynamically
+// inside a `'use step'` body, per the rules above.
+export async function markTaskRunning(taskId: string) {
   const { sudoSupabase } = await import('@/supabase.js')
   await sudoSupabase
     .from('refresh_task')
     .update({ status: 'running', started_at: new Date().toISOString(), updated_at: new Date().toISOString() })
     .eq('id', taskId)
-  try {
-    await run()
-    await sudoSupabase
-      .from('refresh_task')
-      .update({ status: 'done', ended_at: new Date().toISOString(), updated_at: new Date().toISOString() })
-      .eq('id', taskId)
-  } catch (e) {
-    await sudoSupabase
-      .from('refresh_task')
-      .update({
-        status: 'error',
-        ended_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        error: String(e instanceof Error ? e.message : e).slice(0, 500),
-      })
-      .eq('id', taskId)
-  }
+}
+
+// Settle the row: done when `failure` is absent, error (carrying its message)
+// otherwise.
+export async function markTaskSettled(taskId: string, failure?: unknown) {
+  const { sudoSupabase } = await import('@/supabase.js')
+  await sudoSupabase
+    .from('refresh_task')
+    .update({
+      status: failure === undefined ? 'done' : 'error',
+      ended_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      ...(failure === undefined
+        ? {}
+        : { error: String(failure instanceof Error ? failure.message : failure).slice(0, 500) }),
+    })
+    .eq('id', taskId)
 }
 
 // Run a whole extract job with the same start/end heartbeat pair
