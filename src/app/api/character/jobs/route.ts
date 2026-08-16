@@ -8,7 +8,7 @@ import { parseColumnsParam, selectColumns } from '@/utils/columnsParam'
 import { toCsv } from '@/utils/csv'
 
 // Column set/order returned when ?columns= is omitted (src/app/api/
-// csvColumns.ts, shared with the lens drop-in templates).
+// csvColumns.ts, shared with the link drop-in templates).
 const DEFAULT_COLUMNS = CHARACTER_JOB_COLUMNS
 
 // Every column ?columns= may select, in any order/subset: DEFAULT_COLUMNS plus

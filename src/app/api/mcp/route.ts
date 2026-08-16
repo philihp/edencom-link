@@ -2,15 +2,15 @@
 // via OAuth 2.1 against Supabase Auth acting as the authorization server (the
 // consent page lives at /oauth/consent; discovery metadata at
 // /.well-known/oauth-protected-resource). Tools are read-only queries over
-// the extracted DB — see tools.ts — with one exception: lensTools.ts can
-// create and share a lens, the server's only write surface.
+// the extracted DB — see tools.ts — with one exception: linkTools.ts can
+// create and share a link, the server's only write surface.
 import { createMcpHandler, withMcpAuth } from 'mcp-handler'
 
 import { verifySupabaseToken } from './auth'
 import { registerEstateTools } from './estateTools'
 import { registerExploreTools } from './exploreTools'
 import { registerIndustryTools } from './industryTools'
-import { registerLensTools } from './lensTools'
+import { registerLinkTools } from './linkTools'
 import { registerShippingTools } from './shippingTools'
 import { registerTools } from './tools'
 
@@ -28,7 +28,7 @@ const handler = createMcpHandler(
     registerIndustryTools(server)
     registerExploreTools(server)
     registerShippingTools(server)
-    registerLensTools(server)
+    registerLinkTools(server)
   },
   {
     serverInfo: { name: 'edencom-link', version: '1.0.0' },
@@ -36,8 +36,8 @@ const handler = createMcpHandler(
     // with `ttlMs: 0` (immediately stale) and `cacheScope: 'private'` unless
     // told otherwise, so without this every client re-fetches the tool list on
     // every use. Both of these results are the same for every caller: tools are
-    // registered unconditionally above — the `lens` dark-launch flag is checked
-    // inside the lens handlers, not at registration — so nothing here varies by
+    // registered unconditionally above — the `link` dark-launch flag is checked
+    // inside the link handlers, not at registration — so nothing here varies by
     // who is asking, and `public` is honest even though the endpoint is
     // authenticated. RLS, not the cache scope, is what scopes the *data* a tool
     // returns. The TTL is how long a deploy that changes the tool list can take

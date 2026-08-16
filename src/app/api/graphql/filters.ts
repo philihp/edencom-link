@@ -8,7 +8,7 @@
 // filters, not paging, are how callers narrow further.
 export const ASSET_CAP = 5000
 export const LIST_CAP = 1000
-// The lens CSV surface serves whole result sets — a Sheets =IMPORTDATA() tab
+// The link CSV surface serves whole result sets — a Sheets =IMPORTDATA() tab
 // can't page or narrow — so its context raises both caps to this bound
 // (docs/sharing-layer/09-sheets-parity.md). Sized to what the uncapped legacy
 // CSV routes already serve inside the same 60s budget; a result that still
@@ -33,7 +33,7 @@ export const clampLimit = (limit: number | null | undefined, cap: number): numbe
 //     narrower result.
 //
 // The two are mutually exclusive: one asks a fuzzy question and the other an
-// exact one, and a stored lens that blended them is one nobody can predict a
+// exact one, and a stored link that blended them is one nobody can predict a
 // year later. Resolving the names is per-dimension (the caller's characters,
 // the SDE, the structure caches) and lives with the resolvers; the shaping and
 // the refusals are here, where they stay pure and testable.

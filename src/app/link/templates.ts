@@ -1,12 +1,12 @@
-// The prewritten lens queries every editing surface offers: the /lens template
-// picker, the /graphql example buttons, and the MCP lens_schema examples all
+// The prewritten link queries every editing surface offers: the /link template
+// picker, the /graphql example buttons, and the MCP link_schema examples all
 // read this one list, so the three can't drift. Pure data + graphql only —
-// test/lensTemplates.test.ts validates every query against the schema and pins
+// test/linkTemplates.test.ts validates every query against the schema and pins
 // the drop-in templates' aliases to the legacy CSV routes' column lists.
 //
 // The seven "Sheets drop-in" templates supersede the api_token CSV routes
 // (docs/sharing-layer/09-sheets-parity.md): each aliases its selections to the
-// legacy route's snake_case columns IN ORDER, so the lens CSV's header row is
+// legacy route's snake_case columns IN ORDER, so the link CSV's header row is
 // byte-identical and an existing =IMPORTDATA() tab re-points cleanly. GraphQL
 // aliases are what make this template authoring instead of resolver code.
 //
@@ -15,7 +15,7 @@
 // fields take comma-separated input. Templates whose variables are structured
 // (restock targets) declare none and keep the JSON textarea.
 
-export type LensTemplateField = {
+export type LinkTemplateField = {
   name: string
   label: string
   kind: 'text' | 'int' | 'list'
@@ -23,33 +23,33 @@ export type LensTemplateField = {
   hint?: string
 }
 
-export type LensTemplate = {
+export type LinkTemplate = {
   id: string
   label: string
   // One sentence; doubles as the MCP examples' `intent`.
   description: string
   query: string
   variables?: Record<string, unknown>
-  variableFields?: LensTemplateField[]
+  variableFields?: LinkTemplateField[]
 }
 
 // Every drop-in takes an optional $owners: absent reads everything the creator
 // owns (characters AND corporations, where the root spans both) — the one
 // deliberate difference from the legacy routes, which split the two sides into
 // /api/character/* and /api/corp/*. Filling it narrows to named owners.
-const OWNERS_FIELD: LensTemplateField = {
+const OWNERS_FIELD: LinkTemplateField = {
   name: 'owners',
   label: 'Owners',
   kind: 'list',
   hint: 'Character or corporation names/ids, comma-separated; empty means everything you own.',
 }
 
-export const LENS_TEMPLATES: LensTemplate[] = [
+export const LINK_TEMPLATES: LinkTemplate[] = [
   {
     id: 'sheets-character-assets',
     label: 'Assets (Sheets drop-in)',
     description:
-      'Every asset stack you own, with the /api/character/assets CSV columns — point an existing sheet tab at this lens.',
+      'Every asset stack you own, with the /api/character/assets CSV columns — point an existing sheet tab at this link.',
     query: `query Assets($owners: [String!]) {
   assets(owners: $owners) {
     rows {
@@ -396,7 +396,7 @@ export const LENS_TEMPLATES: LensTemplate[] = [
     id: 'restock',
     label: 'Restock list',
     description:
-      'How much to buy of each item to get back up to a supply buffer. The targets ARE the lens — a viewer cannot change them, so the buffer levels stay yours.',
+      'How much to buy of each item to get back up to a supply buffer. The targets ARE the link — a viewer cannot change them, so the buffer levels stay yours.',
     query: `query Restock($targets: [RestockTarget!]!) {
   restock(targets: $targets) {
     typeName

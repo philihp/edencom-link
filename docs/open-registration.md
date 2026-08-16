@@ -128,7 +128,7 @@ require `is_established_account()`. Everything else was left alone, deliberately
 
 - per-owner extract tables key on the caller's own registrations, so they are
   naturally empty for an account that owns nothing;
-- the fitting/asset/den/lens share audiences go through
+- the fitting/asset/den/link share audiences go through
   `share_audience_matches()`, which needs overlapping corp or alliance
   membership — except its deliberately public branch (no secret, no audience
   lists), which the sharing-layer docs define as *public*, so anonymous callers

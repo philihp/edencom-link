@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 
-import { LENS_FLAG, hasFlag } from '@/flags'
+import { LINK_FLAG, hasFlag } from '@/flags'
 import { createClient } from '@/utils/supabase/server'
 
 import { establishedUser } from '../lib/establishedUser'
@@ -81,7 +81,7 @@ const SettingsPage = async ({ searchParams }: { searchParams: Promise<{ gice?: s
 
       <Discord appId={process.env.DISCORD_APP_ID ?? null} channels={discordChannels ?? []} />
 
-      <ApiToken initialToken={settings?.api_token ?? null} lensEnabled={await hasFlag(user.id, LENS_FLAG)} />
+      <ApiToken initialToken={settings?.api_token ?? null} linkEnabled={await hasFlag(user.id, LINK_FLAG)} />
 
       {chancellor && (
         <>

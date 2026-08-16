@@ -2,8 +2,8 @@
 
 import { useState } from 'react'
 
-import { csvRows } from '@/app/lens/flatten'
-import { LENS_TEMPLATES } from '@/app/lens/templates'
+import { csvRows } from '@/app/link/flatten'
+import { LINK_TEMPLATES } from '@/app/link/templates'
 import { toCsv } from '@/utils/csv'
 import styles from './graphql.module.css'
 
@@ -13,11 +13,11 @@ import styles from './graphql.module.css'
 //
 // GET /api/graphql serves GraphiQL, which is where the schema-aware
 // autocomplete and the docs explorer live. This page keeps the examples —
-// the shared lens template list (src/app/lens/templates.ts), since a lens IS
+// the shared link template list (src/app/link/templates.ts), since a link IS
 // a stored query of this same shape — and the CSV download GraphiQL can't
-// offer, via the same Lens flattening (src/app/lens/flatten.ts).
+// offer, via the same Link flattening (src/app/link/flatten.ts).
 
-const EXAMPLES = LENS_TEMPLATES
+const EXAMPLES = LINK_TEMPLATES
 
 export const QueryEditor = () => {
   const [query, setQuery] = useState(EXAMPLES[0].query)

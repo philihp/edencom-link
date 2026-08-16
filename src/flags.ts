@@ -2,7 +2,7 @@ import { createServiceClient } from '@/utils/supabase/service'
 
 // Dark-launch flag names live here so callers can't typo them apart.
 export const GRAPHQL_FLAG = 'graphql'
-export const LENS_FLAG = 'lens'
+export const LINK_FLAG = 'link'
 export const FIT_UI_FLAG = 'fit-ui'
 
 // Every flag the Chancellor tools offer as a checkbox, with the copy shown
@@ -11,7 +11,7 @@ export const FIT_UI_FLAG = 'fit-ui'
 // dropped when a Chancellor saves.
 export const KNOWN_FLAGS: { flag: string; label: string }[] = [
   { flag: GRAPHQL_FLAG, label: 'GraphQL API and its playground (/graphql)' },
-  { flag: LENS_FLAG, label: 'Lenses — saved, shareable GraphQL queries (/lens)' },
+  { flag: LINK_FLAG, label: 'Links — Standing Observation Links, saved queries issued to others (/link)' },
   { flag: FIT_UI_FLAG, label: 'Our own ship-fitting stack, in progress (/item/[itemId])' },
 ]
 

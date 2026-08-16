@@ -1,7 +1,7 @@
-// Truncated lens ids, both directions — pure string work only, so the node
+// Truncated link ids, both directions — pure string work only, so the node
 // test runner can cover it without a client.
 //
-// Accept side (uuidPrefixRange): a truncated id in the /lens/[id] path is any
+// Accept side (uuidPrefixRange): a truncated id in the /link/[id] path is any
 // prefix of the canonical uuid formatting, at least 8 hex digits long
 // (shorter invites typo-matches and shrinks the scan space for probing which
 // ids exist). Postgres compares uuids bytewise — the same order as their hex
@@ -47,7 +47,7 @@ const formatHexPrefix = (hex: string): string =>
 
 // The shortest canonical-format prefix of `id` (≥ 8 hex digits) that no id in
 // `contested` shares, or the full id when nothing shorter disambiguates.
-// The caller decides which ids are contested — for lenses that's only ones
+// The caller decides which ids are contested — for links that's only ones
 // created no later than `id`, since resolution takes the oldest-created match
 // and anything newer loses the tie on its own.
 export const shortestUuidPrefix = (id: string, contested: string[]): string => {

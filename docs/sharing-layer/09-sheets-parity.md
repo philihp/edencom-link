@@ -1,6 +1,6 @@
-# Sheets parity: lenses supersede the api_token CSV routes
+# Sheets parity: links supersede the api_token CSV routes
 
-**Status: in progress** — this phase's code ships alongside the lens creator
+**Status: in progress** — this phase's code ships alongside the link creator
 UI (templates, fork, IMPORTDATA surfacing) and the `request.timing`
 instrumentation the BRIN index project reads (`docs/brin-indexes/README.md`).
 
@@ -19,26 +19,26 @@ by the per-user `api_token` in the query string:
 | `/api/corp/blueprints` | `corp_blueprints` | no |
 | `/api/corp/jobs` | `corp_industry_jobs` | yes |
 
-The lens CSV surface (`/lens/[id]/csv?share=…`, `docs/sharing-layer/07-lens.md`)
-was always positioned to supersede them: a lens is a stored GraphQL query, so
+The link CSV surface (`/link/[id]/csv?share=…`, `docs/sharing-layer/07-link.md`)
+was always positioned to supersede them: a link is a stored GraphQL query, so
 one general surface replaces seven bespoke ones, and sharing rides the unified
 audience model instead of a bearer token that unlocks *everything* the account
 owns. This phase closes the parity gaps and starts the deprecation.
 
 ## Decisions
 
-- **No time travel in lenses.** The GraphQL schema stays current-data-only —
+- **No time travel in links.** The GraphQL schema stays current-data-only —
   the `_over_time` SCD histories are deliberately not exposed (see
   `04-graphql-shared.md`). `at=` stays a legacy-route capability, documented as
-  the one thing lenses do not replace. This is also load-bearing for
+  the one thing links do not replace. This is also load-bearing for
   measurement: the legacy `at=` requests are the `served: 'historical'` series
   the BRIN before/after comparison pivots on, so those routes cannot be removed
   until that project's measurement windows close.
 - **Column-name parity is template authoring, not resolver code.** `toCsv`
   derives CSV headers from response keys, and GraphQL aliases control those
-  keys — so a lens template selecting `item_id: itemId` produces a
+  keys — so a link template selecting `item_id: itemId` produces a
   byte-identical header row to the legacy route, and an existing sheet tab
-  re-points cleanly. The drop-in templates in `src/app/lens/templates.ts` pin
+  re-points cleanly. The drop-in templates in `src/app/link/templates.ts` pin
   this, tested against the routes' own column lists.
 - **`output_count` is not carried over.** In the jobs RPCs it is an SQL join
   against `sde_blueprint_product` (`runs * product_quantity`), and on the
@@ -51,7 +51,7 @@ owns. This phase closes the parity gaps and starts the deprecation.
 - **Exports are uncapped up to `EXPORT_CAP`, and refuse beyond it.** The
   interactive GraphQL caps (`ASSET_CAP` 5000 / `LIST_CAP` 1000) exist so an
   ad-hoc query stays bounded; a Sheets tab can't page, so a capped CSV would be
-  *silently* short — the one failure mode worse than failing. The lens CSV
+  *silently* short — the one failure mode worse than failing. The link CSV
   route runs its query with the caps raised to `EXPORT_CAP` (50 000, sized to
   what the uncapped legacy routes already serve inside the same 60 s budget)
   via `contextForUser(userId, { exporting: true })`, and answers 400 rather
@@ -66,14 +66,14 @@ owns. This phase closes the parity gaps and starts the deprecation.
    Drift-guarded in `test/graphqlSchema.test.ts`.
 2. **Export caps** — `EXPORT_CAP` in `filters.ts`; `GraphqlContext.caps`
    (defaults `ASSET_CAP`/`LIST_CAP`) threaded through every resolver cap site;
-   `runLens(lens, { exporting })` → `contextForUser(userId, { exporting })`;
+   `runLink(link, { exporting })` → `contextForUser(userId, { exporting })`;
    the CSV route refuses at the bound.
-3. **Drop-in templates** — one `LensTemplate` per legacy route in
-   `src/app/lens/templates.ts`, aliasing every default column to its
+3. **Drop-in templates** — one `LinkTemplate` per legacy route in
+   `src/app/link/templates.ts`, aliasing every default column to its
    snake_case legacy name, tested for exact header equality in
-   `test/lensTemplates.test.ts`.
-4. **Deprecation** — `/account/settings` presents lenses as the primary Sheets
-   integration for `lens`-flagged accounts and moves the legacy formulas under
+   `test/linkTemplates.test.ts`.
+4. **Deprecation** — `/account/settings` presents links as the primary Sheets
+   integration for `link`-flagged accounts and moves the legacy formulas under
    a Deprecated heading; the seven routes answer a `Deprecation: true` header.
 
 ## What deprecation means here
@@ -81,8 +81,8 @@ owns. This phase closes the parity gaps and starts the deprecation.
 - The routes stay live and instrumented. They are the `served: 'historical'`
   measurement instrument for `docs/brin-indexes/README.md`; removal is not
   scheduled before that project's per-table measurement windows have closed,
-  and `at=` users have no lens replacement to move to.
-- Steering *all* users to lenses requires lifting the `lens` dark-launch flag
+  and `at=` users have no link replacement to move to.
+- Steering *all* users to links requires lifting the `link` dark-launch flag
   (`src/flags.ts`) — a product call taken separately, not by this phase.
 - When removal is eventually scheduled, it is its own phase with its own
   notice period; nothing in this phase breaks an existing `=IMPORTDATA()`
@@ -91,16 +91,16 @@ owns. This phase closes the parity gaps and starts the deprecation.
 ## Tests
 
 - `test/graphqlSchema.test.ts` — the six IndustryJob columns.
-- `test/lensTemplates.test.ts` — every template validates against the schema;
+- `test/linkTemplates.test.ts` — every template validates against the schema;
   the drop-in templates' aliases equal the legacy routes' default column lists
   exactly.
-- `test/lensValidate.test.ts` — `topLevelFieldOf` (the timing metric's `field`
+- `test/linkValidate.test.ts` — `topLevelFieldOf` (the timing metric's `field`
   dimension).
 
 ## Verification
 
-- Save a drop-in template as a lens, link-share it, and diff
-  `/lens/<id>/csv?share=…` against the matching legacy route's output: header
+- Save a drop-in template as a link, link-share it, and diff
+  `/link/<id>/csv?share=…` against the matching legacy route's output: header
   byte-identical, rows equal modulo ordering.
-- A lens whose result reaches `EXPORT_CAP` answers 400, not a shortened CSV.
+- A link whose result reaches `EXPORT_CAP` answers 400, not a shortened CSV.
 - `request.timing` lines appear for both surfaces in Vercel Observability.

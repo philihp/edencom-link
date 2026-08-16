@@ -19,7 +19,7 @@ type ShareDialogProps = {
   save: (input: SaveShareInput) => Promise<SaveShareResult>
   revoke: () => Promise<{ error?: string }>
   // Overrides the what-sharing-means line for subjects that aren't a
-  // container of items (a lens shares query results, not an item tree).
+  // container of items (a link shares query results, not an item tree).
   hint?: string
 }
 

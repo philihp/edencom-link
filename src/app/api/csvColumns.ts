@@ -1,6 +1,6 @@
 // The column sets the api_token CSV routes serve, factored out of the route
-// files so the lens drop-in templates (src/app/lens/templates.ts) can be
-// tested for exact header parity against them (test/lensTemplates.test.ts) —
+// files so the link drop-in templates (src/app/link/templates.ts) can be
+// tested for exact header parity against them (test/linkTemplates.test.ts) —
 // route files may only export Next's route fields, so the arrays live here.
 // Each matches its Postgres function's json_build_object in schema.sql; order
 // is the CSV column order.

@@ -58,7 +58,7 @@ export type GraphqlContext = {
   // is: EVE ids overflow 32-bit Int.
   corporationIds: string[]
   // Per-list row bounds the resolvers cap with. The HTTP surfaces get the
-  // defaults (ASSET_CAP/LIST_CAP); the lens CSV export raises both to
+  // defaults (ASSET_CAP/LIST_CAP); the link CSV export raises both to
   // EXPORT_CAP, since a Sheets tab can't page and a silently shortened CSV is
   // worse than a refusal (docs/sharing-layer/09-sheets-parity.md).
   caps: { asset: number; list: number }
@@ -249,12 +249,12 @@ const contextFor = async (
 
 // A user's GraphQL context outside any request auth: the service client plus
 // their registrations — what api_token mode builds, minus the token lookup.
-// This is how a Lens (docs/sharing-layer/07-lens.md) runs a stored query
+// This is how a Link (docs/sharing-layer/07-link.md) runs a stored query
 // under its CREATOR's security context: mode 'token' means the session-only
 // surfaces (includeShared/sharedWithMe) reject exactly as they do for Bearer
 // callers, and the resolvers' leak-guard .in('registration_id', …) is the
 // barrier. Callers must have authorized the viewer BEFORE building this.
-// `exporting` is the lens CSV surface's cap raise — see GraphqlContext.caps.
+// `exporting` is the link CSV surface's cap raise — see GraphqlContext.caps.
 export const contextForUser = (
   userId: string,
   { exporting = false }: { exporting?: boolean } = {}

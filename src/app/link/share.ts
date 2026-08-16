@@ -1,11 +1,11 @@
-// Writing a lens's audience: the one implementation behind both the editor's
+// Writing a link's audience: the one implementation behind both the editor's
 // share dialog (via the server action in ./actions.ts) and the MCP
-// `create_lens` tool.
+// `create_link` tool.
 //
 // Factored out of actions.ts rather than left there because a 'use server'
 // module exports server actions, not helpers — the MCP layer needs the logic,
 // not a callable action. Nothing here authorizes anybody: callers establish
-// who the user is (cookie session or bearer token) and that they hold the lens
+// who the user is (cookie session or bearer token) and that they hold the link
 // flag, then hand in a client whose RLS pins the write to them.
 import type { SupabaseClient } from '@supabase/supabase-js'
 
@@ -67,15 +67,15 @@ export const fetchOwnAudiences = async (supabase: SupabaseClient): Promise<OwnAu
 
 export type ApplyShareResult = { ok: true; share: ShareState | null } | { ok: false; message: string }
 
-// Write a resolved audience onto a lens row the caller owns.
+// Write a resolved audience onto a link row the caller owns.
 //
 // `existingSecret` is the secret currently on the row: an existing link
 // survives a re-share, unless `rotateLink` mints a fresh secret, which
-// invalidates every URL ever issued for this lens.
-export const applyLensShare = async (
+// invalidates every URL ever issued for this link.
+export const applyLinkShare = async (
   supabase: SupabaseClient,
   userId: string,
-  lensId: string,
+  linkId: string,
   audience: ResolvedAudience,
   { existingSecret, rotateLink = false }: { existingSecret: string | null; rotateLink?: boolean }
 ): Promise<ApplyShareResult> => {
@@ -83,9 +83,9 @@ export const applyLensShare = async (
   // is how this table spells "public", so it must never be reached by accident.
   if (!audience.shared) {
     const { error } = await supabase
-      .from('lens')
+      .from('link')
       .update({ enabled: false, corporation_ids: [], alliance_ids: [], secret: null })
-      .eq('id', lensId)
+      .eq('id', linkId)
       .eq('user_id', userId)
     return error ? { ok: false, message: error.message } : { ok: true, share: null }
   }
@@ -102,14 +102,14 @@ export const applyLensShare = async (
   const secret = audience.link ? (rotateLink || !existingSecret ? mintShareSecret() : existingSecret) : null
 
   const { error } = await supabase
-    .from('lens')
+    .from('link')
     .update({
       enabled: true,
       corporation_ids: audience.corporationIds,
       alliance_ids: audience.allianceIds,
       secret,
     })
-    .eq('id', lensId)
+    .eq('id', linkId)
     .eq('user_id', userId)
   if (error) return { ok: false, message: error.message }
 
@@ -119,7 +119,7 @@ export const applyLensShare = async (
       corporationIds: audience.corporationIds,
       allianceIds: audience.allianceIds,
       hasLink: secret != null,
-      shareParam: secret != null && salt != null ? signShare(lensId, secret, salt) : null,
+      shareParam: secret != null && salt != null ? signShare(linkId, secret, salt) : null,
       isPublic: secret == null && audience.corporationIds.length === 0 && audience.allianceIds.length === 0,
     },
   }

@@ -22,7 +22,7 @@ export const verifyShareToken = (shareId: string, secret: string, salt: string, 
 }
 
 // Links minted before the URL cleanup carried the share id ahead of the
-// signature — `?share=<shareId>.<signature>` — which for a lens repeated the
+// signature — `?share=<shareId>.<signature>` — which for a link repeated the
 // id already sitting in the path. Both forms parse; the id half, when present,
 // only ever NARROWS the row lookup (a caller rejects a mismatch), it never
 // selects a row the URL's own path doesn't already identify. New links carry

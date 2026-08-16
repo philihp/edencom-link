@@ -6,83 +6,88 @@ import { revalidatePath } from 'next/cache'
 import { contextForUser } from '@/app/api/graphql/context'
 import { schema } from '@/app/api/graphql/schema'
 import type { SaveShareInput, SaveShareResult } from '@/app/asset/shareActions'
-import { LENS_FLAG, hasFlag } from '@/flags'
+import { LINK_FLAG, hasFlag } from '@/flags'
 import { createClient } from '@/utils/supabase/server'
-import { resolveLens } from './access'
-import { applyLensShare, fetchOwnAudiences } from './share'
-import { parseLensVariables, validateLensQuery } from './validate'
+import { resolveLink } from './access'
+import { applyLinkShare, fetchOwnAudiences } from './share'
+import { parseLinkVariables, validateLinkQuery } from './validate'
 
-// Server actions behind the /lens editor (docs/sharing-layer/07-lens.md).
-// Cookie-session client throughout, like every share writer: RLS pins lens
+// Server actions behind the /link editor (docs/sharing-layer/07-link.md).
+// Cookie-session client throughout, like every share writer: RLS pins link
 // rows to their owner. Everything here is additionally gated on the caller's
-// own lens flag — the editor is dark-launched.
+// own link flag — the editor is dark-launched.
+
+// Every action here refuses the same way when the caller has no Link
+// clearance: the account exists, the capability is not issued to it. Stated
+// plainly first — a model or a person reading this needs to know who to ask.
+const NOT_CLEARED = 'Link clearance is not held on this account. Ask the site owner to issue it.'
 
 const flaggedUser = async (supabase: Awaited<ReturnType<typeof createClient>>): Promise<string | null> => {
   const { data: auth, error } = await supabase.auth.getUser()
   if (error || !auth?.user) return null
-  return (await hasFlag(auth.user.id, LENS_FLAG)) ? auth.user.id : null
+  return (await hasFlag(auth.user.id, LINK_FLAG)) ? auth.user.id : null
 }
 
-export type SaveLensInput = { name: string; query: string; variables: string }
-export type SaveLensResult = { error?: string; id?: string }
+export type SaveLinkInput = { name: string; query: string; variables: string }
+export type SaveLinkResult = { error?: string; id?: string }
 
-export const saveLens = async (lensId: string | null, input: SaveLensInput): Promise<SaveLensResult> => {
+export const saveLink = async (linkId: string | null, input: SaveLinkInput): Promise<SaveLinkResult> => {
   const supabase = await createClient()
   const userId = await flaggedUser(supabase)
-  if (!userId) return { error: 'Not available' }
+  if (!userId) return { error: NOT_CLEARED }
 
   const name = input.name.trim()
-  if (name === '') return { error: 'Give the lens a name.' }
+  if (name === '') return { error: 'Give the Link a name.' }
 
-  const validation = validateLensQuery(input.query)
+  const validation = validateLinkQuery(input.query)
   if (!validation.ok) return { error: validation.message }
-  const variables = parseLensVariables(input.variables)
+  const variables = parseLinkVariables(input.variables)
   if (!variables.ok) return { error: variables.message }
 
   // RLS pins both branches to the caller: with check on insert, using on the
   // update's row match (a foreign id simply updates nothing).
   const row = { name, query: input.query, variables: variables.variables, updated_at: new Date().toISOString() }
-  const { data: saved, error } = lensId
-    ? await supabase.from('lens').update(row).eq('id', lensId).eq('user_id', userId).select('id').maybeSingle()
+  const { data: saved, error } = linkId
+    ? await supabase.from('link').update(row).eq('id', linkId).eq('user_id', userId).select('id').maybeSingle()
     : await supabase
-        .from('lens')
+        .from('link')
         .insert({ ...row, user_id: userId })
         .select('id')
         .maybeSingle()
   if (error || !saved) return { error: error?.message ?? 'Save failed' }
 
-  revalidatePath('/lens')
-  revalidatePath(`/lens/${saved.id}`)
+  revalidatePath('/link')
+  revalidatePath(`/link/${saved.id}`)
   return { id: saved.id as string }
 }
 
-export const deleteLens = async (lensId: string): Promise<{ error?: string }> => {
+export const deleteLink = async (linkId: string): Promise<{ error?: string }> => {
   const supabase = await createClient()
   const userId = await flaggedUser(supabase)
-  if (!userId) return { error: 'Not available' }
+  if (!userId) return { error: NOT_CLEARED }
 
-  const { error } = await supabase.from('lens').delete().eq('id', lensId).eq('user_id', userId)
+  const { error } = await supabase.from('link').delete().eq('id', linkId).eq('user_id', userId)
   if (error) return { error: error.message }
-  revalidatePath('/lens')
+  revalidatePath('/link')
   return {}
 }
 
 // Run-as-me preview for the editor: validates, then executes under the
 // CALLER's own context — the same result the audience will see, since the
-// caller is the creator. Doesn't require the graphql flag: the lens flag is
+// caller is the creator. Doesn't require the graphql flag: the link flag is
 // the editor's gate. Structured rather than pre-stringified so the editor can
-// render the same table the viewer page does (lensTable.tsx).
-export const previewLens = async (input: {
+// render the same table the viewer page does (linkTable.tsx).
+export const previewLink = async (input: {
   query: string
   variables: string
 }): Promise<{ error?: string; data?: unknown; errors?: string[] }> => {
   const supabase = await createClient()
   const userId = await flaggedUser(supabase)
-  if (!userId) return { error: 'Not available' }
+  if (!userId) return { error: NOT_CLEARED }
 
-  const validation = validateLensQuery(input.query)
+  const validation = validateLinkQuery(input.query)
   if (!validation.ok) return { error: validation.message }
-  const variables = parseLensVariables(input.variables)
+  const variables = parseLinkVariables(input.variables)
   if (!variables.ok) return { error: variables.message }
 
   const contextValue = await contextForUser(userId)
@@ -90,66 +95,66 @@ export const previewLens = async (input: {
   return { data: result.data ?? null, errors: (result.errors ?? []).map((e) => e.message) }
 }
 
-// Fork a lens someone shared with you into your own list: same query and
+// Fork a link someone shared with you into your own list: same query and
 // variables, your name on the row, unshared until you share it. Authorization
-// is exactly the viewer's (resolveLens's RLS or signed-link door) — if you can
-// see a lens run, you can keep its QUERY, which was always visible on its
+// is exactly the viewer's (resolveLink's RLS or signed-link door) — if you can
+// see a link run, you can keep its QUERY, which was always visible on its
 // page. The insert carries no audience: a copy never inherits the original's
 // sharing.
-export const copyLens = async (lensId: string, share?: string): Promise<{ error?: string; id?: string }> => {
+export const copyLink = async (linkId: string, share?: string): Promise<{ error?: string; id?: string }> => {
   const supabase = await createClient()
   const userId = await flaggedUser(supabase)
-  if (!userId) return { error: 'Not available' }
+  if (!userId) return { error: NOT_CLEARED }
 
-  const resolved = await resolveLens(lensId, share)
+  const resolved = await resolveLink(linkId, share)
   if (!resolved) return { error: 'Not found' }
 
   // RLS's with check pins the insert to the caller.
   const { data: saved, error } = await supabase
-    .from('lens')
+    .from('link')
     .insert({
       user_id: userId,
-      name: `Copy of ${resolved.lens.name}`,
-      query: resolved.lens.query,
-      variables: resolved.lens.variables ?? {},
+      name: `Copy of ${resolved.link.name}`,
+      query: resolved.link.query,
+      variables: resolved.link.variables ?? {},
     })
     .select('id')
     .maybeSingle()
   if (error || !saved) return { error: error?.message ?? 'Copy failed' }
 
-  revalidatePath('/lens')
+  revalidatePath('/link')
   return { id: saved.id as string }
 }
 
-// The audience side, driven by the shared ShareDialog. The lens row IS the
+// The audience side, driven by the shared ShareDialog. The link row IS the
 // share row, so save/revoke toggle its `enabled` flag and audience columns
 // rather than upserting a sibling row. Requested audience ids are filtered to
 // ones the caller actually has (the setSharedAlliances defense) — the dialog
 // only offers those, but a form post is not a promise.
 //
-// The write itself lives in ./share.ts, shared with the MCP create_lens tool
+// The write itself lives in ./share.ts, shared with the MCP create_link tool
 // so the two can't disagree about what "public" or "not shared" mean.
-export const saveLensShare = async (lensId: string, input: SaveShareInput): Promise<SaveShareResult> => {
+export const saveLinkShare = async (linkId: string, input: SaveShareInput): Promise<SaveShareResult> => {
   const supabase = await createClient()
   const userId = await flaggedUser(supabase)
-  if (!userId) return { error: 'Not available' }
+  if (!userId) return { error: NOT_CLEARED }
 
   const { data: existing } = await supabase
-    .from('lens')
+    .from('link')
     .select('id, secret')
-    .eq('id', lensId)
+    .eq('id', linkId)
     .eq('user_id', userId)
     .maybeSingle<{ id: string; secret: string | null }>()
-  if (!existing) return { error: 'Not your lens' }
+  if (!existing) return { error: 'Not your Link.' }
 
   const own = await fetchOwnAudiences(supabase)
   const ownCorpIds = new Set(own.corporations.map((c) => c.id))
   const ownAllianceIds = new Set(own.alliances.map((a) => a.id))
 
-  const applied = await applyLensShare(
+  const applied = await applyLinkShare(
     supabase,
     userId,
-    lensId,
+    linkId,
     {
       corporationIds: input.isPublic
         ? []
@@ -167,27 +172,27 @@ export const saveLensShare = async (lensId: string, input: SaveShareInput): Prom
   )
   if (!applied.ok) return { error: applied.message }
 
-  revalidatePath('/lens')
-  revalidatePath(`/lens/${lensId}`)
+  revalidatePath('/link')
+  revalidatePath(`/link/${linkId}`)
   return { share: applied.share ?? undefined }
 }
 
-export const revokeLensShare = async (lensId: string): Promise<{ error?: string }> => {
+export const revokeLinkShare = async (linkId: string): Promise<{ error?: string }> => {
   const supabase = await createClient()
   const userId = await flaggedUser(supabase)
-  if (!userId) return { error: 'Not available' }
+  if (!userId) return { error: NOT_CLEARED }
 
   // Back to the unshared state — NOT an empty audience, which would be public.
-  const applied = await applyLensShare(
+  const applied = await applyLinkShare(
     supabase,
     userId,
-    lensId,
+    linkId,
     { corporationIds: [], allianceIds: [], link: false, isPublic: false, shared: false },
     { existingSecret: null }
   )
   if (!applied.ok) return { error: applied.message }
 
-  revalidatePath('/lens')
-  revalidatePath(`/lens/${lensId}`)
+  revalidatePath('/link')
+  revalidatePath(`/link/${linkId}`)
   return {}
 }

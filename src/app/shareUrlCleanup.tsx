@@ -3,8 +3,8 @@
 import { useEffect } from 'react'
 
 // Graceful migration off the old `?share=<shareId>.<signature>` links, which
-// repeated an id the path already carries (a lens's worst case:
-// /lens/<id>?share=<id>.<sig>). Rendered only by a page that has ALREADY
+// repeated an id the path already carries (a link's worst case:
+// /link/<id>?share=<id>.<sig>). Rendered only by a page that has ALREADY
 // resolved the share server-side, it rewrites the address bar to the short
 // `?share=<signature>` form the resolvers now also accept — so the URL a
 // visitor copies onward, or bookmarks, is the clean one.

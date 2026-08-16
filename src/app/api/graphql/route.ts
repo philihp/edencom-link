@@ -36,7 +36,7 @@ const { handleRequest } = createYoga({
   graphqlEndpoint: '/api/graphql',
   fetchAPI: { Response },
   // GraphiQL for schema-aware autocomplete and the docs explorer; the /graphql
-  // page's plain editor stays as the lightweight surface (and is what the Lens
+  // page's plain editor stays as the lightweight surface (and is what the Link
   // editor reuses). credentials same-origin so the IDE's own requests carry
   // the Supabase session cookie — the Bearer path is for external tools.
   graphiql: () =>

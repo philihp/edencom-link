@@ -18,7 +18,7 @@ export type RequestTiming = {
   served: 'live' | 'historical'
 }
 
-export type TimedSurface = 'legacy_csv' | 'lens_csv' | 'lens_view' | 'graphql' | 'public_csv'
+export type TimedSurface = 'legacy_csv' | 'link_csv' | 'link_view' | 'graphql' | 'public_csv'
 
 type TimingMeta = {
   // The static route template — never an interpolated id, so the metric's
@@ -26,10 +26,10 @@ type TimingMeta = {
   route: string
   surface: TimedSurface
   // The Postgres function the route calls (CSV routes) or the GraphQL root
-  // field (lens/graphql surfaces).
+  // field (link/graphql surfaces).
   field: string | null
   // Stamps a `Deprecation: true` response header: the api_token CSV routes are
-  // superseded by lenses (docs/sharing-layer/09-sheets-parity.md) but stay
+  // superseded by links (docs/sharing-layer/09-sheets-parity.md) but stay
   // live — they are the BRIN measurement instrument and the only at= surface.
   deprecated?: boolean
 }
