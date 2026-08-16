@@ -1,30 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 
+import { CHARACTER_ORDER_COLUMNS } from '@/app/api/csvColumns'
 import { RequestTiming, withRequestTiming } from '@/app/api/requestTiming'
 import { resolvePlayer } from '@/utils/apiToken'
 import { AT_PARAM_ERROR, parseAtParam } from '@/utils/atParam'
 import { parseColumnsParam, selectColumns } from '@/utils/columnsParam'
 import { toCsv } from '@/utils/csv'
 
-// Default column set/order, matching character_orders()'s json_build_object
-// in schema.sql. ?columns= can reorder/subset these.
-const ALLOWED_COLUMNS = [
-  'duration',
-  'escrow',
-  'is_buy_order',
-  'is_corporation',
-  'issued',
-  'location_id',
-  'min_volume',
-  'order_id',
-  'price',
-  'range',
-  'region_id',
-  'type_id',
-  'volume_remain',
-  'volume_total',
-  'character_name',
-] as const
+// Default column set/order (src/app/api/csvColumns.ts, shared with the lens
+// drop-in templates). ?columns= can reorder/subset these.
+const ALLOWED_COLUMNS = CHARACTER_ORDER_COLUMNS
 
 // Public CSV endpoint for Google Sheets =IMPORTDATA(): the player's open market
 // orders across all of their characters, with the owning character's name, as of

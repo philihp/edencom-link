@@ -750,6 +750,7 @@ export const resolvers = {
         location_id: number
         range: string
         is_buy: boolean
+        is_corporation: boolean
         price: number
         volume_total: number
         volume_remain: number
@@ -790,6 +791,7 @@ export const resolvers = {
           type: itemTypeOf(types, r.type_id),
           location: locationOf(locations, ref),
           isBuy: r.is_buy,
+          isCorporation: r.is_corporation,
           price: Number(r.price),
           volumeTotal: String(r.volume_total),
           volumeRemain: String(r.volume_remain),

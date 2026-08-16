@@ -8,6 +8,7 @@ import { schema } from '@/app/api/graphql/schema'
 import type { SaveShareInput, SaveShareResult } from '@/app/asset/shareActions'
 import { LENS_FLAG, hasFlag } from '@/flags'
 import { createClient } from '@/utils/supabase/server'
+import { resolveLens } from './access'
 import { applyLensShare, fetchOwnAudiences } from './share'
 import { parseLensVariables, validateLensQuery } from './validate'
 
@@ -69,11 +70,12 @@ export const deleteLens = async (lensId: string): Promise<{ error?: string }> =>
 // Run-as-me preview for the editor: validates, then executes under the
 // CALLER's own context — the same result the audience will see, since the
 // caller is the creator. Doesn't require the graphql flag: the lens flag is
-// the editor's gate.
+// the editor's gate. Structured rather than pre-stringified so the editor can
+// render the same table the viewer page does (lensTable.tsx).
 export const previewLens = async (input: {
   query: string
   variables: string
-}): Promise<{ error?: string; result?: string }> => {
+}): Promise<{ error?: string; data?: unknown; errors?: string[] }> => {
   const supabase = await createClient()
   const userId = await flaggedUser(supabase)
   if (!userId) return { error: 'Not available' }
@@ -85,9 +87,38 @@ export const previewLens = async (input: {
 
   const contextValue = await contextForUser(userId)
   const result = await graphql({ schema, source: input.query, variableValues: variables.variables, contextValue })
-  return {
-    result: JSON.stringify({ data: result.data ?? null, errors: result.errors?.map((e) => e.message) }, null, 2),
-  }
+  return { data: result.data ?? null, errors: (result.errors ?? []).map((e) => e.message) }
+}
+
+// Fork a lens someone shared with you into your own list: same query and
+// variables, your name on the row, unshared until you share it. Authorization
+// is exactly the viewer's (resolveLens's RLS or signed-link door) — if you can
+// see a lens run, you can keep its QUERY, which was always visible on its
+// page. The insert carries no audience: a copy never inherits the original's
+// sharing.
+export const copyLens = async (lensId: string, share?: string): Promise<{ error?: string; id?: string }> => {
+  const supabase = await createClient()
+  const userId = await flaggedUser(supabase)
+  if (!userId) return { error: 'Not available' }
+
+  const resolved = await resolveLens(lensId, share)
+  if (!resolved) return { error: 'Not found' }
+
+  // RLS's with check pins the insert to the caller.
+  const { data: saved, error } = await supabase
+    .from('lens')
+    .insert({
+      user_id: userId,
+      name: `Copy of ${resolved.lens.name}`,
+      query: resolved.lens.query,
+      variables: resolved.lens.variables ?? {},
+    })
+    .select('id')
+    .maybeSingle()
+  if (error || !saved) return { error: error?.message ?? 'Copy failed' }
+
+  revalidatePath('/lens')
+  return { id: saved.id as string }
 }
 
 // The audience side, driven by the shared ShareDialog. The lens row IS the

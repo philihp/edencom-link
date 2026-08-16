@@ -1,24 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 
+import { CHARACTER_ASSET_COLUMNS } from '@/app/api/csvColumns'
 import { RequestTiming, withRequestTiming } from '@/app/api/requestTiming'
 import { resolvePlayer } from '@/utils/apiToken'
 import { AT_PARAM_ERROR, parseAtParam } from '@/utils/atParam'
 import { parseColumnsParam, selectColumns } from '@/utils/columnsParam'
 import { toCsv } from '@/utils/csv'
 
-// Default column set/order, matching character_asset_snapshot_at()'s
-// json_build_object in schema.sql. ?columns= can reorder/subset these.
-const ALLOWED_COLUMNS = [
-  'is_blueprint_copy',
-  'is_singleton',
-  'item_id',
-  'location_flag',
-  'location_id',
-  'location_type',
-  'quantity',
-  'type_id',
-  'character_name',
-] as const
+// Default column set/order (src/app/api/csvColumns.ts, shared with the lens
+// drop-in templates). ?columns= can reorder/subset these.
+const ALLOWED_COLUMNS = CHARACTER_ASSET_COLUMNS
 
 // Public CSV endpoint for Google Sheets =IMPORTDATA(): the player's raw asset
 // rows (one per item stack) with the owning character's name, as of an optional

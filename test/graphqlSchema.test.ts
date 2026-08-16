@@ -177,6 +177,8 @@ test('IndustryJob carries the Sheets-parity columns', () => {
   assert.equal(String(fields.facilityId.type), 'String!')
   assert.equal(String(fields.pauseDate.type), 'String')
   assert.equal(String(fields.completedCharacterId.type), 'String')
+  const order = objectType(schema, 'MarketOrder').getFields()
+  assert.equal(String(order.isCorporation.type), 'Boolean!')
 })
 
 test('Character exposes the EVE character id distinctly from the registration id', () => {

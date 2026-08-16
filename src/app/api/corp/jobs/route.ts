@@ -1,40 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 
+import { CORP_JOB_COLUMNS } from '@/app/api/csvColumns'
 import { RequestTiming, withRequestTiming } from '@/app/api/requestTiming'
 import { resolvePlayer } from '@/utils/apiToken'
 import { AT_PARAM_ERROR, parseAtParam } from '@/utils/atParam'
 import { parseColumnsParam, selectColumns } from '@/utils/columnsParam'
 import { toCsv } from '@/utils/csv'
 
-// Column set/order returned when ?columns= is omitted, matching
-// corp_industry_jobs()'s json_build_object in schema.sql.
-const DEFAULT_COLUMNS = [
-  'activity_id',
-  'blueprint_id',
-  'blueprint_location_id',
-  'blueprint_type_id',
-  'completed_character_id',
-  'completed_date',
-  'corporation_id',
-  'cost',
-  'duration',
-  'end_date',
-  'facility_id',
-  'installer_id',
-  'job_id',
-  'licensed_runs',
-  'output_location_id',
-  'pause_date',
-  'probability',
-  'product_type_id',
-  'runs',
-  'start_date',
-  'station_id',
-  'status',
-  'successful_runs',
-  'blueprint_type_name',
-  'product_type_name',
-] as const
+// Column set/order returned when ?columns= is omitted (src/app/api/
+// csvColumns.ts, shared with the lens drop-in templates).
+const DEFAULT_COLUMNS = CORP_JOB_COLUMNS
 
 // Every column ?columns= may select, in any order/subset: DEFAULT_COLUMNS plus
 // fields that exist in the json_build_object but are opt-in only (excluded

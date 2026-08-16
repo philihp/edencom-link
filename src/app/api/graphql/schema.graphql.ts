@@ -378,6 +378,8 @@ export const typeDefs = /* GraphQL */ `
     locationName: String
     regionId: String!
     isBuy: Boolean!
+    "Placed on behalf of the character's corporation (ESI's flag; the order still rides the character's extract)."
+    isCorporation: Boolean!
     price: Float!
     volumeTotal: String!
     volumeRemain: String!

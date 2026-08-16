@@ -31,6 +31,7 @@ import { lensEdits, resolveLensRef } from '@/app/lens/lensRef'
 import { runLens } from '@/app/lens/run'
 import { applyLensShare, fetchOwnAudiences } from '@/app/lens/share'
 import { shortLensId } from '@/app/lens/shortId'
+import { LENS_TEMPLATES } from '@/app/lens/templates'
 import { parseLensVariables, SESSION_ONLY_ARGUMENTS, SESSION_ONLY_FIELDS, validateLensQuery } from '@/app/lens/validate'
 import { LENS_FLAG, hasFlag } from '@/flags'
 import { signShare, tokenSalt } from '@/shareToken'
@@ -67,45 +68,16 @@ const FLAG_REFUSAL =
 // result into a data dump — the lens's own page and CSV are where the rows live.
 const PREVIEW_ROWS = 5
 
-// Worked examples beat prose for query shape, and these cover the joints a
-// model actually gets wrong: filtering to a container (the plural `locations:`
-// takes the item id of the container, which search_assets / browse_assets
-// resolve), filtering to a set of types (`types:` takes SDE type ids or whole
-// names), and the restock list, whose targets live in the variables.
-//
-// Every filter is a SINGULAR/PLURAL pair — `location:` searches names,
-// `locations:` is an exact list — so an example using one of the pre-pairing
-// spellings (locationId:, typeIds:) no longer validates against the schema.
-const EXAMPLES = [
-  {
-    intent: 'Everything sitting in one container or ship, by its item id.',
-    query:
-      'query { assets(locations: ["1046809423988"], limit: 500) { totalCount truncated rows { itemId typeId typeName quantity locationFlag ownerName } } }',
-  },
-  {
-    intent: 'Only certain item types, wherever they are — e.g. the inputs to a fuel block.',
-    query:
-      'query { assets(types: ["16273", "17887", "16275", "9832", "44"], limit: 500) { totalCount rows { typeId typeName quantity locationName ownerName } } }',
-  },
-  {
-    intent: 'Both at once: those types, but only inside that container. Variables keep the ids out of the query text.',
-    query:
-      'query Stock($container: [String!], $types: [String!]) { assets(locations: $container, types: $types, limit: 500) { totalCount rows { typeId typeName quantity } } }',
-    variables: { container: ['1046809423988'], types: ['16273', '17887'] },
-  },
-  {
-    intent:
-      "A restock list: how much to buy of each item to get back up to a supply buffer. The targets ARE the lens — a viewer cannot change them, so the buffer levels stay the creator's.",
-    query:
-      'query Restock($targets: [RestockTarget!]!) { restock(targets: $targets, location: "1DQ1-A") { typeName groupName target onHand delta toBuy } }',
-    variables: {
-      targets: [
-        { type: 'Nitrogen Fuel Block', quantity: 10000 },
-        { type: 'Tritanium', quantity: 1000000 },
-      ],
-    },
-  },
-]
+// Worked examples beat prose for query shape. Derived from the shared template
+// list (src/app/lens/templates.ts) — the same prewritten queries the /lens
+// picker and /graphql example buttons offer, so a model and a browser user are
+// taught from one text, and test/lensTemplates.test.ts keeps every example
+// valid against the schema.
+const EXAMPLES = LENS_TEMPLATES.map((t) => ({
+  intent: t.description,
+  query: t.query,
+  ...(t.variables ? { variables: t.variables } : {}),
+}))
 
 // The lens's own URLs. Absolute when the deployment knows its origin, paths
 // otherwise (see src/utils/siteUrl.ts). `pathId` is the shortest id that

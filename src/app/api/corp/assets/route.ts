@@ -1,23 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 
+import { CORP_ASSET_COLUMNS } from '@/app/api/csvColumns'
 import { RequestTiming, withRequestTiming } from '@/app/api/requestTiming'
 import { resolvePlayer } from '@/utils/apiToken'
 import { parseColumnsParam, selectColumns } from '@/utils/columnsParam'
 import { toCsv } from '@/utils/csv'
 
-// Default column set/order, matching corp_assets()'s json_build_object in
-// schema.sql. ?columns= can reorder/subset these.
-const ALLOWED_COLUMNS = [
-  'item_id',
-  'corporation_id',
-  'type_id',
-  'location_id',
-  'location_flag',
-  'location_type',
-  'quantity',
-  'is_singleton',
-  'is_blueprint_copy',
-] as const
+// Default column set/order (src/app/api/csvColumns.ts, shared with the lens
+// drop-in templates). ?columns= can reorder/subset these.
+const ALLOWED_COLUMNS = CORP_ASSET_COLUMNS
 
 // Public CSV endpoint for Google Sheets =IMPORTDATA(): the current live asset
 // rows (one per item stack) for the corporation(s) the caller's characters
