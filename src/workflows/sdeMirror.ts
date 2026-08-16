@@ -189,14 +189,31 @@ export async function sdeMirrorWorkflow() {
 
     // Drain one entry: chase its slice cursor until the entry reports done,
     // through the file's own named step (ingest_<stem>) so the run tree names
-    // each file instead of showing a wall of "ingestSlice".
+    // each file instead of showing a wall of "ingestSlice". A slice returning
+    // the cursor it was given can't happen today (a pause line is always past
+    // startLine), but if a regression ever makes it possible, fail the file
+    // rather than spawning steps forever.
     const drainFile = async (file: SdeFile): Promise<void> => {
       const step = ingestStepFor(file)
       let cursor = 0
       while (cursor !== -1) {
-        cursor = await step(plan.zipUrl, file, plan.build, cursor)
+        const next = await step(plan.zipUrl, file, plan.build, cursor)
+        if (next === cursor) throw new Error(`sde-mirror: ${file.stem} made no progress at line ${cursor}`)
+        cursor = next
       }
     }
+
+    // Per-file fault isolation (the characterAssets catch-collect shape): a
+    // file whose slices exhaust their bounded step retries should cost that
+    // file — and any tail step reading it — not the other 100 files' committed
+    // work. Failures are collected and thrown together after everything else
+    // drains, so the run still reads failed and completed_at is never stamped.
+    const failures: { stem: string; message: string }[] = []
+    const caught = (stem: string, p: Promise<void>): Promise<void> =>
+      p.catch((e) => {
+        console.error(`[sde-mirror] ${stem} failed:`, e)
+        failures.push({ stem, message: e instanceof Error ? e.message : String(e) })
+      })
 
     // Largest compressed entries first, so the longest slice chains (typeDogma)
     // start at t=0 and wall clock tracks the longest chain instead of whatever
@@ -207,13 +224,17 @@ export async function sdeMirrorWorkflow() {
 
     // Build each lane's sequential drain chain synchronously, keeping a per-file
     // completion promise so the tail steps below can start on their actual
-    // inputs rather than on the whole ingest.
+    // inputs rather than on the whole ingest. The drained map holds the
+    // UNCAUGHT per-file promise — a tail step whose input failed must reject,
+    // not run over a half-ingested table — while the lane chains on the caught
+    // continuation so it proceeds past a failed file to its lane-mates.
     const drained = new Map<string, Promise<void>>()
     const laneDone = lanes.map((lane) => {
       let prev: Promise<void> = Promise.resolve()
       for (const file of lane) {
-        prev = prev.then(() => drainFile(file))
-        drained.set(file.stem, prev)
+        const attempt = prev.then(() => drainFile(file))
+        drained.set(file.stem, attempt)
+        prev = caught(file.stem, attempt)
       }
       return prev
     })
@@ -226,12 +247,37 @@ export async function sdeMirrorWorkflow() {
     // only sde_npc_stations, the esf_data re-encode needs only its 7 input
     // tables, and the sheet_csv re-encode needs only sde_types + sde_blueprints.
     // All are forced — a non-skipped run always re-does the full ingest, and the
-    // derived encodes re-write to match.
-    const stations = afterStems(['npc_stations']).then(() => stationNames())
-    const esf = afterStems(ESF_INPUT_STEMS).then(() => encodeEsf(plan.build))
-    const sheets = afterStems(SHEET_INPUT_STEMS).then(() => encodeSheets(plan.build))
+    // derived encodes re-write to match. Each is caught like the files are: a
+    // failed input file rejects its afterStems, so the tail step is skipped and
+    // recorded as its own failure (alongside the file's) instead of running
+    // over a half-ingested table or killing the run.
+    const stations = caught(
+      'station_names',
+      afterStems(['npc_stations']).then(() => stationNames())
+    )
+    const esf = caught(
+      'esf_data',
+      afterStems(ESF_INPUT_STEMS).then(() => encodeEsf(plan.build))
+    )
+    const sheets = caught(
+      'sheet_csv',
+      afterStems(SHEET_INPUT_STEMS).then(() => encodeSheets(plan.build))
+    )
 
     await Promise.all([allDrained, stations, esf, sheets])
+    // A partial ingest must not finalize: no view refresh over half-ingested
+    // tables, no completed_at stamp (so the next night re-ingests). Throwing
+    // lands in the catch below — finalizeFailed closes the heartbeat ok: false
+    // and the rethrow marks the run failed in Observability — while everything
+    // that did land stays committed.
+    if (failures.length > 0) {
+      throw new AggregateError(
+        failures.map(({ stem, message }) => new Error(`${stem}: ${message}`)),
+        // The message is what finalizeFailed records and /jobs renders, so
+        // name the casualties rather than just counting them.
+        `sde-mirror: ${failures.length} step(s) failed: ${failures.map(({ stem }) => stem).join(', ')}`
+      )
+    }
     // Last, once every table has landed: refresh the derived views, stamp the
     // build completed with this run's commit, and close the heartbeat planRun()
     // opened.

@@ -308,7 +308,7 @@ export const fetchAllPages = async (fetchPage) => {
 const SCHEMA_CACHE_MISS = 'PGRST205'
 const RELOAD_BACKOFF_MS = [500, 1000, 2000, 4000, 8000]
 
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+export const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 // Run a PostgREST write, retrying while it reports a schema-cache miss, and
 // return its final result unchanged so the caller keeps its own error message.
