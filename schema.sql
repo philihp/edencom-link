@@ -1971,6 +1971,10 @@ create unique index character_clone_over_time_current_jump_idx
   on public.character_clone_over_time (registration_id, jump_clone_id) where is_current and not is_home;
 create unique index character_clone_over_time_current_home_idx
   on public.character_clone_over_time (registration_id) where is_current and is_home;
+-- Time travel: valid_from climbs with physical order (the reconcile appends),
+-- so BRIN serves `valid_from <= as_of` at ~kB size (docs/brin-indexes/README.md).
+create index character_clone_over_time_asof_idx
+  on public.character_clone_over_time using brin (valid_from) with (pages_per_range = 32);
 
 alter table public.character_clone_over_time enable row level security;
 create policy "Users read own clones"
@@ -2040,6 +2044,10 @@ create table public.character_skill_over_time (
 create index character_skill_over_time_registration_id_idx on public.character_skill_over_time (registration_id);
 create unique index character_skill_over_time_current_idx
   on public.character_skill_over_time (registration_id, skill_id) where is_current;
+-- Time travel: valid_from climbs with physical order (the reconcile appends),
+-- so BRIN serves `valid_from <= as_of` at ~kB size (docs/brin-indexes/README.md).
+create index character_skill_over_time_asof_idx
+  on public.character_skill_over_time using brin (valid_from) with (pages_per_range = 32);
 
 alter table public.character_skill_over_time enable row level security;
 create policy "Users read own skills"
@@ -2085,6 +2093,10 @@ create table public.character_ship_over_time (
 create index character_ship_over_time_registration_id_idx on public.character_ship_over_time (registration_id);
 create unique index character_ship_over_time_current_idx
   on public.character_ship_over_time (registration_id) where is_current;
+-- Time travel: valid_from climbs with physical order (the reconcile appends),
+-- so BRIN serves `valid_from <= as_of` at ~kB size (docs/brin-indexes/README.md).
+create index character_ship_over_time_asof_idx
+  on public.character_ship_over_time using brin (valid_from) with (pages_per_range = 32);
 
 alter table public.character_ship_over_time enable row level security;
 create policy "Users read own ship"
@@ -2152,6 +2164,10 @@ create index character_fitting_over_time_registration_id_idx
 -- At most one live row per fit; also the collision guard the reconcile relies on.
 create unique index character_fitting_over_time_current_idx
   on public.character_fitting_over_time (registration_id, fitting_id) where is_current;
+-- Time travel: valid_from climbs with physical order (the reconcile appends),
+-- so BRIN serves `valid_from <= as_of` at ~kB size (docs/brin-indexes/README.md).
+create index character_fitting_over_time_asof_idx
+  on public.character_fitting_over_time using brin (valid_from) with (pages_per_range = 32);
 
 alter table public.character_fitting_over_time enable row level security;
 create policy "Users read own fittings"
@@ -2280,6 +2296,10 @@ create unique index character_mercenary_den_over_time_current_idx
 -- Time-travel lookups walking a den's version history.
 create index character_mercenary_den_over_time_den_idx
   on public.character_mercenary_den_over_time (registration_id, den_id, valid_until desc);
+-- Time travel: valid_from climbs with physical order (the reconcile appends),
+-- so BRIN serves `valid_from <= as_of` at ~kB size (docs/brin-indexes/README.md).
+create index character_mercenary_den_over_time_asof_idx
+  on public.character_mercenary_den_over_time using brin (valid_from) with (pages_per_range = 32);
 
 alter table public.character_mercenary_den_over_time enable row level security;
 -- Base policy: a user reads their own characters' dens. The sharing policy that
