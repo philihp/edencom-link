@@ -262,7 +262,11 @@ current snapshot, and the tail of history is the cheap part to lose.
 1. Should the other nine markets gnf.lt offers be tracked? Adding one is a
    one-line change to `TRACKED_MARKETS`, and it costs a step and its share of
    the churn above.
-2. `list_market_orders` (MCP) reads the player's *own* orders. Nothing yet
+2. Should the other growth tables follow this table onto BRIN? Nothing else in
+   the schema uses it. Surveyed, with a measurement-first plan, in
+   [docs/brin-indexes/](../brin-indexes/) — the honest answer is that it depends
+   on production row counts nobody has looked at yet.
+3. `list_market_orders` (MCP) reads the player's *own* orders. Nothing yet
    exposes these captured prices to MCP or to the app's own pages — an
    `appraise_items` that priced against a chosen market and moment would be the
    obvious next use of this table.
