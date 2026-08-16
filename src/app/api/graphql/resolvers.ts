@@ -320,7 +320,7 @@ const characterIdentitiesFor = async (
       { name, characterId: ctx.ownerCharacterIdById.get(id) ?? null },
     ])
   )
-  const foreign = [...new Set([...registrationIds])].filter((id) => !identities.has(id))
+  const foreign = [...new Set(registrationIds)].filter((id) => !identities.has(id))
   if (foreign.length > 0) {
     const { data } = await ctx.supabase
       .from('character_directory')

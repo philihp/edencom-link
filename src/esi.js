@@ -61,7 +61,7 @@ const esiFetch = async (path, { access_token, params = {}, method = 'GET', body,
   const response = await fetch(`${ESI_BASE}${path}?${search}`, {
     method,
     headers,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
+    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
   })
   if (!response.ok) {
     throw await esiError(response, path, label)

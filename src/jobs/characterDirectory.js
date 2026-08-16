@@ -104,7 +104,7 @@ export const runCharacterDirectory = async () => {
     )
   )
   const corpIds = [...new Set(map((a) => Number(a.corporation_id), resolved))]
-  const allianceIds = [...new Set([...allianceByCorp.values()])]
+  const allianceIds = [...new Set(allianceByCorp.values())]
 
   // One bulk name resolution for every corp + alliance id. Missing entries just
   // fall back to a null name (the row still carries the authoritative ids).
