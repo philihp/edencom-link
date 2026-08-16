@@ -62,6 +62,6 @@ const handler = async (request: NextRequest, _context: unknown, timing: RequestT
 }
 
 export const GET = withRequestTiming(
-  { route: '/api/character/assets', surface: 'legacy_csv', field: 'character_asset_snapshot_at' },
+  { route: '/api/character/assets', surface: 'legacy_csv', field: 'character_asset_snapshot_at', deprecated: true },
   handler
 )

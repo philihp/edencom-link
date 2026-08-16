@@ -5,7 +5,12 @@ import { useEffect, useState } from 'react'
 import { generateApiToken } from './actions'
 import Dot from './dot'
 
-const ApiToken = ({ initialToken }: { initialToken: string | null }) => {
+// `lensEnabled`: the account carries the `lens` dark-launch flag, so lenses
+// are presented as the primary Sheets integration and the token URLs move
+// under a Deprecated heading (docs/sharing-layer/09-sheets-parity.md). For
+// unflagged accounts the token URLs stay the only offer — deprecating a thing
+// someone has no replacement for would just be rude.
+const ApiToken = ({ initialToken, lensEnabled }: { initialToken: string | null; lensEnabled: boolean }) => {
   const [token, setToken] = useState(initialToken)
   const [origin, setOrigin] = useState('')
   const [response, setResponse] = useState('')
@@ -37,9 +42,27 @@ const ApiToken = ({ initialToken }: { initialToken: string | null }) => {
   return (
     <>
       <h2>API Access (Google Sheets)</h2>
-      <p>
-        Pull your data into a spreadsheet with <code>=IMPORTDATA(url)</code> (the first row is the column headers):
-      </p>
+      {lensEnabled && (
+        <p>
+          The current way to feed a spreadsheet is a <a href="/lens">lens</a>: pick a &quot;Sheets drop-in&quot;
+          template (same columns as the URLs below), share it as a link, and paste the <code>=IMPORTDATA(…)</code>{' '}
+          formula it shows you. A lens link exposes only that one query — unlike the API token below, which unlocks
+          everything at once.
+        </p>
+      )}
+      {lensEnabled ? (
+        <h3>Deprecated: token URLs</h3>
+      ) : (
+        <p>
+          Pull your data into a spreadsheet with <code>=IMPORTDATA(url)</code> (the first row is the column headers):
+        </p>
+      )}
+      {lensEnabled && (
+        <p>
+          These keep working, but new sheets should use lenses. The one thing staying here for now is <code>at=</code>{' '}
+          history — lenses read current data only.
+        </p>
+      )}
       {assetsUrl && blueprintsUrl && industryUrl && ordersUrl && corpAssetsUrl && corpBlueprintsUrl && corpJobsUrl && (
         <ul>
           <li>

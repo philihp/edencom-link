@@ -48,6 +48,6 @@ const handler = async (request: NextRequest, _context: unknown, timing: RequestT
 }
 
 export const GET = withRequestTiming(
-  { route: '/api/character/blueprints', surface: 'legacy_csv', field: 'character_blueprints' },
+  { route: '/api/character/blueprints', surface: 'legacy_csv', field: 'character_blueprints', deprecated: true },
   handler
 )

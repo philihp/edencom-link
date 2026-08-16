@@ -28,6 +28,10 @@ type TimingMeta = {
   // The Postgres function the route calls (CSV routes) or the GraphQL root
   // field (lens/graphql surfaces).
   field: string | null
+  // Stamps a `Deprecation: true` response header: the api_token CSV routes are
+  // superseded by lenses (docs/sharing-layer/09-sheets-parity.md) but stay
+  // live — they are the BRIN measurement instrument and the only at= surface.
+  deprecated?: boolean
 }
 
 const outcomeOf = (status: number): string => {
@@ -45,8 +49,11 @@ export const withRequestTiming =
     const timing: RequestTiming = { rows: null, served: 'live' }
     try {
       const response = await handler(request, context, timing)
+      if (meta.deprecated) response.headers.set('Deprecation', 'true')
       recordRequest({
-        ...meta,
+        route: meta.route,
+        surface: meta.surface,
+        field: meta.field,
         served: timing.served,
         outcome: outcomeOf(response.status),
         status: response.status,
@@ -56,7 +63,9 @@ export const withRequestTiming =
       return response
     } catch (error) {
       recordRequest({
-        ...meta,
+        route: meta.route,
+        surface: meta.surface,
+        field: meta.field,
         served: timing.served,
         outcome: 'query_failed',
         status: 500,

@@ -71,6 +71,6 @@ const handler = async (request: NextRequest, _context: unknown, timing: RequestT
 }
 
 export const GET = withRequestTiming(
-  { route: '/api/corp/jobs', surface: 'legacy_csv', field: 'corp_industry_jobs' },
+  { route: '/api/corp/jobs', surface: 'legacy_csv', field: 'corp_industry_jobs', deprecated: true },
   handler
 )
