@@ -2,20 +2,20 @@
 
 EVE Online hangar/wallet/industry tracker, deployed on Vercel.
 
-- **Stack:** Next.js 16 (App Router) + React 19 + TypeScript 6, ESM. Supabase (Postgres). `ramda` for utilities; `ts-pattern` for branching on string-literal unions where `.exhaustive()` catches new members at build time — it does not replace early-return guard chains or range comparisons (`freshnessLevel`, `securityMultiplier`, mercenary-den `colorOf` stay plain ifs).
+- **Stack:** Next.js 16 (App Router) + React 19 + TypeScript 7, ESM. Supabase (Postgres). `ramda` for utilities; `ts-pattern` for branching on string-literal unions where `.exhaustive()` catches new members at build time — it does not replace early-return guard chains or range comparisons (`freshnessLevel`, `securityMultiplier`, mercenary-den `colorOf` stay plain ifs).
 - **Node:** 24.18.0 (`.node-version`). **Package manager:** pnpm (pinned via `packageManager` in `package.json`).
 - **Path alias:** `@/*` → `./src/*`.
 
 ## Commands
 
 - `pnpm run dev` / `build` / `start`.
-- `pnpm run lint` — `eslint .` (`no-explicit-any` off, unused vars allowed with `^_` prefix).
+- `pnpm run lint` — `oxlint` (`.oxlintrc.json`: correctness category, `no-explicit-any` off, unused vars allowed with `^_` prefix).
 - `pnpm run pretty` — `prettier --write src/` (`@philihp/prettier-config`).
 - `pnpm test` — `node --test "test/**/*.test.ts"`. Node's built-in runner over the few pure-logic modules (no framework; Node strips TS types itself, hence `.ts` import extensions). Most code is I/O against Supabase/ESI, verified by `build` + `lint` rather than tests.
 - `pnpm run test:sql` — `psql $DATABASE_URL -f test/sql/blueprint_search.sql`; point at a **throwaway** DB (creates stand-in tables named like real views; rolls back).
 - `pnpm run test:branch` — `test/signupBranch.test.ts` against a real Supabase **preview branch** (Pro database branching): registration end to end, from invite code through `auth.users` to the new account's RLS scope. Needs `SUPABASE_ACCESS_TOKEN` + `SUPABASE_PROJECT_REF` (creates an ephemeral branch and deletes it) or `SUPABASE_TEST_BRANCH_URL`/`_ANON_KEY`/`_SERVICE_KEY` (reuses one; still needs `SUPABASE_ACCESS_TOKEN`). **A branch clones the parent's auth config, SMTP included, so the helper disables outbound email on the branch and verifies it before any test touches it — a branch it cannot silence is refused.** Skips with a printed reason when neither is set, so it's inert under plain `pnpm test`. Helper: `test/lib/supabaseBranch.ts`.
 - No `typecheck` script (rely on `next build`).
-- Pre-commit: husky runs `lint-staged` (prettier + `eslint --fix` on staged files) then `pnpm run lint`.
+- Pre-commit: husky runs `lint-staged` (prettier + `oxlint --fix` on staged files) then `pnpm run lint`.
 - **The build downloads nothing from CCP and never touches the SDE** — no `predev`/`prebuild` steps. SDE data reaches runtime only through the nightly-mirrored tables (see Architecture).
 - `pnpm run esf-data` / `sheet-csv` / `sde-mirror` — manual runs of the SDE mirror and its tail encoders (`src/jobs/esfData.js`, `src/jobs/sheetCsv.js` — a JS port of `docs/sheet-csv/reference/full_sheet_gen.py` — and `src/jobs/sdeMirror.js`, `--force` re-ingests); the first two also have unscheduled `CRON_SECRET`-protected `/api/cron/*` routes (`?force=1`). See the SDE mirror workflow pattern.
 - **Vendored `@eveshipfit/*`:** `react` and `dogma-engine` tarballs committed under `vendor/eveshipfit/` with `file:` specifiers (no GitHub Packages token at install); `@eveshipfit/data` is replaced by the stub `vendor/eveshipfit/data-stub/`. To bump: `npm pack @eveshipfit/<pkg>@<version>`, drop the `.tgz` in, update the `file:` path, `pnpm install`.

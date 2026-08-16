@@ -72,7 +72,7 @@
     "dev": "next dev",
     "heartbeat": "node src/heartbeat.js",
     "refresh": "node src/refresh.js",
-    "lint": "eslint .",
+    "lint": "oxlint",
     "ping": "node src/ping-db.js",
     "prepare": "husky",
     "pretty": "prettier --write src/",
@@ -83,20 +83,16 @@
   },
   "prettier": "@philihp/prettier-config",
   "devDependencies": {
-    "@eslint/eslintrc": "3.3.6",
-    "@eslint/js": "^10.0.0",
     "@philihp/prettier-config": "1.0.0",
     "@types/node": "26.2.0",
     "@types/ramda": "0.32.0",
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.4",
-    "eslint": "^10.0.0",
-    "globals": "^17.0.0",
     "husky": "9.1.7",
     "lint-staged": "17.3.0",
+    "oxlint": "1.78.0",
     "prettier": "3.9.6",
     "supabase": "2.114.0",
-    "typescript": "6.0.3",
-    "typescript-eslint": "8.67.0"
+    "typescript": "7.0.2"
   }
 }

@@ -76,7 +76,7 @@ const management = async (path: string, init: RequestInit = {}) => {
     headers: {
       authorization: `Bearer ${token}`,
       'content-type': 'application/json',
-      ...(init.headers ?? {}),
+      ...init.headers,
     },
   })
   const body = await response.text()

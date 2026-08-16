@@ -1,0 +1,17 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "ignorePatterns": [
+    ".next/**",
+    "node_modules/**",
+    "next-env.d.ts",
+    "src/app/.well-known/workflow/**",
+    "vendor/**"
+  ],
+  "categories": {
+    "correctness": "error"
+  },
+  "rules": {
+    "no-unused-vars": ["warn", { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_" }],
+    "typescript/no-explicit-any": "off"
+  }
+}
