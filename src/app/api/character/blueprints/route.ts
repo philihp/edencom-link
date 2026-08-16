@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 
+import { RequestTiming, withRequestTiming } from '@/app/api/requestTiming'
 import { resolvePlayer } from '@/utils/apiToken'
 import { parseColumnsParam, selectColumns } from '@/utils/columnsParam'
 import { toCsv } from '@/utils/csv'
@@ -26,7 +27,7 @@ const ALLOWED_COLUMNS = [
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
-export const GET = async (request: NextRequest): Promise<NextResponse> => {
+const handler = async (request: NextRequest, _context: unknown, timing: RequestTiming): Promise<NextResponse> => {
   const { searchParams } = new URL(request.url)
 
   const columnsResult = parseColumnsParam(searchParams.get('columns'), ALLOWED_COLUMNS)
@@ -49,7 +50,13 @@ export const GET = async (request: NextRequest): Promise<NextResponse> => {
     return NextResponse.json({ error: 'Query failed' }, { status: 500 })
   }
 
+  timing.rows = (rows ?? []).length
   return new NextResponse(toCsv(selectColumns(rows ?? [], columnsResult.columns)), {
     headers: { 'Content-Type': 'text/csv; charset=utf-8' },
   })
 }
+
+export const GET = withRequestTiming(
+  { route: '/api/character/blueprints', surface: 'legacy_csv', field: 'character_blueprints' },
+  handler
+)

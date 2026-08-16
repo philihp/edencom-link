@@ -16,7 +16,16 @@
 //
 // Pure module: `graphql` + the SDL only (relative .ts import so `node --test`
 // can load it — see test/lensValidate.test.ts).
-import { buildSchema, parse, validate, visit, Kind, type DocumentNode } from 'graphql'
+import {
+  buildSchema,
+  parse,
+  validate,
+  visit,
+  Kind,
+  type DocumentNode,
+  type FieldNode,
+  type OperationDefinitionNode,
+} from 'graphql'
 
 import { typeDefs } from '../api/graphql/schema.graphql.ts'
 
@@ -83,6 +92,24 @@ export const validateLensQuery = (query: string): LensValidation => {
   }
 
   return { ok: true }
+}
+
+// The single top-level field a lens query selects — the `field` dimension of
+// the request.timing metric (src/observability.js). Total on any query that
+// passed validateLensQuery (which enforces exactly one top-level field);
+// answers null rather than throwing on anything else, since a metric label is
+// never worth failing a request over.
+export const topLevelFieldOf = (query: string): string | null => {
+  try {
+    const document = parse(query)
+    const operation = document.definitions.find(
+      (d): d is OperationDefinitionNode => d.kind === Kind.OPERATION_DEFINITION
+    )
+    const field = operation?.selectionSet.selections.find((s): s is FieldNode => s.kind === Kind.FIELD)
+    return field?.name.value ?? null
+  } catch {
+    return null
+  }
 }
 
 // The stored variables must be a JSON object (fixed by the creator at save

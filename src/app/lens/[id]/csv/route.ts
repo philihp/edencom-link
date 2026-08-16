@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 
+import { recordRequest } from '@/observability'
 import { toCsv } from '@/utils/csv'
 import { resolveLens } from '../../access'
 import { csvRows } from '../../flatten'
@@ -22,12 +23,22 @@ export const GET = async (
   const { searchParams } = new URL(request.url)
   const share = searchParams.get('share')?.trim() || undefined
 
+  const startedAt = Date.now()
   const resolved = await resolveLens(id, share)
   if (!resolved) {
+    // The ok/query_failed runs report from inside runLens (where the lens's
+    // root field is known); a lens that never resolved has no field to name.
+    recordRequest({
+      route: '/lens/[id]/csv',
+      surface: 'lens_csv',
+      outcome: 'not_found',
+      status: 404,
+      durationMs: Date.now() - startedAt,
+    })
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
   }
 
-  const result = await runLens(resolved.lens)
+  const result = await runLens(resolved.lens, { surface: 'lens_csv', route: '/lens/[id]/csv' })
   if (result.errors.length > 0 && result.data == null) {
     return NextResponse.json({ error: result.errors.join(' — ') }, { status: 500 })
   }

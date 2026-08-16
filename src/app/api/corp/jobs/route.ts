@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 
+import { RequestTiming, withRequestTiming } from '@/app/api/requestTiming'
 import { resolvePlayer } from '@/utils/apiToken'
 import { AT_PARAM_ERROR, parseAtParam } from '@/utils/atParam'
 import { parseColumnsParam, selectColumns } from '@/utils/columnsParam'
@@ -50,11 +51,12 @@ export const dynamic = 'force-dynamic'
 // Headroom over Vercel's default function timeout.
 export const maxDuration = 60
 
-export const GET = async (request: NextRequest): Promise<NextResponse> => {
+const handler = async (request: NextRequest, _context: unknown, timing: RequestTiming): Promise<NextResponse> => {
   const { searchParams } = new URL(request.url)
 
   // `at` time-travels the SCD-2 history (corp_industry_job_over_time) to the job
   // versions valid at that moment; default now is the live set.
+  if (searchParams.get('at') !== null) timing.served = 'historical'
   const at = parseAtParam(searchParams.get('at'))
   if (!at.ok) {
     return NextResponse.json({ error: AT_PARAM_ERROR }, { status: 400 })
@@ -87,7 +89,13 @@ export const GET = async (request: NextRequest): Promise<NextResponse> => {
     return NextResponse.json({ error: 'Query failed' }, { status: 500 })
   }
 
+  timing.rows = (rows ?? []).length
   return new NextResponse(toCsv(selectColumns(rows ?? [], columnsResult.columns ?? DEFAULT_COLUMNS)), {
     headers: { 'Content-Type': 'text/csv; charset=utf-8' },
   })
 }
+
+export const GET = withRequestTiming(
+  { route: '/api/corp/jobs', surface: 'legacy_csv', field: 'corp_industry_jobs' },
+  handler
+)

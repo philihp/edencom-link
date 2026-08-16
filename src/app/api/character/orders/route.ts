@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 
+import { RequestTiming, withRequestTiming } from '@/app/api/requestTiming'
 import { resolvePlayer } from '@/utils/apiToken'
 import { AT_PARAM_ERROR, parseAtParam } from '@/utils/atParam'
 import { parseColumnsParam, selectColumns } from '@/utils/columnsParam'
@@ -34,11 +35,12 @@ export const dynamic = 'force-dynamic'
 // Headroom over Vercel's default function timeout.
 export const maxDuration = 60
 
-export const GET = async (request: NextRequest): Promise<NextResponse> => {
+const handler = async (request: NextRequest, _context: unknown, timing: RequestTiming): Promise<NextResponse> => {
   const { searchParams } = new URL(request.url)
 
   // `at` reconstructs which orders were open at that moment from the SCD-2
   // history (character_order_over_time); default now is the live open set.
+  if (searchParams.get('at') !== null) timing.served = 'historical'
   const at = parseAtParam(searchParams.get('at'))
   if (!at.ok) {
     return NextResponse.json({ error: AT_PARAM_ERROR }, { status: 400 })
@@ -64,7 +66,13 @@ export const GET = async (request: NextRequest): Promise<NextResponse> => {
     return NextResponse.json({ error: 'Query failed' }, { status: 500 })
   }
 
+  timing.rows = (rows ?? []).length
   return new NextResponse(toCsv(selectColumns(rows ?? [], columnsResult.columns)), {
     headers: { 'Content-Type': 'text/csv; charset=utf-8' },
   })
 }
+
+export const GET = withRequestTiming(
+  { route: '/api/character/orders', surface: 'legacy_csv', field: 'character_orders' },
+  handler
+)

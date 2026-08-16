@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { parseLensVariables, validateLensQuery } from '../src/app/lens/validate.ts'
+import { parseLensVariables, topLevelFieldOf, validateLensQuery } from '../src/app/lens/validate.ts'
 
 test('a plain single-field query passes', () => {
   const result = validateLensQuery(`{ walletBalances { ownerName balance } }`)
@@ -66,4 +66,17 @@ test('non-object variables are rejected', () => {
   assert.equal(parseLensVariables('[1, 2]').ok, false)
   assert.equal(parseLensVariables('"x"').ok, false)
   assert.equal(parseLensVariables('not json').ok, false)
+})
+
+test('topLevelFieldOf names the single root field of a saved lens', () => {
+  assert.equal(topLevelFieldOf(`{ walletBalances { balance } }`), 'walletBalances')
+  assert.equal(
+    topLevelFieldOf(`query Stockpile($item: String!) { assets(type: $item) { rows { quantity } } }`),
+    'assets'
+  )
+})
+
+test('topLevelFieldOf answers null rather than throwing on anything unnamed', () => {
+  assert.equal(topLevelFieldOf(`{ walletBalances {`), null)
+  assert.equal(topLevelFieldOf(``), null)
 })
