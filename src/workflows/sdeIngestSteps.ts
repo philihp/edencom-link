@@ -12,7 +12,7 @@
 // CCP adds later that aren't in this roster still ingest — sdeMirrorWorkflow
 // falls back to the generic `ingestSlice` step for any stem not found here.
 //
-// Roster captured from SDE build 3442663 (78 files).
+// Roster captured from SDE build 3466501 (101 files).
 
 export type SdeFile = {
   entry: string
@@ -33,6 +33,16 @@ const slice: IngestSliceStep = async (zipUrl, file, build, startLine) => {
   return ingestEntrySlice(zipUrl, file, build, startLine)
 }
 
+async function ingest_accounting_entry_types(
+  zipUrl: string,
+  file: SdeFile,
+  build: number,
+  startLine: number
+): Promise<number> {
+  'use step'
+  return slice(zipUrl, file, build, startLine)
+}
+
 async function ingest_agent_types(zipUrl: string, file: SdeFile, build: number, startLine: number): Promise<number> {
   'use step'
   return slice(zipUrl, file, build, startLine)
@@ -49,6 +59,16 @@ async function ingest_agents_in_space(
 }
 
 async function ingest_ancestries(zipUrl: string, file: SdeFile, build: number, startLine: number): Promise<number> {
+  'use step'
+  return slice(zipUrl, file, build, startLine)
+}
+
+async function ingest_applied_proximity_effects(
+  zipUrl: string,
+  file: SdeFile,
+  build: number,
+  startLine: number
+): Promise<number> {
   'use step'
   return slice(zipUrl, file, build, startLine)
 }
@@ -143,6 +163,26 @@ async function ingest_corporation_activities(
   return slice(zipUrl, file, build, startLine)
 }
 
+async function ingest_corporation_role_groups(
+  zipUrl: string,
+  file: SdeFile,
+  build: number,
+  startLine: number
+): Promise<number> {
+  'use step'
+  return slice(zipUrl, file, build, startLine)
+}
+
+async function ingest_corporation_roles(
+  zipUrl: string,
+  file: SdeFile,
+  build: number,
+  startLine: number
+): Promise<number> {
+  'use step'
+  return slice(zipUrl, file, build, startLine)
+}
+
 async function ingest_dbuff_collections(
   zipUrl: string,
   file: SdeFile,
@@ -203,7 +243,32 @@ async function ingest_epic_arcs(zipUrl: string, file: SdeFile, build: number, st
   return slice(zipUrl, file, build, startLine)
 }
 
+async function ingest_expert_systems(zipUrl: string, file: SdeFile, build: number, startLine: number): Promise<number> {
+  'use step'
+  return slice(zipUrl, file, build, startLine)
+}
+
 async function ingest_factions(zipUrl: string, file: SdeFile, build: number, startLine: number): Promise<number> {
+  'use step'
+  return slice(zipUrl, file, build, startLine)
+}
+
+async function ingest_fighter_abilities(
+  zipUrl: string,
+  file: SdeFile,
+  build: number,
+  startLine: number
+): Promise<number> {
+  'use step'
+  return slice(zipUrl, file, build, startLine)
+}
+
+async function ingest_fighter_abilities_by_type(
+  zipUrl: string,
+  file: SdeFile,
+  build: number,
+  startLine: number
+): Promise<number> {
   'use step'
   return slice(zipUrl, file, build, startLine)
 }
@@ -243,7 +308,62 @@ async function ingest_icons(zipUrl: string, file: SdeFile, build: number, startL
   return slice(zipUrl, file, build, startLine)
 }
 
+async function ingest_industry_activities(
+  zipUrl: string,
+  file: SdeFile,
+  build: number,
+  startLine: number
+): Promise<number> {
+  'use step'
+  return slice(zipUrl, file, build, startLine)
+}
+
+async function ingest_industry_assembly_lines(
+  zipUrl: string,
+  file: SdeFile,
+  build: number,
+  startLine: number
+): Promise<number> {
+  'use step'
+  return slice(zipUrl, file, build, startLine)
+}
+
+async function ingest_industry_installation_types(
+  zipUrl: string,
+  file: SdeFile,
+  build: number,
+  startLine: number
+): Promise<number> {
+  'use step'
+  return slice(zipUrl, file, build, startLine)
+}
+
+async function ingest_industry_modifier_sources(
+  zipUrl: string,
+  file: SdeFile,
+  build: number,
+  startLine: number
+): Promise<number> {
+  'use step'
+  return slice(zipUrl, file, build, startLine)
+}
+
+async function ingest_industry_target_filters(
+  zipUrl: string,
+  file: SdeFile,
+  build: number,
+  startLine: number
+): Promise<number> {
+  'use step'
+  return slice(zipUrl, file, build, startLine)
+}
+
 async function ingest_landmarks(zipUrl: string, file: SdeFile, build: number, startLine: number): Promise<number> {
+  'use step'
+  return slice(zipUrl, file, build, startLine)
+}
+
+async function ingest_link_with_ship(zipUrl: string, file: SdeFile, build: number, startLine: number): Promise<number> {
   'use step'
   return slice(zipUrl, file, build, startLine)
 }
@@ -338,6 +458,16 @@ async function ingest_meta_groups(zipUrl: string, file: SdeFile, build: number, 
   return slice(zipUrl, file, build, startLine)
 }
 
+async function ingest_metenox_moon_drill(
+  zipUrl: string,
+  file: SdeFile,
+  build: number,
+  startLine: number
+): Promise<number> {
+  'use step'
+  return slice(zipUrl, file, build, startLine)
+}
+
 async function ingest_military_campaign_objectives(
   zipUrl: string,
   file: SdeFile,
@@ -359,6 +489,16 @@ async function ingest_military_campaigns(
 }
 
 async function ingest_missions(zipUrl: string, file: SdeFile, build: number, startLine: number): Promise<number> {
+  'use step'
+  return slice(zipUrl, file, build, startLine)
+}
+
+async function ingest_notification_types(
+  zipUrl: string,
+  file: SdeFile,
+  build: number,
+  startLine: number
+): Promise<number> {
   'use step'
   return slice(zipUrl, file, build, startLine)
 }
@@ -413,7 +553,22 @@ async function ingest_planet_schematics(
   return slice(zipUrl, file, build, startLine)
 }
 
+async function ingest_proximity_trap(zipUrl: string, file: SdeFile, build: number, startLine: number): Promise<number> {
+  'use step'
+  return slice(zipUrl, file, build, startLine)
+}
+
 async function ingest_races(zipUrl: string, file: SdeFile, build: number, startLine: number): Promise<number> {
+  'use step'
+  return slice(zipUrl, file, build, startLine)
+}
+
+async function ingest_school_map(zipUrl: string, file: SdeFile, build: number, startLine: number): Promise<number> {
+  'use step'
+  return slice(zipUrl, file, build, startLine)
+}
+
+async function ingest_schools(zipUrl: string, file: SdeFile, build: number, startLine: number): Promise<number> {
   'use step'
   return slice(zipUrl, file, build, startLine)
 }
@@ -444,6 +599,11 @@ async function ingest_ship_tree_groups(
   build: number,
   startLine: number
 ): Promise<number> {
+  'use step'
+  return slice(zipUrl, file, build, startLine)
+}
+
+async function ingest_skill_plans(zipUrl: string, file: SdeFile, build: number, startLine: number): Promise<number> {
   'use step'
   return slice(zipUrl, file, build, startLine)
 }
@@ -533,6 +693,16 @@ async function ingest_skinr_slots(zipUrl: string, file: SdeFile, build: number, 
   return slice(zipUrl, file, build, startLine)
 }
 
+async function ingest_skinr_slots_to_materials(
+  zipUrl: string,
+  file: SdeFile,
+  build: number,
+  startLine: number
+): Promise<number> {
+  'use step'
+  return slice(zipUrl, file, build, startLine)
+}
+
 async function ingest_skinr_tier_thresholds(
   zipUrl: string,
   file: SdeFile,
@@ -569,6 +739,36 @@ async function ingest_station_operations(
 }
 
 async function ingest_station_services(
+  zipUrl: string,
+  file: SdeFile,
+  build: number,
+  startLine: number
+): Promise<number> {
+  'use step'
+  return slice(zipUrl, file, build, startLine)
+}
+
+async function ingest_station_standings_restrictions(
+  zipUrl: string,
+  file: SdeFile,
+  build: number,
+  startLine: number
+): Promise<number> {
+  'use step'
+  return slice(zipUrl, file, build, startLine)
+}
+
+async function ingest_system_dbuff_emitters(
+  zipUrl: string,
+  file: SdeFile,
+  build: number,
+  startLine: number
+): Promise<number> {
+  'use step'
+  return slice(zipUrl, file, build, startLine)
+}
+
+async function ingest_system_wide_effects(
   zipUrl: string,
   file: SdeFile,
   build: number,
@@ -621,9 +821,11 @@ async function ingest_types(zipUrl: string, file: SdeFile, build: number, startL
 // Stem → its named ingest step. sdeMirrorWorkflow looks a file's stem up here
 // and falls back to the generic `ingestSlice` for anything not listed.
 export const INGEST_STEPS: Record<string, IngestSliceStep> = {
+  accounting_entry_types: ingest_accounting_entry_types,
   agent_types: ingest_agent_types,
   agents_in_space: ingest_agents_in_space,
   ancestries: ingest_ancestries,
+  applied_proximity_effects: ingest_applied_proximity_effects,
   archetypes: ingest_archetypes,
   bloodlines: ingest_bloodlines,
   blueprints: ingest_blueprints,
@@ -636,6 +838,8 @@ export const INGEST_STEPS: Record<string, IngestSliceStep> = {
   contraband_types: ingest_contraband_types,
   control_tower_resources: ingest_control_tower_resources,
   corporation_activities: ingest_corporation_activities,
+  corporation_role_groups: ingest_corporation_role_groups,
+  corporation_roles: ingest_corporation_roles,
   dbuff_collections: ingest_dbuff_collections,
   dogma_attribute_categories: ingest_dogma_attribute_categories,
   dogma_attributes: ingest_dogma_attributes,
@@ -644,13 +848,22 @@ export const INGEST_STEPS: Record<string, IngestSliceStep> = {
   dungeons: ingest_dungeons,
   dynamic_item_attributes: ingest_dynamic_item_attributes,
   epic_arcs: ingest_epic_arcs,
+  expert_systems: ingest_expert_systems,
   factions: ingest_factions,
+  fighter_abilities: ingest_fighter_abilities,
+  fighter_abilities_by_type: ingest_fighter_abilities_by_type,
   freelance_job_schemas: ingest_freelance_job_schemas,
   graphic_material_sets: ingest_graphic_material_sets,
   graphics: ingest_graphics,
   groups: ingest_groups,
   icons: ingest_icons,
+  industry_activities: ingest_industry_activities,
+  industry_assembly_lines: ingest_industry_assembly_lines,
+  industry_installation_types: ingest_industry_installation_types,
+  industry_modifier_sources: ingest_industry_modifier_sources,
+  industry_target_filters: ingest_industry_target_filters,
   landmarks: ingest_landmarks,
+  link_with_ship: ingest_link_with_ship,
   map_asteroid_belts: ingest_map_asteroid_belts,
   map_constellations: ingest_map_constellations,
   map_moons: ingest_map_moons,
@@ -664,19 +877,25 @@ export const INGEST_STEPS: Record<string, IngestSliceStep> = {
   masteries: ingest_masteries,
   mercenary_tactical_operations: ingest_mercenary_tactical_operations,
   meta_groups: ingest_meta_groups,
+  metenox_moon_drill: ingest_metenox_moon_drill,
   military_campaign_objectives: ingest_military_campaign_objectives,
   military_campaigns: ingest_military_campaigns,
   missions: ingest_missions,
+  notification_types: ingest_notification_types,
   npc_characters: ingest_npc_characters,
   npc_corporation_divisions: ingest_npc_corporation_divisions,
   npc_corporations: ingest_npc_corporations,
   npc_stations: ingest_npc_stations,
   planet_resources: ingest_planet_resources,
   planet_schematics: ingest_planet_schematics,
+  proximity_trap: ingest_proximity_trap,
   races: ingest_races,
+  school_map: ingest_school_map,
+  schools: ingest_schools,
   ship_tree_elements: ingest_ship_tree_elements,
   ship_tree_factions: ingest_ship_tree_factions,
   ship_tree_groups: ingest_ship_tree_groups,
+  skill_plans: ingest_skill_plans,
   skin_licenses: ingest_skin_licenses,
   skin_materials: ingest_skin_materials,
   skinr_component_categories: ingest_skinr_component_categories,
@@ -687,11 +906,15 @@ export const INGEST_STEPS: Record<string, IngestSliceStep> = {
   skinr_slot_configurations: ingest_skinr_slot_configurations,
   skinr_slot_names: ingest_skinr_slot_names,
   skinr_slots: ingest_skinr_slots,
+  skinr_slots_to_materials: ingest_skinr_slots_to_materials,
   skinr_tier_thresholds: ingest_skinr_tier_thresholds,
   skins: ingest_skins,
   sovereignty_upgrades: ingest_sovereignty_upgrades,
   station_operations: ingest_station_operations,
   station_services: ingest_station_services,
+  station_standings_restrictions: ingest_station_standings_restrictions,
+  system_dbuff_emitters: ingest_system_dbuff_emitters,
+  system_wide_effects: ingest_system_wide_effects,
   translation_languages: ingest_translation_languages,
   type_bonus: ingest_type_bonus,
   type_dogma: ingest_type_dogma,

@@ -31,7 +31,8 @@ import { userAgent } from '../esi.js'
 import { recordPeakRss } from '../observability.js'
 import { resolveAllIds } from '../resolveNames.js'
 import { recordHeartbeat, sudoSupabase } from '../supabase.js'
-import { cli, forEachSequential, writeWithSchemaRetry } from './lib.js'
+import { cli, forEachSequential, sleep, writeWithSchemaRetry } from './lib.js'
+import { MIN_BISECT_ROWS, planUpsertRecovery } from './upsertRecovery.js'
 
 const SDE_LATEST_URL = 'https://developers.eveonline.com/static-data/eve-online-static-data-latest-jsonl.zip'
 
@@ -286,11 +287,28 @@ const ensureMirrorTable = async (stem, keyType) => {
 // cache reloads — writeWithSchemaRetry waits that window out. A new table's
 // first chunk is always at the start of its step, so its ~15s ceiling fits the
 // slice budget.
-const upsertChunk = async (table, rows) => {
+//
+// Beyond the schema-cache window, transient failures are handled per
+// planUpsertRecovery (src/jobs/upsertRecovery.js): a statement timeout bisects
+// the chunk (replaying the identical statement times out identically — the
+// workflow's own step retries proved that the hard way), connection/network
+// errors wait and retry, everything else throws. Returns whether a statement
+// timeout was seen, so the caller can shrink its chunk size for the rest of
+// the slice. Keyed upserts keep every retry path idempotent.
+const upsertChunk = async (table, rows, attempt = 0) => {
   const { error } = await writeWithSchemaRetry(table, () =>
     sudoSupabase.from(table).upsert(rows, { onConflict: '_key' })
   )
-  if (error) throw new Error(`sde-mirror: upsert into ${table} failed: ${error.message}`)
+  if (!error) return false
+  const plan = planUpsertRecovery(error, rows.length, attempt)
+  if (plan.action === 'fail') throw new Error(`sde-mirror: upsert into ${table} failed: ${error.message}`)
+  console.warn(`[sde-mirror] ${table}: ${error.code ?? '?'} on ${rows.length} rows — ${plan.action}`)
+  if (plan.action === 'retry') {
+    await sleep(plan.waitMs)
+    return upsertChunk(table, rows, attempt + 1)
+  }
+  await forEachSequential(splitEvery(Math.ceil(rows.length / 2), rows), (half) => upsertChunk(table, half, attempt + 1))
+  return true
 }
 
 // Rows that vanished from the current dump kept their old sde_build stamp;
@@ -328,10 +346,14 @@ export const ingestEntrySlice = async (zipUrl, file, build, startLine = 0, budge
   let carry = Buffer.alloc(0)
   let pauseLine = null
   let skipFile = false
+  // Shrinks (floor MIN_BISECT_ROWS) when a flush hits a statement timeout, so
+  // one fat-row region doesn't force a fresh bisect on every later chunk.
+  let rowCap = CHUNK_ROWS
 
   const flush = async () => {
     if (chunk.length === 0) return
-    await upsertChunk(table, chunk)
+    const timedOut = await upsertChunk(table, chunk)
+    if (timedOut) rowCap = Math.max(MIN_BISECT_ROWS, Math.floor(rowCap / 2))
     upserted += chunk.length
     chunk = []
     chunkBytes = 0
@@ -369,7 +391,7 @@ export const ingestEntrySlice = async (zipUrl, file, build, startLine = 0, budge
 
       chunk.push({ _key: parsed._key, data: parsed, sde_build: build })
       chunkBytes += text.length
-      if (chunk.length >= CHUNK_ROWS || chunkBytes >= CHUNK_BYTES) {
+      if (chunk.length >= rowCap || chunkBytes >= CHUNK_BYTES) {
         await flush()
         if (Date.now() - t0 > budgetMs) pauseLine = thisLine + 1
       }
