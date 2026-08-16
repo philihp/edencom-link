@@ -5,26 +5,34 @@ import './globals.css'
 import Header from './layout/header'
 import Footer from './layout/footer'
 
+// Safari keeps a favicon store keyed on the icon URL and consults it before
+// any HTTP cache — Cache-Control and ETag never get a say — so a tab that
+// once saw an old mark keeps drawing it forever while the bytes at the same
+// path change underneath. Versioning the URLs is the only way to force a
+// refetch. **Bump this whenever the icon artwork changes.**
+const ICON_VERSION = '2'
+const icon = (path: string) => `${path}?v=${ICON_VERSION}`
+
 export const metadata: Metadata = {
   title: 'Edencom Link',
   // Stop mobile browsers from turning long numeric IDs into "tap to dial" links.
   formatDetection: { telephone: false },
   icons: {
     icon: [
-      { url: '/favicon.ico', sizes: '16x16 32x32 48x48' },
-      { url: '/favicon.svg', type: 'image/svg+xml' },
+      { url: icon('/favicon.ico'), sizes: '16x16 32x32 48x48' },
+      { url: icon('/favicon.svg'), type: 'image/svg+xml' },
     ],
-    apple: '/apple-touch-icon.png',
+    apple: icon('/apple-touch-icon.png'),
     other: [
       {
         type: 'image/png',
         sizes: '16x16',
-        url: '/favicon-16x16.png',
+        url: icon('/favicon-16x16.png'),
       },
       {
         type: 'image/png',
         sizes: '32x32',
-        url: '/favicon-32x32.png',
+        url: icon('/favicon-32x32.png'),
       },
       // Scrapers that want a larger tile — Google's s2 favicon service,
       // which is what Claude renders next to the MCP connector — pick the
@@ -33,12 +41,12 @@ export const metadata: Metadata = {
       {
         type: 'image/png',
         sizes: '48x48',
-        url: '/favicon-48x48.png',
+        url: icon('/favicon-48x48.png'),
       },
       {
         type: 'image/png',
         sizes: '192x192',
-        url: '/android-chrome-192x192.png',
+        url: icon('/android-chrome-192x192.png'),
       },
     ],
   },
