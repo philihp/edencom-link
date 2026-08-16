@@ -72,7 +72,11 @@ export const GET = async (
     market_id: market,
     as_of: at.iso,
   })
-  if (error) return NextResponse.json({ error: 'Query failed' }, { status: 500 })
+  // Surfaced verbatim, like /sheets/[file] and /esf/[file] rather than the
+  // opaque 'Query failed' the per-user endpoints answer with: everything here
+  // is public data, and the message is how you find out the mirror hasn't been
+  // migrated or populated yet.
+  if (error) return NextResponse.json({ error: `market-prices: ${error.message}` }, { status: 500 })
 
   const csv = toCsv(
     (rows ?? []).map((row: Record<string, unknown>) => ({
