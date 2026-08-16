@@ -5,6 +5,7 @@ import { GRAPHQL_FLAG, hasFlag } from '@/flags'
 import { resolvePlayer } from '@/utils/apiToken'
 import { createClient } from '@/utils/supabase/server'
 import { createServiceClient } from '@/utils/supabase/service'
+import { ASSET_CAP, EXPORT_CAP, LIST_CAP } from './filters'
 
 // The per-request context every resolver receives. Two auth modes share it:
 //
@@ -56,6 +57,11 @@ export type GraphqlContext = {
   // registrationIds. Ids are strings for the same reason every id in the schema
   // is: EVE ids overflow 32-bit Int.
   corporationIds: string[]
+  // Per-list row bounds the resolvers cap with. The HTTP surfaces get the
+  // defaults (ASSET_CAP/LIST_CAP); the lens CSV export raises both to
+  // EXPORT_CAP, since a Sheets tab can't page and a silently shortened CSV is
+  // worse than a refusal (docs/sharing-layer/09-sheets-parity.md).
+  caps: { asset: number; list: number }
   // Lazily load the caller's corporation identities (name, alliance) — only the
   // Corporation edge reads them, and there are a handful at most, so one memo
   // per request covers every result set.
@@ -193,7 +199,8 @@ const loadCorporationIdentities = async (
 const contextFor = async (
   supabase: SupabaseClient,
   mode: GraphqlContext['mode'],
-  userId: string
+  userId: string,
+  caps: GraphqlContext['caps'] = { asset: ASSET_CAP, list: LIST_CAP }
 ): Promise<GraphqlContext> => {
   const { data: registrations, error } = await supabase
     .from('registration')
@@ -225,6 +232,7 @@ const contextFor = async (
       rows.flatMap((r): Array<[string, string]> => (r.character_id == null ? [] : [[r.id, String(r.character_id)]]))
     ),
     corporationIds,
+    caps,
     corporationIdentities: () => {
       corporationIdentities ??= loadCorporationIdentities(supabase, corporationIds)
       return corporationIdentities
@@ -246,8 +254,12 @@ const contextFor = async (
 // surfaces (includeShared/sharedWithMe) reject exactly as they do for Bearer
 // callers, and the resolvers' leak-guard .in('registration_id', …) is the
 // barrier. Callers must have authorized the viewer BEFORE building this.
-export const contextForUser = (userId: string): Promise<GraphqlContext> =>
-  contextFor(createServiceClient(), 'token', userId)
+// `exporting` is the lens CSV surface's cap raise — see GraphqlContext.caps.
+export const contextForUser = (
+  userId: string,
+  { exporting = false }: { exporting?: boolean } = {}
+): Promise<GraphqlContext> =>
+  contextFor(createServiceClient(), 'token', userId, exporting ? { asset: EXPORT_CAP, list: EXPORT_CAP } : undefined)
 
 export const buildContext = async (request: Request): Promise<GraphqlContext> => {
   const authorization = request.headers.get('authorization') ?? ''

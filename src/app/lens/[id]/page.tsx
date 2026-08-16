@@ -30,7 +30,7 @@ const LensViewerPage = async ({
   if (!resolved) notFound()
   const { lens, viewerIsOwner } = resolved
 
-  const result = await runLens(lens, { surface: 'lens_view', route: '/lens/[id]' })
+  const result = await runLens(lens, { timing: { surface: 'lens_view', route: '/lens/[id]' } })
   const rows = lensRows(result.data)
   const headers = rows.length > 0 ? Object.keys(rows[0]) : []
   // Hand the CSV link the short token, whichever generation arrived here.

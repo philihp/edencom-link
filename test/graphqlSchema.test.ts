@@ -164,6 +164,21 @@ test('the flat scalar beside each edge survives', () => {
   assert.equal(String(job.productTypeName.type), 'String')
 })
 
+// The columns the legacy /api/{character,corp}/jobs CSV routes serve and the
+// lens drop-in templates select (docs/sharing-layer/09-sheets-parity.md).
+// output_count is deliberately absent: it's an SQL join against
+// sde_blueprint_product in the RPCs, and opt-in-only on the legacy routes.
+test('IndustryJob carries the Sheets-parity columns', () => {
+  const schema = buildSchema(typeDefs)
+  const fields = objectType(schema, 'IndustryJob').getFields()
+  assert.equal(String(fields.blueprintId.type), 'String!')
+  assert.equal(String(fields.blueprintLocationId.type), 'String!')
+  assert.equal(String(fields.outputLocationId.type), 'String!')
+  assert.equal(String(fields.facilityId.type), 'String!')
+  assert.equal(String(fields.pauseDate.type), 'String')
+  assert.equal(String(fields.completedCharacterId.type), 'String')
+})
+
 test('Character exposes the EVE character id distinctly from the registration id', () => {
   const schema = buildSchema(typeDefs)
   const character = objectType(schema, 'Character').getFields()

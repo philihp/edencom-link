@@ -32,12 +32,19 @@ export type LensResult = { data: unknown; errors: string[] }
 // served — the editor's preview, the create/update preflights.
 export type LensRunSurface = { surface: 'lens_csv' | 'lens_view'; route: string }
 
+export type LensRunOptions = {
+  timing?: LensRunSurface
+  // The CSV surface's cap raise (GraphqlContext.caps): a Sheets tab can't page,
+  // so exports run under EXPORT_CAP and the route refuses when even that bit.
+  exporting?: boolean
+}
+
 export const runLens = async (
   lens: Pick<LensRecord, 'user_id' | 'query' | 'variables'>,
-  timing?: LensRunSurface
+  { timing, exporting = false }: LensRunOptions = {}
 ): Promise<LensResult> => {
   const startedAt = Date.now()
-  const contextValue = await contextForUser(lens.user_id)
+  const contextValue = await contextForUser(lens.user_id, { exporting })
   const result = await graphql({
     schema,
     source: lens.query,

@@ -442,6 +442,18 @@ export const typeDefs = /* GraphQL */ `
 
     "The EVE character who installed a CORP job; null on a character's own job, which ESI doesn't stamp."
     installerId: String
+    "The blueprint ITEM the job consumes — the physical copy or original, not its type."
+    blueprintId: String!
+    "Where the blueprint item sat when the job was installed."
+    blueprintLocationId: String!
+    "Where the job's output will be delivered."
+    outputLocationId: String!
+    "ESI's raw facility id — stationId when the job runs in an NPC station, else the structure id (see also location)."
+    facilityId: String!
+    "When the job was paused (its facility reinforced); null while it runs."
+    pauseDate: String
+    "The EVE character who delivered the job; null until someone does."
+    completedCharacterId: String
     blueprintType: ItemType!
     "Null for research and copy jobs, which produce no new item type."
     productType: ItemType

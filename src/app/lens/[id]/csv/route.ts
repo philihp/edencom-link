@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 
+import { EXPORT_CAP } from '@/app/api/graphql/filters'
 import { recordRequest } from '@/observability'
 import { toCsv } from '@/utils/csv'
 import { resolveLens } from '../../access'
@@ -38,7 +39,10 @@ export const GET = async (
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
   }
 
-  const result = await runLens(resolved.lens, { surface: 'lens_csv', route: '/lens/[id]/csv' })
+  const result = await runLens(resolved.lens, {
+    timing: { surface: 'lens_csv', route: '/lens/[id]/csv' },
+    exporting: true,
+  })
   if (result.errors.length > 0 && result.data == null) {
     return NextResponse.json({ error: result.errors.join(' — ') }, { status: 500 })
   }
@@ -46,7 +50,20 @@ export const GET = async (
   // csvRows, not lensRows: a lens selecting a nullable edge (location on an
   // asset ESI gave no location_id for) returns ragged rows, and toCsv reads its
   // header off the first one.
-  return new NextResponse(toCsv(csvRows(result.data)), {
+  const rows = csvRows(result.data)
+
+  // `exporting` raised the per-list caps to EXPORT_CAP; a result that still
+  // reaches it was almost certainly cut there, and a silently shortened CSV is
+  // worse than a refusal the sheet can see (an author's own smaller `limit:` is
+  // deliberate and passes untouched).
+  if (rows.length >= EXPORT_CAP) {
+    return NextResponse.json(
+      { error: `The result hit the ${EXPORT_CAP}-row export bound — narrow the lens's filters.` },
+      { status: 400 }
+    )
+  }
+
+  return new NextResponse(toCsv(rows), {
     headers: { 'content-type': 'text/csv; charset=utf-8' },
   })
 }
