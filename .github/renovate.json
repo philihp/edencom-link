@@ -16,7 +16,8 @@
   "automergeStrategy": "squash",
   "rebaseWhen": "conflicted",
   "lockFileMaintenance": {
-    "enabled": true
+    "enabled": true,
+    "automerge": true
   },
   "postUpdateOptions": ["pnpmDedupe"],
   "packageRules": [
