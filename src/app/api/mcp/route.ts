@@ -12,6 +12,7 @@ import { registerExploreTools } from './exploreTools'
 import { registerIndustryTools } from './industryTools'
 import { registerLinkTools } from './linkTools'
 import { registerShippingTools } from './shippingTools'
+import { registerSkillTools } from './skillTools'
 import { registerTools } from './tools'
 
 // mcp-handler 2.x serves the 2026-07-28 spec (stateless, no sessions), falling
@@ -29,6 +30,7 @@ const handler = createMcpHandler(
     registerExploreTools(server)
     registerShippingTools(server)
     registerLinkTools(server)
+    registerSkillTools(server)
   },
   {
     serverInfo: { name: 'edencom-link', version: '1.0.0' },

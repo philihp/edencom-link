@@ -1,7 +1,8 @@
 // Link authoring over MCP (docs/sharing-layer/07-link.md): turn what a human
 // asked for in words — "a link on the container named input showing every type
 // that goes into fuel blocks, visible to my corp and to anyone with the URL" —
-// into a saved, shared link.
+// into a saved, shared link. Also `run_query`, the ad-hoc form: the same
+// query, run once in the caller's own context, saving nothing.
 //
 // **These are the first write tools on this server.** Everything else here
 // answers questions; `create_link` inserts a row and, on request, publishes it
@@ -33,7 +34,7 @@ import { applyLinkShare, fetchOwnAudiences } from '@/app/link/share'
 import { shortLinkId } from '@/app/link/shortId'
 import { LINK_TEMPLATES } from '@/app/link/templates'
 import { parseLinkVariables, SESSION_ONLY_ARGUMENTS, SESSION_ONLY_FIELDS, validateLinkQuery } from '@/app/link/validate'
-import { LINK_FLAG, hasFlag } from '@/flags'
+import { GRAPHQL_FLAG, LINK_FLAG, hasFlag } from '@/flags'
 import { signShare, tokenSalt } from '@/shareToken'
 import { createBearerClient } from '@/utils/supabase/bearer'
 import { siteUrl } from '@/utils/siteUrl'
@@ -62,6 +63,15 @@ const callerFor = (ctx: ServerCtx): Caller | null => {
 // to explain the refusal to the person who asked.
 const FLAG_REFUSAL =
   'Link clearance is not held on this account: Links are still dark-launched and this account does not carry the "link" flag. Ask the site owner to issue it before creating one.'
+
+// run_query is the MCP face of the /graphql surface, so it rides that flag,
+// not the link one.
+const GRAPHQL_FLAG_REFUSAL =
+  'The GraphQL API is not enabled for this account: run_query needs the "graphql" flag, which is still dark-launched. Ask the site owner to issue it.'
+
+// How much of a run_query result to hand back. Matches the read tools'
+// MAX_ROWS — unlike a create_link preview, the result IS the answer here.
+const RUN_ROWS = 200
 
 // How much of the link's own output to hand back after saving. Enough to show
 // the human that the query answers what they asked, not enough to make a tool
@@ -207,7 +217,7 @@ export const registerLinkTools = (server: McpServer): void => {
   server.registerTool(
     'link_schema',
     {
-      title: 'Standing Observation Link — schema and audiences',
+      title: 'Data Link — schema and audiences',
       description:
         'What you need before calling create_link: the GraphQL schema a link query is written against, the rules a link query must satisfy, worked example queries, and the audiences this user can share a link with (the corporations and alliances their characters are actually in). Call this first — a link query written against a guessed schema will be rejected at save time, and an audience the user is not in cannot be named.',
       annotations: { readOnlyHint: true, openWorldHint: false },
@@ -220,7 +230,7 @@ export const registerLinkTools = (server: McpServer): void => {
 
       const own = await fetchOwnAudiences(caller.supabase)
       return textResult({
-        masthead: masthead('STANDING OBSERVATION LINK — REGISTRATION REQUIREMENTS'),
+        masthead: masthead('DATA LINK — REGISTRATION REQUIREMENTS'),
         what_a_link_is:
           "A saved GraphQL query over the creator's own data. Whoever it is shared with runs it and sees the creator's results — they never gain access to the underlying data, and they cannot change the query or its variables.",
         rules: RULES,
@@ -236,9 +246,53 @@ export const registerLinkTools = (server: McpServer): void => {
   )
 
   server.registerTool(
+    'run_query',
+    {
+      title: 'Run a GraphQL query',
+      description:
+        "Run a GraphQL query over this user's data and return the rows. Nothing is saved — this is the ad-hoc form of a Data Link, running in the caller's own context exactly as the /graphql page does. Call link_schema first; the query obeys the same rules a Link does (one query operation, one top-level field, no session-only surfaces), so a query that runs here can be passed to create_link unchanged when it is worth keeping or sharing. Use it for one-off questions the fixed tools do not cover, and to iterate on a query before saving it.",
+      annotations: { readOnlyHint: true, openWorldHint: false },
+      inputSchema: z.object({
+        query: z
+          .string()
+          .min(1)
+          .describe('The GraphQL query, valid against the schema link_schema returns. One query, one top-level field.'),
+        variables: z
+          .record(z.string(), z.unknown())
+          .optional()
+          .describe('Values for the query\'s variables, e.g. { "container": "1046809423988" }.'),
+      }),
+    },
+    async ({ query, variables }, ctx: ServerCtx): Promise<ToolResult> => {
+      const caller = callerFor(ctx)
+      if (!caller) return textResult('Missing bearer token.')
+      if (!(await hasFlag(caller.userId, GRAPHQL_FLAG))) return textResult(GRAPHQL_FLAG_REFUSAL)
+
+      const validation = validateLinkQuery(query)
+      if (!validation.ok) {
+        return textResult(`${validation.message} Call link_schema for the schema this query has to satisfy.`)
+      }
+      const parsedVariables = parseLinkVariables(variables ? JSON.stringify(variables) : '')
+      if (!parsedVariables.ok) return textResult(parsedVariables.message)
+
+      const result = await runLink({ user_id: caller.userId, query, variables: parsedVariables.variables })
+      const rows = linkRows(result.data)
+      return textResult({
+        row_count: rows.length,
+        columns: rows.length > 0 ? Object.keys(rows[0]) : [],
+        rows: rows.slice(0, RUN_ROWS),
+        ...(rows.length > RUN_ROWS && {
+          note: `Showing the first ${RUN_ROWS} of ${rows.length} rows. Save the query with create_link for a CSV of all of them.`,
+        }),
+        ...(result.errors.length > 0 && { errors: result.errors }),
+      })
+    }
+  )
+
+  server.registerTool(
     'create_link',
     {
-      title: 'Register a Standing Observation Link',
+      title: 'Register a Data Link',
       description:
         "Save a GraphQL query as a link over this user's data, and optionally share it. Call link_schema first for the schema, the rules and this user's shareable audiences; use the read tools (search_assets, browse_assets, blueprint_for_product) to turn what the human described into the concrete item ids and type ids the query needs. Writes: this creates a row owned by the calling user, and sharing it makes the query's results visible to whoever it names. Returns the Link's URL, the CSV URL for spreadsheets, the signed share URL when one was asked for, and a preview of what the Link currently returns so you can check it answers the question. Editing and deleting a link are done in the web editor at /link.",
       annotations: {
@@ -353,7 +407,7 @@ export const registerLinkTools = (server: McpServer): void => {
       }
 
       return textResult({
-        masthead: masthead('STANDING OBSERVATION LINK — REGISTERED'),
+        masthead: masthead('DATA LINK — REGISTERED'),
         link: linkUrls(inserted.id, name.trim(), pathId),
         share: describeShare(pathId, applied.share, own),
         preview: preflight.report,
@@ -365,7 +419,7 @@ export const registerLinkTools = (server: McpServer): void => {
   server.registerTool(
     'list_links',
     {
-      title: 'Standing Observation Link Registry',
+      title: 'Data Link Registry',
       description:
         'The Links this user has saved: name, id, the stored query and variables, who each is shared with, and its URLs (including the signed share URL where one exists). Call this before update_link to find the Link being talked about, or to answer "what Links do I have" and "what\'s the URL for my fuel Link again". Lists only Links this user created — a Link someone else issued to them is not theirs to edit.',
       annotations: { readOnlyHint: true, openWorldHint: false },
@@ -388,7 +442,7 @@ export const registerLinkTools = (server: McpServer): void => {
       const pathIds = await Promise.all(rows.map((row) => shortLinkId(row.id)))
 
       return textResult({
-        masthead: masthead('STANDING OBSERVATION LINK REGISTRY'),
+        masthead: masthead('DATA LINK REGISTRY'),
         links: rows.map((row, i) => ({
           ...linkUrls(row.id, row.name, pathIds[i]),
           updated_at: row.updated_at,
@@ -401,7 +455,7 @@ export const registerLinkTools = (server: McpServer): void => {
               }),
         })),
         ...(rows.length === 0 && {
-          note: 'No Links registered. Observation is not currently delegated to anyone. create_link registers one.',
+          note: 'No Data Links registered. create_link registers one.',
         }),
       })
     }
@@ -410,7 +464,7 @@ export const registerLinkTools = (server: McpServer): void => {
   server.registerTool(
     'update_link',
     {
-      title: 'Amend a Standing Observation Link',
+      title: 'Amend a Data Link',
       description:
         "Change an existing link: its name, its query, its variables, who it's shared with, or any combination. Anything not given is left alone, so renaming a link doesn't touch its query and re-sharing it doesn't touch either. Identify the link by id or by name (list_links shows both). Writes: this changes what the link's existing audience sees the next time they open it. A new query is run before it is saved, so a broken one is refused rather than pushed to that audience. Deleting a link is done in the web editor at /link.",
       annotations: {
@@ -543,7 +597,7 @@ export const registerLinkTools = (server: McpServer): void => {
       }
 
       return textResult({
-        masthead: masthead('STANDING OBSERVATION LINK — AMENDED'),
+        masthead: masthead('DATA LINK — AMENDED'),
         link: linkUrls(stored.id, edits.changes.name ?? stored.name, pathId),
         changed: [...edits.changed, ...(shareRequested ? ['share'] : [])],
         ...(edits.changed.length === 0 && !shareRequested && { note: 'Nothing to change — no fields were given.' }),

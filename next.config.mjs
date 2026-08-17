@@ -11,6 +11,12 @@ const nextConfig = {
   // pre-existing incompatibility between that route and the webpack build
   // path, so Turbopack is the only viable option here regardless.)
   turbopack: {},
+  // The MCP get_skill tool reads this markdown at request time; Next only
+  // traces what the bundler sees imported, so without this the deployed
+  // function has no copy of the file to read.
+  outputFileTracingIncludes: {
+    '/api/mcp': ['docs/edencom-industry-SKILL.md'],
+  },
   experimental: {
     staleTimes: {
       // How long the client-side router cache may reuse an already-rendered

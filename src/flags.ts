@@ -11,7 +11,7 @@ export const FIT_UI_FLAG = 'fit-ui'
 // dropped when a Chancellor saves.
 export const KNOWN_FLAGS: { flag: string; label: string }[] = [
   { flag: GRAPHQL_FLAG, label: 'GraphQL API and its playground (/graphql)' },
-  { flag: LINK_FLAG, label: 'Links — Standing Observation Links, saved queries issued to others (/link)' },
+  { flag: LINK_FLAG, label: 'Links — Data Links, saved queries issued to others (/link)' },
   { flag: FIT_UI_FLAG, label: 'Our own ship-fitting stack, in progress (/item/[itemId])' },
 ]
 
