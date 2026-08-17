@@ -92,7 +92,16 @@ export const previewLink = async (input: {
 
   const contextValue = await contextForUser(userId)
   const result = await graphql({ schema, source: input.query, variableValues: variables.variables, contextValue })
-  return { data: result.data ?? null, errors: (result.errors ?? []).map((e) => e.message) }
+  return {
+    // graphql-js builds its result maps with Object.create(null), and a server
+    // action's return value must be React-serializable — null-prototype
+    // objects are rejected at the boundary. The JSON round-trip yields plain
+    // objects, exactly what this action's old pre-stringified return produced
+    // implicitly. (The viewer page and CSV route consume the result entirely
+    // server-side, so only this action needs it.)
+    data: result.data == null ? null : JSON.parse(JSON.stringify(result.data)),
+    errors: (result.errors ?? []).map((e) => e.message),
+  }
 }
 
 // Fork a link someone shared with you into your own list: same query and
