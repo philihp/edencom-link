@@ -95,3 +95,72 @@
   overflow-x: auto;
   margin-top: 8pt;
 }
+
+/* The Link index as a directory listing: fixed columns, one line per Link,
+   the name column carrying the glyph and the click target. Grid rather than a
+   table so the header and rows share one column definition and the whole
+   listing collapses to name-only on a narrow screen. */
+.listing {
+  list-style: none;
+  margin: 12pt 0 0;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.listingHead,
+.row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 14em) minmax(0, 12em);
+  gap: 8pt;
+  align-items: baseline;
+  padding: 4pt 8pt;
+  font-size: 9pt;
+}
+
+.listingHead {
+  color: var(--ink-soft);
+  background: var(--paper-raised);
+  border-bottom: 1px solid var(--line);
+}
+
+.row + .row {
+  border-top: 1px solid var(--line);
+}
+
+.row:hover {
+  background: var(--paper-raised);
+}
+
+.rowName {
+  font-size: 10pt;
+  display: flex;
+  gap: 6pt;
+  align-items: baseline;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.glyph {
+  color: var(--ink-soft);
+}
+
+.rowQuiet {
+  color: var(--ink-soft);
+}
+
+.rowActions {
+  justify-self: start;
+}
+
+@media (max-width: 40em) {
+  .listingHead {
+    display: none;
+  }
+
+  .row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2pt;
+  }
+}
