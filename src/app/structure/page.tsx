@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { chain, concat, filter, forEach, map, splitEvery, uniq } from 'ramda'
 
+import { COST_AVOIDANCE_FLAG, hasFlag } from '@/flags'
 import { createClient } from '@/utils/supabase/server'
 
 import { establishedUser } from '../account/lib/establishedUser'
@@ -19,6 +20,8 @@ import {
   INDEX_ACTIVITY_LABELS,
   structureIndexActivities,
 } from './industryIndex'
+import { costAvoidance, OwnTaxReceipt } from './costAvoidance'
+import { fetchTaxRates, formatRate } from '../settings/tax/rates'
 import { StructureSilhouette } from './silhouette'
 import { Sparkline } from './sparkline'
 import { WindowSelect } from './windowSelect'
@@ -175,6 +178,18 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
     concat(characterJobs, corpJobs)
   )
 
+  // Which of those jobs are OURS, for the cost-avoidance figure below. Only the
+  // two selects above qualify — our characters' jobs and our corporations' —
+  // never the industry_job_tax_facility rows merged in further down, which are
+  // other players' jobs renting our slots. Their tax is revenue; ours is a bill
+  // we paid to ourselves, and it is that bill the counterfactual scales.
+  const ownJobIds = new Set(map((j: JobRow) => String(j.job_id), concat(characterJobs, corpJobs)))
+
+  // Dark-launched: an account without the flag renders no footer row, and the
+  // two rates behind it live on /settings/tax.
+  const showAvoidance = await hasFlag(user.id, COST_AVOIDANCE_FLAG)
+  const taxRates = await fetchTaxRates(supabase, user.id)
+
   // Fuel timers live in corp_structure_status now (own-corp only). RLS returns a
   // row only for structures the caller's corp owns, so an alliance-mate's
   // structure that's visible via corp_structure simply has no fuel here.
@@ -208,6 +223,11 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
     if (existing) existing.push(name)
     else rigsByStructure.set(key, [name])
   }
+
+  // Names for the cost-avoidance breakdown, which addresses structures by id.
+  // Every id it can name came from `list` (the job selects are seeded from it),
+  // so this map always covers it.
+  const structureNameById = new Map<string, string | null>(list.map((s) => [String(s.structure_id), s.name]))
 
   const systemNames = await fetchSystemNames(list.map((s) => Number(s.system_id)))
   const structureTypeNames = await fetchTypeNames(list.map((s) => Number(s.type_id)))
@@ -285,6 +305,10 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
   )
 
   const totalByStructure = new Map<string, number>()
+  // Tax receipts for jobs of OUR own, feeding the cost-avoidance figure. Same
+  // resolution as the revenue beside it, but the job id the entry matched on is
+  // kept rather than discarded, so ours can be told from a renter's.
+  const ownReceipts: OwnTaxReceipt[] = []
   // Unaccounted tax broken down by the party that paid it (the character/corp that ran the job).
   const unaccountedByParty = new Map<string, number>()
   let unaccounted = 0
@@ -292,15 +316,15 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
     const amount = Number(entry.amount ?? 0)
     // The job id is the entry's context_id; fall back to parsing it out of the description for older
     // entries (or any ref_type variants) where ESI didn't populate context_id.
-    let structureId = entry.context_id != null ? structureByJob.get(String(entry.context_id)) : undefined
-    if (!structureId) {
-      for (const token of entry.description?.match(/\d+/g) ?? []) {
-        structureId = structureByJob.get(token)
-        if (structureId) break
-      }
-    }
+    const candidates = [
+      ...(entry.context_id != null ? [String(entry.context_id)] : []),
+      ...(entry.description?.match(/\d+/g) ?? []),
+    ]
+    const jobId = candidates.find((token) => structureByJob.has(token))
+    const structureId = jobId ? structureByJob.get(jobId) : undefined
     if (structureId) {
       totalByStructure.set(structureId, (totalByStructure.get(structureId) ?? 0) + amount)
+      if (jobId != null && ownJobIds.has(jobId)) ownReceipts.push({ structureId, amount })
     } else {
       // Tax we received but can't tie to one of our structures (e.g. jobs not in our table).
       unaccounted += amount
@@ -308,6 +332,8 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
       unaccountedByParty.set(party, (unaccountedByParty.get(party) ?? 0) + amount)
     }
   }
+
+  const avoidance = costAvoidance(ownReceipts, taxRates)
 
   // Largest payers first.
   const unaccountedParties = [...unaccountedByParty.entries()].sort((a, b) => b[1] - a[1])
@@ -508,7 +534,49 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
             )}
             <span>Clone revenue:</span>
             <span className={styles.footerValue}>{formatKisk(cloneRevenue)}</span>
+            {showAvoidance && (
+              <>
+                <span>Cost avoidance:</span>
+                <span className={styles.footerValue}>{avoidance.total == null ? '—' : formatIsk(avoidance.total)}</span>
+              </>
+            )}
           </div>
+          {showAvoidance && (
+            <p className={styles.unaccountedNote}>
+              <em>
+                {avoidance.total == null ? (
+                  <>
+                    Cost avoidance needs a non-zero rate for your own characters — nothing was billed, so there is no
+                    receipt to price a public structure against.{' '}
+                  </>
+                ) : (
+                  <>
+                    Cost avoidance is facility tax never incurred: {avoidance.jobs.toLocaleString()} job
+                    {avoidance.jobs === 1 ? '' : 's'} of ours ran in our own structures and paid us{' '}
+                    {formatIsk(avoidance.billed)} at {formatRate(taxRates.own)}, where a public{' '}
+                    {formatRate(taxRates.public)} would have cost {formatIsk(avoidance.counterfactual ?? 0)} and kept
+                    it. No ISK changed hands, so it is not revenue.{' '}
+                  </>
+                )}
+                <Link href="/settings/tax">Change the rates &raquo;</Link>
+              </em>
+            </p>
+          )}
+          {showAvoidance && avoidance.byStructure.length > 0 && (
+            <details className={styles.breakdown}>
+              <summary>Cost avoidance by structure ({avoidance.byStructure.length})</summary>
+              <div className={styles.breakdownGrid}>
+                {avoidance.byStructure.map(([structureId, avoided]) => (
+                  <span key={`avoided-${structureId}`} className={styles.breakdownRow}>
+                    <Link href={`/structure/${structureId}`}>
+                      <Name name={structureNameById.get(structureId)} id={structureId} />
+                    </Link>
+                    <span className={styles.footerValue}>{formatIsk(avoided)}</span>
+                  </span>
+                ))}
+              </div>
+            </details>
+          )}
           {unaccountedParties.length > 0 && (
             <p className={styles.unaccountedNote}>
               <em>
