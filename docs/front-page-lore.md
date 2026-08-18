@@ -32,25 +32,30 @@ standardised on; see `sharing-layer/07-link.md`.)
 
 ## Voice rules
 
-- **The lore frames; the features stay literal.** Every card still says what
-  the page actually does — ME/TE research state, fuel runway, `=IMPORTDATA()`.
-  The flavour is in the section names and the closing clause of each body, not
-  in place of the substance. Nobody should have to decode a metaphor to learn
-  whether we track wallets.
-- **Nouns come from the institution, not the enterprise.** record (not system
-  of record), feed / section (not module), doctrine (not pillars/governance),
-  accreditation (not onboarding), sweep (not sync run), standing watch (not
-  go-live). The ERP words are the previous voice; don't mix the two.
-- **One capsuleer's picture, not a war.** Resist escalating into Triglavian
-  cosplay — no invasion status, no Fortress/Advancing/Contested, no
-  "defend New Eden". The institution is the borrowed frame; the subject is
-  still someone's hangar.
+- **Anything that exists in the EVE client keeps its client name.** This is the
+  rule the first draft got wrong, and it is the one that matters most. Cards are
+  Wallet & Journal, Assets & Inventory, Manufacturing & Research, Market Orders,
+  Structures & Fuel, Clones & Implants, Mercenary Den Operations, Analytics &
+  Exports, Blueprint Calculator — not the flavour synonyms an earlier pass
+  reached for (materiel registry, fortifications, personnel file, forward
+  operations). We are fitting into the universe, not making players translate
+  their own UI to find out whether we track wallets.
+- **The lore frames; the features stay literal.** Flavour lives in the hero, the
+  section intros, the doctrine headings and the closing. Card bodies stay
+  concrete — ME and TE levels, fuel runway, `=IMPORTDATA()`.
+- **Watch for collisions with our own nouns.** "Open the link" was cut as a CTA
+  because Data Links (`/link`) are a real feature; a button by that name reads
+  as navigation to them. Same class of error as renaming a game element.
+- **One capsuleer's picture, not a war.** No invasion status, no
+  Fortress/Advancing/Contested, no "defend New Eden". The institution is the
+  borrowed frame; the subject is still someone's hangar.
 - **The read-only claim carries the most weight.** "It is a receiver, not a
-  transmitter" is the best line on the page precisely because it is a
-  structural fact, not a promise. Keep the doctrine section's claims
-  structural — versioned rows, RLS, no write scope — and true.
-- **Keep the corpses.** The pull quote's last clause is the one place the page
-  is allowed to be funny at its own expense.
+  transmitter" survives every rewrite because it is a structural fact rather
+  than a promise. Keep the doctrine section's three claims structural — versioned
+  rows, RLS, no write scope — and true.
+- **Keep a corpse joke.** The pull quote's last clause is the one place the page
+  is allowed to be funny at its own expense, and the site really does track
+  frozen corpses.
 
 ## Structure (unchanged by the rewrite)
 

@@ -4,54 +4,54 @@ import { createClient } from '@/utils/supabase/server'
 import { establishedUser } from './account/lib/establishedUser'
 import styles from './home.module.css'
 
-// EDENCOM was chartered to make four rival empires read one threat picture.
-// The sections below are that picture, narrowed to a single capsuleer's holdings:
-// every feed named for what it watches, not for the ESI endpoint behind it.
+// The lore is the frame, not the labels. Anything that exists in the EVE client
+// keeps its client name here — a player scanning these cards should recognise
+// every one of them without translating. The flavour lives in the prose below.
 const SECTIONS = [
   {
-    label: 'Treasury',
-    title: 'Treasury & Ledger',
-    body: 'Consolidated wallets across every character, corporation division ledgers, and journal rollups by reference type. Where the ISK came from and where it went, without alt-tabbing through eleven clients to find out.',
+    label: 'Wallet',
+    title: 'Wallet & Journal',
+    body: 'Every character\u2019s wallet in one ledger, next to your corporation\u2019s division wallets. Journal entries roll up by reference type, so you can see what the ISK actually was \u2014 bounties, taxes, escrow \u2014 instead of scrolling a thousand lines.',
   },
   {
-    label: 'Materiel',
-    title: 'Materiel Registry',
-    body: 'Every item, every station, every nested container — one searchable registry with location drill-down, stack counts, and a reconstruction of what you held before any given downtime.',
+    label: 'Inventory',
+    title: 'Assets & Inventory',
+    body: 'Every item in every station, ship, and nested container, searchable, with stack counts and location drill-down. Nothing is overwritten, so \u201cwhat did I hold before that downtime\u201d is a question with an answer.',
   },
   {
-    label: 'Production',
-    title: 'Production & Supply',
-    body: 'Industry jobs, blueprint holdings with ME/TE research state, slot capacity read off trained skills, and system cost indices. Supply planning that already knows which rigs are fitted to your structures.',
+    label: 'Industry',
+    title: 'Manufacturing & Research',
+    body: 'Industry jobs, blueprints with their ME and TE levels, and job slots counted from what your characters have actually trained. System cost indices and the rigs fitted to your structures are part of the same picture.',
   },
   {
     label: 'Market',
-    title: 'Market Traffic',
-    body: 'Open orders and full transaction history across characters and corp divisions, resolved into one trade record. What filled, what expired, and what it all cleared at.',
+    title: 'Market Orders',
+    body: 'Open orders and full transaction history, across characters and corp divisions. What filled, what expired, and what it cleared at \u2014 without logging in eleven times to find out.',
   },
   {
-    label: 'Holdings',
-    title: 'Fortifications',
-    body: 'Your Upwell structures as held positions: fuel runway, service modules, fitted rigs, reinforcement state, and industry-tax revenue per structure per day. A fortress is only a fortress while the fuel lasts.',
+    label: 'Structures',
+    title: 'Structures & Fuel',
+    body: 'Fuel runway, service modules, fitted rigs, and reinforcement state for every Upwell structure. Industry-tax revenue is broken out per structure per day, so you know which citadel is earning its fuel blocks.',
   },
   {
-    label: 'Personnel',
-    title: 'Capsuleer Registry',
-    body: 'The personnel file, adapted for personnel who respawn. Characters, jump clones, implant loadouts, skill training history, and jump-timer availability — the whole distributed roster on one screen.',
+    label: 'Clones',
+    title: 'Clones & Implants',
+    body: 'Jump clones and where they\u2019re parked, implant loadouts, and jump-timer availability, across every character. Skill training history rides along, so who trained what, and when, is on record.',
   },
   {
-    label: 'Field ops',
-    title: 'Forward Operations',
-    body: 'Mercenary den deployments with development and anarchy telemetry, reinforcement timers, and opt-in intel sharing scoped to exactly one alliance. The part of the picture worth handing to someone else.',
+    label: 'Mercenary dens',
+    title: 'Mercenary Den Operations',
+    body: 'Your dens with development and anarchy levels, reinforcement timers, and a map of what sits around them. Intel sharing is opt-in and scoped to exactly one alliance \u2014 no further.',
   },
   {
-    label: 'Telemetry',
-    title: 'Telemetry Export',
-    body: 'CSV feeds built for Google Sheets =IMPORTDATA(), keyed to a personal token, answerable for any historical date. Your dashboards, your formulas, reading off the same record everything else here reads.',
+    label: 'Analytics',
+    title: 'Analytics & Exports',
+    body: 'CSV feeds built for Google Sheets =IMPORTDATA(), keyed to a personal token. The asset, order, industry and blueprint feeds each answer for a past date, so your spreadsheet time-travels with the database.',
   },
   {
-    label: 'Advisory',
-    title: 'Advisory Interface',
-    body: 'An OAuth-authorized MCP server, so an AI assistant can field “which blueprints are worth researching” or “appraise my Jita hangar” against exactly the data your account can see — never one row more.',
+    label: 'Blueprints',
+    title: 'Blueprint Calculator',
+    body: 'Name an item; it resolves the blueprint that builds it and prices the material bill against runs, ME, your structure\u2019s role bonus, its fitted ME rig, and system security \u2014 a rig counts only where it actually covers that product. You reach it by asking an AI assistant in plain language, over an OAuth-authorized MCP server scoped to exactly your own data.',
   },
 ]
 
@@ -60,31 +60,31 @@ const SECTIONS = [
 // took a doctrine about what the feed may and may not do.
 const DOCTRINE = [
   {
-    title: 'The record is never overwritten',
-    body: 'Every asset, order, job, and blueprint is versioned rather than replaced. Nothing is quietly corrected after the fact, so “when did that stack move?” is a query instead of an argument.',
+    title: 'Nothing is overwritten',
+    body: 'Every asset, order, job, and blueprint is versioned: a change closes the old row and opens a new one. \u201cWhen did that stack move?\u201d is a query, not an argument.',
   },
   {
-    title: 'Clearance is compartmented',
-    body: 'Row-level security scopes every read to your account. Access is granted one ESI scope at a time, and anything you share is cut deliberately thin: one ship, one alliance’s intel, one public page.',
+    title: 'Compartmented by construction',
+    body: 'Row-level security scopes every read to your own account, and access is granted one ESI scope at a time. Shares are deliberately narrow: one ship, one alliance\u2019s intel, one public page.',
   },
   {
-    title: 'Observation, never command',
-    body: 'The link holds no write permission against your account and never asks for one. It watches your holdings; it cannot touch them, undock them, or spend them.',
+    title: 'Read-only, structurally',
+    body: 'The site holds no write permission against your account and never asks for one. It can tell you what you own; it cannot touch it. It is a receiver, not a transmitter.',
   },
 ]
 
 const STEPS = [
   {
-    title: 'Accreditation',
-    body: 'Link a character through EVE SSO. Each permission is granted one scope at a time — the feeds you skip are simply the ones that stay dark.',
+    title: 'Link a character',
+    body: 'Sign in through EVE SSO and grant scopes one at a time. Anything you skip simply stays dark \u2014 the site works with whatever you choose to feed it.',
   },
   {
-    title: 'Datalink established',
-    body: 'Scheduled pipelines pull every endpoint into the record and keep every version of it. Backfill is automatic; there is no cutover and nothing to import by hand.',
+    title: 'Let the pipelines run',
+    body: 'Scheduled jobs pull every endpoint on their own clock and keep every version. Backfill is automatic; there is nothing to import, export, or paste by hand.',
   },
   {
-    title: 'Standing watch',
-    body: 'Read the sections, wire up a spreadsheet, hand out a scoped share link, or point an AI assistant at it. The picture stays current whether or not you are looking at it.',
+    title: 'Read the picture',
+    body: 'Browse it, wire a spreadsheet to a CSV feed, hand out a share link scoped to exactly one thing, or point an AI assistant at your data and start asking questions.',
   },
 ]
 
@@ -101,25 +101,24 @@ const Home = async () => {
         </p>
         <h1 className={styles.headline}>One picture. Every hangar, every wallet, every alt.</h1>
         <p className={styles.sub}>
-          EDENCOM was chartered to make four empires that had spent a millennium shooting at each other read the same
-          threat picture. Edencom Link does the smaller, harder version of that job: one continuously synchronized
-          record across every character and corporation you fly, with a full history behind every line of it — from your
-          first frigate to the ten-millionth unit of Tritanium.
+          EDENCOM’s real achievement was never the Vorton projector. It was getting four empires that had spent a
+          millennium shooting at each other to read one threat picture and trust it. Your eleven alts have the same
+          problem. This is their datalink.
         </p>
         <div className={styles.actions}>
           {user ? (
             <>
               <Link href="/asset" className={styles.primary}>
-                Open the link
+                Open your assets
               </Link>
               <Link href="/character/" className={styles.secondary}>
-                Accredit a character
+                Add a character
               </Link>
             </>
           ) : (
             <>
               <Link href="/account/register" className={styles.primary}>
-                Request accreditation
+                Request access
               </Link>
               <Link href="/account/login" className={styles.secondary}>
                 Sign in
@@ -150,10 +149,10 @@ const Home = async () => {
 
       <section className={styles.section}>
         <p className={styles.eyebrow}>The feed</p>
-        <h2 className={styles.sectionTitle}>Nine sections. One record.</h2>
+        <h2 className={styles.sectionTitle}>Nine feeds. One picture.</h2>
         <p className={styles.sectionSub}>
-          Most capsuleers run their holdings on spreadsheets, screenshots, and a Discord bot that stopped working two
-          patches ago — every source disagreeing with every other. Edencom Link replaces the pile with one feed that
+          Most capsuleers run their holdings on spreadsheets, screenshots, and a Discord bot that died two patches ago —
+          every source partly right, none agreeing. This is the same data, pulled straight from ESI, in one place that
           agrees with itself.
         </p>
         <div className={styles.cards}>
@@ -169,7 +168,7 @@ const Home = async () => {
 
       <section className={styles.section}>
         <p className={styles.eyebrow}>The doctrine</p>
-        <h2 className={styles.sectionTitle}>A shared picture is only worth what its rules are worth</h2>
+        <h2 className={styles.sectionTitle}>Why the picture holds</h2>
         <div className={styles.pillars}>
           {DOCTRINE.map(({ title, body }) => (
             <div key={title} className={styles.pillar}>
@@ -182,7 +181,7 @@ const Home = async () => {
 
       <section className={styles.section}>
         <p className={styles.eyebrow}>Standing up the link</p>
-        <h2 className={styles.sectionTitle}>Live inside a downtime</h2>
+        <h2 className={styles.sectionTitle}>Three steps, about a minute</h2>
         <ol className={styles.steps}>
           {STEPS.map(({ title, body }, index) => (
             <li key={title} className={styles.step}>
@@ -198,20 +197,18 @@ const Home = async () => {
 
       <section className={styles.quote}>
         <blockquote className={styles.quoteText}>
-          “Before the link, knowing where anything was meant alt-tabbing through eleven hangars and trusting a
-          spreadsheet last edited before the war. Now I know where every asset is — including the corpses.”
+          “It knows where everything is — every hangar, every can, every wallet division. Including the corpses. It knew
+          the corpses by name.”
         </blockquote>
-        <p className={styles.quoteAttribution}>— Logistics director, an undisclosed nullsec alliance</p>
+        <p className={styles.quoteAttribution}>— a nullsec logistics director, who asked not to be identified</p>
       </section>
 
       <section className={styles.closing}>
-        <h2 className={styles.closingTitle}>
-          {user ? 'The watch is already standing.' : 'Come read the same picture.'}
-        </h2>
+        <h2 className={styles.closingTitle}>Establish the link</h2>
         <p className={styles.closingBody}>
           {user
-            ? 'Your pipelines are live and sweeping. Review what landed most recently, or grant a scope you left dark during accreditation.'
-            : 'Accreditation is invite-only. If you hold a code, standing up the link takes about a minute — no import, no cutover, no waiting on a downtime.'}
+            ? 'You’re already on the net. Review what landed on the last sweep, or grant a scope you left dark when you added a character.'
+            : 'Registration is invite-only; find a member with a code, and you’re about a minute from a single picture of everything you own.'}
         </p>
         <div className={styles.actions}>
           {user ? (
@@ -226,7 +223,7 @@ const Home = async () => {
           ) : (
             <>
               <Link href="/account/register" className={styles.primary}>
-                Request accreditation
+                Request access
               </Link>
               <Link href="/account/login" className={styles.secondary}>
                 Sign in
