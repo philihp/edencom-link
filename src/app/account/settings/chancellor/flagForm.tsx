@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { union, without } from 'ramda'
 
-import { KNOWN_FLAGS } from '@/flags'
+import { KNOWN_FLAGS } from '@/flagCatalog'
 
 import Dot from '../dot'
 import { AccountFlags, lookupAccountFlags, setAccountFlags } from './actions'

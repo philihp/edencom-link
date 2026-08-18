@@ -2,6 +2,7 @@ import { createYoga } from 'graphql-yoga'
 import type { NextRequest } from 'next/server'
 
 import { GRAPHQL_FLAG, hasFlag } from '@/flags'
+import { timed, withServerTiming } from '@/serverTiming'
 import { createClient } from '@/utils/supabase/server'
 import { buildContext } from './context'
 import { schema } from './schema'
@@ -32,7 +33,9 @@ const graphiqlForRequest = async (): Promise<boolean> => {
 
 const { handleRequest } = createYoga({
   schema,
-  context: ({ request }) => buildContext(request),
+  // Timed apart from execution: context building is auth + flag lookups, the
+  // execution phase is the resolvers' DB work (timingPlugin.ts spans it).
+  context: ({ request }) => timed('graphql.context', () => buildContext(request)),
   graphqlEndpoint: '/api/graphql',
   fetchAPI: { Response },
   // GraphiQL for schema-aware autocomplete and the docs explorer; the /graphql
@@ -59,7 +62,11 @@ const { handleRequest } = createYoga({
 })
 
 // Thin wrapper only to satisfy Next's route-handler signature (yoga's second
-// parameter is its own server context, not Next's { params }).
-const handler = (request: NextRequest): Promise<Response> => Promise.resolve(handleRequest(request, {}))
+// parameter is its own server context, not Next's { params }) — plus the
+// Server-Timing scope, so the in-browser editor's network panel shows which
+// resolvers a slow query spent its time in (src/serverTiming.ts).
+const handler = withServerTiming((request: NextRequest): Promise<Response> =>
+  Promise.resolve(handleRequest(request, {}))
+)
 
 export { handler as GET, handler as POST, handler as OPTIONS }

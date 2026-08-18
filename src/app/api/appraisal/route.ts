@@ -13,6 +13,7 @@ import { NextResponse } from 'next/server'
 import { all, test, uniq } from 'ramda'
 
 import { appraise, appraisalUrl, MARKETS, type Market } from '@/innominate'
+import { timed, withServerTiming } from '@/serverTiming'
 import { createClient } from '@/utils/supabase/server'
 
 import { MAX_LINES } from './assetLines'
@@ -28,7 +29,11 @@ export const maxDuration = 60
 const fail = (status: number, error: string, extra: Record<string, unknown> = {}) =>
   NextResponse.json({ ok: false, error, ...extra }, { status })
 
-export async function POST(request: Request) {
+// Wrapped for Server-Timing (src/serverTiming.ts): this route has two very
+// different slow halves — the RLS-scoped subtree walk and the throttled
+// innomin.at call — and the panel that fires it is the one place a user
+// actually waits, so the split is worth surfacing.
+const handler = async (request: Request) => {
   const supabase = await createClient()
   const { data: auth, error: authError } = await supabase.auth.getUser()
   if (authError || !auth?.user) return fail(401, 'Sign in to appraise items.')
@@ -63,7 +68,9 @@ export async function POST(request: Request) {
   // Everything under the target, priced by name — the walk, the blueprint skip
   // and the name merge all live in ./assetLines so this route and the MCP
   // appraise_assets tool can't disagree about what's in a container.
-  const { lines, skippedBlueprints, unnamed } = await collectAssetLinesForTargets(supabase, targets)
+  const { lines, skippedBlueprints, unnamed } = await timed('appraise.walk', () =>
+    collectAssetLinesForTargets(supabase, targets)
+  )
 
   if (lines.length === 0) {
     return fail(422, 'Nothing here can be appraised.', {
@@ -106,3 +113,5 @@ export async function POST(request: Request) {
     ...(appraisal.rateLimitRemaining != null && { rate_limit_remaining: appraisal.rateLimitRemaining }),
   })
 }
+
+export const POST = withServerTiming(handler)

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 import { recordRequest } from '@/observability'
+import { applyServerTiming, collectServerTiming } from '@/serverTiming'
 
 // Wraps a route handler so every return path emits one `request.timing` metric
 // (src/observability.js) — the measurement seam the BRIN index project reads
@@ -9,6 +10,10 @@ import { recordRequest } from '@/observability'
 // live vs historical) through the mutable `timing` it receives, so a route
 // stays a one-line change: wrap the handler, set `timing.rows`/`timing.served`
 // where they become known.
+//
+// It also opens the Server-Timing collection scope (src/serverTiming.ts), so
+// every wrapped route answers with a per-request breakdown of its Supabase
+// round trips alongside the aggregate metric line.
 
 export type RequestTiming = {
   // Rows in the response; stays null on requests that never produce any.
@@ -44,34 +49,35 @@ const outcomeOf = (status: number): string => {
 
 export const withRequestTiming =
   <C>(meta: TimingMeta, handler: (request: NextRequest, context: C, timing: RequestTiming) => Promise<NextResponse>) =>
-  async (request: NextRequest, context: C): Promise<NextResponse> => {
-    const startedAt = Date.now()
-    const timing: RequestTiming = { rows: null, served: 'live' }
-    try {
-      const response = await handler(request, context, timing)
-      if (meta.deprecated) response.headers.set('Deprecation', 'true')
-      recordRequest({
-        route: meta.route,
-        surface: meta.surface,
-        field: meta.field,
-        served: timing.served,
-        outcome: outcomeOf(response.status),
-        status: response.status,
-        rows: timing.rows,
-        durationMs: Date.now() - startedAt,
-      })
-      return response
-    } catch (error) {
-      recordRequest({
-        route: meta.route,
-        surface: meta.surface,
-        field: meta.field,
-        served: timing.served,
-        outcome: 'query_failed',
-        status: 500,
-        rows: null,
-        durationMs: Date.now() - startedAt,
-      })
-      throw error
-    }
-  }
+  (request: NextRequest, context: C): Promise<NextResponse> =>
+    collectServerTiming(async () => {
+      const startedAt = Date.now()
+      const timing: RequestTiming = { rows: null, served: 'live' }
+      try {
+        const response = applyServerTiming(await handler(request, context, timing))
+        if (meta.deprecated) response.headers.set('Deprecation', 'true')
+        recordRequest({
+          route: meta.route,
+          surface: meta.surface,
+          field: meta.field,
+          served: timing.served,
+          outcome: outcomeOf(response.status),
+          status: response.status,
+          rows: timing.rows,
+          durationMs: Date.now() - startedAt,
+        })
+        return response
+      } catch (error) {
+        recordRequest({
+          route: meta.route,
+          surface: meta.surface,
+          field: meta.field,
+          served: timing.served,
+          outcome: 'query_failed',
+          status: 500,
+          rows: null,
+          durationMs: Date.now() - startedAt,
+        })
+        throw error
+      }
+    })

@@ -19,6 +19,7 @@
 // dev (no VERCEL) skips the queue and calls directly — a single developer isn't
 // a threat to the shared budget, and it keeps `pnpm run dev` working.
 import { requestKeyFor } from '@/innominateKey'
+import { timed } from '@/serverTiming'
 import { send } from '@/utils/queue'
 import { createServiceClient } from '@/utils/supabase/service'
 
@@ -370,13 +371,18 @@ export const appraise = async (
   // Local dev has no Vercel queue infrastructure and is a single developer, so
   // it calls directly (bypassing the shared-budget throttle); production routes
   // every call through the throttled queue.
+  // Both paths are spanned for Server-Timing (src/serverTiming.ts) under the
+  // same name and told apart by their description: on a queued call the number
+  // is mostly time spent waiting for the global throttle to reach this
+  // request, not innomin.at's own latency, and reading a 12 s appraisal
+  // without that distinction sends you debugging the wrong system.
   if (process.env.VERCEL !== '1') {
-    const result = await callInnominate(items, market, save)
+    const result = await timed('appraise.price', () => callInnominate(items, market, save), 'innomin.at direct')
     if (result.ok) cacheSet(key, result.appraisal)
     return result
   }
 
-  return appraiseViaQueue(items, market, save, key)
+  return timed('appraise.price', () => appraiseViaQueue(items, market, save, key), 'innomin.at queued')
 }
 
 // ---- Queue consumer entry point -------------------------------------------
