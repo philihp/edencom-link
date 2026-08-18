@@ -64,7 +64,7 @@ const LinkPage = async () => {
 
   return (
     <>
-      <h1>Standing Observation Links</h1>
+      <h1>Data Links</h1>
       <p>
         A Link is a standing query registered against your materiel, works orders and fund position. It is issued to a
         corporation, to an alliance, to whoever holds a signed URL, or to everyone. Whoever opens it runs the query and
