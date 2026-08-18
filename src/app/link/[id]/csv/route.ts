@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 
 import { EXPORT_CAP } from '@/app/api/graphql/filters'
 import { recordRequest } from '@/observability'
+import { withServerTiming } from '@/serverTiming'
 import { toCsv } from '@/utils/csv'
 import { resolveLink } from '../../access'
 import { csvRows } from '../../flatten'
@@ -16,7 +17,7 @@ import { runLink } from '../../run'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
-export const GET = async (
+const handler = async (
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ): Promise<NextResponse> => {
@@ -67,3 +68,10 @@ export const GET = async (
     headers: { 'content-type': 'text/csv; charset=utf-8' },
   })
 }
+
+// Wrapped rather than exported directly so the response carries the
+// Server-Timing breakdown of the link's execution (src/serverTiming.ts) — the
+// per-request twin of the request.timing metric runLink emits. The api_token
+// CSV routes get it from withRequestTiming; this route does its own metric
+// bookkeeping, so it opts in here.
+export const GET = withServerTiming(handler)

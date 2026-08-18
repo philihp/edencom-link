@@ -2,6 +2,7 @@ import { Kind, type DocumentNode, type FieldNode, type OperationDefinitionNode }
 import type { Plugin } from 'graphql-yoga'
 
 import { recordRequest } from '@/observability'
+import { recordServerTimingSpan } from '@/serverTiming'
 
 // The request.timing emitter for /api/graphql (src/observability.js): one
 // metric line per executed operation, timed over the execution phase — the
@@ -29,6 +30,10 @@ export const timingPlugin: Plugin = {
         // Incremental delivery (@defer/@stream) answers an AsyncIterable; not
         // enabled on this endpoint, so skip rather than misreport a partial.
         if (Symbol.asyncIterator in result) return
+        // Also as a Server-Timing span, named by the root fields so a query
+        // selecting several shows which combination cost what
+        // (src/serverTiming.ts). Same clock, same phase, different audience.
+        recordServerTimingSpan('graphql.execute', Date.now() - startedAt, field)
         recordRequest({
           route: '/api/graphql',
           surface: 'graphql',

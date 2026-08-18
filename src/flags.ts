@@ -1,19 +1,9 @@
 import { createServiceClient } from '@/utils/supabase/service'
 
-// Dark-launch flag names live here so callers can't typo them apart.
-export const GRAPHQL_FLAG = 'graphql'
-export const LINK_FLAG = 'link'
-export const FIT_UI_FLAG = 'fit-ui'
-
-// Every flag the Chancellor tools offer as a checkbox, with the copy shown
-// beside it. A flag an account already carries that isn't listed here still
-// renders (as an unlabelled checkbox), so a hand-set flag is never silently
-// dropped when a Chancellor saves.
-export const KNOWN_FLAGS: { flag: string; label: string }[] = [
-  { flag: GRAPHQL_FLAG, label: 'GraphQL API and its playground (/graphql)' },
-  { flag: LINK_FLAG, label: 'Links — Data Links, saved queries issued to others (/link)' },
-  { flag: FIT_UI_FLAG, label: 'Our own ship-fitting stack, in progress (/item/[itemId])' },
-]
+// The flag names and catalog live in src/flagCatalog.ts (dependency-free, so
+// client components can import them); re-exported here so every server caller
+// keeps its single '@/flags' import.
+export { FIT_UI_FLAG, GRAPHQL_FLAG, KNOWN_FLAGS, LINK_FLAG } from '@/flagCatalog'
 
 // user_settings.flags is the per-user dark-launch flag list (see the
 // add_user_settings_flags migration, whose comment points at this module).

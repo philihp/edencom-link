@@ -9,6 +9,7 @@ import { graphql } from 'graphql'
 import { contextForUser } from '@/app/api/graphql/context'
 import { schema } from '@/app/api/graphql/schema'
 import { recordRequest } from '@/observability'
+import { timed } from '@/serverTiming'
 import { linkRows } from './flatten'
 import { topLevelFieldOf } from './validate'
 
@@ -44,13 +45,18 @@ export const runLink = async (
   { timing, exporting = false }: LinkRunOptions = {}
 ): Promise<LinkResult> => {
   const startedAt = Date.now()
-  const contextValue = await contextForUser(link.user_id, { exporting })
-  const result = await graphql({
-    schema,
-    source: link.query,
-    variableValues: link.variables ?? {},
-    contextValue,
-  })
+  // Split into two spans because they fail differently: building the creator
+  // context is a handful of fixed lookups, while execution is the resolvers'
+  // (unbounded) query work. A slow link is nearly always the second.
+  const contextValue = await timed('link.context', () => contextForUser(link.user_id, { exporting }))
+  const result = await timed('link.execute', () =>
+    graphql({
+      schema,
+      source: link.query,
+      variableValues: link.variables ?? {},
+      contextValue,
+    })
+  )
   const out = { data: result.data ?? null, errors: (result.errors ?? []).map((e) => e.message) }
   // The duration covers building the creator context plus executing the query —
   // everything between "the link is authorized" and "rows exist in memory",

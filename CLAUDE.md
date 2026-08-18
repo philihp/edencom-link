@@ -96,6 +96,7 @@ Functions take `(accessToken, id, ...)`; return raw ESI JSON (paged wrappers ret
 ### `src/utils/`
 
 - `apiToken.ts` — `resolvePlayer(token)` for Sheets endpoints → `{ ok, supabase, registrationIds }` or error
+- `supabase/timedFetch.ts` — `timedSupabaseFetch(label)`, the instrumented `fetch` every Supabase client factory installs so each round trip becomes a Server-Timing span
 - `csv.ts` — `toCsv(rows)` (RFC 4180); `atParam.ts` — `parseAtParam(raw)` for the `at=` time-travel param (pads partial ISO dates)
 - `queue.ts` — region-pinned `@vercel/queue` client (default `sfo1`) + `send`/`handleCallback`
 - `cron.ts` — `requireCronSecret`; `runDirectCronJob` kept only for the `esf-data`/`sheet-csv` bootstrap routes
@@ -225,4 +226,5 @@ Key Postgres functions (RPC or SQL):
 
 - **ESI conditional requests (ETags):** the single-request snapshot jobs (character-orders, -wallet-transactions, -industry-jobs, -fittings) send the last ETag as `If-None-Match` (`esiConditionalJson`). On `304` the job skips its reconcile; on `200` it reconciles and stores the new ETag **after** the write commits, so a mid-run failure never skips a fetch whose data wasn't persisted. Only applied to endpoints returning the whole collection in one request (a `304` unambiguously means nothing changed); paginated endpoints are deliberately unconditional. Each request emits an `esi.conditional_request` metric (`recordEsiConditional` in `src/observability.js`).
 - **Observability metrics:** `src/observability.js` emits single-line JSON metrics to stdout, ingested from Vercel function logs — zero-dependency, the single seam to later swap in real OTel.
+- **Server-Timing headers** (`docs/server-timing.md`): `src/serverTiming.ts` holds a request-scoped span collector (`AsyncLocalStorage`); `withRequestTiming` and `withServerTiming(handler)` open the scope and stamp the response, so the browser's network panel shows *which* query was slow. Spans arrive free for every Supabase round trip — each client factory passes `timedSupabaseFetch(label)` as supabase-js's `global.fetch` (`db.<rpc|table>`, `sde.*`, `auth.*`) — plus explicit `timed(name, fn)` around the appraisal/GraphQL/link phases. Publicly cacheable responses go unstamped (a CDN would serve the first caller's timing to everyone). **Pages can't carry it** — App Router server components have no response-header seam; the collector is simply inert under a render. Because it imports `node:async_hooks`, a client component transitively importing a Supabase factory is now a build error (why `src/flagCatalog.ts` exists, split out of `@/flags`).
 - **Name resolution:** `universe_name` caches ESI `universeNames`; `resolveBatch()` bisects on error. Type names come from `src/sdeTypes.ts`.
