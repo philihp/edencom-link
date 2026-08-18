@@ -202,6 +202,37 @@ export const fittings = (access_token, characterID, ifNoneMatch) =>
     label: `fittings ${characterID}`,
   })
 
+// Save a fitting to the character's in-game fitting library. The body is
+// ESI's own fitting shape minus the id — { name, description, ship_type_id,
+// items[{ type_id, flag, quantity }] } — which is exactly what
+// character_fitting_over_time stores, so restoring an archived fit is a
+// straight replay of a stored row. ESI mints the fitting_id and returns
+// { fitting_id }: page a fit out and back in and it comes back with a new one,
+// which is why the archive keys on content rather than on the game's id.
+//
+// Needs esi-fittings.write_fittings.v1 — this and deleteFitting are the only
+// calls in this file that change a character's game state.
+export const createFitting = (access_token, characterID, fitting) =>
+  esiJson(`/characters/${characterID}/fittings/`, {
+    access_token,
+    method: 'POST',
+    body: fitting,
+    label: `createFitting ${characterID}`,
+  })
+
+// Delete one saved fitting from the character's in-game library. Answers 204
+// with no body, so there is nothing to parse — the caller learns only that it
+// worked. Irreversible from CCP's side: the caller is responsible for having
+// stored the fit first (see src/app/api/fittings/lib.ts, which writes the whole
+// body to fitting_write_log before it ever gets here).
+export const deleteFitting = async (access_token, characterID, fittingID) => {
+  await esiFetch(`/characters/${characterID}/fittings/${fittingID}/`, {
+    access_token,
+    method: 'DELETE',
+    label: `deleteFitting ${characterID} ${fittingID}`,
+  })
+}
+
 // A character's contracts — every contract they issued or were assigned,
 // covering the last 30 days plus anything still outstanding or in progress.
 // Page-numbered (x-pages), so it is deliberately NOT a conditional request: an

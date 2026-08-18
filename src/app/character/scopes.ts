@@ -14,6 +14,14 @@ export type EsiScope = {
   without: string
   /** Required scopes are always requested and cannot be turned off. */
   required?: boolean
+  /**
+   * Opt-in scopes are left OUT of the default request set: a player who has
+   * never touched /settings/grants is not asked for them. Every other optional
+   * scope is requested by default and the player unchecks what they don't want;
+   * an opt-in scope is the reverse, because granting it lets this app *change*
+   * the character's game state rather than only read it.
+   */
+  optIn?: boolean
 }
 
 export const esiScopes: EsiScope[] = [
@@ -138,8 +146,16 @@ export const esiScopes: EsiScope[] = [
   {
     scope: 'esi-fittings.read_fittings.v1',
     name: 'Saved fittings',
-    why: 'Lists the ship fittings this character has saved in the game, so they can be browsed and opened in the fitting viewer. Read-only — fittings are never created, edited or deleted in game.',
+    why: 'Lists the ship fittings this character has saved in the game, so they can be browsed and opened in the fitting viewer. Reading alone never changes anything in game — archiving and restoring fittings needs the separate write scope below.',
     without: 'this character’s saved fittings will not be listed.',
+  },
+  {
+    scope: 'esi-fittings.write_fittings.v1',
+    name: 'Save and delete fittings',
+    why: 'Lets you archive a fitting — save it here and delete it from the game to free one of the character’s 500 saved-fitting slots — and restore an archived fitting back into the game later. This is the only scope that changes anything in game, so it is off unless you turn it on, and every fitting deleted this way is stored here in full first.',
+    without:
+      'fittings can be browsed but not archived or restored; the character keeps every fit in its 500 in-game slots.',
+    optIn: true,
   },
   {
     scope: 'esi-universe.read_structures.v1',
@@ -149,8 +165,11 @@ export const esiScopes: EsiScope[] = [
   },
 ]
 
-/** Every scope, requested by default when a player has saved no preferences. */
-export const defaultScopes = esiScopes.map((s) => s.scope)
+/**
+ * The scopes requested by default when a player has saved no preferences —
+ * every scope except the opt-in ones, which a player has to ask for.
+ */
+export const defaultScopes = esiScopes.filter((s) => !s.optIn).map((s) => s.scope)
 
 /** Scopes that are always requested regardless of the player's preferences. */
 export const requiredScopes = esiScopes.filter((s) => s.required).map((s) => s.scope)
