@@ -4821,7 +4821,21 @@ create table public.user_settings (
   enabled_scopes text[] not null default '{}',
   api_token text unique,
   flags text[] not null default '{}',
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+  -- Industry facility tax rates, as fractions (0.001 = 0.1%), behind the
+  -- cost-avoidance figure on /structure. Player-declared rather than
+  -- extracted: what a structure owner charges is set in the client and ESI
+  -- reports it nowhere -- corp_structure.services carries a name and a state
+  -- and nothing else. `own` is what this account's characters pay in the
+  -- account's own structures, `public` what renting slots elsewhere would have
+  -- cost. Bounded either side of what the client allows so a percent typed
+  -- where a fraction belongs can't multiply the figure by a hundred.
+  industry_tax_rate_own    numeric(6, 5) not null default 0.001,
+  industry_tax_rate_public numeric(6, 5) not null default 0.01,
+  constraint user_settings_industry_tax_rates_sane check (
+    industry_tax_rate_own    between 0 and 1
+    and industry_tax_rate_public between 0 and 1
+  )
 );
 
 alter table public.user_settings enable row level security;
