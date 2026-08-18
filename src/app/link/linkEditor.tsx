@@ -59,6 +59,11 @@ const fieldValuesOf = (template: LinkTemplate): Record<string, string> =>
 type LinkEditorProps = {
   // null = the create-new editor; otherwise the link being edited.
   link: { id: string; name: string; query: string; variables: string } | null
+  // Optional controlled open state, for the Link page, where the Edit toggle
+  // sits in the heading's button row and the form opens underneath it rather
+  // than inside it. Uncontrolled (its own button) everywhere else.
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
 }
 
 type PreviewResult = { data: unknown; errors: string[] }
@@ -68,9 +73,11 @@ type PreviewResult = { data: unknown; errors: string[] }
 // declares them, raw JSON otherwise), a run-as-me preview rendered as the same
 // table the viewer page shows, save, and delete. Sharing lives in the
 // ShareDialog the server component renders beside this.
-export const LinkEditor = ({ link }: LinkEditorProps) => {
+export const LinkEditor = ({ link, open: openProp, onOpenChange }: LinkEditorProps) => {
   const router = useRouter()
-  const [open, setOpen] = useState(link === null)
+  const [selfOpen, setSelfOpen] = useState(link === null)
+  const open = openProp ?? selfOpen
+  const setOpen = onOpenChange ?? setSelfOpen
   const [name, setName] = useState(link?.name ?? '')
   const [query, setQuery] = useState(link?.query ?? DEFAULT_QUERY)
   const [variables, setVariables] = useState(link?.variables ?? '')

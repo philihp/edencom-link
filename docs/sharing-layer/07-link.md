@@ -92,11 +92,23 @@ assumes a service client.
 
 ## Surfaces
 
-- **`/link` — the editor, a new top-level route, dark-launched behind a
+- **`/link` — the directory, a new top-level route, dark-launched behind a
   feature flag** (`LINK_FLAG = 'link'` in `src/flags.ts`, the same
-  gate-and-redirect shape as `/graphql`): list your links, create/edit
-  (query textarea + variables + a Run-as-me preview reusing the `/graphql`
-  editor component), and the share dialog for the audience.
+  gate-and-redirect shape as `/graphql`): one line per Link — name, who it is
+  issued to (`issuance.ts`, tested), when it last changed — plus the
+  create-new editor at the top. **Amended after first use:** as built, this
+  page stacked a full editor _and_ a share dialog into every row, so ten Links
+  were a scroll rather than a look, and the audience controls for a query sat
+  next to a query you weren't reading. Per-link editing and sharing moved to
+  the Link's own page; the index is a listing and nothing else.
+- **`/link/[id]` for its owner — where a Link is administered.** CSV, Edit and
+  Share sit in one corner row of the heading, so issuing a Link happens while
+  looking at the results it will hand over. The Edit toggle lives in that row
+  but the form opens under the heading (`ownerPanel.tsx` holds the open state;
+  `LinkEditor` takes optional controlled `open`/`onOpenChange` for exactly
+  this), because a column form crushes inside a flex button row. The Sheets
+  `=IMPORTDATA()` formula moved here too — it only exists when the Link is
+  issued, so it belongs beside the control that issues it.
 - **`/link/[id]`** — the viewer: runs the link (per Execution above),
   renders the result as a table, shows the creator's name (via
   `character_directory`-safe display: link shares are user-scoped, so show
@@ -162,7 +174,7 @@ editor.
 
 Deleting a link stays in the web editor.
 
-`update_link` runs the query the link *would have* before writing it, and
+`update_link` runs the query the link _would have_ before writing it, and
 refuses the whole edit if it comes back with nothing at all: a link that
 already has an audience must never be broken underneath them. Zero rows is
 still a legitimate answer — an empty container is worth watching — so only a
@@ -193,7 +205,7 @@ other tool declares. What actually constrains it, as always, is not the hint:
 - they write on the **caller's own bearer client**, so RLS pins the row to them
   exactly as the editor's cookie session does — no service role anywhere in the
   path, no creating a link for someone else, and no editing one (`update_link`
-  additionally filters to `user_id`, so a link merely shared *with* the caller
+  additionally filters to `user_id`, so a link merely shared _with_ the caller
   is invisible to it);
 - the audience is resolved against the caller's **own** corporations and
   alliances (`src/app/link/audience.ts`, pure and unit-tested in
