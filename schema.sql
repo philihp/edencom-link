@@ -117,6 +117,7 @@ drop table if exists public.character_ship_over_time    cascade;
 drop view  if exists public.character_fitting            cascade;
 drop table if exists public.character_fitting_over_time  cascade;
 drop table if exists public.character_fitting_share      cascade;
+drop table if exists public.fitting_write_log            cascade;
 -- Pre-existing gap: character_mercenary_den never had a drop statement (added
 -- via migration), so re-running this file failed on it. Now an SCD table +
 -- current-snapshot view, with status/share siblings.
@@ -2263,6 +2264,83 @@ create policy "Users remove own fitting shares"
 grant select                         on public.character_fitting_share to anon;
 grant select, insert, update, delete on public.character_fitting_share to authenticated;
 grant all                    on public.character_fitting_share to service_role;
+
+-- ── fitting_write_log ─────────────────────────────────────────────────────
+-- Every change this deployment has made to a character's in-game fitting
+-- library, and the only place a deleted fit survives if nothing else does.
+--
+-- This is the app's first write path to ESI: everywhere else, tokens are
+-- read-only and CCP's copy of the universe is something we mirror, never
+-- touch. The fittings archive (docs/fitting-fuse.md) breaks that, because the
+-- feature *is* deleting: a character may keep 500 fits saved, and archiving
+-- one means storing it here and then removing it from the game so the slot
+-- comes free.
+--
+-- So the log is written BEFORE the ESI call, not after it, and it carries the
+-- fit's whole body — name, ship, every module — not a reference to a row
+-- elsewhere. A crash between the insert and CCP's 204 leaves a 'pending' row
+-- holding a complete, restorable copy of a fit that may or may not still
+-- exist; the far worse shape, a fit deleted from the game with nothing on this
+-- side to replay, cannot happen. character_fitting_over_time keeps history
+-- too, but it is a mirror of what the extract last saw, and a fit created and
+-- deleted between two extracts would never appear in it at all.
+--
+-- Append-only in practice: rows are inserted 'pending' and updated once to
+-- 'ok' or 'error'. Nothing deletes from here.
+create table public.fitting_write_log (
+  id bigint generated always as identity primary key,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  registration_id uuid not null references public.registration(id) on delete cascade,
+  -- 'delete' removed a fit from the game; 'create' put one back (or saved a
+  -- brand new one). Named for what happened in EVE, not for what the player
+  -- called it in the filesystem.
+  op text not null check (op in ('create', 'delete')),
+  -- The game's id: the fit being deleted, or the id ESI minted for a created
+  -- one (null until it answers, and on a failed create).
+  fitting_id bigint,
+  -- The caller's own key for a restore, minted client-side so the write can be
+  -- a PUT. A restore creates a fitting inside EVE and CCP assigns its id, so
+  -- there is no server-side id to address until after the fact; a GUID names
+  -- the *attempt* instead, and makes a retry after a lost response replay onto
+  -- this row rather than saving a second copy. Null on deletes, which are
+  -- addressed by the game's fitting_id.
+  request_id uuid,
+  -- The fit itself, complete enough to POST back verbatim.
+  name text,
+  description text,
+  ship_type_id bigint,
+  items jsonb not null default '[]'::jsonb,
+  -- src/fittingArchive.ts contentHash over the four fields above: what makes
+  -- "this fit is already saved in game" answerable without comparing blobs.
+  content_hash text not null,
+  -- What asked for this. 'fuse' is the macOS filesystem client; the column
+  -- exists so a future UI path is distinguishable in the audit trail.
+  source text not null default 'api',
+  status text not null check (status in ('pending', 'ok', 'error')),
+  error text,
+  created_at timestamptz not null default now(),
+  finished_at timestamptz
+);
+create index fitting_write_log_registration_id_idx
+  on public.fitting_write_log (registration_id, created_at desc);
+create index fitting_write_log_content_hash_idx
+  on public.fitting_write_log (registration_id, content_hash);
+create unique index fitting_write_log_request_id_idx
+  on public.fitting_write_log (request_id) where request_id is not null;
+
+alter table public.fitting_write_log enable row level security;
+-- Readable by its owner so the audit trail is theirs to inspect; written only
+-- by the service role, because the route that writes it is also the only thing
+-- allowed to call ESI. A browser session can never insert a row claiming a
+-- delete happened.
+create policy "Users read own fitting writes"
+  on public.fitting_write_log
+  for select
+  to authenticated
+  using (user_id = (select auth.uid()));
+
+grant select on public.fitting_write_log to authenticated;
+grant all    on public.fitting_write_log to service_role;
 
 -- ── character_mercenary_den (SCD type 2) ──────────────────────────────────
 -- A character's deployed Mercenary Dens, from the compatibility-date ESI

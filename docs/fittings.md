@@ -53,9 +53,12 @@ The schema below is therefore built with an `owner_scope` column
 endpoint, ingesting it is a new job writing a new `owner_scope` value into the
 same table, plus a filter on the page — not a migration of everything.
 
-A follow-up plan now exists for going beyond read-only entirely:
-[`fitting-paging.md`](fitting-paging.md) — using the write scope to page fits
-between the game's 500-slot saved list and an unbounded library here.
+**Shipped follow-up: writes.** Going beyond read-only was planned in
+[`fitting-paging.md`](fitting-paging.md) and shipped as
+[`fitting-fuse.md`](fitting-fuse.md) — the `esi-fittings.write_fittings.v1`
+scope, the `/api/fittings` routes, and a macOS FUSE mount that makes archiving a
+fit out of the game's 500 slots a `cp` and a `rm`. That scope is this app's
+first write scope, and the only one excluded from the default request set.
 
 **Shipped follow-up: per-fit sharing, at three levels.** A fit's own page
 (`/fitting/[characterId]/[fittingId]`) carries share controls backed by

@@ -9,9 +9,17 @@ they aren't flying gets **paged out** (archived here, deleted from the game).
 The player's _library_ — every fit they've ever kept — lives on this site;
 the game holds only the working set.
 
-Status: **plan only.** Nothing below is built. It builds on the shipped
-read-only fittings feature (`docs/fittings.md`: scope #742, extract #743,
-`/fitting` page #744, MCP tool #745).
+Status: **superseded in part.** The write path described here shipped, with a
+different interface and a simpler state machine — see
+[`fitting-fuse.md`](fitting-fuse.md): `/api/fittings` does the ESI writes
+synchronously (its caller is a filesystem, so `rm` has to have happened by the
+time it returns), `fitting_write_log` replaces `fitting_page_op`, and the
+archive lives in the player's own folders rather than in a `fitting_library`
+table. What is still unbuilt here is the **library** half — auto-eviction, pins,
+and a resident/archived view on `/fitting`.
+
+It builds on the shipped read-only fittings feature (`docs/fittings.md`: scope
+#742, extract #743, `/fitting` page #744, MCP tool #745).
 
 ## Why this is possible at all
 

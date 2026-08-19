@@ -1,15 +1,16 @@
 # edencom-link
 
-EVE Online hangar/wallet/industry tracker. Pulls character and corporation data from
-CCP's ESI API into Postgres (Supabase), then serves it through a Next.js app.
+An ERP for your EVE Online corp salvaged from abandoned Edencom hardware, Link will pull
+character and corp ESI data into a time-series postgres database for historical tracking
+and real-time data window sharing across your alliance, corp, or just for your own
+spreadsheets.
 
-## Prerequisites
+## Stack
 
-- [Node.js](https://nodejs.org/) 24.16.0+ (see `.node-version`)
-- [pnpm](https://pnpm.io/) (version is pinned by the `packageManager` field in `package.json`)
-- [Docker](https://www.docker.com/) — required to run Supabase locally
-- [Supabase CLI](https://supabase.com/docs/guides/local-development/cli/getting-started) — already listed as a dev dependency, so `pnpm install` is enough; invoke it via `pnpm exec supabase ...` or `npx supabase ...`
-- An [EVE Online developer application](https://developers.eveonline.com/applications) for SSO login (client ID + secret, callback URL)
+- Node.js (Javascript) 24.16.0+ (see `.node-version`)
+- [pnpm](https://pnpm.io) - Node Package Manager for polyrepos
+- Supabase - Postgres on Docker handling authentication and secure RLS sharing.
+- EVE Online ESI for SSO and data extracts
 
 ## 1. Install dependencies
 

@@ -20,6 +20,27 @@ jobs:
       - run: pnpm run lint
       - run: pnpm test
 
+  # The macOS FUSE client (fuse/), which is Go and has its own tests. Its pure
+  # packages need nothing but a toolchain; the filesystem layer binds to libfuse
+  # through cgo, so the build step installs the headers. Built on Linux because
+  # that is what a runner is — the same source is what `make` produces on macOS
+  # against macFUSE, and a compile failure shows up either way.
+  fuse:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: fuse/go.mod
+          cache-dependency-path: fuse/go.sum
+      - run: sudo apt-get update && sudo apt-get install -y libfuse-dev
+      - run: go vet ./...
+        working-directory: fuse
+      - run: go test ./...
+        working-directory: fuse
+      - run: go build ./...
+        working-directory: fuse
+
   # The signup test against a real Supabase preview branch. Provisioning one
   # takes minutes and costs money, so this is gated three ways:
   #   - fork PRs can't have the secrets, so they're skipped outright;
