@@ -11,7 +11,7 @@
 # test` covers, which is why the CI job on Linux is worth anything.
 
 BINARY := eve-fittings-fs
-PREFIX ?= /usr/local
+PREFIX ?= $(HOME)/.local
 
 .PHONY: all build test vet fmt install clean
 
