@@ -11,6 +11,7 @@ package link
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -185,11 +186,39 @@ type Restored struct {
 	Created   bool  `json:"created"`
 }
 
-// Restore replays an archive file back into the character's in-game library.
+// RequestID mints the key a restore is addressed by: a random (version 4) uuid.
+//
+// Hand-rolled rather than pulled from a dependency, because this is the only
+// uuid in the program and 12 lines of crypto/rand beats a module. Nothing reads
+// the bits — the key only has to be unique, and 122 random ones are.
+func RequestID() (string, error) {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", fmt.Errorf("no randomness for a request id: %w", err)
+	}
+	b[6] = (b[6] & 0x0f) | 0x40 // version 4
+	b[8] = (b[8] & 0x3f) | 0x80 // RFC 4122 variant
+	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16]), nil
+}
+
+// Restore replays an archive file back into the character's in-game library,
+// as a PUT to a key this client mints.
+//
+// The key is what makes the write idempotent: the fitting does not exist yet
+// and CCP will assign its id, so there is no server-side name to address, but
+// a uuid names the attempt. Retry after a lost response and the same PUT lands
+// on the same row and reports the fitting EVE already saved, instead of saving
+// a second copy.
+//
 // The body is the file's bytes, unexamined — the server validates it, because
 // the server is where a "which fields does ESI accept" answer stays current.
 func (c *Client) Restore(ctx context.Context, characterID string, file []byte) (Restored, error) {
-	payload, err := c.do(ctx, http.MethodPost, "/api/fittings/"+url.PathEscape(characterID), file)
+	requestID, err := RequestID()
+	if err != nil {
+		return Restored{}, err
+	}
+	path := fmt.Sprintf("/api/fittings/%s/%s", url.PathEscape(characterID), requestID)
+	payload, err := c.do(ctx, http.MethodPut, path, file)
 	if err != nil {
 		return Restored{}, err
 	}

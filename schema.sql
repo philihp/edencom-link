@@ -2298,6 +2298,13 @@ create table public.fitting_write_log (
   -- The game's id: the fit being deleted, or the id ESI minted for a created
   -- one (null until it answers, and on a failed create).
   fitting_id bigint,
+  -- The caller's own key for a restore, minted client-side so the write can be
+  -- a PUT. A restore creates a fitting inside EVE and CCP assigns its id, so
+  -- there is no server-side id to address until after the fact; a GUID names
+  -- the *attempt* instead, and makes a retry after a lost response replay onto
+  -- this row rather than saving a second copy. Null on deletes, which are
+  -- addressed by the game's fitting_id.
+  request_id uuid,
   -- The fit itself, complete enough to POST back verbatim.
   name text,
   description text,
@@ -2318,6 +2325,8 @@ create index fitting_write_log_registration_id_idx
   on public.fitting_write_log (registration_id, created_at desc);
 create index fitting_write_log_content_hash_idx
   on public.fitting_write_log (registration_id, content_hash);
+create unique index fitting_write_log_request_id_idx
+  on public.fitting_write_log (request_id) where request_id is not null;
 
 alter table public.fitting_write_log enable row level security;
 -- Readable by its owner so the audit trail is theirs to inspect; written only

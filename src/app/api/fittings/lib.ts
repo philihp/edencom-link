@@ -180,6 +180,8 @@ type LogEntry = {
   fitting_id: number | null
   fitting: FittingBody
   source: string
+  /** The caller's own key for a restore; null for a delete. */
+  request_id?: string | null
 }
 
 // Open a fitting_write_log row before touching ESI, and hand back the closers.
@@ -196,6 +198,7 @@ const openLog = async (caller: Caller, registration: Registration, entry: LogEnt
       registration_id: registration.registration_id,
       op: entry.op,
       fitting_id: entry.fitting_id,
+      request_id: entry.request_id ?? null,
       name: entry.fitting.name,
       description: entry.fitting.description,
       ship_type_id: entry.fitting.ship_type_id,
@@ -268,19 +271,49 @@ export const archiveFitting = async (
 }
 
 /**
- * Restore one fitting into the game.
+ * The fitting a completed restore under this request id produced, if it has
+ * already run. This is what makes PUT mean what PUT is supposed to mean: the
+ * same request replayed lands on the same row and reports the same fitting,
+ * without a second thought given to CCP.
+ */
+const replayedRestore = async (caller: Caller, registration: Registration, requestId: string) => {
+  const { data } = await caller.supabase
+    .from('fitting_write_log')
+    .select('fitting_id, status')
+    .eq('request_id', requestId)
+    .eq('registration_id', registration.registration_id)
+    .maybeSingle<{ fitting_id: number | null; status: string }>()
+  // A 'pending' row is a crashed or in-flight attempt, not an answer: fall
+  // through and let the live-ESI content check decide what actually happened.
+  return data?.status === 'ok' && data.fitting_id != null ? Number(data.fitting_id) : null
+}
+
+/**
+ * Restore one fitting into the game, under a key the caller minted.
  *
- * Deduplicated against the live library by content hash, so restoring a file
- * twice — or restoring one that was never actually archived — costs a slot
- * once. Guarded against the 500-slot cap using EVE's own count rather than our
+ * Two independent guards against saving the same fit twice, because they cover
+ * different accidents:
+ *
+ *   * `requestId` catches a **retried request** — a lost response, a `cp` the
+ *     kernel reissued. Same key, same answer, no second call to CCP.
+ *   * the **content hash** catches the same *fit* arriving under a fresh key,
+ *     which is the ordinary case: copying the same archive file in twice mints
+ *     a new GUID each time, and only the content can tell you the game already
+ *     has it.
+ *
+ * Guarded against the 500-slot cap using EVE's own count rather than our
  * mirror's, since the mirror is as stale as the last extract.
  */
 export const restoreFitting = async (
   caller: Caller,
   registration: Registration,
+  requestId: string,
   fitting: FittingBody,
   source: string
 ): Promise<{ fitting_id: number; created: boolean } | Failure> => {
+  const replayed = await replayedRestore(caller, registration, requestId)
+  if (replayed !== null) return { fitting_id: replayed, created: false }
+
   const token = await esiToken(caller, registration, WRITE_SCOPE)
   if (isFailure(token)) return token
 
@@ -302,7 +335,13 @@ export const restoreFitting = async (
     )
   }
 
-  const log = await openLog(caller, registration, { op: 'create', fitting_id: null, fitting, source })
+  const log = await openLog(caller, registration, {
+    op: 'create',
+    fitting_id: null,
+    fitting,
+    source,
+    request_id: requestId,
+  })
   let created: { fitting_id: number }
   try {
     created = await createFitting(token.access_token, registration.character_id, fitting)

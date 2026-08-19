@@ -60,21 +60,38 @@ The client is left with the part only it can do: being a filesystem.
 
 ## The server: `/api/fittings`
 
-Three routes, authenticated by `user_settings.api_token` (as
-`Authorization: Bearer …`, or `?token=` to stay curl-able like the CSV
-endpoints). The token resolves through a service-role client, so every query
-scopes itself to the caller's registrations by hand — there is no RLS backstop
-on this path.
+Authenticated by `user_settings.api_token` (as `Authorization: Bearer …`, or
+`?token=` to stay curl-able like the CSV endpoints). The token resolves through
+a service-role client, so every query scopes itself to the caller's
+registrations by hand — there is no RLS backstop on this path.
 
-| Route                                     | What it does                                       |
-| ----------------------------------------- | -------------------------------------------------- |
-| `GET /api/fittings`                       | every character and every fitting, in one response |
-| `GET /api/fittings/{characterId}/{id}`    | one archive file                                   |
-| `DELETE /api/fittings/{characterId}/{id}` | archive it: store it, then delete it from EVE      |
-| `POST /api/fittings/{characterId}`        | restore an archive file into EVE                   |
+| Route                                            | What it does                                       |
+| ------------------------------------------------ | -------------------------------------------------- |
+| `GET /api/fittings`                              | every character and every fitting, in one response |
+| `GET /api/fittings/{characterId}/{handle}`       | one archive file                                   |
+| `PUT /api/fittings/{characterId}/{requestId}`    | restore an archive file into EVE                   |
+| `DELETE /api/fittings/{characterId}/{fittingId}` | archive it: store it, then delete it from EVE      |
 
 `characterId` is the EVE numeric id, matching `/fitting/[characterId]/…` rather
 than the registration uuid the tables key on.
+
+**The handle in the last segment is one of two things**, and which one says what
+you are naming. A **number** is the game's own `fitting_id`, for a fit EVE
+already has — that is what GET and DELETE address. A **uuid** is a key the
+caller mints for a restore, because the fitting it creates does not exist yet
+and CCP, not us, assigns its id. PUT addresses that one, and GET resolves it
+too once the restore has run, so the URI you wrote to is a URI you can read
+back.
+
+That is why a restore is a PUT rather than a POST to the collection. The
+objection to PUT is normally "the client can't name the target" — true of the
+game's id, which is assigned on save and **reassigned on every restore**, so
+the id in an archive file names nothing that will exist after the call. But the
+key doesn't have to be the game's, or ours, or derived from the content: any
+unique uuid will do, because nothing ever reads it. It names the _attempt_.
+With that, PUT is idempotent in the way the method promises — a retry after a
+lost response replays onto the same `fitting_write_log` row and reports the
+fitting EVE already saved.
 
 **The listing reads the mirror, not ESI.** Browsing is the common case by a wide
 margin — one listing per Finder window, per keystroke in a save dialog — and
@@ -133,10 +150,18 @@ The delete path in full:
 The response carries the deleted fit, so a client that archived nothing still
 ends up holding a copy.
 
-The restore path is the same shape in reverse: validate the file, fetch live,
-return the existing `fitting_id` if the character already has that exact fit
-(content hash, so a double `cp` costs no slot), refuse with `507` if all 500
-slots are full, then log → `POST` → open the local row.
+The restore path is the same shape in reverse: replay the request id if it has
+already completed, validate the file, fetch live, return the existing
+`fitting_id` if the character already has that exact fit, refuse with `507` if
+all 500 slots are full, then log → `POST` to ESI → open the local row.
+
+Two guards against saving the same fit twice, because they catch different
+accidents. The **request id** catches a retried request — a lost response, a
+`cp` the kernel reissued — with no second call to CCP at all. The **content
+hash** catches the same fit arriving under a fresh key, which is the ordinary
+case: copying the same archive file in twice mints a new uuid each time, and
+only the content can tell you the game already has it. Neither subsumes the
+other, which is why both are there.
 
 ### Identity is content, not the game's id
 
