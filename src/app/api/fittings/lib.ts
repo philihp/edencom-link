@@ -34,12 +34,22 @@ export type Caller = {
   registrations: Registration[]
 }
 
-export type Failure = { status: number; error: string }
+export type Failure = {
+  status: number
+  error: string
+  /** Extra fields merged into the error body — a conflict says what it collided with. */
+  detail?: Record<string, unknown>
+}
 
-const failure = (status: number, error: string): Failure => ({ status, error })
+const failure = (status: number, error: string, detail?: Record<string, unknown>): Failure => ({
+  status,
+  error,
+  ...(detail ? { detail } : {}),
+})
 
 /** A Failure as the JSON body every route in this tree answers errors with. */
-export const errorResponse = (f: Failure): NextResponse => NextResponse.json({ error: f.error }, { status: f.status })
+export const errorResponse = (f: Failure): NextResponse =>
+  NextResponse.json({ error: f.error, ...f.detail }, { status: f.status })
 
 // The api_token, from an Authorization: Bearer header or a ?token= query param.
 // The header is what the FUSE client sends; the query param matches how the
@@ -209,6 +219,11 @@ const openLog = async (caller: Caller, registration: Registration, entry: LogEnt
     })
     .select('id')
     .single<{ id: number }>()
+  // 23505 is Postgres's unique_violation: another request already claimed this
+  // id, either concurrently or a moment ago. The unique index is what actually
+  // enforces use-once — the read below it is only the fast path — so this is
+  // the branch that holds under two PUTs racing for the same key.
+  if (error?.code === '23505') return 'taken' as const
   if (error || !data) throw new Error(`fitting_write_log insert failed: ${error?.message ?? 'no row'}`)
 
   const close = async (status: 'ok' | 'error', patch: { fitting_id?: number; error?: string } = {}) => {
@@ -259,6 +274,10 @@ export const archiveFitting = async (
   }
 
   const log = await openLog(caller, registration, { op: 'delete', fitting_id: fittingId, fitting: fit, source })
+  // Unreachable: a delete carries no request_id, and the unique index that
+  // returns 'taken' excludes nulls. Narrowed rather than asserted, so the day
+  // deletes grow a key this is a refusal and not a crash.
+  if (log === 'taken') return failure(409, 'That delete has already been recorded.')
   try {
     await deleteFitting(token.access_token, registration.character_id, fittingId)
   } catch (e) {
@@ -271,22 +290,40 @@ export const archiveFitting = async (
 }
 
 /**
- * The fitting a completed restore under this request id produced, if it has
- * already run. This is what makes PUT mean what PUT is supposed to mean: the
- * same request replayed lands on the same row and reports the same fitting,
- * without a second thought given to CCP.
+ * A restore key is used once.
+ *
+ * PUT to a key that has already been used is a `409`, not a replayed success:
+ * the id names one attempt, and reusing it means the caller has lost track of
+ * which of its writes went through — worth telling them, rather than papering
+ * over with the previous answer. Uuids are free; mint another.
+ *
+ * It stays idempotent in the sense that matters, because idempotency is about
+ * effects and not status codes: however many times that PUT arrives, the
+ * character ends up with exactly one fitting from it. A client retrying after
+ * a lost response gets the `409` — which carries the `fitting_id` the first
+ * attempt produced, so "already done, here's what it did" is still an answer
+ * it can act on.
+ *
+ * Any row counts, whatever its status. A `pending` row is a crashed or
+ * in-flight attempt and an `error` row is a failed one; in both cases that id
+ * has been spent and the honest answer is that it isn't available.
  */
-const replayedRestore = async (caller: Caller, registration: Registration, requestId: string) => {
+const claimedRequest = async (caller: Caller, registration: Registration, requestId: string) => {
   const { data } = await caller.supabase
     .from('fitting_write_log')
     .select('fitting_id, status')
     .eq('request_id', requestId)
     .eq('registration_id', registration.registration_id)
     .maybeSingle<{ fitting_id: number | null; status: string }>()
-  // A 'pending' row is a crashed or in-flight attempt, not an answer: fall
-  // through and let the live-ESI content check decide what actually happened.
-  return data?.status === 'ok' && data.fitting_id != null ? Number(data.fitting_id) : null
+  return data ?? null
 }
+
+const conflict = (requestId: string, claimed: { fitting_id: number | null; status: string } | null): Failure =>
+  failure(409, `Request id ${requestId} has already been used. Mint a new one.`, {
+    request_id: requestId,
+    ...(claimed?.fitting_id != null ? { fitting_id: Number(claimed.fitting_id) } : {}),
+    ...(claimed?.status ? { previous_status: claimed.status } : {}),
+  })
 
 /**
  * Restore one fitting into the game, under a key the caller minted.
@@ -294,11 +331,12 @@ const replayedRestore = async (caller: Caller, registration: Registration, reque
  * Two independent guards against saving the same fit twice, because they cover
  * different accidents:
  *
- *   * `requestId` catches a **retried request** — a lost response, a `cp` the
- *     kernel reissued. Same key, same answer, no second call to CCP.
+ *   * `requestId` is **used once**: a second PUT to the same key is a 409, so a
+ *     repeated request can never become a second fitting, whatever the body
+ *     says.
  *   * the **content hash** catches the same *fit* arriving under a fresh key,
  *     which is the ordinary case: copying the same archive file in twice mints
- *     a new GUID each time, and only the content can tell you the game already
+ *     a new uuid each time, and only the content can tell you the game already
  *     has it.
  *
  * Guarded against the 500-slot cap using EVE's own count rather than our
@@ -311,8 +349,8 @@ export const restoreFitting = async (
   fitting: FittingBody,
   source: string
 ): Promise<{ fitting_id: number; created: boolean } | Failure> => {
-  const replayed = await replayedRestore(caller, registration, requestId)
-  if (replayed !== null) return { fitting_id: replayed, created: false }
+  const claimed = await claimedRequest(caller, registration, requestId)
+  if (claimed) return conflict(requestId, claimed)
 
   const token = await esiToken(caller, registration, WRITE_SCOPE)
   if (isFailure(token)) return token
@@ -342,6 +380,9 @@ export const restoreFitting = async (
     source,
     request_id: requestId,
   })
+  // Lost the race to another PUT holding the same key between the read above
+  // and this insert.
+  if (log === 'taken') return conflict(requestId, await claimedRequest(caller, registration, requestId))
   let created: { fitting_id: number }
   try {
     created = await createFitting(token.access_token, registration.character_id, fitting)

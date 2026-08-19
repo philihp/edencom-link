@@ -6,6 +6,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
+	"strings"
 	"testing"
 )
 
@@ -82,13 +84,15 @@ func TestArchiveSendsADeleteForTheRightFitting(t *testing.T) {
 	}
 }
 
-func TestRestorePostsTheFileVerbatim(t *testing.T) {
+func TestRestorePutsTheFileVerbatimToAMintedKey(t *testing.T) {
 	// The bytes off the player's disk go up untouched: the server is what
 	// decides whether they are a fitting, so this client can never be the thing
 	// that is out of date about ESI's rules.
 	file := []byte(`{"name":"Tackle","ship_type_id":587,"items":[]}`)
 	var received []byte
+	var method, path string
 	client := serve(t, func(w http.ResponseWriter, r *http.Request) {
+		method, path = r.Method, r.URL.Path
 		received, _ = io.ReadAll(r.Body)
 		w.WriteHeader(http.StatusCreated)
 		json.NewEncoder(w).Encode(map[string]any{"fitting_id": 42, "created": true})
@@ -101,8 +105,58 @@ func TestRestorePostsTheFileVerbatim(t *testing.T) {
 	if string(received) != string(file) {
 		t.Errorf("body was rewritten: %q", string(received))
 	}
+	if method != http.MethodPut {
+		t.Errorf("method = %s, want PUT", method)
+	}
+	// A restore is addressed by a uuid the client mints, never by a fitting id:
+	// EVE assigns that itself, so there is nothing else to name.
+	prefix := "/api/fittings/90000001/"
+	if !strings.HasPrefix(path, prefix) || !uuidV4.MatchString(strings.TrimPrefix(path, prefix)) {
+		t.Errorf("path = %q, want %s<uuid>", path, prefix)
+	}
 	if restored.FittingID != 42 || !restored.Created {
 		t.Errorf("restored = %+v", restored)
+	}
+}
+
+var uuidV4 = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
+
+func TestRequestIDIsAFreshV4Uuid(t *testing.T) {
+	// Uniqueness is the only property the key needs — it is never shown to CCP
+	// and never becomes the fitting's identity — but it has to actually be
+	// unique, and it has to be a uuid the server's route will accept.
+	seen := map[string]bool{}
+	for i := 0; i < 1000; i++ {
+		id, err := RequestID()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !uuidV4.MatchString(id) {
+			t.Fatalf("RequestID() = %q, not a v4 uuid", id)
+		}
+		if seen[id] {
+			t.Fatalf("RequestID() repeated %q", id)
+		}
+		seen[id] = true
+	}
+}
+
+func TestEachRestoreGetsItsOwnKey(t *testing.T) {
+	// Two copies of the same file are two attempts, not one retried. They must
+	// not share a key — a reused key is a 409, so a shared one would turn the
+	// second, perfectly legitimate copy into a failure.
+	paths := []string{}
+	client := serve(t, func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		io.WriteString(w, `{"fitting_id":1,"created":true}`)
+	})
+	for i := 0; i < 2; i++ {
+		if _, err := client.Restore(context.Background(), "1", []byte(`{}`)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if paths[0] == paths[1] {
+		t.Errorf("both restores used %q", paths[0])
 	}
 }
 
@@ -130,6 +184,23 @@ func TestARefusalCarriesItsStatusAndSentence(t *testing.T) {
 	}
 	if err.Error() != "Philihp already has 500 of 500 fittings saved in EVE." {
 		t.Errorf("message = %q", err.Error())
+	}
+}
+
+func TestAReusedRestoreKeyIsAConflict(t *testing.T) {
+	// A restore key is used once. The client mints a fresh one per attempt, so
+	// this is a collision rather than a retry — it has to surface as a refusal
+	// with its status intact, since that is what fs.go turns into EEXIST.
+	client := serve(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusConflict)
+		io.WriteString(w, `{"error":"Request id … has already been used. Mint a new one.","fitting_id":9}`)
+	})
+	_, err := client.Restore(context.Background(), "1", []byte(`{}`))
+	if err == nil {
+		t.Fatal("a reused key should not look like a successful restore")
+	}
+	if StatusOf(err) != http.StatusConflict {
+		t.Errorf("status = %d, want 409", StatusOf(err))
 	}
 }
 

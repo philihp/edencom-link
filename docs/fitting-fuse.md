@@ -89,9 +89,26 @@ game's id, which is assigned on save and **reassigned on every restore**, so
 the id in an archive file names nothing that will exist after the call. But the
 key doesn't have to be the game's, or ours, or derived from the content: any
 unique uuid will do, because nothing ever reads it. It names the _attempt_.
-With that, PUT is idempotent in the way the method promises — a retry after a
-lost response replays onto the same `fitting_write_log` row and reports the
-fitting EVE already saved.
+
+**A key is used once.** PUT to one that has already been used is a `409`, not a
+replayed success — the caller has lost track of which of its writes went
+through, and that is worth saying rather than papering over. Uuids are free;
+mint another. Any row counts, whatever became of it: `pending` is a crashed or
+in-flight attempt and `error` is a failed one, and in both cases the id has
+been spent.
+
+That is still idempotent in the sense the method promises, because idempotency
+is about effects and not status codes: however many times a given PUT arrives,
+the character ends up with exactly one fitting from it. A client retrying after
+a lost response gets the `409`, which carries the `fitting_id` the first
+attempt produced — "already done, and here is what it did" is an answer it can
+act on.
+
+The rule is enforced by a unique index, not by the read that precedes the
+insert. That read is only the fast path; between it and the insert there is a
+window, and two PUTs racing for one key close it on the constraint. That is
+what `test/sql/fitting_write_log.sql` covers, since it is the branch no
+application-level test can reach.
 
 **The listing reads the mirror, not ESI.** Browsing is the common case by a wide
 margin — one listing per Finder window, per keystroke in a save dialog — and
@@ -150,18 +167,18 @@ The delete path in full:
 The response carries the deleted fit, so a client that archived nothing still
 ends up holding a copy.
 
-The restore path is the same shape in reverse: replay the request id if it has
-already completed, validate the file, fetch live, return the existing
+The restore path is the same shape in reverse: refuse the request id if it has
+already been used, validate the file, fetch live, return the existing
 `fitting_id` if the character already has that exact fit, refuse with `507` if
 all 500 slots are full, then log → `POST` to ESI → open the local row.
 
 Two guards against saving the same fit twice, because they catch different
-accidents. The **request id** catches a retried request — a lost response, a
-`cp` the kernel reissued — with no second call to CCP at all. The **content
-hash** catches the same fit arriving under a fresh key, which is the ordinary
-case: copying the same archive file in twice mints a new uuid each time, and
-only the content can tell you the game already has it. Neither subsumes the
-other, which is why both are there.
+accidents. The **request id** is used once, so a repeated request can never
+become a second fitting whatever its body says — and it is refused before CCP
+is called at all. The **content hash** catches the same fit arriving under a
+fresh key, which is the ordinary case: copying the same archive file in twice
+mints a new uuid each time, so only the content can tell you the game already
+has it. Neither subsumes the other, which is why both are there.
 
 ### Identity is content, not the game's id
 

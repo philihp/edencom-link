@@ -593,6 +593,11 @@ func errnoFor(err error) int {
 		return -fuse.EINVAL
 	case 404:
 		return -fuse.ENOENT
+	case 409:
+		// The restore key was already used. The client mints a fresh one per
+		// attempt, so this means a genuine collision rather than a retry, and
+		// EEXIST is the honest word for it.
+		return -fuse.EEXIST
 	case 507:
 		// The character's 500 in-game slots are full: exactly "no space left".
 		return -fuse.ENOSPC
