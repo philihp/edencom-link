@@ -1,7 +1,7 @@
 'use client'
 
 import { DateTime } from '../DateTime'
-import { formatKiskValue } from '../isk'
+import { formatIskValue } from '../isk'
 import { Name } from '../names'
 import { TypeName } from '../typeName'
 import styles from './market.module.css'
@@ -138,8 +138,8 @@ export const RecentSales = ({ now, sales, characters, corpNames, typeNamesPromis
               <th>Seller</th>
               <th>Type</th>
               <th>Qty</th>
-              <th>Unit (kISK)</th>
-              <th>Total (kISK)</th>
+              <th>Unit (ISK)</th>
+              <th>Total (ISK)</th>
               <th>Sold</th>
               <th>Seen</th>
             </tr>
@@ -154,8 +154,8 @@ export const RecentSales = ({ now, sales, characters, corpNames, typeNamesPromis
                   <TypeName id={Number(s.type_id)} promise={typeNamesPromise} />
                 </td>
                 <td>{s.quantity}</td>
-                <td>{formatKiskValue(s.unit_price)}</td>
-                <td>{formatKiskValue(Number(s.unit_price) * Number(s.quantity))}</td>
+                <td>{formatIskValue(s.unit_price)}</td>
+                <td>{formatIskValue(Number(s.unit_price) * Number(s.quantity))}</td>
                 <td>
                   <DateTime value={s.date} />
                 </td>

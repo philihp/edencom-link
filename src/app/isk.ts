@@ -11,8 +11,8 @@ export const formatKisk = (raw: string | number | null) => {
   return value === '—' ? value : `${value} kISK`
 }
 
-// Money in raw ISK as a bare number, e.g. "1,234". Reserved for structure
-// taxable events (industry job tax), which are kept in ISK rather than kISK.
+// Money in raw ISK as a bare number, e.g. "1,234". Used for structure taxable
+// events (industry job tax) and the market page, which show ISK rather than kISK.
 export const formatIskValue = (raw: string | number | null) => {
   if (raw === null) return '—'
   return Number(raw).toLocaleString('en-US', { maximumFractionDigits: 0 })
