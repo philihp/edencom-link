@@ -36,6 +36,9 @@
   grid-template-columns: repeat(4, 1fr);
   gap: 12pt;
   margin: 16pt 0;
+  /* The overview pane is capped at half the viewport; lists scroll inside
+   * their tiles instead of growing the page. */
+  height: 50vh;
 }
 
 .tileWide {
@@ -45,6 +48,8 @@
 @media (max-width: 720px) {
   .overview {
     grid-template-columns: 1fr;
+    /* Stacked single-column tiles can't share 50vh; let them size naturally. */
+    height: auto;
   }
 
   .tileWide {
@@ -61,6 +66,8 @@
   border-radius: var(--radius);
   background: var(--paper-raised);
   min-width: 0;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .tileHead {
@@ -89,6 +96,9 @@
   padding: 0;
   display: flex;
   flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .topRow {
