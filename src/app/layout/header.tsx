@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { createClient } from '@/utils/supabase/server'
 
 import { establishedUser } from '../account/lib/establishedUser'
+import { needsDurableIdentity } from '../account/lib/ssoEmail'
 import { Freshness } from '../Freshness'
 import { CharacterName } from '../names'
 import styles from './header.module.css'
@@ -92,6 +93,16 @@ const Header = async () => {
           )}
           <span className={styles.bracket}>]</span>
         </nav>
+        {/* An account whose only key is an EVE character has nothing else to
+            sign in with: the character token, and the cookies in this browser.
+            Say so quietly, once the account is real enough to be worth losing
+            (docs/open-registration.md, stage 3). */}
+        {user && needsDurableIdentity(user.email) && (
+          <p className={styles.nudge}>
+            Your characters are the only key to this account.{' '}
+            <Link href="/account/email">Add an email and password</Link> so you can sign in from anywhere.
+          </p>
+        )}
       </div>
     </header>
   )

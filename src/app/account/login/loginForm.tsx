@@ -4,6 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 
+import { signInWithEve } from '../../character/actions'
 import styles from '../auth.module.css'
 import Status from '../status'
 import SubmitButton from '../submitButton'
@@ -14,6 +15,9 @@ import { login } from './actions'
 // logged-out user through login and back.
 export const LoginForm = ({ next }: { next?: string }) => {
   const [error, setError] = useState('')
+  // Kept apart from the password form's error so one failure doesn't blank the
+  // other's message.
+  const [ssoError, setSsoError] = useState('')
   // Controlled so a rejected sign-in doesn't cost the address too: React resets
   // the form's uncontrolled fields once the action settles. The password is
   // left to clear, which is the conventional behaviour after a failure.
@@ -26,6 +30,14 @@ export const LoginForm = ({ next }: { next?: string }) => {
       return
     }
     redirect(next ?? '/')
+  }
+
+  // The action redirects out to EVE on success, so anything it returns is a
+  // failure to report.
+  const signInAndReturn = async (formData: FormData) => {
+    setSsoError('')
+    const message = await signInWithEve(formData)
+    if (message) setSsoError(message)
   }
 
   return (
@@ -77,6 +89,19 @@ export const LoginForm = ({ next }: { next?: string }) => {
         </form>
 
         <div className={styles.divider}>or</div>
+        {/* A form, not a link: starting the EVE round trip needs a session to
+            hang the character on, and a Server Action is where that cookie
+            write sticks (docs/open-registration.md). */}
+        <form>
+          <button className={styles.alt} formAction={signInAndReturn}>
+            Log in with EVE Online
+          </button>
+        </form>
+        <p className={styles.altNote}>
+          No password needed — your character is the key. New here? This registers you too.
+        </p>
+        <div aria-live="polite">{ssoError && <Status kind="error">{ssoError}</Status>}</div>
+
         {/* A plain anchor, not next/link: /account/gice is a route handler that
             redirects out to the SSO, so it wants a real navigation. */}
         <a className={styles.alt} href="/account/gice">

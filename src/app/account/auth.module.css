@@ -173,6 +173,14 @@
   transform: translateY(1px);
 }
 
+/* The EVE entry point wears the same face as .alt but is a form submit rather
+ * than a link, so it needs the button reset a link never does. */
+button.alt {
+  width: 100%;
+  font: inherit;
+  cursor: pointer;
+}
+
 .altNote {
   margin: 8px 0 0;
   font-size: 12px;

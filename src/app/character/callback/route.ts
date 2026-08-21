@@ -7,6 +7,9 @@ import { character } from '@/esi'
 import { createClient } from '@/utils/supabase/server'
 import { createServiceClient } from '@/utils/supabase/service'
 
+import { mintSession } from '../../account/lib/mintSession'
+import { characterCallbackPlan } from '../../account/lib/signupFlow'
+import { eveEmail } from '../../account/lib/ssoEmail'
 import { dispatchRefresh } from '../dispatchRefresh'
 import { sso } from '../sso'
 
@@ -66,13 +69,32 @@ const upsertToken =
     if (response.error) throw new Error(`upsert token failed: ${JSON.stringify(response.error)}`)
   }
 
+// Give an account with no address of its own the EVE placeholder, so it can be
+// signed into later. An account that grew out of an anonymous session has no
+// email, and mintSession's magic-link token is keyed on one — without this, an
+// account whose only identity is a character could never be recovered from a
+// browser that lost its cookies. Confirmed on the spot: the domain receives no
+// mail, so there is nobody to confirm it. Best-effort — a failure here must not
+// cost the player the character they just authorized.
+const ensureRecoveryEmail = async (service: SupabaseClient, userId: string, eveCharacterId: number) => {
+  const { data, error } = await service.auth.admin.getUserById(userId)
+  if (error || !data?.user || data.user.email) return
+  const { error: updateError } = await service.auth.admin.updateUserById(userId, {
+    email: eveEmail(eveCharacterId),
+    email_confirm: true,
+  })
+  if (updateError) console.warn(`/character/callback: placeholder email for ${userId} failed: ${updateError.message}`)
+}
+
 export const GET = async (request: NextRequest) => {
   const supabase = await createClient()
   const {
     data: { user },
   } = await supabase.auth.getUser()
   if (!user?.id) throw new Error('no authenticated supabase user on /character/callback')
-  const user_id = user.id
+  // Not const: the SSO exchange below can reveal that this character already
+  // belongs to another account, and the writes then land on that one.
+  let user_id = user.id
 
   // registration and token are service-role-only at the grant layer, and this
   // route is their sole writer. The reason is that registration.character_id is
@@ -113,6 +135,46 @@ export const GET = async (request: NextRequest) => {
     if (sheet?.corporation_id != null) corporation_id = Number(sheet.corporation_id)
   } catch (e) {
     console.warn(`/character/callback: corp lookup failed for ${eve_character_id}: ${(e as Error)?.message}`)
+  }
+
+  // Whose account does this character belong on? `(character_id, owner)` is
+  // EVE's own "same character, same player" pair — CCP rolls `owner` on a
+  // transfer — so a match means the returning player is who they were, and a
+  // caller who is still a drive-by (anonymous, owning nothing) is signed into
+  // that account instead of starting a second one holding the same character.
+  // This is at once the "Log in with EVE Online" path and the recovery path for
+  // an account whose browser lost its cookies.
+  const { data: existingOwner } = await service
+    .from('registration')
+    .select('user_id')
+    .eq('character_id', eve_character_id)
+    .eq('owner', owner)
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle()
+  const { count: callerRegistrations } = await service
+    .from('registration')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', user.id)
+
+  const plan = characterCallbackPlan({
+    caller: {
+      userId: user.id,
+      isAnonymous: user.is_anonymous === true,
+      hasRegistration: (callerRegistrations ?? 0) > 0,
+    },
+    existingOwnerUserId: existingOwner?.user_id ?? null,
+  })
+
+  if (plan === 'sign-in-existing') {
+    // Backfills the placeholder first, for accounts that predate it — the
+    // magic-link token below is keyed on an address.
+    await ensureRecoveryEmail(service, existingOwner!.user_id, eve_character_id)
+    const error = await mintSession(existingOwner!.user_id)
+    if (error) throw new Error(`signing in to the account holding ${name} failed: ${error}`)
+    user_id = existingOwner!.user_id
+  } else {
+    await ensureRecoveryEmail(service, user_id, eve_character_id)
   }
 
   // upsertCharacter returns registration.id — a uuid — not an EVE id. The

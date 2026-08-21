@@ -1,3 +1,5 @@
+import { isEstablishedAccount } from './accountStatus.ts'
+
 // How an email/password sign-up reaches an account, given whatever session the
 // visitor arrived with (docs/open-registration.md, stage 2).
 //
@@ -19,3 +21,35 @@ export type EmailSignupPlan = 'convert' | 'sign-up'
 
 export const emailSignupPlan = (session: { isAnonymous: boolean } | null): EmailSignupPlan =>
   session?.isAnonymous ? 'convert' : 'sign-up'
+
+// Which account an EVE SSO callback should land on (docs/open-registration.md,
+// stage 3). EVE SSO is not a Supabase identity — it writes a `registration` row
+// — so a character can only ever be attached to whatever session is present,
+// and the callback has to decide whether that session is the right one.
+//
+// `(character_id, owner)` is EVE's own answer to "is this the same character,
+// still owned by the same player": CCP rolls `owner` when a character changes
+// hands, so a match means the returning player is who they were. When that pair
+// is already registered to a *different* account and the caller is a drive-by
+// — anonymous, owning nothing, which is what a returning player with no cookies
+// looks like — signing them into the account that already holds the character
+// is both the log-in path and the recovery path. Minting a second account
+// holding the same character would split their data in half.
+//
+// A caller who is already established keeps today's behaviour: the upsert is
+// keyed `(user_id, owner)`, so an alt shared between two real accounts stays
+// attached to both, and nobody is signed out of the account they are using.
+export type CharacterCallbackPlan = 'attach' | 'sign-in-existing'
+
+export const characterCallbackPlan = ({
+  caller,
+  existingOwnerUserId,
+}: {
+  caller: { userId: string; isAnonymous: boolean; hasRegistration: boolean }
+  existingOwnerUserId: string | null
+}): CharacterCallbackPlan =>
+  existingOwnerUserId !== null &&
+  existingOwnerUserId !== caller.userId &&
+  !isEstablishedAccount({ isAnonymous: caller.isAnonymous, hasRegistration: caller.hasRegistration })
+    ? 'sign-in-existing'
+    : 'attach'

@@ -215,7 +215,8 @@ at the end of this section.
 
 ## Stage 3 — EVE SSO as a first (and sufficient) identity
 
-**PR size:** medium
+**PR size:** medium — **landed.** What shipped, and the one assumption it had to
+overturn, is recorded at the end of this section.
 
 `/character/callback` already works once a session exists — the anonymous
 session satisfies its auth check, so "add a character before registering"
@@ -235,6 +236,57 @@ owner)` is already registered to a _different_ user and the current caller
   a Supabase anonymous user (see Stage 1's sweep guard). Show a quiet header
   banner on such accounts — "add an email, Discord, or GICE so you can sign
   in from anywhere" — since the character token is their only key.
+
+### What stage 3 actually landed
+
+- **The callback decides whose account the character belongs on.** Before any
+  write, `/character/callback` looks for a `registration` matching this
+  `(character_id, owner)` pair — EVE's own "same character, same player", since
+  CCP rolls `owner` on a transfer. The pure `characterCallbackPlan()`
+  (`lib/signupFlow.ts`, tested) answers `sign-in-existing` when that pair
+  belongs to another account **and** the caller is still a drive-by (anonymous,
+  owning nothing, which is exactly what a returning player with no cookies looks
+  like), and `attach` otherwise — so an established caller is never signed out
+  of the account they were using, and an alt shared between two real accounts
+  stays on both. The re-authorized tokens land on the account that wins, which
+  is what makes this the recovery path and not just a redirect.
+- **The assumption that had to go: "an EVE-only account stays anonymous
+  forever."** It does, in Supabase's eyes — but signing one back in means
+  minting a magic-link token, and GoTrue keys that on an email address. An
+  account with no address could never be re-entered from a browser that lost its
+  cookies, which would have left stage 3's sign-in path unable to sign anyone
+  in. So a character add now stamps the same kind of placeholder GICE has used
+  all along — `eve-<characterId>@sso.edencom.link`, confirmed on the spot
+  because the domain receives no mail — on an account that has no address of its
+  own (`ensureRecoveryEmail`, best-effort: it must never cost someone the
+  character they just authorized). It also backfills one for an older account
+  before signing into it.
+  - Consequences worth knowing: such accounts may now read as permanent to
+    Supabase, so `is_anonymous` is even less useful as "is this a real account?"
+    than the stage-1 note said — `isEstablishedAccount()` remains the answer, and
+    both its clauses still matter (accounts that predate this, and the window
+    between minting a session and attaching the first character). The
+    `anon-sweep` guard is unaffected: it already required the account to own
+    nothing, and these own a character.
+- **`needsDurableIdentity(email)`** (`lib/ssoEmail.ts`, tested) is the header
+  banner's condition: no address at all, or an EVE placeholder. A GICE
+  placeholder is deliberately excluded — that account can always come back
+  through GICE — and the domain check is what keeps a real
+  `eve-...@somewhere.else` out. The banner sits under the nav, quiet, pointing
+  at `/account/email`.
+- **"Log in with EVE Online"** on `/account/login` is a form, not a link: the
+  round trip needs a session to hang the character on, and a Server Action is
+  where that cookie write sticks. `signInWithEve()` skips the
+  `/settings/grants` detour the character-add action takes — someone getting
+  back in is not choosing scopes — and a visitor who turns out to be new simply
+  registers with the default scopes.
+- **Coverage:** `test/characterCallback.test.ts` for the plan and the placeholder
+  predicates. `test/signupBranch.test.ts` gained the mechanism the whole path
+  rests on: an account that started out anonymous accepts a placeholder address
+  and then hands back a session for a magic-link token minted against it. That
+  is GoTrue behaviour rather than something this codebase decides, so it is
+  pinned against a real branch; `.github/workflows/test.yml` now also treats
+  `src/app/character/callback/` as relevant to that job.
 
 ## Stage 4 — GICE without the gate
 

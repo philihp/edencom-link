@@ -34,3 +34,22 @@ export const register = async (_formData: FormData) => {
   const scopes = await getEnabledScopes(supabase, user.id)
   redirect(sso.getRedirectUrl('state', scopes))
 }
+
+// The "Log in with EVE Online" entry point on /account/login. Same SSO round
+// trip as adding a character, minus the grants detour: someone whose browser
+// lost its cookies is not choosing what to share, they are getting back in, and
+// /character/callback recognises the character and signs them into the account
+// that already holds it. A visitor who turns out to be new gets the default
+// scopes and can narrow them afterwards on /settings/grants.
+//
+// Returns an error message when there is no session to be had (anonymous
+// sign-ins disabled or rate limited); otherwise it redirects out to EVE.
+export const signInWithEve = async (_formData: FormData): Promise<string | undefined> => {
+  const supabase = await createClient()
+
+  const user = await ensureSession(supabase)
+  if (!user) return 'Could not start an EVE Online sign-in just now — try again in a moment.'
+
+  const scopes = await getEnabledScopes(supabase, user.id)
+  redirect(sso.getRedirectUrl('state', scopes))
+}
