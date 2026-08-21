@@ -89,8 +89,21 @@ const management = async (path: string, init: RequestInit = {}) => {
 
 // Why the run is skipping, or null when it can proceed. Callers pass this
 // straight to node:test's `skip` option so a developer running `pnpm test`
-// without Supabase credentials sees the reason rather than a failure.
+// sees the reason rather than a failure.
+//
+// The first check is an explicit opt-in, not a credential: these tests reach
+// the real Supabase Management API and provision a real (ephemeral, billable)
+// cloud branch, and `pnpm test` globs this suite in with the offline ones. The
+// credentials alone must never be enough to leave the machine — a filled-in
+// .env sits on every dev box, and "I ran the unit tests" should not cost a
+// network round trip, minutes of provisioning, or a cent. Only `pnpm run
+// test:branch` sets the flag.
+export const RUN_FLAG = 'RUN_BRANCH_TESTS'
+
 export const branchSkipReason = (): string | null => {
+  if (process.env[RUN_FLAG] !== '1') {
+    return `reaches the real Supabase Management API — runs only via pnpm run test:branch (${RUN_FLAG}=1)`
+  }
   const reused = process.env.SUPABASE_TEST_BRANCH_URL
   if (reused) {
     if (!process.env.SUPABASE_TEST_BRANCH_ANON_KEY || !process.env.SUPABASE_TEST_BRANCH_SERVICE_KEY) {
