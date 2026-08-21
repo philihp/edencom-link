@@ -1,6 +1,9 @@
 # Cost avoidance on industry facility tax
 
-The figure below the revenue on `/structure`. **Cost avoidance** is the accounting
+The figure below the revenue on `/structure` — per structure on each tile
+(attributed the same way the revenue is: journal entry → job → structure, and
+visible under the same corp-ledger RLS), plus an account-wide total in the
+footer. **Cost avoidance** is the accounting
 term for an expense that was never incurred because a resource you already own
 did the work — as distinct from a **cost saving**, which is a bill that got
 smaller, and from **revenue**, which is money that actually arrived. Nothing
