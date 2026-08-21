@@ -1,0 +1,176 @@
+/*
+ * Shipping calculator: the paste box and the estimate, side by side.
+ *
+ * Two equal columns, because the left one holds a wide, tall textarea (an
+ * inventory paste is both) and the right one holds the answer to what's in it —
+ * neither is a sidebar. Below the breakpoint they stack, box first.
+ */
+
+.split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16pt;
+  align-items: start;
+  margin: 16px 0;
+}
+
+@media (max-width: 900px) {
+  .split {
+    grid-template-columns: 1fr;
+  }
+}
+
+.pane {
+  min-width: 0;
+}
+
+.label {
+  display: block;
+  font-size: 10pt;
+  color: var(--ink-soft);
+  margin-bottom: 4pt;
+}
+
+/* Monospace so a pasted inventory's tab columns still line up, and tall enough
+   for a real list (30 rows) without scrolling — resizable for a longer one. */
+.textarea {
+  display: block;
+  width: 100%;
+  min-height: 28em;
+  padding: 8pt;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink);
+  background: var(--paper-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  resize: vertical;
+  tab-size: 8;
+}
+
+.textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.results {
+  display: flex;
+  flex-direction: column;
+  gap: 12pt;
+}
+
+/* One card per thing being reported: the cargo itself, then each lane. */
+.card {
+  padding: 10pt 12pt;
+  background: var(--paper-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+
+.cardTitle {
+  display: flex;
+  align-items: center;
+  gap: 8pt;
+  margin: 0 0 8pt;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.cardNote {
+  margin: 6pt 0 0;
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+/* Label left, figure right: the numbers stack into a column the eye can read
+   down, which is the whole reason the two lanes are separate cards. */
+.figure {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12pt;
+  padding: 2pt 0;
+}
+
+.figureLabel {
+  font-size: 11px;
+  color: var(--ink-soft);
+}
+
+.figureValue {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+  white-space: nowrap;
+  cursor: help;
+}
+
+/* The figure the card exists to report — the collateral, the total. */
+.figureStrong .figureValue {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.badge {
+  padding: 1pt 6pt;
+  border: 1px solid var(--line);
+  border-radius: 3pt;
+  font-size: 9pt;
+  font-weight: 400;
+  color: var(--ink-faint);
+}
+
+.warning {
+  padding: 8pt 12pt;
+  border: 1px solid var(--danger);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  color: var(--ink);
+}
+
+.warning p {
+  margin: 0 0 4pt;
+}
+
+.warning ul {
+  margin: 0;
+  padding-left: 16pt;
+}
+
+.error {
+  font-size: 12px;
+  color: var(--danger);
+}
+
+.muted {
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+.pending {
+  display: flex;
+  flex-direction: column;
+  gap: 8pt;
+}
+
+.pendingLabel {
+  margin: 0;
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+
+/* Announced, not drawn — the skeleton beside it is the visible half. */
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
