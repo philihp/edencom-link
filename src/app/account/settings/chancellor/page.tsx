@@ -10,6 +10,7 @@ import { establishedUser } from '../../lib/establishedUser'
 import { isChancellor } from './chancellor'
 import FlagForm from './flagForm'
 import GrantForm from './grantForm'
+import ImpersonateForm from './impersonateForm'
 import RevokeButton from './revokeButton'
 
 const ChancellorPage = async () => {
@@ -61,6 +62,24 @@ const ChancellorPage = async () => {
 
   const labelFor = (id: string) => namesByUser.get(id)?.join(', ') ?? emailByUser.get(id) ?? id
 
+  // The caller's own account, raw — moved here from the old /account/debug page.
+  const { data: settings } = await supabase
+    .from('user_settings')
+    .select('enabled_scopes, api_token, flags, updated_at')
+    .eq('user_id', user.id)
+    .maybeSingle()
+
+  const debugInfo = {
+    user_id: user.id,
+    email: user.email,
+    created_at: user.created_at,
+    last_sign_in_at: user.last_sign_in_at,
+    enabled_scopes: settings?.enabled_scopes ?? [],
+    api_token: settings?.api_token ?? null,
+    flags: settings?.flags ?? [],
+    settings_updated_at: settings?.updated_at ?? null,
+  }
+
   return (
     <>
       <Link href="/account/settings">&laquo; Back to settings</Link>
@@ -91,6 +110,14 @@ const ChancellorPage = async () => {
         tick what it should have — saving replaces its whole flag list.
       </p>
       <FlagForm />
+
+      <h2>Impersonate</h2>
+      <p>Swaps this session for a real session as another account. Sign back in as yourself to return.</p>
+      <ImpersonateForm />
+
+      <h2>Debug</h2>
+      <p>Your own account, as the database sees it.</p>
+      <pre>{JSON.stringify(debugInfo, null, 2)}</pre>
     </>
   )
 }

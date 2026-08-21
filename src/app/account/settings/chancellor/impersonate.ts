@@ -4,7 +4,7 @@ import { redirect } from 'next/navigation'
 
 import { createClient } from '@/utils/supabase/server'
 import { createServiceClient } from '@/utils/supabase/service'
-import { isChancellor } from '../settings/chancellor/chancellor'
+import { isChancellor } from './chancellor'
 
 // Swap the caller's own session for a real session as another account, via a
 // server-minted magic link: generateLink() (service role) issues a token
