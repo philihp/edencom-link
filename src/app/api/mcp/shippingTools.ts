@@ -20,7 +20,10 @@ import {
   COLLATERAL_BASES,
   DEFAULT_COLLATERAL_BASIS,
   describeRoute,
+  describeTier,
+  maxQuotableVolumeM3,
   resolveShippingRoute,
+  tierForVolume,
   type CollateralBasis,
 } from './shippingQuery'
 
@@ -149,15 +152,19 @@ export const registerShippingTools = (server: McpServer): void => {
       // Nothing asked about at all → the caller wants the menu.
       if (route_id == null && !origin?.trim() && !destination?.trim() && volume_m3 == null && !items?.length) {
         return textResult({
-          routes: routes.map(describeRoute),
-          ...(settings.maxVolumeM3 != null && { max_volume_m3: settings.maxVolumeM3 }),
-          ...(settings.minRewardIsk != null && { min_reward_isk: settings.minRewardIsk }),
-          ...(settings.rushFeeIsk != null && { rush_fee_isk: settings.rushFeeIsk }),
+          routes: routes.map((route) => describeRoute(route, settings.tiers)),
+          // Rates are per load-size tier, so the tier ceilings are the thing a
+          // caller needs to know before asking: a load past the largest one a
+          // route enables has no standard rate and the quote is refused.
+          load_size_tiers: settings.tiers.map((tier) => ({
+            name: tier.name,
+            max_volume_m3: tier.maxVolumeM3,
+          })),
           note: 'Call again with origin, destination, and either volume_m3 + collateral_isk or an items manifest for a quote.',
         })
       }
 
-      const match = resolveShippingRoute(routes, { routeId: route_id, origin, destination })
+      const match = resolveShippingRoute(routes, { routeId: route_id, origin, destination, classes: settings.tiers })
       if (!match.ok) return textResult(match.message)
 
       // Explicit figures always win; the appraisal only fills the gaps. So a
@@ -179,7 +186,19 @@ export const registerShippingTools = (server: McpServer): void => {
 
       if (volume == null || volume <= 0) {
         return textResult(
-          `Matched ${describeRoute(match.route)} — pass volume_m3, or an items manifest to derive volume and collateral, for a quote.`
+          `Matched ${describeRoute(match.route, settings.tiers)} — pass volume_m3, or an items manifest to derive volume and collateral, for a quote.`
+        )
+      }
+
+      // Refused upstream anyway, but saying which ceiling was passed (and by
+      // how much) is more useful than relaying "no standard rate for this
+      // load size".
+      const cap = maxQuotableVolumeM3(match.route, settings.tiers)
+      if (cap != null && volume > cap) {
+        return textResult(
+          `${volume.toLocaleString('en-US')} m³ is past the largest load ${match.route.originName} → ${
+            match.route.destinationName
+          } has a standard rate for (${cap.toLocaleString('en-US')} m³). Split the shipment, or ask KumGo for a manual quote.`
         )
       }
 
@@ -187,8 +206,13 @@ export const registerShippingTools = (server: McpServer): void => {
       if (!result.ok) return textResult(result.message)
 
       const { quote, route } = result
+      const tier = tierForVolume(match.route, settings.tiers, volume)
       return textResult({
-        route: describeRoute(route),
+        route: describeRoute(route, settings.tiers),
+        ...(tier != null && {
+          load_size_tier: settings.tiers.find((t) => t.id === tier.tierId)?.name ?? String(tier.tierId),
+          tier_rate: describeTier(tier),
+        }),
         ...(route.destinationFullName != null && { deliver_to: route.destinationFullName }),
         volume_m3: volume,
         collateral_isk: collateral ?? 0,
@@ -198,6 +222,7 @@ export const registerShippingTools = (server: McpServer): void => {
         ...(quote.rushFeeIsk > 0 && { rush_fee_isk: quote.rushFeeIsk }),
         total_isk: quote.totalIsk,
         contract_reward_isk: quote.rewardIsk,
+        ...(quote.collateralCapExceeded && { collateral_cap_exceeded: true }),
         ...(notes.length && { notes }),
         note: 'Set the courier contract reward to contract_reward_isk and the collateral to collateral_isk. Quote computed live by kumgo.space.',
       })
