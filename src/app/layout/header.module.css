@@ -52,3 +52,12 @@
 .sep {
   color: var(--line);
 }
+
+/* The durability nudge under the nav: present but never shouting — an account
+ * held only by its character tokens is a working account, not an error. */
+.nudge {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink-faint);
+}

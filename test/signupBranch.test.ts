@@ -22,7 +22,10 @@
 //      and cannot be recorded twice,
 //   3. registering from an anonymous session converts that account in place
 //      rather than minting a second one,
-//   4. the new account can act as itself under RLS (writes and reads back its
+//   4. an account that started out anonymous can be signed back in with nothing
+//      but a placeholder address and a magic-link token — the mechanism behind
+//      "Log in with EVE Online" (stage 3),
+//   5. the new account can act as itself under RLS (writes and reads back its
 //      own user_settings row) and cannot see another account's.
 //
 // Registration is open as of stage 2, so a code no longer gates anything; what
@@ -264,6 +267,49 @@ describe('signing up on a Supabase branch', { skip: skip ?? false, timeout: SETU
       assert.equal(signedIn.user?.id, anon.user.id)
     }
   )
+
+  it('can sign an EVE-only account back in with no password', { timeout: TEST_TIMEOUT_MS }, async () => {
+    // The mechanism behind stage 3's "Log in with EVE Online": an account whose
+    // only identity is a character has no password and never had a deliverable
+    // address, so getting back into it means minting a magic-link token — which
+    // GoTrue keys on an email. /character/callback therefore stamps a
+    // placeholder (eve-<id>@sso.edencom.link) on such an account at its first
+    // character. Whether an account that started out anonymous will accept one,
+    // and then hand back a session for it, is a GoTrue behaviour rather than
+    // something our code decides, which is exactly why it is pinned here.
+    const client = anonClient()
+    const { data: anon, error: anonError } = await client.auth.signInAnonymously()
+    if (anonError || !anon.user) {
+      console.log(`# anonymous sign-ins unavailable on this branch: ${anonError?.message}`)
+      return
+    }
+    createdUserIds.push(anon.user.id)
+
+    const placeholder = `eve-${randomUUID()}@sso.edencom.link`
+    const { error: stampError } = await service.auth.admin.updateUserById(anon.user.id, {
+      email: placeholder,
+      email_confirm: true,
+    })
+    assert.equal(stampError, null, `stamping the placeholder address failed: ${stampError?.message}`)
+
+    // mintSession's two halves: generateLink creates the token without sending
+    // mail (the placeholder domain could not receive it anyway), and verifyOtp
+    // consumes it on the caller's client.
+    const { data: link, error: linkError } = await service.auth.admin.generateLink({
+      type: 'magiclink',
+      email: placeholder,
+    })
+    assert.equal(linkError, null, `minting a magic link failed: ${linkError?.message}`)
+    assert.ok(link?.properties?.hashed_token, 'no token to consume')
+
+    const recovered = anonClient()
+    const { data: session, error: otpError } = await recovered.auth.verifyOtp({
+      type: 'magiclink',
+      token_hash: link.properties.hashed_token,
+    })
+    assert.equal(otpError, null, `consuming the magic link failed: ${otpError?.message}`)
+    assert.equal(session.user?.id, anon.user.id, 'the recovered session is a different account')
+  })
 
   it('lets the new account own rows under RLS, and only its own', { timeout: TEST_TIMEOUT_MS }, async () => {
     const registered = await register(await mintInvite())
