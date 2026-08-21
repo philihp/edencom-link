@@ -9,10 +9,11 @@ stages 1–5 are not started.
 
 Feasible, and the seam is cleaner than it looks from `shipFitView.tsx`. The
 thing we actually depend on for correctness — the dogma math that turns a hull
-+ modules + skills into EHP/DPS/capacitor numbers — is **not** in
-`@eveshipfit/react`. It's in the separate `@eveshipfit/dogma-engine` WASM
-package (Rust, MIT, vendored at `vendor/eveshipfit/eveshipfit-dogma-engine-7.1.0.tgz`),
-whose entire public interface is:
+
+- modules + skills into EHP/DPS/capacitor numbers — is **not** in
+  `@eveshipfit/react`. It's in the separate `@eveshipfit/dogma-engine` WASM
+  package (Rust, MIT, vendored at `vendor/eveshipfit/eveshipfit-dogma-engine-7.1.0.tgz`),
+  whose entire public interface is:
 
 ```ts
 export function init(): void
@@ -24,7 +25,7 @@ export function calculate(js_esf_fit: any, js_skills: any): any // → Calculati
 1. **Data loading** — `EveDataProvider` fetches the 6 `.pb2` protobuf files
    and decodes them into an `EveData` object (`types`, `typeDogma`,
    `dogmaAttributes`, `dogmaEffects`, plus `attributeMapping`/`effectMapping`
-   name→id indexes). We already control both ends of this: we *encode* those
+   name→id indexes). We already control both ends of this: we _encode_ those
    files ourselves (`src/buildEsfData.js` from the `sde_*` mirror, per our own
    copy of the schema in `src/esf.proto`, with the dogma patches in
    `src/esfPatches.json`) and serve them from `/esf/[file]`.
@@ -47,7 +48,7 @@ Two facts make the UI rewrite tractable:
 
 - **The derived stats are engine outputs, not UI math.** `ehp`,
   `damagePerSecondWithReload`, `alignTime`, `capacitorPeakDelta`,
-  `scanStrength`, etc. are *synthetic dogma attributes* — added by the patch
+  `scanStrength`, etc. are _synthetic dogma attributes_ — added by the patch
   file we already vendor (`src/esfPatches.json`) and computed inside the WASM
   engine. A custom stats panel is "resolve name→id via `attributeMapping`,
   read `calculation.hull.attributes.get(id).value`, format" — not a
@@ -60,26 +61,26 @@ the attribute list the stats panel reads) is clean.
 
 ## What we keep vs. what we write
 
-| Piece                                          | Fate                                                                             |
-| ---------------------------------------------- | -------------------------------------------------------------------------------- |
-| `@eveshipfit/dogma-engine` (WASM)              | **Keep**, vendored as today; it *is* "the same model EveShipFit comes up with"    |
-| `esf_data` pipeline + `/esf/[file]`            | **Keep** unchanged — same 6 files, same schema, same patches                      |
-| Protobuf decode (client side)                  | **Write** (~small): decoder against our own `src/esf.proto`                       |
-| Engine glue (globals + `calculate` wrapper)    | **Write** (~tiny): port of `DogmaEngineProvider` minus React context              |
-| ESI fit → slots (`useImportEsiFitting`)        | **Write**: port the location-flag→slot mapping                                    |
-| Stats panel (`ShipStatistics`)                 | **Write**: our layout, reading the synthetic attributes (list ported)             |
-| Fitting wheel (`ShipFit`)                      | **Write**: our own SVG — the largest pure-UI item                                 |
-| Character providers + localStorage dance       | **Delete** — we pin all-skills-V ourselves; the whole `ensureDefaultCharacter` workaround in `shipFitView.tsx` dies with it |
-| `HardwareListing`/`FitManagerProvider` (simulate) | **Drop** (per scope: no module offlining, no drag-to-fit — can revisit later)  |
-| EFT import/export, local fits, ESI login       | **Drop** — never used here                                                        |
-| `@eveshipfit/react` + `data-stub`              | **Retire** at the end (also retires half of `bump-eveshipfit.yml`)                |
+| Piece                                             | Fate                                                                                                                        |
+| ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `@eveshipfit/dogma-engine` (WASM)                 | **Keep**, vendored as today; it _is_ "the same model EveShipFit comes up with"                                              |
+| `esf_data` pipeline + `/esf/[file]`               | **Keep** unchanged — same 6 files, same schema, same patches                                                                |
+| Protobuf decode (client side)                     | **Write** (~small): decoder against our own `src/esf.proto`                                                                 |
+| Engine glue (globals + `calculate` wrapper)       | **Write** (~tiny): port of `DogmaEngineProvider` minus React context                                                        |
+| ESI fit → slots (`useImportEsiFitting`)           | **Write**: port the location-flag→slot mapping                                                                              |
+| Stats panel (`ShipStatistics`)                    | **Write**: our layout, reading the synthetic attributes (list ported)                                                       |
+| Fitting wheel (`ShipFit`)                         | **Write**: our own SVG — the largest pure-UI item                                                                           |
+| Character providers + localStorage dance          | **Delete** — we pin all-skills-V ourselves; the whole `ensureDefaultCharacter` workaround in `shipFitView.tsx` dies with it |
+| `HardwareListing`/`FitManagerProvider` (simulate) | **Drop** (per scope: no module offlining, no drag-to-fit — can revisit later)                                               |
+| EFT import/export, local fits, ESI login          | **Drop** — never used here                                                                                                  |
+| `@eveshipfit/react` + `data-stub`                 | **Retire** at the end (also retires half of `bump-eveshipfit.yml`)                                                          |
 
 Incidental wins: the fit becomes renderable without the placeholder
 choreography (`fitPlaceholder.tsx` exists only because `EveDataProvider`
 renders nothing until decode); the localStorage `currentCharacter` footgun
 documented in `shipFitView.tsx` disappears; bundle shrinks; and since we have
 real trained skills in `character_skill`, a later stage can compute stats
-against the *owner's actual skills* instead of the all-V baseline — something
+against the _owner's actual skills_ instead of the all-V baseline — something
 the current embed can't do.
 
 ## Risks / unknowns (each pinned to a stage)
@@ -97,7 +98,7 @@ the current embed can't do.
   (resonances → resist %, `capacitorPeakDeltaPercentage` → stable/unstable,
   etc.). Enumerated during stage 2 by porting from `ShipStatistics` (MIT).
 - **Skills input shape.** `calculate(fit, skills)` assumes untrained skills are
-  L1, so the all-V baseline must pass *every* skill id explicitly (the react
+  L1, so the all-V baseline must pass _every_ skill id explicitly (the react
   `DefaultCharactersProvider` builds this from `EveData` types with
   `categoryID` = skill). Same port, stage 0.
 
@@ -170,7 +171,7 @@ over the live `/esf/*.pb2`.
 Two things came out of it that weren't in the plan:
 
 - **The current viewer under-reports damage.** Loaded ammunition is a hangar
-  row carrying its *slot's* flag, so a launcher and its missiles both arrive as
+  row carrying its _slot's_ flag, so a launcher and its missiles both arrive as
   `HiSlot0`; upstream's ESI import turns each into a module, landing two
   "modules" in one slot and leaving the weapon unarmed. A fitted, loaded Rifter
   reads **0 dps** in today's embed and 116.9 dps once the charge is routed onto

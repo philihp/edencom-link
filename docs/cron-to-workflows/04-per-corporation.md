@@ -23,7 +23,7 @@ because of that incident. Read the long comment on
 `fanOutPerCorporationCronJob` in `src/utils/cron.ts` before touching
 anything.
 
-The migration is actually a *structural improvement* here — "one step per
+The migration is actually a _structural improvement_ here — "one step per
 corp, never two concurrent for the same corp" becomes control flow instead
 of a queue-shape convention — but it must land after the fan-out pattern
 (phase 3) has run in production for a while, because a mistake reconciles
@@ -31,11 +31,11 @@ corp hangars wrongly, which is the most painful data class in the app.
 
 ## In-phase order
 
-| # | Job | Write pattern | Why this slot |
-|---|---|---|---|
-| 1 | `corp-wallet-transactions` | keyed append (`corp_wallet_transaction`, per division) | No reconcile at all — a concurrent or retried run is harmlessly idempotent. Proves the per-corp enumeration + step shape. |
-| 2 | `corp-industry-jobs` | SCD-2 (`corp_industry_job_over_time`) | Reconciler, but modest volume. |
-| 3 | `corp-assets` | SCD-2 (`corp_asset_over_time`) + `corp_structure_rig`, paginated | The original race victim: biggest volume, paginated, most user-visible. Last, deliberately. |
+| #   | Job                        | Write pattern                                                    | Why this slot                                                                                                             |
+| --- | -------------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| 1   | `corp-wallet-transactions` | keyed append (`corp_wallet_transaction`, per division)           | No reconcile at all — a concurrent or retried run is harmlessly idempotent. Proves the per-corp enumeration + step shape. |
+| 2   | `corp-industry-jobs`       | SCD-2 (`corp_industry_job_over_time`)                            | Reconciler, but modest volume.                                                                                            |
+| 3   | `corp-assets`              | SCD-2 (`corp_asset_over_time`) + `corp_structure_rig`, paginated | The original race victim: biggest volume, paginated, most user-visible. Last, deliberately.                               |
 
 One PR per job. Watch a full scheduled cycle between them.
 
@@ -98,10 +98,10 @@ Invariants to preserve — check each against the code, not from memory:
   race the queue shape was built to kill.
 - **Step retries are serial, and that's why they're safe.** A retried
   reconcile after a partial failure just converges (the incident was
-  *concurrent* reconciles, not re-runs). Nothing else may write the same
+  _concurrent_ reconciles, not re-runs). Nothing else may write the same
   corp's rows while the workflow runs — which holds, except for the
   on-demand path below.
-- **Lanes only parallelize *different* corps** (each corp's rows are
+- **Lanes only parallelize _different_ corps** (each corp's rows are
   disjoint). `LANES = 2` because the corp count is small and corp pulls
   are the heaviest (paginated hangars); even `LANES = 1` (fully
   sequential) is acceptable if the daily window allows.
@@ -110,7 +110,7 @@ Invariants to preserve — check each against the code, not from memory:
 
 `PER_CORPORATION_JOBS` in `dispatchRefresh.ts` dispatches these same jobs
 through the queue (one message per corp) when a user adds a character or
-clicks refresh. A scheduled *workflow* step and an on-demand *queue*
+clicks refresh. A scheduled _workflow_ step and an on-demand _queue_
 message for the same corp could theoretically overlap — but that exact
 overlap already exists today between a cron-enqueued message and an
 on-demand one. Parity, not regression. Phase 5 removes the duality; until

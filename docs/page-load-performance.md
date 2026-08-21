@@ -209,13 +209,13 @@ Phase 4 said to measure before doing more. It was worth it — the biggest wins
 were not where this plan predicted, and phase 3's premise turned out to be
 wrong.
 
-| | |
-| --- | --- |
-| `asset_ancestors()` (breadcrumb, blocking) | **3,199 ms → 59 ms** |
-| `character_asset_location_summary()` (index + system pages, blocking) | 970 ms → 588 ms |
-| `corp_asset_location_summary()` | 257 ms → 126 ms |
-| `character_asset_location_contents()` | 128 ms → 63 ms |
-| root items | 34 ms → 0.8 ms |
+|                                                                       |                      |
+| --------------------------------------------------------------------- | -------------------- |
+| `asset_ancestors()` (breadcrumb, blocking)                            | **3,199 ms → 59 ms** |
+| `character_asset_location_summary()` (index + system pages, blocking) | 970 ms → 588 ms      |
+| `corp_asset_location_summary()`                                       | 257 ms → 126 ms      |
+| `character_asset_location_contents()`                                 | 128 ms → 63 ms       |
+| root items                                                            | 34 ms → 0.8 ms       |
 
 None of it was round-trip count, which is what phases 2 and 3 were aimed at.
 It was three query-level faults:

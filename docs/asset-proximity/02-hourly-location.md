@@ -84,5 +84,5 @@ saving.
 - `pnpm run lint` and `pnpm run build` pass.
 - After deploy, hit the route once with the `CRON_SECRET` bearer to confirm
   fan-out (`{ ok: true, dispatched: N }`), then check `character_location.
-  recorded_at` advances hourly and per-character `character-location`
+recorded_at` advances hourly and per-character `character-location`
   heartbeats appear.

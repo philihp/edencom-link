@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 
 import { createClient } from '@/utils/supabase/server'
 
+import { discordAuthEnabled } from '../lib/discordAuth'
 import { establishedUser } from '../lib/establishedUser'
 
 import { LoginForm } from './loginForm'
@@ -11,8 +12,16 @@ import { LoginForm } from './loginForm'
 const sanitizeNext = (next: string | undefined): string | undefined =>
   next?.startsWith('/') && !next.startsWith('//') ? next : undefined
 
-const Login = async ({ searchParams }: { searchParams: Promise<{ next?: string }> }) => {
-  const { next } = await searchParams
+// `discord` carries what the callback route could not say itself: a refused
+// consent screen, or an identity already attached to another account.
+const DISCORD_NOTES: Record<string, string> = {
+  failed: 'That Discord sign-in didn’t complete. You can try again.',
+  'linked-elsewhere':
+    'That Discord account already belongs to another Edencom Link account. Log in to it first, or use a different Discord account.',
+}
+
+const Login = async ({ searchParams }: { searchParams: Promise<{ next?: string; discord?: string }> }) => {
+  const { next, discord } = await searchParams
   const sanitizedNext = sanitizeNext(next)
 
   const supabase = await createClient()
@@ -21,7 +30,13 @@ const Login = async ({ searchParams }: { searchParams: Promise<{ next?: string }
     redirect(sanitizedNext ?? '/')
   }
 
-  return <LoginForm next={sanitizedNext} />
+  return (
+    <LoginForm
+      next={sanitizedNext}
+      discordEnabled={discordAuthEnabled()}
+      discordNote={(discord && DISCORD_NOTES[discord]) || undefined}
+    />
+  )
 }
 
 export default Login

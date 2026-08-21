@@ -5,11 +5,13 @@
 ## Current State
 
 ### Memory Usage Overview
+
 - **Primary concern:** Fluid compute memory consumption is the largest recurring expense
 - **Data source:** TBD — Vercel billing, observability dashboard, application metrics
 - **Baseline measurement date:** [TO BE FILLED]
 
 ### Memory Allocation by Function/Service
+
 ```
 [Document the breakdown of memory usage by:]
 - Vercel functions by endpoint / job
@@ -22,6 +24,7 @@
 ```
 
 ### Cost Analysis
+
 ```
 Monthly memory cost breakdown:
 - Total: $[X]
@@ -30,6 +33,7 @@ Monthly memory cost breakdown:
 ```
 
 ### Current Architecture Context
+
 - **Stack:** Next.js 16 + Node 24, ESM
 - **Key memory users:**
   - SDE mirror workflow (reads full zip, ingests tables)
@@ -39,12 +43,15 @@ Monthly memory cost breakdown:
   - Ship-fitting protobuf encoding (`encodeEsfData()`)
 
 ### Profiling & Instrumentation
+
 **Current visibility:**
+
 - [ ] Vercel function memory metrics available?
 - [ ] Application performance monitoring (APM) enabled?
 - [ ] Heap snapshots or profiling data captured?
 
 **To acquire:**
+
 - [ ] Capture baseline memory profiles for top 3 jobs (with `node --inspect` or similar)
 - [ ] Export Vercel observability data for past 30 days
 - [ ] Identify peak memory usage patterns (time of day, day of week, per job)
@@ -62,4 +69,5 @@ Monthly memory cost breakdown:
 - Assume extract jobs handle large paginated responses inefficiently (no streaming)
 
 ---
+
 **Next:** See [Stage 2: Analysis](02-analysis.md)

@@ -9,20 +9,20 @@ instrumentation the BRIN index project reads (`docs/brin-indexes/README.md`).
 Seven bespoke CSV endpoints serve Google Sheets `=IMPORTDATA()`, authenticated
 by the per-user `api_token` in the query string:
 
-| Route | Postgres function | `at=` time travel |
-| --- | --- | --- |
-| `/api/character/assets` | `character_asset_snapshot_at` | yes |
-| `/api/character/blueprints` | `character_blueprints` | no |
-| `/api/character/jobs` | `character_industry_jobs` | yes |
-| `/api/character/orders` | `character_orders` | yes |
-| `/api/corp/assets` | `corp_assets` | no |
-| `/api/corp/blueprints` | `corp_blueprints` | no |
-| `/api/corp/jobs` | `corp_industry_jobs` | yes |
+| Route                       | Postgres function             | `at=` time travel |
+| --------------------------- | ----------------------------- | ----------------- |
+| `/api/character/assets`     | `character_asset_snapshot_at` | yes               |
+| `/api/character/blueprints` | `character_blueprints`        | no                |
+| `/api/character/jobs`       | `character_industry_jobs`     | yes               |
+| `/api/character/orders`     | `character_orders`            | yes               |
+| `/api/corp/assets`          | `corp_assets`                 | no                |
+| `/api/corp/blueprints`      | `corp_blueprints`             | no                |
+| `/api/corp/jobs`            | `corp_industry_jobs`          | yes               |
 
 The link CSV surface (`/link/[id]/csv?share=…`, `docs/sharing-layer/07-link.md`)
 was always positioned to supersede them: a link is a stored GraphQL query, so
 one general surface replaces seven bespoke ones, and sharing rides the unified
-audience model instead of a bearer token that unlocks *everything* the account
+audience model instead of a bearer token that unlocks _everything_ the account
 owns. This phase closes the parity gaps and starts the deprecation.
 
 ## Decisions
@@ -51,7 +51,7 @@ owns. This phase closes the parity gaps and starts the deprecation.
 - **Exports are uncapped up to `EXPORT_CAP`, and refuse beyond it.** The
   interactive GraphQL caps (`ASSET_CAP` 5000 / `LIST_CAP` 1000) exist so an
   ad-hoc query stays bounded; a Sheets tab can't page, so a capped CSV would be
-  *silently* short — the one failure mode worse than failing. The link CSV
+  _silently_ short — the one failure mode worse than failing. The link CSV
   route runs its query with the caps raised to `EXPORT_CAP` (50 000, sized to
   what the uncapped legacy routes already serve inside the same 60 s budget)
   via `contextForUser(userId, { exporting: true })`, and answers 400 rather
@@ -82,7 +82,7 @@ owns. This phase closes the parity gaps and starts the deprecation.
   measurement instrument for `docs/brin-indexes/README.md`; removal is not
   scheduled before that project's per-table measurement windows have closed,
   and `at=` users have no link replacement to move to.
-- Steering *all* users to links requires lifting the `link` dark-launch flag
+- Steering _all_ users to links requires lifting the `link` dark-launch flag
   (`src/flags.ts`) — a product call taken separately, not by this phase.
 - When removal is eventually scheduled, it is its own phase with its own
   notice period; nothing in this phase breaks an existing `=IMPORTDATA()`

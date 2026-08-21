@@ -42,8 +42,8 @@ website, with no behavior behind it.
 - **Ed25519 verification, zero-dependency:** Node 24's `node:crypto`
   verifies Ed25519 natively — import the hex `DISCORD_PUBLIC_KEY` as a raw
   key (via a one-line JWK wrap: `{ kty: 'OKP', crv: 'Ed25519', x:
-  base64url(hexToBytes(key)) }`) and `crypto.verify(null, message, key,
-  sig)`. This matches the repo's zero-dependency preference
+base64url(hexToBytes(key)) }`) and `crypto.verify(null, message, key,
+sig)`. This matches the repo's zero-dependency preference
   (`src/observability.js` precedent). Fallback if the raw-key import proves
   fiddly: the official `discord-interactions` npm package is tiny and does
   exactly this — acceptable, but try without it first.

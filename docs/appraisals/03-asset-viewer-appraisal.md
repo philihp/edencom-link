@@ -23,7 +23,7 @@ On `/asset/[locationId]` (`src/app/asset/[locationId]/locationAssets.tsx`):
   appraises the whole location (`locationId` as the target). Same component,
   same endpoint.
 - Errors render inline in the cell, small and quiet: `rate limited — retry
-  in 42s`, `appraisal unavailable`. No toasts, no retries.
+in 42s`, `appraisal unavailable`. No toasts, no retries.
 - The share-token (anonymous) path renders **no** Value column and no header
   button: the endpoint requires a session (see below), and the page already
   hides drill-down links in that mode. `page.tsx` passes a `canAppraise`
@@ -67,7 +67,7 @@ Server flow:
    them would be wrong more often than right. Count them as
    `skipped_blueprints`.
 4. **Guard the batch.** Zero lines → `{ ok: false, error: "nothing to
-   appraise" }` (e.g. a container of only blueprints). More than **500
+appraise" }` (e.g. a container of only blueprints). More than **500
    distinct types** → refuse with a clear error rather than truncating (a
    silently partial total is worse than no total). 500 was **verified against
    the live API** (2026-08-01, one `save: false` request): a 500-entry batch
@@ -78,7 +78,7 @@ Server flow:
 5. **Resolve names and appraise.** `getSdeTypeNames` over the type ids;
    types the SDE can't name are dropped into an `unpriced` list (the API is
    name-keyed, so an unnamed type can't be priced). One `appraise(lines,
-   market)` call — never more.
+market)` call — never more.
 6. **Respond.**
 
 ```jsonc
@@ -91,10 +91,10 @@ Server flow:
   "price_split": 3990000000,
   "total_volume_m3": 5010.0,
   "line_count": 12,
-  "skipped_blueprints": 3,            // omit when 0
-  "unpriced": ["SomeType"],           // names the API couldn't price; omit when empty
-  "cached": true,                     // omit when false
-  "rate_limit_remaining": 197         // omit when null
+  "skipped_blueprints": 3, // omit when 0
+  "unpriced": ["SomeType"], // names the API couldn't price; omit when empty
+  "cached": true, // omit when false
+  "rate_limit_remaining": 197, // omit when null
 }
 ```
 
@@ -117,7 +117,7 @@ export const AppraiseButton = ({ target }: { target: string }) => { … }
 ```
 
 - `useState<'idle' | 'loading' | Result | Err>`; on click, `fetch('/api/appraisal',
-  { method: 'POST', body: JSON.stringify({ target }) })`.
+{ method: 'POST', body: JSON.stringify({ target }) })`.
 - Renders: idle → `<button>appraise</button>`; loading → `…`; success →
   the sell/buy figures (tooltip as described above; append `*` when
   `cached` — cheap honesty about staleness); error → the quiet inline

@@ -27,14 +27,14 @@ reasoning as `/sheets/[file]` (third-party data about the public market,
 nothing about the caller's account, identical bytes for everyone). A trailing
 `.csv` is accepted and ignored, because sheet URLs read better with it.
 
-| Column | Meaning |
-|---|---|
-| `TypeID` | EVE type id, ascending — same order the Apps Script sorted into |
-| `Updated` | when a run last confirmed this price still stands |
-| `Buy` | best bid, empty when nothing is bid |
-| `Sell` | best ask, empty when nothing is offered |
-| `Since` | when this price took effect (how long it has stood unchanged) |
-| `Strategy` | how the service derived it — see below |
+| Column     | Meaning                                                         |
+| ---------- | --------------------------------------------------------------- |
+| `TypeID`   | EVE type id, ascending — same order the Apps Script sorted into |
+| `Updated`  | when a run last confirmed this price still stands               |
+| `Buy`      | best bid, empty when nothing is bid                             |
+| `Sell`     | best ask, empty when nothing is offered                         |
+| `Since`    | when this price took effect (how long it has stood unchanged)   |
+| `Strategy` | how the service derived it — see below                          |
 
 The first four columns are exactly what `getMarketPrices` returned, in the same
 order, so pointing a tab here is a drop-in swap. `Since` and `Strategy` are
@@ -91,14 +91,14 @@ and 175M rows a year for a table meant to compress.
 So the version signature is exactly three fields (`signature()` in
 `src/jobs/marketPriceReconcile.js`):
 
-| Field | Kept? | Why |
-|---|---|---|
-| `buy.max` → `buy_max` | **versioned** | the best bid, what the sheet prices against |
-| `sell.min` → `sell_min` | **versioned** | the best ask, likewise |
-| `strategy` | **versioned** | stable, low-cardinality, changes how to read the number |
-| `updated` | dropped | changes hourly for ~every type; `valid_until` answers the same question about *our* data more accurately |
-| `volume`, `order_count` | dropped | jitter every hour; depth, not price |
-| `avg`, `median`, `percentile`, `stddev`, `min`/`max` on the far side, the whole `all` group | dropped | derived stats that move constantly |
+| Field                                                                                       | Kept?         | Why                                                                                                      |
+| ------------------------------------------------------------------------------------------- | ------------- | -------------------------------------------------------------------------------------------------------- |
+| `buy.max` → `buy_max`                                                                       | **versioned** | the best bid, what the sheet prices against                                                              |
+| `sell.min` → `sell_min`                                                                     | **versioned** | the best ask, likewise                                                                                   |
+| `strategy`                                                                                  | **versioned** | stable, low-cardinality, changes how to read the number                                                  |
+| `updated`                                                                                   | dropped       | changes hourly for ~every type; `valid_until` answers the same question about _our_ data more accurately |
+| `volume`, `order_count`                                                                     | dropped       | jitter every hour; depth, not price                                                                      |
+| `avg`, `median`, `percentile`, `stddev`, `min`/`max` on the far side, the whole `all` group | dropped       | derived stats that move constantly                                                                       |
 
 An empty order book stores `null`, never `0` — "nobody is bidding" and
 "somebody is bidding zero" are different facts, and 7,143 of 20,536 types had
@@ -114,14 +114,14 @@ This is expected to become the largest table in the database, so its physical
 shape was measured rather than reasoned about: four candidate layouts, 2M rows
 each, real Postgres 16, comparing `pg_total_relation_size`.
 
-| Layout | Bytes/row | vs. baseline |
-|---|---|---|
-| Baseline: surrogate `id`, btree as-of index, text columns | 158.2 | — |
-| `market` normalised to a `smallint` FK | 158.2 | **0.0%** |
-| `market` *and* `strategy` normalised | 150.9 | −4.6% |
-| Columns reordered, text kept | 155.7 | −1.6% |
-| No surrogate `id` | 121.5 | −23% |
-| No `id` + BRIN as-of index | 90.0 | **−43%** |
+| Layout                                                    | Bytes/row | vs. baseline |
+| --------------------------------------------------------- | --------- | ------------ |
+| Baseline: surrogate `id`, btree as-of index, text columns | 158.2     | —            |
+| `market` normalised to a `smallint` FK                    | 158.2     | **0.0%**     |
+| `market` _and_ `strategy` normalised                      | 150.9     | −4.6%        |
+| Columns reordered, text kept                              | 155.7     | −1.6%        |
+| No surrogate `id`                                         | 121.5     | −23%         |
+| No `id` + BRIN as-of index                                | 90.0      | **−43%**     |
 
 The counter-intuitive row is the second one. **Normalising `market` into a
 lookup table saves exactly zero bytes.** `'C-J6MT'` is a 7-byte short varlena;
@@ -144,7 +144,7 @@ What does pay:
   at the end of the heap, so `valid_from` is near-perfectly correlated with
   physical position — the one condition BRIN needs. At 2M rows the btree was
   60 MB against BRIN's 40 kB, costing ~2.5 ms on a deep-history query (2.6 ms →
-  5.1 ms). `market` is deliberately *not* in the BRIN: rows from both markets
+  5.1 ms). `market` is deliberately _not_ in the BRIN: rows from both markets
   interleave within a block, so summarising it would match every range; it is
   filtered on the recheck instead.
 - **Column order (−1.6%, free).** Fixed-width 8-byte columns first, so no
@@ -157,7 +157,7 @@ At the measured 90 bytes/row: ~3.2 GB/year at 10% hourly churn, ~6.5 GB at 20%
 
 Storage was the smaller problem. The snapshot predicate
 `valid_from <= as_of and (is_current or valid_until >= as_of)` cannot use any
-index because of the OR, so *every sheet refresh* was a sequential scan of the
+index because of the OR, so _every sheet refresh_ was a sequential scan of the
 whole table — 97 ms at 2M rows, and linear in table size from there.
 
 At `as_of = now()` that predicate is just "the current rows" anyway (a closed
@@ -216,14 +216,14 @@ current snapshot, and the tail of history is the cheap part to lose.
 
 ## Pieces
 
-| | |
-|---|---|
-| `src/gnfMarket.js` | the only module that talks to appraise.gnf.lt; `TRACKED_MARKETS`, `fetchMarketPrices`, and the truncated-feed floor |
-| `src/jobs/marketPriceReconcile.js` | pure seam: `normalizePrices`, `signature`, `partitionPrices`. Tested in `test/marketPriceReconcile.test.ts` |
-| `src/jobs/marketPrices.js` | the job — paged current-row read, reconcile, batched touch/close/insert. `pnpm run market-prices` |
-| `src/workflows/marketPrices.ts` | one step per market, heartbeat opened and closed by their own steps |
-| `src/app/api/cron/market-prices/route.ts` | hourly Vercel Cron trigger (`3 * * * *`) |
-| `src/app/sheets/market/[market]/route.ts` | the public CSV |
+|                                                                       |                                                                                                                                                                                               |
+| --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/gnfMarket.js`                                                    | the only module that talks to appraise.gnf.lt; `TRACKED_MARKETS`, `fetchMarketPrices`, and the truncated-feed floor                                                                           |
+| `src/jobs/marketPriceReconcile.js`                                    | pure seam: `normalizePrices`, `signature`, `partitionPrices`. Tested in `test/marketPriceReconcile.test.ts`                                                                                   |
+| `src/jobs/marketPrices.js`                                            | the job — paged current-row read, reconcile, batched touch/close/insert. `pnpm run market-prices`                                                                                             |
+| `src/workflows/marketPrices.ts`                                       | one step per market, heartbeat opened and closed by their own steps                                                                                                                           |
+| `src/app/api/cron/market-prices/route.ts`                             | hourly Vercel Cron trigger (`3 * * * *`)                                                                                                                                                      |
+| `src/app/sheets/market/[market]/route.ts`                             | the public CSV                                                                                                                                                                                |
 | `market_price_over_time` + `market_price` + `market_price_snapshot()` | `supabase/migrations/20260816040000_market_price.sql`, mirrored into `schema.sql`. No surrogate key; one partial unique index doing identity, paging and the live query; BRIN for time travel |
 
 ## Decisions taken (revisit if wrong)
@@ -266,7 +266,7 @@ current snapshot, and the tail of history is the cheap part to lose.
    the schema uses it. Surveyed, with a measurement-first plan, in
    [docs/brin-indexes/](../brin-indexes/) — the honest answer is that it depends
    on production row counts nobody has looked at yet.
-3. `list_market_orders` (MCP) reads the player's *own* orders. Nothing yet
+3. `list_market_orders` (MCP) reads the player's _own_ orders. Nothing yet
    exposes these captured prices to MCP or to the app's own pages — an
    `appraise_items` that priced against a chosen market and moment would be the
    obvious next use of this table.
