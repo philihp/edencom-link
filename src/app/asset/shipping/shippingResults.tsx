@@ -6,26 +6,23 @@
 // minted in an event (the debounce timer), not by a navigation — `use()` on
 // that promise is what suspends the boundary around it, which is what puts the
 // loader on screen the instant the typing stops.
+//
+// Every figure here is full ISK, never abbreviated: these are numbers a player
+// types into a courier contract, and "1.234 bISK" is not something you can
+// type into the collateral field.
 import { use } from 'react'
 
-import { formatBisk, formatIsk } from '../../isk'
+import { formatIsk } from '../../isk'
 
 import type { QuotedDirection, ShippingEstimate } from './actions'
 import styles from './shipping.module.css'
 
-// Volume runs from a few m³ (a crate of ammo) to hundreds of thousands (a
-// freighter load), so it gets ordinary separators and at most one decimal —
-// enough to tell 0.9 m³ from nothing at all.
 const formatVolume = (m3: number) => `${m3.toLocaleString('en-US', { maximumFractionDigits: 1 })} m³`
 
-// bISK for the headline figures, which are read against each other; the exact
-// ISK is one hover away, because a courier contract is typed in whole ISK.
 const Figure = ({ label, isk, strong }: { label: string; isk: number; strong?: boolean }) => (
   <div className={strong ? `${styles.figure} ${styles.figureStrong}` : styles.figure}>
     <span className={styles.figureLabel}>{label}</span>
-    <span className={styles.figureValue} title={formatIsk(isk)}>
-      {formatBisk(isk)}
-    </span>
+    <span className={styles.figureValue}>{formatIsk(isk)}</span>
   </div>
 )
 
@@ -37,8 +34,14 @@ const DirectionCard = ({ direction }: { direction: QuotedDirection }) => (
         <Figure label="Total cost" isk={direction.totalIsk} strong />
         <Figure label="Contract reward" isk={direction.rewardIsk} />
         {direction.rushFeeIsk > 0 ? <Figure label="Rush fee" isk={direction.rushFeeIsk} /> : null}
-        <p className={styles.cardNote}>{direction.route}</p>
+        <p className={styles.cardNote}>
+          {direction.lane} · tier {direction.tier} · {direction.rate}
+          {direction.collateralFeePercent > 0 ? ` + ${direction.collateralFeePercent}% collateral` : ''}
+        </p>
         {direction.deliverTo ? <p className={styles.cardNote}>Deliver to {direction.deliverTo}</p> : null}
+        {direction.collateralCapExceeded ? (
+          <p className={styles.error}>This lane will not insure the full value — the tier has a collateral ceiling.</p>
+        ) : null}
       </>
     ) : (
       <p className={styles.error}>{direction.message}</p>
@@ -51,8 +54,24 @@ export const ShippingResults = ({ promise }: { promise: Promise<ShippingEstimate
 
   if (!estimate.ok) return <p className={styles.error}>{estimate.message}</p>
 
+  // KumGo prices by load-size tier and has no standard rate past the largest
+  // one it enables — 350,000 m³ today, which is also about where a jump
+  // freighter's hold ends. Past it every lane below refuses, so the reason is
+  // stated once, up top, instead of only as two identical refusals.
+  const overCapacity = estimate.maxVolumeM3 != null && estimate.volumeM3 > estimate.maxVolumeM3
+
   return (
     <div className={styles.results}>
+      {overCapacity ? (
+        <section className={styles.warning} role="alert">
+          <p>
+            <strong>{formatVolume(estimate.volumeM3)} is too big to ship in one contract.</strong> The largest standard
+            load is {formatVolume(estimate.maxVolumeM3 ?? 0)} — about a jump freighter&apos;s hold. Split the list, or
+            ask KumGo on Discord for a manual quote.
+          </p>
+        </section>
+      ) : null}
+
       <section className={styles.card}>
         <h3 className={styles.cardTitle}>
           Cargo
@@ -63,8 +82,10 @@ export const ShippingResults = ({ promise }: { promise: Promise<ShippingEstimate
             freight quote below was priced against it. */}
         <Figure label="Recommended collateral (Jita sell)" isk={estimate.sellIsk} strong />
         <Figure label="Jita buy" isk={estimate.buyIsk} />
-        <p className={styles.cardNote}>
-          {formatVolume(estimate.volumeM3)} · {estimate.lineCount} item{estimate.lineCount === 1 ? '' : 's'}
+        <p className={overCapacity ? styles.cardNoteAlert : styles.cardNote}>
+          {formatVolume(estimate.volumeM3)}
+          {estimate.maxVolumeM3 != null ? ` of ${formatVolume(estimate.maxVolumeM3)} max` : ''} · {estimate.lineCount}{' '}
+          item{estimate.lineCount === 1 ? '' : 's'}
         </p>
       </section>
 
