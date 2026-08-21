@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 
-import { COST_AVOIDANCE_FLAG, LINK_FLAG, hasFlag } from '@/flags'
+import { LINK_FLAG, hasFlag } from '@/flags'
 import { createClient } from '@/utils/supabase/server'
 
 import { establishedUser } from '../lib/establishedUser'
@@ -75,16 +75,12 @@ const SettingsPage = async ({ searchParams }: { searchParams: Promise<{ gice?: s
       <p>Choose which data we may read from EVE Online when you add a character.</p>
       <Link href="/settings/grants">Manage ESI access</Link>
 
-      {(await hasFlag(user.id, COST_AVOIDANCE_FLAG)) && (
-        <>
-          <h2>Industry tax rates</h2>
-          <p>
-            What your characters pay to run a job in your own structures, and what a public structure would have
-            charged. Structures prices the difference as cost avoidance.
-          </p>
-          <Link href="/settings/tax">Manage tax rates</Link>
-        </>
-      )}
+      <h2>Industry tax rates</h2>
+      <p>
+        What your characters pay to run a job in your own structures, and what a public structure would have charged.
+        Structures prices the difference as cost avoidance.
+      </p>
+      <Link href="/settings/tax">Manage tax rates</Link>
 
       <h2>Invite codes</h2>
       <p>Refer someone with a code of yours. See the codes you can give out and when you earn more.</p>
