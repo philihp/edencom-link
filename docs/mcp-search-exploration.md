@@ -37,16 +37,16 @@ RLS-scoped asset RPCs for #1). No ESI calls, no new extract jobs.
 
 ## What already exists
 
-| Piece | Where | What it gives us |
-|---|---|---|
-| `sde_published_type` view | `20260716010000_sde_mirror.sql` | `type_id, name, group_id, category_id` for every published type |
-| `sde_search_type` / `sde_search_system` RPCs | same | coverage-ranked ILIKE search, the pattern to mirror |
-| `sde_kspace_system` view | extended in `20260719120000_sde_kspace_system_region_path.sql` | systems **already carry** `constellation_id/_name` and `region_id/_name` — the region→systems query needs no new join |
-| `sde_planet` view | `20260716010000_sde_mirror.sql` | `planet_id, system_id, celestial_index, type_id, system_name` for every planet |
-| Raw mirror tables `sde_groups`, `sde_categories`, `sde_map_regions`, `sde_map_constellations` | minted by the nightly ingest (every JSONL file lands) | group/category/region names sit in `data -> 'name' ->> 'en'`, just not yet projected as app-shaped views |
-| `sde_blueprint_product` matview + `src/sdeBlueprints.ts` | SDE cutover PR 4 | `getBlueprintForProduct` / `getBlueprintsForMaterial` already keyed by typeID — the MCP tools just don't accept one |
-| MCP plumbing | `src/app/api/mcp/lib.ts` / `tools.ts` | `textResult`, `resolveTypeFilter` (`MAX_TYPES = 100` guard), `MAX_ROWS = 200` display cap, `fetchAllRows` paging |
-| `TEMPERATE_PLANET_TYPE_ID = 11` | `src/sdePlanets.ts` | precedent for planet-type reasoning; `/mercenary-dens` is the existing consumer |
+| Piece                                                                                         | Where                                                          | What it gives us                                                                                                      |
+| --------------------------------------------------------------------------------------------- | -------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `sde_published_type` view                                                                     | `20260716010000_sde_mirror.sql`                                | `type_id, name, group_id, category_id` for every published type                                                       |
+| `sde_search_type` / `sde_search_system` RPCs                                                  | same                                                           | coverage-ranked ILIKE search, the pattern to mirror                                                                   |
+| `sde_kspace_system` view                                                                      | extended in `20260719120000_sde_kspace_system_region_path.sql` | systems **already carry** `constellation_id/_name` and `region_id/_name` — the region→systems query needs no new join |
+| `sde_planet` view                                                                             | `20260716010000_sde_mirror.sql`                                | `planet_id, system_id, celestial_index, type_id, system_name` for every planet                                        |
+| Raw mirror tables `sde_groups`, `sde_categories`, `sde_map_regions`, `sde_map_constellations` | minted by the nightly ingest (every JSONL file lands)          | group/category/region names sit in `data -> 'name' ->> 'en'`, just not yet projected as app-shaped views              |
+| `sde_blueprint_product` matview + `src/sdeBlueprints.ts`                                      | SDE cutover PR 4                                               | `getBlueprintForProduct` / `getBlueprintsForMaterial` already keyed by typeID — the MCP tools just don't accept one   |
+| MCP plumbing                                                                                  | `src/app/api/mcp/lib.ts` / `tools.ts`                          | `textResult`, `resolveTypeFilter` (`MAX_TYPES = 100` guard), `MAX_ROWS = 200` display cap, `fetchAllRows` paging      |
+| `TEMPERATE_PLANET_TYPE_ID = 11`                                                               | `src/sdePlanets.ts`                                            | precedent for planet-type reasoning; `/mercenary-dens` is the existing consumer                                       |
 
 So the bulk of the work is: three small views + two view extensions (one
 migration), three loader modules' worth of functions, and one new MCP tool
@@ -121,6 +121,7 @@ metacharacters (`%`, `_`, `\`) in user input before building `.ilike()`
 filters, matching the search RPCs' literal-match semantics.
 
 New `src/sdeGroups.ts`:
+
 - `getSdeGroups(groupIDs)` / `getSdeGroup(groupID)` — cached id→
   `{ groupID, name, categoryID, categoryName, published }`.
 - `searchSdeGroups(query, limit?)` — `.ilike('name', …)` over `sde_group`,
@@ -130,6 +131,7 @@ New `src/sdeGroups.ts`:
   a full list is small enough to return whole.
 
 New `src/sdeRegions.ts`:
+
 - `searchSdeRegions(query, limit?)` — `.ilike` over `sde_region`, coverage
   ranked.
 - `getRegionSystems(regionID)` — `sde_kspace_system` filtered by `region_id`,
@@ -139,12 +141,14 @@ New `src/sdeRegions.ts`:
   today; hoist it or duplicate the ~10 lines, decide in the PR).
 
 Extend `src/sdeTypes.ts`:
+
 - `getTypesInGroups(groupIDs)` — paged select over `sde_published_type` by
   `group_id`.
 - `getTypesInCategory(categoryID)` — same by `category_id`. Category 9
   (Blueprint) has several thousand types, so paging is mandatory here.
 
 Extend `src/sdePlanets.ts`:
+
 - `getSystemPlanets(systemIDs)` — `sde_planet` by `system_id`, returning the
   existing `SdePlanet` shape (reuse `rowToPlanet`).
 - `getRegionPlanets(regionID, planetTypeIDs?)` — `sde_planet` by the new
@@ -155,7 +159,7 @@ Extend `src/sdePlanets.ts`:
   `getTypesInGroups([7])`. No hardcoded planet-type list: CCP's names
   (`Planet (Lava)`, `Planet (Temperate)`, …) are the source of truth, and new
   planet types (Shattered, Scorched) just work.
-  *As shipped:* this split in two rather than landing in the loader — the
+  _As shipped:_ this split in two rather than landing in the loader — the
   fetch (`getSdeTypesInGroups([PLANET_GROUP_ID])`, a function `sdeTypes.ts`
   already had) stays in the tool, and the matching is the pure, unit-tested
   `matchPlanetTypes` in `planetQuery.ts`. Keeping the loader free of it is what
@@ -174,6 +178,7 @@ existing blueprint tools.
 ### PR 3 — exploration tools + blueprint `type_id` params
 
 **`get_type`** — one type in full.
+
 - Input: `type` (fuzzy name) **or** `type_id` (exact), exactly one required.
 - Output: `type_id`, `name`, `group` + `group_id`, `category` + `category_id`
   (one `sde_published_type` row via the extended view), plus industry hooks:
@@ -182,11 +187,13 @@ existing blueprint tools.
   so the model knows which follow-up tool to call.
 
 **`list_item_groups`** — browse the taxonomy.
+
 - Input: optional `category` (fuzzy name or id). No args → all categories
   (id + name, published flag). With a category → its groups (id + name).
 - Output is small either way; no cap gymnastics needed.
 
 **`list_types`** — every typeID in a group or category.
+
 - Input: `group` or `category` (fuzzy name or numeric id), exactly one;
   optional `limit` (default `MAX_ROWS = 200`, max 1000).
 - Output: resolved group/category (echoing the fuzzy match the way
@@ -202,10 +209,11 @@ is the "look at the blueprints for a given typeID" ask, and it lets `get_type`
 round trip through names.
 
 **`explore_region`** — the map, one region at a time.
+
 - Input: `region` (fuzzy name, e.g. "metro" → Metropolis).
 - Output: `region`, `region_id`, `constellation_count`, `system_count`, then
   `constellations: [{ constellation, constellation_id, systems: [{ system,
-  system_id, security }] }]` — grouped in JS from `getRegionSystems` rows,
+system_id, security }] }]` — grouped in JS from `getRegionSystems` rows,
   security formatted via `formatSecurity`. Region sizes are bounded (largest
   k-space region is well under 400 systems), so the full listing fits a
   response comfortably; keep a defensive cap + note anyway.
@@ -219,6 +227,7 @@ system's composition and lets `planet_type` narrow only the itemized list, so
 one call answers both "does it have temperate planets" and "what else is here";
 region mode filters at the fetch, so its per-system breakdown covers the asked-
 about types only.
+
 - Input: `system` **or** `region` (fuzzy names, exactly one), optional
   `planet_type` (fuzzy, resolved via `resolvePlanetType`).
 - System mode: resolve via `searchSdeSystems`, return
@@ -226,7 +235,7 @@ about types only.
   (`name` "RXA-W1 III", `planet_id`, `type`), celestial order.
 - Region mode: `getRegionPlanets(regionID, typeIDs?)`, rolled up per system:
   `systems: [{ system, security, planets: { "Planet (Lava)": 3, … },
-  matching_planets }]`, sorted by matching count desc then name, capped at
+matching_planets }]`, sorted by matching count desc then name, capped at
   `MAX_ROWS` systems with `capNote` + `total_systems`. This directly answers
   "which systems in X have temperate planets for dens" and "best lava-planet
   systems for PI".
@@ -245,13 +254,13 @@ Extend the existing tool in `tools.ts` (+ `resolveTypeFilter` in `lib.ts`):
   type-id set; when `item` is also given, intersect the sets (so
   `item: "vexor", category: "ship"` works and `item` alone behaves exactly as
   today).
-- The `MAX_TYPES = 100` guard exists to stop an accidentally broad *substring*
+- The `MAX_TYPES = 100` guard exists to stop an accidentally broad _substring_
   from walking the hangar. A whole group/category is a deliberate ask, so the
   taxonomy path gets its own, higher ceiling (~2000 type ids — category 6
   "Ship" is ~600 published types and must fit; category 9 stays excluded by
   the existing blueprint default). The ids travel in the
   `character_asset_search` / `corp_asset_search` RPC body (`type_id =
-  any(...)`), so there's no URL-length concern; both functions seed from the
+any(...)`), so there's no URL-length concern; both functions seed from the
   matched rows (the cheap seeded-recursion shape), so a bigger id list stays
   cheap.
 - Response gains the resolved `group`/`category` echo; `totals_by_item`
@@ -262,12 +271,12 @@ Extend the existing tool in `tools.ts` (+ `resolveTypeFilter` in `lib.ts`):
 Same expand-contract discipline as the SDE cutover stack — each PR builds,
 lints, and ships alone:
 
-| PR | Scope | Files |
-|----|-------|-------|
-| **1 — DB views** | Migration: `sde_group` / `sde_category` / `sde_region` views; append `group_name`/`category_name` to `sde_published_type` and `region_id`/`region_name`/`security` to `sde_planet`; grants; `schema.sql` SDE section + drop list | `supabase/migrations/…`, `schema.sql` |
-| **2 — loaders** | `sdeGroups.ts`, `sdeRegions.ts`; extend `sdeTypes.ts` (`getTypesInGroups`/`getTypesInCategory`) and `sdePlanets.ts` (`getSystemPlanets`/`getRegionPlanets`/`resolvePlanetType`) | `src/sde*.ts` |
-| **3 — exploration tools** | `exploreTools.ts` (`get_type`, `list_item_groups`, `list_types`, `explore_region`, `list_planets`), register in `route.ts`; `type_id` params on the two blueprint tools | `src/app/api/mcp/` |
-| **4 — asset search filter** | `group`/`category` params on `search_assets`; taxonomy path in `resolveTypeFilter` | `src/app/api/mcp/tools.ts`, `lib.ts` |
+| PR                          | Scope                                                                                                                                                                                                                            | Files                                 |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
+| **1 — DB views**            | Migration: `sde_group` / `sde_category` / `sde_region` views; append `group_name`/`category_name` to `sde_published_type` and `region_id`/`region_name`/`security` to `sde_planet`; grants; `schema.sql` SDE section + drop list | `supabase/migrations/…`, `schema.sql` |
+| **2 — loaders**             | `sdeGroups.ts`, `sdeRegions.ts`; extend `sdeTypes.ts` (`getTypesInGroups`/`getTypesInCategory`) and `sdePlanets.ts` (`getSystemPlanets`/`getRegionPlanets`/`resolvePlanetType`)                                                  | `src/sde*.ts`                         |
+| **3 — exploration tools**   | `exploreTools.ts` (`get_type`, `list_item_groups`, `list_types`, `explore_region`, `list_planets`), register in `route.ts`; `type_id` params on the two blueprint tools                                                          | `src/app/api/mcp/`                    |
+| **4 — asset search filter** | `group`/`category` params on `search_assets`; taxonomy path in `resolveTypeFilter`                                                                                                                                               | `src/app/api/mcp/tools.ts`, `lib.ts`  |
 
 PRs 3 and 4 are independent of each other; both depend on 2, which depends
 on 1. CLAUDE.md's MCP-server section and codebase-map entries update in each
@@ -277,6 +286,7 @@ pushed (see Workflow rules); a follow-up fix is a new migration.
 ## Verification
 
 No test runner in this repo. Per PR:
+
 - `pnpm run build` + `pnpm run lint` (the loaders and tools are exercised at
   type level; the views' column names are pinned by the row types).
 - PR 1: run the migration against a branch/staging DB and spot-check —

@@ -35,7 +35,7 @@ its own:
    has its own consumers, so `sdeStations` can go async while `sdeTypes` stays
    sync+JSON.
 2. **The mirror is already populated in prod** (nightly `sde-mirror`, #607) and
-   the build keeps emitting the JSON until the very last PR — so a *half*-
+   the build keeps emitting the JSON until the very last PR — so a _half_-
    migrated app works: migrated loaders read the DB, the rest read JSON. Every
    intermediate state is shippable, and the never-cache-misses rule (see
    `src/sdeCache.ts`) means even a fresh/empty table degrades to `#id`
@@ -44,15 +44,15 @@ its own:
 This is a standard expand-contract migration. The stack, smallest/most-isolated
 first:
 
-| PR | Scope | Consumers touched |
-|----|-------|-------------------|
-| **1 — infra + stations** ✅ | Add `src/utils/supabase/sde.ts` (anon client) + `src/sdeCache.ts` (`createByIdCache` + `bulkLookup`); migrate `sdeStations` → async DB-backed as the first loader | `stationNames.ts` |
-| **2 — planets** ✅ | `sdePlanets` → async; drop its `sdeSystems` import (the `sde_planet` view carries `system_name`) | `mercenary-dens` |
-| **3 — systems** ✅ | `sdeSystems` → async, add `getSdeSystems` bulk helper | `systemNames`, `indexes` page + actions, `mcp/tools` (`resolveSystemNames`) |
-| **4 — blueprints** ✅ | `sdeBlueprints` → async | `mcp/tools` (2 fns) |
-| **5 — types** ✅ | `sdeTypes` → async, `getSdeTypes` bulk, `SdeSearchResult` gains `categoryID` (drops per-row category lookups) | the big fan-out: `typeNames`, `blueprint/api`, `type/search`, `asset/search`, `asset/[locationId]`, `ship/[itemId]`, `corpses`, `mercenary-dens`, `mcp/lib` + `tools` |
-| **6 — contract** ✅ (this PR) | Delete `src/buildSde.js` + the `sde:build` script; `predev`/`prebuild` → `esf:build` only; drop `/src/generated` from `.gitignore`; finish the Commands/Architecture/build-pipeline prose in CLAUDE.md. Folds in **doc 03**: `esf:build` now reads the `sde_*` mirror too (no CCP download, no `unzip`), so the build downloads nothing from CCP | `buildEsfData.js` |
-| **6 — contract** | Delete `src/buildSde.js`, drop the `sde:build` script, `predev`/`prebuild` → `esf:build` only, remove `/src/generated` from `.gitignore`, finish the CLAUDE.md prose | none |
+| PR                            | Scope                                                                                                                                                                                                                                                                                                                                            | Consumers touched                                                                                                                                                     |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **1 — infra + stations** ✅   | Add `src/utils/supabase/sde.ts` (anon client) + `src/sdeCache.ts` (`createByIdCache` + `bulkLookup`); migrate `sdeStations` → async DB-backed as the first loader                                                                                                                                                                                | `stationNames.ts`                                                                                                                                                     |
+| **2 — planets** ✅            | `sdePlanets` → async; drop its `sdeSystems` import (the `sde_planet` view carries `system_name`)                                                                                                                                                                                                                                                 | `mercenary-dens`                                                                                                                                                      |
+| **3 — systems** ✅            | `sdeSystems` → async, add `getSdeSystems` bulk helper                                                                                                                                                                                                                                                                                            | `systemNames`, `indexes` page + actions, `mcp/tools` (`resolveSystemNames`)                                                                                           |
+| **4 — blueprints** ✅         | `sdeBlueprints` → async                                                                                                                                                                                                                                                                                                                          | `mcp/tools` (2 fns)                                                                                                                                                   |
+| **5 — types** ✅              | `sdeTypes` → async, `getSdeTypes` bulk, `SdeSearchResult` gains `categoryID` (drops per-row category lookups)                                                                                                                                                                                                                                    | the big fan-out: `typeNames`, `blueprint/api`, `type/search`, `asset/search`, `asset/[locationId]`, `ship/[itemId]`, `corpses`, `mercenary-dens`, `mcp/lib` + `tools` |
+| **6 — contract** ✅ (this PR) | Delete `src/buildSde.js` + the `sde:build` script; `predev`/`prebuild` → `esf:build` only; drop `/src/generated` from `.gitignore`; finish the Commands/Architecture/build-pipeline prose in CLAUDE.md. Folds in **doc 03**: `esf:build` now reads the `sde_*` mirror too (no CCP download, no `unzip`), so the build downloads nothing from CCP | `buildEsfData.js`                                                                                                                                                     |
+| **6 — contract**              | Delete `src/buildSde.js`, drop the `sde:build` script, `predev`/`prebuild` → `esf:build` only, remove `/src/generated` from `.gitignore`, finish the CLAUDE.md prose                                                                                                                                                                             | none                                                                                                                                                                  |
 
 Ordering notes: PRs 2–5 are mutually independent (a shared consumer like
 `mcp/tools.ts` is touched by several, each awaiting only the loader it's
@@ -112,7 +112,7 @@ absent — the same reason the queue consumer lazy-imports job modules.)
 ## Step 2 — caching policy (applies to all five loaders)
 
 - SDE data changes at most once per game patch and the mirror refreshes
-  nightly, so a **module-level `Map` cache with a 6-hour TTL** on *by-id*
+  nightly, so a **module-level `Map` cache with a 6-hour TTL** on _by-id_
   lookups is safe and keeps hot paths (type names render on every page) at
   zero DB round-trips after warm-up.
 - **Cache only found rows. Never cache misses.** On a fresh deploy before the
@@ -273,7 +273,7 @@ into the error boundary. Follow this in all five loaders.
 - Keep `MANUFACTURING = 1`, `REACTION = 11`, and the `Blueprint` /
   `BlueprintMaterial` types exactly as they are
   (`Blueprint = { blueprintTypeID, activityID, productTypeID, productQuantity,
-  materials: BlueprintMaterial[] }`, `BlueprintMaterial = { typeID, quantity }`).
+materials: BlueprintMaterial[] }`, `BlueprintMaterial = { typeID, quantity }`).
 - Row mapping from `sde_blueprint_product`: `blueprint_type_id`,
   `activity_id`, `product_type_id`, `product_quantity`, and `materials` is
   already CCP's `[{typeID, quantity}, …]` jsonb — map it defensively
@@ -297,7 +297,7 @@ into the error boundary. Follow this in all five loaders.
 - `getSdePlanets(ids)` / `getSdePlanet(id)` over the `sde_planet` view, which
   already carries `system_name` — **drop the import of `getSdeSystem` from
   sdeSystems** (the old cross-loader dependency). Derive
-  `name = system_name ? `${system_name} ${toRoman(celestial_index)}` : `Planet #${id}``
+  `name = system_name ? `${system_name} ${toRoman(celestial_index)}`:`Planet #${id}``
   matching the current fallback behavior. Same cache pattern.
 - Keep the returned `SdePlanet` shape identical
   (`{ planetID, systemID, systemName, celestialIndex, typeID, roman, name }` —
@@ -311,22 +311,22 @@ is mechanical. The non-mechanical ones are flagged. **Grep for every import
 from the five loaders when done** (`rg "from '@/sde"` and relative variants)
 to be sure nothing was missed.
 
-| File | Change |
-|---|---|
-| `src/app/typeNames.ts` | `fetchTypeNames` already returns a Promise; body becomes `await getSdeTypeNames(ids)` |
-| `src/app/systemNames.ts` | `await getSdeSystemNames(...)` first, then the existing `universe_name` DB fallback for ids the SDE didn't resolve (wormhole systems) — keep that fallback |
-| `src/app/stationNames.ts` | `await getSdeStationNames(...)` + keep `universe_name` fallback; `fetchStationSystems` awaits `getSdeStationSystems` |
-| `src/app/blueprint/api.ts` | `await searchSdeTypes(...)` in `searchBlueprints`/`resolveProductTypeID`; `await getSdeType(...)` in `fetchType`. The `.name.endsWith('Blueprint')` filtering keeps working on RPC results |
-| `src/app/api/type/search/route.ts` | `NextResponse.json(await searchSdeTypes(q))` |
-| `src/app/asset/search/page.tsx` | `await searchSdeTypesAll(query)`. **Simplification**: the page currently calls `getSdeType` per match to read `categoryID` for its exclude-blueprints filter — the search results now carry `categoryID`, so filter on that directly (no per-row lookups). The "too many results" check keeps using `.length`; verify its threshold constant is < 1000 (the new hard cap) |
-| `src/app/asset/[locationId]/page.tsx` | The sync `isShip(typeId)`-style predicate (categoryID === ship category) is used inside row mapping. Bulk-fetch once: `const types = await getSdeTypes(uniqueTypeIds)` then build a `Set<number>` of ship type ids and use sync `Set.has` in the map |
-| `src/app/ship/[itemId]/page.tsx` | Same bulk-then-Set treatment as above |
-| `src/app/indexes/page.tsx` | Per-row `getSdeSystem(id)` → one `await getSdeSystems(ids)` before mapping; `formatSecurity` unchanged |
-| `src/app/indexes/actions.ts` | `await searchSdeSystems(query, 8)`; the watch-system validation awaits `getSdeSystem` |
-| `src/app/corpses/[characterID]/page.tsx` | `await searchSdeTypesAll('corpse')`. Note this page runs for anonymous visitors — the anon SDE client covers it |
-| `src/app/mercenary-dens/page.tsx` | `await getSdeTypeNames(...)`; per-den `getSdePlanet(planet_id)` → one bulk `await getSdePlanets(planetIds)` then index into the record |
-| `src/app/api/mcp/lib.ts` | **Exported-signature change**: the shared type-resolution helper (`resolveTypeFilter` and friends) becomes `async` — it currently uses `searchSdeTypesAll` + per-result `getSdeType` for blueprint-category filtering; use the `categoryID` now on each search result instead. Update every caller in `tools.ts` |
-| `src/app/api/mcp/tools.ts` | `await` at each of the ~12 SDE call sites (`getSdeTypeNames`, `getSdeSystem`, `getSdeSystemNames`, `searchSdeSystems`, `getSdeType`, `getBlueprintForProduct`, `getBlueprintsForMaterial`); all inside async tool handlers already. Where a sync per-row lookup feeds a `.map()`, use the bulk-then-index pattern |
+| File                                     | Change                                                                                                                                                                                                                                                                                                                                                                    |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/app/typeNames.ts`                   | `fetchTypeNames` already returns a Promise; body becomes `await getSdeTypeNames(ids)`                                                                                                                                                                                                                                                                                     |
+| `src/app/systemNames.ts`                 | `await getSdeSystemNames(...)` first, then the existing `universe_name` DB fallback for ids the SDE didn't resolve (wormhole systems) — keep that fallback                                                                                                                                                                                                                |
+| `src/app/stationNames.ts`                | `await getSdeStationNames(...)` + keep `universe_name` fallback; `fetchStationSystems` awaits `getSdeStationSystems`                                                                                                                                                                                                                                                      |
+| `src/app/blueprint/api.ts`               | `await searchSdeTypes(...)` in `searchBlueprints`/`resolveProductTypeID`; `await getSdeType(...)` in `fetchType`. The `.name.endsWith('Blueprint')` filtering keeps working on RPC results                                                                                                                                                                                |
+| `src/app/api/type/search/route.ts`       | `NextResponse.json(await searchSdeTypes(q))`                                                                                                                                                                                                                                                                                                                              |
+| `src/app/asset/search/page.tsx`          | `await searchSdeTypesAll(query)`. **Simplification**: the page currently calls `getSdeType` per match to read `categoryID` for its exclude-blueprints filter — the search results now carry `categoryID`, so filter on that directly (no per-row lookups). The "too many results" check keeps using `.length`; verify its threshold constant is < 1000 (the new hard cap) |
+| `src/app/asset/[locationId]/page.tsx`    | The sync `isShip(typeId)`-style predicate (categoryID === ship category) is used inside row mapping. Bulk-fetch once: `const types = await getSdeTypes(uniqueTypeIds)` then build a `Set<number>` of ship type ids and use sync `Set.has` in the map                                                                                                                      |
+| `src/app/ship/[itemId]/page.tsx`         | Same bulk-then-Set treatment as above                                                                                                                                                                                                                                                                                                                                     |
+| `src/app/indexes/page.tsx`               | Per-row `getSdeSystem(id)` → one `await getSdeSystems(ids)` before mapping; `formatSecurity` unchanged                                                                                                                                                                                                                                                                    |
+| `src/app/indexes/actions.ts`             | `await searchSdeSystems(query, 8)`; the watch-system validation awaits `getSdeSystem`                                                                                                                                                                                                                                                                                     |
+| `src/app/corpses/[characterID]/page.tsx` | `await searchSdeTypesAll('corpse')`. Note this page runs for anonymous visitors — the anon SDE client covers it                                                                                                                                                                                                                                                           |
+| `src/app/mercenary-dens/page.tsx`        | `await getSdeTypeNames(...)`; per-den `getSdePlanet(planet_id)` → one bulk `await getSdePlanets(planetIds)` then index into the record                                                                                                                                                                                                                                    |
+| `src/app/api/mcp/lib.ts`                 | **Exported-signature change**: the shared type-resolution helper (`resolveTypeFilter` and friends) becomes `async` — it currently uses `searchSdeTypesAll` + per-result `getSdeType` for blueprint-category filtering; use the `categoryID` now on each search result instead. Update every caller in `tools.ts`                                                          |
+| `src/app/api/mcp/tools.ts`               | `await` at each of the ~12 SDE call sites (`getSdeTypeNames`, `getSdeSystem`, `getSdeSystemNames`, `searchSdeSystems`, `getSdeType`, `getBlueprintForProduct`, `getBlueprintsForMaterial`); all inside async tool handlers already. Where a sync per-row lookup feeds a `.map()`, use the bulk-then-index pattern                                                         |
 
 ## Step 5 — delete the build-time pipeline
 
@@ -389,8 +389,7 @@ Update every section that describes the old pipeline (grep CLAUDE.md for
 - PostgREST returns bigint columns as JSON numbers — fine for every EVE id
   (they're far below 2^53), no string handling needed.
 - The old `searchSdeTypesAll` was truly unbounded; the RPC caps at 1000.
-  Checked call sites: the asset-search "too many" guard (threshold well under
-  1000) and the corpse-type lookup (a handful of matches). If a future call
+  Checked call sites: the asset-search "too many" guard (threshold well under 1000) and the corpse-type lookup (a handful of matches). If a future call
   site genuinely needs >1000 matches, it needs a different query, not a
   bigger cap.
 - `sdePlanets` must not import from `sdeSystems` anymore — the view provides

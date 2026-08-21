@@ -19,6 +19,7 @@ This project folder contains a multi-stage plan to identify and eliminate unnece
 Each stage builds on the previous one and includes concrete deliverables and acceptance criteria.
 
 ### [Stage 1: Discovery & Current State Assessment](01-discovery.md)
+
 **Goal:** Establish baseline memory metrics and costs.
 
 - [ ] Measure current memory usage per function type
@@ -32,6 +33,7 @@ Each stage builds on the previous one and includes concrete deliverables and acc
 ---
 
 ### [Stage 2: Root Cause Analysis](02-analysis.md)
+
 **Goal:** Identify why memory is being consumed and where.
 
 - [ ] Profile SDE mirror workflow (largest data ingest)
@@ -46,9 +48,11 @@ Each stage builds on the previous one and includes concrete deliverables and acc
 ---
 
 ### [Stage 3: Solutions & Options](03-solutions.md)
+
 **Goal:** Identify concrete optimization strategies.
 
 Organized by category:
+
 - **A. SDE Mirror Workflow** (30–50% potential savings)
 - **B. ESI Extract Jobs** (10–20% potential savings)
 - **C. SDE Loaders & Caching** (5–10% potential savings)
@@ -60,24 +64,29 @@ Organized by category:
 ---
 
 ### [Stage 4: Implementation Roadmap](04-implementation-roadmap.md)
+
 **Goal:** Prioritize and schedule concrete work.
 
 **Phase 1: Quick Wins (Weeks 1–2)** — 15–25% reduction
+
 - Chunked bulk inserts across extract jobs
 - Bound SDE loader cache
 - Stream API responses
 - Cache TTL tuning
 
 **Phase 2: Stream Rewrites (Weeks 3–5)** — +10–20% reduction
+
 - Stream SDE mirror ZIP decompression
 - Stream ESI paginated responses
 - Pre-allocate reconciliation buffers
 
 **Phase 3: Observability (Weeks 6–8)** — +2–5% reduction + monitoring
+
 - Memory profiling dashboard
 - Batch size tuning & experiments
 
 **Phase 4: Deferred** — High effort, deferred unless critical
+
 - External Redis cache
 - Postgres cursor streaming
 
@@ -86,6 +95,7 @@ Organized by category:
 ---
 
 ### [Stage 5: Monitoring & Validation](05-monitoring-validation.md)
+
 **Goal:** Establish metrics and validation checkpoints.
 
 - Baseline metrics table (memory per job type)
@@ -133,7 +143,7 @@ outcome — recorded here so nobody re-opens it expecting stages 1–5 to run.
 **What happened, in order:**
 
 1. **#676 (2026-07-21) removed the `memory` settings from `vercel.json`** — one
-   day *before* this plan merged. Under active-CPU billing Vercel sizes memory
+   day _before_ this plan merged. Under active-CPU billing Vercel sizes memory
    from real usage, so the lever this whole plan aims at ("lower peak RSS, then
    lower the configured limit, then pay less") no longer exists. `vercel.json`
    still carries no `memory` key today. The stage 1 premise — memory as the
@@ -162,15 +172,15 @@ rather than money.
 
 **Deliberately not done, and why:**
 
-| Task | Why it stays undone |
-|---|---|
-| P1.1 chunked bulk inserts | Already true before the plan — every extract job upserts via `splitEvery` (500–1000 rows). Nothing to do |
+| Task                            | Why it stays undone                                                                                                                                                   |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P1.1 chunked bulk inserts       | Already true before the plan — every extract job upserts via `splitEvery` (500–1000 rows). Nothing to do                                                              |
 | P1.2 bound the SDE loader cache | `src/sdeCache.ts` is still an unbounded `Map` with a 6h TTL. Bounded by the SDE's own size (types/systems/stations), not by traffic, so it plateaus rather than grows |
-| P1.3 stream CSV responses | `/api/{character,corp}/*` still buffer via `toCsv`. Per-request, small next to a mirror ingest |
-| P1.4 TTL tuning | Needs the hit-rate metric that P1.2 would add. Not worth it on its own |
-| P3.1 dashboard + alerts | The metric is emitted; no dashboard or alert rule was built on it |
-| P3.2 batch-size A/B | Speculative without a cost signal to optimize against |
-| Phase 4 (Redis, PG cursors) | Was already deferred |
+| P1.3 stream CSV responses       | `/api/{character,corp}/*` still buffer via `toCsv`. Per-request, small next to a mirror ingest                                                                        |
+| P1.4 TTL tuning                 | Needs the hit-rate metric that P1.2 would add. Not worth it on its own                                                                                                |
+| P3.1 dashboard + alerts         | The metric is emitted; no dashboard or alert rule was built on it                                                                                                     |
+| P3.2 batch-size A/B             | Speculative without a cost signal to optimize against                                                                                                                 |
+| Phase 4 (Redis, PG cursors)     | Was already deferred                                                                                                                                                  |
 
 **Known gaps in the instrumentation**, if this is ever picked back up:
 

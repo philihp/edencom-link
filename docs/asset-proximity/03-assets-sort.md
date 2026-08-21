@@ -74,7 +74,7 @@ abyssal). One BFS answers every location on the page (~8 ms worst case,
 in-process — see docs/asset-proximity/README.md), so this adds no measurable
 server time to a page that already walks hangars in Postgres.
 
-Pass `originSystem: string | null` (the origin system's *name*, resolved via
+Pass `originSystem: string | null` (the origin system's _name_, resolved via
 `getSdeSystemNames` or the page's existing name plumbing) and
 `originCharacter: string | null` into `AssetsTable` so the sort control can
 say what it's measuring from.

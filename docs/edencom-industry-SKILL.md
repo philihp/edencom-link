@@ -63,12 +63,12 @@ Then apply the minimum of 1 unit for each run.
 
 The four modifiers:
 
-| Modifier    | Values                | Source                                         |
-| :---------- | :-------------------- | :--------------------------------------------- |
-| `ME`        | 0.00 to 0.10          | Blueprint ME level ÷ 100                       |
-| `structure` | 0 or 0.01             | 1% when the job runs in an engineering complex |
-| `rig`       | 0, 0.02, 0.024        | No rig, T1 rig, T2 rig                         |
-| `sec`       | 1, 1.9, 2.1           | Highsec, lowsec, nullsec and wormhole          |
+| Modifier    | Values         | Source                                         |
+| :---------- | :------------- | :--------------------------------------------- |
+| `ME`        | 0.00 to 0.10   | Blueprint ME level ÷ 100                       |
+| `structure` | 0 or 0.01      | 1% when the job runs in an engineering complex |
+| `rig`       | 0, 0.02, 0.024 | No rig, T1 rig, T2 rig                         |
+| `sec`       | 1, 1.9, 2.1    | Highsec, lowsec, nullsec and wormhole          |
 
 The security band comes from the displayed (rounded) security of the system:
 0.5 and more is highsec, more than 0.0 is lowsec, all other space is nullsec.

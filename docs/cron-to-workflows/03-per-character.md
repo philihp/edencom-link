@@ -16,21 +16,21 @@ scheduled path for jobs with per-character tokens, ESI paging, and (for
 most) SCD-2 reconciles. Everything per-character stays inside the
 untouched job modules — token refresh, per-character heartbeats,
 reconciles all live in `forEachCharacter` and the `run*()` functions — so
-the workflow only replaces the *dispatch* layer. Still, the fan-out
+the workflow only replaces the _dispatch_ layer. Still, the fan-out
 pattern (lanes, determinism, retry blast radius) needs proving on the
 safest job before the reconcilers follow.
 
 ## In-phase order
 
-| # | Job | Write pattern | Why this slot |
-|---|---|---|---|
-| 1 | `character-wallet-transactions` | append-only + ETag skip | Safest possible: single-request snapshot, keyed append, a `304` makes most steps near-no-ops. **First PR: this job alone**, establishing the fan-out pattern. |
-| 2 | `character-orders` | SCD-2 + ETag, single request | Small data, ETag-guarded. |
-| 3 | `character-industry-jobs` | SCD-2 + ETag, single request | Same shape as orders. |
-| 4 | `character-status` | live-row upserts ×5 endpoints | No SCD-2 except clones; internally fault-isolated per endpoint already. Uses the **any-scope** enumeration (see below). |
-| 5 | `character-mercenary-dens` | SCD-2 + append-only status + per-den detail calls | Extra ESI call per den; niche data. |
-| 6 | `character-blueprints` | SCD-2, paginated | First paginated reconciler. |
-| 7 | `character-assets` | SCD-2, paginated + asset names | Biggest volume and the most user-visible table — last. |
+| #   | Job                             | Write pattern                                     | Why this slot                                                                                                                                                 |
+| --- | ------------------------------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | `character-wallet-transactions` | append-only + ETag skip                           | Safest possible: single-request snapshot, keyed append, a `304` makes most steps near-no-ops. **First PR: this job alone**, establishing the fan-out pattern. |
+| 2   | `character-orders`              | SCD-2 + ETag, single request                      | Small data, ETag-guarded.                                                                                                                                     |
+| 3   | `character-industry-jobs`       | SCD-2 + ETag, single request                      | Same shape as orders.                                                                                                                                         |
+| 4   | `character-status`              | live-row upserts ×5 endpoints                     | No SCD-2 except clones; internally fault-isolated per endpoint already. Uses the **any-scope** enumeration (see below).                                       |
+| 5   | `character-mercenary-dens`      | SCD-2 + append-only status + per-den detail calls | Extra ESI call per den; niche data.                                                                                                                           |
+| 6   | `character-blueprints`          | SCD-2, paginated                                  | First paginated reconciler.                                                                                                                                   |
+| 7   | `character-assets`              | SCD-2, paginated + asset names                    | Biggest volume and the most user-visible table — last.                                                                                                        |
 
 ## The fan-out workflow shape
 
@@ -61,8 +61,7 @@ export async function runCharacterStep(
 // src/workflows/characterWalletTransactions.ts
 import { enumerateCharacters, runCharacterStep } from './lib'
 
-const load = async () =>
-  (await import('@/jobs/characterWalletTransactions.js')).runCharacterWalletTransactions
+const load = async () => (await import('@/jobs/characterWalletTransactions.js')).runCharacterWalletTransactions
 
 export async function characterWalletTransactionsWorkflow() {
   'use workflow'
@@ -90,7 +89,7 @@ Notes:
 - **Deterministic control flow in the orchestrator body**: workflow bodies
   must be simple deterministic control flow, and helpers imported at
   workflow (non-step) level would execute in workflow context (see
-  `src/workflows/sdeMirror.ts`'s comment). Ramda's *pure* combinators are
+  `src/workflows/sdeMirror.ts`'s comment). Ramda's _pure_ combinators are
   fine — referentially transparent, no Node imports — so the as-built
   `characterWalletTransactions.ts` uses `transpose(splitEvery(LANES, ids))`
   for the lane split and a `reduce` promise-chain (the `forEachSequential`
@@ -126,7 +125,7 @@ The shape above is right in spirit; two things changed once it hit the runtime:
   step argument, but Vercel Workflows serialize step inputs/outputs for durable
   replay and a function can't serialize (this is why `sdeIngestSteps.ts` steps
   take only `zipUrl`/`file`/`build`/`startLine`). So each workflow owns its own
-  thin `'use step'` `syncCharacter(characterId: number)` that lazy-imports *its*
+  thin `'use step'` `syncCharacter(characterId: number)` that lazy-imports _its_
   job module — exactly the `characterImplants.ts` precedent — and only
   `characterId` (a bigint→number) crosses the boundary. The one genuinely
   shared step is `enumerateCharacters(scopes)` in `src/workflows/lib.ts`

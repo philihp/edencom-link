@@ -13,8 +13,8 @@ raw SQL against Supabase instead:
    (`search_assets`, `list_market_orders`, `search_transactions`).
 2. "Given how many capital launcher hardpoints, how many Phoenix Navy Issues
    could I build?" — five calls plus manual diffing of a BOM against asset
-   counts. The binding constraint (Capital Siege Array) and the fact that *no
-   Phoenix Navy Issue blueprint is owned at all* were both found by accident
+   counts. The binding constraint (Capital Siege Array) and the fact that _no
+   Phoenix Navy Issue blueprint is owned at all_ were both found by accident
    rather than by design.
 3. "Which blueprints in 27-HP0 are not at ME/TE 10/20 yet?" — impossible.
    `list_blueprints` has no location filter and truncates at 200 of 10,968 rows.
@@ -34,18 +34,18 @@ Recorded here so implementations don't have to re-derive it.
 
 ### Relevant tables (`public` schema)
 
-| Table | Notes |
-|---|---|
-| `character_blueprint` | `item_id`, `character_id` (uuid), `type_id`, `location_id`, `location_flag`, `quantity`, `material_efficiency` (smallint), `time_efficiency` (smallint), `runs`, `is_current`, `valid_from`, `valid_until` |
-| `corp_blueprint` | same shape, `corporation_id` (bigint) instead of `character_id` |
-| `character_asset`, `corp_asset` | asset hangars |
-| `universe_structure` | `structure_id`, `name`, `system_id`, `type_id`, `resolved_at` — resolved Upwell names |
-| `corp_structure` | `structure_id`, `corporation_id`, `type_id`, `system_id`, `name`, `state`, `services` (jsonb), reinforce fields |
-| `corp_structure_rig` | fitted rigs, needed for ME calculations |
-| `sde_types` | `_key` = type_id, `data` jsonb; English name at `data->'name'->>'en'` |
-| `sde_groups` / `sde_group` | needed to classify blueprints vs reaction formulas |
-| `sde_blueprints` | manufacturing/reaction material bills |
-| `sde_map_solar_systems` | `_key` = system_id, `data` jsonb |
+| Table                           | Notes                                                                                                                                                                                                      |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `character_blueprint`           | `item_id`, `character_id` (uuid), `type_id`, `location_id`, `location_flag`, `quantity`, `material_efficiency` (smallint), `time_efficiency` (smallint), `runs`, `is_current`, `valid_from`, `valid_until` |
+| `corp_blueprint`                | same shape, `corporation_id` (bigint) instead of `character_id`                                                                                                                                            |
+| `character_asset`, `corp_asset` | asset hangars                                                                                                                                                                                              |
+| `universe_structure`            | `structure_id`, `name`, `system_id`, `type_id`, `resolved_at` — resolved Upwell names                                                                                                                      |
+| `corp_structure`                | `structure_id`, `corporation_id`, `type_id`, `system_id`, `name`, `state`, `services` (jsonb), reinforce fields                                                                                            |
+| `corp_structure_rig`            | fitted rigs, needed for ME calculations                                                                                                                                                                    |
+| `sde_types`                     | `_key` = type_id, `data` jsonb; English name at `data->'name'->>'en'`                                                                                                                                      |
+| `sde_groups` / `sde_group`      | needed to classify blueprints vs reaction formulas                                                                                                                                                         |
+| `sde_blueprints`                | manufacturing/reaction material bills                                                                                                                                                                      |
+| `sde_map_solar_systems`         | `_key` = system_id, `data` jsonb                                                                                                                                                                           |
 
 Both blueprint tables are temporal — **always filter `is_current`**. There is a
 parallel `*_over_time` table for history; don't read from it for current-state
@@ -60,8 +60,8 @@ questions.
   rows, or handle the sentinel values explicitly.
 - **Reaction formulas cannot be researched.** They have no ME/TE, always report
   0/0, and will flood any "needs research" result set. Exclude them by
-  `group_id` via `sde_types` → `sde_groups`, *not* by matching `'%Reaction
-  Formula%'` against the name. Name matching is what the exploratory SQL did and
+  `group_id` via `sde_types` → `sde_groups`, _not_ by matching `'%Reaction
+Formula%'` against the name. Name matching is what the exploratory SQL did and
   it is fragile.
 - BPOs of researchable types cannot stack; reaction formula originals can. This
   is why some `runs = -1` rows have positive quantities.
@@ -73,7 +73,7 @@ As of 2026-07-25, scoped to system 27-HP0 (`system_id` 30000832), which contains
 
 - 884 current blueprint rows total
 - 280 originals (`runs = -1`)
-- 18 originals below ME 10 / TE 20 *after* excluding reaction formulas
+- 18 originals below ME 10 / TE 20 _after_ excluding reaction formulas
   (was 32 before exclusion — the 14 extras are the trap)
 
 These make good fixture assertions, though they will drift as research
@@ -95,16 +95,16 @@ also suggests the current implementation fetches broadly and slices in JS.
 
 ```ts
 type ListBlueprintsInput = {
-  item?: string           // name substring, matches product name too
-  owner?: string          // character or corporation name substring
-  system?: string         // e.g. "27-HP0"
-  structure?: string      // e.g. "HDUMP - T1 Research" (substring of resolved name)
-  kind?: 'original' | 'copy' | 'all'   // default 'all'
-  below_me?: number       // return only blueprints with me < this
-  below_te?: number       // return only blueprints with te < this
-  researchable?: boolean  // exclude reaction formulas and other non-researchable types
-  group?: 'none' | 'type' | 'type_location'  // default 'none'
-  limit?: number          // default 100, max 500
+  item?: string // name substring, matches product name too
+  owner?: string // character or corporation name substring
+  system?: string // e.g. "27-HP0"
+  structure?: string // e.g. "HDUMP - T1 Research" (substring of resolved name)
+  kind?: 'original' | 'copy' | 'all' // default 'all'
+  below_me?: number // return only blueprints with me < this
+  below_te?: number // return only blueprints with te < this
+  researchable?: boolean // exclude reaction formulas and other non-researchable types
+  group?: 'none' | 'type' | 'type_location' // default 'none'
+  limit?: number // default 100, max 500
 }
 ```
 
@@ -113,7 +113,7 @@ type ListBlueprintsInput = {
 - **All filtering, grouping, and limiting happens in SQL.** Do not fetch 10k
   rows and post-process. This is the actual defect being fixed.
 - `system` and `structure` resolve through `universe_structure`. Note that
-  `location_id` may be a container *inside* a structure rather than the
+  `location_id` may be a container _inside_ a structure rather than the
   structure itself — for now, match on `location_id = structure_id` and record
   a known limitation; container traversal is out of scope for this change.
 - `group: 'type'` collapses identical (type, me, te) rows into one with a
@@ -146,8 +146,8 @@ type ResearchBacklogInput = {
   system?: string
   structure?: string
   owner?: string
-  target_me?: number   // default 10
-  target_te?: number   // default 20
+  target_me?: number // default 10
+  target_te?: number // default 20
 }
 
 type ResearchBacklogRow = {
@@ -159,7 +159,7 @@ type ResearchBacklogRow = {
   te_to_go: number
   structure: string
   system: string
-  in_progress: boolean   // an active ME/TE research job exists for this item_id
+  in_progress: boolean // an active ME/TE research job exists for this item_id
 }
 ```
 
@@ -195,22 +195,22 @@ type ListStructuresInput = {
   system?: string
   name?: string
   owner?: string
-  services?: string[]   // filter by fitted/online service, e.g. ['manufacturing']
+  services?: string[] // filter by fitted/online service, e.g. ['manufacturing']
 }
 
 type StructureRow = {
   structure_id: number
   name: string
   system: string
-  type: string            // "Sotiyo", "Athanor", ...
+  type: string // "Sotiyo", "Athanor", ...
   state?: string
   services?: string[]
-  rigs?: string[]         // from corp_structure_rig
+  rigs?: string[] // from corp_structure_rig
 }
 ```
 
 **`me_bonus` was specified here, built, and then removed — don't add it back.**
-The idea was that it explains *why* a material requirement came out at 18
+The idea was that it explains _why_ a material requirement came out at 18
 instead of 20. It can't: a rig only bonuses products in the groups its filter
 covers (`src/app/blueprint/rigs.ts`), so there is no single material bonus for a
 structure independent of what is being built. A structure carrying only an
@@ -218,7 +218,7 @@ Equipment Manufacturing rig has an `me_bonus` of zero for a ship and 2.4% for a
 module, and the field cannot say which. It was also a second hand-rolled copy of
 arithmetic that belongs to `eve-industry`'s `cost()`.
 
-The rigs *are* the fact worth returning, and this tool returns them. To explain a
+The rigs _are_ the fact worth returning, and this tool returns them. To explain a
 material requirement, pass the row's `structure_id` to `blueprint_for_product` or
 `blueprints_using_material`: those know the product, apply the per-product rig
 test, and report which rig was used and which were skipped. `rigs_for_blueprint`
@@ -233,10 +233,10 @@ The Phoenix Navy Issue question, as one call.
 ```ts
 type BuildReadinessInput = {
   product: string
-  runs?: number          // default 1
-  structure_id?: string  // derives ME modifiers, as blueprint_for_product does
+  runs?: number // default 1
+  structure_id?: string // derives ME modifiers, as blueprint_for_product does
   owner?: string
-  system?: string        // only count materials present here
+  system?: string // only count materials present here
 }
 
 type BuildReadiness = {
@@ -250,7 +250,7 @@ type BuildReadiness = {
     runs_remaining?: number
     location?: string
   }
-  binding_constraint: string | null   // material name that caps max_buildable
+  binding_constraint: string | null // material name that caps max_buildable
   materials: Array<{
     material: string
     need_per_run: number
@@ -258,7 +258,7 @@ type BuildReadiness = {
     have: number
     short: number
     locations: string[]
-    in_production: number   // quantity from active industry jobs
+    in_production: number // quantity from active industry jobs
   }>
 }
 ```
@@ -279,7 +279,7 @@ type BuildReadiness = {
   `max(runs, ceil(base × runs × me_mult × structure_mult × rig_mult))`, with the
   rig multiplier scaled by system security (nullsec ×2.1). `blueprint_for_product`
   already does this — share the code, don't reimplement.
-- Materials are matched against character *and* corporation hangars, same as
+- Materials are matched against character _and_ corporation hangars, same as
   `search_assets`.
 
 ### Tests
@@ -310,7 +310,7 @@ roughly in order of likelihood:
    or salvage response somewhere in the pipeline, and rows are landing in the
    wrong table.
 2. A `type_id` join is misaligned — the ingest is correct but `sde_types` is
-   being keyed against the wrong column, so real blueprints are being *labelled*
+   being keyed against the wrong column, so real blueprints are being _labelled_
    as salvage.
 3. ESI genuinely returns these (unlikely, but worth ruling out before assuming
    it's our bug).
@@ -328,11 +328,11 @@ table's name.
 
 ## Suggested sequencing
 
-| Request | Contents | Depends on |
-|---|---|---|
-| A | Sections 1 + 3 — `list_blueprints` filters, `list_structures` | — |
-| B | Sections 2 + 4 — `research_backlog`, `build_readiness` | A |
-| C | Section 5 — salvage row investigation | — |
+| Request | Contents                                                      | Depends on |
+| ------- | ------------------------------------------------------------- | ---------- |
+| A       | Sections 1 + 3 — `list_blueprints` filters, `list_structures` | —          |
+| B       | Sections 2 + 4 — `research_backlog`, `build_readiness`        | A          |
+| C       | Section 5 — salvage row investigation                         | —          |
 
 A is mechanical and should land quickly. B contains the real logic and deserves
 its own review. C is independent and might turn out to be somebody else's bug.

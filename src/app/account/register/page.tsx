@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 
 import { createClient } from '@/utils/supabase/server'
 
+import { discordAuthEnabled } from '../lib/discordAuth'
 import { establishedUser } from '../lib/establishedUser'
 import { referralForAccount, type Referral } from '../lib/referral'
 
@@ -29,7 +30,7 @@ const RegisterPage = async () => {
 
   return (
     <Suspense>
-      <RegisterForm referral={referral} />
+      <RegisterForm referral={referral} discordEnabled={discordAuthEnabled()} />
     </Suspense>
   )
 }

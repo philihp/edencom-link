@@ -32,7 +32,7 @@ simulated hourly cycles running the job's real touch/close/insert statements,
 The tables share one write pattern and one read pattern, by construction:
 
 - **Writes append.** Every reconcile bumps `valid_until` on unchanged rows in
-  place, closes vanished rows in place, and *appends* new versions — so
+  place, closes vanished rows in place, and _appends_ new versions — so
   `valid_from` climbs with block number on every `*_over_time` table, exactly
   the correlation BRIN needs.
 - **Time travel is a range predicate the btrees can't serve.** Every snapshot
@@ -83,7 +83,7 @@ the RPC, when someone wants one, is the expensive half.)
 ### Where `pages_per_range = 32` comes from, and how to recalibrate it
 
 **Provenance, honestly:** 32 is inherited from the `market_price_over_time`
-precedent. The market-prices sizing work ran its benchmarks *with* 32 — the
+precedent. The market-prices sizing work ran its benchmarks _with_ 32 — the
 5.1 ms / 181 ms numbers above were measured at that setting — but never A/B'd
 it against PostgreSQL's default of 128. It is a reasonable value carried
 forward, not a measured optimum, and the standard keeps it for uniformity
@@ -149,7 +149,7 @@ free — is why the standard errs fine rather than coarse.
 
 ## Measurement protocol (per table PR)
 
-The point of standardizing *measured* is that every claim below is checkable
+The point of standardizing _measured_ is that every claim below is checkable
 in Vercel Observability, not a rerun of someone's laptop benchmark.
 
 ### 1. Baseline window
@@ -210,15 +210,15 @@ A regression reverts the one migration — which is why each table ships alone.
 
 Which timing series measures which table. `field` is the metric's dimension.
 
-| Table                               | Historical probe                                        | `field`                      |
-| ----------------------------------- | ------------------------------------------------------- | ---------------------------- |
-| `character_asset_over_time`         | `/api/character/assets?at=`                             | `character_asset_snapshot_at`|
-| `character_order_over_time`         | `/api/character/orders?at=`                             | `character_orders`           |
-| `character_industry_job_over_time`  | `/api/character/jobs?at=`                               | `character_industry_jobs`    |
-| `corp_industry_job_over_time`       | `/api/corp/jobs?at=`                                    | `corp_industry_jobs`         |
-| `market_price_over_time`            | `/sheets/market/[market]?at=` (the control — BRIN'd already) | `market_price_snapshot` |
-| `character_blueprint_over_time`, `corp_asset_over_time`, `corp_blueprint_over_time` | none — their RPCs are live-only | EXPLAIN-only evidence, stated honestly in the PR |
-| `character_clone/skill/ship/fitting/mercenary_den_over_time` | none — no snapshot RPC exists | EXPLAIN-only evidence |
+| Table                                                                               | Historical probe                                             | `field`                                          |
+| ----------------------------------------------------------------------------------- | ------------------------------------------------------------ | ------------------------------------------------ |
+| `character_asset_over_time`                                                         | `/api/character/assets?at=`                                  | `character_asset_snapshot_at`                    |
+| `character_order_over_time`                                                         | `/api/character/orders?at=`                                  | `character_orders`                               |
+| `character_industry_job_over_time`                                                  | `/api/character/jobs?at=`                                    | `character_industry_jobs`                        |
+| `corp_industry_job_over_time`                                                       | `/api/corp/jobs?at=`                                         | `corp_industry_jobs`                             |
+| `market_price_over_time`                                                            | `/sheets/market/[market]?at=` (the control — BRIN'd already) | `market_price_snapshot`                          |
+| `character_blueprint_over_time`, `corp_asset_over_time`, `corp_blueprint_over_time` | none — their RPCs are live-only                              | EXPLAIN-only evidence, stated honestly in the PR |
+| `character_clone/skill/ship/fitting/mercenary_den_over_time`                        | none — no snapshot RPC exists                                | EXPLAIN-only evidence                            |
 
 The live-path guard for every table is the same tables' `served='live'`
 series: `link_csv`/`graphql` (`assets`, `blueprints`, `industryJobs`,
@@ -297,7 +297,7 @@ one mid-size table:
   an untouched sibling table.
 - HOT updates are the mechanism to verify: with free space per page, the
   `valid_until` touch can stay on-page instead of appending a dead tuple —
-  which *also* protects the BRIN correlation, since fewer relocations means
+  which _also_ protects the BRIN correlation, since fewer relocations means
   the append order stays clean.
 
 Separate follow-up; does not block the index rollout.

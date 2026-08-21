@@ -80,7 +80,7 @@ The pilot did its job. With the fan-out pattern landed:
   shapes are gone; describe the workflow trigger shape and the
   `src/workflows/` per-job convention instead. Update the sde-mirror
   bullet that calls its trigger "a fifth cron dispatch shape" (it's now
-  *the* shape).
+  _the_ shape).
 - Mark every row of this plan's README table done; note the end state at
   the top.
 - The [`/jobs` page](../jobs-page.md) is sequenced after this phase and

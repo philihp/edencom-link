@@ -39,7 +39,7 @@ Decisions:
   candidates), duplicate resolved typeId across targets.
 - `restockLines(targets, stacks, onlyBelowTarget)` — ramda fold summing `quantity ?? 1` per
   `type_id`, producing `{typeId, target, onHand, delta: onHand - target, toBuy: max(0, target -
-  onHand)}` in target input order; `onlyBelowTarget` drops covered lines (default true).
+onHand)}` in target input order; `onlyBelowTarget` drops covered lines (default true).
 
 ### 2. SDL — `src/app/api/graphql/schema.graphql.ts`
 

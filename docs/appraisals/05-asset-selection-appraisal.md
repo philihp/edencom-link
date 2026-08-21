@@ -65,11 +65,11 @@ not true of another, and leaving the old figure on screen would be a lie.
 
 Three call sites, all the same component:
 
-| Where | Targets |
-|---|---|
-| Under the asset table, bottom right | the selected rows |
-| `/asset/[locationId]` header | the location itself ("Appraise everything here") |
-| `/ship/[itemId]` header, top right | the ship item id ("Appraise ship") |
+| Where                               | Targets                                          |
+| ----------------------------------- | ------------------------------------------------ |
+| Under the asset table, bottom right | the selected rows                                |
+| `/asset/[locationId]` header        | the location itself ("Appraise everything here") |
+| `/ship/[itemId]` header, top right  | the ship item id ("Appraise ship")               |
 
 **The hull is a row.** `/ship/[itemId]` prepends a row for the ship itself to
 the table (both the signed-in and the share-link views), so "everything shown in
@@ -98,7 +98,7 @@ Two cases the scalar walk never had to think about, both of which a selection
 can genuinely contain (a container and something inside it):
 
 - an item reached by two parents' descents is folded once (`distinct on
-  (item_id)`), not counted twice;
+(item_id)`), not counted twice;
 - an item that is itself one of the parents is dropped by the walk, because the
   caller adds a line for every target it resolved — otherwise the nested target
   would be priced both as a target and as its parent's content.

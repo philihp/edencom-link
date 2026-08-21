@@ -5,11 +5,11 @@ the account's main character currently is, so the stuff you can actually go
 get sits at the top. Three deliverables, shipped as **separate PRs, in
 order** — each numbered document is a self-contained implementation spec:
 
-| Doc | PR | What | Status / dependency |
-|---|---|---|---|
-| [01-jump-graph.md](01-jump-graph.md) | small | `sde_system_jump` view over the mirrored stargate data + `src/sdeJumps.ts` loader with a BFS jump-distance function | Independent; do first |
-| [02-hourly-location.md](02-hourly-location.md) | tiny | Schedule the existing `character-location` extract hourly via Vercel Cron | Independent of 01 |
-| [03-assets-sort.md](03-assets-sort.md) | medium | `/asset` computes jumps from the main character's current system and gains a "Nearby" sort | After 01 **and** 02 |
+| Doc                                            | PR     | What                                                                                                                | Status / dependency   |
+| ---------------------------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------- | --------------------- |
+| [01-jump-graph.md](01-jump-graph.md)           | small  | `sde_system_jump` view over the mirrored stargate data + `src/sdeJumps.ts` loader with a BFS jump-distance function | Independent; do first |
+| [02-hourly-location.md](02-hourly-location.md) | tiny   | Schedule the existing `character-location` extract hourly via Vercel Cron                                           | Independent of 01     |
+| [03-assets-sort.md](03-assets-sort.md)         | medium | `/asset` computes jumps from the main character's current system and gains a "Nearby" sort                          | After 01 **and** 02   |
 
 Future ideas deliberately **not** in scope (park them unless asked): a
 `character_location_over_time` history table (where does my main actually
@@ -24,7 +24,7 @@ The question was whether the SDE carries a **precalculated** distance
 function. It doesn't — the legacy `mapSolarSystemJumps` /
 `mapRegionJumps` tables from the old community SQL conversions did not
 survive into CCP's JSONL export, and no all-pairs distance file exists. What
-the export *does* carry is the full stargate graph, and that turns out to be
+the export _does_ carry is the full stargate graph, and that turns out to be
 all we need:
 
 - **`mapStargates.jsonl`** → already mirrored nightly as

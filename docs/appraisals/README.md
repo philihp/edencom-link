@@ -7,13 +7,13 @@ Evepraisal-style service; the repo owner has an API key, provisioned as the
 **separate PRs, in order** — each numbered document is a self-contained
 implementation spec:
 
-| Doc | PR | What | Status / dependency |
-|---|---|---|---|
-| [01-mcp-appraise-tool.md](01-mcp-appraise-tool.md) | **Milestone 1** | The shared `src/innominate.ts` API client + an `appraise_items` MCP tool (batch appraisal by item name) | Independent; do first |
-| [02-asset-subtree-items.md](02-asset-subtree-items.md) | small | Postgres functions that aggregate a container/location subtree into `(type_id, quantity)` rows | Independent of 01 (pure DB); needed by 03 |
-| [03-asset-viewer-appraisal.md](03-asset-viewer-appraisal.md) | **Milestone 2** | Appraise buttons in the asset viewer: lazy-load the appraisal of one stack, or a container/ship and everything inside it | After 01 (client) **and** 02 (DB functions) |
-| [04-mcp-appraise-assets.md](04-mcp-appraise-assets.md) | small | The `appraise_assets` MCP tool: price a location, ship or container by reusing 03's walk | After 01–03; shipped |
-| [05-asset-selection-appraisal.md](05-asset-selection-appraisal.md) | small | Row selection (checkboxes + drag rectangle) in the asset table, with one appraisal control per table instead of 03's per-row column | Supersedes 03's UI; shipped |
+| Doc                                                                | PR              | What                                                                                                                                | Status / dependency                         |
+| ------------------------------------------------------------------ | --------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- |
+| [01-mcp-appraise-tool.md](01-mcp-appraise-tool.md)                 | **Milestone 1** | The shared `src/innominate.ts` API client + an `appraise_items` MCP tool (batch appraisal by item name)                             | Independent; do first                       |
+| [02-asset-subtree-items.md](02-asset-subtree-items.md)             | small           | Postgres functions that aggregate a container/location subtree into `(type_id, quantity)` rows                                      | Independent of 01 (pure DB); needed by 03   |
+| [03-asset-viewer-appraisal.md](03-asset-viewer-appraisal.md)       | **Milestone 2** | Appraise buttons in the asset viewer: lazy-load the appraisal of one stack, or a container/ship and everything inside it            | After 01 (client) **and** 02 (DB functions) |
+| [04-mcp-appraise-assets.md](04-mcp-appraise-assets.md)             | small           | The `appraise_assets` MCP tool: price a location, ship or container by reusing 03's walk                                            | After 01–03; shipped                        |
+| [05-asset-selection-appraisal.md](05-asset-selection-appraisal.md) | small           | Row selection (checkboxes + drag rectangle) in the asset table, with one appraisal control per table instead of 03's per-row column | Supersedes 03's UI; shipped                 |
 
 Doc 03 describes the per-row appraise column as originally shipped; doc 05
 replaced that UI with row selection and a single appraisal control, so read 03
@@ -61,6 +61,7 @@ our key.
     is a change from the original hard rule of "always false, hard-code it" —
     if the API-key terms ever require otherwise, this is the one call site to
     revoke.
+
   - `comment` — irrelevant when not saving; omit.
 
 - **Response 200** (`AppraisalResponse`): `appraisals[]` (one entry per
@@ -70,18 +71,29 @@ our key.
   {
     "appraisals": [
       {
-        "name": "Tritanium", "item_id": 34, "quantity": 1000,
-        "item_vol": 0.01, "total_item_vol": 10.0,
-        "sell_price": 4.03, "buy_price": 3.95,
-        "sell_average": 3.74, "buy_average": 3.68,
-        "total_sell_price": 4030.0, "total_buy_price": 3950.0,
+        "name": "Tritanium",
+        "item_id": 34,
+        "quantity": 1000,
+        "item_vol": 0.01,
+        "total_item_vol": 10.0,
+        "sell_price": 4.03,
+        "buy_price": 3.95,
+        "sell_average": 3.74,
+        "buy_average": 3.68,
+        "total_sell_price": 4030.0,
+        "total_buy_price": 3950.0,
         "error": null
       }
     ],
-    "total_vol": 10.0, "total_sell_value": 4030.0, "total_buy_value": 3950.0,
+    "total_vol": 10.0,
+    "total_sell_value": 4030.0,
+    "total_buy_value": 3950.0,
     "price_split": 3990.0,
-    "market": "jita", "market_status": "Ready",
-    "corp_id": null, "comment": "", "current_count": 177609
+    "market": "jita",
+    "market_status": "Ready",
+    "corp_id": null,
+    "comment": "",
+    "current_count": 177609
   }
   ```
 

@@ -21,17 +21,17 @@ spends more of the shared request budget than the one request the job needs.
 
 A second appraisal tool in `src/app/api/mcp/estateTools.ts` — it belongs with
 the estate tools, not with `appraise_items` in `tools.ts`, because it is a
-question about what the user *has*:
+question about what the user _has_:
 
-| Param | |
-|---|---|
+| Param                 |                                                                                                                                                                                                                                                                        |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `location` (required) | A station/structure/system name substring, or a raw id — the only way to reach one of the caller's own ships or containers. Resolved by the same `matchLocation` helper `browse_assets` uses, which is why `drill_in_with_id` from that tool can be pasted straight in |
-| `market` | Hub to price against, default `jita` (same enum as `appraise_items`) |
-| `include_items` | Itemize every priced type (up to `MAX_ROWS`) instead of the ten most valuable. Default off |
+| `market`              | Hub to price against, default `jita` (same enum as `appraise_items`)                                                                                                                                                                                                   |
+| `include_items`       | Itemize every priced type (up to `MAX_ROWS`) instead of the ten most valuable. Default off                                                                                                                                                                             |
 
 It returns the batch totals (sell, buy, split, volume), the resolved location and
 id, the itemized lines, whatever went unpriced, and the usual `data_refreshed`
-stamp — the prices are live, but *what is in the hangar* is only as fresh as the
+stamp — the prices are live, but _what is in the hangar_ is only as fresh as the
 last assets extract, and that distinction is worth the caller seeing.
 
 ## The seam
@@ -49,7 +49,7 @@ somebody else's hangar.
 
 The pure fold sits in `src/app/api/appraisal/assetLines.ts` (ramda only, no I/O,
 unit-tested in `test/assetLines.test.ts`), which is where the three decisions
-that would be *quietly* wrong live: blueprints are skipped (an asset row can't
+that would be _quietly_ wrong live: blueprints are skipped (an asset row can't
 tell an original from a worthless copy), two type ids sharing one SDE name merge
 into one line rather than being counted twice, and a type the SDE can't name is
 reported as `#<id>` rather than silently dropped from a total that then looks

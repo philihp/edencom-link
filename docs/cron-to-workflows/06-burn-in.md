@@ -3,7 +3,7 @@
 Phase 5 landed (#798) and the migration's structural goals are met: every
 extract job — scheduled and on-demand — has exactly one execution engine, the
 queue hop is gone from both paths, and per-corp serialization is control flow.
-What this phase covers is the difference between *landed* and *done*: the
+What this phase covers is the difference between _landed_ and _done_: the
 production verification phase 5 explicitly owed, plus four pieces of debt the
 audit found that the earlier phases either created or deliberately deferred.
 
@@ -94,7 +94,7 @@ Close it at the source:
   `/jobs` later can render a failed run as failed.
 
 Small, self-contained, and the single highest-value item here: it turns the
-freshness matrix from "when did it last run" into "did it last *work*."
+freshness matrix from "when did it last run" into "did it last _work_."
 
 ## 4. Retire `runDirectCronJob` — the last non-workflow execution path
 

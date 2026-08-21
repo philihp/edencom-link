@@ -79,3 +79,22 @@ export const giceCompletionPlan = ({
   if (existingLinkUserId !== null && existingLinkUserId !== caller?.userId) return 'sign-in-existing'
   return caller ? 'link-in-place' : 'create'
 }
+
+// How a "Continue with Discord" click reaches an account
+// (docs/open-registration.md, stage 5). The same shape as the email path, for
+// the same reason: someone can already be holding an account before they have
+// an identity to hang on it.
+//
+// With a session in hand — the anonymous one a character add minted, or a
+// member linking Discord from settings — `linkIdentity` attaches the identity
+// to *that* account, which is Supabase's native anonymous→permanent conversion
+// and keeps `auth.uid()` stable. With no session, `signInWithOAuth` signs in or
+// creates as needed.
+//
+// A returning member whose browser lost its cookies looks like the first case
+// but must land in the second: their Discord identity is already attached
+// elsewhere, and Supabase says so at the callback rather than at the start of
+// the round trip, so that fallback lives there and not in this decision.
+export type DiscordEntryPlan = 'link' | 'sign-in'
+
+export const discordEntryPlan = (session: { userId: string } | null): DiscordEntryPlan => (session ? 'link' : 'sign-in')

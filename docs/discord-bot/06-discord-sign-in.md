@@ -1,5 +1,11 @@
 # Stage 06 — Discord as an auth method
 
+**Status: implemented** (stage 5 of docs/open-registration.md), behind the
+`DISCORD_AUTH` env gate until the Supabase provider is configured — the
+dashboard steps are listed at the end of that stage. What follows is the design
+this was built from; where the implementation differs, the open-registration doc
+records why.
+
 **PR size:** medium · **Depends on:** 02 (the Discord application exists) ·
 **Independent of:** 03–05 (no bot, no channels, no outbox involved)
 
@@ -16,12 +22,12 @@ No hand-rolled OAuth client. Supabase Auth ships a Discord provider; the
 whole feature is dashboard configuration plus a handful of client calls:
 
 - **Sign in / sign up:** `supabase.auth.signInWithOAuth({ provider:
-  'discord', options: { redirectTo } })` from a "Continue with Discord"
+'discord', options: { redirectTo } })` from a "Continue with Discord"
   button on `/account/login` and `/account/register`. Supabase creates the
   account on first sign-in (identity in `auth.identities`, carrying the
   Discord user id, username, avatar).
 - **Add Discord to an email account:** `supabase.auth.linkIdentity({
-  provider: 'discord' })` from a new "Connected accounts" section on
+provider: 'discord' })` from a new "Connected accounts" section on
   `/account/settings`. Requires **manual linking** enabled in the Supabase
   dashboard (Authentication → Providers). `unlinkIdentity` for removal —
   Supabase refuses to unlink the last identity, so a Discord-only account
@@ -45,11 +51,11 @@ whole feature is dashboard configuration plus a handful of client calls:
 
 ## Interactions with the rest of the app
 
-- **Invite gating:** registration today is invite-code gated. Decide in the
-  implementing PR whether Discord sign-up must also present an invite code
-  (likely yes: collect/redeem it on a post-OAuth landing step for accounts
-  with no redeemed code, reusing the `invite_code` machinery) — otherwise
-  Discord becomes an open-registration bypass.
+- **Invite gating: resolved as no gate.** Registration stopped being
+  invite-gated (docs/open-registration.md); a code is referral attribution
+  wherever one is offered, so Discord bypasses nothing. There is no post-OAuth
+  landing step, and none is wanted: the fewer steps between the consent screen
+  and a working account, the better.
 - **Stage 03 linking:** an account's Discord identity (in
   `auth.identities`) lets the `/edencom link` handler bind a channel by
   matching the invoking Discord user id — no link code. See the amended

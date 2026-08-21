@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 
 import styles from '../auth.module.css'
+import { DiscordButton } from '../discord/button'
 import Status from '../status'
 import SubmitButton from '../submitButton'
 import { lookupInvite, register, type InviteLookup } from './actions'
@@ -21,7 +22,7 @@ type Referral = { referred: boolean; inviterName: string | null }
 // longer the first thing anyone meets. It appears in three situations: a code
 // arrived in the URL from a shared link, the account already carries a referral
 // (shown as a line, not a field — one per account), or the visitor asks for it.
-const RegisterForm = ({ referral }: { referral: Referral }) => {
+const RegisterForm = ({ referral, discordEnabled }: { referral: Referral; discordEnabled?: boolean }) => {
   const urlInvite = useSearchParams().get('invite')?.trim() ?? ''
 
   const [invite, setInvite] = useState(urlInvite)
@@ -190,6 +191,13 @@ const RegisterForm = ({ referral }: { referral: Referral }) => {
           Register with GICE
         </a>
         <p className={styles.altNote}>In The Imperium? No email needed — your Goonfleet SSO account is enough.</p>
+
+        {discordEnabled && (
+          <>
+            <DiscordButton label="Register with Discord" />
+            <p className={styles.altNote}>No email or password to remember — your Discord account signs you in.</p>
+          </>
+        )}
 
         <div className={styles.footer}>
           <Link href="/account/login">Already have an account?</Link>

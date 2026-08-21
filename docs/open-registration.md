@@ -17,9 +17,10 @@ Registration stops being invite-gated. Instead:
   running as a GitHub Action, and PRs get forked preview databases via
   Supabase branching (Pro).
 
-Stages 1–4 have landed: every way in — email/password, EVE SSO, GICE — is open,
-and an invite code is referral attribution wherever one is offered. Discord
-(stage 5) is the remaining identity.
+Stages 1–5 have landed: every way in — email/password, EVE SSO, GICE, Discord —
+is open, and an invite code is referral attribution wherever one is offered.
+Discord's entry points wait on an env gate until its provider is configured;
+see the end of stage 5.
 
 ## Where we start from (current behavior)
 
@@ -335,7 +336,9 @@ is recorded at the end of this section.
 
 ## Stage 5 — Discord
 
-**PR size:** medium (mostly the stage-06 doc, now unblocked)
+**PR size:** medium (mostly the stage-06 doc, now unblocked) — **landed, behind
+an env gate.** What shipped, and what has to be switched on before the buttons
+are shown, is at the end of this section.
 
 Implement `docs/discord-bot/06-discord-sign-in.md` with the invite question
 resolved as **no gate**:
@@ -350,6 +353,61 @@ resolved as **no gate**:
 After stages 2–5, "do the others later" needs no extra work: email via the
 existing `/account/email`, characters via `/character`, Discord via settings,
 GICE via `/account/gice` — all keyed on the stable `auth.uid()`.
+
+### What stage 5 actually landed
+
+- **Supabase's native provider, driven from the server.** There is no browser
+  Supabase client here (session cookies are httpOnly), so both halves run as
+  Server Actions with `skipBrowserRedirect: true` and a `redirect()` to the URL
+  Supabase hands back — which is also where the PKCE verifier cookie gets
+  written. `/account/discord/callback` exchanges the code on the SSR client.
+- **`discordEntryPlan()`** (`lib/signupFlow.ts`, tested) is the email path's
+  shape again: a caller holding a session gets `linkIdentity` — Supabase's
+  native anonymous→permanent conversion, so the account they already have is
+  the account they keep — and a caller with no session gets `signInWithOAuth`.
+- **The returning-member case resolves at the callback, not the start.** Someone
+  whose browser lost its cookies arrives holding a fresh anonymous session, so
+  the start goes down the link path, and Supabase refuses because that identity
+  belongs to their real account. It only says so after the round trip, so the
+  callback catches it and sends them to `/account/login?discord=linked-elsewhere`
+  with an explanation, rather than to `/error`.
+- **`DISCORD_AUTH` gates the buttons, not the routes.** The provider lives in
+  the Supabase dashboard, and a button pointing at one that isn't enabled fails
+  in front of the audience least able to make sense of it — signed-out visitors.
+  So the entry points render only where this deployment says the dashboard side
+  is done (`discordAuthConfigured`, tested), while the action and the callback
+  stay reachable and refuse politely, so a stale form can't 500.
+- **Unlinking** lives in the settings "Sign-in methods" list, beside email and
+  GICE. Supabase refuses to unlink an account's last identity, and that refusal
+  is passed through verbatim rather than pre-empted: it knows about identities
+  this code doesn't — and an EVE character is not one of them, which is exactly
+  the sort of thing a hand-rolled guard would get wrong.
+- **Coverage:** `test/discordAuth.test.ts` over the gate parsing and the plan.
+
+### Switching it on (dashboard work, in order)
+
+1. **Discord developer portal** → your application → OAuth2: add
+   `https://<project-ref>.supabase.co/auth/v1/callback` as a redirect URI.
+   Copy the client id and client secret.
+2. **Supabase dashboard** → Authentication → Providers → Discord: enable it,
+   paste that client id and secret. Scopes stay at Discord's default for the
+   provider (`identify email`) — an email means the converted account has a real
+   address rather than a placeholder.
+3. **Supabase dashboard** → Authentication → Providers (bottom of the page, or
+   Auth settings depending on vintage): enable **manual linking**. Without it
+   `linkIdentity` is refused, which would break exactly the case that keeps an
+   anonymous account from being duplicated.
+4. **Supabase dashboard** → Authentication → URL Configuration → Redirect URLs:
+   allow `https://<your-domain>/account/discord/callback`, plus
+   `http://localhost:3000/account/discord/callback` for local work and a
+   wildcard for previews (`https://*-philihp.vercel.app/**`) if previews should
+   support it.
+5. **Vercel** → project → Settings → Environment Variables: set `DISCORD_AUTH=1`
+   (and the same locally in `.env`). Only then do the buttons appear.
+6. Walk the acceptance list in `docs/discord-bot/06-discord-sign-in.md`: a fresh
+   browser registers through Discord; that account adds an email and password
+   and can then use either; an existing account links Discord in settings and
+   signs back in to the same `user_id`; unlinking a sole identity is refused.
 
 ## Stage 6 — tests, CI, Supabase branching
 

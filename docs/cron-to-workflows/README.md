@@ -1,7 +1,7 @@
 # Cron → Vercel Workflows: migration plan
 
 > **✅ Complete (all five phases).** End state: every extract job — scheduled
-> *and* on-demand — executes as a Vercel Workflow. The cron routes are thin
+> _and_ on-demand — executes as a Vercel Workflow. The cron routes are thin
 > `start()` triggers; the on-demand "Refresh ESI" path `start()`s the same
 > workflows with an `OnDemandTarget` (pre-enumerated `registrationIds` +
 > `refresh_task` id, tracked in the step via `withRefreshTask` —
@@ -37,11 +37,11 @@ What Workflows buy over the current paths:
   that outgrows 60s can later split into resumable steps (the `sde-mirror`
   slice pattern) without changing its schedule or callers.
 - **Bounded retries with visibility.** The queue retries whole messages
-  blindly (`retryAfterSeconds: 60`); a workflow retries the failed *step*,
+  blindly (`retryAfterSeconds: 60`); a workflow retries the failed _step_,
   and every run/step's status, timing, and error shows under Vercel's
   Observability → Workflows.
 - **Structural serialization.** The per-corporation jobs exist in their
-  current one-message-per-corp shape *because* concurrent queue messages
+  current one-message-per-corp shape _because_ concurrent queue messages
   once raced the same corp's SCD-2 reconcile and corrupted it (see the long
   comment on `fanOutPerCorporationCronJob` in `src/utils/cron.ts`). A
   workflow expresses "one step per corp, never concurrent for the same
@@ -56,14 +56,14 @@ What Workflows buy over the current paths:
 `requireCronSecret`. Four dispatch shapes live in `src/utils/cron.ts`, plus
 the workflow shape used by `sde-mirror`:
 
-| Shape | Jobs | Execution today |
-|---|---|---|
-| `runDirectCronJob` (inline) | ~~`industry-systems`~~, ~~`universe-structures`~~, ~~`corp-structures`~~, ~~`corp-wallet-journal`~~, ~~`corp-blueprints`~~ (all migrated — `runDirectCronJob` now unused, deleted in phase 5) | Whole job inside the cron route's single 60s invocation |
-| `dispatchAccountCronJob` (1 queue msg) | ~~`universe-names`~~, ~~`character-directory`~~ (migrated; was `character-affiliations`) | Queue consumer runs the batch, records the whole-job heartbeat |
-| `fanOutPerCharacterCronJob` (1 msg/char) | ~~`character-orders`~~, ~~`character-assets`~~, ~~`character-blueprints`~~, ~~`character-mercenary-dens`~~, ~~`character-wallet-transactions`~~, ~~`character-industry-jobs`~~ (all migrated in phase 3) | Queue consumer runs per character |
-| `fanOutPerCharacterAnyScopeCronJob` | ~~`character-status`~~ (migrated in phase 3) | Same, any-of-scopes token selection |
-| `fanOutPerCorporationCronJob` (1 msg/corp) | ~~`corp-assets`~~, ~~`corp-industry-jobs`~~, ~~`corp-wallet-transactions`~~ (all migrated in phase 4) | Queue consumer runs per corp |
-| `start()` a workflow | `sde-mirror` | Already a workflow — **done, not in scope** |
+| Shape                                      | Jobs                                                                                                                                                                                                     | Execution today                                                |
+| ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| `runDirectCronJob` (inline)                | ~~`industry-systems`~~, ~~`universe-structures`~~, ~~`corp-structures`~~, ~~`corp-wallet-journal`~~, ~~`corp-blueprints`~~ (all migrated — `runDirectCronJob` now unused, deleted in phase 5)            | Whole job inside the cron route's single 60s invocation        |
+| `dispatchAccountCronJob` (1 queue msg)     | ~~`universe-names`~~, ~~`character-directory`~~ (migrated; was `character-affiliations`)                                                                                                                 | Queue consumer runs the batch, records the whole-job heartbeat |
+| `fanOutPerCharacterCronJob` (1 msg/char)   | ~~`character-orders`~~, ~~`character-assets`~~, ~~`character-blueprints`~~, ~~`character-mercenary-dens`~~, ~~`character-wallet-transactions`~~, ~~`character-industry-jobs`~~ (all migrated in phase 3) | Queue consumer runs per character                              |
+| `fanOutPerCharacterAnyScopeCronJob`        | ~~`character-status`~~ (migrated in phase 3)                                                                                                                                                             | Same, any-of-scopes token selection                            |
+| `fanOutPerCorporationCronJob` (1 msg/corp) | ~~`corp-assets`~~, ~~`corp-industry-jobs`~~, ~~`corp-wallet-transactions`~~ (all migrated in phase 4)                                                                                                    | Queue consumer runs per corp                                   |
+| `start()` a workflow                       | `sde-mirror`                                                                                                                                                                                             | Already a workflow — **done, not in scope**                    |
 
 Not in scope: `sde-mirror` (already migrated), `esf-data` (unscheduled
 manual bootstrap; the scheduled encode is a tail step of `sde-mirror`),
@@ -125,14 +125,14 @@ migration PR only swaps the scheduled trigger.
 
 ## The plan
 
-| Doc | Jobs (in-phase risk order) | Shape change | Status |
-|---|---|---|---|
-| [01-direct-jobs.md](01-direct-jobs.md) | `industry-systems` ✅, `universe-structures` ✅, `corp-structures` ✅, `corp-wallet-journal` ✅, `corp-blueprints` ✅ | inline → single-step workflow | ✅ **Done** — all 5 migrated; `runDirectCronJob` now unused (deleted in phase 5) |
-| [02-account-jobs.md](02-account-jobs.md) | `universe-names` ✅, `character-directory` ✅ (was `character-affiliations`) | 1 queue msg → single-step workflow | ✅ **Done** |
-| [03-per-character.md](03-per-character.md) | `character-wallet-transactions` ✅, `character-orders` ✅, `character-industry-jobs` ✅, `character-status` ✅, `character-mercenary-dens` ✅, `character-blueprints` ✅, `character-assets` ✅ | per-char queue fan-out → fan-out workflow | ✅ **Done** — all 7 migrated; `fanOutPerCharacterCronJob`/`fanOutPerCharacterAnyScopeCronJob` now unused on the scheduled path (deleted in phase 5) |
-| [04-per-corporation.md](04-per-corporation.md) | `corp-wallet-transactions` ✅, `corp-industry-jobs` ✅, `corp-assets` ✅ | per-corp queue fan-out → fan-out workflow | ✅ **Done** — all 3 migrated; `fanOutPerCorporationCronJob` now unused on the scheduled path (deleted in phase 5) |
-| [05-contract.md](05-contract.md) | — | retire dead cron helpers, decide the on-demand queue path, retire the `character-implants` pilot | ✅ **Done** — §2 resolved as (b): on-demand `start()`s workflows with an `OnDemandTarget`; queue consumer + `jobs` topic deleted; pilot retired. One deviation from the spec: `runDirectCronJob` was *not* deleted — the unscheduled `esf-data`/`sheet-csv` bootstrap routes still run through it |
-| [06-burn-in.md](06-burn-in.md) | `esf-data`, `sheet-csv` (§4) | burn-in and aftercare: production verification phase 5 owed, orphaned `refresh_task` sweep, heartbeat failure recording, retire `runDirectCronJob` | — |
+| Doc                                            | Jobs (in-phase risk order)                                                                                                                                                                      | Shape change                                                                                                                                       | Status                                                                                                                                                                                                                                                                                            |
+| ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [01-direct-jobs.md](01-direct-jobs.md)         | `industry-systems` ✅, `universe-structures` ✅, `corp-structures` ✅, `corp-wallet-journal` ✅, `corp-blueprints` ✅                                                                           | inline → single-step workflow                                                                                                                      | ✅ **Done** — all 5 migrated; `runDirectCronJob` now unused (deleted in phase 5)                                                                                                                                                                                                                  |
+| [02-account-jobs.md](02-account-jobs.md)       | `universe-names` ✅, `character-directory` ✅ (was `character-affiliations`)                                                                                                                    | 1 queue msg → single-step workflow                                                                                                                 | ✅ **Done**                                                                                                                                                                                                                                                                                       |
+| [03-per-character.md](03-per-character.md)     | `character-wallet-transactions` ✅, `character-orders` ✅, `character-industry-jobs` ✅, `character-status` ✅, `character-mercenary-dens` ✅, `character-blueprints` ✅, `character-assets` ✅ | per-char queue fan-out → fan-out workflow                                                                                                          | ✅ **Done** — all 7 migrated; `fanOutPerCharacterCronJob`/`fanOutPerCharacterAnyScopeCronJob` now unused on the scheduled path (deleted in phase 5)                                                                                                                                               |
+| [04-per-corporation.md](04-per-corporation.md) | `corp-wallet-transactions` ✅, `corp-industry-jobs` ✅, `corp-assets` ✅                                                                                                                        | per-corp queue fan-out → fan-out workflow                                                                                                          | ✅ **Done** — all 3 migrated; `fanOutPerCorporationCronJob` now unused on the scheduled path (deleted in phase 5)                                                                                                                                                                                 |
+| [05-contract.md](05-contract.md)               | —                                                                                                                                                                                               | retire dead cron helpers, decide the on-demand queue path, retire the `character-implants` pilot                                                   | ✅ **Done** — §2 resolved as (b): on-demand `start()`s workflows with an `OnDemandTarget`; queue consumer + `jobs` topic deleted; pilot retired. One deviation from the spec: `runDirectCronJob` was _not_ deleted — the unscheduled `esf-data`/`sheet-csv` bootstrap routes still run through it |
+| [06-burn-in.md](06-burn-in.md)                 | `esf-data`, `sheet-csv` (§4)                                                                                                                                                                    | burn-in and aftercare: production verification phase 5 owed, orphaned `refresh_task` sweep, heartbeat failure recording, retire `runDirectCronJob` | —                                                                                                                                                                                                                                                                                                 |
 
 Phase 1's first PR migrates **one** job (`industry-systems`) to establish
 the single-step pattern; the rest of the phase can then batch 2–3 jobs per
@@ -159,7 +159,7 @@ No test runner exists. The gates are:
 3. Confirm the heartbeat pair landed (`latest_heartbeats()` /
    `/character/refresh` for per-character jobs) and the job's table shows a
    fresh `valid_until` / `recorded_at` bump.
-4. Watch the next *scheduled* firing before starting the next phase.
+4. Watch the next _scheduled_ firing before starting the next phase.
 
 Rollback for any single PR is a plain revert: the routes go back to the
 previous dispatch shape, and the job modules were never touched.
@@ -167,19 +167,19 @@ previous dispatch shape, and the job modules were never touched.
 ## House rules (from CLAUDE.md — these bite)
 
 - **No test runner.** Lint + build + manual exercise, per above.
-- **Ramda over `for`/`while`** in job code — but workflow *orchestrator*
+- **Ramda over `for`/`while`** in job code — but workflow _orchestrator_
   bodies are the documented exception (see the comment in
   `src/workflows/sdeMirror.ts`): plain, deterministic control flow over
   step calls, no helpers imported at workflow (non-step) level. Ramda
-  itself *is* okay in a workflow body, though: its pure combinators
+  itself _is_ okay in a workflow body, though: its pure combinators
   (`map`, `reduce`, `transpose`, `splitEvery`, …) are referentially
   transparent — identical on every replay — and pull in no Node modules,
   so they don't trip the compiler's ban the way an impure/Node-touching
   helper would. `characterWalletTransactions.ts` uses
   `transpose(splitEvery(LANES, ids))` for the lane split and a `reduce`
   promise-chain for the sequential per-lane drain. The exception is only
-  about *not importing workflow-level helpers that run impure/Node code in
-  workflow context*, not about avoiding ramda.
+  about _not importing workflow-level helpers that run impure/Node code in
+  workflow context_, not about avoiding ramda.
 - **Lazy-import job modules inside steps** — their top-level setup needs
   runtime env vars.
 - **`git fetch origin && git rebase origin/main`** immediately before

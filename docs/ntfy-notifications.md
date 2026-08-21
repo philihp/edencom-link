@@ -123,7 +123,7 @@ grant all                            on public.notification to service_role;
 
 Field-naming note: the request asked for "the time it was scheduled" — this
 lands as **two** columns to cover both readings: `scheduled_at` (the time it
-is scheduled *to send*, i.e. the job's `end_date`) and `created_at` (the time
+is scheduled _to send_, i.e. the job's `end_date`) and `created_at` (the time
 the scheduling happened). `sent_at` is the time it was sent.
 
 ### `user_settings.ntfy_topic`
@@ -147,7 +147,9 @@ identical behavior:
 export const publishNtfy = async (
   topic: string,
   { subject, body, click }: { subject: string; body: string; click?: string }
-): Promise<{ ok: boolean; status: number }> => { /* fetch POST, headers above */ }
+): Promise<{ ok: boolean; status: number }> => {
+  /* fetch POST, headers above */
+}
 ```
 
 - No retry logic here — the sweep owns retries (via `attempts`).
@@ -182,8 +184,7 @@ Alongside the existing parallel fetches, read the signed-in user's pending
 industry notifications (RLS scopes it automatically):
 
 ```ts
-supabase.from('notification').select('source')
-  .is('sent_at', null).like('source', 'industry-job:%')
+supabase.from('notification').select('source').is('sent_at', null).like('source', 'industry-job:%')
 ```
 
 …plus `user_settings.ntfy_topic` (null ⇒ toggles disabled). Pass
@@ -224,9 +225,9 @@ On **enable**:
 4. Compose the snapshot:
    - `subject`: `Industry job complete`
    - `body`: `<Activity>: <runs> runs of <product type name> finished at
-     <station/structure name>` — activity from `ACTIVITY_NAMES`, type name
+<station/structure name>` — activity from `ACTIVITY_NAMES`, type name
      via `getSdeType`, location via the same resolution the page already did
-     (pass the display name from the client as a *hint only* — recompute
+     (pass the display name from the client as a _hint only_ — recompute
      server-side).
    - `scheduled_at`: the job's `end_date`.
    - `source`: `industry-job:<job_id>`.
@@ -239,7 +240,7 @@ On **disable**: delete the user's pending row
 history. Finish with `revalidatePath('/industry')`.
 
 Corp jobs need no special casing: the toggle is **per-user** — whoever flips
-it gets the ping on *their* topic — and RLS on `corp_industry_job` already
+it gets the ping on _their_ topic — and RLS on `corp_industry_job` already
 answers "may this user watch this job".
 
 ## 5. Sender job — `notification-send`
@@ -251,7 +252,7 @@ cron path) even though it reads our own DB rather than ESI:
   self-runnable via `cli(import.meta.url, TAG, run)`. Logic (ramda style, no
   `for`/`while`):
   1. `sudoSupabase` select due rows: `sent_at is null`, `scheduled_at <=
-     now()`, `attempts < 10`, joined to `user_settings` for each row's
+now()`, `attempts < 10`, joined to `user_settings` for each row's
      current `ntfy_topic` (read at send time, so rotating the topic applies
      to pending rows).
   2. `forEachSequential` over rows: no topic ⇒ bump `attempts` and skip;
@@ -265,7 +266,7 @@ cron path) even though it reads our own DB rather than ESI:
   direct shape: the working set is tiny, there is nothing to fan out, and the
   heartbeat gives `/character/refresh`-style liveness for free).
 - **`vercel.json`**: `{ "path": "/api/cron/notification-send", "schedule":
-  "*/5 * * * *" }`. Every 5 minutes bounds notification lateness at ~5 min,
+"*/5 * * * *" }`. Every 5 minutes bounds notification lateness at ~5 min,
   which is fine for jobs measured in hours/days. (Per-minute cron needs
   Vercel Pro — this project's 18 existing sub-daily crons imply Pro already;
   if invocation volume is a concern, `*/15` is an acceptable first setting.)
@@ -283,7 +284,7 @@ it manually (the heartbeat row still shows it's alive).
   `character-industry-jobs`' reconcile re-stamp pending rows when it opens a
   new SCD version of a watched job.
 - **Job delivered/cancelled early**: the notification still fires at
-  `end_date`. For manufacturing, `end_date` *is* completion (delivery is just
+  `end_date`. For manufacturing, `end_date` _is_ completion (delivery is just
   pickup), so this is usually correct anyway. A cancelled job produces one
   stale ping; the user can toggle off first.
 - **Topic deleted/rotated between toggle and send**: topic is read at send

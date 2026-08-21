@@ -32,7 +32,7 @@ extract time — not a separate scanner job — means the on-demand "Refresh
 ESI" queue path and the CLI get detection for free, since they run the same
 sync function.
 
-**First-observation rule:** a den whose *first ever* observation is already
+**First-observation rule:** a den whose _first ever_ observation is already
 reinforced should still enqueue (user links mid-reinforcement and wants the
 ping). A den that vanishes from the listing with a pending outbox row: leave
 the row — the den being transferred/unanchored mid-timer is itself worth a
@@ -62,7 +62,7 @@ as always.
 **Dedupe key:** `source = 'mercenary-den:<den_id>:<reinforcement_end unix>'`
 — one ping per den per distinct timer. Re-observing the same reinforcement
 on the next 6-hourly run hits the partial unique index (and, once sent, the
-sent row simply exists); a *changed* timer mints a new source and pings
+sent row simply exists); a _changed_ timer mints a new source and pings
 again, which is the desired behavior. Treat the `23505` duplicate error as
 success, as the ntfy doc prescribes.
 

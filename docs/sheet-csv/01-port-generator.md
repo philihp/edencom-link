@@ -19,7 +19,7 @@ export const SHEET_FILE_NAMES = [
   'types-twines.csv',
   'types-miros.csv',
 ]
-export const encodeSheetCsv = async () => ({ /* name → csv string */ })
+export const encodeSheetCsv = async () => ({/* name → csv string */})
 ```
 
 ## Inputs
@@ -78,7 +78,7 @@ step, so a single-invocation build is comfortably in budget.
 
 ## Transform spec
 
-The row *data* below is a faithful port of the Python; the *serialization*
+The row _data_ below is a faithful port of the Python; the _serialization_
 diverges deliberately (headered RFC 4180 instead of the Python's headerless
 quoted format — see README decision 1), and the `Group` column is a new
 pre-join the Python left to sheet-side lookups.

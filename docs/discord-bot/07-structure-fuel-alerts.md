@@ -15,7 +15,7 @@ The scoping below is accurate except on three points the code had to settle:
   stored.
 - **The dedup rule needed a second clock.** "Compare against the previous
   observation" is not enough on its own: while nobody refuels, the stored
-  `fuel_expires` and the fresh one are the *same instant*, so both sides of
+  `fuel_expires` and the fresh one are the _same instant_, so both sides of
   a naive comparison read the same remaining time and the alert never
   fires. The previous reading has to be judged against
   `corp_structure_status.updated_at` — the time it was taken. Yesterday's

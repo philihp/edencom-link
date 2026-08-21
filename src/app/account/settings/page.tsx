@@ -4,12 +4,14 @@ import { redirect } from 'next/navigation'
 import { LINK_FLAG, hasFlag } from '@/flags'
 import { createClient } from '@/utils/supabase/server'
 
+import { discordAuthEnabled } from '../lib/discordAuth'
 import { establishedUser } from '../lib/establishedUser'
 
 import { isChancellor } from './chancellor/chancellor'
 import { isSsoPlaceholderEmail } from '../lib/ssoEmail'
 import ApiToken from './apiToken'
 import ChangePassword from './changePassword'
+import { DiscordButton, DiscordUnlinkButton } from '../discord/button'
 import Discord from './discord'
 import { LogoffButton } from './logoffButton'
 import MainCharacter from './mainCharacter'
@@ -33,6 +35,11 @@ const SettingsPage = async ({ searchParams }: { searchParams: Promise<{ gice?: s
   const chancellor = await isChancellor(user.id)
   const { data: giceAccount } = await supabase.from('gice_account').select('gice_id, name').maybeSingle()
   const placeholderEmail = isSsoPlaceholderEmail(user.email)
+  // Which providers this account can sign in with. Supabase owns the list
+  // (EVE SSO isn't on it — that's a registration row, not an identity), so ask
+  // it rather than inferring from anything of ours.
+  const { data: identities } = await supabase.auth.getUserIdentities()
+  const discordLinked = (identities?.identities ?? []).some(({ provider }) => provider === 'discord')
   const { data: discordChannels } = await supabase
     .from('discord_channel')
     .select('id, guild_id, channel_id, guild_name, channel_name, created_at, disabled_at')
@@ -66,6 +73,16 @@ const SettingsPage = async ({ searchParams }: { searchParams: Promise<{ gice?: s
         )}
         {giceParam === 'conflict' && ' — that GICE account is already linked to a different Edencom Link account.'}
       </p>
+      {discordAuthEnabled() && (
+        <div>
+          Discord: {discordLinked ? <strong>linked</strong> : 'not linked'}
+          {discordLinked ? (
+            <DiscordUnlinkButton />
+          ) : (
+            <DiscordButton label="Link your Discord account" next="/account/settings" plain />
+          )}
+        </div>
+      )}
 
       <ChangePassword />
 

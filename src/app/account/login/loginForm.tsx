@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 
 import { signInWithEve } from '../../character/actions'
+import { DiscordButton } from '../discord/button'
 import styles from '../auth.module.css'
 import Status from '../status'
 import SubmitButton from '../submitButton'
@@ -13,7 +14,15 @@ import { login } from './actions'
 // The login form proper; the page (a server component) passes a sanitized
 // same-site `next` path so flows like the OAuth consent page can bounce a
 // logged-out user through login and back.
-export const LoginForm = ({ next }: { next?: string }) => {
+export const LoginForm = ({
+  next,
+  discordEnabled,
+  discordNote,
+}: {
+  next?: string
+  discordEnabled?: boolean
+  discordNote?: string
+}) => {
   const [error, setError] = useState('')
   // Kept apart from the password form's error so one failure doesn't blank the
   // other's message.
@@ -88,6 +97,10 @@ export const LoginForm = ({ next }: { next?: string }) => {
           <div aria-live="polite">{error && <Status kind="error">{error}</Status>}</div>
         </form>
 
+        {/* Reported here rather than by the callback route, which has no page
+            of its own to say it on. */}
+        {discordNote && <Status kind="error">{discordNote}</Status>}
+
         <div className={styles.divider}>or</div>
         {/* A form, not a link: starting the EVE round trip needs a session to
             hang the character on, and a Server Action is where that cookie
@@ -108,6 +121,13 @@ export const LoginForm = ({ next }: { next?: string }) => {
           Log in with GICE
         </a>
         <p className={styles.altNote}>In The Imperium? Use your Goonfleet SSO account.</p>
+
+        {discordEnabled && (
+          <>
+            <DiscordButton label="Log in with Discord" next={next} />
+            <p className={styles.altNote}>Also registers you, if this is your first time here.</p>
+          </>
+        )}
 
         <div className={styles.footer}>
           <Link href="/account/register">Need an account?</Link>

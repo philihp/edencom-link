@@ -128,6 +128,6 @@ a wormhole, say) yields `null` for everything, which doc 03 renders as
 - Migration applies cleanly (`pnpm run db:push` on the linked project, or
   let the `Migrate` workflow do it on merge).
 - Manual check in a dev console / scratch route: `getJumpDistance(30000142,
-  30002187)` (Jita→Amarr) returns **11**, `getJumpDistance(30000142,
-  30000142)` returns **0**, and a wormhole system id (e.g. 31000005) returns
+30002187)` (Jita→Amarr) returns **11**, `getJumpDistance(30000142,
+30000142)` returns **0**, and a wormhole system id (e.g. 31000005) returns
   **null**. These values were validated against SDE build 3442663.
