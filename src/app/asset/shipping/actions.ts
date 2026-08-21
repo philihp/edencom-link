@@ -4,11 +4,19 @@
 // Jita-sell appraisal plus a freight quote in each direction out.
 //
 // It leaves the deployment twice — innomin.at for the prices (item names and
-// quantities only, nothing about the caller's account) and kumgo.space for the
-// freight (route, volume, collateral) — and reads no DB beyond the auth check.
-// Both third parties are reached through their single-module wrappers, the same
-// ones the MCP tools use, so the throttle, timeouts and error shapes stay in
-// one place.
+// quantities only) and kumgo.space for the freight (route, volume,
+// collateral) — and reads no database at all. Both third parties are reached
+// through their single-module wrappers, the same ones the MCP tools use, so
+// the throttle, timeouts and error shapes stay in one place.
+//
+// **Unauthenticated on purpose**, matching the page. There is no account to
+// scope: every input arrives in the request and no row is read, so there is
+// nothing an anonymous caller could see that a signed-in one couldn't. What a
+// public action does expose is cost — each call is one innomin.at request
+// against a budget shared by the whole deployment — but that budget is already
+// defended where it has to be, by the global leaky-bucket throttle and shared
+// cache in src/innominate.ts rather than by who is asking. A flood queues; it
+// cannot outspend the budget.
 //
 // Never throws: the client renders whatever comes back, and a rejected promise
 // inside a Suspense boundary would be an error boundary's problem instead of a
@@ -16,7 +24,6 @@
 import { appraise } from '@/innominate'
 import { fetchShippingRoutes, requestShippingQuote } from '@/kumgo'
 
-import { establishedUser } from '../../account/lib/establishedUser'
 import { describeTier, maxQuotableVolumeM3, resolveShippingRoute, tierForVolume } from '../../api/mcp/shippingQuery'
 
 import { MAX_LINES, parseManifest } from './manifest'
@@ -78,10 +85,6 @@ export type ShippingEstimate =
     }
 
 export const quoteShipping = async (raw: string): Promise<ShippingEstimate> => {
-  // A server action is a public endpoint; the page's gate doesn't cover it.
-  const user = await establishedUser()
-  if (!user) return { ok: false, message: 'Sign in to price a shipment.' }
-
   const { lines, ignored } = parseManifest(raw)
   if (lines.length === 0) return { ok: false, message: 'Paste a list of items to price.' }
   if (lines.length > MAX_LINES) {

@@ -65,6 +65,10 @@ const Header = async () => {
           <span className={styles.bracket}>[</span>
           {!user ? (
             <>
+              {/* The one page that works signed out, so it needs a way in
+                  from here — /asset, where it otherwise lives, is gated. */}
+              <Link href="/asset/shipping">shipping</Link>
+              <span className={styles.sep}>|</span>
               <Link href="/account/login">login</Link>
               <span className={styles.sep}>|</span>
               <Link href="/account/register">register</Link>
