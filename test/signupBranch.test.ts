@@ -17,11 +17,18 @@
 //
 // What it asserts, mirroring src/app/account/register/actions.ts (which can't be
 // imported here — it is a 'use server' module reading cookies):
-//   1. an unused invite code gates registration,
-//   2. signUp creates an account in auth.users,
-//   3. the code is burned for exactly that account,
+//   1. signUp creates an account in auth.users, with or without a code,
+//   2. a code that is offered is recorded as a referral on exactly that account,
+//      and cannot be recorded twice,
+//   3. registering from an anonymous session converts that account in place
+//      rather than minting a second one,
 //   4. the new account can act as itself under RLS (writes and reads back its
 //      own user_settings row) and cannot see another account's.
+//
+// Registration is open as of stage 2, so a code no longer gates anything; what
+// is worth pinning here is that the referral still lands on the right account,
+// and that the conversion keeps auth.uid() stable — the whole reason a
+// character added before signing up survives the sign-up.
 import assert from 'node:assert/strict'
 import { randomBytes, randomUUID } from 'node:crypto'
 import { after, before, describe, it } from 'node:test'
@@ -71,16 +78,45 @@ describe('signing up on a Supabase branch', { skip: skip ?? false, timeout: SETU
     reason: string | null
   }
 
-  // The registration path itself: check the code is unredeemed, sign up, burn
-  // the code for the new account. Returns what the caller needs to assert on.
-  const register = async (code: string): Promise<Registration> => {
-    const { data: invite } = await service
+  const credentials = () => ({
+    email: `signup-test-${randomUUID()}@edencom.test`,
+    password: `${randomUUID()}Aa1!`,
+  })
+
+  // Check a code the way the action does before it touches the account: only a
+  // code that exists and is unclaimed is worth carrying forward.
+  const checkInvite = async (code: string) => {
+    const { data } = await service
       .from('invite_code')
       .select('id')
       .eq('code', code)
       .is('redeemed_by', null)
       .maybeSingle()
-    if (!invite) {
+    return data?.id ?? null
+  }
+
+  // Record the referral, guarded on the code still being unclaimed and on the
+  // account not already carrying one — both guards the action applies.
+  const affixReferral = async (inviteId: string, userId: string) => {
+    const { count } = await service
+      .from('invite_code')
+      .select('id', { count: 'exact', head: true })
+      .eq('redeemed_by', userId)
+    if ((count ?? 0) > 0) return
+    const { error } = await service
+      .from('invite_code')
+      .update({ redeemed_by: userId, redeemed_at: new Date().toISOString() })
+      .eq('id', inviteId)
+      .is('redeemed_by', null)
+    assert.equal(error, null, `affixing the referral failed: ${error?.message}`)
+  }
+
+  // The registration path itself: an optional code is checked first (a bad one
+  // stops the sign-up while the form can still be corrected), the account is
+  // created, then the referral is recorded against it.
+  const register = async (code?: string): Promise<Registration> => {
+    const inviteId = code === undefined ? null : await checkInvite(code)
+    if (code !== undefined && !inviteId) {
       return {
         user: null,
         session: null,
@@ -90,19 +126,13 @@ describe('signing up on a Supabase branch', { skip: skip ?? false, timeout: SETU
       }
     }
 
-    const email = `signup-test-${randomUUID()}@edencom.test`
-    const password = `${randomUUID()}Aa1!`
+    const { email, password } = credentials()
     const { data, error } = await anonClient().auth.signUp({ email, password })
     assert.equal(error, null, `signUp failed: ${error?.message}`)
     assert.ok(data.user, 'signUp returned no user')
     createdUserIds.push(data.user.id)
 
-    const { error: burnError } = await service
-      .from('invite_code')
-      .update({ redeemed_by: data.user.id, redeemed_at: new Date().toISOString() })
-      .eq('id', invite.id)
-      .is('redeemed_by', null)
-    assert.equal(burnError, null, `burning the invite code failed: ${burnError?.message}`)
+    if (inviteId) await affixReferral(inviteId, data.user.id)
 
     return { user: data.user, session: data.session, email, password, reason: null }
   }
@@ -142,7 +172,7 @@ describe('signing up on a Supabase branch', { skip: skip ?? false, timeout: SETU
     if (branch) await deleteTestBranch(branch)
   })
 
-  it('creates an account and burns the invite code', { timeout: TEST_TIMEOUT_MS }, async () => {
+  it('creates an account and records the invite code as a referral', { timeout: TEST_TIMEOUT_MS }, async () => {
     const code = await mintInvite()
     const registered = await register(code)
     assert.equal(registered.reason, null)
@@ -163,7 +193,7 @@ describe('signing up on a Supabase branch', { skip: skip ?? false, timeout: SETU
     assert.ok(invite?.redeemed_at, 'the redeemed code carries no redemption time')
   })
 
-  it('refuses to re-use a burned invite code', { timeout: TEST_TIMEOUT_MS }, async () => {
+  it('refuses to re-use a claimed invite code', { timeout: TEST_TIMEOUT_MS }, async () => {
     const code = await mintInvite()
     await register(code)
 
@@ -171,6 +201,69 @@ describe('signing up on a Supabase branch', { skip: skip ?? false, timeout: SETU
     assert.equal(second.user, null)
     assert.match(`${second.reason}`, /invite code/)
   })
+
+  it('creates an account with no invite code at all', { timeout: TEST_TIMEOUT_MS }, async () => {
+    const registered = await register()
+    assert.equal(registered.reason, null)
+    assert.ok(registered.user)
+
+    const { data: fetched } = await service.auth.admin.getUserById(registered.user.id)
+    assert.equal(fetched.user?.email, registered.email)
+
+    // Nothing was claimed on its behalf: an open registration is simply
+    // unreferred, not credited to some arbitrary code.
+    const { count } = await service
+      .from('invite_code')
+      .select('id', { count: 'exact', head: true })
+      .eq('redeemed_by', registered.user.id)
+    assert.equal(count, 0)
+  })
+
+  it(
+    'converts an anonymous account in place instead of minting a second one',
+    { timeout: TEST_TIMEOUT_MS },
+    async () => {
+      const client = anonClient()
+      const { data: anon, error: anonError } = await client.auth.signInAnonymously()
+      if (anonError || !anon.user) {
+        // Anonymous sign-ins are a project setting (stage 0 of
+        // docs/open-registration.md), and a branch inherits whatever the parent
+        // has. Say so rather than failing something this file doesn't configure.
+        console.log(`# anonymous sign-ins unavailable on this branch: ${anonError?.message}`)
+        return
+      }
+      createdUserIds.push(anon.user.id)
+      assert.equal(anon.user.is_anonymous, true)
+
+      // The referral is affixed to the account that already exists — the case
+      // that makes conversion worth doing, since a code claimed before sign-up
+      // would be stranded on an abandoned account otherwise.
+      const code = await mintInvite()
+      const inviteId = await checkInvite(code)
+      assert.ok(inviteId)
+      await affixReferral(inviteId, anon.user.id)
+
+      const { email, password } = credentials()
+      const { data: converted, error } = await client.auth.updateUser({ email, password })
+      assert.equal(error, null, `converting the anonymous account failed: ${error?.message}`)
+      assert.equal(converted.user?.id, anon.user.id, 'conversion minted a different account')
+
+      // Permanent to Supabase now, holding the same id — so the referral (and
+      // anything else affixed before sign-up) is still on the account.
+      const { data: fetched } = await service.auth.admin.getUserById(anon.user.id)
+      assert.equal(fetched.user?.is_anonymous, false)
+      assert.equal(fetched.user?.email, email, 'the branch did not apply the new address')
+
+      const { data: invite } = await service.from('invite_code').select('redeemed_by').eq('code', code).single()
+      assert.equal(invite?.redeemed_by, anon.user.id)
+
+      // And it is a working password login, not merely a row: the point of
+      // converting is that they can come back.
+      const { data: signedIn, error: signInError } = await anonClient().auth.signInWithPassword({ email, password })
+      assert.equal(signInError, null, `signing in as the converted account failed: ${signInError?.message}`)
+      assert.equal(signedIn.user?.id, anon.user.id)
+    }
+  )
 
   it('lets the new account own rows under RLS, and only its own', { timeout: TEST_TIMEOUT_MS }, async () => {
     const registered = await register(await mintInvite())

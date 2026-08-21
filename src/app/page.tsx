@@ -208,7 +208,7 @@ const Home = async () => {
         <p className={styles.closingBody}>
           {user
             ? 'You’re already on the net. Review what landed on the last sweep, or grant a scope you left dark when you added a character.'
-            : 'Registration is invite-only; find a member with a code, and you’re about a minute from a single picture of everything you own.'}
+            : 'Registration is open, and you’re about a minute from a single picture of everything you own.'}
         </p>
         <div className={styles.actions}>
           {user ? (

@@ -78,8 +78,8 @@ const InvitesPage = async () => {
     <>
       <h1>Invite codes</h1>
       <p>
-        Edencom Link is invite-only. Copy an unused code&rsquo;s link below and send it to someone to let them register
-        an account — each code works once.
+        Anyone can register at Edencom Link, so a code isn&rsquo;t a key — it&rsquo;s a referral. Copy an unused
+        code&rsquo;s link below and send it to someone, and their account is credited to you; each code works once.
       </p>
 
       {!firstSsoAt && (
@@ -153,7 +153,7 @@ const InvitesPage = async () => {
           ) : redeemedCode.created_by ? (
             <p>You were invited by another capsuleer.</p>
           ) : (
-            <p>You joined with a founding invite code.</p>
+            <p>No one is credited with referring you.</p>
           )}
         </>
       )}

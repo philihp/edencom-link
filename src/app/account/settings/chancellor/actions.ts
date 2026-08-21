@@ -1,5 +1,7 @@
 'use server'
 
+import { randomBytes } from 'node:crypto'
+
 import { revalidatePath } from 'next/cache'
 import { pluck, uniq } from 'ramda'
 
@@ -41,9 +43,11 @@ const resolveAccountByCharacter = async (
 }
 
 // Promote the account that owns a given EVE character to Chancellor by flagging
-// the invite_code that account redeemed (each registered account burned exactly
-// one code, so that row uniquely identifies it). The write goes through the
-// service role, the only role allowed to set is_chancellor.
+// the invite_code row that account holds — `redeemed_by` is unique per account,
+// so that row identifies it. Registration is open now
+// (docs/open-registration.md), so an account may hold no row at all; conferral
+// then mints one, carrying the flag and crediting no referrer. The write goes
+// through the service role, the only role allowed to set is_chancellor.
 export const grantChancellor = async (formData: FormData): Promise<{ ok?: string; error?: string }> => {
   const gate = await requireChancellor()
   if ('error' in gate) return { error: gate.error }
@@ -59,11 +63,15 @@ export const grantChancellor = async (formData: FormData): Promise<{ ok?: string
     .eq('redeemed_by', target.userId)
     .limit(1)
     .maybeSingle()
-  if (!redeemed) {
-    return { error: 'That account hasn’t redeemed an invite code, so it can’t be made a Chancellor.' }
-  }
 
-  const { error } = await service.from('invite_code').update({ is_chancellor: true }).eq('id', redeemed.id)
+  const { error } = redeemed
+    ? await service.from('invite_code').update({ is_chancellor: true }).eq('id', redeemed.id)
+    : await service.from('invite_code').insert({
+        code: randomBytes(8).toString('hex'),
+        redeemed_by: target.userId,
+        redeemed_at: new Date().toISOString(),
+        is_chancellor: true,
+      })
   if (error) return { error: error.message }
 
   revalidatePath('/account/settings/chancellor')
