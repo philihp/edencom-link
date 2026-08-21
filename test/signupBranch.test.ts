@@ -13,7 +13,9 @@
 // sender. createTestBranch now disables outbound mail on the branch and
 // verifies it before returning, and refuses the branch otherwise — so nothing
 // here can reach an inbox. Keep it that way: no auth call in this file may
-// depend on mail being sent.
+// depend on mail being sent, and none may assume the address domain is doing
+// the protecting (see `credentials` below — the domain only has to satisfy
+// GoTrue's validator).
 //
 // What it asserts, mirroring src/app/account/register/actions.ts (which can't be
 // imported here — it is a 'use server' module reading cookies):
@@ -81,8 +83,18 @@ describe('signing up on a Supabase branch', { skip: skip ?? false, timeout: SETU
     reason: string | null
   }
 
+  // A subdomain of the real domain, not the reserved `.test` TLD these used to
+  // use: GoTrue now refuses `.test` outright (`email_address_invalid`), and the
+  // placeholder addresses this suite already mints on `sso.edencom.link` pass
+  // the same validator. Nothing about the domain is what keeps mail off the
+  // wire — createTestBranch does that before a test can authenticate, with
+  // three independent locks it verifies by reading the config back
+  // (autoconfirm, so no mail is generated; SMTP pointed at the branch's own
+  // loopback; the built-in mail service floored to one per hour) — and no call
+  // in this file asks GoTrue to send anything anyway. `branch-test` has no MX,
+  // so even a bounce has nowhere to originate.
   const credentials = () => ({
-    email: `signup-test-${randomUUID()}@edencom.test`,
+    email: `signup-test-${randomUUID()}@branch-test.edencom.link`,
     password: `${randomUUID()}Aa1!`,
   })
 
