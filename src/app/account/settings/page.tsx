@@ -87,7 +87,7 @@ const SettingsPage = async ({ searchParams }: { searchParams: Promise<{ gice?: s
       )}
 
       <h2>Invite codes</h2>
-      <p>Edencom Link is invite-only. See the codes you can give out and when you earn more.</p>
+      <p>Refer someone with a code of yours. See the codes you can give out and when you earn more.</p>
       <Link href="/account/invite">Manage invite codes</Link>
 
       <Discord appId={process.env.DISCORD_APP_ID ?? null} channels={discordChannels ?? []} />

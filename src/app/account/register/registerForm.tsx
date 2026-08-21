@@ -12,7 +12,16 @@ import { INVITE_CODE_PATTERN } from './inviteCode'
 
 type Result = { kind: 'ok' | 'error'; message: string }
 
-const RegisterForm = () => {
+// Structurally the lib/referral `Referral`, restated rather than imported: that
+// module reaches a Supabase factory, and a client component may not pull one
+// into its graph (see the Server-Timing note in CLAUDE.md).
+type Referral = { referred: boolean; inviterName: string | null }
+
+// Registration is open (docs/open-registration.md), so the invite field is no
+// longer the first thing anyone meets. It appears in three situations: a code
+// arrived in the URL from a shared link, the account already carries a referral
+// (shown as a line, not a field — one per account), or the visitor asks for it.
+const RegisterForm = ({ referral }: { referral: Referral }) => {
   const urlInvite = useSearchParams().get('invite')?.trim() ?? ''
 
   const [invite, setInvite] = useState(urlInvite)
@@ -23,6 +32,7 @@ const RegisterForm = () => {
   // A code arriving via the URL renders read-only; "use a different code"
   // unlocks it (needed when a shared link's code turns out to be spent).
   const [locked, setLocked] = useState(urlInvite !== '')
+  const [showInvite, setShowInvite] = useState(urlInvite !== '')
   const [lookup, setLookup] = useState<InviteLookup | null>(null)
   const lookupSeq = useRef(0)
 
@@ -65,8 +75,8 @@ const RegisterForm = () => {
       <div className={styles.card}>
         <h1 className={styles.title}>Register</h1>
         <p className={styles.intro}>
-          Create an account to manage your hangars. Registration is invite-only — you&rsquo;ll need a code from someone
-          already here.
+          Create an account to manage your hangars. Anyone may register — an invite code, if you have one, credits
+          whoever sent you.
         </p>
 
         <form
@@ -76,49 +86,60 @@ const RegisterForm = () => {
           }}
         >
           <div className={styles.fields}>
-            <div className={styles.field}>
-              <label className={styles.label} htmlFor="invite">
-                Invite code
-              </label>
-              {/* readOnly, not disabled — a disabled input is dropped from FormData on submit */}
-              <input
-                className={styles.input}
-                id="invite"
-                name="invite"
-                type="text"
-                autoComplete="off"
-                autoFocus={urlInvite === ''}
-                required
-                readOnly={locked}
-                value={invite}
-                onChange={(e) => {
-                  setInvite(e.target.value)
-                  setSubmitted(false)
-                }}
-              />
-              <div aria-live="polite">
-                {lookup?.status === 'valid' && (
-                  <Status kind="ok" inline>
-                    {lookup.inviterName ? `Invited by ${lookup.inviterName}` : 'A founding invite code'}
-                  </Status>
-                )}
-                {lookup?.status === 'redeemed' && (
-                  <Status kind="error" inline>
-                    This invite code has already been used.
-                  </Status>
-                )}
-                {lookup?.status === 'unknown' && (
-                  <Status kind="error" inline>
-                    This invite code isn&rsquo;t recognized.
-                  </Status>
+            {referral.referred ? (
+              referral.inviterName && (
+                <Status kind="ok" inline>
+                  Referred by {referral.inviterName}
+                </Status>
+              )
+            ) : showInvite ? (
+              <div className={styles.field}>
+                <label className={styles.label} htmlFor="invite">
+                  Invite code
+                </label>
+                {/* readOnly, not disabled — a disabled input is dropped from FormData on submit */}
+                <input
+                  className={styles.input}
+                  id="invite"
+                  name="invite"
+                  type="text"
+                  autoComplete="off"
+                  autoFocus={urlInvite === ''}
+                  readOnly={locked}
+                  value={invite}
+                  onChange={(e) => {
+                    setInvite(e.target.value)
+                    setSubmitted(false)
+                  }}
+                />
+                <div aria-live="polite">
+                  {lookup?.status === 'valid' && (
+                    <Status kind="ok" inline>
+                      {lookup.inviterName ? `Invited by ${lookup.inviterName}` : 'A founding invite code'}
+                    </Status>
+                  )}
+                  {lookup?.status === 'redeemed' && (
+                    <Status kind="error" inline>
+                      This invite code has already been used.
+                    </Status>
+                  )}
+                  {lookup?.status === 'unknown' && (
+                    <Status kind="error" inline>
+                      This invite code isn&rsquo;t recognized.
+                    </Status>
+                  )}
+                </div>
+                {locked && (
+                  <button type="button" className={styles.linkButton} onClick={() => setLocked(false)}>
+                    use a different code
+                  </button>
                 )}
               </div>
-              {locked && (
-                <button type="button" className={styles.linkButton} onClick={() => setLocked(false)}>
-                  use a different code
-                </button>
-              )}
-            </div>
+            ) : (
+              <button type="button" className={styles.linkButton} onClick={() => setShowInvite(true)}>
+                No invite code required — but if you have one, enter it
+              </button>
+            )}
 
             <div className={styles.field}>
               <label className={styles.label} htmlFor="email">

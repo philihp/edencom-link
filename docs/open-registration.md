@@ -28,14 +28,14 @@ There is **no anonymous user today** — nothing in the codebase calls
 - `/account/gice/complete`: requires an invite code, `admin.createUser` with a
   placeholder email, links `gice_account`, burns the code, `mintSession`.
 - `/character/callback`: **requires** an already-authenticated Supabase user;
-  EVE SSO only ever *adds characters to* an account, it cannot start one.
+  EVE SSO only ever _adds characters to_ an account, it cannot start one.
 - Discord sign-in is designed (`docs/discord-bot/06-discord-sign-in.md`) but
   not implemented; that doc left the invite question open — this plan answers
   it: no invite gate.
 
 `invite_code.redeemed_by` keeps its column but changes meaning: from "the
 account this code admitted" to "the account this code referred". The earning
-schedule for *minting* codes, Chancellor conferral via `is_chancellor` codes,
+schedule for _minting_ codes, Chancellor conferral via `is_chancellor` codes,
 and all RLS stay as they are.
 
 ## Stage 0 — platform configuration (no code)
@@ -70,10 +70,10 @@ RLS audit found is recorded at the end of this section.
   a shared link to survive an EVE-first sign-up).
 - **Migration** (plus the `schema.sql` twin):
   - partial unique index `invite_code (redeemed_by) where redeemed_by is not
-    null` — one referral per account, enforced where the race can't cheat it;
+null` — one referral per account, enforced where the race can't cheat it;
   - comment updates recording what the column means.
-  `redeemed_by … on delete set null` already returns a code to the pool when
-  a never-converted anonymous user is deleted.
+    `redeemed_by … on delete set null` already returns a code to the pool when
+    a never-converted anonymous user is deleted.
 - **Anon hygiene:** a nightly `anon-sweep` job (single-step Vercel Workflow
   shape, like the other daily jobs) — abandoning a half-finished flow leaves an
   account behind — deletes `auth.users` rows where
@@ -108,7 +108,7 @@ RLS audit found is recorded at the end of this section.
 - **The seam the plan only implied:** once any account can hold a session
   before it has an identity, "a user exists" stops meaning "a member is signed
   in", and roughly thirty gates read it that way. `isEstablishedAccount()`
-  (`src/app/account/lib/accountStatus.ts`, pure + tested) answers *our*
+  (`src/app/account/lib/accountStatus.ts`, pure + tested) answers _our_
   question — permanent to Supabase, **or** owns a character — and
   `establishedUser()` next door is the drop-in those gates now call instead of
   `auth.getUser()`. `is_established_account()` in SQL is its twin.
@@ -131,7 +131,7 @@ require `is_established_account()`. Everything else was left alone, deliberately
 - the fitting/asset/den/link share audiences go through
   `share_audience_matches()`, which needs overlapping corp or alliance
   membership — except its deliberately public branch (no secret, no audience
-  lists), which the sharing-layer docs define as *public*, so anonymous callers
+  lists), which the sharing-layer docs define as _public_, so anonymous callers
   reading it is the intended semantic, not a leak. (The plan flagged the
   level-era `public` share as the hot spot; Revision 3 had already made the
   answer explicit.);
@@ -146,7 +146,8 @@ bearer client, so an anonymous caller's tools return their own (empty) data.
 
 ## Stage 2 — email/password from the anonymous session
 
-**PR size:** small
+**PR size:** small — **landed.** What shipped and where it differed is recorded
+at the end of this section.
 
 - `register/actions.ts`: replace `auth.signUp` with
   `auth.updateUser({ email, password })` on the current (anonymous) session —
@@ -158,7 +159,7 @@ bearer client, so an anonymous caller's tools return their own (empty) data.
 - `registerForm.tsx`:
   - Invite field **hidden by default**; drop the "invite-only" copy.
   - If the anonymous user already has an affixed code, quietly show
-    "Referred by *\<inviter's main character\>*" — resolved server-side
+    "Referred by _\<inviter's main character\>_" — resolved server-side
     (service role: `invite_code where redeemed_by = uid` → `created_by` →
     the existing `mainCharacterNameForUser`). Founding/seed codes
     (`created_by` null) show nothing.
@@ -166,6 +167,51 @@ bearer client, so an anonymous caller's tools return their own (empty) data.
     clicking it reveals the invite input, which keeps today's debounced
     `lookupInvite` "Invited by …" feedback, and submitting affixes the code
     alongside the conversion.
+
+### What stage 2 actually landed
+
+- **The invite gate is off the email path.** `register/actions.ts` checks a code
+  only when one was offered, converts the session in place when there is one
+  (`auth.updateUser({ email, password })`), and falls back to `auth.signUp` when
+  there isn't. The decision is the pure `emailSignupPlan()`
+  (`src/app/account/lib/signupFlow.ts`, tested): `convert` for an anonymous
+  session, `sign-up` for none _and_ for an already-permanent one — a signed-in
+  member's credentials must not be rewritten from the register form.
+- **A code is checked before the account is touched**, not after: a code the
+  visitor typed on purpose and got wrong still fails the submit, because
+  silently dropping it would lose the referral without saying so. A code that is
+  simply absent is not an error any more.
+- **Referral writing and reading moved out of the action** into
+  `src/app/account/lib/referral.ts` (`checkInviteCode`, `affixReferral`,
+  `referralForAccount`), since the register _page_ needs the read too. Affixing
+  is guarded on the account not already carrying a referral — the partial unique
+  index would refuse it anyway — and is best-effort: by then the account exists,
+  and losing the attribution is not worth failing a registration over.
+- **The form asks for a code only when there is a reason to.** A URL-supplied
+  code renders as today (read-only, with the live "Invited by …" lookup and the
+  "use a different code" escape); an account that already carries a referral
+  gets the "Referred by …" line instead of a field; everyone else gets a subtle
+  link that reveals the input. `Referral`'s shape is restated in the client
+  component rather than imported, because `lib/referral.ts` reaches a Supabase
+  factory and a client component may not pull one into its graph.
+- **Referred-by is two answers, not one** (`{ referred, inviterName }`): a
+  founding/seed code has no creator to name but still occupies the account's one
+  referral slot, so the form must not go on offering to take another code.
+- **Chancellor conferral needed a fallback the plan didn't foresee.** It flags
+  the `invite_code` row an account holds, and "every account holds one" stopped
+  being true the moment registration opened. `grantChancellor` now mints a row
+  (no creator, so nobody is credited with a referral) when the target has none;
+  `/account/invite`'s no-creator line reads "No one is credited with referring
+  you", which is true of a founding code and of a conferral row alike.
+- **Copy:** the register page, the front page's closing paragraph,
+  `/account/invite` and `/account/settings` no longer call the site invite-only.
+  The GICE copy still does, and correctly — that gate comes off in stage 4.
+- **Coverage:** `test/signupFlow.test.ts` for the plan; `test/signupBranch.test.ts`
+  gained the codeless sign-up and the anonymous-conversion path (same id after
+  conversion, `is_anonymous` cleared, referral affixed _before_ conversion still
+  on the account, and a working password login afterwards). The conversion test
+  prints a skip line rather than failing if the branch has anonymous sign-ins
+  switched off, since that is a project setting from stage 0.
 
 ## Stage 3 — EVE SSO as a first (and sufficient) identity
 
@@ -176,7 +222,7 @@ session satisfies its auth check, so "add a character before registering"
 mostly falls out of Stage 1. What's left:
 
 - **Sign-in / duplicate handling:** when the callback's `(character_id,
-  owner)` is already registered to a *different* user and the current caller
+owner)` is already registered to a _different_ user and the current caller
   is a fresh anonymous user (no identities, no registrations), don't create a
   second account holding the same character — `mintSession` into the existing
   owner instead. This is simultaneously the returning-user "Log in with EVE
@@ -251,7 +297,7 @@ GICE via `/account/gice` — all keyed on the stable `auth.uid()`.
   applied automatically, and the Supabase↔Vercel integration so preview
   deployments receive that branch's credentials. Division of labor:
   - unit tests mock Supabase and never touch a database;
-  - branching validates the *migrations* and gives preview deploys a real,
+  - branching validates the _migrations_ and gives preview deploys a real,
     isolated database (this project's Stage 1 migration is the first
     customer);
   - production stays with the existing `migrate.yml` on push to `main` —
@@ -279,7 +325,7 @@ GICE via `/account/gice` — all keyed on the stable `auth.uid()`.
   when reading auth logs.
 - **`is_anonymous` semantics drift:** EVE-only accounts are permanent to us
   but anonymous to Supabase. Every "is this a real account?" check must ask
-  *our* question (has identity or registration), not Supabase's flag — the
+  _our_ question (has identity or registration), not Supabase's flag — the
   sweep guard and the Stage 3 banner both encode this.
 - **Referral display privacy:** the register page reveals the inviter's main
   character name to whoever holds the link — same exposure as today's

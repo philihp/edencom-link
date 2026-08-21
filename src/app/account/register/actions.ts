@@ -6,6 +6,8 @@ import { createServiceClient } from '@/utils/supabase/service'
 import { createClient } from '@/utils/supabase/server'
 
 import { mainCharacterNameForUser } from '../lib/inviter'
+import { affixReferral, checkInviteCode } from '../lib/referral'
+import { emailSignupPlan } from '../lib/signupFlow'
 import { INVITE_CODE_PATTERN } from './inviteCode'
 
 export type InviteLookup =
@@ -35,46 +37,41 @@ export const lookupInvite = async (rawCode: string): Promise<InviteLookup> => {
   return { status: 'valid', inviterName }
 }
 
-// Registration is invite-only: the form must carry an unused invite code. We
-// validate and redeem it with the service role, since a registrant can't see
-// invite_code rows under RLS — not even the one they were sent. (Stage 2 of
-// docs/open-registration.md drops the requirement and converts the anonymous
-// account in place instead of minting a second one.)
+// Registration is open (docs/open-registration.md): an invite code is optional
+// and, when present, is recorded as a referral rather than spent as admission.
+//
+// The account itself may already exist — a visitor who started adding a
+// character is holding an anonymous session — in which case this converts that
+// user in place instead of minting a second one, keeping auth.uid() and
+// anything already affixed to it. `signUp` remains the no-session fallback.
+// Either way the address is confirmed through the existing /account/confirm
+// route before it becomes theirs.
 export const register = async (formData: FormData) => {
   await delay(5000)
 
-  const inviteCode = `${formData.get('invite') ?? ''}`.trim()
-  if (!inviteCode) {
-    return { data: null, error: { message: 'An invite code is required to register.' } }
-  }
-
-  const service = createServiceClient()
-  const { data: invite } = await service
-    .from('invite_code')
-    .select('id')
-    .eq('code', inviteCode)
-    .is('redeemed_by', null)
-    .maybeSingle()
-  if (!invite) {
-    return { data: null, error: { message: 'That invite code is invalid or has already been used.' } }
+  // Checked before the account is touched, so a mistyped code fails while it
+  // can still be corrected in the form.
+  const invite = await checkInviteCode(`${formData.get('invite') ?? ''}`)
+  if (invite && !invite.ok) {
+    return { data: null, error: { message: invite.message } }
   }
 
   const supabase = await createClient()
-  const { data, error } = await supabase.auth.signUp({
-    email: `${formData.get('email')}`,
-    password: `${formData.get('password')}`,
-  })
+  const {
+    data: { user: sessionUser },
+  } = await supabase.auth.getUser()
+
+  const email = `${formData.get('email')}`
+  const password = `${formData.get('password')}`
+  const { data, error } =
+    emailSignupPlan(sessionUser && { isAnonymous: sessionUser.is_anonymous === true }) === 'convert'
+      ? await supabase.auth.updateUser({ email, password })
+      : await supabase.auth.signUp({ email, password })
   if (error || !data?.user) {
     return { data, error }
   }
 
-  // Record the referral against the new account. Guard on the code still being
-  // unredeemed so two simultaneous sign-ups can't share one.
-  await service
-    .from('invite_code')
-    .update({ redeemed_by: data.user.id, redeemed_at: new Date().toISOString() })
-    .eq('id', invite.id)
-    .is('redeemed_by', null)
+  if (invite?.ok) await affixReferral(invite.inviteId, data.user.id)
 
   return { data, error }
 }
