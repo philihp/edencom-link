@@ -183,3 +183,21 @@
   font-weight: 600;
   color: var(--danger);
 }
+
+/* Clipboard button beside a figure or the destination name. Borderless and
+   quiet, matching the mercenary-dens ping button — it sits inside a line of
+   text and must not become the thing the eye lands on. */
+.copyButton {
+  border: none;
+  background: none;
+  padding: 0 2pt;
+  margin-left: 4pt;
+  font-size: 9pt;
+  line-height: 1;
+  cursor: pointer;
+  vertical-align: middle;
+}
+
+.copyButton:hover {
+  opacity: 0.7;
+}

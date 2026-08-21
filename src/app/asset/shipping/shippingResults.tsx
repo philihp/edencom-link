@@ -15,14 +15,23 @@ import { use } from 'react'
 import { formatIsk } from '../../isk'
 
 import type { QuotedDirection, ShippingEstimate } from './actions'
+import { CopyValue } from './copyValue'
 import styles from './shipping.module.css'
 
 const formatVolume = (m3: number) => `${m3.toLocaleString('en-US', { maximumFractionDigits: 1 })} m³`
 
-const Figure = ({ label, isk, strong }: { label: string; isk: number; strong?: boolean }) => (
+// `copy` marks the figures that get typed into a courier contract. What is
+// copied is the bare integer — the rendered form carries thousands separators
+// and an "ISK" suffix, neither of which the game's fields want. Rounded UP:
+// both of these are amounts that must not come out short, and a fraction of an
+// ISK cannot be entered anyway.
+const Figure = ({ label, isk, strong, copy }: { label: string; isk: number; strong?: boolean; copy?: string }) => (
   <div className={strong ? `${styles.figure} ${styles.figureStrong}` : styles.figure}>
     <span className={styles.figureLabel}>{label}</span>
-    <span className={styles.figureValue}>{formatIsk(isk)}</span>
+    <span className={styles.figureValue}>
+      {formatIsk(isk)}
+      {copy ? <CopyValue value={String(Math.ceil(isk))} label={copy} /> : null}
+    </span>
   </div>
 )
 
@@ -32,13 +41,18 @@ const DirectionCard = ({ direction }: { direction: QuotedDirection }) => (
     {direction.ok ? (
       <>
         <Figure label="Total cost" isk={direction.totalIsk} strong />
-        <Figure label="Contract reward" isk={direction.rewardIsk} />
+        <Figure label="Contract reward" isk={direction.rewardIsk} copy="contract reward" />
         {direction.rushFeeIsk > 0 ? <Figure label="Rush fee" isk={direction.rushFeeIsk} /> : null}
         <p className={styles.cardNote}>
           {direction.lane} · tier {direction.tier} · {direction.rate}
           {direction.collateralFeePercent > 0 ? ` + ${direction.collateralFeePercent}% collateral` : ''}
         </p>
-        {direction.deliverTo ? <p className={styles.cardNote}>Deliver to {direction.deliverTo}</p> : null}
+        {direction.deliverTo ? (
+          <p className={styles.cardNote}>
+            Deliver to {direction.deliverTo}
+            <CopyValue value={direction.deliverTo} label="destination station" />
+          </p>
+        ) : null}
         {direction.collateralCapExceeded ? (
           <p className={styles.error}>This lane will not insure the full value — the tier has a collateral ceiling.</p>
         ) : null}
@@ -80,7 +94,7 @@ export const ShippingResults = ({ promise }: { promise: Promise<ShippingEstimate
         {/* The recommendation, not just a valuation: this is the number to
             type into the courier contract's collateral field, and every
             freight quote below was priced against it. */}
-        <Figure label="Recommended collateral (Jita sell)" isk={estimate.sellIsk} strong />
+        <Figure label="Recommended collateral (Jita sell)" isk={estimate.sellIsk} strong copy="collateral" />
         <Figure label="Jita buy" isk={estimate.buyIsk} />
         <p className={overCapacity ? styles.cardNoteAlert : styles.cardNote}>
           {formatVolume(estimate.volumeM3)}
