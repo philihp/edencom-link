@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { createClient } from '@/utils/supabase/server'
 
 import { establishedUser } from './account/lib/establishedUser'
+import { register } from './character/actions'
 import styles from './home.module.css'
 
 // The lore is the frame, not the labels. Anything that exists in the EVE client
@@ -105,28 +106,26 @@ const Home = async () => {
           millennium shooting at each other to read one threat picture and trust it. Your eleven alts have the same
           problem. This is their datalink.
         </p>
-        <div className={styles.actions}>
-          {user ? (
-            <>
-              <Link href="/asset" className={styles.primary}>
-                Open your assets
-              </Link>
-              <Link href="/character/" className={styles.secondary}>
-                Add a character
-              </Link>
-            </>
-          ) : (
-            <>
-              <Link href="/account/register" className={styles.primary}>
-                Request access
-              </Link>
-              <Link href="/account/login" className={styles.secondary}>
-                Sign in
-              </Link>
-            </>
-          )}
-        </div>
-        <p className={styles.microcopy}>Invite-only · read-only ESI access · you choose the scopes</p>
+        {user ? (
+          <div className={styles.actions}>
+            <Link href="/asset" className={styles.primary}>
+              Open your assets
+            </Link>
+            <Link href="/character/" className={styles.secondary}>
+              Add a character
+            </Link>
+          </div>
+        ) : (
+          <form className={styles.actions}>
+            <button formAction={register} className={styles.primary}>
+              Add a character
+            </button>
+            <Link href="/account/login" className={styles.secondary}>
+              Sign in
+            </Link>
+          </form>
+        )}
+        <p className={styles.microcopy}>Read-only ESI access · you choose the scopes</p>
       </section>
 
       <section className={styles.stats}>
@@ -208,29 +207,27 @@ const Home = async () => {
         <p className={styles.closingBody}>
           {user
             ? 'You’re already on the net. Review what landed on the last sweep, or grant a scope you left dark when you added a character.'
-            : 'Registration is open, and you’re about a minute from a single picture of everything you own.'}
+            : 'Add a character and you’re about a minute from a single picture of everything you own.'}
         </p>
-        <div className={styles.actions}>
-          {user ? (
-            <>
-              <Link href="/jobs" className={styles.primary}>
-                Review pipeline status
-              </Link>
-              <Link href="/settings/grants" className={styles.secondary}>
-                Manage access grants
-              </Link>
-            </>
-          ) : (
-            <>
-              <Link href="/account/register" className={styles.primary}>
-                Request access
-              </Link>
-              <Link href="/account/login" className={styles.secondary}>
-                Sign in
-              </Link>
-            </>
-          )}
-        </div>
+        {user ? (
+          <div className={styles.actions}>
+            <Link href="/jobs" className={styles.primary}>
+              Review pipeline status
+            </Link>
+            <Link href="/settings/grants" className={styles.secondary}>
+              Manage access grants
+            </Link>
+          </div>
+        ) : (
+          <form className={styles.actions}>
+            <button formAction={register} className={styles.primary}>
+              Add a character
+            </button>
+            <Link href="/account/login" className={styles.secondary}>
+              Sign in
+            </Link>
+          </form>
+        )}
       </section>
     </main>
   )
