@@ -224,11 +224,6 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
     else rigsByStructure.set(key, [name])
   }
 
-  // Names for the cost-avoidance breakdown, which addresses structures by id.
-  // Every id it can name came from `list` (the job selects are seeded from it),
-  // so this map always covers it.
-  const structureNameById = new Map<string, string | null>(list.map((s) => [String(s.structure_id), s.name]))
-
   const systemNames = await fetchSystemNames(list.map((s) => Number(s.system_id)))
   const structureTypeNames = await fetchTypeNames(list.map((s) => Number(s.type_id)))
 
@@ -334,6 +329,10 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
   }
 
   const avoidance = costAvoidance(ownReceipts, taxRates)
+  // Per-structure figures for the tiles. Receipts come from corp_wallet_journal,
+  // whose RLS is own-corps only — so, exactly like the Revenue beside it, a
+  // structure shows a figure only to callers who can read that corp's ledger.
+  const avoidedByStructure = new Map(avoidance.byStructure)
 
   // Largest payers first.
   const unaccountedParties = [...unaccountedByParty.entries()].sort((a, b) => b[1] - a[1])
@@ -450,6 +449,14 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
                         </span>
                       </>
                     )}
+                    {showAvoidance && avoidedByStructure.has(String(s.structure_id)) && (
+                      <>
+                        <span className={styles.label}>Cost Avoidance</span>
+                        <span className={`${styles.value} ${styles.num}`}>
+                          {formatIsk(avoidedByStructure.get(String(s.structure_id)) ?? 0)}
+                        </span>
+                      </>
+                    )}
                     <span className={styles.label}>Type</span>
                     <span className={styles.value}>
                       <Name name={structureTypeNames[Number(s.type_id)]} id={s.type_id} />
@@ -561,21 +568,6 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
                 <Link href="/settings/tax">Change the rates &raquo;</Link>
               </em>
             </p>
-          )}
-          {showAvoidance && avoidance.byStructure.length > 0 && (
-            <details className={styles.breakdown}>
-              <summary>Cost avoidance by structure ({avoidance.byStructure.length})</summary>
-              <div className={styles.breakdownGrid}>
-                {avoidance.byStructure.map(([structureId, avoided]) => (
-                  <span key={`avoided-${structureId}`} className={styles.breakdownRow}>
-                    <Link href={`/structure/${structureId}`}>
-                      <Name name={structureNameById.get(structureId)} id={structureId} />
-                    </Link>
-                    <span className={styles.footerValue}>{formatIsk(avoided)}</span>
-                  </span>
-                ))}
-              </div>
-            </details>
           )}
           {unaccountedParties.length > 0 && (
             <p className={styles.unaccountedNote}>
