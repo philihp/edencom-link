@@ -19,6 +19,7 @@ const ShippingLoading = () => (
         <div className={styles.textarea} aria-hidden="true" />
       </div>
       <div className={styles.pane}>
+        <span className={styles.label}>Rates</span>
         <SkeletonLines count={3} />
       </div>
     </div>

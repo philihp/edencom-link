@@ -96,7 +96,13 @@ export const ShippingCalculator = () => {
           placeholder={'Tritanium\t1,000\nRifter x5\nDamage Control II'}
         />
       </div>
-      <div className={styles.pane}>
+      <div className={styles.pane} aria-labelledby="rates-heading">
+        {/* The counterpart to the textarea's "Items" — it sits outside the
+            Suspense boundary so the column is titled in every state, including
+            while the loader is up. */}
+        <span className={styles.label} id="rates-heading">
+          Rates
+        </span>
         {request == null ? (
           <Placeholder />
         ) : (
