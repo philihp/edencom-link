@@ -62,3 +62,41 @@ test('blank lines vanish and a fitting header is reported as ignored', () => {
 test('nothing pasted is no lines at all', () => {
   assert.deepEqual(parseManifest('   \n\n').lines, [])
 })
+
+// A count in front of the name, with no "x", is how people actually write a
+// shopping list. Reading "25000 Construction Blocks" as a single item named
+// that is what sent the whole string to the appraiser, which fuzzily matched
+// it to a different item entirely and priced one of it.
+test('a bare leading count is a quantity', () => {
+  const { lines } = parseManifest('25000 Construction Blocks\n1000 x Tritanium\n12 Rifter')
+  assert.deepEqual(lines, [
+    { name: 'Construction Blocks', quantity: 25000 },
+    { name: 'Tritanium', quantity: 1000 },
+    { name: 'Rifter', quantity: 12 },
+  ])
+})
+
+test('names that start with digits are not eaten by the leading count', () => {
+  // The digits are glued to the letters in every one of these, and it is that
+  // missing space — not a list of exceptions — that keeps them whole.
+  const { lines } = parseManifest(
+    ['425mm AutoCannon II', '1600mm Steel Plates II', '10MN Afterburner II', '800mm Repeating Cannon II'].join('\n')
+  )
+  assert.deepEqual(
+    lines.map((l) => l.quantity),
+    [1, 1, 1, 1]
+  )
+  assert.equal(lines[0].name, '425mm AutoCannon II')
+  assert.equal(lines[2].name, '10MN Afterburner II')
+})
+
+test('an item starting with x survives an optional-x leading count', () => {
+  const { lines } = parseManifest('10 Xenon Gas\n10 x Xenon Gas')
+  assert.deepEqual(lines, [{ name: 'Xenon Gas', quantity: 20 }])
+})
+
+test('a trailing count still wins over a leading one', () => {
+  // "1600mm" is part of the name; the 5 at the end is the count.
+  const { lines } = parseManifest('1600mm Steel Plates II 5')
+  assert.deepEqual(lines, [{ name: '1600mm Steel Plates II', quantity: 5 }])
+})

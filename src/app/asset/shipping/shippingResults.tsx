@@ -93,6 +93,25 @@ export const ShippingResults = ({ promise }: { promise: Promise<ShippingEstimate
         <DirectionCard key={direction.label} direction={direction} />
       ))}
 
+      {/* The appraiser matches names fuzzily and reports no error when it
+          settles on a different item, which silently re-prices the cargo —
+          so every substitution is named rather than trusted. */}
+      {estimate.substitutions.length > 0 ? (
+        <section className={styles.warning} role="alert">
+          <p>
+            {estimate.substitutions.length === 1 ? 'One line was' : `${estimate.substitutions.length} lines were`}{' '}
+            priced as a different item than asked for:
+          </p>
+          <ul>
+            {estimate.substitutions.map((swap) => (
+              <li key={swap.input}>
+                &ldquo;{swap.input}&rdquo; <span className={styles.muted}>priced as</span> {swap.priced}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
       {/* An unpriced line doesn't blank the page — a single typo in a
           forty-line paste shouldn't — but the collateral above then covers
           less than the load, which is worth saying plainly. */}

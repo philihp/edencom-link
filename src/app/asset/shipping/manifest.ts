@@ -42,8 +42,17 @@ const COUNT = String.raw`(?:\d{1,3}(?:[,'\u00a0\u202f ]\d{3})+|\d+)`
 // x-prefixed. A name ending in digits is safe: they're never preceded by a
 // space ("Zainou 'Gypsy' KNS-1000", "425mm AutoCannon II").
 const TRAILING_QUANTITY = new RegExp(String.raw`^(.*?\S)\s+x?\s*(${COUNT})$`, 'i')
-// "1000x Tritanium" — the other way round, as multibuy also accepts.
-const LEADING_QUANTITY = new RegExp(String.raw`^(${COUNT})\s*x\s+(.*\S)$`, 'i')
+// "1000x Tritanium", "1000 x Tritanium", "25000 Construction Blocks" — the
+// count leads. The x is optional, because a count in front of a name is how
+// people actually write a shopping list, and reading "25000 Construction
+// Blocks" as one item named that is how a whole line of cargo ends up priced
+// as a single unit of whatever the appraiser fuzzily matched it to.
+//
+// What keeps this off the many item names that START with digits — "425mm
+// AutoCannon II", "1600mm Steel Plates II", "10MN Afterburner II" — is the
+// required whitespace: in a name the digits are glued to the letters, never
+// separated by a space.
+const LEADING_QUANTITY = new RegExp(String.raw`^(${COUNT})\s*x?\s+(.*\S)$`, 'i')
 
 // Thousands separators vary by client locale (comma, apostrophe, thin space);
 // none of them survive into the number. Anything that isn't a whole positive

@@ -68,6 +68,11 @@ export type ShippingEstimate =
       // is still shown (a typo shouldn't blank the page) but the collateral
       // only covers what priced, which the page says out loud.
       unpriced: Array<{ name: string; suggestions: string[] }>
+      // Lines it priced as a DIFFERENT item than the one asked for. It matches
+      // names fuzzily and reports no error when it settles on something else,
+      // so a near miss silently re-prices the cargo. Surfaced rather than
+      // trusted.
+      substitutions: Array<{ input: string; priced: string }>
       ignored: string[]
       directions: QuotedDirection[]
     }
@@ -176,6 +181,15 @@ export const quoteShipping = async (raw: string): Promise<ShippingEstimate> => {
     unpriced: priced.items
       .filter((item) => item.error != null)
       .map((item) => ({ name: item.name, suggestions: item.possibleMatches })),
+    // The response carries one entry per requested line, in request order, and
+    // its `name` is what the service RESOLVED to — so zipping by index against
+    // what was sent is what catches "construction blocks" coming back priced
+    // as something else.
+    substitutions: lines.flatMap((line, index) => {
+      const item = priced.items[index]
+      if (item == null || item.error != null) return []
+      return item.name.toLowerCase() === line.name.toLowerCase() ? [] : [{ input: line.name, priced: item.name }]
+    }),
     ignored,
     directions,
   }
