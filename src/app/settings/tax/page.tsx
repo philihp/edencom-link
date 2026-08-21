@@ -1,7 +1,6 @@
 import Link from 'next/link'
-import { notFound, redirect } from 'next/navigation'
+import { redirect } from 'next/navigation'
 
-import { COST_AVOIDANCE_FLAG, hasFlag } from '@/flags'
 import { createClient } from '@/utils/supabase/server'
 
 import { establishedUser } from '../../account/lib/establishedUser'
@@ -9,8 +8,6 @@ import { fetchTaxRates } from './rates'
 import TaxForm from './taxForm'
 import styles from './tax.module.css'
 
-// Dark-launched behind cost-avoidance, like /graphql and /item/[itemId]: an
-// account without the flag gets a 404 rather than a locked page.
 const TaxRatesPage = async () => {
   const supabase = await createClient()
 
@@ -18,7 +15,6 @@ const TaxRatesPage = async () => {
   if (!user) {
     redirect('/account/login')
   }
-  if (!(await hasFlag(user.id, COST_AVOIDANCE_FLAG))) notFound()
 
   const rates = await fetchTaxRates(supabase, user.id)
 

@@ -2,7 +2,6 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { chain, concat, filter, forEach, map, splitEvery, uniq } from 'ramda'
 
-import { COST_AVOIDANCE_FLAG, hasFlag } from '@/flags'
 import { createClient } from '@/utils/supabase/server'
 
 import { establishedUser } from '../account/lib/establishedUser'
@@ -185,9 +184,7 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
   // we paid to ourselves, and it is that bill the counterfactual scales.
   const ownJobIds = new Set(map((j: JobRow) => String(j.job_id), concat(characterJobs, corpJobs)))
 
-  // Dark-launched: an account without the flag renders no footer row, and the
-  // two rates behind it live on /settings/tax.
-  const showAvoidance = await hasFlag(user.id, COST_AVOIDANCE_FLAG)
+  // The two rates behind the cost-avoidance figures live on /settings/tax.
   const taxRates = await fetchTaxRates(supabase, user.id)
 
   // Fuel timers live in corp_structure_status now (own-corp only). RLS returns a
@@ -449,7 +446,7 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
                         </span>
                       </>
                     )}
-                    {showAvoidance && avoidedByStructure.has(String(s.structure_id)) && (
+                    {avoidedByStructure.has(String(s.structure_id)) && (
                       <>
                         <span className={styles.label}>Cost Avoidance</span>
                         <span className={`${styles.value} ${styles.num}`}>
@@ -541,34 +538,28 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
             )}
             <span>Clone revenue:</span>
             <span className={styles.footerValue}>{formatKisk(cloneRevenue)}</span>
-            {showAvoidance && (
-              <>
-                <span>Cost avoidance:</span>
-                <span className={styles.footerValue}>{avoidance.total == null ? '—' : formatIsk(avoidance.total)}</span>
-              </>
-            )}
+            <span>Cost avoidance:</span>
+            <span className={styles.footerValue}>{avoidance.total == null ? '—' : formatIsk(avoidance.total)}</span>
           </div>
-          {showAvoidance && (
-            <p className={styles.unaccountedNote}>
-              <em>
-                {avoidance.total == null ? (
-                  <>
-                    Cost avoidance needs a non-zero rate for your own characters — nothing was billed, so there is no
-                    receipt to price a public structure against.{' '}
-                  </>
-                ) : (
-                  <>
-                    Cost avoidance is facility tax never incurred: {avoidance.jobs.toLocaleString()} job
-                    {avoidance.jobs === 1 ? '' : 's'} of ours ran in our own structures and paid us{' '}
-                    {formatIsk(avoidance.billed)} at {formatRate(taxRates.own)}, where a public{' '}
-                    {formatRate(taxRates.public)} would have cost {formatIsk(avoidance.counterfactual ?? 0)} and kept
-                    it. No ISK changed hands, so it is not revenue.{' '}
-                  </>
-                )}
-                <Link href="/settings/tax">Change the rates &raquo;</Link>
-              </em>
-            </p>
-          )}
+          <p className={styles.unaccountedNote}>
+            <em>
+              {avoidance.total == null ? (
+                <>
+                  Cost avoidance needs a non-zero rate for your own characters — nothing was billed, so there is no
+                  receipt to price a public structure against.{' '}
+                </>
+              ) : (
+                <>
+                  Cost avoidance is facility tax never incurred: {avoidance.jobs.toLocaleString()} job
+                  {avoidance.jobs === 1 ? '' : 's'} of ours ran in our own structures and paid us{' '}
+                  {formatIsk(avoidance.billed)} at {formatRate(taxRates.own)}, where a public{' '}
+                  {formatRate(taxRates.public)} would have cost {formatIsk(avoidance.counterfactual ?? 0)} and kept it.
+                  No ISK changed hands, so it is not revenue.{' '}
+                </>
+              )}
+              <Link href="/settings/tax">Change the rates &raquo;</Link>
+            </em>
+          </p>
           {unaccountedParties.length > 0 && (
             <p className={styles.unaccountedNote}>
               <em>

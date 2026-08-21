@@ -2,7 +2,6 @@
 
 import { revalidatePath } from 'next/cache'
 
-import { COST_AVOIDANCE_FLAG, hasFlag } from '@/flags'
 import { createClient } from '@/utils/supabase/server'
 
 import { fromPercent } from './rates'
@@ -27,7 +26,6 @@ export const saveTaxRates = async (formData: FormData): Promise<{ ok?: string; e
     data: { user },
   } = await supabase.auth.getUser()
   if (!user?.id) return { error: 'You are not signed in.' }
-  if (!(await hasFlag(user.id, COST_AVOIDANCE_FLAG))) return { error: 'Not enabled for this account.' }
 
   const own = parsePercent(formData.get('own'), 'Alt tax rate')
   if (typeof own === 'string') return { error: own }
