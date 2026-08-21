@@ -10,10 +10,13 @@ import { lookupInvite, type InviteLookup } from '../../register/actions'
 import { INVITE_CODE_PATTERN } from '../../register/inviteCode'
 import { completeGiceRegistration } from './actions'
 
-// Invite code entry for a freshly verified GICE identity. Mirrors the live
-// inviter lookup on the email register form, minus the email/password fields.
+// The last step of a GICE registration. There is nothing required to fill in —
+// the identity is already proved — so the invite field sits behind a link, the
+// way it does on the email register form, and only records a referral. Keeps
+// that form's live inviter lookup for a code that is entered.
 const CompleteForm = ({ name }: { name: string | null }) => {
   const [invite, setInvite] = useState('')
+  const [showInvite, setShowInvite] = useState(false)
   const [lookup, setLookup] = useState<InviteLookup | null>(null)
   const lookupSeq = useRef(0)
 
@@ -48,8 +51,8 @@ const CompleteForm = ({ name }: { name: string | null }) => {
       <div className={styles.card}>
         <h1 className={styles.title}>Almost there{name ? `, ${name}` : ''}</h1>
         <p className={styles.intro}>
-          Your GICE login checks out. Edencom Link is invite-only, so one last thing: an invite code creates your
-          account.
+          Your GICE login checks out — that&rsquo;s all we need. Create your account and your hangars are a character
+          away.
         </p>
 
         <form
@@ -59,42 +62,47 @@ const CompleteForm = ({ name }: { name: string | null }) => {
           }}
         >
           <div className={styles.fields}>
-            <div className={styles.field}>
-              <label className={styles.label} htmlFor="invite">
-                Invite code
-              </label>
-              <input
-                className={styles.input}
-                id="invite"
-                name="invite"
-                type="text"
-                autoComplete="off"
-                autoFocus
-                required
-                value={invite}
-                onChange={(e) => {
-                  setInvite(e.target.value)
-                  setSubmitted(false)
-                }}
-              />
-              <div aria-live="polite">
-                {lookup?.status === 'valid' && (
-                  <Status kind="ok" inline>
-                    {lookup.inviterName ? `Invited by ${lookup.inviterName}` : 'A founding invite code'}
-                  </Status>
-                )}
-                {lookup?.status === 'redeemed' && (
-                  <Status kind="error" inline>
-                    This invite code has already been used.
-                  </Status>
-                )}
-                {lookup?.status === 'unknown' && (
-                  <Status kind="error" inline>
-                    This invite code isn&rsquo;t recognized.
-                  </Status>
-                )}
+            {showInvite ? (
+              <div className={styles.field}>
+                <label className={styles.label} htmlFor="invite">
+                  Invite code
+                </label>
+                <input
+                  className={styles.input}
+                  id="invite"
+                  name="invite"
+                  type="text"
+                  autoComplete="off"
+                  autoFocus
+                  value={invite}
+                  onChange={(e) => {
+                    setInvite(e.target.value)
+                    setSubmitted(false)
+                  }}
+                />
+                <div aria-live="polite">
+                  {lookup?.status === 'valid' && (
+                    <Status kind="ok" inline>
+                      {lookup.inviterName ? `Invited by ${lookup.inviterName}` : 'A founding invite code'}
+                    </Status>
+                  )}
+                  {lookup?.status === 'redeemed' && (
+                    <Status kind="error" inline>
+                      This invite code has already been used.
+                    </Status>
+                  )}
+                  {lookup?.status === 'unknown' && (
+                    <Status kind="error" inline>
+                      This invite code isn&rsquo;t recognized.
+                    </Status>
+                  )}
+                </div>
               </div>
-            </div>
+            ) : (
+              <button type="button" className={styles.linkButton} onClick={() => setShowInvite(true)}>
+                No invite code required — but if you have one, enter it
+              </button>
+            )}
           </div>
 
           <SubmitButton formAction={completeAndReturn} disabled={submitted} pendingLabel="Creating account…">

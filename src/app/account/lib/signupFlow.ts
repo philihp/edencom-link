@@ -53,3 +53,29 @@ export const characterCallbackPlan = ({
   !isEstablishedAccount({ isAnonymous: caller.isAnonymous, hasRegistration: caller.hasRegistration })
     ? 'sign-in-existing'
     : 'attach'
+
+// Which account a verified GICE identity lands on (docs/open-registration.md,
+// stage 4). Same question as the EVE callback's, with a different key: the
+// OIDC `sub`, recorded in `gice_account`.
+//
+// - Already linked to somebody else? That account wins and the caller is signed
+//   into it — a GICE identity belongs to exactly one account, and the link is
+//   the record of which.
+// - Holding a session (the usual case now: an anonymous account minted by some
+//   earlier flow, or a member linking GICE from settings)? Link it there. For an
+//   account that is still a drive-by, that link is what makes it real, and it
+//   converts in place — no second account, no invite, `auth.uid()` unchanged.
+// - No session at all? There is nothing to link to yet, so the account is minted
+//   outright, as it always was.
+export type GiceCompletionPlan = 'sign-in-existing' | 'link-in-place' | 'create'
+
+export const giceCompletionPlan = ({
+  caller,
+  existingLinkUserId,
+}: {
+  caller: { userId: string } | null
+  existingLinkUserId: string | null
+}): GiceCompletionPlan => {
+  if (existingLinkUserId !== null && existingLinkUserId !== caller?.userId) return 'sign-in-existing'
+  return caller ? 'link-in-place' : 'create'
+}
