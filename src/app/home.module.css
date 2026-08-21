@@ -63,6 +63,8 @@
 
 .primary,
 .secondary {
+  font-family: inherit;
+  cursor: pointer;
   padding: 10px 20px;
   border-radius: var(--radius-sm);
   font-size: 13px;
