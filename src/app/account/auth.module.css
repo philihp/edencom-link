@@ -86,6 +86,41 @@
   text-underline-offset: 2px;
 }
 
+/* The invite field's reveal. Closed is the resting state, so the transition
+ * declared here is the one that runs on the way OUT (ease-out); .revealOpen
+ * carries the entrance (ease-in). max-height rather than height because the
+ * field's height depends on whether the inviter lookup has a line to show —
+ * the value only has to be larger than the field can ever be. */
+.reveal {
+  overflow: hidden;
+  max-height: 0;
+  opacity: 0;
+  transform: translateY(-4px);
+  transition:
+    max-height 0.18s ease-out,
+    opacity 0.18s ease-out,
+    transform 0.18s ease-out;
+}
+
+.revealOpen {
+  max-height: 220px;
+  opacity: 1;
+  transform: none;
+  transition:
+    max-height 0.22s ease-in,
+    opacity 0.22s ease-in,
+    transform 0.22s ease-in;
+}
+
+/* Reduced motion still needs the transition to *fire*, because its end is what
+ * unmounts the field — so it is made instant rather than removed. */
+@media (prefers-reduced-motion: reduce) {
+  .reveal,
+  .revealOpen {
+    transition-duration: 0.01ms;
+  }
+}
+
 .submit {
   width: 100%;
   margin: 20px 0 0;
