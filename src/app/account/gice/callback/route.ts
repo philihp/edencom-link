@@ -3,8 +3,12 @@
 // Three outcomes, decided by who arrives:
 // - a signed-in user links GICE to their account (back to settings),
 // - a signed-out user whose GICE account is already linked signs in,
-// - a signed-out stranger proceeds to /account/gice/complete to redeem an
-//   invite code (registration stays invite-only even via SSO).
+// - anyone else proceeds to /account/gice/complete, which finishes the
+//   registration (an invite code is optional there — see
+//   docs/open-registration.md). "Anyone else" includes a caller holding an
+//   anonymous session: that is an account still mid-flow, not a member linking
+//   GICE, and the completion step converts it in place rather than linking a
+//   drive-by account nobody can sign into.
 
 import { cookies } from 'next/headers'
 import { NextRequest, NextResponse } from 'next/server'
@@ -12,6 +16,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
 import { createServiceClient } from '@/utils/supabase/service'
 
+import { establishedUser } from '../../lib/establishedUser'
 import { mintSession } from '../../lib/mintSession'
 import {
   encodePendingIdentity,
@@ -63,9 +68,10 @@ export const GET = async (request: NextRequest) => {
     .maybeSingle()
 
   const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  // The *member*, not merely a session: an anonymous account mid-flow has
+  // nothing to link GICE to yet, and would be bounced straight back out of
+  // /account/settings. It goes down the completion path below instead.
+  const user = await establishedUser(supabase)
 
   if (user) {
     // Link flow: attach this GICE identity to the signed-in account.

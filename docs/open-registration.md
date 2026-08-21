@@ -17,6 +17,10 @@ Registration stops being invite-gated. Instead:
   running as a GitHub Action, and PRs get forked preview databases via
   Supabase branching (Pro).
 
+Stages 1–4 have landed: every way in — email/password, EVE SSO, GICE — is open,
+and an invite code is referral attribution wherever one is offered. Discord
+(stage 5) is the remaining identity.
+
 ## Where we start from (current behavior)
 
 There is **no anonymous user today** — nothing in the codebase calls
@@ -290,7 +294,8 @@ owner)` is already registered to a _different_ user and the current caller
 
 ## Stage 4 — GICE without the gate
 
-**PR size:** small
+**PR size:** small — **landed.** What shipped, and the hole it closed on the way,
+is recorded at the end of this section.
 
 - `/account/gice/complete/actions.ts`: with a live (anonymous) session, stop
   calling `admin.createUser`. Instead link `gice_account` to `auth.uid()` and
@@ -300,6 +305,33 @@ owner)` is already registered to a _different_ user and the current caller
   keep today's behavior: `mintSession` into the winner.
 - The complete page's invite field gets the same optional treatment as
   Stage 2 (referred-by line, or the subtle reveal link).
+
+### What stage 4 actually landed
+
+- **The last gate is off.** `completeGiceRegistration` no longer requires a
+  code; an offered one is checked before the account is touched and recorded as
+  a referral, exactly as on the email path. The complete page's field sits
+  behind the same "No invite code required" reveal link, and its copy no longer
+  calls the site invite-only — nor does the register page's GICE note.
+- **Three ways to reach an account, one decision.** `giceCompletionPlan()`
+  (`lib/signupFlow.ts`, tested) answers `sign-in-existing` when the `gice_id` is
+  already linked to another account (that account wins — a GICE identity belongs
+  to exactly one), `link-in-place` when the caller holds a session, and `create`
+  only when there is nothing to link to. The in-place branch skips `mintSession`
+  entirely: they are already signed in on the account being converted.
+- **A hole stage 1 opened, closed here.** The GICE callback branched on "is
+  there a user?", which since anonymous sessions includes an account still
+  mid-flow — it would link GICE to that drive-by account and bounce it out of
+  `/account/settings`, which gates on `establishedUser()`. The callback now
+  branches on the _member_, so an anonymous caller falls through to the
+  completion path and is converted there instead.
+- **`ensurePlaceholderEmail()`** (`lib/recoveryEmail.ts`) is stage 3's helper
+  hoisted out of the character callback, now that both SSO paths need it: an
+  account converted through GICE gets `gice-<id>@sso.edencom.link` if it has no
+  address of its own. It only ever fills a blank — an account that already has a
+  real address, or the EVE placeholder from a character add, keeps it, so
+  linking GICE can never overwrite what somebody signs in with.
+- **Coverage:** `test/giceCompletion.test.ts` over the three branches.
 
 ## Stage 5 — Discord
 

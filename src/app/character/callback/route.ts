@@ -8,6 +8,7 @@ import { createClient } from '@/utils/supabase/server'
 import { createServiceClient } from '@/utils/supabase/service'
 
 import { mintSession } from '../../account/lib/mintSession'
+import { ensurePlaceholderEmail } from '../../account/lib/recoveryEmail'
 import { characterCallbackPlan } from '../../account/lib/signupFlow'
 import { eveEmail } from '../../account/lib/ssoEmail'
 import { dispatchRefresh } from '../dispatchRefresh'
@@ -68,23 +69,6 @@ const upsertToken =
     const response = await supabase.from('token').upsert(columns, { onConflict: 'registration_id' })
     if (response.error) throw new Error(`upsert token failed: ${JSON.stringify(response.error)}`)
   }
-
-// Give an account with no address of its own the EVE placeholder, so it can be
-// signed into later. An account that grew out of an anonymous session has no
-// email, and mintSession's magic-link token is keyed on one — without this, an
-// account whose only identity is a character could never be recovered from a
-// browser that lost its cookies. Confirmed on the spot: the domain receives no
-// mail, so there is nobody to confirm it. Best-effort — a failure here must not
-// cost the player the character they just authorized.
-const ensureRecoveryEmail = async (service: SupabaseClient, userId: string, eveCharacterId: number) => {
-  const { data, error } = await service.auth.admin.getUserById(userId)
-  if (error || !data?.user || data.user.email) return
-  const { error: updateError } = await service.auth.admin.updateUserById(userId, {
-    email: eveEmail(eveCharacterId),
-    email_confirm: true,
-  })
-  if (updateError) console.warn(`/character/callback: placeholder email for ${userId} failed: ${updateError.message}`)
-}
 
 export const GET = async (request: NextRequest) => {
   const supabase = await createClient()
@@ -169,12 +153,12 @@ export const GET = async (request: NextRequest) => {
   if (plan === 'sign-in-existing') {
     // Backfills the placeholder first, for accounts that predate it — the
     // magic-link token below is keyed on an address.
-    await ensureRecoveryEmail(service, existingOwner!.user_id, eve_character_id)
+    await ensurePlaceholderEmail(service, existingOwner!.user_id, eveEmail(eve_character_id))
     const error = await mintSession(existingOwner!.user_id)
     if (error) throw new Error(`signing in to the account holding ${name} failed: ${error}`)
     user_id = existingOwner!.user_id
   } else {
-    await ensureRecoveryEmail(service, user_id, eve_character_id)
+    await ensurePlaceholderEmail(service, user_id, eveEmail(eve_character_id))
   }
 
   // upsertCharacter returns registration.id — a uuid — not an EVE id. The

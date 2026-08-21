@@ -189,9 +189,7 @@ const RegisterForm = ({ referral }: { referral: Referral }) => {
         <a className={styles.alt} href="/account/gice">
           Register with GICE
         </a>
-        <p className={styles.altNote}>
-          In The Imperium? No email needed — though you&rsquo;ll still enter an invite code.
-        </p>
+        <p className={styles.altNote}>In The Imperium? No email needed — your Goonfleet SSO account is enough.</p>
 
         <div className={styles.footer}>
           <Link href="/account/login">Already have an account?</Link>
