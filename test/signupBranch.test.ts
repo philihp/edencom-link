@@ -43,10 +43,15 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { branchSkipReason, createTestBranch, deleteTestBranch, type BranchTarget } from './lib/supabaseBranch.ts'
 
 // Convenience for local runs; CI passes the credentials in the environment.
-try {
-  process.loadEnvFile('.env')
-} catch {
-  // no .env — the env is expected to carry the credentials already
+// Gated on the same opt-in as the suite itself: under plain `pnpm test` this
+// file must not even read credentials into its process, so the offline run
+// carries nothing that could reach the network.
+if (process.env.RUN_BRANCH_TESTS === '1') {
+  try {
+    process.loadEnvFile('.env')
+  } catch {
+    // no .env — the env is expected to carry the credentials already
+  }
 }
 
 // Provisioning a branch is minutes, not seconds.
