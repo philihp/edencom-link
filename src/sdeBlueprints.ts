@@ -7,6 +7,8 @@
 //
 // Fourth loader migrated in the SDE-loaders-to-database cutover
 // (docs/sde-db-cutover/01-loader-cutover.md).
+import { splitEvery } from 'ramda'
+
 import { sdeSupabase } from './utils/supabase/sde'
 
 // EVE industry activity ids present in the mirror's blueprint-product view.
@@ -78,4 +80,45 @@ export const getBlueprintsForMaterial = async (materialTypeID: number): Promise<
     return []
   }
   return ((data ?? []) as BlueprintRow[]).map(rowToBlueprint).sort((a, b) => a.productTypeID - b.productTypeID)
+}
+
+// The reverse of getBlueprintForProduct, in bulk: what each of these blueprint
+// types makes. The BPO showcase (/bpos/[name]) needs it to label a blueprint
+// with its PRODUCT's category — every blueprint type is itself in category
+// "Blueprint", which would sort a whole collection into one bucket.
+//
+// Uncached like its siblings, and chunked at 500 ids so a large collection
+// stays under PostgREST's 1000-row response cap. Manufacturing wins over a
+// reaction, then the lower blueprint type id, exactly as the by-product lookup
+// resolves its ties.
+export const getBlueprintsByTypeIDs = async (
+  blueprintTypeIDs: Iterable<number>
+): Promise<Record<number, Blueprint>> => {
+  const ids = [...new Set(blueprintTypeIDs)].filter((id) => Number.isFinite(id))
+  if (ids.length === 0) return {}
+
+  const chunks = await Promise.all(
+    splitEvery(500, ids).map(async (chunk) => {
+      const { data, error } = await sdeSupabase()
+        .from('sde_blueprint_product')
+        .select('blueprint_type_id, activity_id, product_type_id, product_quantity, materials')
+        .in('blueprint_type_id', chunk)
+      if (error) {
+        console.error(`[sdeBlueprints] blueprint lookup failed: ${error.message}`)
+        return [] as BlueprintRow[]
+      }
+      return (data ?? []) as BlueprintRow[]
+    })
+  )
+
+  return chunks.flat().reduce<Record<number, Blueprint>>((acc, row) => {
+    const blueprint = rowToBlueprint(row)
+    const seen = acc[blueprint.blueprintTypeID]
+    const better =
+      seen == null ||
+      Number(blueprint.activityID === MANUFACTURING) - Number(seen.activityID === MANUFACTURING) > 0 ||
+      (blueprint.activityID === seen.activityID && blueprint.productTypeID < seen.productTypeID)
+    if (better) acc[blueprint.blueprintTypeID] = blueprint
+    return acc
+  }, {})
 }
