@@ -4,8 +4,11 @@
 -- The disclosure rule itself is pinned by industry_job_tax_facility.sql; this
 -- file covers what the aggregation layered on top can get wrong: attributing a
 -- job to the wrong structure, grouping days in local time instead of UTC,
--- dropping the station_id/facility_id fallback, or letting the window leak
--- older entries in.
+-- dropping the station_id/facility_id fallback, letting the window leak older
+-- entries in, or netting an outgoing entry against an incoming one (a job
+-- installed AS THE CORPORATION into its own structure only ever writes the
+-- outgoing side, so netting reported such a structure as earning negative
+-- revenue).
 --
 -- Run against a THROWAWAY database from the repo root (same harness as
 -- asset_share.sql): DATABASE_URL='postgresql://…/throwaway' pnpm run test:sql
@@ -60,10 +63,15 @@ insert into public.corp_wallet_journal values
   (1000, 1, 4, '2026-08-07T12:00:00Z', 'industry_job_tax', 5,  700.00, 7002),
   (1000, 1, 5, '2026-08-08T12:00:00Z', 'industry_job_tax', 4, 9999.00, 7001),
   (1000, 1, 6, '2026-08-08T06:00:00Z', 'industry_job_tax', 6,  125.00, 7002),
-  (1000, 1, 7, '2026-06-01T12:00:00Z', 'industry_job_tax', 1, 4242.00, 7001);
+  (1000, 1, 7, '2026-06-01T12:00:00Z', 'industry_job_tax', 1, 4242.00, 7001),
+  -- Tax our own corporation PAID for job 3, on a (payer, day) that already has
+  -- an incoming row — so the split shows up in the measures without perturbing
+  -- any of the row/day counts asserted below.
+  (1000, 1, 8, '2026-08-08T02:00:00Z', 'industry_job_tax', 3, -300.00, 7001);
 
 \i supabase/migrations/20260809000000_industry_job_tax_facility.sql
 \i supabase/migrations/20260809080000_structure_tax_revenue.sql
+\i supabase/migrations/20260822120000_structure_tax_revenue_split_signs.sql
 
 set local test.uid = '99999999-0000-0000-0000-000000000001';
 
@@ -129,6 +137,34 @@ declare days date[];
 begin
   select array_agg(day) into days from public.structure_tax_revenue(60000001, '2026-08-01T00:00:00Z');
   assert days[1] >= days[array_length(days, 1)], 'rows should come back newest day first';
+end $$;
+
+-- The two directions stay apart. An outgoing entry must not net against the
+-- incoming ones (which would drop 7001's 08-08 total from 1500 to 1200), nor
+-- inflate the received job count; it lands in its own measures, sign flipped so
+-- both columns read positive.
+do $$
+declare got record;
+begin
+  select * into got
+  from public.structure_tax_revenue(60000001, '2026-08-01T00:00:00Z')
+  where payer_id = 7001 and day = date '2026-08-08';
+  assert got.isk = 1500.00, 'received ISK must not be netted against tax paid, got ' || got.isk;
+  assert got.jobs = 2, 'the outgoing entry must not count as a received job, got ' || got.jobs;
+  assert got.isk_self_paid = 300.00, 'expected 300 self-paid ISK (positive), got ' || got.isk_self_paid;
+  assert got.self_paid_jobs = 1, 'expected 1 self-paid job, got ' || got.self_paid_jobs;
+end $$;
+
+-- A (payer, day) with nothing outgoing reports zero rather than null, so the
+-- page can sum the column without coalescing every row.
+do $$
+declare got record;
+begin
+  select * into got
+  from public.structure_tax_revenue(60000001, '2026-08-01T00:00:00Z')
+  where payer_id = 7002 and day = date '2026-08-07';
+  assert got.isk_self_paid = 0, 'expected 0, got ' || coalesce(got.isk_self_paid::text, 'null');
+  assert got.self_paid_jobs = 0, 'expected 0, got ' || coalesce(got.self_paid_jobs::text, 'null');
 end $$;
 
 -- A caller with no journal entries of their own gets nothing, since the

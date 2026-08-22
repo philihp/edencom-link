@@ -19,7 +19,8 @@ import {
   INDEX_ACTIVITY_LABELS,
   structureIndexActivities,
 } from './industryIndex'
-import { costAvoidance, OwnTaxReceipt } from './costAvoidance'
+import { costAvoidance } from './costAvoidance'
+import { foldTaxLedger } from './taxLedger'
 import { fetchTaxRates, formatRate } from '../settings/tax/rates'
 import { StructureSilhouette } from './silhouette'
 import { Sparkline } from './sparkline'
@@ -71,6 +72,7 @@ type JobRow = {
 
 type JournalRow = {
   amount: number | string | null
+  corporation_id: number | string | null
   context_id: number | string | null
   description: string | null
   first_party_id: number | string | null
@@ -239,17 +241,18 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
     { days: windowDays, bucketHours: Math.max(1, Math.ceil((windowDays * 24) / 180)) }
   )
 
-  // Receipts only. industry_job_tax cuts both ways in a corp wallet: a positive entry is tax someone
-  // paid to run a job in one of our structures, a negative one is tax WE paid to run a job in
-  // someone else's. Only the first is revenue. Summing both netted a corp's own industry spend
-  // against its landlord income — and a corp that rents slots without owning any occupied structure
-  // showed a negative figure under a heading that reads "Revenue".
+  // Both signs, sorted out by foldTaxLedger below rather than here. industry_job_tax cuts both ways
+  // in a corp wallet: a positive entry is tax someone paid to run a job in one of our structures, a
+  // negative one is tax our corporation paid to run a job as ITSELF. Only the first is revenue —
+  // summing both netted a corp's own industry spend against its landlord income, and a corp that
+  // rents slots without owning any occupied structure showed a negative figure under a heading that
+  // reads "Revenue". But the second is still an own-rate charge, and the only one a corp that runs
+  // everything under corp ownership ever generates, so it feeds cost avoidance (see taxLedger.ts).
   const journal = await fetchAllRows<JournalRow>((from, to) =>
     supabase
       .from('corp_wallet_journal')
-      .select('amount, context_id, description, first_party_id')
+      .select('amount, corporation_id, context_id, description, first_party_id')
       .eq('ref_type', 'industry_job_tax')
-      .gt('amount', 0)
       .gte('date', windowStart)
       .order('date', { ascending: false })
       .range(from, to)
@@ -296,36 +299,35 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
     )
   )
 
-  const totalByStructure = new Map<string, number>()
-  // Tax receipts for jobs of OUR own, feeding the cost-avoidance figure. Same
-  // resolution as the revenue beside it, but the job id the entry matched on is
-  // kept rather than discarded, so ours can be told from a renter's.
-  const ownReceipts: OwnTaxReceipt[] = []
-  // Unaccounted tax broken down by the party that paid it (the character/corp that ran the job).
-  const unaccountedByParty = new Map<string, number>()
-  let unaccounted = 0
-  for (const entry of (journal ?? []) as JournalRow[]) {
-    const amount = Number(entry.amount ?? 0)
-    // The job id is the entry's context_id; fall back to parsing it out of the description for older
-    // entries (or any ref_type variants) where ESI didn't populate context_id.
-    const candidates = [
-      ...(entry.context_id != null ? [String(entry.context_id)] : []),
-      ...(entry.description?.match(/\d+/g) ?? []),
-    ]
-    const jobId = candidates.find((token) => structureByJob.has(token))
-    const structureId = jobId ? structureByJob.get(jobId) : undefined
-    if (structureId) {
-      totalByStructure.set(structureId, (totalByStructure.get(structureId) ?? 0) + amount)
-      if (jobId != null && ownJobIds.has(jobId)) ownReceipts.push({ structureId, amount })
-    } else {
-      // Tax we received but can't tie to one of our structures (e.g. jobs not in our table).
-      unaccounted += amount
-      const party = entry.first_party_id != null ? String(entry.first_party_id) : 'unknown'
-      unaccountedByParty.set(party, (unaccountedByParty.get(party) ?? 0) + amount)
-    }
-  }
+  // Who owns each structure on the page. corp_structure's RLS is own-corps OR alliance-mates, so a
+  // tile here is not necessarily ours — and tax our corp paid into an ally's structure is a real
+  // expense, not an expense avoided. Comparing this against the paying corporation is what tells
+  // the two apart.
+  const structureOwner = new Map<string, string>(list.map((st) => [String(st.structure_id), String(st.corporation_id)]))
 
-  const avoidance = costAvoidance(ownReceipts, taxRates)
+  const ledger = foldTaxLedger(
+    map(
+      (entry: JournalRow) => ({
+        amount: Number(entry.amount ?? 0),
+        corporationId: entry.corporation_id != null ? String(entry.corporation_id) : null,
+        // The job id is the entry's context_id; fall back to parsing it out of the description for
+        // older entries (or any ref_type variants) where ESI didn't populate context_id.
+        jobIds: [
+          ...(entry.context_id != null ? [String(entry.context_id)] : []),
+          ...(entry.description?.match(/\d+/g) ?? []),
+        ],
+        payerId: entry.first_party_id != null ? String(entry.first_party_id) : null,
+      }),
+      (journal ?? []) as JournalRow[]
+    ),
+    { structureByJob, ownJobIds, structureOwner }
+  )
+
+  const totalByStructure = ledger.revenueByStructure
+  const unaccounted = ledger.unaccounted
+  const unaccountedByParty = ledger.unaccountedByParty
+
+  const avoidance = costAvoidance(ledger.ownReceipts, taxRates)
   // Per-structure figures for the tiles. Receipts come from corp_wallet_journal,
   // whose RLS is own-corps only — so, exactly like the Revenue beside it, a
   // structure shows a figure only to callers who can read that corp's ledger.

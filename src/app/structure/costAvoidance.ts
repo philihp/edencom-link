@@ -8,7 +8,13 @@
 // structure it would have paid theirs and kept none of it, and the gap between
 // the two rates on the same job is the expense we avoided.
 //
-// The arithmetic runs off the tax we were paid, not off the job's `cost`. ESI
+// Which charges count is decided in taxLedger.ts. Both directions qualify: tax
+// a member paid into the corp wallet for a personal job, and tax the corp paid
+// out of that same wallet for a job installed as the corporation into its own
+// structure (where CCP writes only the outgoing side, since the ISK never
+// leaves the entity). Either way it is an own-rate charge on a job of ours.
+//
+// The arithmetic runs off the tax we were charged, not off the job's `cost`. ESI
 // documents `cost` as "the sum of job installation fee and industry facility
 // tax", and the tax inside it is levied on the job's Estimated Item Value —
 // a different, larger number than the fee, and one we cannot compute without
@@ -24,7 +30,8 @@
 
 export type OwnTaxReceipt = {
   structureId: string
-  // ISK of industry_job_tax we were paid for one job of our own.
+  // ISK of industry_job_tax charged at our own rate for one job of our own,
+  // always positive whichever way it moved through the wallet.
   amount: number
 }
 
@@ -36,6 +43,8 @@ export type CostAvoidance = {
   // Largest first, so a caller can render the breakdown straight off it.
   byStructure: Array<[structureId: string, avoided: number]>
   // Tax we actually billed ourselves — the figure this is derived from.
+  // Positive whether it was received from a member or paid by the corporation
+  // to itself; taxLedger.ts has already normalised the sign.
   billed: number
   // What the same jobs would have been billed at the public rate.
   counterfactual: number | null

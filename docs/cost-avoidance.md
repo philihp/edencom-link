@@ -78,13 +78,44 @@ ourselves. `src/app/structure/costAvoidance.ts` is that fold, tested in
 `test/costAvoidance.test.ts`; a zero own rate leaves the figure unknowable
 (there is no receipt to scale) rather than infinite.
 
-Which receipts count is the other half. `/structure` already resolves each
-`industry_job_tax` entry to a job and thence to a structure, unioning
-`character_industry_job` and `corp_industry_job` (ours) with the
-`industry_job_tax_facility()` RPC (other players renting our slots). Only the
-first two feed cost avoidance — a renter's tax is revenue, not a bill we paid
-ourselves — so the page keeps the job id each entry matched on and checks it
-against the set of our own.
+## Which charges count, and why the sign is not the answer
+
+`/structure` resolves each `industry_job_tax` entry to a job and thence to a
+structure, unioning `character_industry_job` and `corp_industry_job` (ours) with
+the `industry_job_tax_facility()` RPC (other players renting our slots). Only
+the first two feed cost avoidance — a renter's tax is revenue, not a bill we
+paid ourselves — so the page keeps the job id each entry matched on and checks
+it against the set of our own.
+
+The direction the ISK moved is a separate question from whose job it was, and
+conflating the two used to zero the figure out entirely for the accounts most
+entitled to it:
+
+- **Positive.** Somebody paid tax into one of our structures. Always revenue;
+  also an own-rate charge when the job was ours (a member installing a
+  _personal_ job pays the fee from their own wallet into the corp's).
+- **Negative, our own structure.** A job installed **as the corporation** bills
+  the corp wallet, not the installer's. When that corporation also owns the
+  structure, the ISK never leaves the entity and CCP writes only this outgoing
+  side — there is no matching receipt anywhere in the journal. It is not
+  revenue, but it is exactly the own-rate charge the counterfactual scales.
+- **Negative, somebody else's structure.** We genuinely paid a landlord.
+  Neither figure.
+
+Reading receipts as "positive amounts only" therefore reported **no cost
+avoidance at all** for a corporation that runs everything under corp ownership
+in its own structures — the case the feature most exists for. It also made
+`/structure/revenue` total such a day to a large negative number under a
+heading that says "Revenue".
+
+`src/app/structure/taxLedger.ts` is the fold that sorts entries into the three
+buckets (tested in `test/taxLedger.test.ts`). The discriminator for an outgoing
+entry is the structure's owning corporation against the corporation whose wallet
+the entry sits in. Two of _our own_ corporations trading tax between themselves
+fail that test deliberately: ISK really moved, and the receiving corp's journal
+carries the positive side, which is where it gets counted. A job is credited at
+most once regardless of how many entries name it, since a job can only be
+charged its facility tax once.
 
 ## If this is ever wanted for a structure we don't own
 

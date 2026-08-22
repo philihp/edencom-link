@@ -60,12 +60,18 @@ type Rig = {
   type_id: number | string
 }
 
-// One row per (payer, UTC day) from structure_tax_revenue().
+// One row per (payer, UTC day) from structure_tax_revenue(). The two measures
+// are separate and never netted: `isk` is tax that ARRIVED, `isk_self_paid` is
+// tax the caller's own corporation paid for a job it installed as itself into
+// this structure — money that never left the entity, and the basis of the cost
+// avoidance on /structure rather than revenue. Both come back positive.
 type TaxRow = {
   payer_id: number | string | null
   day: string
   jobs: number | string
   isk: number | string | null
+  self_paid_jobs: number | string
+  isk_self_paid: number | string | null
 }
 
 type StructureParams = {
@@ -198,17 +204,26 @@ const StructurePage = async ({ params, searchParams }: StructureParams) => {
 
   const taxTotalIsk = taxRows.reduce((sum, r) => sum + Number(r.isk ?? 0), 0)
   const taxTotalJobs = taxRows.reduce((sum, r) => sum + Number(r.jobs ?? 0), 0)
+  const selfPaidIsk = taxRows.reduce((sum, r) => sum + Number(r.isk_self_paid ?? 0), 0)
+  const selfPaidJobs = taxRows.reduce((sum, r) => sum + Number(r.self_paid_jobs ?? 0), 0)
+  // A structure whose corp installs everything under corp ownership has only
+  // self-paid rows, so the received column would be all zeroes; the extra
+  // column earns its width only when there is something in it.
+  const showSelfPaid = selfPaidJobs > 0
 
   // The payer leaderboard above the table: the same rows folded from
   // (payer, day) down to (payer), ranked by ISK. No extra query — the window's
   // rows are already in hand, and re-aggregating here keeps the two views
   // guaranteed consistent with each other.
+  // Both measures fold together here: the leaderboard ranks who put the most
+  // industry through this structure, which is the same question whichever
+  // wallet the tax came out of.
   const byPayer = new Map<string, { payerId: string; isk: number; jobs: number }>()
   for (const r of taxRows) {
     const payerId = r.payer_id != null ? String(r.payer_id) : 'unknown'
     const entry = byPayer.get(payerId) ?? { payerId, isk: 0, jobs: 0 }
-    entry.isk += Number(r.isk ?? 0)
-    entry.jobs += Number(r.jobs ?? 0)
+    entry.isk += Number(r.isk ?? 0) + Number(r.isk_self_paid ?? 0)
+    entry.jobs += Number(r.jobs ?? 0) + Number(r.self_paid_jobs ?? 0)
     byPayer.set(payerId, entry)
   }
   const leaderboard = [...byPayer.values()].sort((a, b) => b.isk - a.isk)
@@ -381,6 +396,12 @@ const StructurePage = async ({ params, searchParams }: StructureParams) => {
               <th>Day</th>
               <th className={retro.num}>Jobs</th>
               <th className={retro.num}>ISK</th>
+              {showSelfPaid && (
+                <>
+                  <th className={retro.num}>Self Jobs</th>
+                  <th className={retro.num}>Self ISK</th>
+                </>
+              )}
             </tr>
           </thead>
           <tbody>
@@ -399,6 +420,12 @@ const StructurePage = async ({ params, searchParams }: StructureParams) => {
                   <td className="serif">{r.day}</td>
                   <td className={retro.num}>{Number(r.jobs)}</td>
                   <td className={retro.num}>{formatIskValue(r.isk)}</td>
+                  {showSelfPaid && (
+                    <>
+                      <td className={retro.num}>{Number(r.self_paid_jobs)}</td>
+                      <td className={retro.num}>{formatIskValue(r.isk_self_paid)}</td>
+                    </>
+                  )}
                 </tr>
               )
             })}
@@ -409,6 +436,12 @@ const StructurePage = async ({ params, searchParams }: StructureParams) => {
               <th />
               <th className={retro.num}>{taxTotalJobs}</th>
               <th className={retro.num}>{formatIskValue(taxTotalIsk)}</th>
+              {showSelfPaid && (
+                <>
+                  <th className={retro.num}>{selfPaidJobs}</th>
+                  <th className={retro.num}>{formatIskValue(selfPaidIsk)}</th>
+                </>
+              )}
             </tr>
           </tfoot>
         </table>
