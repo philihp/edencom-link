@@ -105,6 +105,14 @@ test('an unrecognizable branch URL yields no ref, so the run refuses rather than
   assert.equal(refFromUrl('https://example.com'), null)
 })
 
+test('under plain pnpm test, fetch itself refuses', { skip: process.env.RUN_BRANCH_TESTS === '1' }, () => {
+  // The mechanism behind the audit: test/lib/offlineGuard.ts is --import'ed
+  // into every test process, so even a network call the skip gate never sees —
+  // some future test, or a transitive import — dies here instead of leaving
+  // the machine. Skipped under test:branch, where fetch is real by design.
+  assert.throws(() => globalThis.fetch('https://example.com'), /test:branch/)
+})
+
 test('credentials alone never take the branch suite onto the network', () => {
   withEnv(
     {
