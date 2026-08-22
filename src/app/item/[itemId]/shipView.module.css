@@ -1,0 +1,550 @@
+/*
+ * The ship viewer's look, in one sheet: ring, slot listing, bays and readout.
+ *
+ * Everything is drawn from the palette in globals.css, so light and dark come
+ * for free — the sheet names no colour of its own. Mobile first: the three
+ * panels are tabs, and the ring is sized as a fraction of whatever box it is
+ * given (ring.ts hands back fractions, not pixels, for exactly this). At the
+ * breakpoint the tab bar goes away, every panel is on the page at once, and
+ * the ring sits beside its slot listing.
+ */
+
+.viewer {
+  margin-top: 18px;
+}
+
+/* --- tabs (phone only) --- */
+
+.tabs {
+  display: flex;
+  gap: 8px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.tab {
+  margin: 0;
+  padding: 7px 15px;
+  font-size: 13px;
+  color: var(--ink-soft);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+}
+
+.tab:hover {
+  background: var(--paper-raised);
+  color: var(--ink);
+}
+
+.tab[data-active] {
+  color: var(--paper-raised);
+  background: var(--accent);
+  border-color: var(--accent-strong);
+  font-weight: 600;
+}
+
+.tabCount {
+  margin-left: 6px;
+  font-family: var(--mono);
+  font-size: 11px;
+  opacity: 0.8;
+}
+
+.panel {
+  display: none;
+  padding-top: 18px;
+}
+
+.panel[data-active] {
+  display: block;
+}
+
+.panelHeading {
+  margin: 0 0 4px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.baseline {
+  margin: 0 0 14px;
+  font-size: 12px;
+  color: var(--ink-faint);
+}
+
+.failed {
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--paper-raised);
+  color: var(--danger);
+}
+
+/* --- the fitting ring --- */
+
+.fitLayout {
+  display: grid;
+  /* minmax(0, …) rather than the default 1fr: a grid track's automatic minimum
+     is its content, and the slot listing is full of long module names, which
+     would otherwise widen the whole layout past a phone's viewport and carry
+     the ring off the side of it. */
+  grid-template-columns: minmax(0, 1fr);
+  gap: 20px;
+}
+
+.fitColumn {
+  min-width: 0;
+}
+
+.ringBox {
+  justify-self: center;
+  /* A grid item's automatic minimum is its content, and the slot listing beside
+     this one is full of long module names — without min-width the whole layout
+     grows past a phone's viewport and takes the ring off the side of it. */
+  min-width: 0;
+  width: 100%;
+  max-width: 438px;
+}
+
+.ring {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+}
+
+.ringPending {
+  opacity: 0.5;
+}
+
+/* The faint circle the outer cells ride on — decoration, but it's what makes
+   the cells read as one ring rather than as scattered squares. */
+.ringGuide {
+  position: absolute;
+  inset: 11%;
+  border: 1px solid var(--line-soft);
+  border-radius: 50%;
+}
+
+.hub {
+  position: absolute;
+  inset: 29.5%;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--paper-raised);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 6px;
+  text-align: center;
+  overflow: hidden;
+}
+
+.hullRender {
+  width: 46%;
+  height: auto;
+  border-radius: 50%;
+  margin: 0;
+}
+
+.hullName {
+  font-size: 13px;
+  line-height: 1.2;
+  color: var(--ink);
+}
+
+.hullGroup {
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.cell {
+  position: absolute;
+  width: 34px;
+  height: 34px;
+  margin: -17px 0 0 -17px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.filled {
+  border: 1px solid var(--line);
+  background: var(--paper-raised);
+}
+
+.empty {
+  border: 1px dashed var(--line);
+}
+
+.innerCell {
+  width: 28px;
+  height: 28px;
+  margin: -14px 0 0 -14px;
+}
+
+.innerCell.filled {
+  border-color: var(--accent);
+}
+
+.cellIcon {
+  width: 24px;
+  height: 24px;
+  margin: 0;
+}
+
+.innerCell .cellIcon {
+  width: 20px;
+  height: 20px;
+}
+
+/* A module with something loaded in it carries a mark, so an unloaded weapon
+   is visible without opening the list. */
+.chargeDot {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.ringLabel {
+  position: absolute;
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  white-space: nowrap;
+}
+
+/* Families always occupy the same quarter of the ring, so their labels can sit
+   in its corners — which are the one place no cell ever reaches, however many
+   slots the hull has. Reading clockwise from the top left: high, mid, rigs, low.
+*/
+.labelHigh {
+  left: 0;
+  top: 0;
+}
+
+.labelMedium {
+  right: 0;
+  top: 0;
+}
+
+.labelLow {
+  left: 0;
+  bottom: 0;
+}
+
+.labelRig {
+  right: 0;
+  bottom: 0;
+  color: var(--accent-strong);
+}
+
+/* --- fitting resources --- */
+
+.resources {
+  display: flex;
+  gap: 14px;
+  padding: 12px 0 14px;
+  border-top: 1px solid var(--line-soft);
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.resource {
+  flex: 1;
+  min-width: 0;
+}
+
+.legend {
+  display: block;
+  margin: 0;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.track {
+  display: block;
+  height: 4px;
+  margin-top: 7px;
+  border-radius: 2px;
+  background: var(--line-soft);
+  overflow: hidden;
+}
+
+.fill {
+  display: block;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+/* Nearly out, and over: the two states worth a colour of their own. */
+.tight {
+  background: var(--warn);
+}
+
+.over {
+  background: var(--danger);
+}
+
+.resourceValue {
+  display: block;
+  margin-top: 5px;
+  font-family: var(--mono);
+  /* Three of these share a phone's width, and "14,820 / 15,900 MW" is a long
+     way to say it; the figure wraps rather than being cut off. */
+  font-size: 10.5px;
+  line-height: 1.35;
+  color: var(--ink-soft);
+}
+
+/* --- slot listing --- */
+
+.slotList {
+  padding-top: 14px;
+}
+
+.slotSection + .slotSection {
+  margin-top: 16px;
+}
+
+.slotCount {
+  margin-left: 8px;
+  font-family: var(--mono);
+  font-weight: 400;
+  letter-spacing: 0;
+  color: var(--ink-faint);
+}
+
+.legend[data-family='Rig'],
+.legend[data-family='SubSystem'] {
+  color: var(--accent-strong);
+}
+
+.moduleList,
+.bayItems {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+}
+
+.module {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 9px;
+  padding: 3px 0;
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+
+.moduleIcon {
+  flex: none;
+  margin: 0;
+}
+
+.moduleName {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  color: var(--ink);
+}
+
+.charge {
+  font-size: 11.5px;
+  color: var(--ink-faint);
+}
+
+.stack {
+  flex: none;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink-faint);
+}
+
+.emptySection {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--ink-faint);
+}
+
+/* --- bays --- */
+
+.bays {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.bay {
+  padding: 11px 13px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--paper-raised);
+}
+
+.bayEmpty {
+  border-style: dashed;
+  background: transparent;
+  color: var(--ink-faint);
+}
+
+.bayHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.bayFill {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+
+.bayHead + .track {
+  margin-top: 8px;
+}
+
+.bayItems {
+  margin-top: 8px;
+}
+
+/* --- statistics --- */
+
+.stats {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.statGroup {
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--paper-raised);
+}
+
+.statRows {
+  margin: 8px 0 0;
+}
+
+.statRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 3px 0;
+  font-size: 13px;
+}
+
+.statRow dt {
+  color: var(--ink-soft);
+}
+
+.statRow dd {
+  margin: 0;
+  font-family: var(--mono);
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.unit {
+  color: var(--ink-faint);
+}
+
+/* Twelve resonances are a table, and a table is the one thing in the readout
+   that has a width of its own — it scrolls inside its card rather than
+   squeezing its columns into nonsense. */
+.resistScroll {
+  overflow-x: auto;
+}
+
+.resists {
+  margin-top: 8px;
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.resists th {
+  font-weight: 600;
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  text-align: right;
+  padding: 3px 0 3px 8px;
+}
+
+.resists th[scope='row'] {
+  text-align: left;
+  padding-left: 0;
+}
+
+.resists td {
+  font-family: var(--mono);
+  text-align: right;
+  padding: 3px 0 3px 8px;
+  color: var(--ink);
+}
+
+/* --- desktop: no tabs, everything on the page, ring beside its listing --- */
+
+@media (min-width: 900px) {
+  .tabs {
+    display: none;
+  }
+
+  .panel {
+    display: block;
+    padding-top: 22px;
+  }
+
+  .panel + .panel {
+    border-top: 1px solid var(--line-soft);
+  }
+
+  .fitLayout {
+    grid-template-columns: 438px minmax(0, 1fr);
+    align-items: start;
+    gap: 26px;
+  }
+
+  .fitColumn {
+    border-left: 1px solid var(--line-soft);
+    padding-left: 22px;
+  }
+
+  /* The resist grid is five columns wide where its neighbours are two, so it
+     takes two of the readout's tracks. */
+  .resistGroup {
+    grid-column: span 2;
+  }
+
+  .resourceValue {
+    font-size: 11px;
+  }
+
+  .resources {
+    border-top: none;
+    padding-top: 0;
+  }
+}

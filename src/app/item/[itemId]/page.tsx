@@ -1,4 +1,3 @@
-import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
 
 import { FIT_UI_FLAG, hasFlag } from '@/flags'
@@ -6,20 +5,25 @@ import { getSdeType } from '@/sdeTypes'
 import { createClient } from '@/utils/supabase/server'
 
 import { establishedUser } from '../../account/lib/establishedUser'
+import { AppraisalPanel } from '../../asset/[locationId]/appraisalPanel'
+import { AssetPath, fetchAssetPath, type Crumb } from '../../assetPath'
 import { toEsiFit } from '../../ship/[itemId]/esfFit'
+import { fetchShipOwner } from '../../ship/[itemId]/shipOwner'
 import { SHIP_CATEGORY_ID, fittingOrder } from '../../ship/[itemId]/shipRows'
-import { FitDebugDynamic } from './fitDebugDynamic'
+import { ShipIdentity } from './identity'
+import { ShipViewDynamic } from './shipViewDynamic'
 
-// Stage 0 of docs/custom-fit-ui.md: the same ship /ship/[itemId] renders,
-// fed through our own fitting stack instead of @eveshipfit/react, rendering
-// no fitting UI at all — just what the stack produced, to be read against the
-// embed on /ship/[itemId].
+// The ship viewer built on our own fitting stack — stages 2 and 3 of
+// docs/custom-fit-ui.md. Same ship /ship/[itemId] renders, same rows, same
+// dogma model; what's different is that every pixel of the fit is ours rather
+// than @eveshipfit/react's embed, which is what lets it be laid out for a
+// phone as well as a desktop.
 //
-// Dark-launched: nothing links here, and the `fit-ui` flag gates it, so
-// obscurity isn't the only gate. Access is otherwise exactly /ship's
-// signed-in path — the same RLS-scoped queries, so this route can't see a
-// ship its owner couldn't. The share-token path is deliberately not mirrored:
-// an unfinished debug page has no business being anonymously reachable.
+// Still dark-launched: nothing links here, and the `fit-ui` flag gates it, so
+// obscurity isn't the only gate. Access is otherwise exactly /ship's signed-in
+// path — the same RLS-scoped queries, so this route can't see a ship its owner
+// couldn't. The share-token path is deliberately not mirrored: an unreleased
+// page has no business being anonymously reachable.
 
 type ShipRow = {
   item_id: number | string
@@ -37,6 +41,19 @@ type FittedRow = {
   quantity: number | string | null
 }
 
+// Where the hull sits, as the identity strip says it: the nearest named place
+// and the system holding it ("Cold Storage, C-J6MT"). The breadcrumb above
+// already spells the whole chain out, so this is deliberately its tail.
+const locationLabel = (crumbs: Crumb[]): string | null => {
+  const places = crumbs.filter((crumb) => crumb.label !== 'Assets')
+  if (places.length === 0) return null
+  return places
+    .slice(-2)
+    .reverse()
+    .map((crumb) => crumb.label)
+    .join(', ')
+}
+
 const ItemFitPage = async ({ params }: { params: Promise<{ itemId: string }> }) => {
   const { itemId } = await params
 
@@ -47,8 +64,7 @@ const ItemFitPage = async ({ params }: { params: Promise<{ itemId: string }> }) 
   // that doesn't exist.
   if (!(await hasFlag(user.id, FIT_UI_FLAG))) notFound()
 
-  // Both hangars probed at once, character wins — the same shape /ship uses,
-  // minus everything this page doesn't render (owner, location, breadcrumb).
+  // Both hangars probed at once, character wins — the same shape /ship uses.
   const [{ data: characterSelf }, { data: corpSelf }] = await Promise.all([
     supabase
       .from('character_asset')
@@ -63,7 +79,7 @@ const ItemFitPage = async ({ params }: { params: Promise<{ itemId: string }> }) 
   const selfType = await getSdeType(Number(self.type_id))
   if (selfType?.categoryID !== SHIP_CATEGORY_ID) notFound()
 
-  const [{ data: characterChildren }, { data: corpChildren }] = await Promise.all([
+  const [{ data: characterChildren }, { data: corpChildren }, crumbs, owner] = await Promise.all([
     supabase
       .from('character_asset')
       .select('item_id, type_id, location_flag, quantity')
@@ -74,6 +90,9 @@ const ItemFitPage = async ({ params }: { params: Promise<{ itemId: string }> }) 
       .select('item_id, type_id, location_flag, quantity')
       .eq('location_id', itemId)
       .returns<FittedRow[]>(),
+    // The full container chain up to its station / structure / system.
+    fetchAssetPath(itemId, supabase),
+    fetchShipOwner(supabase, characterSelf, corpSelf),
   ])
   const children = [...(characterChildren ?? []), ...(corpChildren ?? [])]
 
@@ -94,13 +113,21 @@ const ItemFitPage = async ({ params }: { params: Promise<{ itemId: string }> }) 
 
   return (
     <>
-      <h1>{self.name && self.name !== typeName ? `${self.name} (${typeName})` : typeName}</h1>
-      <p>
-        Fitting-stack spike (docs/custom-fit-ui.md, stage 0). No fitting UI here — this page exists to prove the
-        non-visual half works: our protobuf decoder over <Link href="/esf/types.pb2">/esf/</Link>, the dogma
-        engine&apos;s data callbacks, the all-skills-V baseline, and the ESI flag → slot mapping.
-      </p>
-      <FitDebugDynamic esiFit={toEsiFit(Number(self.type_id), self.name ?? null, rows)} itemId={itemId} />
+      <AssetPath crumbs={crumbs} current={self.name ?? typeName} />
+      <ShipIdentity
+        name={self.name && self.name !== typeName ? self.name : typeName}
+        typeName={typeName}
+        groupName={selfType?.groupName ?? null}
+        itemId={itemId}
+        owner={owner}
+        location={locationLabel(crumbs)}
+        actions={
+          /* The hull plus everything nested inside it — the same set the bays
+             below list, priced in one request. */
+          <AppraisalPanel targets={[itemId]} label="Appraise" />
+        }
+      />
+      <ShipViewDynamic esiFit={toEsiFit(Number(self.type_id), self.name ?? null, rows)} />
     </>
   )
 }

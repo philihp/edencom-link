@@ -34,6 +34,7 @@
    * successors, adopted by the sign-on surfaces first.
    */
   --ok: #15803d;
+  --warn: #a16207;
   --danger: #b3261e;
 
   --radius: 10px;
@@ -67,6 +68,7 @@
     --link: #6ea8fe;
     --link-visited: #c699f7;
     --ok: #4ade80;
+    --warn: #fcd34d;
     --danger: #fca5a5;
   }
 }

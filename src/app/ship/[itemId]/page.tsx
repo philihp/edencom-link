@@ -1,4 +1,3 @@
-import type { SupabaseClient } from '@supabase/supabase-js'
 import { notFound, redirect } from 'next/navigation'
 import { Suspense } from 'react'
 
@@ -22,6 +21,7 @@ import { ShareDialog } from '../../asset/shareDialog'
 import { toEsiFit } from './esfFit'
 import { FitPlaceholder } from './fitPlaceholder'
 import { characterPortrait, corporationLogo, ShipHeading, type ShipOwner } from './shipHeading'
+import { fetchShipOwner } from './shipOwner'
 import { ShipContents } from './shipContents'
 import { ShipFitViewDynamic } from './shipFitViewDynamic'
 import { SHIP_CATEGORY_ID, fittingOrder, hullRow, type ChildRow } from './shipRows'
@@ -152,47 +152,6 @@ const ContentsFallback = () => (
     />
   </>
 )
-
-// Owner: the holding character's name and portrait, or the corporation's
-// cached name and logo. `character_id` here is the EVE numeric id (what the
-// image server serves portraits for), not the registration uuid its sibling
-// asset columns misname.
-const fetchShipOwner = async (
-  supabase: SupabaseClient,
-  characterSelf: ShipRow | null,
-  corpSelf: ShipRow | null
-): Promise<ShipOwner> => {
-  if (!characterSelf?.registration_id) {
-    const corporationId = Number(corpSelf?.corporation_id)
-    const { data: corpName } = await supabase
-      .from('universe_name')
-      .select('name')
-      .eq('id', corporationId)
-      .maybeSingle<{ name: string }>()
-    return { name: corpName?.name ?? `Corporation #${corporationId}`, portrait: corporationLogo(corporationId) }
-  }
-
-  // A shared ship's owner is outside the caller's registration view (RLS);
-  // their public name resolves through the world-readable directory. Both are
-  // probed together — only one of them can match.
-  const [{ data: registration }, { data: directory }] = await Promise.all([
-    supabase
-      .from('registration')
-      .select('name, character_id')
-      .eq('id', characterSelf.registration_id)
-      .maybeSingle<{ name: string; character_id: number | string | null }>(),
-    supabase
-      .from('character_directory')
-      .select('name, character_id')
-      .eq('registration_id', characterSelf.registration_id)
-      .maybeSingle<{ name: string | null; character_id: number | string | null }>(),
-  ])
-  const eveCharacterId = registration?.character_id ?? directory?.character_id ?? null
-  return {
-    name: registration?.name ?? directory?.name ?? 'Unknown character',
-    portrait: eveCharacterId == null ? null : characterPortrait(eveCharacterId),
-  }
-}
 
 // Anonymous share-link view: wheel + name + owner only. All queries run on
 // the service client, explicitly filtered to the sharer's characters/corps.

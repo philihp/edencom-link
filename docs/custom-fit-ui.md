@@ -2,8 +2,9 @@
 
 Feasibility assessment and staged plan for rendering the ship-fitting view
 (wheel + statistics) with our own components and look & feel, while keeping
-eveship.fit's calculation model. **Stage 0 is done** (see its section below);
-stages 1–5 are not started.
+eveship.fit's calculation model. **Stages 0, 2 and 3 are done**
+(see their sections below); stage 1 was folded into them, and stages 4–5 are
+not started.
 
 ## Verdict
 
@@ -141,7 +142,8 @@ UI.
 
 #### Outcome — done, no showstoppers
 
-Shipped as `src/app/item/[itemId]/` (page + `fitDebug.tsx`) over
+Shipped as `src/app/item/[itemId]/` (page + `fitDebug.tsx`, since replaced by
+the viewer of stages 2–3) over
 `src/app/item/[itemId]/esf/`: `protobuf.ts` (schema-driven reader),
 `schema.ts` (the six messages of `src/esf.proto` as data), `eveData.ts`
 (fetch + decode + name→id indexes, cached per page load), `dogma.ts` (the
@@ -194,6 +196,19 @@ unit-testable pure parts (flag→slot mapping, attribute resolution) covered by
 `pnpm test`. No visual change; `/item` still renders the debug dump through
 the new module.
 
+#### Outcome — folded into stages 2–3, not shipped as its own step
+
+The spike's `esf/` modules already were the typed, module-cached loader this
+stage was going to extract, so moving them somewhere else would have been a
+rename. What the stage was really for — a seam the UI can call and pure parts
+under test — arrived with the view instead: `useFit.ts` is the one entry point
+(decode → callbacks → engine → `calculate`), and the new pure modules beside it
+(`ring.ts`, `panels.ts`) are covered by `pnpm test`.
+
+Still owed, and inherited by whoever needs it: `esf/fit.ts`'s flag→slot mapping
+and `esf/attributes.ts`'s formatting rules have no tests of their own, and the
+decoder comparison is still the scratch harness stage 0 left behind.
+
 ### Stage 2 — statistics panel, our look & feel
 
 Port the attribute list + derivations from `ShipStatistics` and render our own
@@ -202,6 +217,20 @@ drones). This is where the design work starts; the panel is pure "format
 numbers", so it can iterate fast against stage 1's stable data.
 
 **Exit criterion:** side-by-side with `/ship/[itemId]`, every number matches.
+
+#### Outcome — done
+
+`STAT_GROUPS` in `esf/attributes.ts` (defense, offense, capacitor, navigation,
+targeting) plus a resist grid of three layers by four damage types, rendered by
+`StatsPanel` in `shipView.tsx`. The flat `HEADLINE` list stage 0 compared
+against is gone; the formatting rules it proved (`formatAttribute`, the
+round-down/round-up asymmetry, resonance → resist) are unchanged, so the
+numbers are the same ones that matched the embed.
+
+Two figures the readout derives rather than reads: `fittingResources` computes
+CPU and powergrid _used_ by subtracting the engine's `cpuFree`/`powerFree` from
+the outputs, and calibration by summing `upgradeCost` off the fitted rigs —
+the hull reports no remainder for that one.
 
 ### Stage 3 — slot layout, then the wheel
 
@@ -213,6 +242,40 @@ slot-count attributes (already in the `Calculation`), module icons from
 `images.evetech.net`, CPU/PG usage arcs from `cpuOutput`/`cpuFree` /
 `powerOutput`/`powerFree`. Static display only — no drag, no state toggling,
 per scope.
+
+#### Outcome — done, as a ring of cells rather than an SVG
+
+The ring is HTML, not SVG: `ring.ts` hands back each slot's position as a
+_fraction_ of the ring's bounding square, and the cells are absolutely
+positioned in percentages. One ring then scales from the 438px desktop panel to
+a phone with no second code path, which an SVG with a fixed viewBox would also
+have given — but this way the cells are ordinary elements carrying the module's
+icon from `images.evetech.net`, with a title and a charge marker, instead of
+foreignObject.
+
+The outer three families share the circle **in proportion to their slot
+counts** (fixed gaps between families come off the top first), so the arcs read
+as the fit: six highs and two mids look like six highs and two mids. Rigs and
+subsystems ride an inner arc, under and over the hull respectively. CPU,
+powergrid and calibration are bars above the slot listing rather than arcs
+around the ring — three labelled bars say "521 / 620 tf" in a way an arc
+cannot.
+
+Alongside it, and not in the original scope: the "aboard right now" bay cards
+(`panels.ts` → `groupBays`), each drawn against its own capacity attribute, so
+a full drone bay and a nearly empty freighter hold both read at a glance.
+
+#### The two layouts
+
+Both come out of one component tree. Below 900px the three panels — fit, cargo,
+info — are tabs; from 900px up the tab bar disappears, every panel is simply on
+the page, and the ring sits beside its slot listing. No width probing at render
+time (which would have to guess before hydration): the tab state exists either
+way and CSS decides whether it means anything.
+
+Light and dark come from the palette in `globals.css` — the sheet names no
+colour of its own — which is also where `--warn` was added, the amber the
+resource bars needed and the two-colour `--ok`/`--danger` pair didn't have.
 
 ### Stage 4 — adoption and retirement
 
