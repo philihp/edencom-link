@@ -53,8 +53,8 @@ const PrivacyPage = () => (
       <li>We show your data back to you, on your account&rsquo;s pages.</li>
       <li>
         We share data only where you opt in: with a corporation you belong to (corp assets and industry, mercenary-den
-        sharing), through public share links you generate yourself (a ship&rsquo;s fit, or the corpses page, which stays
-        off unless you enable it), or to a Discord channel you link.
+        sharing), through public share links you generate yourself (a ship&rsquo;s fit, your blueprint-original
+        showcase, or the corpses page, all of which stay off unless you enable them), or to a Discord channel you link.
       </li>
       <li>We do not sell your data or share it with advertisers.</li>
     </ul>

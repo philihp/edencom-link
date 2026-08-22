@@ -1,0 +1,64 @@
+/* Page header: title left, blueprint tally right — the arrangement the corpses
+ * and indexes pages use. */
+.pageHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12pt;
+}
+
+.pageHeader h1 {
+  margin: 0;
+}
+
+.count {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 10pt;
+  color: var(--ink-soft);
+}
+
+/* Who the collection belongs to, and (for the owner) the share control. */
+.subtitle {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8pt;
+  color: var(--ink-soft);
+  margin: 4pt 0 0;
+}
+
+.pilots {
+  color: var(--ink-soft);
+  margin: 4pt 0 0;
+  max-width: 70ch;
+}
+
+/* A column header that is also its sort control: styled as text, not a button,
+ * so the header row still reads as a header row. */
+.sortButton {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+.sortButton:hover {
+  color: var(--ink);
+}
+
+.sorted {
+  color: var(--ink);
+}
+
+.nameCell {
+  display: flex;
+  align-items: center;
+  gap: 6pt;
+}
+
+.empty {
+  color: var(--ink-faint);
+}

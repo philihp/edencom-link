@@ -135,6 +135,7 @@ drop table if exists public.user_settings        cascade;
 drop table if exists public.refresh_task         cascade;
 drop table if exists public.shared_asset_token   cascade;
 drop table if exists public.link                 cascade;
+drop table if exists public.bpo_share            cascade;
 drop table if exists public.discord_link_code    cascade;
 drop table if exists public.notification         cascade;
 drop table if exists public.discord_channel      cascade;
@@ -3084,6 +3085,55 @@ create policy "Audience reads links aimed at them"
 grant select                         on public.link to anon;
 grant select, insert, update, delete on public.link to authenticated;
 grant all                            on public.link to service_role;
+
+-- ── bpo_share ──────────────────────────────────────────────────────────────
+-- The audience for one account's blueprint-original showcase, the public page
+-- at /bpos/[main-character-name]. Standard Revision 3 audience row
+-- (corporation_ids / alliance_ids / secret; fully public = the row that names
+-- no one), and user_id-keyed rather than registration-keyed for the same reason
+-- `link` is: the subject is "every original this account owns", pooled across
+-- every character on it.
+--
+-- That pooling is a deliberate exception to the per-character grantor rule the
+-- asset and fitting shares keep (docs/sharing-layer/design.md's alt-privacy
+-- invariant). It is owner-initiated and opt-in — no row means not shared, the
+-- page 404s, and nothing about the account's alts is correlated for anyone.
+-- Showing the collection whole is the entire point of the page.
+create table public.bpo_share (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null unique references auth.users(id) on delete cascade,
+  corporation_ids bigint[] not null default '{}',
+  alliance_ids bigint[] not null default '{}',
+  secret text,
+  created_at timestamptz not null default now()
+);
+
+alter table public.bpo_share enable row level security;
+
+-- Owner manages their own row outright (the `link` shape — the owner is a user,
+-- so the predicate is direct rather than a registration subquery).
+create policy "Users manage own bpo share"
+  on public.bpo_share
+  for all
+  to authenticated
+  using (user_id = (select auth.uid()))
+  with check (user_id = (select auth.uid()));
+
+-- Audience discovery, the load-bearing array policy every Revision 3 share
+-- table carries: the page asks this table, as the viewer, whether a share is
+-- aimed at them. Link-only rows match nobody here (RLS cannot see a URL token;
+-- signed links resolve at the app layer), and neither does the fully-public row
+-- for a signed-out visitor -- the page clears that case through the service
+-- role rather than leaning on an anon evaluation of my_corporation_ids().
+create policy "Audience reads bpo shares aimed at them"
+  on public.bpo_share
+  for select
+  to anon, authenticated
+  using (public.share_audience_matches(corporation_ids, alliance_ids, secret));
+
+grant select                         on public.bpo_share to anon;
+grant select, insert, update, delete on public.bpo_share to authenticated;
+grant all                            on public.bpo_share to service_role;
 
 -- ── character_clone_state ──────────────────────────────────────────────────
 -- Character-level fields from ESI /characters/{id}/clones/, written by the
