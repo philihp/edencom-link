@@ -75,6 +75,8 @@ const nextConfig = {
     { source: '/asset/:itemId/fit', destination: '/ship/:itemId', permanent: false },
     // The Chancellor tools became a settings subpage.
     { source: '/account/chancellor', destination: '/account/settings/chancellor', permanent: true },
+    // The debug dump and impersonate form folded into the Chancellor tools.
+    { source: '/account/debug', destination: '/account/settings/chancellor', permanent: true },
   ],
 }
 

@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 
-import Dot from '../settings/dot'
+import Dot from '../dot'
 import { impersonate } from './impersonate'
 
 // On success this navigates away (the server action redirects home with the

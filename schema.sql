@@ -1452,7 +1452,8 @@ grant execute on function public.innominate_try_acquire(double precision) to ser
 
 -- ── impersonation_log ──────────────────────────────────────────────────────
 -- Chancellor-impersonation audit trail: one row per magic-link impersonation
--- session minted via /account/debug (see src/app/account/debug/impersonate.ts).
+-- session minted via /account/settings/chancellor
+-- (see src/app/account/settings/chancellor/impersonate.ts).
 -- Internal-only, service-role bookkeeping — RLS is on with no policy, mirroring
 -- esi_etag, so neither the impersonating Chancellor nor the impersonated user
 -- can read it through the API.
