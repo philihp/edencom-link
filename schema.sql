@@ -4803,8 +4803,18 @@ grant  execute on function public.industry_job_tax_facility(bigint[]) to authent
 --
 -- Payer identity crosses no new boundary: first_party_id is already on the
 -- journal row the caller can read, and /structure/revenue already displays it.
+--
+-- Two measures, never netted. industry_job_tax cuts both ways in a corp wallet:
+-- a positive entry is money that arrived, a negative one is tax the corporation
+-- paid — and for a job installed AS THE CORPORATION into its own structure that
+-- is money that never left the entity (CCP writes only the outgoing side), so a
+-- corp running everything under corp ownership generates nothing but negative
+-- entries. Summing the two reported such structures as earning large negative
+-- revenue. `isk_self_paid` is the own-rate charge behind the cost-avoidance
+-- figure on /structure; see docs/cost-avoidance.md and
+-- src/app/structure/taxLedger.ts.
 create or replace function public.structure_tax_revenue(structure_id bigint, since timestamptz)
-returns table (payer_id bigint, day date, jobs bigint, isk numeric)
+returns table (payer_id bigint, day date, jobs bigint, isk numeric, self_paid_jobs bigint, isk_self_paid numeric)
 language sql
 stable
 as $$
@@ -4822,10 +4832,12 @@ as $$
     from public.industry_job_tax_facility(array(select distinct t.context_id from tax t)) f
   )
   select
-    t.first_party_id                  as payer_id,
-    (t.date at time zone 'UTC')::date as day,
-    count(*)                          as jobs,
-    sum(coalesce(t.amount, 0))        as isk
+    t.first_party_id                                            as payer_id,
+    (t.date at time zone 'UTC')::date                           as day,
+    count(*) filter (where t.amount > 0)                        as jobs,
+    coalesce(sum(t.amount) filter (where t.amount > 0), 0)      as isk,
+    count(*) filter (where t.amount < 0)                        as self_paid_jobs,
+    coalesce(-sum(t.amount) filter (where t.amount < 0), 0)     as isk_self_paid
   from tax t
   join located l on l.job_id = t.context_id
   -- Upwell structures share the id between station_id and facility_id; jobs in

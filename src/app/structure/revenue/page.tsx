@@ -232,7 +232,14 @@ const RevenuePage = async ({ searchParams }: RevenueParams) => {
       .filter((id) => Number.isFinite(id))
   )
 
-  const dayTotal = entries.reduce((sum, e) => sum + Number(e.amount ?? 0), 0)
+  // The two sides never net. A positive entry is tax that arrived — revenue. A negative one is tax
+  // our own corporation paid, which for a job installed AS THE CORPORATION into that same
+  // corporation's structure is money that never left the entity (CCP writes only the outgoing
+  // side). Summing them together reported a corp that runs everything under corp ownership as
+  // having NEGATIVE tax revenue; see src/app/structure/taxLedger.ts, which is what turns those
+  // outgoing rows into the /structure cost-avoidance figure.
+  const dayRevenue = entries.reduce((sum, e) => sum + Math.max(0, Number(e.amount ?? 0)), 0)
+  const dayPaid = entries.reduce((sum, e) => sum + Math.min(0, Number(e.amount ?? 0)), 0)
 
   const pager = day && (
     <nav className={styles.pager}>
@@ -307,12 +314,21 @@ const RevenuePage = async ({ searchParams }: RevenueParams) => {
               </tbody>
               <tfoot>
                 <tr>
-                  <th>Total</th>
+                  <th>Received</th>
                   <th />
-                  <th className={retro.num}>{formatIskValue(dayTotal)}</th>
+                  <th className={retro.num}>{formatIskValue(dayRevenue)}</th>
                   <th />
                   <th />
                 </tr>
+                {dayPaid < 0 && (
+                  <tr>
+                    <th>Paid to self</th>
+                    <th />
+                    <th className={retro.num}>{formatIskValue(dayPaid)}</th>
+                    <th />
+                    <th />
+                  </tr>
+                )}
               </tfoot>
             </table>
           ) : (
