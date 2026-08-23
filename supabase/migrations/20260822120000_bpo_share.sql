@@ -1,3 +1,14 @@
+-- SUPERSEDED — this file never applied to production and never will.
+--
+-- It collided on version 20260822120000 with
+-- structure_tax_revenue_split_signs (#945 and #946 merged sixteen seconds
+-- apart), and the Supabase CLI's version-keyed matching skipped it. The
+-- filename cannot be changed — it is a migration's identity — so the table is
+-- created by 20260823005000_create_bpo_share.sql instead, and this file is
+-- recorded as applied by the one-time history repair in
+-- docs/bpo-share-collision.md. Kept verbatim below; still idempotent, so
+-- running it anywhere is harmless.
+
 -- bpo_share — the audience for one account's blueprint-original showcase
 -- (/bpos/[main-character-name]).
 --
