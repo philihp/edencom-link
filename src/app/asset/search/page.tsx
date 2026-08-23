@@ -13,7 +13,8 @@ import { LinkSpinner } from '../../linkSpinner'
 import { fetchOwners } from '../../owners'
 import { resolveLocations, type LocationRef } from '../../resolveLocations'
 import retro from '../../retro.module.css'
-import { iconVariation, TypeIcon, type IconVariation } from '../../typeIcon'
+import { iconVariation, type IconVariation } from '../../iconVariation'
+import { TypeIcon } from '../../typeIcon'
 import { TypeName } from '../../typeName'
 import { AssetSearchForm } from '../assetSearchForm'
 import { Quantity } from '../[locationId]/quantity'
@@ -286,7 +287,7 @@ const AssetSearchPage = async ({ searchParams }: { searchParams: Promise<{ q?: s
                   )}
                 </td>
                 <td>
-                  <TypeIcon id={row.typeId} variation={iconFor(row.typeId)} />
+                  <TypeIcon id={row.typeId} prefer={iconFor(row.typeId)} />
                   {row.contents > 0 ? (
                     <Link href={`/asset/${row.itemId}`}>
                       <TypeName id={row.typeId} name={row.name} promise={typeNamesPromise} />

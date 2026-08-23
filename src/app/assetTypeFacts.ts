@@ -3,7 +3,7 @@
 // builds ItemRows (the asset folder, both ship views) resolves the same facts
 // from one getSdeTypes lookup, so they can't drift from each other.
 import type { SdeType } from '@/sdeTypes'
-import { iconVariation, type IconVariation } from './typeIcon'
+import { iconVariation, type IconVariation } from './iconVariation'
 
 export type TypeFacts = {
   unitVolume: number | null
