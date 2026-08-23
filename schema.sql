@@ -4289,6 +4289,11 @@ create index universe_structure_unresolved_at_idx
   on public.universe_structure (unresolved_at)
   where unresolved_at is not null;
 
+-- "Every structure in this system": the GraphQL location filter's name match
+-- (src/app/api/graphql/structureMatch.ts) reads a whole system at a time.
+create index universe_structure_system_id_idx
+  on public.universe_structure (system_id);
+
 alter table public.universe_structure enable row level security;
 -- Readable by any *established* account — a member, not an account still
 -- mid-flow on an anonymous session (see is_established_account() above).

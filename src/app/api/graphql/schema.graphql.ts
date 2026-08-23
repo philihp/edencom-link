@@ -217,6 +217,14 @@ export const typeDefs = /* GraphQL */ `
   that system's rows and a station name that station's. \`locations:\` is an
   exact list of \`locationId\`s and whole names, mixed. Neither widens what you
   can read: a name you don't own resolves to an id none of your rows carry.
+
+  A term that matches nothing that way gets read as a structure the way people
+  say one: the first word is a prefix of the SOLAR SYSTEM, punctuation ignored
+  ("TKD", "TK-D" and "TK-DLH" all reach TK-DLH), and the words after it pick the
+  structure in that system matching the most of them — so \`location: "TKD
+  Reactions T2"\` finds "TK-DLH - CUDDLES T2 Composite Reactions". Ambiguity is
+  refused rather than guessed at, in both halves: a prefix answering to two
+  systems, or two structures matching the same words, matches nothing.
   """
   type Location {
     locationId: String!
