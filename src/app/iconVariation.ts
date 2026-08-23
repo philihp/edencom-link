@@ -79,6 +79,15 @@ export const blueprintIcon = (isCopy: boolean | null | undefined): IconVariation
 
 export const variationsUrl = (typeID: number) => `https://images.evetech.net/types/${typeID}`
 
+// Where one type's variation list is remembered between page loads. Dotted
+// key, per the convention the other browser-stored preferences use
+// (assets.ownerId, industry.activeJobs.ownerId), with the type id in the key so
+// each type is its own entry — no whole-blob rewrite to learn one new type, and
+// nothing to prune when the vocabulary changes. The `.1` is a schema version:
+// bump it and every stored entry is ignored, which is the escape hatch if the
+// stored shape ever has to change.
+export const variationsCacheKey = (typeID: number) => `typeIcon.variations.1.${typeID}`
+
 // CCP's image server serves fixed power-of-two sizes; ask for the one that
 // still has pixels to spare at 2× the rendered size.
 export const fetchSize = (size: number) => (size <= 32 ? 64 : size <= 64 ? 128 : size <= 128 ? 256 : 512)
