@@ -47,7 +47,7 @@ export const BposTable = ({ entries }: { entries: BpoEntry[] }) => {
               <span className={styles.nameCell}>
                 {/* Blueprints have no "icon" variation on CCP's image server —
                     an original answers to "bp". */}
-                <TypeIcon id={entry.typeId} variation="bp" size={24} />
+                <TypeIcon id={entry.typeId} prefer="bp" size={24} />
                 <span className="serif">{entry.name ?? `#${entry.typeId}`}</span>
               </span>
             </td>

@@ -4,7 +4,6 @@ import { createClient } from '@/utils/supabase/server'
 import { establishedUser } from '../account/lib/establishedUser'
 import { needsDurableIdentity } from '../account/lib/ssoEmail'
 import { Freshness } from '../Freshness'
-import { CharacterName } from '../names'
 import styles from './header.module.css'
 
 const Header = async () => {
@@ -48,11 +47,10 @@ const Header = async () => {
           <Link href="/" className={styles.brand}>
             Edencom Link
           </Link>
-          {displayName && (
-            <span className={styles.user}>
-              <CharacterName name={displayName} />
-            </span>
-          )}
+          {/* Plain, not <CharacterName>: the bar is one header line, and a serif
+              name sitting beside the sans wordmark set two faces in it. Chrome
+              is sans (see the typography note in globals.css). */}
+          {displayName && <span className={styles.user}>{displayName}</span>}
           {user && (
             <span className={styles.refresh}>
               <Freshness at={lastRefreshedAt} prefix="Refreshed" never="never refreshed" />

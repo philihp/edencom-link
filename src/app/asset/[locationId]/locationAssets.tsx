@@ -7,7 +7,8 @@ import { ascend, descend, difference, sortWith, union } from 'ramda'
 import { LinkSpinner } from '../../linkSpinner'
 import { ALL_OWNERS, OwnerSelect, ownerNames, useOwnerFilter, type Owners } from '../../ownerFilter'
 import retro from '../../retro.module.css'
-import { TypeIcon, type IconVariation } from '../../typeIcon'
+import { type IconVariation } from '../../iconVariation'
+import { TypeIcon } from '../../typeIcon'
 import { TypeName } from '../../typeName'
 import styles from '../assets.module.css'
 import { OWNER_STORAGE_KEY } from '../filterKey'
@@ -343,7 +344,7 @@ export const LocationAssets = ({ rows, owners, typeNamesPromise, canAppraise }: 
                         outside the link so a click always lands on the name,
                         and it renders immediately (no name lookup). */}
                     <span className={styles.item}>
-                      <TypeIcon id={row.typeId} variation={row.icon} />
+                      <TypeIcon id={row.typeId} prefer={row.icon} />
                       {row.href ? (
                         // Ships open their own /ship page; containers drill into /asset.
                         <Link href={row.href}>

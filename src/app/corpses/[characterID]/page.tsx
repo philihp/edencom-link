@@ -3,6 +3,8 @@ import { notFound } from 'next/navigation'
 import { searchSdeTypesAll } from '@/sdeTypes'
 import { createServiceClient } from '@/utils/supabase/service'
 
+import { TypeIcon } from '../../typeIcon'
+
 import styles from '../corpses.module.css'
 
 // Modern capsuleer corpses are the gendered "Corpse Male"/"Corpse Female"
@@ -126,13 +128,7 @@ const CorpsesPage = async ({ params }: { params: Promise<{ characterID: string }
           {corpses.map(({ itemId, typeId, pilot, isNew }) => (
             <li key={itemId} className={styles.tile}>
               {isNew && <span className={styles.badge}>New!</span>}
-              <img
-                className={styles.icon}
-                src={`https://images.evetech.net/types/${typeId}/icon?size=64`}
-                alt=""
-                width={48}
-                height={48}
-              />
+              <TypeIcon id={typeId} size={48} className={styles.icon} />
               <span className={styles.name}>
                 {pilot ?? <span className={styles.unknown}>Unknown (#{itemId})</span>}
               </span>
