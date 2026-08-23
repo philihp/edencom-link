@@ -1,59 +1,14 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
-import { ascend, range, reduce, sort, uniq } from 'ramda'
 
 import { createClient } from '@/utils/supabase/server'
 
 import { establishedUser } from '../account/lib/establishedUser'
-import {
-  baseSlotMax,
-  countJobSlots,
-  emptyCounts,
-  SKILL_FAMILY,
-  SLOT_SKILL_IDS,
-  type CharacterJobRow,
-  type CorpJobRow,
-  type SlotCounts,
-  type SlotFamily,
-  type SlotMax,
-} from '../industry/jobSlots'
 import { formatBisk } from '../isk'
-import { fetchSystemNames, fetchSystemPaths } from '../systemNames'
-import { fetchTypeNames } from '../typeNames'
 import { register } from './actions'
-import { requiredScopes } from './scopes'
-import { getEnabledScopes } from './userScopes'
+import { fetchCharacterOverviews, hasNoOptionalScopes } from './characterData'
+import { JobSlots } from './jobSlotBubbles'
 import styles from './character.module.css'
-
-const SLOT_ROWS: { family: SlotFamily; label: string }[] = [
-  { family: 'manufacturing', label: 'Manufacturing' },
-  { family: 'research', label: 'Research' },
-  { family: 'reaction', label: 'Reactions' },
-]
-
-const JobSlots = ({ counts, max }: { counts: SlotCounts; max: SlotMax }) => (
-  <div className={styles.slots}>
-    {SLOT_ROWS.map(({ family, label }) => {
-      const { running, finished } = counts[family]
-      // Never hide a job: if skill data lags behind reality, widen the row to
-      // fit every occupied slot rather than clip it.
-      const slotCount = Math.max(max[family], running + finished)
-      return (
-        <div
-          key={family}
-          className={`${styles.slotRow} ${styles[family]}`}
-          title={`${label}: ${running} running, ${finished} ready of ${max[family]} slot${max[family] === 1 ? '' : 's'}`}
-        >
-          {range(0, slotCount).map((i) => {
-            if (i < running) return <span key={i} className={`${styles.slot} ${styles.slotFilled}`} />
-            if (i < running + finished) return <span key={i} className={`${styles.slot} ${styles.slotReady}`} />
-            return <span key={i} className={styles.slot} />
-          })}
-        </div>
-      )
-    })}
-  </div>
-)
 
 const CharacterPage = async () => {
   const supabase = await createClient()
@@ -63,127 +18,13 @@ const CharacterPage = async () => {
     redirect('/')
   }
 
-  const { data: characters, status, statusText, error } = await supabase.from('registration').select()
-
-  const { data: wallets } = await supabase
-    .from('character_wallet')
-    .select('registration_id, balance, recorded_at')
-    .order('recorded_at', { ascending: false })
-
-  const latestBalance = reduce(
-    (acc, w) => (acc.has(w.registration_id) ? acc : acc.set(w.registration_id, w.balance)),
-    new Map<string, string>(),
-    wallets ?? []
-  )
-
-  const { data: locations } = await supabase.from('character_location').select('registration_id, solar_system_id')
-  const systemNames = await fetchSystemNames((locations ?? []).map((l) => Number(l.solar_system_id)))
-  const locationSystem = new Map(
-    (locations ?? []).map((l) => [
-      l.registration_id as string,
-      systemNames[Number(l.solar_system_id)] ?? `System #${l.solar_system_id}`,
-    ])
-  )
-
-  const { data: clones } = await supabase.from('character_clone').select('registration_id, system_id')
-  const cloneSystemPaths = await fetchSystemPaths((clones ?? []).map((c) => Number(c.system_id)))
-  const cloneSystemsByCharacter = reduce(
-    (acc, c) => {
-      const system =
-        c.system_id != null ? (cloneSystemPaths[Number(c.system_id)] ?? `System #${c.system_id}`) : 'Unknown'
-      const existing = acc.get(c.registration_id as string) ?? []
-      acc.set(c.registration_id as string, uniq([...existing, system]))
-      return acc
-    },
-    new Map<string, string[]>(),
-    clones ?? []
-  )
-  const cloneSystems = new Map(
-    [...cloneSystemsByCharacter.entries()].map(([characterId, systems]) => [
-      characterId,
-      sort(
-        ascend((s: string) => s),
-        systems
-      ),
-    ])
-  )
-
-  const { data: implantRows } = await supabase.from('character_implant').select('registration_id, type_ids')
-  const implantTypeNames = await fetchTypeNames((implantRows ?? []).flatMap((r) => (r.type_ids ?? []).map(Number)))
-  const implantsByCharacter = new Map(
-    (implantRows ?? []).map((r) => [
-      r.registration_id as string,
-      (r.type_ids ?? []).map((id: number) => implantTypeNames[id] ?? `Type #${id}`),
-    ])
-  )
-
-  const { data: shipRows } = await supabase
-    .from('character_ship')
-    .select('registration_id, ship_item_id, ship_type_id, ship_name')
-  const shipTypeNames = await fetchTypeNames((shipRows ?? []).map((r) => Number(r.ship_type_id)))
-  const currentShip = new Map(
-    (shipRows ?? []).map((r) => {
-      const typeName = shipTypeNames[Number(r.ship_type_id)] ?? `Type #${r.ship_type_id}`
-      return [
-        r.registration_id as string,
-        {
-          itemId: String(r.ship_item_id),
-          label: r.ship_name && r.ship_name !== typeName ? `${r.ship_name} (${typeName})` : typeName,
-        },
-      ]
-    })
-  )
-
-  // Jobs that still hold a slot: running (status 'active') or ready to deliver
-  // (status 'ready'). Corp jobs count against the installing character's slots
-  // as well, so both listings feed the shared fold; RLS already scopes the corp
-  // view to the caller's corporations.
-  const [{ data: industryJobs }, { data: corpIndustryJobs }] = await Promise.all([
-    supabase
-      .from('character_industry_job')
-      .select('job_id, registration_id, activity_id, status, end_date')
-      .in('status', ['active', 'ready']),
-    supabase
-      .from('corp_industry_job')
-      .select('job_id, installer_id, activity_id, status, end_date')
-      .in('status', ['active', 'ready']),
-  ])
-  const jobSlotCounts = countJobSlots({
-    characterJobs: (industryJobs ?? []) as CharacterJobRow[],
-    corpJobs: (corpIndustryJobs ?? []) as CorpJobRow[],
-    registrationByCharacterId: new Map(
-      (characters ?? []).filter((c) => c.character_id != null).map((c) => [String(c.character_id), c.id as string])
-    ),
-  })
-
-  // Per-character slot ceilings, derived from the two skills behind each family.
-  const { data: skillRows } = await supabase
-    .from('character_skill')
-    .select('registration_id, skill_id, active_skill_level')
-    .in('skill_id', SLOT_SKILL_IDS)
-  const slotMax = reduce(
-    (acc, r) => {
-      const family = SKILL_FAMILY[Number(r.skill_id)]
-      if (family) {
-        const max = acc.get(r.registration_id as string) ?? baseSlotMax()
-        max[family] += Number(r.active_skill_level) || 0
-        acc.set(r.registration_id as string, max)
-      }
-      return acc
-    },
-    new Map<string, SlotMax>(),
-    skillRows ?? []
-  )
-
-  // If the player has turned off every optional ESI scope, characters they add
-  // grant nothing beyond identification, so almost no features will work.
-  const enabledScopes = await getEnabledScopes(supabase, user.id)
-  const hasNoOptionalScopes = enabledScopes.every((scope) => requiredScopes.includes(scope))
+  const { characters, status, statusText, error } = await fetchCharacterOverviews(supabase)
+  const noOptionalScopes = await hasNoOptionalScopes(supabase, user.id)
 
   return (
     <>
       <h1>Characters</h1>
-      {hasNoOptionalScopes && (
+      {noOptionalScopes && (
         <div className={styles.warning} role="alert">
           <strong className={styles.warningTitle}>Limited access selected</strong>
           <p className={styles.warningBody}>
@@ -194,12 +35,12 @@ const CharacterPage = async () => {
         </div>
       )}
       <ul className={styles.grid}>
-        {characters?.map((c) => (
+        {characters.map((c) => (
           <li key={`character-${c.id}`} className={styles.tile}>
-            {c.character_id ? (
+            {c.characterId ? (
               <img
                 className={styles.avatar}
-                src={`https://images.evetech.net/characters/${c.character_id}/portrait?size=128`}
+                src={`https://images.evetech.net/characters/${c.characterId}/portrait?size=128`}
                 alt={c.name}
               />
             ) : (
@@ -208,42 +49,36 @@ const CharacterPage = async () => {
             <div className={styles.body}>
               <div className={styles.name}>{c.name}</div>
               {/* Only show the job-slot bubbles for characters who have shared their
-                  skills — slotMax has an entry only when character_skill rows exist,
-                  so without the scope we don't guess a capacity, we show nothing. */}
-              {slotMax.has(c.id) && (
-                <JobSlots counts={jobSlotCounts.get(c.id) ?? emptyCounts()} max={slotMax.get(c.id)!} />
-              )}
+                  skills — slots is null unless character_skill rows exist, so without
+                  the scope we don't guess a capacity, we show nothing. */}
+              {c.slots && <JobSlots counts={c.slots.counts} max={c.slots.max} />}
               <div className={styles.meta}>
                 <span className={styles.metaLabel}>ISK:</span>
-                {latestBalance.has(c.id) ? formatBisk(latestBalance.get(c.id)!) : '—'}
+                {c.balance === null ? '—' : formatBisk(c.balance)}
               </div>
               <div className={styles.meta}>
                 <span className={styles.metaLabel}>Location:</span>
-                {locationSystem.get(c.id) ?? '—'}
+                {c.locationSystem ?? '—'}
               </div>
               <div className={styles.meta}>
                 <span className={styles.metaLabel}>Ship:</span>
-                {currentShip.has(c.id) ? (
-                  <Link href={`/ship/${currentShip.get(c.id)!.itemId}`}>{currentShip.get(c.id)!.label}</Link>
-                ) : (
-                  '—'
-                )}
+                {c.ship ? <Link href={`/ship/${c.ship.itemId}`}>{c.ship.label}</Link> : '—'}
               </div>
-              {(cloneSystems.get(c.id)?.length ?? 0) > 0 && (
+              {c.cloneSystems.length > 0 && (
                 <div className={styles.metaBlock}>
                   <span className={styles.metaLabel}>Clone systems:</span>
                   <ul className={`${styles.bulletList} ${styles.cloneList}`}>
-                    {cloneSystems.get(c.id)!.map((system) => (
+                    {c.cloneSystems.map((system) => (
                       <li key={system}>{system}</li>
                     ))}
                   </ul>
                 </div>
               )}
-              {(implantsByCharacter.get(c.id)?.length ?? 0) > 0 && (
+              {c.implants.length > 0 && (
                 <div className={styles.metaBlock}>
                   <span className={styles.metaLabel}>Implants:</span>
                   <ul className={styles.bulletList}>
-                    {implantsByCharacter.get(c.id)!.map((name: string, i: number) => (
+                    {c.implants.map((name: string, i: number) => (
                       <li key={i}>{name}</li>
                     ))}
                   </ul>
