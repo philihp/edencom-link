@@ -2,3 +2,8 @@
 # Without this, `pnpm run pretty` rewrites build output and `prettier --check`
 # can never report a clean tree.
 src/app/.well-known/workflow/
+
+# Vendored artifacts: design-tool exports and bundled JS/HTML checked in as-is.
+# Reformatting them destroys the exporter's output for no benefit — nothing here
+# ships. `.oxlintrc.json` ignores `docs/**` for the same reason.
+docs/

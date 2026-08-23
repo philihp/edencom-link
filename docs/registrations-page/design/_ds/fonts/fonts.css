@@ -1,0 +1,16 @@
+/* Eve Sans Neue — brand typeface (self-hosted) */
+
+@font-face { font-family: 'Eve Sans Neue'; src: url('evesansneue-regular.otf') format('opentype'); font-weight: 400; font-style: normal; }
+@font-face { font-family: 'Eve Sans Neue'; src: url('evesansneue-italic.otf') format('opentype'); font-weight: 400; font-style: italic; }
+@font-face { font-family: 'Eve Sans Neue'; src: url('evesansneue-bold.otf') format('opentype'); font-weight: 700; font-style: normal; }
+@font-face { font-family: 'Eve Sans Neue'; src: url('evesansneue-bolditalic.otf') format('opentype'); font-weight: 700; font-style: italic; }
+
+@font-face { font-family: 'Eve Sans Neue Condensed'; src: url('evesansneue-condensed.otf') format('opentype'); font-weight: 400; font-style: normal; }
+@font-face { font-family: 'Eve Sans Neue Condensed'; src: url('evesansneue-condenseditalic.otf') format('opentype'); font-weight: 400; font-style: italic; }
+@font-face { font-family: 'Eve Sans Neue Condensed'; src: url('evesansneue-condensedbold.otf') format('opentype'); font-weight: 700; font-style: normal; }
+@font-face { font-family: 'Eve Sans Neue Condensed'; src: url('evesansneue-condensedbolditalic.otf') format('opentype'); font-weight: 700; font-style: italic; }
+
+@font-face { font-family: 'Eve Sans Neue Expanded'; src: url('evesansneue-expanded.otf') format('opentype'); font-weight: 400; font-style: normal; }
+@font-face { font-family: 'Eve Sans Neue Expanded'; src: url('evesansneue-expandeditalic.otf') format('opentype'); font-weight: 400; font-style: italic; }
+@font-face { font-family: 'Eve Sans Neue Expanded'; src: url('evesansneue-expandedbold.otf') format('opentype'); font-weight: 700; font-style: normal; }
+@font-face { font-family: 'Eve Sans Neue Expanded'; src: url('evesansneue-expandedbolditalic.otf') format('opentype'); font-weight: 700; font-style: italic; }
