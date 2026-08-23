@@ -239,3 +239,13 @@ Key Postgres functions (RPC or SQL):
 - **Observability metrics:** `src/observability.js` emits single-line JSON metrics to stdout, ingested from Vercel function logs — zero-dependency, the single seam to later swap in real OTel.
 - **Server-Timing headers** (`docs/server-timing.md`): `src/serverTiming.ts` holds a request-scoped span collector (`AsyncLocalStorage`); `withRequestTiming` and `withServerTiming(handler)` open the scope and stamp the response, so the browser's network panel shows _which_ query was slow. Spans arrive free for every Supabase round trip — each client factory passes `timedSupabaseFetch(label)` as supabase-js's `global.fetch` (`db.<rpc|table>`, `sde.*`, `auth.*`) — plus explicit `timed(name, fn)` around the appraisal/GraphQL/link phases. Publicly cacheable responses go unstamped (a CDN would serve the first caller's timing to everyone). **Pages can't carry it** — App Router server components have no response-header seam; the collector is simply inert under a render. Because it imports `node:async_hooks`, a client component transitively importing a Supabase factory is now a build error (why `src/flagCatalog.ts` exists, split out of `@/flags`).
 - **Name resolution:** `universe_name` caches ESI `universeNames`; `resolveBatch()` bisects on error. Type names come from `src/sdeTypes.ts`.
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+# This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->
