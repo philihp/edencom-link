@@ -1,0 +1,33 @@
+# Phase 4 — the actually-combined parts
+
+Phases 2–3 could, at worst, ship two pages stacked under one URL. This phase
+delivers the reason for merging: the connections between a character and the
+jobs that feed their data. Exact scope comes from the phase-0 extraction —
+build what the mockup fuses, and only that. Candidates, in likely order:
+
+1. **Per-character freshness on the character card.** Each card shows how
+   fresh *that character's* data is — derivable from `characterEntities`
+   (phase 1's `JobsOverview`): the oldest `lastRunAt` across the
+   per-character jobs for that registration id, rendered with the existing
+   `Freshness` component. If the mockup has a per-card refresh control, it
+   dispatches `dispatchRefresh` for that one registration (the per-character
+   equivalent of Refresh all — `src/app/jobs/actions.ts` may need a thin new
+   server action wrapping the existing dispatch path; add it beside the
+   current ones, do not modify them).
+2. **Job breakdown rows link back to cards** (anchor per registration id) and
+   vice versa, if the mockup indicates it.
+3. **One data pass.** `page.tsx` calls `fetchCharacterOverviews` and
+   `fetchJobsOverview` in `Promise.all`. If profiling (Server-Timing spans
+   arrive free — docs/server-timing.md) shows redundant queries — both fetch
+   `registration` — de-duplicate by letting the page fetch registrations once
+   and pass them in as an optional parameter to both. Optional-parameter,
+   defaulting to self-fetch, so the old pages' call sites don't change.
+
+Rules: no schema changes; no new RPCs unless a fold over already-fetched rows
+genuinely can't express it; anything speculative the mockup doesn't show is
+out of scope.
+
+## Verification
+
+`lint`/`build`; the phase 2 and 3 checklists still fully tick (integration
+must not regress parity).
