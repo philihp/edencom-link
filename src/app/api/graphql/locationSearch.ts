@@ -19,6 +19,7 @@ import { searchSdeSystems } from '@/sdeSystems'
 import { escapeLike } from '@/utils/escapeLike'
 import { sdeSupabase } from '@/utils/supabase/sde'
 import type { NamedRef } from './filters'
+import { pickLocation, pickSystem, systemPrefixPattern, tokenize } from './structureMatch'
 
 // Per source. A term matching more than this many places is a term worth
 // narrowing, and the cap keeps one filter from becoming an unbounded `in`.
@@ -26,6 +27,7 @@ const PER_SOURCE = 200
 
 type StructureRow = { structure_id: number | string; name: string | null }
 type StationRow = { station_id: number | string; name: string | null }
+type SystemRow = { system_id: number | string; name: string | null }
 
 const named = (rows: Array<{ id: number | string; name: string | null }>): NamedRef[] =>
   rows.filter((r) => r.name != null).map((r) => ({ id: String(r.id), name: r.name as string }))
@@ -54,4 +56,47 @@ export const searchLocationCandidates = async (term: string, supabase: SupabaseC
   // precedence resolveLocations applies when it renders the same location.
   const byId = new Map(candidates.map((c): [string, NamedRef] => [c.id, c]).reverse())
   return [...byId.values()]
+}
+
+// The fallback the substring search above can't be: "TKD Reactions" is nobody's
+// substring, but it is a system prefix and a word out of a structure's name.
+// Only reached when the plain search found nothing, so this widens what
+// resolves without changing what already did. The rules — and every refusal —
+// live in structureMatch.ts; this is the two queries they need.
+//
+// Same "searching is not reading" caveat as above: it resolves a name to an id
+// the caller then filters their OWN rows by.
+export const resolveLocationByTokens = async (term: string, supabase: SupabaseClient): Promise<NamedRef | null> => {
+  const tokens = tokenize(term)
+  if (tokens.length === 0) return null
+
+  const { data: systemRows } = await sdeSupabase()
+    .from('sde_kspace_system')
+    .select('system_id, name')
+    .ilike('name', systemPrefixPattern(tokens[0]))
+    .limit(PER_SOURCE)
+  const system = pickSystem(
+    tokens[0],
+    named(((systemRows ?? []) as SystemRow[]).map((r) => ({ id: r.system_id, name: r.name })))
+  )
+  if (system.kind !== 'match') return null
+
+  const rest = tokens.slice(1)
+  if (rest.length === 0) return system.ref
+
+  const systemId = Number(system.ref.id)
+  const [corpStructures, cachedStructures, stations] = await Promise.all([
+    supabase.from('corp_structure').select('structure_id, name').eq('system_id', systemId).limit(PER_SOURCE),
+    supabase.from('universe_structure').select('structure_id, name').eq('system_id', systemId).limit(PER_SOURCE),
+    sdeSupabase().from('sde_station').select('station_id, name').eq('system_id', systemId).limit(PER_SOURCE),
+  ])
+  const inSystem = [
+    ...named(((corpStructures.data ?? []) as StructureRow[]).map((r) => ({ id: r.structure_id, name: r.name }))),
+    ...named(((cachedStructures.data ?? []) as StructureRow[]).map((r) => ({ id: r.structure_id, name: r.name }))),
+    ...named(((stations.data ?? []) as StationRow[]).map((r) => ({ id: r.station_id, name: r.name }))),
+  ]
+  // Same de-dupe (and same corp-name-wins precedence) as the search above.
+  const byId = new Map(inSystem.map((c): [string, NamedRef] => [c.id, c]).reverse())
+
+  return pickLocation(rest, system.ref, [...byId.values()])
 }
