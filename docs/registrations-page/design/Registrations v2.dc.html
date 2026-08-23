@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics>
+<meta name="design_doc_mode" content="canvas">
+<link rel="stylesheet" href="_ds/edencom-link-design-80a92c6f-29aa-4e04-8f29-c0c9bc110814/fonts/fonts.css">
+<link rel="stylesheet" href="_ds/edencom-link-design-80a92c6f-29aa-4e04-8f29-c0c9bc110814/tokens/colors.css">
+<link rel="stylesheet" href="_ds/edencom-link-design-80a92c6f-29aa-4e04-8f29-c0c9bc110814/tokens/interactions.css">
+<link rel="stylesheet" href="_ds/edencom-link-design-80a92c6f-29aa-4e04-8f29-c0c9bc110814/styles.css">
+<script src="_ds/edencom-link-design-80a92c6f-29aa-4e04-8f29-c0c9bc110814/_ds_bundle.js"></script>
+<style>
+html,body{background:#101113}
+body{margin:0;font-family:'Eve Sans Neue',ui-sans-serif,sans-serif}
+a{color:var(--link)}a:hover{color:var(--link-hover)}
+.lt{
+  --bg-canvas:#f4f4f5;--bg-surface:#ffffff;--bg-elevated:#ececee;--bg-overlay:#e2e2e5;
+  --border-subtle:#d9d9dd;--border-strong:#c2c2c9;
+  --text-primary:#17181a;--text-secondary:#54585f;--text-tertiary:#6b6e75;
+  --accent-primary:#7a7aef;--accent-primary-hover:#6a6ae8;--accent-text:#5451c9;
+  --link:#5b4fc4;--link-hover:#463aa8;
+  --status-good:#177a44;--status-warn:#8a6114;--status-bad:#b32c33;--status-info:#2b49b0;
+}
+.av{display:flex;flex:none}
+.lt .av{--text-primary:#f4f4f5}
+.dv-turn{--accent-text:var(--accent-primary);padding:40px 44px 32px;border-bottom:1px solid #26272c}
+.dv-thd{display:flex;align-items:baseline;gap:10px;margin:0 0 20px}
+.dv-tid{font:600 10px ui-monospace,Menlo,monospace;padding:3px 7px;background:#f4f4f5;color:#17181a;border-radius:4px;text-decoration:none}
+.dv-tname{font:600 13px/1.2 'Eve Sans Neue',sans-serif;color:#f4f4f5}
+.dv-opts{display:flex;flex-direction:column;gap:34px;align-items:flex-start}
+.dv-opt{display:flex;flex-direction:column;gap:9px;scroll-margin-top:16px}
+.dv-oid{font:600 10.5px ui-monospace,Menlo,monospace;padding:3px 7px;background:#26272c;color:#f4f4f5;border-radius:5px;text-decoration:none}
+.dv-olabel{display:flex;align-items:baseline;gap:8px;font:400 11px/1.35 'Eve Sans Neue',sans-serif;color:#9a9da5;max-width:920px}
+.dv-opt:target .dv-oid{background:#8f8ff5;color:#17181a}
+.dv-pair{display:flex;gap:18px;padding:16px;border:1px solid #26272c;border-radius:10px}
+.dv-app{width:1180px;background:var(--bg-canvas);border:1px solid var(--border-subtle);border-radius:8px;overflow:hidden;color:var(--text-primary);box-sizing:border-box}
+.dv-next{margin:26px 0 0;font:12px/1.5 'Eve Sans Neue',sans-serif;color:#6c6f76}
+.m{font-family:ui-monospace,Menlo,monospace}
+.ok{display:inline-flex;width:18px;height:18px;border-radius:50%;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:var(--status-good);border:1.5px solid var(--status-good);flex:none}
+.no{display:inline-flex;width:18px;height:18px;border-radius:50%;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:var(--status-bad);border:1.5px solid var(--status-bad);flex:none}
+.bk{display:inline-flex;width:18px;height:18px;border-radius:50%;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:var(--status-info);border:1.5px solid var(--status-info);flex:none}
+.yd{display:inline-flex;width:18px;height:18px;align-items:center;justify-content:center;flex:none}
+.yd::before{content:"";width:42%;height:42%;border-radius:50%;background:var(--status-warn)}
+.cb{display:inline-flex;width:18px;height:18px;border-radius:4px;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex:none}
+.cb-on{background:var(--accent-primary);color:#17181a}
+.cb-off{border:1.5px solid var(--border-strong);box-sizing:border-box}
+.jc{display:flex;flex-direction:column;align-items:center;gap:4px}
+.jt{font-family:ui-monospace,Menlo,monospace;font-size:9.5px;color:var(--text-tertiary);white-space:nowrap}
+.rfa{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:5px;border:1px solid var(--border-subtle);color:var(--text-tertiary);font-size:11px}
+.colhd{display:flex;flex-direction:column;align-items:center;gap:5px}
+.scope{font-size:10.5px;letter-spacing:.05em;color:var(--text-tertiary)}
+</style>
+</helmet>
+
+<section class="dv-turn" id="t10">
+<div class="dv-thd"><a class="dv-tid" href="#t10">10</a><span class="dv-tname">Registrations × refresh jobs — one matrix · plus the first-run empty state · dark and light, desktop and mobile</span></div>
+<div style="max-width:1060px;margin:0 0 26px;font-size:12px;line-height:1.7;color:var(--text-secondary);background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:8px;padding:15px 18px">
+<b style="color:var(--text-primary)">A grant and its refresh job are the same cell.</b> The pattern is a CI matrix (GitHub Actions, Datadog synthetics): rows are the thing being polled, columns are the job type, and each cell is the last run. Here a cell shows the grant icon <i>and</i> the last refresh time — so "never" next to a red ✕ answers its own question: the job never runs <i>because</i> there is no grant. No separate jobs page to cross-reference.<br>
+<b style="color:var(--text-primary)">Bulk triggers live on the axes.</b> The ↻ in a column header refreshes that scope across every character that has it; the ↻ at the end of a row refreshes everything for that character; a single cell refreshes on its own ↻ (shown on the active cell). Cells without a grant have no trigger — nothing to run.<br>
+<b style="color:var(--text-primary)">The empty state is the matrix, ghosted.</b> A first-run user shouldn't land on a marketing panel — they land on the actual instrument, drawn faint, with one dashed row where their first character will appear. The columns are already labeled, so the CTA doesn't have to explain what registering unlocks — the empty grid does. One primary action, no plea.
+</div>
+<div class="dv-opts">
+
+<div class="dv-opt" id="10a">
+<div class="dv-olabel"><a class="dv-oid" href="#10a">10a</a>Desktop — the matrix. Template row zero, grant icon + last-refresh per cell, ↻ per column (all characters), ↻ per row (all jobs for a character). Kel's wallet cell shows the payoff: "never — no grant".</div>
+<div class="dv-pair">
+<div class="dv-app">
+  <div style="display:flex;align-items:center;gap:14px;padding:13px 22px;border-bottom:1px solid var(--border-subtle);background:var(--bg-surface)">
+    <span style="color:var(--accent-text);font-size:15px">❄</span>
+    <span style="font-family:'Eve Sans Neue Expanded',sans-serif;font-size:13px;font-weight:700">edencom link</span>
+    <span style="font-size:12px;color:var(--text-tertiary)">[ characters | <span style="color:var(--text-primary)">registrations</span> | links | assets ]</span>
+    <span style="flex:1"></span>
+    <span class="av"><x-import component-from-global-scope="DesignSystem_80a92c.Avatar" name="Aria Valis" size="{{ 26 }}" hint-size="26px,26px"></x-import></span>
+  </div>
+  <div style="padding:22px 24px 26px">
+    <div style="display:flex;align-items:flex-end;gap:14px">
+      <div style="flex:1;min-width:0">
+        <div style="font-family:'Eve Sans Neue Expanded',sans-serif;font-size:20px;font-weight:700">registrations &amp; refresh</div>
+        <div style="font-size:12px;color:var(--text-tertiary);margin-top:5px">4 characters · <span style="color:var(--status-warn)">1 needs re-auth</span> · next scheduled sweep in <span class="m" style="color:var(--text-primary)">14m</span></div>
+      </div>
+      <x-import component-from-global-scope="DesignSystem_80a92c.Button" variant="ghost" size="sm" hint-size="118px,36px">↻ refresh all</x-import>
+      <x-import component-from-global-scope="DesignSystem_80a92c.Button" variant="primary" size="sm" hint-size="168px,36px">+ register a character</x-import>
+    </div>
+
+    <div style="margin-top:18px;border:1px solid var(--border-subtle);border-radius:6px;overflow:hidden">
+      <div style="display:grid;grid-template-columns:230px repeat(5,1fr) 130px;align-items:start;padding:10px 14px;border-bottom:1px solid var(--border-subtle);background:var(--bg-surface)">
+        <span style="font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--text-tertiary);align-self:center">character</span>
+        <span class="colhd"><span class="scope">assets</span><span class="rfa" title="refresh assets for all">↻</span></span>
+        <span class="colhd"><span class="scope">wallet</span><span class="rfa">↻</span></span>
+        <span class="colhd"><span class="scope">location</span><span class="rfa">↻</span></span>
+        <span class="colhd"><span class="scope">industry</span><span class="rfa">↻</span></span>
+        <span class="colhd"><span class="scope">market</span><span class="rfa">↻</span></span>
+        <span style="font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--text-tertiary);text-align:right;align-self:center">all jobs</span>
+      </div>
+
+      <div style="display:grid;grid-template-columns:230px repeat(5,1fr) 130px;align-items:center;padding:11px 14px;border-bottom:1px solid var(--border-strong);background:var(--bg-elevated)">
+        <span style="min-width:0">
+          <span style="display:block;font-size:12.5px;font-weight:700;color:var(--accent-text)">next request asks for</span>
+          <span style="display:block;font-size:10.5px;color:var(--text-tertiary);margin-top:2px">what you grant when you register</span>
+        </span>
+        <span class="jc"><span class="cb cb-on">✓</span></span>
+        <span class="jc"><span class="cb cb-on">✓</span></span>
+        <span class="jc"><span class="cb cb-on">✓</span></span>
+        <span class="jc"><span class="cb cb-on">✓</span></span>
+        <span class="jc"><span class="cb cb-off"></span></span>
+        <span style="text-align:right;font-size:11px;color:var(--text-tertiary)">4 of 5</span>
+      </div>
+
+      <div style="display:grid;grid-template-columns:230px repeat(5,1fr) 130px;align-items:center;padding:11px 14px;border-bottom:1px solid var(--border-subtle);background:var(--bg-surface)">
+        <span style="display:flex;align-items:center;gap:10px;min-width:0">
+          <span class="av"><x-import component-from-global-scope="DesignSystem_80a92c.Avatar" name="Aria Valis" size="{{ 28 }}" hint-size="28px,28px"></x-import></span>
+          <span style="min-width:0"><span style="display:block;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Aria Valis</span><span style="display:block;font-size:10.5px;color:var(--text-tertiary)" class="m">[DSWB] · main</span></span>
+        </span>
+        <span class="jc"><span class="ok">✓</span><span class="jt">12m ago</span></span>
+        <span class="jc"><span class="ok">✓</span><span class="jt">12m ago</span></span>
+        <span class="jc"><span style="display:flex;align-items:center;gap:5px"><span class="ok">✓</span><span class="rfa" style="border-color:var(--accent-primary);color:var(--accent-text)">↻</span></span><span class="jt" style="color:var(--accent-text)">running…</span></span>
+        <span class="jc"><span class="ok">✓</span><span class="jt">1h ago</span></span>
+        <span class="jc"><span class="bk">✓</span><span class="jt">3h ago</span></span>
+        <span style="display:flex;justify-content:flex-end;gap:7px"><span class="rfa" title="refresh all for Aria">↻</span><span style="font-size:11.5px;color:var(--text-tertiary);align-self:center">remove</span></span>
+      </div>
+
+      <div style="display:grid;grid-template-columns:230px repeat(5,1fr) 130px;align-items:center;padding:11px 14px;border-bottom:1px solid var(--border-subtle);background:var(--bg-surface)">
+        <span style="display:flex;align-items:center;gap:10px;min-width:0">
+          <span class="av"><x-import component-from-global-scope="DesignSystem_80a92c.Avatar" name="Vex Ondari" size="{{ 28 }}" hint-size="28px,28px"></x-import></span>
+          <span style="min-width:0"><span style="display:block;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Vex Ondari</span><span style="display:block;font-size:10.5px;color:var(--text-tertiary)" class="m">[DSWB] · industry alt</span></span>
+        </span>
+        <span class="jc"><span class="ok">✓</span><span class="jt">26m ago</span></span>
+        <span class="jc"><span class="ok">✓</span><span class="jt">26m ago</span></span>
+        <span class="jc"><span class="no">✕</span><span class="jt" style="color:var(--status-bad)">never — no grant</span></span>
+        <span class="jc"><span class="ok">✓</span><span class="jt">2h ago</span></span>
+        <span class="jc"><span class="yd"></span><span class="jt">—</span></span>
+        <span style="display:flex;justify-content:flex-end;gap:7px"><span class="rfa">↻</span><span style="font-size:11.5px;color:var(--text-tertiary);align-self:center">remove</span></span>
+      </div>
+
+      <div style="display:grid;grid-template-columns:230px repeat(5,1fr) 130px;align-items:center;padding:11px 14px;border-bottom:1px solid var(--border-subtle);background:var(--bg-surface)">
+        <span style="display:flex;align-items:center;gap:10px;min-width:0">
+          <span class="av"><x-import component-from-global-scope="DesignSystem_80a92c.Avatar" name="Kel Torin" size="{{ 28 }}" hint-size="28px,28px"></x-import></span>
+          <span style="min-width:0"><span style="display:block;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Kel Torin</span><span style="display:block;font-size:10.5px;color:var(--status-warn)">grants trail the template · <span style="color:var(--link)">re-auth</span></span></span>
+        </span>
+        <span class="jc"><span class="ok">✓</span><span class="jt">41m ago</span></span>
+        <span class="jc"><span class="no">✕</span><span class="jt" style="color:var(--status-bad)">never — no grant</span></span>
+        <span class="jc"><span class="ok">✓</span><span class="jt">41m ago</span></span>
+        <span class="jc"><span class="no">✕</span><span class="jt" style="color:var(--status-bad)">never — no grant</span></span>
+        <span class="jc"><span class="yd"></span><span class="jt">—</span></span>
+        <span style="display:flex;justify-content:flex-end;gap:7px"><span class="rfa">↻</span><span style="font-size:11.5px;color:var(--text-tertiary);align-self:center">remove</span></span>
+      </div>
+
+      <div style="display:grid;grid-template-columns:230px repeat(5,1fr) 130px;align-items:center;padding:11px 14px;background:var(--bg-surface)">
+        <span style="display:flex;align-items:center;gap:10px;min-width:0">
+          <span class="av"><x-import component-from-global-scope="DesignSystem_80a92c.Avatar" name="Mira Sundstrom" size="{{ 28 }}" hint-size="28px,28px"></x-import></span>
+          <span style="min-width:0"><span style="display:block;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Mira Sundstrom</span><span style="display:block;font-size:10.5px;color:var(--text-tertiary)" class="m">[GSOL] · hauler</span></span>
+        </span>
+        <span class="jc"><span class="ok">✓</span><span class="jt">8m ago</span></span>
+        <span class="jc"><span class="ok">✓</span><span class="jt">8m ago</span></span>
+        <span class="jc"><span class="ok">✓</span><span class="jt">8m ago</span></span>
+        <span class="jc"><span class="yd"></span><span class="jt">—</span></span>
+        <span class="jc"><span class="bk">✓</span><span class="jt" style="color:var(--status-warn)">failed 2h ago · <span style="color:var(--link)">retry</span></span></span>
+        <span style="display:flex;justify-content:flex-end;gap:7px"><span class="rfa">↻</span><span style="font-size:11.5px;color:var(--text-tertiary);align-self:center">remove</span></span>
+      </div>
+    </div>
+
+    <div style="display:flex;align-items:center;gap:16px;margin-top:12px;font-size:11px;color:var(--text-tertiary);flex-wrap:wrap">
+      <span style="display:flex;align-items:center;gap:6px"><span class="ok" style="width:15px;height:15px;font-size:9px">✓</span>requested + granted</span>
+      <span style="display:flex;align-items:center;gap:6px"><span class="no" style="width:15px;height:15px;font-size:9px">✕</span>requested, missing — job can never run</span>
+      <span style="display:flex;align-items:center;gap:6px"><span class="bk" style="width:15px;height:15px;font-size:9px">✓</span>granted, not requested — still refreshes</span>
+      <span style="display:flex;align-items:center;gap:6px"><span class="yd" style="width:15px;height:15px"></span>neither</span>
+      <span style="flex:1"></span>
+      <x-import component-from-global-scope="DesignSystem_80a92c.StatusDot" tone="warn" label="3 jobs blocked by missing grants" size="{{ 7 }}" hint-size="220px,16px"></x-import>
+    </div>
+  </div>
+</div>
+
+<div class="lt">
+<div class="dv-app">
+  <div style="display:flex;align-items:center;gap:14px;padding:13px 22px;border-bottom:1px solid var(--border-subtle);background:var(--bg-surface)">
+    <span style="color:var(--accent-text);font-size:15px">❄</span>
+    <span style="font-family:'Eve Sans Neue Expanded',sans-serif;font-size:13px;font-weight:700">edencom link</span>
+    <span style="font-size:12px;color:var(--text-tertiary)">[ characters | <span style="color:var(--text-primary)">registrations</span> | links | assets ]</span>
+    <span style="flex:1"></span>
+    <span class="av"><x-import component-from-global-scope="DesignSystem_80a92c.Avatar" name="Aria Valis" size="{{ 26 }}" hint-size="26px,26px"></x-import></span>
+  </div>
+  <div style="padding:22px 24px 26px">
+    <div style="display:flex;align-items:flex-end;gap:14px">
+      <div style="flex:1;min-width:0">
+        <div style="font-family:'Eve Sans Neue Expanded',sans-serif;font-size:20px;font-weight:700">registrations &amp; refresh</div>
+        <div style="font-size:12px;color:var(--text-tertiary);margin-top:5px">4 characters · <span style="color:var(--status-warn)">1 needs re-auth</span> · next scheduled sweep in <span class="m" style="color:var(--text-primary)">14m</span></div>
+      </div>
+      <x-import component-from-global-scope="DesignSystem_80a92c.Button" variant="ghost" size="sm" hint-size="118px,36px">↻ refresh all</x-import>
+      <x-import component-from-global-scope="DesignSystem_80a92c.Button" variant="primary" size="sm" hint-size="168px,36px">+ register a character</x-import>
+    </div>
+
+    <div style="margin-top:18px;border:1px solid var(--border-subtle);border-radius:6px;overflow:hidden">
+      <div style="display:grid;grid-template-columns:230px repeat(5,1fr) 130px;align-items:start;padding:10px 14px;border-bottom:1px solid var(--border-subtle);background:var(--bg-surface)">
+        <span style="font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--text-tertiary);align-self:center">character</span>
+        <span class="colhd"><span class="scope">assets</span><span class="rfa" title="refresh assets for all">↻</span></span>
+        <span class="colhd"><span class="scope">wallet</span><span class="rfa">↻</span></span>
+        <span class="colhd"><span class="scope">location</span><span class="rfa">↻</span></span>
+        <span class="colhd"><span class="scope">industry</span><span class="rfa">↻</span></span>
+        <span class="colhd"><span class="scope">market</span><span class="rfa">↻</span></span>
+        <span style="font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--text-tertiary);text-align:right;align-self:center">all jobs</span>
+      </div>
+
+      <div style="display:grid;grid-template-columns:230px repeat(5,1fr) 130px;align-items:center;padding:11px 14px;border-bottom:1px solid var(--border-strong);background:var(--bg-elevated)">
+        <span style="min-width:0">
+          <span style="display:block;font-size:12.5px;font-weight:700;color:var(--accent-text)">next request asks for</span>
+          <span style="display:block;font-size:10.5px;color:var(--text-tertiary);margin-top:2px">what you grant when you register</span>
+        </span>
+        <span class="jc"><span class="cb cb-on">✓</span></span>
+        <span class="jc"><span class="cb cb-on">✓</span></span>
+        <span class="jc"><span class="cb cb-on">✓</span></span>
+        <span class="jc"><span class="cb cb-on">✓</span></span>
+        <span class="jc"><span class="cb cb-off"></span></span>
+        <span style="text-align:right;font-size:11px;color:var(--text-tertiary)">4 of 5</span>
+      </div>
+
+      <div style="display:grid;grid-template-columns:230px repeat(5,1fr) 130px;align-items:center;padding:11px 14px;border-bottom:1px solid var(--border-subtle);background:var(--bg-surface)">
+        <span style="display:flex;align-items:center;gap:10px;min-width:0">
+          <span class="av"><x-import component-from-global-scope="DesignSystem_80a92c.Avatar" name="Aria Valis" size="{{ 28 }}" hint-size="28px,28px"></x-import></span>
+          <span style="min-width:0"><span style="display:block;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Aria Valis</span><span style="display:block;font-size:10.5px;color:var(--text-tertiary)" class="m">[DSWB] · main</span></span>
+        </span>
+        <span class="jc"><span class="ok">✓</span><span class="jt">12m ago</span></span>
+        <span class="jc"><span class="ok">✓</span><span class="jt">12m ago</span></span>
+        <span class="jc"><span style="display:flex;align-items:center;gap:5px"><span class="ok">✓</span><span class="rfa" style="border-color:var(--accent-primary);color:var(--accent-text)">↻</span></span><span class="jt" style="color:var(--accent-text)">running…</span></span>
+        <span class="jc"><span class="ok">✓</span><span class="jt">1h ago</span></span>
+        <span class="jc"><span class="bk">✓</span><span class="jt">3h ago</span></span>
+        <span style="display:flex;justify-content:flex-end;gap:7px"><span class="rfa" title="refresh all for Aria">↻</span><span style="font-size:11.5px;color:var(--text-tertiary);align-self:center">remove</span></span>
+      </div>
+
+      <div style="display:grid;grid-template-columns:230px repeat(5,1fr) 130px;align-items:center;padding:11px 14px;border-bottom:1px solid var(--border-subtle);background:var(--bg-surface)">
+        <span style="display:flex;align-items:center;gap:10px;min-width:0">
+          <span class="av"><x-import component-from-global-scope="DesignSystem_80a92c.Avatar" name="Vex Ondari" size="{{ 28 }}" hint-size="28px,28px"></x-import></span>
+          <span style="min-width:0"><span style="display:block;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Vex Ondari</span><span style="display:block;font-size:10.5px;color:var(--text-tertiary)" class="m">[DSWB] · industry alt</span></span>
+        </span>
+        <span class="jc"><span class="ok">✓</span><span class="jt">26m ago</span></span>
+        <span class="jc"><span class="ok">✓</span><span class="jt">26m ago</span></span>
+        <span class="jc"><span class="no">✕</span><span class="jt" style="color:var(--status-bad)">never — no grant</span></span>
+        <span class="jc"><span class="ok">✓</span><span class="jt">2h ago</span></span>
+        <span class="jc"><span class="yd"></span><span class="jt">—</span></span>
+        <span style="display:flex;justify-content:flex-end;gap:7px"><span class="rfa">↻</span><span style="font-size:11.5px;color:var(--text-tertiary);align-self:center">remove</span></span>
+      </div>
+
+      <div style="display:grid;grid-template-columns:230px repeat(5,1fr) 130px;align-items:center;padding:11px 14px;border-bottom:1px solid var(--border-subtle);background:var(--bg-surface)">
+        <span style="display:flex;align-items:center;gap:10px;min-width:0">
+          <span class="av"><x-import component-from-global-scope="DesignSystem_80a92c.Avatar" name="Kel Torin" size="{{ 28 }}" hint-size="28px,28px"></x-import></span>
+          <span style="min-width:0"><span style="display:block;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Kel Torin</span><span style="display:block;font-size:10.5px;color:var(--status-warn)">grants trail the template · <span style="color:var(--link)">re-auth</span></span></span>
+        </span>
+        <span class="jc"><span class="ok">✓</span><span class="jt">41m ago</span></span>
+        <span class="jc"><span class="no">✕</span><span class="jt" style="color:var(--status-bad)">never — no grant</span></span>
+        <span class="jc"><span class="ok">✓</span><span class="jt">41m ago</span></span>
+        <span class="jc"><span class="no">✕</span><span class="jt" style="color:var(--status-bad)">never — no grant</span></span>
+        <span class="jc"><span class="yd"></span><span class="jt">—</span></span>
+        <span style="display:flex;justify-content:flex-end;gap:7px"><span class="rfa">↻</span><span style="font-size:11.5px;color:var(--text-tertiary);align-self:center">remove</span></span>
+      </div>
+
+      <div style="display:grid;grid-template-columns:230px repeat(5,1fr) 130px;align-items:center;padding:11px 14px;background:var(--bg-surface)">
+        <span style="display:flex;align-items:center;gap:10px;min-width:0">
+          <span class="av"><x-import component-from-global-scope="DesignSystem_80a92c.Avatar" name="Mira Sundstrom" size="{{ 28 }}" hint-size="28px,28px"></x-import></span>
+          <span style="min-width:0"><span style="display:block;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Mira Sundstrom</span><span style="display:block;font-size:10.5px;color:var(--text-tertiary)" class="m">[GSOL] · hauler</span></span>
+        </span>
+        <span class="jc"><span class="ok">✓</span><span class="jt">8m ago</span></span>
+        <span class="jc"><span class="ok">✓</span><span class="jt">8m ago</span></span>
+        <span class="jc"><span class="ok">✓</span><span class="jt">8m ago</span></span>
+        <span class="jc"><span class="yd"></span><span class="jt">—</span></span>
+        <span class="jc"><span class="bk">✓</span><span class="jt" style="color:var(--status-warn)">failed 2h ago · <span style="color:var(--link)">retry</span></span></span>
+        <span style="display:flex;justify-content:flex-end;gap:7px"><span class="rfa">↻</span><span style="font-size:11.5px;color:var(--text-tertiary);align-self:center">remove</span></span>
+      </div>
+    </div>
+
+    <div style="display:flex;align-items:center;gap:16px;margin-top:12px;font-size:11px;color:var(--text-tertiary);flex-wrap:wrap">
+      <span style="display:flex;align-items:center;gap:6px"><span class="ok" style="width:15px;height:15px;font-size:9px">✓</span>requested + granted</span>
+      <span style="display:flex;align-items:center;gap:6px"><span class="no" style="width:15px;height:15px;font-size:9px">✕</span>requested, missing — job can never run</span>
+      <span style="display:flex;align-items:center;gap:6px"><span class="bk" style="width:15px;height:15px;font-size:9px">✓</span>granted, not requested — still refreshes</span>
+      <span style="display:flex;align-items:center;gap:6px"><span class="yd" style="width:15px;height:15px"></span>neither</span>
+      <span style="flex:1"></span>
+      <x-import component-from-global-scope="DesignSystem_80a92c.StatusDot" tone="warn" label="3 jobs blocked by missing grants" size="{{ 7 }}" hint-size="220px,16px"></x-import>
+    </div>
+  </div>
+</div>
+</div>
+</div>
+</div>
+
+<div class="dv-opt" id="10b">
+<div class="dv-olabel"><a class="dv-oid" href="#10b">10b</a>Mobile — character cards, scope chips carry the last-run time; a blocked chip says why. ↻ per card refreshes the character; the scope-wide sweep moves into the header's ⋯ sheet.</div>
+<div class="dv-pair">
+<x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="{{ true }}" hint-size="402px,874px">
+<div style="height:100%;display:flex;flex-direction:column;background:var(--bg-canvas);color:var(--text-primary);font-family:'Eve Sans Neue',sans-serif">
+  <div style="flex:none;padding:56px 16px 10px;background:var(--bg-surface);border-bottom:1px solid var(--border-subtle);display:flex;align-items:center;gap:13px">
+    <span style="display:flex;flex-direction:column;gap:4px;width:20px"><span style="height:1.5px;background:var(--text-primary)"></span><span style="height:1.5px;background:var(--text-primary)"></span><span style="height:1.5px;background:var(--text-primary)"></span></span>
+    <span style="flex:1;display:flex;align-items:baseline;gap:7px;font-size:14px"><span style="color:var(--accent-text)">❄</span><span style="font-family:'Eve Sans Neue Expanded',sans-serif;font-weight:700">edencom link</span></span>
+    <span class="av"><x-import component-from-global-scope="DesignSystem_80a92c.Avatar" name="Aria Valis" size="{{ 28 }}" hint-size="28px,28px"></x-import></span>
+  </div>
+  <div style="flex:none;padding:14px 16px 12px;border-bottom:1px solid var(--border-subtle);display:flex;align-items:flex-end;gap:10px">
+    <div style="flex:1;min-width:0">
+      <div style="font-family:'Eve Sans Neue Expanded',sans-serif;font-size:20px;font-weight:700">registrations</div>
+      <div style="font-size:12px;color:var(--text-tertiary);margin-top:4px">4 characters · <span style="color:var(--status-warn)">3 jobs blocked</span> · sweep in <span class="m">14m</span></div>
+    </div>
+    <span style="min-width:44px;min-height:44px;display:flex;align-items:center;justify-content:center;border:1px solid var(--border-subtle);border-radius:6px;font-size:15px;color:var(--text-secondary)">⋯</span>
+  </div>
+  <div style="flex:1;min-height:0;overflow:auto;padding:14px 16px 18px">
+
+    <div style="background:var(--bg-elevated);border:1px solid var(--border-strong);border-radius:6px;padding:12px 13px">
+      <div style="font-size:12.5px;font-weight:700;color:var(--accent-text)">next request asks for</div>
+      <div style="display:flex;flex-wrap:wrap;gap:7px;margin-top:10px">
+        <span style="display:flex;align-items:center;gap:6px;border:1px solid var(--border-strong);border-radius:999px;padding:8px 12px;font-size:11.5px"><span class="cb cb-on" style="width:15px;height:15px;font-size:10px">✓</span>assets</span>
+        <span style="display:flex;align-items:center;gap:6px;border:1px solid var(--border-strong);border-radius:999px;padding:8px 12px;font-size:11.5px"><span class="cb cb-on" style="width:15px;height:15px;font-size:10px">✓</span>wallet</span>
+        <span style="display:flex;align-items:center;gap:6px;border:1px solid var(--border-strong);border-radius:999px;padding:8px 12px;font-size:11.5px"><span class="cb cb-on" style="width:15px;height:15px;font-size:10px">✓</span>location</span>
+        <span style="display:flex;align-items:center;gap:6px;border:1px solid var(--border-strong);border-radius:999px;padding:8px 12px;font-size:11.5px"><span class="cb cb-on" style="width:15px;height:15px;font-size:10px">✓</span>industry</span>
+        <span style="display:flex;align-items:center;gap:6px;border:1px solid var(--border-subtle);border-radius:999px;padding:8px 12px;font-size:11.5px;color:var(--text-tertiary)"><span class="cb cb-off" style="width:15px;height:15px"></span>market</span>
+      </div>
+    </div>
+
+    <div style="background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:6px;padding:12px 13px;margin-top:12px">
+      <div style="display:flex;align-items:center;gap:10px">
+        <span class="av"><x-import component-from-global-scope="DesignSystem_80a92c.Avatar" name="Aria Valis" size="{{ 32 }}" hint-size="32px,32px"></x-import></span>
+        <span style="flex:1;min-width:0"><span style="display:block;font-size:13px">Aria Valis</span><span style="display:block;font-size:10.5px;color:var(--text-tertiary)" class="m">[DSWB] · main</span></span>
+        <span style="min-width:44px;min-height:44px;display:flex;align-items:center;justify-content:center;border:1px solid var(--border-subtle);border-radius:6px;color:var(--text-secondary);font-size:14px">↻</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:7px;margin-top:11px;font-size:11px">
+        <span style="display:flex;align-items:center;gap:8px"><span class="ok" style="width:15px;height:15px;font-size:9px">✓</span><span style="width:64px;color:var(--text-secondary)">assets</span><span class="m" style="color:var(--text-tertiary)">12m ago</span></span>
+        <span style="display:flex;align-items:center;gap:8px"><span class="ok" style="width:15px;height:15px;font-size:9px">✓</span><span style="width:64px;color:var(--text-secondary)">wallet</span><span class="m" style="color:var(--text-tertiary)">12m ago</span></span>
+        <span style="display:flex;align-items:center;gap:8px"><span class="ok" style="width:15px;height:15px;font-size:9px">✓</span><span style="width:64px;color:var(--text-secondary)">location</span><span class="m" style="color:var(--accent-text)">running…</span></span>
+        <span style="display:flex;align-items:center;gap:8px"><span class="ok" style="width:15px;height:15px;font-size:9px">✓</span><span style="width:64px;color:var(--text-secondary)">industry</span><span class="m" style="color:var(--text-tertiary)">1h ago</span></span>
+        <span style="display:flex;align-items:center;gap:8px"><span class="bk" style="width:15px;height:15px;font-size:9px">✓</span><span style="width:64px;color:var(--text-secondary)">market</span><span class="m" style="color:var(--text-tertiary)">3h ago</span></span>
+      </div>
+    </div>
+
+    <div style="background:var(--bg-surface);border:1px solid var(--status-warn);border-radius:6px;padding:12px 13px;margin-top:8px">
+      <div style="display:flex;align-items:center;gap:10px">
+        <span class="av"><x-import component-from-global-scope="DesignSystem_80a92c.Avatar" name="Kel Torin" size="{{ 32 }}" hint-size="32px,32px"></x-import></span>
+        <span style="flex:1;min-width:0"><span style="display:block;font-size:13px">Kel Torin</span><span style="display:block;font-size:10.5px;color:var(--status-warn)">2 jobs blocked by missing grants</span></span>
+        <span style="min-width:44px;min-height:44px;display:flex;align-items:center;justify-content:center;border:1px solid var(--border-subtle);border-radius:6px;color:var(--text-secondary);font-size:14px">↻</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:7px;margin-top:11px;font-size:11px">
+        <span style="display:flex;align-items:center;gap:8px"><span class="ok" style="width:15px;height:15px;font-size:9px">✓</span><span style="width:64px;color:var(--text-secondary)">assets</span><span class="m" style="color:var(--text-tertiary)">41m ago</span></span>
+        <span style="display:flex;align-items:center;gap:8px"><span class="no" style="width:15px;height:15px;font-size:9px">✕</span><span style="width:64px;color:var(--text-secondary)">wallet</span><span class="m" style="color:var(--status-bad)">never — no grant</span></span>
+        <span style="display:flex;align-items:center;gap:8px"><span class="ok" style="width:15px;height:15px;font-size:9px">✓</span><span style="width:64px;color:var(--text-secondary)">location</span><span class="m" style="color:var(--text-tertiary)">41m ago</span></span>
+        <span style="display:flex;align-items:center;gap:8px"><span class="no" style="width:15px;height:15px;font-size:9px">✕</span><span style="width:64px;color:var(--text-secondary)">industry</span><span class="m" style="color:var(--status-bad)">never — no grant</span></span>
+        <span style="display:flex;align-items:center;gap:8px"><span class="yd" style="width:15px;height:15px"></span><span style="width:64px;color:var(--text-tertiary)">market</span><span class="m" style="color:var(--text-tertiary)">—</span></span>
+      </div>
+      <div style="margin-top:11px"><x-import component-from-global-scope="DesignSystem_80a92c.Button" variant="primary" hint-size="100%,44px">re-auth to unblock 2 jobs</x-import></div>
+    </div>
+
+    <div style="margin-top:12px;font-size:11px;color:var(--text-tertiary);line-height:1.6">red ✕ = the job can never run until this character grants the scope. blue ✓ = granted but not in the next request — still refreshes.</div>
+  </div>
+
+  <div style="flex:none;background:var(--bg-surface);border-top:1px solid var(--border-subtle);border-radius:14px 14px 0 0;padding:10px 16px 30px">
+    <div style="width:38px;height:4px;border-radius:2px;background:var(--border-strong);margin:0 auto 11px"></div>
+    <div style="font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--text-tertiary)">[ refresh a scope everywhere ]</div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px">
+      <span style="display:flex;align-items:center;gap:7px;border:1px solid var(--border-subtle);border-radius:999px;padding:10px 14px;font-size:12px;color:var(--text-secondary)">↻ assets <span class="m" style="color:var(--text-tertiary)">×4</span></span>
+      <span style="display:flex;align-items:center;gap:7px;border:1px solid var(--border-subtle);border-radius:999px;padding:10px 14px;font-size:12px;color:var(--text-secondary)">↻ wallet <span class="m" style="color:var(--text-tertiary)">×3</span></span>
+      <span style="display:flex;align-items:center;gap:7px;border:1px solid var(--border-subtle);border-radius:999px;padding:10px 14px;font-size:12px;color:var(--text-secondary)">↻ location <span class="m" style="color:var(--text-tertiary)">×4</span></span>
+      <span style="display:flex;align-items:center;gap:7px;border:1px solid var(--border-subtle);border-radius:999px;padding:10px 14px;font-size:12px;color:var(--text-secondary)">↻ industry <span class="m" style="color:var(--text-tertiary)">×3</span></span>
+    </div>
+  </div>
+</div>
+</x-import>
+
+<div class="lt">
+<x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="{{ false }}" hint-size="402px,874px">
+<div style="height:100%;display:flex;flex-direction:column;background:var(--bg-canvas);color:var(--text-primary);font-family:'Eve Sans Neue',sans-serif">
+  <div style="flex:none;padding:56px 16px 10px;background:var(--bg-surface);border-bottom:1px solid var(--border-subtle);display:flex;align-items:center;gap:13px">
+    <span style="display:flex;flex-direction:column;gap:4px;width:20px"><span style="height:1.5px;background:var(--text-primary)"></span><span style="height:1.5px;background:var(--text-primary)"></span><span style="height:1.5px;background:var(--text-primary)"></span></span>
+    <span style="flex:1;display:flex;align-items:baseline;gap:7px;font-size:14px"><span style="color:var(--accent-text)">❄</span><span style="font-family:'Eve Sans Neue Expanded',sans-serif;font-weight:700">edencom link</span></span>
+    <span class="av"><x-import component-from-global-scope="DesignSystem_80a92c.Avatar" name="Aria Valis" size="{{ 28 }}" hint-size="28px,28px"></x-import></span>
+  </div>
+  <div style="flex:none;padding:14px 16px 12px;border-bottom:1px solid var(--border-subtle);display:flex;align-items:flex-end;gap:10px">
+    <div style="flex:1;min-width:0">
+      <div style="font-family:'Eve Sans Neue Expanded',sans-serif;font-size:20px;font-weight:700">registrations</div>
+      <div style="font-size:12px;color:var(--text-tertiary);margin-top:4px">4 characters · <span style="color:var(--status-warn)">3 jobs blocked</span> · sweep in <span class="m">14m</span></div>
+    </div>
+    <span style="min-width:44px;min-height:44px;display:flex;align-items:center;justify-content:center;border:1px solid var(--border-subtle);border-radius:6px;font-size:15px;color:var(--text-secondary)">⋯</span>
+  </div>
+  <div style="flex:1;min-height:0;overflow:auto;padding:14px 16px 18px">
+
+    <div style="background:var(--bg-elevated);border:1px solid var(--border-strong);border-radius:6px;padding:12px 13px">
+      <div style="font-size:12.5px;font-weight:700;color:var(--accent-text)">next request asks for</div>
+      <div style="display:flex;flex-wrap:wrap;gap:7px;margin-top:10px">
+        <span style="display:flex;align-items:center;gap:6px;border:1px solid var(--border-strong);border-radius:999px;padding:8px 12px;font-size:11.5px"><span class="cb cb-on" style="width:15px;height:15px;font-size:10px">✓</span>assets</span>
+        <span style="display:flex;align-items:center;gap:6px;border:1px solid var(--border-strong);border-radius:999px;padding:8px 12px;font-size:11.5px"><span class="cb cb-on" style="width:15px;height:15px;font-size:10px">✓</span>wallet</span>
+        <span style="display:flex;align-items:center;gap:6px;border:1px solid var(--border-strong);border-radius:999px;padding:8px 12px;font-size:11.5px"><span class="cb cb-on" style="width:15px;height:15px;font-size:10px">✓</span>location</span>
+        <span style="display:flex;align-items:center;gap:6px;border:1px solid var(--border-strong);border-radius:999px;padding:8px 12px;font-size:11.5px"><span class="cb cb-on" style="width:15px;height:15px;font-size:10px">✓</span>industry</span>
+        <span style="display:flex;align-items:center;gap:6px;border:1px solid var(--border-subtle);border-radius:999px;padding:8px 12px;font-size:11.5px;color:var(--text-tertiary)"><span class="cb cb-off" style="width:15px;height:15px"></span>market</span>
+      </div>
+    </div>
+
+    <div style="background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:6px;padding:12px 13px;margin-top:12px">
+      <div style="display:flex;align-items:center;gap:10px">
+        <span class="av"><x-import component-from-global-scope="DesignSystem_80a92c.Avatar" name="Aria Valis" size="{{ 32 }}" hint-size="32px,32px"></x-import></span>
+        <span style="flex:1;min-width:0"><span style="display:block;font-size:13px">Aria Valis</span><span style="display:block;font-size:10.5px;color:var(--text-tertiary)" class="m">[DSWB] · main</span></span>
+        <span style="min-width:44px;min-height:44px;display:flex;align-items:center;justify-content:center;border:1px solid var(--border-subtle);border-radius:6px;color:var(--text-secondary);font-size:14px">↻</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:7px;margin-top:11px;font-size:11px">
+        <span style="display:flex;align-items:center;gap:8px"><span class="ok" style="width:15px;height:15px;font-size:9px">✓</span><span style="width:64px;color:var(--text-secondary)">assets</span><span class="m" style="color:var(--text-tertiary)">12m ago</span></span>
+        <span style="display:flex;align-items:center;gap:8px"><span class="ok" style="width:15px;height:15px;font-size:9px">✓</span><span style="width:64px;color:var(--text-secondary)">wallet</span><span class="m" style="color:var(--text-tertiary)">12m ago</span></span>
+        <span style="display:flex;align-items:center;gap:8px"><span class="ok" style="width:15px;height:15px;font-size:9px">✓</span><span style="width:64px;color:var(--text-secondary)">location</span><span class="m" style="color:var(--accent-text)">running…</span></span>
+        <span style="display:flex;align-items:center;gap:8px"><span class="ok" style="width:15px;height:15px;font-size:9px">✓</span><span style="width:64px;color:var(--text-secondary)">industry</span><span class="m" style="color:var(--text-tertiary)">1h ago</span></span>
+        <span style="display:flex;align-items:center;gap:8px"><span class="bk" style="width:15px;height:15px;font-size:9px">✓</span><span style="width:64px;color:var(--text-secondary)">market</span><span class="m" style="color:var(--text-tertiary)">3h ago</span></span>
+      </div>
+    </div>
+
+    <div style="background:var(--bg-surface);border:1px solid var(--status-warn);border-radius:6px;padding:12px 13px;margin-top:8px">
+      <div style="display:flex;align-items:center;gap:10px">
+        <span class="av"><x-import component-from-global-scope="DesignSystem_80a92c.Avatar" name="Kel Torin" size="{{ 32 }}" hint-size="32px,32px"></x-import></span>
+        <span style="flex:1;min-width:0"><span style="display:block;font-size:13px">Kel Torin</span><span style="display:block;font-size:10.5px;color:var(--status-warn)">2 jobs blocked by missing grants</span></span>
+        <span style="min-width:44px;min-height:44px;display:flex;align-items:center;justify-content:center;border:1px solid var(--border-subtle);border-radius:6px;color:var(--text-secondary);font-size:14px">↻</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:7px;margin-top:11px;font-size:11px">
+        <span style="display:flex;align-items:center;gap:8px"><span class="ok" style="width:15px;height:15px;font-size:9px">✓</span><span style="width:64px;color:var(--text-secondary)">assets</span><span class="m" style="color:var(--text-tertiary)">41m ago</span></span>
+        <span style="display:flex;align-items:center;gap:8px"><span class="no" style="width:15px;height:15px;font-size:9px">✕</span><span style="width:64px;color:var(--text-secondary)">wallet</span><span class="m" style="color:var(--status-bad)">never — no grant</span></span>
+        <span style="display:flex;align-items:center;gap:8px"><span class="ok" style="width:15px;height:15px;font-size:9px">✓</span><span style="width:64px;color:var(--text-secondary)">location</span><span class="m" style="color:var(--text-tertiary)">41m ago</span></span>
+        <span style="display:flex;align-items:center;gap:8px"><span class="no" style="width:15px;height:15px;font-size:9px">✕</span><span style="width:64px;color:var(--text-secondary)">industry</span><span class="m" style="color:var(--status-bad)">never — no grant</span></span>
+        <span style="display:flex;align-items:center;gap:8px"><span class="yd" style="width:15px;height:15px"></span><span style="width:64px;color:var(--text-tertiary)">market</span><span class="m" style="color:var(--text-tertiary)">—</span></span>
+      </div>
+      <div style="margin-top:11px"><x-import component-from-global-scope="DesignSystem_80a92c.Button" variant="primary" hint-size="100%,44px">re-auth to unblock 2 jobs</x-import></div>
+    </div>
+
+    <div style="margin-top:12px;font-size:11px;color:var(--text-tertiary);line-height:1.6">red ✕ = the job can never run until this character grants the scope. blue ✓ = granted but not in the next request — still refreshes.</div>
+  </div>
+
+  <div style="flex:none;background:var(--bg-surface);border-top:1px solid var(--border-subtle);border-radius:14px 14px 0 0;padding:10px 16px 30px">
+    <div style="width:38px;height:4px;border-radius:2px;background:var(--border-strong);margin:0 auto 11px"></div>
+    <div style="font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--text-tertiary)">[ refresh a scope everywhere ]</div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px">
+      <span style="display:flex;align-items:center;gap:7px;border:1px solid var(--border-subtle);border-radius:999px;padding:10px 14px;font-size:12px;color:var(--text-secondary)">↻ assets <span class="m" style="color:var(--text-tertiary)">×4</span></span>
+      <span style="display:flex;align-items:center;gap:7px;border:1px solid var(--border-subtle);border-radius:999px;padding:10px 14px;font-size:12px;color:var(--text-secondary)">↻ wallet <span class="m" style="color:var(--text-tertiary)">×3</span></span>
+      <span style="display:flex;align-items:center;gap:7px;border:1px solid var(--border-subtle);border-radius:999px;padding:10px 14px;font-size:12px;color:var(--text-secondary)">↻ location <span class="m" style="color:var(--text-tertiary)">×4</span></span>
+      <span style="display:flex;align-items:center;gap:7px;border:1px solid var(--border-subtle);border-radius:999px;padding:10px 14px;font-size:12px;color:var(--text-secondary)">↻ industry <span class="m" style="color:var(--text-tertiary)">×3</span></span>
+    </div>
+  </div>
+</div>
+</x-import>
+</div>
+</div>
+</div>
+
+<div class="dv-opt" id="10c">
+<div class="dv-olabel"><a class="dv-oid" href="#10c">10c</a>Desktop, first run — the same matrix drawn faint, columns already labeled, one dashed row waiting for the first character. The instrument sells itself; the CTA just opens the door.</div>
+<div class="dv-pair">
+<div class="dv-app">
+  <div style="display:flex;align-items:center;gap:14px;padding:13px 22px;border-bottom:1px solid var(--border-subtle);background:var(--bg-surface)">
+    <span style="color:var(--accent-text);font-size:15px">❄</span>
+    <span style="font-family:'Eve Sans Neue Expanded',sans-serif;font-size:13px;font-weight:700">edencom link</span>
+    <span style="font-size:12px;color:var(--text-tertiary)">[ characters | <span style="color:var(--text-primary)">registrations</span> | links | assets ]</span>
+    <span style="flex:1"></span>
+    <span class="av"><x-import component-from-global-scope="DesignSystem_80a92c.Avatar" name="New Capsuleer" size="{{ 26 }}" hint-size="26px,26px"></x-import></span>
+  </div>
+  <div style="padding:22px 24px 30px">
+    <div style="font-family:'Eve Sans Neue Expanded',sans-serif;font-size:20px;font-weight:700">registrations &amp; refresh</div>
+    <div style="font-size:12px;color:var(--text-tertiary);margin-top:5px">every number in this app starts here — a character, and what they let us read.</div>
+
+    <div style="margin-top:18px;border:1px solid var(--border-subtle);border-radius:6px;overflow:hidden">
+      <div style="display:grid;grid-template-columns:230px repeat(5,1fr) 130px;align-items:start;padding:10px 14px;border-bottom:1px solid var(--border-subtle);background:var(--bg-surface)">
+        <span style="font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--text-tertiary);align-self:center">character</span>
+        <span class="colhd"><span class="scope">assets</span></span>
+        <span class="colhd"><span class="scope">wallet</span></span>
+        <span class="colhd"><span class="scope">location</span></span>
+        <span class="colhd"><span class="scope">industry</span></span>
+        <span class="colhd"><span class="scope">market</span></span>
+        <span style="font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--text-tertiary);text-align:right;align-self:center">all jobs</span>
+      </div>
+
+      <div style="display:grid;grid-template-columns:230px repeat(5,1fr) 130px;align-items:center;padding:11px 14px;border-bottom:1px solid var(--border-subtle);background:var(--bg-elevated)">
+        <span style="min-width:0">
+          <span style="display:block;font-size:12.5px;font-weight:700;color:var(--accent-text)">your first request will ask for</span>
+          <span style="display:block;font-size:10.5px;color:var(--text-tertiary);margin-top:2px">adjust before you register — you grant only what's checked</span>
+        </span>
+        <span class="jc"><span class="cb cb-on">✓</span></span>
+        <span class="jc"><span class="cb cb-on">✓</span></span>
+        <span class="jc"><span class="cb cb-on">✓</span></span>
+        <span class="jc"><span class="cb cb-on">✓</span></span>
+        <span class="jc"><span class="cb cb-off"></span></span>
+        <span style="text-align:right;font-size:11px;color:var(--text-tertiary)">4 of 5</span>
+      </div>
+
+      <div style="padding:26px 14px 28px;background:var(--bg-surface);display:flex;flex-direction:column;align-items:center;gap:14px">
+        <div style="width:100%;display:grid;grid-template-columns:230px repeat(5,1fr) 130px;align-items:center;opacity:.45">
+          <span style="display:flex;align-items:center;gap:10px">
+            <span style="width:28px;height:28px;border-radius:50%;border:1.5px dashed var(--border-strong);flex:none"></span>
+            <span style="height:10px;width:110px;border-radius:3px;border:1.5px dashed var(--border-strong)"></span>
+          </span>
+          <span class="jc"><span style="width:18px;height:18px;border-radius:50%;border:1.5px dashed var(--border-strong)"></span></span>
+          <span class="jc"><span style="width:18px;height:18px;border-radius:50%;border:1.5px dashed var(--border-strong)"></span></span>
+          <span class="jc"><span style="width:18px;height:18px;border-radius:50%;border:1.5px dashed var(--border-strong)"></span></span>
+          <span class="jc"><span style="width:18px;height:18px;border-radius:50%;border:1.5px dashed var(--border-strong)"></span></span>
+          <span class="jc"><span style="width:18px;height:18px;border-radius:50%;border:1.5px dashed var(--border-strong)"></span></span>
+          <span></span>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:10px;margin-top:6px">
+          <div style="font-family:'Eve Sans Neue Expanded',sans-serif;font-size:15px;font-weight:700">no characters registered yet</div>
+          <div style="font-size:12px;color:var(--text-tertiary);max-width:420px;text-align:center;line-height:1.6">register one through EVE's SSO and this row fills in — refresh jobs start within a minute of the grant.</div>
+          <x-import component-from-global-scope="DesignSystem_80a92c.Button" variant="primary" hint-size="220px,42px">register your first character</x-import>
+          <span style="font-size:11px;color:var(--text-tertiary)">uses CCP's official login — we never see your password. <a href="#10c" style="font-size:11px">what each scope unlocks</a></span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="lt">
+<div class="dv-app">
+  <div style="display:flex;align-items:center;gap:14px;padding:13px 22px;border-bottom:1px solid var(--border-subtle);background:var(--bg-surface)">
+    <span style="color:var(--accent-text);font-size:15px">❄</span>
+    <span style="font-family:'Eve Sans Neue Expanded',sans-serif;font-size:13px;font-weight:700">edencom link</span>
+    <span style="font-size:12px;color:var(--text-tertiary)">[ characters | <span style="color:var(--text-primary)">registrations</span> | links | assets ]</span>
+    <span style="flex:1"></span>
+    <span class="av"><x-import component-from-global-scope="DesignSystem_80a92c.Avatar" name="New Capsuleer" size="{{ 26 }}" hint-size="26px,26px"></x-import></span>
+  </div>
+  <div style="padding:22px 24px 30px">
+    <div style="font-family:'Eve Sans Neue Expanded',sans-serif;font-size:20px;font-weight:700">registrations &amp; refresh</div>
+    <div style="font-size:12px;color:var(--text-tertiary);margin-top:5px">every number in this app starts here — a character, and what they let us read.</div>
+
+    <div style="margin-top:18px;border:1px solid var(--border-subtle);border-radius:6px;overflow:hidden">
+      <div style="display:grid;grid-template-columns:230px repeat(5,1fr) 130px;align-items:start;padding:10px 14px;border-bottom:1px solid var(--border-subtle);background:var(--bg-surface)">
+        <span style="font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--text-tertiary);align-self:center">character</span>
+        <span class="colhd"><span class="scope">assets</span></span>
+        <span class="colhd"><span class="scope">wallet</span></span>
+        <span class="colhd"><span class="scope">location</span></span>
+        <span class="colhd"><span class="scope">industry</span></span>
+        <span class="colhd"><span class="scope">market</span></span>
+        <span style="font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--text-tertiary);text-align:right;align-self:center">all jobs</span>
+      </div>
+
+      <div style="display:grid;grid-template-columns:230px repeat(5,1fr) 130px;align-items:center;padding:11px 14px;border-bottom:1px solid var(--border-subtle);background:var(--bg-elevated)">
+        <span style="min-width:0">
+          <span style="display:block;font-size:12.5px;font-weight:700;color:var(--accent-text)">your first request will ask for</span>
+          <span style="display:block;font-size:10.5px;color:var(--text-tertiary);margin-top:2px">adjust before you register — you grant only what's checked</span>
+        </span>
+        <span class="jc"><span class="cb cb-on">✓</span></span>
+        <span class="jc"><span class="cb cb-on">✓</span></span>
+        <span class="jc"><span class="cb cb-on">✓</span></span>
+        <span class="jc"><span class="cb cb-on">✓</span></span>
+        <span class="jc"><span class="cb cb-off"></span></span>
+        <span style="text-align:right;font-size:11px;color:var(--text-tertiary)">4 of 5</span>
+      </div>
+
+      <div style="padding:26px 14px 28px;background:var(--bg-surface);display:flex;flex-direction:column;align-items:center;gap:14px">
+        <div style="width:100%;display:grid;grid-template-columns:230px repeat(5,1fr) 130px;align-items:center;opacity:.45">
+          <span style="display:flex;align-items:center;gap:10px">
+            <span style="width:28px;height:28px;border-radius:50%;border:1.5px dashed var(--border-strong);flex:none"></span>
+            <span style="height:10px;width:110px;border-radius:3px;border:1.5px dashed var(--border-strong)"></span>
+          </span>
+          <span class="jc"><span style="width:18px;height:18px;border-radius:50%;border:1.5px dashed var(--border-strong)"></span></span>
+          <span class="jc"><span style="width:18px;height:18px;border-radius:50%;border:1.5px dashed var(--border-strong)"></span></span>
+          <span class="jc"><span style="width:18px;height:18px;border-radius:50%;border:1.5px dashed var(--border-strong)"></span></span>
+          <span class="jc"><span style="width:18px;height:18px;border-radius:50%;border:1.5px dashed var(--border-strong)"></span></span>
+          <span class="jc"><span style="width:18px;height:18px;border-radius:50%;border:1.5px dashed var(--border-strong)"></span></span>
+          <span></span>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:10px;margin-top:6px">
+          <div style="font-family:'Eve Sans Neue Expanded',sans-serif;font-size:15px;font-weight:700">no characters registered yet</div>
+          <div style="font-size:12px;color:var(--text-tertiary);max-width:420px;text-align:center;line-height:1.6">register one through EVE's SSO and this row fills in — refresh jobs start within a minute of the grant.</div>
+          <x-import component-from-global-scope="DesignSystem_80a92c.Button" variant="primary" hint-size="220px,42px">register your first character</x-import>
+          <span style="font-size:11px;color:var(--text-tertiary)">uses CCP's official login — we never see your password. <a href="#10c" style="font-size:11px">what each scope unlocks</a></span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+</div>
+</div>
+
+<div class="dv-opt" id="10d">
+<div class="dv-olabel"><a class="dv-oid" href="#10d">10d</a>Mobile, first run — same ghost row and template card, CTA above the fold.</div>
+<div class="dv-pair">
+<x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="{{ true }}" hint-size="402px,874px">
+<div style="height:100%;display:flex;flex-direction:column;background:var(--bg-canvas);color:var(--text-primary);font-family:'Eve Sans Neue',sans-serif">
+  <div style="flex:none;padding:56px 16px 10px;background:var(--bg-surface);border-bottom:1px solid var(--border-subtle);display:flex;align-items:center;gap:13px">
+    <span style="display:flex;flex-direction:column;gap:4px;width:20px"><span style="height:1.5px;background:var(--text-primary)"></span><span style="height:1.5px;background:var(--text-primary)"></span><span style="height:1.5px;background:var(--text-primary)"></span></span>
+    <span style="flex:1;display:flex;align-items:baseline;gap:7px;font-size:14px"><span style="color:var(--accent-text)">❄</span><span style="font-family:'Eve Sans Neue Expanded',sans-serif;font-weight:700">edencom link</span></span>
+    <span class="av"><x-import component-from-global-scope="DesignSystem_80a92c.Avatar" name="New Capsuleer" size="{{ 28 }}" hint-size="28px,28px"></x-import></span>
+  </div>
+  <div style="flex:1;min-height:0;overflow:auto;padding:16px">
+    <div style="font-family:'Eve Sans Neue Expanded',sans-serif;font-size:20px;font-weight:700">registrations</div>
+    <div style="font-size:12px;color:var(--text-tertiary);margin-top:4px;line-height:1.6">every number in this app starts here — a character, and what they let us read.</div>
+
+    <div style="background:var(--bg-elevated);border:1px solid var(--border-strong);border-radius:6px;padding:12px 13px;margin-top:16px">
+      <div style="font-size:12.5px;font-weight:700;color:var(--accent-text)">your first request will ask for</div>
+      <div style="font-size:11px;color:var(--text-tertiary);margin-top:2px">adjust before you register — you grant only what's checked</div>
+      <div style="display:flex;flex-wrap:wrap;gap:7px;margin-top:10px">
+        <span style="display:flex;align-items:center;gap:6px;border:1px solid var(--border-strong);border-radius:999px;padding:8px 12px;font-size:11.5px"><span class="cb cb-on" style="width:15px;height:15px;font-size:10px">✓</span>assets</span>
+        <span style="display:flex;align-items:center;gap:6px;border:1px solid var(--border-strong);border-radius:999px;padding:8px 12px;font-size:11.5px"><span class="cb cb-on" style="width:15px;height:15px;font-size:10px">✓</span>wallet</span>
+        <span style="display:flex;align-items:center;gap:6px;border:1px solid var(--border-strong);border-radius:999px;padding:8px 12px;font-size:11.5px"><span class="cb cb-on" style="width:15px;height:15px;font-size:10px">✓</span>location</span>
+        <span style="display:flex;align-items:center;gap:6px;border:1px solid var(--border-strong);border-radius:999px;padding:8px 12px;font-size:11.5px"><span class="cb cb-on" style="width:15px;height:15px;font-size:10px">✓</span>industry</span>
+        <span style="display:flex;align-items:center;gap:6px;border:1px solid var(--border-subtle);border-radius:999px;padding:8px 12px;font-size:11.5px;color:var(--text-tertiary)"><span class="cb cb-off" style="width:15px;height:15px"></span>market</span>
+      </div>
+    </div>
+
+    <div style="border:1.5px dashed var(--border-strong);border-radius:6px;padding:22px 16px;margin-top:12px;display:flex;flex-direction:column;align-items:center;gap:11px">
+      <span style="display:flex;align-items:center;gap:10px;opacity:.45;width:100%;justify-content:center">
+        <span style="width:30px;height:30px;border-radius:50%;border:1.5px dashed var(--border-strong)"></span>
+        <span style="height:10px;width:120px;border-radius:3px;border:1.5px dashed var(--border-strong)"></span>
+      </span>
+      <div style="font-family:'Eve Sans Neue Expanded',sans-serif;font-size:15px;font-weight:700;margin-top:4px">no characters yet</div>
+      <div style="font-size:12px;color:var(--text-tertiary);text-align:center;line-height:1.6;max-width:280px">register one through EVE's SSO and refresh jobs start within a minute of the grant.</div>
+      <div style="width:100%;margin-top:2px"><x-import component-from-global-scope="DesignSystem_80a92c.Button" variant="primary" hint-size="100%,46px">register your first character</x-import></div>
+      <span style="font-size:11px;color:var(--text-tertiary);text-align:center">uses CCP's official login — we never see your password.</span>
+    </div>
+  </div>
+</div>
+</x-import>
+
+<div class="lt">
+<x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="{{ false }}" hint-size="402px,874px">
+<div style="height:100%;display:flex;flex-direction:column;background:var(--bg-canvas);color:var(--text-primary);font-family:'Eve Sans Neue',sans-serif">
+  <div style="flex:none;padding:56px 16px 10px;background:var(--bg-surface);border-bottom:1px solid var(--border-subtle);display:flex;align-items:center;gap:13px">
+    <span style="display:flex;flex-direction:column;gap:4px;width:20px"><span style="height:1.5px;background:var(--text-primary)"></span><span style="height:1.5px;background:var(--text-primary)"></span><span style="height:1.5px;background:var(--text-primary)"></span></span>
+    <span style="flex:1;display:flex;align-items:baseline;gap:7px;font-size:14px"><span style="color:var(--accent-text)">❄</span><span style="font-family:'Eve Sans Neue Expanded',sans-serif;font-weight:700">edencom link</span></span>
+    <span class="av"><x-import component-from-global-scope="DesignSystem_80a92c.Avatar" name="New Capsuleer" size="{{ 28 }}" hint-size="28px,28px"></x-import></span>
+  </div>
+  <div style="flex:1;min-height:0;overflow:auto;padding:16px">
+    <div style="font-family:'Eve Sans Neue Expanded',sans-serif;font-size:20px;font-weight:700">registrations</div>
+    <div style="font-size:12px;color:var(--text-tertiary);margin-top:4px;line-height:1.6">every number in this app starts here — a character, and what they let us read.</div>
+
+    <div style="background:var(--bg-elevated);border:1px solid var(--border-strong);border-radius:6px;padding:12px 13px;margin-top:16px">
+      <div style="font-size:12.5px;font-weight:700;color:var(--accent-text)">your first request will ask for</div>
+      <div style="font-size:11px;color:var(--text-tertiary);margin-top:2px">adjust before you register — you grant only what's checked</div>
+      <div style="display:flex;flex-wrap:wrap;gap:7px;margin-top:10px">
+        <span style="display:flex;align-items:center;gap:6px;border:1px solid var(--border-strong);border-radius:999px;padding:8px 12px;font-size:11.5px"><span class="cb cb-on" style="width:15px;height:15px;font-size:10px">✓</span>assets</span>
+        <span style="display:flex;align-items:center;gap:6px;border:1px solid var(--border-strong);border-radius:999px;padding:8px 12px;font-size:11.5px"><span class="cb cb-on" style="width:15px;height:15px;font-size:10px">✓</span>wallet</span>
+        <span style="display:flex;align-items:center;gap:6px;border:1px solid var(--border-strong);border-radius:999px;padding:8px 12px;font-size:11.5px"><span class="cb cb-on" style="width:15px;height:15px;font-size:10px">✓</span>location</span>
+        <span style="display:flex;align-items:center;gap:6px;border:1px solid var(--border-strong);border-radius:999px;padding:8px 12px;font-size:11.5px"><span class="cb cb-on" style="width:15px;height:15px;font-size:10px">✓</span>industry</span>
+        <span style="display:flex;align-items:center;gap:6px;border:1px solid var(--border-subtle);border-radius:999px;padding:8px 12px;font-size:11.5px;color:var(--text-tertiary)"><span class="cb cb-off" style="width:15px;height:15px"></span>market</span>
+      </div>
+    </div>
+
+    <div style="border:1.5px dashed var(--border-strong);border-radius:6px;padding:22px 16px;margin-top:12px;display:flex;flex-direction:column;align-items:center;gap:11px">
+      <span style="display:flex;align-items:center;gap:10px;opacity:.45;width:100%;justify-content:center">
+        <span style="width:30px;height:30px;border-radius:50%;border:1.5px dashed var(--border-strong)"></span>
+        <span style="height:10px;width:120px;border-radius:3px;border:1.5px dashed var(--border-strong)"></span>
+      </span>
+      <div style="font-family:'Eve Sans Neue Expanded',sans-serif;font-size:15px;font-weight:700;margin-top:4px">no characters yet</div>
+      <div style="font-size:12px;color:var(--text-tertiary);text-align:center;line-height:1.6;max-width:280px">register one through EVE's SSO and refresh jobs start within a minute of the grant.</div>
+      <div style="width:100%;margin-top:2px"><x-import component-from-global-scope="DesignSystem_80a92c.Button" variant="primary" hint-size="100%,46px">register your first character</x-import></div>
+      <span style="font-size:11px;color:var(--text-tertiary);text-align:center">uses CCP's official login — we never see your password.</span>
+    </div>
+  </div>
+</div>
+</x-import>
+</div>
+</div>
+</div>
+
+</div>
+<p class="dv-next">Try next: "the scope-sweep confirmation with ESI rate-limit warning" · "job history for one cell — last 20 runs" · "what the header nav badge shows when jobs are blocked"</p>
+</section>
+</x-dc>
+</body>
+</html>

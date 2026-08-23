@@ -2,6 +2,7 @@
   "$schema": "./node_modules/oxlint/configuration_schema.json",
   "ignorePatterns": [
     ".next/**",
+    "docs/**",
     "node_modules/**",
     "next-env.d.ts",
     "src/app/.well-known/workflow/**",

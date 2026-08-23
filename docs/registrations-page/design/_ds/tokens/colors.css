@@ -1,0 +1,42 @@
+/* Edencom Link — dark theme tokens (extracted from the Characters view reference) */
+:root {
+  /* base surfaces */
+  --bg-canvas: #17181a;
+  --bg-surface: #1c1d20;
+  --bg-elevated: #1f2024;
+  --bg-overlay: #26272c;
+
+  /* borders */
+  --border-subtle: #2b2c31;
+  --border-strong: #34353b;
+
+  /* text */
+  --text-primary: #f4f4f5;
+  --text-secondary: #9a9da5;
+  --text-tertiary: #6c6f76;
+
+  /* brand / accent */
+  --accent-primary: #8f8ff5;
+  --accent-primary-hover: #a3a3f7;
+  --link: #a996f0;
+  --link-hover: #c3b6f7;
+
+  /* status */
+  --status-good: #3ecf7e;
+  --status-warn: #e3b341;
+  --status-bad: #f0555c;
+  --status-info: #4f7cff;
+
+  /* radius / shadow */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --shadow-overlay: 0 8px 24px rgba(0,0,0,0.4);
+
+  /* semantic aliases */
+  --surface-card: var(--bg-elevated);
+  --surface-card-border: var(--border-subtle);
+  --text-body: var(--text-primary);
+  --text-muted: var(--text-secondary);
+  --text-faint: var(--text-tertiary);
+}
