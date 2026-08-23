@@ -38,7 +38,7 @@ export const ShipHeading = ({ typeId, heading, owner, actions }: ShipHeadingProp
   <div className={styles.header}>
     {/* "render" is the big 3D hull art — every Ship-category type has one, and
         both callers have already gated on that category. */}
-    <TypeIcon id={typeId} size={64} variation="render" className={styles.render} />
+    <TypeIcon id={typeId} size={64} prefer="render" className={styles.render} />
     <div className={styles.identity}>
       <h1 className="serif">{heading}</h1>
       <p className={styles.owner}>

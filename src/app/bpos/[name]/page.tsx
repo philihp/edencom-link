@@ -63,9 +63,7 @@ const BposPage = async ({ params, searchParams }: PageProps) => {
       {shareParam && <ShareUrlCleanup />}
 
       <div className={styles.pageHeader}>
-        <h1>
-          The Blueprint Library of <span className="serif">{account.mainName}</span>
-        </h1>
+        <h1>{`The Blueprint Library of ${account.mainName}`}</h1>
         {total > 0 && <span className={styles.count}>{total}</span>}
       </div>
 

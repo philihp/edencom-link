@@ -21,9 +21,9 @@ import { guessLocationRef, resolveTypeFilter } from '@/app/api/mcp/lib'
 import { resolveLocations, type LocationRef, type ResolvedLocations } from '@/app/resolveLocations'
 import { getSdeTypes, searchSdeTypesAll, type SdeType } from '@/sdeTypes'
 import { clampLimit, matchExactNames, matchOwnerFilter, parseRefFilter, parseSince, splitRefEntries } from './filters'
-import { searchLocationCandidates } from './locationSearch'
+import { resolveLocationByTokens, searchLocationCandidates } from './locationSearch'
 import { resolveTargets, restockLines, type Stack } from './restock'
-import type { OwnerScopes } from './filters'
+import type { NamedRef, OwnerScopes } from './filters'
 import type { GraphqlContext } from './context'
 
 const badRequest = (message: string): never => {
@@ -69,6 +69,9 @@ const typeIdsFor = async (args: {
 // The location dimension → location ids, or null for no filter. `location`
 // searches names (station, structure or system — see locationSearch.ts) and
 // keeps everything it matched; `locations` takes exact ids and whole names.
+// Either way, a term that resolves to nothing gets a second read as a system
+// prefix plus words from a structure's name ("TKD Reactions"), which is how a
+// link ends up filtering by a structure somebody can actually type.
 const locationIdsFor = async (
   ctx: GraphqlContext,
   args: { location?: string | null; locations?: readonly string[] | null }
@@ -79,8 +82,10 @@ const locationIdsFor = async (
   if (query.kind === 'none') return null
   if (query.kind === 'search') {
     const candidates = await searchLocationCandidates(query.term, ctx.supabase)
-    if (candidates.length === 0) return badRequest(`No location matched "${query.term}".`)
-    return candidates.map((c) => c.id)
+    if (candidates.length > 0) return candidates.map((c) => c.id)
+    const guessed = await resolveLocationByTokens(query.term, ctx.supabase)
+    if (guessed === null) return badRequest(`No location matched "${query.term}".`)
+    return [guessed.id]
   }
 
   const { ids, names } = splitRefEntries(query.entries)
@@ -89,10 +94,19 @@ const locationIdsFor = async (
   )
   const byName = new Map(found)
   const matched = matchExactNames(names, (name) => byName.get(name) ?? [])
-  if (matched.unmatched.length > 0) {
-    return badRequest(`No location matched ${matched.unmatched.map((u) => `"${u}"`).join(', ')}.`)
+  // A whole name is what the plural asks for, but "TK-DLH - CUDDLES T2
+  // Composite Reactions" typed from memory is rarely whole. What didn't match
+  // one gets the same system-prefix-plus-tokens read the singular falls back to
+  // (locationSearch.ts), which lands on ONE location or none — so an entry
+  // still either names something or is an error, as the plural promises.
+  const guessed = await Promise.all(
+    matched.unmatched.map(async (name) => [name, await resolveLocationByTokens(name, ctx.supabase)] as const)
+  )
+  const stillUnmatched = guessed.filter(([, ref]) => ref === null).map(([name]) => name)
+  if (stillUnmatched.length > 0) {
+    return badRequest(`No location matched ${stillUnmatched.map((u) => `"${u}"`).join(', ')}.`)
   }
-  return [...new Set([...ids, ...matched.ids])]
+  return [...new Set([...ids, ...matched.ids, ...guessed.map(([, ref]) => (ref as NamedRef).id)])]
 }
 
 // Page a filtered select up to `cap` rows — PostgREST caps a single request at

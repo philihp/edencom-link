@@ -197,7 +197,7 @@ const Ring = ({ loaded }: { loaded: FitCalculation }) => {
       <div className={styles.ring}>
         <span className={styles.ringGuide} aria-hidden="true" />
         <div className={styles.hub}>
-          <TypeIcon id={loaded.fit.shipTypeId} size={84} variation="render" className={styles.hullRender} />
+          <TypeIcon id={loaded.fit.shipTypeId} size={84} prefer="render" className={styles.hullRender} />
           <span className={`${styles.hullName} serif`}>{hullType?.name ?? `#${loaded.fit.shipTypeId}`}</span>
           <span className={styles.hullGroup}>{loaded.eveData.groups[hullType?.groupID ?? 0]?.name}</span>
         </div>

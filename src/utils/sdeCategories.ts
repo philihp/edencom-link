@@ -10,3 +10,9 @@
 // by default, and an appraisal never prices them — an asset row carries no way
 // to tell an original from a worthless copy.
 export const BLUEPRINT_CATEGORY_ID = 9
+
+// Ancient Relics: the Sleeper salvage tiers (Intact / Malfunctioning / Wrecked
+// Armor Nanobots, Power Cores, Hull Sections and friends). Like blueprints,
+// these have their own artwork on the image server and no "icon" at all — see
+// iconVariation() in src/app/typeIcon.tsx.
+export const ANCIENT_RELIC_CATEGORY_ID = 34

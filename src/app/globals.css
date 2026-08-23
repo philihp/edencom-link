@@ -141,6 +141,17 @@ h2 {
  * Prefer the self-serif components (`TypeName`, `DateTime`, and the `Name`
  * family in names.tsx) for entity names and timestamps; reach for this `.serif`
  * utility for one-off dynamic text that has no dedicated component.
+ *
+ * A HEADING TAKES ONE FACE FOR ITS WHOLE LENGTH. The roles above sort text
+ * within a page; they do not licence mixing faces inside a single title. A sans
+ * sentence with the name in it set in serif — "The Blueprint Library of
+ * <span class="serif">Sir Cuddles</span>" — almost always looks bad, so choose
+ * the face for the heading as a whole: `<h1 class="serif">` when the heading IS
+ * a thing's name (structures, ships, fittings, assembled items all do this), the
+ * page default when it is a sentence that happens to contain one (/corpses,
+ * /bpos). The one exception is a heading that is code or a command, which takes
+ * --mono — and that exception overrides the serif role rather than carving a
+ * second face out of the title, so it too applies to the whole heading.
  */
 .serif {
   font-family: var(--serif);

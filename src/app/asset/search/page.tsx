@@ -13,7 +13,8 @@ import { LinkSpinner } from '../../linkSpinner'
 import { fetchOwners } from '../../owners'
 import { resolveLocations, type LocationRef } from '../../resolveLocations'
 import retro from '../../retro.module.css'
-import { TypeIcon, type IconVariation } from '../../typeIcon'
+import { iconVariation, type IconVariation } from '../../iconVariation'
+import { TypeIcon } from '../../typeIcon'
 import { TypeName } from '../../typeName'
 import { AssetSearchForm } from '../assetSearchForm'
 import { Quantity } from '../[locationId]/quantity'
@@ -151,12 +152,13 @@ const AssetSearchPage = async ({ searchParams }: { searchParams: Promise<{ q?: s
   // every matched type's name — no extra SDE lookup needed. TypeName still
   // expects a promise (it also renders each row's player-assigned name, if any).
   const typeNamesPromise = Promise.resolve(Object.fromEntries(typeNameById))
-  // Blueprints have no "icon" on CCP's image server (only bp/bpc — asking for
-  // an icon is a 400, not a fallback), and the search results already carry
-  // each match's category. The asset-search RPCs don't report whether a given
-  // stack is a copy, so every blueprint row shows the original's artwork.
-  const blueprintTypeIds = new Set(matches.filter((m) => m.categoryID === BLUEPRINT_CATEGORY_ID).map((m) => m.typeID))
-  const iconFor = (typeId: number): IconVariation => (blueprintTypeIds.has(typeId) ? 'bp' : 'icon')
+  // Blueprints and Ancient Relics have no "icon" on CCP's image server (asking
+  // for one is a 400, not a fallback), and the search results already carry
+  // each match's category — so the shared category rule decides. The
+  // asset-search RPCs don't report whether a given stack is a copy, so every
+  // blueprint row shows the original's artwork.
+  const categoryByTypeId = new Map(matches.map((m) => [m.typeID, m.categoryID]))
+  const iconFor = (typeId: number): IconVariation => iconVariation(categoryByTypeId.get(typeId))
 
   const [{ data: characterRows }, { data: corpRows }, owners] = await Promise.all([
     supabase.rpc('character_asset_search', { type_ids: typeIds }),
@@ -285,7 +287,7 @@ const AssetSearchPage = async ({ searchParams }: { searchParams: Promise<{ q?: s
                   )}
                 </td>
                 <td>
-                  <TypeIcon id={row.typeId} variation={iconFor(row.typeId)} />
+                  <TypeIcon id={row.typeId} prefer={iconFor(row.typeId)} />
                   {row.contents > 0 ? (
                     <Link href={`/asset/${row.itemId}`}>
                       <TypeName id={row.typeId} name={row.name} promise={typeNamesPromise} />
