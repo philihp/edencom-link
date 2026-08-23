@@ -3,13 +3,16 @@
   "extends": ["config:recommended", "helpers:pinGitHubActionDigests"],
   "description": [
     "Automerge relies on GitHub's native auto-merge (Settings -> General -> Pull Requests -> Allow auto-merge). Without it Renovate can only merge during its own hourly run, and the PR has to be green at that exact moment.",
-    "rebaseWhen=conflicted keeps that window open: main moves several times a day, and rebasing an open PR every time restarts its Vercel deploy, so the branch is rarely green when Renovate looks. Nothing here requires a PR to be up to date with main, so merging slightly behind is fine."
+    "rebaseWhen=conflicted keeps that window open: main moves several times a day, and rebasing an open PR every time restarts its Vercel deploy, so the branch is rarely green when Renovate looks. Nothing here requires a PR to be up to date with main, so merging slightly behind is fine.",
+    "minimumReleaseAge holds a branch back until the release is old enough for pnpm's supply-chain policy to accept it. pnpm 11 refuses a lockfile entry published within the last 24h (ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION), which is what sank #938: Renovate wrote a perfectly correct lockfile for next@16.3.2 about sixteen hours after it was published, and `pnpm install --frozen-lockfile` rejected it in CI. Three days rather than the bare 24h so the margin survives clock skew and Renovate's hourly granularity, and so a package yanked shortly after release never reaches a branch here. Renovate's default internalChecksFilter of strict already holds a whole group back until every update in it has aged out, so nothing slips through a grouped PR.",
+    "This cannot cover a transitive version that lockFileMaintenance or pnpmDedupe pulls in fresh — Renovate ages the dependency it is updating, not the whole resolution. Such a PR fails the same check and simply does not automerge; rerunning it once the release ages out is enough."
   ],
   "schedule": ["every weekend"],
   "semanticCommits": "enabled",
   "dependencyDashboard": true,
   "dependencyDashboardTitle": "Independency Dashboard",
   "transitiveRemediation": true,
+  "minimumReleaseAge": "3 days",
   "labels": ["dependencies"],
   "prConcurrentLimit": 10,
   "platformAutomerge": true,
