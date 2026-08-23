@@ -1,3 +1,4 @@
+import type { SupabaseClient } from '@supabase/supabase-js'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { map, reduce } from 'ramda'
@@ -11,31 +12,7 @@ import { resolveLocations, type LocationRef } from '../resolveLocations'
 import { AssetSearchForm } from './assetSearchForm'
 import styles from './assets.module.css'
 import { AssetsTable, type Location } from './assetsTable'
-
-// Bigint ids arrive from PostgREST as strings, so every id is kept as a string
-// and only converted to a number at the API/system-lookup boundary.
-type CharacterSummaryRow = {
-  location_id: number | string
-  location_type: string | null
-  registration_id: string
-  stacks: number | string
-}
-
-type CorpSummaryRow = {
-  location_id: number | string
-  location_type: string | null
-  corporation_id: number | string
-  stacks: number | string
-}
-
-// A summary row from either source, keyed by whoever owns the stacks: a
-// character (registration uuid) or a corporation (EVE corporation id).
-type SummaryRow = {
-  location_id: number | string
-  location_type: string | null
-  owner_id: string
-  stacks: number | string
-}
+import { assetExtractStamp, fetchLocationSummary } from './locationSummary'
 
 const AssetsPage = async () => {
   const supabase = await createClient()
@@ -49,55 +26,48 @@ const AssetsPage = async () => {
   // a name-resolution pass), so the wait is covered by ./loading.tsx — which
   // paints the instant the link is clicked, rather than only once the server
   // has started responding, as an in-page Suspense fallback did.
-  return <Locations />
+  //
+  // The client is handed down rather than made again so the summary's cache
+  // lookup runs against one whose session is already resolved in memory.
+  return <Locations supabase={supabase} userId={user.id} />
 }
 export default AssetsPage
 
-const Locations = async () => {
-  const supabase = await createClient()
-
+const Locations = async ({ supabase, userId }: { supabase: SupabaseClient; userId: string }) => {
   // A hangar can hold tens of thousands of nested items; paging them all into
   // Node and walking the location_id chains here timed the page out. The
   // *_asset_location_summary() functions do the walk in Postgres and return one
   // small row per location/owner pair instead (RLS still scopes character rows
   // to us and corp rows to corps we have a registered character in). The
   // "last refreshed" heartbeat doesn't depend on any of this, so it's fetched
-  // in the same batch instead of after everything else resolves.
-  const [{ data: characterSummary }, { data: corpSummary }, owners, { data: lastRun }, { data: mainCharacter }] =
-    await Promise.all([
-      supabase.rpc('character_asset_location_summary'),
-      supabase.rpc('corp_asset_location_summary'),
-      fetchOwners(),
-      supabase
-        .from('heartbeat')
-        .select('ended_at, run_url')
-        .eq('job', 'character-assets')
-        .not('ended_at', 'is', null)
-        .order('ended_at', { ascending: false })
-        .limit(1)
-        .maybeSingle(),
-      // The corpses share page is keyed on a character id; link the signed-in
-      // user to their own (their main character's), like the header used to.
-      supabase
-        .from('registration')
-        .select('character_id')
-        .order('is_main', { ascending: false })
-        .order('created_at', { ascending: true })
-        .limit(1)
-        .maybeSingle(),
-    ])
+  // in the same batch instead of after everything else resolves — alongside the
+  // cache stamp the summary itself is keyed on.
+  const [stamp, owners, { data: lastRun }, { data: mainCharacter }] = await Promise.all([
+    assetExtractStamp(supabase),
+    fetchOwners(),
+    supabase
+      .from('heartbeat')
+      .select('ended_at, run_url')
+      .eq('job', 'character-assets')
+      .not('ended_at', 'is', null)
+      .order('ended_at', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    // The corpses share page is keyed on a character id; link the signed-in
+    // user to their own (their main character's), like the header used to.
+    supabase
+      .from('registration')
+      .select('character_id')
+      .order('is_main', { ascending: false })
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .maybeSingle(),
+  ])
   const mainCharacterId = mainCharacter?.character_id ?? null
 
-  const summary: SummaryRow[] = [
-    ...map(
-      (row: CharacterSummaryRow): SummaryRow => ({ ...row, owner_id: row.registration_id }),
-      (characterSummary ?? []) as CharacterSummaryRow[]
-    ),
-    ...map(
-      (row: CorpSummaryRow): SummaryRow => ({ ...row, owner_id: String(row.corporation_id) }),
-      (corpSummary ?? []) as CorpSummaryRow[]
-    ),
-  ]
+  // Served from the data cache unless an asset extract has completed since the
+  // last render; only then is the whole-hangar walk paid for again.
+  const summary = await fetchLocationSummary(supabase, userId, stamp)
 
   // Tally stacks per location, split by the owner (character or corporation)
   // of each stack so the client can filter by owner.
