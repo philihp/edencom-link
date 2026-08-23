@@ -10,53 +10,25 @@
 
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
-import { reduce } from 'ramda'
 
 import { createClient } from '@/utils/supabase/server'
 
 import { establishedUser } from '../account/lib/establishedUser'
 
-import { isChancellor } from '../account/settings/chancellor/chancellor'
 import { Freshness } from '../Freshness'
 import { freshnessLevel, relativeTime } from '../freshness'
 import { CharacterName, Name } from '../names'
+import { fetchJobsOverview } from './jobsData'
 import styles from './jobs.module.css'
 import { NextRun } from './nextRun'
 import { RefreshPoller } from './poller'
 import { RefreshAllButton, RefreshButton } from './refreshButton'
 import { type JobEntry, type Kickable, isOverdue, jobsInSection, nextRunFor } from './registry'
-import {
-  type ActivityTask,
-  type EntityRun,
-  OVERLAY_MINUTES,
-  activityRows,
-  isAbandoned,
-  laggingCount,
-  newestRun,
-  oldestRun,
-  rowStatus,
-  statusOf,
-} from './rows'
+import { type EntityRun, isAbandoned, laggingCount, newestRun, oldestRun, rowStatus } from './rows'
 
 // Always read fresh — the poller re-requests this server component every couple
 // of seconds while any kicked-off job is still in flight.
 export const dynamic = 'force-dynamic'
-
-type Beat = {
-  job: string
-  registration_id: string | null
-  corporation_id: number | null
-  ended_at: string
-  ok: boolean | null
-  error: string | null
-  // Set (with ok true) when the run was a permitted no-op: a corp endpoint the
-  // character holds no in-game role for. See heartbeat.skipped_reason.
-  skipped_reason: string | null
-}
-
-type OpenBeat = { job: string; registration_id: string | null; corporation_id: number | null }
-
-type Task = ActivityTask & { registration_id: string | null }
 
 const iso = (at: Date | null) => (at === null ? null : at.toISOString())
 
@@ -248,164 +220,18 @@ const JobsPage = async () => {
     redirect('/account/login')
   }
 
-  const chancellor = await isChancellor(user.id)
-
-  const now = Date.now()
-  const openFloor = new Date(now - 60 * 60_000).toISOString()
-  // Recent activity keeps a day; the per-cell overlay is much tighter, so an
-  // on-demand error from this morning doesn't outrank a scheduled pull that has
-  // since succeeded.
-  const activityFloor = new Date(now - 24 * 60 * 60_000).toISOString()
-  const overlayFloor = new Date(now - OVERLAY_MINUTES * 60_000).toISOString()
-
-  const [{ data: registrationsData }, { data: beatsData }, { data: openData }, { data: tasksData }] = await Promise.all(
-    [
-      supabase.from('registration').select('id, name, corporation_id').order('created_at', { ascending: true }),
-      supabase.rpc('latest_heartbeats'),
-      // Open runs — started, not yet ended. This is what makes a *scheduled* run
-      // visible as running; latest_heartbeats() returns completed rows only. The
-      // floor drops rows whose end step never landed, which would otherwise read
-      // as permanently running.
-      supabase
-        .from('heartbeat')
-        .select('job, registration_id, corporation_id')
-        .is('ended_at', null)
-        .not('started_at', 'is', null)
-        .gte('ran_at', openFloor),
-      supabase
-        .from('refresh_task')
-        .select('id, batch_id, job, registration_id, character_name, status, error, created_at, started_at, ended_at')
-        .gte('created_at', activityFloor)
-        .order('created_at', { ascending: true }),
-    ]
-  )
-
-  const registrations = registrationsData ?? []
-  const beats = (beatsData ?? []) as Beat[]
-  const openBeats = (openData ?? []) as OpenBeat[]
-  const tasks = (tasksData ?? []) as Task[]
-
-  const corporationOf = new Map(registrations.map((r) => [r.id, r.corporation_id]))
-
-  // latest_heartbeats returns one row per job per owner. Character- and
-  // account-scoped rows are already unique per cell; corp rows can appear once
-  // per character that has ever run the corp's pull, so keep the newest — its
-  // registration_id is whose token the extract actually ran under last time.
-  const { charBeats, corpBeats, accountBeats, corpRunsAs } = reduce(
-    (acc, b: Beat) => {
-      if (b.corporation_id != null) {
-        const key = `${b.job}:${b.corporation_id}`
-        const prev = acc.corpBeats.get(key)
-        if (!prev || prev.ended_at < b.ended_at) acc.corpBeats.set(key, b)
-        // Whose token *worked*. A skipped row names a character who was turned
-        // away for want of the in-game role, which is precisely who didn't run
-        // it, so those never claim the Runs as column.
-        if (b.skipped_reason == null) {
-          const prevRun = acc.corpRunsAs.get(b.corporation_id)
-          if (!prevRun || prevRun.ended_at < b.ended_at) acc.corpRunsAs.set(b.corporation_id, b)
-        }
-      } else if (b.registration_id != null) {
-        acc.charBeats.set(`${b.job}:${b.registration_id}`, b)
-      } else {
-        acc.accountBeats.set(b.job, b)
-      }
-      return acc
-    },
-    {
-      charBeats: new Map<string, Beat>(),
-      corpBeats: new Map<string, Beat>(),
-      accountBeats: new Map<string, Beat>(),
-      corpRunsAs: new Map<number, Beat>(),
-    },
-    beats
-  )
-
-  // Same keying for the open rows: a corp run's heartbeat carries the
-  // corporation, a per-character run its registration, a shared run neither.
-  const openCells = new Set(openBeats.map((b) => `${b.job}:${b.corporation_id ?? b.registration_id ?? ''}`))
-
-  // Index the just-kicked tasks by cell, later rows winning. A corp job's task
-  // row carries its representative character, so key those by the corp instead.
-  const corpJobNames = new Set(jobsInSection('corporation').map((entry) => entry.job))
-  const taskByCell = reduce(
-    (acc, t) => {
-      if (t.created_at < overlayFloor || isAbandoned(t, now)) return acc
-      const corpId = corpJobNames.has(t.job) && t.registration_id != null ? corporationOf.get(t.registration_id) : null
-      return acc.set(`${t.job}:${corpId ?? t.registration_id ?? ''}`, t)
-    },
-    new Map<string, Task>(),
-    tasks
-  )
-  const anyActive = tasks.some((t) => (t.status === 'pending' || t.status === 'running') && !isAbandoned(t, now))
-
-  // The user's corporations, each with the registered characters in it (in
-  // registration order — the representative dispatchRefresh would pick first).
-  const corporations = reduce(
-    (acc, r) => {
-      if (r.corporation_id == null) return acc
-      const group = acc.get(r.corporation_id)
-      if (group) group.push(r)
-      else acc.set(r.corporation_id, [r])
-      return acc
-    },
-    new Map<number, typeof registrations>(),
-    registrations
-  )
-
-  const corporationIds = [...corporations.keys()]
-  const { data: corpNamesData } = corporationIds.length
-    ? await supabase.from('universe_name').select('id, name').in('id', corporationIds)
-    : { data: [] }
-  const corpName = new Map((corpNamesData ?? []).map((n) => [Number(n.id), n.name as string]))
-
-  const runFor = (job: string, key: string, beat: Beat | undefined): Omit<EntityRun, 'id' | 'name'> => ({
-    lastRunAt: beat?.ended_at ?? null,
-    ...statusOf({
-      task: taskByCell.get(`${job}:${key}`),
-      open: openCells.has(`${job}:${key}`),
-      beat: beat && { ok: beat.ok, error: beat.error, skippedReason: beat.skipped_reason },
-    }),
-  })
-
-  const characterEntities: Record<string, EntityRun[]> = Object.fromEntries(
-    jobsInSection('character').map((entry) => [
-      entry.job,
-      registrations.map((r) => ({
-        id: r.id,
-        name: r.name,
-        ...runFor(entry.job, r.id, charBeats.get(`${entry.job}:${r.id}`)),
-      })),
-    ])
-  )
-
-  const corporationEntities: Record<string, EntityRun[]> = Object.fromEntries(
-    jobsInSection('corporation').map((entry) => [
-      entry.job,
-      [...corporations.entries()].map(([corporationId, members]) => {
-        const runsAs = corpRunsAs.get(corporationId)
-        const owned = members.find((m) => m.id === runsAs?.registration_id)
-        // Kick new pulls as the character the last one succeeded under when
-        // it's ours; the workflow target carries the whole corp group either
-        // way, so this only picks the row's representative.
-        const representative = owned ?? members[0]
-        // Nobody has run it here yet → name who *would* run it, so the column
-        // still answers "under whose token" instead of blanking.
-        const runsAsCorpmate = runsAs != null && owned == null
-        return {
-          // The refresh button dispatches against a registration of ours, so
-          // the entity's id is the representative character's — the corp id is
-          // only how its heartbeats are keyed.
-          id: representative.id,
-          name: corpName.get(corporationId) ?? `#${corporationId}`,
-          runsAs: runsAsCorpmate ? null : representative.name,
-          runsAsCorpmate,
-          ...runFor(entry.job, String(corporationId), corpBeats.get(`${entry.job}:${corporationId}`)),
-        }
-      }),
-    ])
-  )
-
-  const activity = activityRows(tasks)
+  const {
+    registrations,
+    characterEntities,
+    corporationEntities,
+    accountBeats,
+    runFor,
+    activity,
+    corporationCount,
+    anyActive,
+    chancellor,
+    now,
+  } = await fetchJobsOverview(supabase, user.id)
 
   return (
     <>
@@ -436,7 +262,7 @@ const JobsPage = async () => {
             offerRefreshAll
           />
 
-          {corporations.size > 0 && (
+          {corporationCount > 0 && (
             <>
               <h2>Corporations</h2>
               <p>
