@@ -45,7 +45,18 @@ first.
 
 ## Repair
 
-One statement, run once against production (Supabase SQL editor, or any
+Either route runs the same statement; pick whichever is less friction.
+
+**From CI (no credentials of your own needed).** Actions → *Repair migration
+history* → Run workflow. That one-shot workflow
+(`.github/workflows/repair-migration-history.yml`) runs the statement through
+`supabase db query --linked`, which goes via the Management API and so needs
+only the `SUPABASE_ACCESS_TOKEN` secret the Migrate workflow already uses — no
+database password. It prints the history table before and after. Then re-run
+*Migrate* (it has `workflow_dispatch`). Delete the repair workflow once Migrate
+is green.
+
+**By hand.** One statement against production (Supabase SQL editor, or any
 service-role psql session). It records the stranded file as applied **without
 running it** — its content is superseded by
 `20260823005000_create_bpo_share.sql`, which does the actual DDL:

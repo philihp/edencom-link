@@ -1,0 +1,62 @@
+name: Repair migration history
+
+# ONE-SHOT, MANUAL ONLY. Unwedges `supabase db push` after the 20260822120000
+# timestamp collision — see docs/bpo-share-collision.md for the full story.
+#
+# Why a workflow rather than a migration: the collision breaks the CLI's own
+# bookkeeping, so `db push` aborts before it applies anything. No migration file
+# can fix it from the inside; the history table has to be corrected out of band,
+# and this is the only place the credentials for that live.
+#
+# The statement is hardcoded rather than an input, so this can only ever do the
+# one thing it documents, and it is `on conflict do nothing`, so running it
+# twice is a no-op. Delete this workflow once the Migrate run is green again.
+on:
+  workflow_dispatch:
+
+# Share Migrate's concurrency group: repairing the history while a push is
+# reading it is exactly the race worth avoiding.
+concurrency:
+  group: migrate
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      # The repo's own pinned CLI (a devDependency), not setup-cli's 2.102.0:
+      # `supabase db query` — which runs SQL through the Management API, so it
+      # needs only the access token and no database password — is newer than the
+      # version the Migrate workflow pins.
+      - run: pnpm install --frozen-lockfile
+
+      - name: Link project
+        run: pnpm exec supabase link --project-ref "$SUPABASE_PROJECT_REF"
+
+      - name: Show migration history before
+        run: |
+          pnpm exec supabase db query --linked \
+            "select version, name from supabase_migrations.schema_migrations where version >= '20260819000000' order by version, name;"
+
+      # Records 20260822120000_bpo_share as applied WITHOUT running it. Its DDL
+      # is superseded by 20260823005000_create_bpo_share.sql, which `db push`
+      # applies once this row stops the CLI mismatching the two files that share
+      # version 20260822120000.
+      - name: Record the stranded migration as applied
+        run: |
+          pnpm exec supabase db query --linked \
+            "insert into supabase_migrations.schema_migrations (version, name, statements) values ('20260822120000', 'bpo_share', array[]::text[]) on conflict (version, name) do nothing;"
+
+      - name: Show migration history after
+        run: |
+          pnpm exec supabase db query --linked \
+            "select version, name from supabase_migrations.schema_migrations where version >= '20260819000000' order by version, name;"
