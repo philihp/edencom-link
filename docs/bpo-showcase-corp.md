@@ -29,26 +29,27 @@ private-by-default sharing model the account page has.
 
 ## Design
 
-### 1. URL namespace: one route, character first
+### 1. URL namespace: one route, corporation first
 
 Keep the single `/bpos/[name]` route. Resolution order:
 
-1. `resolveBposAccount(slug, viewer)` — an account whose **main** character
-   slugifies to this (existing behavior, unchanged). Every URL in the wild today
-   keeps its meaning.
-2. Only if no account matches: a corporation whose **name** slugifies to this
-   (`corporation.name` probed with the same `slugLikePattern` `_`-wildcard
-   trick, then narrowed by exact `characterSlug()` comparison — corp names allow
-   the same space/dash ambiguity).
+1. A corporation whose **name** slugifies to this (`corporation.name` probed
+   with the same `slugLikePattern` `_`-wildcard trick, then narrowed by exact
+   `characterSlug()` comparison — corp names allow the same space/dash
+   ambiguity). Corp-first because there are far fewer corporations than
+   registrations: the common case settles on one cheap probe of a small,
+   world-readable table.
+2. Only if no corporation matches: `resolveBposAccount(slug, viewer)` — an
+   account whose **main** character slugifies to this (existing behavior,
+   unchanged).
 3. Two corporations slugifying identically (shouldn't happen — EVE corp names
    are unique — but the slug folds case and whitespace): resolve to nothing,
    same coin-flip refusal as ambiguous accounts.
 
-A character-vs-corp name collision therefore hides the corp page behind the
-character's. Accepted: EVE disallows a corp taking an in-use character name, so
-real collisions are near-impossible, and the character-first order is the
-backward-compatible one. No `/bpos/corp/[name]` sub-route — one namespace, one
-URL shape to share.
+A character-vs-corp name collision therefore hides the character's page behind
+the corp's. Accepted: EVE disallows a corp taking an in-use character name, so
+real collisions are near-impossible. No `/bpos/corp/[name]` sub-route — one
+namespace, one URL shape to share.
 
 Refactor `access.ts` around a discriminated subject:
 
@@ -58,7 +59,7 @@ type BposSubject =
   | { kind: 'corporation'; corporationId: number; name: string }
 ```
 
-`resolveBposSubject(slug, viewer)` tries account then corporation.
+`resolveBposSubject(slug, viewer)` tries corporation then account.
 `ts-pattern` `.exhaustive()` on `kind` where the page branches.
 
 ### 2. New table: `corp_bpo_share`
@@ -165,7 +166,7 @@ none added.
 1. Migration + `schema.sql`: `corp_bpo_share` (table, RLS, grants).
    `pnpm run db:new corp_bpo_share`.
 2. `slug.ts`: nothing (helpers already name-agnostic); rename nothing.
-3. `access.ts`: `BposSubject`, `resolveBposSubject` (account → corp),
+3. `access.ts`: `BposSubject`, `resolveBposSubject` (corp → account),
    corp branch of `bposAccess` (`member` access kind).
 4. `data.ts`: shared `dressStacks`, new `fetchCorpBpoEntries`.
 5. `shareData.ts` / `shareActions.ts`: corp variants (`corp_bpo_share`,
