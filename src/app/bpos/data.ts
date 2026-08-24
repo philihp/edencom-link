@@ -1,8 +1,10 @@
-// Reading one account's blueprint originals and dressing them with SDE names.
+// Reading a subject's blueprint originals and dressing them with SDE names.
 //
-// Service-role, explicitly scoped to the registrations resolveBposAccount()
-// found — the /corpses precedent. The caller has already decided the viewer may
-// see them.
+// Two subjects, one shape: an account's characters (character_blueprint, scoped
+// to the registrations resolveBposAccount() found) or a corporation's hangars
+// (corp_blueprint, scoped to the one corporation id). Service-role in both
+// cases — the /corpses precedent — because the caller has already decided the
+// viewer may see them.
 import { getBlueprintsByTypeIDs } from '@/sdeBlueprints'
 import { getSdeTypes } from '@/sdeTypes'
 import { createServiceClient } from '@/utils/supabase/service'
@@ -39,10 +41,39 @@ const readBlueprints = async (
   return rows.length < PAGE_SIZE ? acc : readBlueprints(registrationIds, from + PAGE_SIZE, acc)
 }
 
-export const fetchBpoEntries = async (registrationIds: string[]): Promise<BpoEntry[]> => {
-  if (registrationIds.length === 0) return []
+// The corporation's own hangars. Same columns, same original filter; the corp
+// mirror is refreshed daily (the character one every 6h), which is the only
+// difference a visitor could notice. Ordered by item_id as well as type_id so
+// the range paging has a unique tiebreaker — corp collections are the large
+// ones, and a page boundary landing inside a run of identical type_ids would
+// otherwise be able to repeat or skip a row.
+const readCorpBlueprints = async (
+  corporationId: number,
+  from = 0,
+  acc: BlueprintRow[] = []
+): Promise<BlueprintRow[]> => {
+  const { data, error } = await createServiceClient()
+    .from('corp_blueprint')
+    .select('type_id, material_efficiency, time_efficiency, quantity, runs')
+    .eq('corporation_id', corporationId)
+    .eq('runs', -1)
+    .order('type_id')
+    .order('item_id')
+    .range(from, from + PAGE_SIZE - 1)
+    .returns<BlueprintRow[]>()
+  if (error) {
+    console.error(`[bpos] corp blueprint read failed: ${error.message}`)
+    return acc
+  }
+  const rows = data ?? []
+  rows.forEach((row) => acc.push(row))
+  return rows.length < PAGE_SIZE ? acc : readCorpBlueprints(corporationId, from + PAGE_SIZE, acc)
+}
 
-  const stacks = stackBpos(await readBlueprints(registrationIds))
+// Stack the rows, then resolve the two SDE hops the table renders. Shared by
+// both subjects: the row shape is identical, so only the read above differs.
+const dressStacks = async (rows: BlueprintRow[]): Promise<BpoEntry[]> => {
+  const stacks = stackBpos(rows)
   if (stacks.length === 0) return []
 
   const blueprintTypeIds = stacks.map((s) => s.typeId)
@@ -69,3 +100,9 @@ export const fetchBpoEntries = async (registrationIds: string[]): Promise<BpoEnt
     }
   })
 }
+
+export const fetchBpoEntries = async (registrationIds: string[]): Promise<BpoEntry[]> =>
+  registrationIds.length === 0 ? [] : dressStacks(await readBlueprints(registrationIds))
+
+export const fetchCorpBpoEntries = async (corporationId: number): Promise<BpoEntry[]> =>
+  dressStacks(await readCorpBlueprints(corporationId))

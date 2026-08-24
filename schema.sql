@@ -136,6 +136,7 @@ drop table if exists public.refresh_task         cascade;
 drop table if exists public.shared_asset_token   cascade;
 drop table if exists public.link                 cascade;
 drop table if exists public.bpo_share            cascade;
+drop table if exists public.corp_bpo_share       cascade;
 drop table if exists public.discord_link_code    cascade;
 drop table if exists public.notification         cascade;
 drop table if exists public.discord_channel      cascade;
@@ -3134,6 +3135,67 @@ create policy "Audience reads bpo shares aimed at them"
 grant select                         on public.bpo_share to anon;
 grant select, insert, update, delete on public.bpo_share to authenticated;
 grant all                            on public.bpo_share to service_role;
+
+-- ── corp_bpo_share ────────────────────────────────────────────────────────
+-- The audience for one CORPORATION's blueprint-original showcase, the page at
+-- /bpos/[corporation-name]. Blueprints deposited into a corp hangar belong to
+-- the corporation, so they land in corp_blueprint and never appear on the
+-- account-scoped showcase; this is that collection's share row.
+--
+-- Standard Revision 3 audience shape, keyed one row per corporation the way
+-- bpo_share is keyed one row per account.
+--
+-- WHO MAY MANAGE IT. Any account with a character in the corporation — exactly
+-- the set that can already read corp_blueprint for it, so nobody can share data
+-- they cannot themselves see. In-game roles are not tracked anywhere in this
+-- deployment (a Director token proves a scope was granted, not that the holder
+-- is a Director), and gating on the token holder would break the common case of
+-- an alt carrying the scope while the main runs the page.
+create table public.corp_bpo_share (
+  id uuid primary key default gen_random_uuid(),
+  corporation_id bigint not null unique,
+  corporation_ids bigint[] not null default '{}',
+  alliance_ids bigint[] not null default '{}',
+  secret text,
+  -- Audit only: who first published it. Never read for authorization — a member
+  -- who leaves must not keep control, and one who joins must not be locked out.
+  created_by uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now()
+);
+
+alter table public.corp_bpo_share enable row level security;
+
+-- Members of the corporation manage its row. The subquery is the same
+-- membership test corp_blueprint_over_time's own read policy uses.
+create policy "Members manage corp bpo share"
+  on public.corp_bpo_share
+  for all
+  to authenticated
+  using (
+    corporation_id in (
+      select corporation_id from public.registration
+      where user_id = (select auth.uid()) and corporation_id is not null
+    )
+  )
+  with check (
+    corporation_id in (
+      select corporation_id from public.registration
+      where user_id = (select auth.uid()) and corporation_id is not null
+    )
+  );
+
+-- Audience discovery, the load-bearing array policy every Revision 3 share
+-- table carries (see bpo_share above for why the fully-public case is settled
+-- app-side through the service role rather than by an anon evaluation here).
+create policy "Audience reads corp bpo shares aimed at them"
+  on public.corp_bpo_share
+  for select
+  to anon, authenticated
+  using (public.share_audience_matches(corporation_ids, alliance_ids, secret));
+
+grant select                         on public.corp_bpo_share to anon;
+grant select, insert, update, delete on public.corp_bpo_share to authenticated;
+grant all                            on public.corp_bpo_share to service_role;
 
 -- ── character_clone_state ──────────────────────────────────────────────────
 -- Character-level fields from ESI /characters/{id}/clones/, written by the

@@ -113,3 +113,102 @@ export const revokeBposShare = async (slug: string): Promise<{ error?: string }>
   revalidatePath(`/bpos/${slug}`)
   return {}
 }
+
+// The corporation showcase's writers. Same shape as the account's, over the
+// corporation-keyed row: the manage policy admits any member, so the row a
+// member saves is the corporation's single share, not a personal one.
+const isMember = async (
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  corporationId: number
+): Promise<boolean> => {
+  const { data } = await supabase.from('registration').select('id').eq('corporation_id', corporationId).limit(1)
+  return (data ?? []).length > 0
+}
+
+export const saveCorpBposShare = async (
+  slug: string,
+  corporationId: number,
+  input: SaveShareInput
+): Promise<SaveShareResult> => {
+  const supabase = await createClient()
+
+  const { data: auth, error: userError } = await supabase.auth.getUser()
+  if (userError || !auth?.user) return { error: 'Not signed in' }
+
+  // RLS would refuse the write anyway; failing here says why.
+  if (!(await isMember(supabase, corporationId))) {
+    return { error: 'Only a member of the corporation can share its blueprint library.' }
+  }
+
+  const owned = await ownAudiences(supabase)
+
+  const corporationIds = input.isPublic
+    ? []
+    : [...new Set(input.corporationIds.map(Number))].filter((id) => owned.ownCorpIds.has(id))
+  const allianceIds = input.isPublic
+    ? []
+    : [...new Set(input.allianceIds.map(Number))].filter((id) => owned.ownAllianceIds.has(id))
+  const link = input.isPublic ? false : input.link
+
+  // Signing requires the deployment's salt; fail before writing anything.
+  let salt: string | null = null
+  if (link) {
+    try {
+      salt = tokenSalt()
+    } catch {
+      return { error: 'Share links are unavailable: TOKEN_SALT is not configured.' }
+    }
+  }
+
+  const { data: existing } = await supabase
+    .from('corp_bpo_share')
+    .select('id, secret')
+    .eq('corporation_id', corporationId)
+    .maybeSingle<{ id: string; secret: string | null }>()
+
+  const secret = link ? (input.rotateLink || !existing?.secret ? mintShareSecret() : existing.secret) : null
+
+  const { data: saved, error } = await supabase
+    .from('corp_bpo_share')
+    .upsert(
+      {
+        corporation_id: corporationId,
+        corporation_ids: corporationIds,
+        alliance_ids: allianceIds,
+        secret,
+        // Audit only, and only on first publish — a later editor doesn't
+        // overwrite who created the row.
+        ...(existing ? {} : { created_by: auth.user.id }),
+      },
+      { onConflict: 'corporation_id' }
+    )
+    .select('id')
+    .maybeSingle<{ id: string }>()
+  if (error || !saved) return { error: error?.message ?? 'Save failed' }
+
+  revalidatePath(`/bpos/${slug}`)
+
+  return {
+    share: {
+      corporationIds,
+      allianceIds,
+      hasLink: secret != null,
+      shareParam: secret != null && salt != null ? signShare(saved.id, secret, salt) : null,
+      isPublic: secret == null && corporationIds.length === 0 && allianceIds.length === 0,
+    },
+  }
+}
+
+export const revokeCorpBposShare = async (slug: string, corporationId: number): Promise<{ error?: string }> => {
+  const supabase = await createClient()
+
+  const { data: auth, error: userError } = await supabase.auth.getUser()
+  if (userError || !auth?.user) return { error: 'Not signed in' }
+
+  // RLS scopes the delete to corporations the caller has a character in.
+  const { error } = await supabase.from('corp_bpo_share').delete().eq('corporation_id', corporationId)
+  if (error) return { error: error.message }
+
+  revalidatePath(`/bpos/${slug}`)
+  return {}
+}
