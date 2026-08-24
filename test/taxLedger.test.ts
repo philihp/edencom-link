@@ -45,13 +45,19 @@ const input = {
     ['S2', ALLY],
     ['S3', SISTER],
   ]),
+  listedOwners: new Set([OURS, ALLY, SISTER]),
 }
+
+// A corporation with no structure on this page — a public station somewhere we
+// rent slots in.
+const LANDLORD = 'corp-9'
 
 const entry = (over: Partial<TaxEntry>): TaxEntry => ({
   amount: 0,
   corporationId: OURS,
   jobIds: [],
   payerId: null,
+  recipientId: null,
   ...over,
 })
 
@@ -93,10 +99,46 @@ test("tax paid into an ally's structure is counted as paid, on their tile", () =
   assert.deepEqual(ledger.ownReceipts, [])
 })
 
-test('a job we cannot place on the page is not tax paid anywhere', () => {
-  const ledger = foldTaxLedger([entry({ amount: -3_500, jobIds: ['off-page'] })], input)
+test('a job we cannot place on the page is never billed to a structure', () => {
+  const ledger = foldTaxLedger([entry({ amount: -3_500, jobIds: ['off-page'], recipientId: LANDLORD })], input)
   assert.equal(ledger.taxesPaidByStructure.size, 0)
   assert.equal(ledger.unaccounted, 0)
+})
+
+test('tax paid to a corporation with no tile here is totalled separately, by landlord', () => {
+  const ledger = foldTaxLedger(
+    [
+      entry({ amount: -3_500, jobIds: ['J9'], recipientId: LANDLORD }),
+      entry({ amount: -1_500, jobIds: ['J10'], recipientId: LANDLORD }),
+    ],
+    input
+  )
+  assert.deepEqual(ledger.unlistedPayments, [
+    { corporationId: LANDLORD, jobId: 'J9', amount: 3_500 },
+    { corporationId: LANDLORD, jobId: 'J10', amount: 1_500 },
+  ])
+  // Never double-billed: it is not on a tile, and not in the revenue bucket.
+  assert.equal(ledger.taxesPaidByStructure.size, 0)
+  assert.equal(ledger.unaccounted, 0)
+})
+
+test('the recipient is known even when the job is not, so the total stays honest', () => {
+  const ledger = foldTaxLedger([entry({ amount: -900, jobIds: [], recipientId: LANDLORD })], input)
+  assert.deepEqual(ledger.unlistedPayments, [{ corporationId: LANDLORD, jobId: null, amount: 900 }])
+})
+
+test('an unresolved charge to a corporation that DOES own a tile is dropped, not called elsewhere', () => {
+  // Its landlord is listed, so the ISK belongs to some tile here — we just
+  // can't say which. Reporting it as paid elsewhere would name the wrong corp.
+  const ledger = foldTaxLedger([entry({ amount: -900, jobIds: ['off-page'], recipientId: ALLY })], input)
+  assert.deepEqual(ledger.unlistedPayments, [])
+  assert.equal(ledger.taxesPaidByStructure.size, 0)
+})
+
+test('a charge we can place on a tile never also counts as paid elsewhere', () => {
+  const ledger = foldTaxLedger([entry({ amount: -9_007, jobIds: ['J2'], recipientId: LANDLORD })], input)
+  assert.deepEqual([...ledger.taxesPaidByStructure], [['S2', 9_007]])
+  assert.deepEqual(ledger.unlistedPayments, [])
 })
 
 test("a renter's payment is revenue but not ours to have avoided", () => {

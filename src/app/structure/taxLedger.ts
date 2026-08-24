@@ -61,6 +61,10 @@ export type TaxEntry = {
   jobIds: readonly string[]
   // The party that paid, for the unaccounted breakdown.
   payerId: string | null
+  // The party that was paid. On an outgoing entry that is the landlord, which
+  // is how tax leaving for a structure this page doesn't list is attributed to
+  // a corporation without resolving the structure at all.
+  recipientId: string | null
 }
 
 export type TaxLedgerInput = {
@@ -78,6 +82,18 @@ export type TaxLedgerInput = {
   // structure id -> the corporation that owns it. Covers every structure on
   // the page, which includes alliance-mates' as well as our own.
   structureOwner: ReadonlyMap<string, string>
+  // The corporations owning a structure on the page. A charge paid to anyone
+  // else went to a landlord this page doesn't list, which is the whole test for
+  // the unlisted bucket — the job needn't resolve for that to be known.
+  listedOwners: ReadonlySet<string>
+}
+
+// One outgoing charge to a landlord with no tile here. `jobId` is kept so the
+// caller can resolve where it ran; the corporation is already known.
+export type UnlistedTaxPayment = {
+  corporationId: string | null
+  jobId: string | null
+  amount: number
 }
 
 export type TaxLedger = {
@@ -87,18 +103,24 @@ export type TaxLedger = {
   // member paid their own corp: one charge, two true statements about it.
   taxesPaidByStructure: Map<string, number>
   ownReceipts: OwnTaxReceipt[]
+  // Tax paid to corporations owning no structure on this page. Kept apart from
+  // taxesPaidByStructure rather than dropped: it is real ISK that left, and
+  // folding it into a per-structure figure would attribute it to a tile that
+  // doesn't exist.
+  unlistedPayments: UnlistedTaxPayment[]
   // Revenue we received but couldn't tie to a structure on the page.
   unaccounted: number
   unaccountedByParty: Map<string, number>
 }
 
 export const foldTaxLedger = (entries: readonly TaxEntry[], input: TaxLedgerInput): TaxLedger => {
-  const { structureByJob, personalJobCorp, structureOwner } = input
+  const { structureByJob, personalJobCorp, structureOwner, listedOwners } = input
 
   const revenueByStructure = new Map<string, number>()
   const taxesPaidByStructure = new Map<string, number>()
   const unaccountedByParty = new Map<string, number>()
   const ownReceipts: OwnTaxReceipt[] = []
+  const unlistedPayments: UnlistedTaxPayment[] = []
   // One receipt per job, and one payment per job. A job can only be charged its
   // facility tax once, so a second entry naming it is the other side of the
   // same charge, not a second one — counting both would double the figure.
@@ -148,10 +170,19 @@ export const foldTaxLedger = (entries: readonly TaxEntry[], input: TaxLedgerInpu
     }
 
     // Outgoing: our corporation paid this, so it is tax we paid whoever owns the
-    // structure. A charge we can't place on this page is dropped rather than
-    // falling into "unaccounted" (which is a revenue bucket) — there is no tile
-    // to attribute it to.
-    if (jobId == null || structureId == null) continue
+    // structure.
+    if (jobId == null || structureId == null) {
+      // No tile to attribute it to. If the landlord owns nothing on this page,
+      // that is because they are somebody else entirely, and the charge belongs
+      // in the unlisted bucket. If they DO own a tile here, the job simply
+      // didn't resolve — attributing it to a structure we cannot name would be
+      // a guess, so it is dropped as before.
+      const recipient = entry.recipientId
+      if (recipient == null || !listedOwners.has(recipient)) {
+        unlistedPayments.push({ corporationId: recipient, jobId: entry.jobIds[0] ?? null, amount: -amount })
+      }
+      continue
+    }
     payTax(jobId, structureId, -amount)
 
     // ...but only a charge our corporation levied on ITSELF was billed at our
@@ -162,5 +193,12 @@ export const foldTaxLedger = (entries: readonly TaxEntry[], input: TaxLedgerInpu
     credit(jobId, structureId, -amount)
   }
 
-  return { revenueByStructure, taxesPaidByStructure, ownReceipts, unaccounted, unaccountedByParty }
+  return {
+    revenueByStructure,
+    taxesPaidByStructure,
+    ownReceipts,
+    unlistedPayments,
+    unaccounted,
+    unaccountedByParty,
+  }
 }
