@@ -1,11 +1,13 @@
 /*
- * Structures as a responsive tile grid — two per row on phones, packing in
- * more columns as the viewport grows (SwiftUI LazyVGrid feel).
+ * Structures as a responsive tile grid — one full-width tile per row on phones,
+ * packing in more columns as the viewport grows (SwiftUI LazyVGrid feel). A
+ * tile carries a name, several labelled figures and a services list, none of
+ * which survive being squeezed into half a phone's width.
  */
 
 .grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: 1fr;
   gap: 12px;
   list-style: none;
   padding: 0;
@@ -230,9 +232,10 @@
   overflow: visible;
 }
 
-/* On narrow phones the tiles are half-screen wide, so the 3-column label /
- * sparkline / value layout overflows. Instead, stack label+value on the first
- * row and let the sparkline take the full width on the second row. */
+/* Phones get one tile per row, but the 3-column label / sparkline / value
+ * layout still leaves the sparkline a sliver between two text columns at that
+ * width. Stack label+value on the first row instead and give the sparkline the
+ * full width on the second, where the trend is actually readable. */
 @media (max-width: 639px) {
   .indexes {
     display: flex;
