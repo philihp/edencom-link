@@ -65,6 +65,11 @@ const FlagForm = () => {
 
       {account && (
         <form>
+          {/* The account's own id, shown because the Impersonate form below
+              takes a user id and this lookup is the only place to get one. */}
+          <p>
+            User ID: <code>{account.userId}</code>
+          </p>
           <ul>
             {names.map((flag) => (
               <li key={flag}>
