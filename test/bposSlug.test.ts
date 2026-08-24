@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 
-import { characterSlug, pickMain, slugLikePattern } from '../src/app/bpos/slug.ts'
+import { characterSlug, pickCorporation, pickMain, slugLikePattern } from '../src/app/bpos/slug.ts'
 
 describe('characterSlug', () => {
   it('lowercases and turns spaces into dashes', () => {
@@ -42,5 +42,46 @@ describe('pickMain', () => {
 
   it('is null for an account with no characters', () => {
     assert.equal(pickMain([]), null)
+  })
+})
+
+describe('pickCorporation', () => {
+  const rows = [
+    { corporation_id: 98001, name: 'Sudden Buggery' },
+    { corporation_id: 98002, name: 'Dreddit' },
+  ]
+
+  it('finds the corporation whose name slugifies to the URL segment', () => {
+    assert.deepEqual(pickCorporation(rows, 'sudden-buggery'), { corporationId: 98001, name: 'Sudden Buggery' })
+  })
+
+  it('rejects a row the wildcard probe over-matched', () => {
+    // `_` matched the dash in the name, but the slug of "Sudden-Buggery" is
+    // "sudden-buggery" — so an over-match only survives when it agrees exactly.
+    assert.equal(pickCorporation([{ corporation_id: 98003, name: 'Suddenly Buggery' }], 'sudden-buggery'), null)
+  })
+
+  it('refuses an ambiguous slug rather than flipping a coin', () => {
+    const ambiguous = [
+      { corporation_id: 98001, name: 'Sudden Buggery' },
+      { corporation_id: 98009, name: 'sudden buggery' },
+    ]
+    assert.equal(pickCorporation(ambiguous, 'sudden-buggery'), null)
+  })
+
+  it('is unbothered by the same corporation appearing twice', () => {
+    const duplicated = [
+      { corporation_id: 98001, name: 'Sudden Buggery' },
+      { corporation_id: '98001', name: 'Sudden Buggery' },
+    ]
+    assert.deepEqual(pickCorporation(duplicated, 'sudden-buggery'), { corporationId: 98001, name: 'Sudden Buggery' })
+  })
+
+  it('ignores directory rows whose name has not been backfilled', () => {
+    assert.equal(pickCorporation([{ corporation_id: 98004, name: null }], 'sudden-buggery'), null)
+  })
+
+  it('is null when nothing matches', () => {
+    assert.equal(pickCorporation(rows, 'karmafleet'), null)
   })
 })

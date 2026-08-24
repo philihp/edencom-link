@@ -23,3 +23,24 @@ export const fetchBposShareDialogData = async (supabase: SupabaseClient): Promis
 
   return { share: shareRowToState(shareRow), corporations, alliances, hasLegacyToken: false }
 }
+
+// The corporation showcase's dialog. The row is keyed by corporation rather
+// than by the caller, and the manage policy makes it visible to every member —
+// so this reads it through the caller's own cookie client, and the audiences
+// offered are still the caller's own affiliations (you can only aim a share at
+// a corp or alliance you're in).
+export const fetchCorpBposShareDialogData = async (
+  supabase: SupabaseClient,
+  corporationId: number
+): Promise<ShareDialogData> => {
+  const { data: regs } = await supabase.from('registration').select('id, corporation_id')
+  const { corporations, alliances } = await fetchShareAudiences(supabase, (regs ?? []) as OwnRegistration[])
+
+  const { data: shareRow } = await supabase
+    .from('corp_bpo_share')
+    .select('id, corporation_ids, alliance_ids, secret')
+    .eq('corporation_id', corporationId)
+    .maybeSingle<ShareRowLike>()
+
+  return { share: shareRowToState(shareRow), corporations, alliances, hasLegacyToken: false }
+}
