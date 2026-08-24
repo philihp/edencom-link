@@ -48,6 +48,8 @@ const CorpBposLinks = async () => {
 
   const service = createServiceClient()
 
+  // Corporations we hold a director in. `token` is service-role-only (those are
+  // live EVE refresh tokens), so the read is explicitly scoped to the caller.
   const { data: tokens } = await service
     .from('token')
     .select('registration_id')
@@ -55,15 +57,32 @@ const CorpBposLinks = async () => {
     .contains('scope', [CORP_BLUEPRINTS_SCOPE])
     .returns<Array<{ registration_id: string }>>()
   const registrationIds = uniq((tokens ?? []).map((t) => t.registration_id))
-  if (registrationIds.length === 0) return null
+  const { data: regs } = registrationIds.length
+    ? await service
+        .from('registration')
+        .select('corporation_id')
+        .in('id', registrationIds)
+        .not('corporation_id', 'is', null)
+        .returns<Array<{ corporation_id: number | string }>>()
+    : { data: [] }
+  const directorCorpIds = uniq((regs ?? []).map((r) => Number(r.corporation_id)))
 
-  const { data: regs } = await service
-    .from('registration')
+  // Corporations whose showcase is shared with us. Asked as the VIEWER, because
+  // corp_bpo_share's own policies already answer exactly this question: a member
+  // sees their corporation's row, and the audience policy adds rows aimed at
+  // their corp or alliance plus any that are fully public. A link-only share
+  // matches nobody here, which is correct — its URL is the only way in.
+  const { data: shares } = await supabase
+    .from('corp_bpo_share')
     .select('corporation_id')
-    .in('id', registrationIds)
-    .not('corporation_id', 'is', null)
     .returns<Array<{ corporation_id: number | string }>>()
-  const corporationIds = uniq((regs ?? []).map((r) => Number(r.corporation_id)))
+  const sharedCorpIds = uniq((shares ?? []).map((r) => Number(r.corporation_id)))
+
+  // Either route means the page has something to show: a director's grant is
+  // what fills corp_blueprint in the first place, and a share is somebody
+  // saying they want it seen. Without one of them the link would open an empty
+  // page, or a 404.
+  const corporationIds = uniq([...directorCorpIds, ...sharedCorpIds])
   if (corporationIds.length === 0) return null
 
   // A corporation whose name the directory hasn't backfilled yet can't be
@@ -81,8 +100,8 @@ const CorpBposLinks = async () => {
     <>
       {named.map((corp) => (
         <p key={corp.corporation_id}>
-          <Link href={`/bpos/${characterSlug(corp.name)}`}>{corp.name}&rsquo;s blueprint originals</Link> — everything
-          in the corporation&rsquo;s hangars, shareable the same way.
+          <Link href={`/bpos/${characterSlug(corp.name)}`}>{corp.name}&rsquo;s blueprint originals</Link> — every
+          original in the corporation&rsquo;s hangars.
         </p>
       ))}
     </>
