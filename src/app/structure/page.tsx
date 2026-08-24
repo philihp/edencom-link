@@ -68,6 +68,12 @@ type JobRow = {
   job_id: number | string
   station_id: number | string | null
   facility_id: number | string | null
+  // Who installed it, and so who was billed. corp_industry_job names the
+  // corporation directly; character_industry_job names the registration, whose
+  // corporation is looked up below. Absent on rows from
+  // industry_job_tax_facility(), which discloses only a location.
+  corporation_id?: number | string | null
+  registration_id?: string | null
 }
 
 type JournalRow = {
@@ -161,7 +167,11 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
     fetchAllRows<JobRow>((from, to) =>
       supabase
         .from(table)
-        .select('job_id, station_id, facility_id')
+        .select(
+          table === 'corp_industry_job'
+            ? 'job_id, station_id, facility_id, corporation_id'
+            : 'job_id, station_id, facility_id, registration_id'
+        )
         .or(jobStructureFilter)
         .order('job_id', { ascending: true })
         .range(from, to)
@@ -179,12 +189,26 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
     concat(characterJobs, corpJobs)
   )
 
-  // Which of those jobs are OURS, for the cost-avoidance figure below. Only the
-  // two selects above qualify — our characters' jobs and our corporations' —
-  // never the industry_job_tax_facility rows merged in further down, which are
-  // other players' jobs renting our slots. Their tax is revenue; ours is a bill
-  // we paid to ourselves, and it is that bill the counterfactual scales.
-  const ownJobIds = new Set(map((j: JobRow) => String(j.job_id), concat(characterJobs, corpJobs)))
+  // Our characters' PERSONAL jobs, mapped to the corporation each installer was
+  // in. That corporation is what decides cost avoidance (a job is only billed
+  // our own rate by a structure its own corp owns), and the presence of a job
+  // here is what decides whether an incoming receipt also counts as tax we paid
+  // — see taxLedger.ts. Corp jobs are deliberately excluded: their payment is
+  // readable as the outgoing entry in the paying corp's own wallet.
+  //
+  // registration is RLS-scoped to the caller, so this only ever resolves our
+  // own characters; a job whose registration we can't see contributes nothing.
+  const { data: ownRegistrations } = await supabase.from('registration').select('id, corporation_id')
+  const corpByRegistration = new Map<string, string>(
+    ((ownRegistrations ?? []) as Array<{ id: string; corporation_id: number | string | null }>)
+      .filter((r) => r.corporation_id != null)
+      .map((r) => [r.id, String(r.corporation_id)])
+  )
+  const personalJobCorp = new Map<string, string>()
+  forEach((j: JobRow) => {
+    const corporationId = j.registration_id != null ? corpByRegistration.get(j.registration_id) : undefined
+    if (corporationId != null) personalJobCorp.set(String(j.job_id), corporationId)
+  }, characterJobs)
 
   // The two rates behind the cost-avoidance figures live on /settings/tax.
   const taxRates = await fetchTaxRates(supabase, user.id)
@@ -320,10 +344,12 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
       }),
       (journal ?? []) as JournalRow[]
     ),
-    { structureByJob, ownJobIds, structureOwner }
+    { structureByJob, personalJobCorp, structureOwner }
   )
 
   const totalByStructure = ledger.revenueByStructure
+  const taxesPaidByStructure = ledger.taxesPaidByStructure
+  const taxesPaidTotal = [...taxesPaidByStructure.values()].reduce((sum, v) => sum + v, 0)
   const unaccounted = ledger.unaccounted
   const unaccountedByParty = ledger.unaccountedByParty
 
@@ -448,6 +474,14 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
                         </span>
                       </>
                     )}
+                    {taxesPaidByStructure.get(String(s.structure_id)) && (
+                      <>
+                        <span className={styles.label}>Taxes Paid</span>
+                        <span className={`${styles.value} ${styles.num}`}>
+                          {formatIsk(taxesPaidByStructure.get(String(s.structure_id)) ?? 0)}
+                        </span>
+                      </>
+                    )}
                     {avoidedByStructure.has(String(s.structure_id)) && (
                       <>
                         <span className={styles.label}>Cost Avoidance</span>
@@ -538,6 +572,12 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
                 <span className={styles.footerValue}>{formatIsk(unaccounted)}</span>
               </>
             )}
+            {taxesPaidTotal > 0 && (
+              <>
+                <span>Taxes paid:</span>
+                <span className={styles.footerValue}>{formatIsk(taxesPaidTotal)}</span>
+              </>
+            )}
             <span>Clone revenue:</span>
             <span className={styles.footerValue}>{formatKisk(cloneRevenue)}</span>
             <span>Cost avoidance:</span>
@@ -562,6 +602,16 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
               <Link href="/settings/tax">Change the rates &raquo;</Link>
             </em>
           </p>
+          {taxesPaidTotal > 0 && (
+            <p className={styles.unaccountedNote}>
+              <em>
+                Taxes paid is facility tax we were actually charged, for jobs run in the structures listed above —
+                including the {formatRate(taxRates.own)} our own structures bill us. Tax paid for a job in a structure
+                that isn&rsquo;t listed here has no tile to belong to and is left out, as is anything a character paid
+                to a corporation that isn&rsquo;t ours, which never appears in a wallet we can read.
+              </em>
+            </p>
+          )}
           {unaccountedParties.length > 0 && (
             <p className={styles.unaccountedNote}>
               <em>
