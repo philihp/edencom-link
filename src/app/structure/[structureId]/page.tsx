@@ -24,11 +24,14 @@ import { structureWindowDays } from '../windows'
 import retro from '../../retro.module.css'
 import structureStyles from '../structures.module.css'
 
+// Nullable where a director is what supplies the value: a structure reached
+// through the public directory rather than corp_structure knows its name,
+// system, type and owner, and nothing else.
 type Structure = {
   structure_id: number
-  corporation_id: number
-  type_id: number
-  system_id: number
+  corporation_id: number | null
+  type_id: number | null
+  system_id: number | null
   profile_id: number | null
   name: string | null
   state: string | null
@@ -39,7 +42,7 @@ type Structure = {
   next_reinforce_apply: string | null
   next_reinforce_weekday: number | null
   services: Array<{ name: string; state: string }> | null
-  last_seen_at: string
+  last_seen_at: string | null
   updated_at: string | null
 }
 
@@ -115,7 +118,7 @@ const StructurePage = async ({ params, searchParams }: StructureParams) => {
   // structure ids are bigints; only digits are valid, and validating guards the .or() filter below.
   const validId = /^\d+$/.test(structureId)
 
-  const { data: structure } = validId
+  const { data: scanned } = validId
     ? await supabase
         .from('corp_structure')
         .select(
@@ -124,6 +127,50 @@ const StructurePage = async ({ params, searchParams }: StructureParams) => {
         .eq('structure_id', structureId)
         .maybeSingle()
     : { data: null }
+
+  // /structure now lists structures our jobs run in but no director of ours can
+  // scan (src/app/structure/roster.ts), so those tiles link here too. There is
+  // no corp_structure row behind one — fall back to the public directory, which
+  // carries what ESI tells a visitor: a name, a system, a type and an owner.
+  // Everything below this that needs a director (fuel, rigs, reinforcement)
+  // simply comes back empty and renders as "—"; the jobs we run there and the
+  // tax we paid for them are ours to read either way.
+  const { data: directory } =
+    validId && !scanned
+      ? await supabase
+          .from('universe_structure')
+          .select('structure_id, name, system_id, type_id, owner_corporation_id, resolved_at')
+          .eq('structure_id', structureId)
+          .maybeSingle<{
+            structure_id: number | string
+            name: string | null
+            system_id: number | string | null
+            type_id: number | string | null
+            owner_corporation_id: number | string | null
+            resolved_at: string | null
+          }>()
+      : { data: null }
+
+  const structure =
+    scanned ??
+    (directory
+      ? {
+          structure_id: Number(directory.structure_id),
+          corporation_id: directory.owner_corporation_id != null ? Number(directory.owner_corporation_id) : null,
+          type_id: directory.type_id != null ? Number(directory.type_id) : null,
+          system_id: directory.system_id != null ? Number(directory.system_id) : null,
+          name: directory.name,
+          state: null,
+          unanchors_at: null,
+          reinforce_hour: null,
+          next_reinforce_hour: null,
+          next_reinforce_apply: null,
+          next_reinforce_weekday: null,
+          services: null,
+          last_seen_at: directory.resolved_at,
+          updated_at: null,
+        }
+      : null)
 
   if (!structure) {
     return (
@@ -271,8 +318,10 @@ const StructurePage = async ({ params, searchParams }: StructureParams) => {
   )
   const leaderboard = sortWith([descend((p: PayerTotal) => p.isk)], [...byPayer.values()])
 
+  // `Number(null)` is 0, a finite id every resolver would go looking for, so a
+  // structure the directory couldn't type contributes no id rather than a zero.
   const typeNames = await fetchTypeNames([
-    Number(s.type_id),
+    ...(s.type_id != null ? [Number(s.type_id)] : []),
     ...rigs.map((r) => Number(r.type_id)),
     ...jobs.flatMap((j) => {
       const ids = [Number(j.blueprint_type_id)]
@@ -281,16 +330,16 @@ const StructurePage = async ({ params, searchParams }: StructureParams) => {
     }),
   ])
 
-  const systemNames = await fetchSystemNames([Number(s.system_id)])
+  const systemNames = await fetchSystemNames(s.system_id != null ? [Number(s.system_id)] : [])
 
-  const typeName = typeNames[Number(s.type_id)]
-  const systemName = systemNames[Number(s.system_id)]
+  const typeName = s.type_id != null ? typeNames[Number(s.type_id)] : undefined
+  const systemName = s.system_id != null ? systemNames[Number(s.system_id)] : undefined
 
   // Industry cost indices relevant to this structure (those its fitted service
   // modules enable), pulled from the latest snapshot for its system.
   const indexActivities = structureIndexActivities(s.services)
-  const indexesBySystem = await fetchLatestSystemIndexes(supabase, [Number(s.system_id)])
-  const systemIndexes = indexesBySystem.get(Number(s.system_id))
+  const indexesBySystem = await fetchLatestSystemIndexes(supabase, s.system_id != null ? [Number(s.system_id)] : [])
+  const systemIndexes = s.system_id != null ? indexesBySystem.get(Number(s.system_id)) : undefined
 
   return (
     <>

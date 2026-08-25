@@ -209,18 +209,38 @@ unaffected — that job runs service-role and never sees RLS.
 
 ## Page
 
-Two tiers, and deliberately no third:
+Three blocks (`src/app/structure/roster.ts`, tested):
 
-1. **Favorites** — `structure_favorite`, `position` order.
-2. **Everything else in the alliance** — which is exactly what the existing
-   `corp_structure` select already returns, since its RLS is own-corps OR
-   alliance-mates. Fuel only for directors; rigs now visible alliance-wide.
-3. ~~Everything else we can name~~ — **not shown.** Structures outside the
-   alliance don't belong on this page.
+1. **Favorites** — `structure_favorite`, `position` order. A pin wins outright,
+   so a favorite can be a structure from either block below.
+2. **Our structures** — what a director token scans, which is exactly what the
+   `corp_structure` select returns (RLS is own-corps OR alliance-mates), _plus_
+   anything owned by a corporation one of our characters is in. That second
+   clause is not redundant: a structure our own corp owns is absent from
+   `corp_structure` whenever no linked character holds Station_Manager there,
+   and filing our own Athanor under everyone else's would be perverse.
+3. **Everyone else's structures** — every player structure appearing as a job
+   location (`station_id`, falling back to `facility_id`) on one of our own
+   industry jobs and not covered above, named from `universe_structure`.
 
-Because tier 3 is empty, a favorite is always something the caller can already
-see, and the star only ever re-sorts this list — no "pinned a structure you
-can't view" state to design around.
+Block 3 was originally struck out as "structures outside the alliance don't
+belong on this page." That was wrong about which structures those are. Renting
+slots is normal, and the structure a corp's own jobs run in is the most relevant
+structure it doesn't own: before this, it appeared only as ISK under "taxes paid
+elsewhere", with no tile to belong to. Discovery is seeded from **our** jobs
+only — never from the jobs `industry_job_tax_facility()` resolves, which are
+other players renting our slots — so the block is "structures we use", not a
+directory dump.
+
+No director means no fitting and no capabilities: what a block 3 tile shows is
+what ESI hands any visitor — a name, a system, a type and an owner — and a
+structure the directory has never resolved still gets a tile, with those fields
+reading "—" rather than being invented. Both own-corp side tables
+(`corp_structure_status`, `corp_structure_rig`) are asked only about scanned
+ids, since a structure we don't scan can only ever come back empty.
+
+A favorite may now be a structure the caller can't scan, which the star already
+handled: `structure_favorite` has no FK to any structure table, deliberately.
 
 That does _not_ make the directory pointless: naming structures is what it is
 for. Asset paths, market orders, industry job locations and contract endpoints
@@ -229,7 +249,8 @@ those into names.
 
 NPC stations are excluded by id range, not by a lookup: player structures are
 `>= 100_000_000_000`, NPC stations `<= 64_000_000`. `universeStructures.js`
-already carries the floor as `STRUCTURE_ID_FLOOR`.
+already carries the floor as `STRUCTURE_ID_FLOOR`; `roster.ts` carries the
+same constant for the same reason, so a job installed in Jita 4-4 gets no tile.
 
 ## Decisions
 

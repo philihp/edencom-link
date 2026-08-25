@@ -437,3 +437,24 @@
   font-size: 13px;
   color: var(--ink-soft);
 }
+
+/* The three blocks the roster splits into: Favorites, Our structures, Everyone
+ * else's. A heading is UI chrome naming a group, not a thing's name, so it takes
+ * the sans face (the typography note in globals.css) — and it sits above a grid
+ * whose own top margin already spaces it, hence the asymmetric margins. */
+.blockHeading {
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin: 24px 0 0;
+}
+
+.blockNote {
+  margin: 4px 0 -8px;
+  max-width: 60ch;
+  color: var(--ink-faint);
+  font-size: 12px;
+}
