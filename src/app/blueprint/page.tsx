@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { map, sort, uniq } from 'ramda'
+import { filter, isNil, map, reject, sort, uniq } from 'ramda'
 
 import { createClient } from '@/utils/supabase/server'
 import { createServiceClient } from '@/utils/supabase/service'
@@ -67,22 +67,36 @@ const CorpBposLinks = async () => {
     : { data: [] }
   const directorCorpIds = uniq(map((r: { corporation_id: number | string }) => Number(r.corporation_id), regs ?? []))
 
-  // Corporations whose showcase is shared with us. Asked as the VIEWER, because
-  // corp_bpo_share's own policies already answer exactly this question: a member
-  // sees their corporation's row, and the audience policy adds rows aimed at
-  // their corp or alliance plus any that are fully public. A link-only share
-  // matches nobody here, which is correct — its URL is the only way in.
+  // Corporations whose showcase has been published. Asked as the VIEWER, so
+  // corp_bpo_share's own policies answer it: a member sees their corporation's
+  // row, and the audience policy adds rows aimed at their corp or alliance
+  // plus any that are fully public.
   const { data: shares } = await supabase
     .from('corp_bpo_share')
     .select('corporation_id')
     .returns<Array<{ corporation_id: number | string }>>()
   const sharedCorpIds = uniq(map((r: { corporation_id: number | string }) => Number(r.corporation_id), shares ?? []))
 
-  // Either route means the page has something to show: a director's grant is
+  // Our own corporations — the ones we have a character in, which is also
+  // exactly the set whose showcase we could publish or revoke ourselves.
+  const { data: ownRegistrations } = await supabase.from('registration').select('corporation_id')
+  const ownCorporationIds = new Set(
+    map(
+      Number,
+      reject(
+        isNil,
+        map((r: { corporation_id: number | string | null }) => r.corporation_id, ownRegistrations ?? [])
+      )
+    )
+  )
+
+  // Either route means the page has something to show — a director's grant is
   // what fills corp_blueprint in the first place, and a share is somebody
-  // saying they want it seen. Without one of them the link would open an empty
-  // page, or a 404.
-  const corporationIds = uniq([...directorCorpIds, ...sharedCorpIds])
+  // saying they want it seen — but this is OUR blueprint page, so it lists only
+  // our own corporations. A stranger's corp aiming a share at our alliance, or
+  // publishing one outright, is theirs to link to; it does not belong in a list
+  // of libraries we keep.
+  const corporationIds = filter((id: number) => ownCorporationIds.has(id), uniq([...directorCorpIds, ...sharedCorpIds]))
   if (corporationIds.length === 0) return null
 
   // A corporation whose name the directory hasn't backfilled yet can't be
