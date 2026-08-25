@@ -1,6 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
+import { filter, isNil, map, reject, uniq } from 'ramda'
 
 import { mintShareSecret, signShare, tokenSalt } from '@/shareToken'
 import { createClient } from '@/utils/supabase/server'
@@ -12,30 +13,21 @@ import type { SaveShareInput, SaveShareResult } from '../asset/shareActions'
 // over the one user_id-keyed bpo_share row. Cookie-session client, never the
 // service role: the table's own policy pins user_id to the caller.
 
+// Every non-null id in a column, deduped and numeric — the shape both halves of
+// the affiliation walk below need.
+const idsIn = <T>(rows: readonly T[], pick: (row: T) => number | string | null): number[] =>
+  uniq(map(Number, reject(isNil, map(pick, rows))))
+
 // The affiliations a share may be aimed at. Requested ids are filtered against
 // these so a hand-rolled request can't aim a share at a corporation the caller
 // has no character in.
 const ownAudiences = async (supabase: Awaited<ReturnType<typeof createClient>>) => {
   const { data: regs } = await supabase.from('registration').select('id, corporation_id')
-  const corpIds = [
-    ...new Set(
-      ((regs ?? []) as Array<{ corporation_id: number | string | null }>)
-        .map((r) => r.corporation_id)
-        .filter((c): c is number => c != null)
-        .map(Number)
-    ),
-  ]
+  const corpIds = idsIn((regs ?? []) as Array<{ corporation_id: number | string | null }>, (r) => r.corporation_id)
   const { data: corps } = corpIds.length
     ? await supabase.from('corporation').select('corporation_id, alliance_id').in('corporation_id', corpIds)
     : { data: [] }
-  const allianceIds = [
-    ...new Set(
-      ((corps ?? []) as Array<{ alliance_id: number | string | null }>)
-        .map((c) => c.alliance_id)
-        .filter((a): a is number => a != null)
-        .map(Number)
-    ),
-  ]
+  const allianceIds = idsIn((corps ?? []) as Array<{ alliance_id: number | string | null }>, (c) => c.alliance_id)
   return { ownCorpIds: new Set(corpIds), ownAllianceIds: new Set(allianceIds) }
 }
 
@@ -49,10 +41,10 @@ export const saveBposShare = async (slug: string, input: SaveShareInput): Promis
 
   const corporationIds = input.isPublic
     ? []
-    : [...new Set(input.corporationIds.map(Number))].filter((id) => owned.ownCorpIds.has(id))
+    : filter((id: number) => owned.ownCorpIds.has(id), uniq(map(Number, input.corporationIds)))
   const allianceIds = input.isPublic
     ? []
-    : [...new Set(input.allianceIds.map(Number))].filter((id) => owned.ownAllianceIds.has(id))
+    : filter((id: number) => owned.ownAllianceIds.has(id), uniq(map(Number, input.allianceIds)))
   const link = input.isPublic ? false : input.link
 
   // Signing requires the deployment's salt; fail before writing anything.
@@ -144,10 +136,10 @@ export const saveCorpBposShare = async (
 
   const corporationIds = input.isPublic
     ? []
-    : [...new Set(input.corporationIds.map(Number))].filter((id) => owned.ownCorpIds.has(id))
+    : filter((id: number) => owned.ownCorpIds.has(id), uniq(map(Number, input.corporationIds)))
   const allianceIds = input.isPublic
     ? []
-    : [...new Set(input.allianceIds.map(Number))].filter((id) => owned.ownAllianceIds.has(id))
+    : filter((id: number) => owned.ownAllianceIds.has(id), uniq(map(Number, input.allianceIds)))
   const link = input.isPublic ? false : input.link
 
   // Signing requires the deployment's salt; fail before writing anything.

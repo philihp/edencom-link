@@ -5,6 +5,8 @@
 // (corp_blueprint, scoped to the one corporation id). Service-role in both
 // cases — the /corpses precedent — because the caller has already decided the
 // viewer may see them.
+import { forEach, map } from 'ramda'
+
 import { getBlueprintsByTypeIDs } from '@/sdeBlueprints'
 import { getSdeTypes } from '@/sdeTypes'
 import { createServiceClient } from '@/utils/supabase/service'
@@ -37,7 +39,7 @@ const readBlueprints = async (
     return acc
   }
   const rows = data ?? []
-  rows.forEach((row) => acc.push(row))
+  forEach((row: BlueprintRow) => acc.push(row), rows)
   return rows.length < PAGE_SIZE ? acc : readBlueprints(registrationIds, from + PAGE_SIZE, acc)
 }
 
@@ -66,7 +68,7 @@ const readCorpBlueprints = async (
     return acc
   }
   const rows = data ?? []
-  rows.forEach((row) => acc.push(row))
+  forEach((row: BlueprintRow) => acc.push(row), rows)
   return rows.length < PAGE_SIZE ? acc : readCorpBlueprints(corporationId, from + PAGE_SIZE, acc)
 }
 
@@ -76,7 +78,7 @@ const dressStacks = async (rows: BlueprintRow[]): Promise<BpoEntry[]> => {
   const stacks = stackBpos(rows)
   if (stacks.length === 0) return []
 
-  const blueprintTypeIds = stacks.map((s) => s.typeId)
+  const blueprintTypeIds = map((s) => s.typeId, stacks)
 
   // Two SDE hops: the blueprint's own name, and — via what it manufactures —
   // the category worth sorting by. A blueprint type's own category is always
@@ -85,9 +87,9 @@ const dressStacks = async (rows: BlueprintRow[]): Promise<BpoEntry[]> => {
     getSdeTypes(blueprintTypeIds),
     getBlueprintsByTypeIDs(blueprintTypeIds),
   ])
-  const productTypes = await getSdeTypes(Object.values(products).map((b) => b.productTypeID))
+  const productTypes = await getSdeTypes(map((b) => b.productTypeID, Object.values(products)))
 
-  return stacks.map((stack) => {
+  return map((stack) => {
     const product = products[stack.typeId]
     const productType = product ? productTypes[product.productTypeID] : undefined
     return {
@@ -98,7 +100,7 @@ const dressStacks = async (rows: BlueprintRow[]): Promise<BpoEntry[]> => {
       // lands in a sensible bucket rather than under "Uncategorized".
       category: productType?.categoryName ?? blueprintTypes[stack.typeId]?.groupName ?? null,
     }
-  })
+  }, stacks)
 }
 
 export const fetchBpoEntries = async (registrationIds: string[]): Promise<BpoEntry[]> =>

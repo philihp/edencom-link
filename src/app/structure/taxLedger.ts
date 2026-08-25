@@ -49,6 +49,8 @@
 // tax paid by the installer, but avoidance for neither: a structure bills a
 // corporation it does not contain at whatever rate it likes, and scaling that
 // receipt as though it were the own rate would invent a saving.
+import { find, forEach, sum } from 'ramda'
+
 import type { OwnTaxReceipt } from './costAvoidance'
 
 export type TaxEntry = {
@@ -126,7 +128,10 @@ export const foldTaxLedger = (entries: readonly TaxEntry[], input: TaxLedgerInpu
   // same charge, not a second one — counting both would double the figure.
   const credited = new Set<string>()
   const paid = new Set<string>()
-  let unaccounted = 0
+
+  // Every per-key total here accumulates the same way. Mutating the map rather
+  // than rebuilding it per entry is the accepted shape for a fold this size.
+  const bump = (into: Map<string, number>, key: string, amount: number) => into.set(key, (into.get(key) ?? 0) + amount)
 
   const credit = (jobId: string, structureId: string, amount: number) => {
     if (credited.has(jobId)) return
@@ -137,19 +142,19 @@ export const foldTaxLedger = (entries: readonly TaxEntry[], input: TaxLedgerInpu
   const payTax = (jobId: string, structureId: string, amount: number) => {
     if (paid.has(jobId)) return
     paid.add(jobId)
-    taxesPaidByStructure.set(structureId, (taxesPaidByStructure.get(structureId) ?? 0) + amount)
+    bump(taxesPaidByStructure, structureId, amount)
   }
 
-  for (const entry of entries) {
+  forEach((entry: TaxEntry) => {
     const { amount } = entry
-    if (!Number.isFinite(amount) || amount === 0) continue
+    if (!Number.isFinite(amount) || amount === 0) return
 
-    const jobId = entry.jobIds.find((token) => structureByJob.has(token))
+    const jobId = find((token: string) => structureByJob.has(token), entry.jobIds)
     const structureId = jobId != null ? structureByJob.get(jobId) : undefined
 
     if (amount > 0) {
       if (structureId != null) {
-        revenueByStructure.set(structureId, (revenueByStructure.get(structureId) ?? 0) + amount)
+        bump(revenueByStructure, structureId, amount)
         // Somebody paid us. If it was one of our own characters, that payment is
         // recorded nowhere else — no character wallet journal is ingested — so
         // this receipt is also the record of tax we paid, and of an own-rate
@@ -162,11 +167,9 @@ export const foldTaxLedger = (entries: readonly TaxEntry[], input: TaxLedgerInpu
       } else {
         // Tax we received but can't tie to one of our structures (e.g. jobs not
         // in our tables, or a structure we've stopped monitoring).
-        unaccounted += amount
-        const party = entry.payerId ?? 'unknown'
-        unaccountedByParty.set(party, (unaccountedByParty.get(party) ?? 0) + amount)
+        bump(unaccountedByParty, entry.payerId ?? 'unknown', amount)
       }
-      continue
+      return
     }
 
     // Outgoing: our corporation paid this, so it is tax we paid whoever owns the
@@ -181,24 +184,25 @@ export const foldTaxLedger = (entries: readonly TaxEntry[], input: TaxLedgerInpu
       if (recipient == null || !listedOwners.has(recipient)) {
         unlistedPayments.push({ corporationId: recipient, jobId: entry.jobIds[0] ?? null, amount: -amount })
       }
-      continue
+      return
     }
     payTax(jobId, structureId, -amount)
 
     // ...but only a charge our corporation levied on ITSELF was billed at our
     // own rate, so only that is avoidance. Paying a landlord — an ally's
     // structure, or a sister corp's — is a real expense and no saving at all.
-    if (entry.corporationId == null) continue
-    if (structureOwner.get(structureId) !== entry.corporationId) continue
+    if (entry.corporationId == null) return
+    if (structureOwner.get(structureId) !== entry.corporationId) return
     credit(jobId, structureId, -amount)
-  }
+  }, entries)
 
   return {
     revenueByStructure,
     taxesPaidByStructure,
     ownReceipts,
     unlistedPayments,
-    unaccounted,
+    // The same figure the breakdown adds up to, so the two can never disagree.
+    unaccounted: sum([...unaccountedByParty.values()]),
     unaccountedByParty,
   }
 }

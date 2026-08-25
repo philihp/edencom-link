@@ -2,6 +2,8 @@
 // name, with its spaces turned into dashes — /bpos/sir-cuddles for "Sir
 // Cuddles". Pure helpers, so the round trip (name → slug, slug → the SQL probe
 // that finds it again) is testable without a database.
+import { reduce } from 'ramda'
+
 import { escapeLike } from '../../utils/escapeLike.ts'
 
 // An EVE name's canonical slug. Lowercased so the URL is case-insensitive in
@@ -47,10 +49,13 @@ export const pickCorporation = (
   rows: readonly CorporationCandidate[],
   slug: string
 ): { corporationId: number; name: string } | null => {
-  const matches = new Map<number, { corporationId: number; name: string }>()
-  rows.forEach((row) => {
-    if (row.name == null || characterSlug(row.name) !== slug) return
-    matches.set(Number(row.corporation_id), { corporationId: Number(row.corporation_id), name: row.name })
-  })
+  const matches = reduce(
+    (acc: Map<number, { corporationId: number; name: string }>, row: CorporationCandidate) =>
+      row.name == null || characterSlug(row.name) !== slug
+        ? acc
+        : acc.set(Number(row.corporation_id), { corporationId: Number(row.corporation_id), name: row.name }),
+    new Map<number, { corporationId: number; name: string }>(),
+    rows
+  )
   return matches.size === 1 ? [...matches.values()][0] : null
 }

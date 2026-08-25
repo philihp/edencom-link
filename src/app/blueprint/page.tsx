@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { uniq } from 'ramda'
+import { map, sort, uniq } from 'ramda'
 
 import { createClient } from '@/utils/supabase/server'
 import { createServiceClient } from '@/utils/supabase/service'
@@ -56,7 +56,7 @@ const CorpBposLinks = async () => {
     .eq('user_id', user.id)
     .contains('scope', [CORP_BLUEPRINTS_SCOPE])
     .returns<Array<{ registration_id: string }>>()
-  const registrationIds = uniq((tokens ?? []).map((t) => t.registration_id))
+  const registrationIds = uniq(map((t: { registration_id: string }) => t.registration_id, tokens ?? []))
   const { data: regs } = registrationIds.length
     ? await service
         .from('registration')
@@ -65,7 +65,7 @@ const CorpBposLinks = async () => {
         .not('corporation_id', 'is', null)
         .returns<Array<{ corporation_id: number | string }>>()
     : { data: [] }
-  const directorCorpIds = uniq((regs ?? []).map((r) => Number(r.corporation_id)))
+  const directorCorpIds = uniq(map((r: { corporation_id: number | string }) => Number(r.corporation_id), regs ?? []))
 
   // Corporations whose showcase is shared with us. Asked as the VIEWER, because
   // corp_bpo_share's own policies already answer exactly this question: a member
@@ -76,7 +76,7 @@ const CorpBposLinks = async () => {
     .from('corp_bpo_share')
     .select('corporation_id')
     .returns<Array<{ corporation_id: number | string }>>()
-  const sharedCorpIds = uniq((shares ?? []).map((r) => Number(r.corporation_id)))
+  const sharedCorpIds = uniq(map((r: { corporation_id: number | string }) => Number(r.corporation_id), shares ?? []))
 
   // Either route means the page has something to show: a director's grant is
   // what fills corp_blueprint in the first place, and a share is somebody
@@ -93,7 +93,7 @@ const CorpBposLinks = async () => {
     .in('corporation_id', corporationIds)
     .not('name', 'is', null)
     .returns<Array<{ corporation_id: number | string; name: string }>>()
-  const named = (corps ?? []).slice().sort((a, b) => a.name.localeCompare(b.name))
+  const named = sort((a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name), corps ?? [])
   if (named.length === 0) return null
 
   return (
