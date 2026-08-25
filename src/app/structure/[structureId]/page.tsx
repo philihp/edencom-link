@@ -5,6 +5,8 @@ import { chain, descend, map, reduce, reject, sortWith, sum, uniq } from 'ramda'
 import { createClient } from '@/utils/supabase/server'
 
 import { establishedUser } from '../../account/lib/establishedUser'
+import { fetchTaxRates, formatRate } from '../../settings/tax/rates'
+import { costAvoidance } from '../costAvoidance'
 import { DateTime } from '../../DateTime'
 import { ACTIVITY_NAMES } from '../../industry/jobFields'
 import { formatIskValue } from '../../isk'
@@ -232,6 +234,16 @@ const StructurePage = async ({ params, searchParams }: StructureParams) => {
   const selfPaidIsk = totalOf((r) => r.isk_self_paid)
   const paidIsk = totalOf((r) => r.isk_paid)
   const paidJobs = totalOf((r) => r.paid_jobs)
+  const selfPaidJobs = totalOf((r) => r.self_paid_jobs)
+
+  // The same arithmetic the list page's Cost Avoidance tile runs, over this
+  // structure's own-rate charges alone — reusing costAvoidance() rather than
+  // repeating the formula, so the two can't disagree about what a saving is.
+  const taxRates = await fetchTaxRates(supabase, user.id)
+  const avoidance = costAvoidance([{ structureId: String(s.structure_id), amount: selfPaidIsk }], taxRates)
+  // What we paid that was NOT billed at our own rate: a landlord charges a
+  // corporation it doesn't contain whatever it likes, so none of it is a saving.
+  const paidAtOtherRate = paidIsk - selfPaidIsk
   // A structure whose corp installs everything under corp ownership has only
   // outgoing rows, so the received column would be all zeroes; the extra column
   // earns its width only when there is something in it.
@@ -485,13 +497,85 @@ const StructurePage = async ({ params, searchParams }: StructureParams) => {
             ISK is tax that arrived here; Paid ISK is what we were charged to run our own jobs here, whoever owns the
             structure. One charge can be both — a member billing their own corporation pays it and we receive it — so
             the two columns describe the same events from different sides rather than summing to a balance.
-            {selfPaidIsk > 0 && (
-              <>
-                {' '}
-                Of what we paid, {formatIskValue(selfPaidIsk)} was billed at our own rate, which is the part{' '}
-                <Link href="/structure">cost avoidance</Link> prices against a public structure.
-              </>
-            )}
+          </em>
+        </p>
+      )}
+
+      {selfPaidIsk > 0 && (
+        <>
+          <h2>Cost Avoidance</h2>
+          <table className={retro.retro}>
+            <tbody>
+              <tr>
+                <td>
+                  <span className={structureStyles.payer}>
+                    <span>
+                      Billed at our own rate <span className={retro.muted}>({formatRate(taxRates.own)})</span>
+                    </span>
+                    <span className={structureStyles.payerCorp}>
+                      {selfPaidJobs.toLocaleString()} charge{selfPaidJobs === 1 ? '' : 's'} on jobs whose own
+                      corporation owns this structure
+                    </span>
+                  </span>
+                </td>
+                <td className={retro.num}>{formatIskValue(selfPaidIsk)}</td>
+              </tr>
+              <tr>
+                <td>
+                  <span className={structureStyles.payer}>
+                    <span>
+                      The same jobs in a public structure{' '}
+                      <span className={retro.muted}>({formatRate(taxRates.public)})</span>
+                    </span>
+                    <span className={structureStyles.payerCorp}>
+                      what they would have been billed, and kept none of
+                    </span>
+                  </span>
+                </td>
+                <td className={retro.num}>
+                  {avoidance.counterfactual == null ? '—' : formatIskValue(avoidance.counterfactual)}
+                </td>
+              </tr>
+              <tr>
+                <th>Avoided</th>
+                <th className={retro.num}>{avoidance.total == null ? '—' : formatIskValue(avoidance.total)}</th>
+              </tr>
+            </tbody>
+          </table>
+          <p className={structureStyles.unaccountedNote}>
+            <em>
+              {avoidance.total == null ? (
+                <>
+                  Cost avoidance needs a non-zero rate for your own characters — nothing was billed, so there is no
+                  receipt to price a public structure against.{' '}
+                </>
+              ) : (
+                <>
+                  The tax receipt is {formatRate(taxRates.own)} of the job&rsquo;s Estimated Item Value, so the same
+                  jobs at {formatRate(taxRates.public)} come to {formatRate(taxRates.public)} ÷{' '}
+                  {formatRate(taxRates.own)} times as much, and the difference is the expense never incurred. No ISK
+                  changed hands, so it is not revenue.{' '}
+                </>
+              )}
+              {paidAtOtherRate > 0 && (
+                <>
+                  A further {formatIskValue(paidAtOtherRate)} of tax we paid here is excluded: it was billed by a
+                  corporation that does not own this structure, at whatever rate that corporation sets, so there is no
+                  own rate to scale.{' '}
+                </>
+              )}
+              <Link href="/settings/tax">Change the rates &raquo;</Link>
+            </em>
+          </p>
+        </>
+      )}
+
+      {selfPaidIsk === 0 && paidIsk > 0 && (
+        <p className={structureStyles.unaccountedNote}>
+          <em>
+            No cost avoidance here: none of the {formatIskValue(paidIsk)} we paid was billed at our own rate. That
+            happens when the jobs were installed by characters or corporations that this structure&rsquo;s owner
+            doesn&rsquo;t contain — a landlord bills them at its own rate, so there is no saving to price.
           </em>
         </p>
       )}
