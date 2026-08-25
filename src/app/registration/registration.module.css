@@ -1,0 +1,245 @@
+/* /registration — the registrations matrix from the phase-0 design extraction
+   (docs/registrations-page/00a-design-extraction.md §1, §4). Design tokens map
+   onto the app's own: bg-surface/canvas → --paper, bg-elevated → --paper-raised,
+   border-subtle → --line-soft, border-strong → --line, text-secondary/tertiary
+   → --ink-soft/--ink-faint.
+
+   Phase 2 builds the shell and the character rows; the per-scope job columns
+   land in phase 3, which widens .row's grid template rather than replacing it. */
+
+/* Page header: title + status line on the left, actions right, baseline-ish
+   aligned per the mockup's flex-end row. */
+.header {
+  display: flex;
+  align-items: flex-end;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+
+.headerText {
+  flex: 1;
+  min-width: 0;
+}
+
+.header h1 {
+  margin: 0;
+}
+
+.status {
+  margin-top: 5px;
+  font-size: 9pt;
+  color: var(--ink-faint);
+}
+
+.statusCount {
+  font-family: var(--mono);
+  color: var(--ink);
+}
+
+.headerActions {
+  display: flex;
+  gap: 8pt;
+  margin: 0;
+}
+
+/* The matrix: one bordered, rounded container, rows separated by hairlines and
+   clipped to the radius. */
+.matrix {
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.columns {
+  display: grid;
+  /* Phase 3 inserts `repeat(N, 1fr)` for the scope columns between these two. */
+  grid-template-columns: 230px 1fr;
+  gap: 14px;
+  align-items: start;
+}
+
+.headerRow {
+  composes: columns;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line-soft);
+  background: var(--paper-raised);
+}
+
+.columnLabel {
+  font-size: 8pt;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.row {
+  composes: columns;
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--line-soft);
+  align-items: center;
+}
+
+.row:last-child {
+  border-bottom: none;
+}
+
+/* Identity cell: portrait, name, and the job-slot bubbles beneath it. */
+.identity {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+}
+
+.avatar {
+  width: 40px;
+  height: 40px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--line-soft);
+  border: 1px solid var(--line);
+}
+
+.identityText {
+  min-width: 0;
+}
+
+.name {
+  font-family: var(--serif);
+  font-weight: bold;
+  font-size: 11pt;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Character state — the fields the mockup's row omits and parity keeps
+   (docs/registrations-page/00a-design-extraction.md §2). Phase 4 rules on
+   where these finally live. */
+.state {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 24px;
+  min-width: 0;
+  font-size: 9pt;
+  color: var(--ink-soft);
+}
+
+.field {
+  min-width: 0;
+}
+
+.fieldLabel {
+  color: var(--ink-faint);
+  margin-right: 4pt;
+}
+
+.list {
+  margin: 2pt 0 0;
+  padding-left: 16pt;
+}
+
+.list li {
+  white-space: nowrap;
+}
+
+.cloneList {
+  list-style: none;
+  padding-left: 0;
+}
+
+/* First run: the matrix, ghosted — one dashed row where the first character
+   will appear, then the invitation (design extraction, "First-run empty
+   state"). */
+.ghostRow {
+  composes: columns;
+  padding: 11px 14px;
+  opacity: 0.45;
+}
+
+.ghostAvatar {
+  width: 40px;
+  height: 40px;
+  flex: none;
+  border-radius: 50%;
+  border: 1px dashed var(--line);
+}
+
+.ghostBar {
+  height: 10px;
+  width: 120px;
+  margin-top: 8px;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-sm);
+}
+
+.empty {
+  padding: 0 14px 18px;
+  text-align: center;
+}
+
+.emptyTitle {
+  font-family: var(--serif);
+  font-size: 11pt;
+}
+
+.emptyBody {
+  margin: 4pt auto 10pt;
+  max-width: 44em;
+  font-size: 9pt;
+  color: var(--ink-soft);
+}
+
+.emptyActions {
+  display: flex;
+  justify-content: center;
+  margin: 0;
+}
+
+.reassurance {
+  margin-top: 10pt;
+  font-size: 8.5pt;
+  color: var(--ink-faint);
+}
+
+/* Same treatment as /character's: an account that shares nothing optional gets
+   almost no data, so say so where characters are added. */
+.warning {
+  margin: 12pt 0;
+  padding: 10pt 12pt;
+  border: 1px solid #d9a441;
+  border-left-width: 3px;
+  border-radius: var(--radius);
+  background: color-mix(in srgb, #d9a441 12%, var(--paper-raised));
+}
+
+.warningTitle {
+  display: block;
+  font-family: var(--serif);
+  font-size: 10pt;
+}
+
+.warningBody {
+  margin: 4pt 0 0;
+  font-size: 9pt;
+  color: var(--ink-soft);
+}
+
+/* Narrow widths: the matrix becomes per-character cards (design extraction §6
+   — the responsive intent). The grid collapses to one column and the identity
+   block sits above the state fields. */
+@media (max-width: 720px) {
+  .columns {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .headerRow {
+    display: none;
+  }
+
+  .row {
+    align-items: flex-start;
+  }
+}
