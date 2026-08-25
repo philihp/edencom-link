@@ -1,10 +1,10 @@
 import Link from 'next/link'
-import { filter, isNil, map, reject, sort, uniq } from 'ramda'
+import { chain, filter, groupBy, isNil, map, reject, sort, uniq } from 'ramda'
 
 import { createClient } from '@/utils/supabase/server'
 import { createServiceClient } from '@/utils/supabase/service'
 
-import { characterSlug } from '../bpos/slug'
+import { characterSlug, pickMain } from '../bpos/slug'
 import { TypeSearch } from './typeSearch'
 
 // ESI hands this scope out only to a character holding the Director role in
@@ -13,33 +13,25 @@ import { TypeSearch } from './typeSearch'
 // readable at all, which is exactly what the corp showcase renders.
 const CORP_BLUEPRINTS_SCOPE = 'esi-corporations.read_blueprints.v1'
 
-// The signed-in user's own showcase lives under their main character's name,
-// derived the same way the header labels them (flagged main first, then their
-// earliest character).
-const OwnBposLink = async () => {
-  const supabase = await createClient()
-  const { data: main } = await supabase
-    .from('registration')
-    .select('name')
-    .order('is_main', { ascending: false })
-    .order('created_at', { ascending: true })
-    .limit(1)
-    .maybeSingle<{ name: string }>()
-  if (!main?.name) return null
-  return (
-    <p>
-      <Link href={`/bpos/${characterSlug(main.name)}`}>Your blueprint originals</Link> — a shareable showcase of every
-      original across your characters.
-    </p>
-  )
-}
+// One row in either list: where it goes and how it reads.
+type Library = { key: string; href: string; label: string; note: string }
 
-// A corporation's originals live in its hangars, not any character's, so they
-// get their own showcase — one link per corporation this account has a director
-// in. Read through the service role, explicitly scoped to the caller: `token`
-// is service-role-only (those are live EVE refresh tokens), so a session client
-// cannot ask which scopes it holds.
-const CorpBposLinks = async () => {
+const libraryOf = (name: string, note: string, key: string): Library => ({
+  key,
+  href: `/bpos/${characterSlug(name)}`,
+  label: name,
+  note,
+})
+
+const byLabel = (a: Library, b: Library) => a.label.localeCompare(b.label)
+
+// The blueprint libraries this account can open, in two lists: the ones that
+// are OURS — our own originals pooled across characters, and the corporations
+// we hold a director in — and below them the ones somebody else published to
+// us. A corporation we are merely a member of sits in the second list: the
+// library is the corporation's, not ours to keep, but membership is why we can
+// see it, so it leads that list.
+const BposLibraries = async () => {
   const supabase = await createClient()
   const {
     data: { user },
@@ -48,8 +40,33 @@ const CorpBposLinks = async () => {
 
   const service = createServiceClient()
 
-  // Corporations we hold a director in. `token` is service-role-only (those are
+  // Our characters: the main names our own showcase, and their corporations are
+  // the ones we have a character in.
+  const { data: ownRegistrations } = await supabase
+    .from('registration')
+    .select('name, is_main, created_at, corporation_id')
+  type OwnReg = {
+    name: string
+    is_main: boolean | null
+    created_at: string | null
+    corporation_id: number | string | null
+  }
+  const ownRegs = (ownRegistrations ?? []) as OwnReg[]
+  const main = pickMain(ownRegs)
+  const memberCorpIds = new Set(
+    map(
+      Number,
+      reject(
+        isNil,
+        map((r: OwnReg) => r.corporation_id, ownRegs)
+      )
+    )
+  )
+
+  // Corporations we hold a DIRECTOR in. `token` is service-role-only (those are
   // live EVE refresh tokens), so the read is explicitly scoped to the caller.
+  // The scope is our only signal, and it is the grant that fills corp_blueprint
+  // in the first place.
   const { data: tokens } = await service
     .from('token')
     .select('registration_id')
@@ -57,7 +74,7 @@ const CorpBposLinks = async () => {
     .contains('scope', [CORP_BLUEPRINTS_SCOPE])
     .returns<Array<{ registration_id: string }>>()
   const registrationIds = uniq(map((t: { registration_id: string }) => t.registration_id, tokens ?? []))
-  const { data: regs } = registrationIds.length
+  const { data: directorRegs } = registrationIds.length
     ? await service
         .from('registration')
         .select('corporation_id')
@@ -65,59 +82,128 @@ const CorpBposLinks = async () => {
         .not('corporation_id', 'is', null)
         .returns<Array<{ corporation_id: number | string }>>()
     : { data: [] }
-  const directorCorpIds = uniq(map((r: { corporation_id: number | string }) => Number(r.corporation_id), regs ?? []))
+  const directorCorpIds = new Set(
+    map((r: { corporation_id: number | string }) => Number(r.corporation_id), directorRegs ?? [])
+  )
 
-  // Corporations whose showcase has been published. Asked as the VIEWER, so
-  // corp_bpo_share's own policies answer it: a member sees their corporation's
-  // row, and the audience policy adds rows aimed at their corp or alliance
-  // plus any that are fully public.
-  const { data: shares } = await supabase
+  // Published corporation libraries. Asked as the VIEWER, so corp_bpo_share's
+  // own policies answer it: a member sees their corporation's row, and the
+  // audience policy adds rows aimed at their corp or alliance plus any that are
+  // fully public. A link-only share matches nobody, which is right — its URL is
+  // the only way in.
+  const { data: corpShares } = await supabase
     .from('corp_bpo_share')
     .select('corporation_id')
     .returns<Array<{ corporation_id: number | string }>>()
-  const sharedCorpIds = uniq(map((r: { corporation_id: number | string }) => Number(r.corporation_id), shares ?? []))
+  const sharedCorpIds = uniq(
+    map((r: { corporation_id: number | string }) => Number(r.corporation_id), corpShares ?? [])
+  )
 
-  // Our own corporations — the ones we have a character in, which is also
-  // exactly the set whose showcase we could publish or revoke ourselves.
-  const { data: ownRegistrations } = await supabase.from('registration').select('corporation_id')
-  const ownCorporationIds = new Set(
+  // Other players' account libraries, published to us the same way. Our own row
+  // is visible here too and is dropped: that library is already the first entry
+  // of the list above.
+  const { data: accountShares } = await supabase
+    .from('bpo_share')
+    .select('user_id')
+    .returns<Array<{ user_id: string }>>()
+  const sharedUserIds = reject(
+    (id: string) => id === user.id,
+    uniq(map((r: { user_id: string }) => r.user_id, accountShares ?? []))
+  )
+
+  // Names. A corporation the directory hasn't backfilled can't be addressed by
+  // slug, so it is left out rather than linking nowhere; an account is
+  // addressed by its main, resolved the same way our own is.
+  const corpIds = uniq([...directorCorpIds, ...sharedCorpIds])
+  const { data: corps } = corpIds.length
+    ? await service
+        .from('corporation')
+        .select('corporation_id, name')
+        .in('corporation_id', corpIds)
+        .not('name', 'is', null)
+        .returns<Array<{ corporation_id: number | string; name: string }>>()
+    : { data: [] }
+  const corpName = new Map(
     map(
-      Number,
-      reject(
-        isNil,
-        map((r: { corporation_id: number | string | null }) => r.corporation_id, ownRegistrations ?? [])
-      )
+      (c: { corporation_id: number | string; name: string }) => [Number(c.corporation_id), c.name] as [number, string],
+      corps ?? []
     )
   )
 
-  // Either route means the page has something to show — a director's grant is
-  // what fills corp_blueprint in the first place, and a share is somebody
-  // saying they want it seen — but this is OUR blueprint page, so it lists only
-  // our own corporations. A stranger's corp aiming a share at our alliance, or
-  // publishing one outright, is theirs to link to; it does not belong in a list
-  // of libraries we keep.
-  const corporationIds = filter((id: number) => ownCorporationIds.has(id), uniq([...directorCorpIds, ...sharedCorpIds]))
-  if (corporationIds.length === 0) return null
+  const { data: sharerRegs } = sharedUserIds.length
+    ? await service
+        .from('registration')
+        .select('user_id, name, is_main, created_at')
+        .in('user_id', sharedUserIds)
+        .returns<Array<{ user_id: string; name: string; is_main: boolean | null; created_at: string | null }>>()
+    : { data: [] }
+  const mainByUser = new Map(
+    chain(
+      ([userId, regs = []]) => {
+        const sharerMain = pickMain(regs)
+        return sharerMain ? [[userId, sharerMain.name] as [string, string]] : []
+      },
+      Object.entries(groupBy((r: { user_id: string }) => r.user_id, sharerRegs ?? []))
+    )
+  )
 
-  // A corporation whose name the directory hasn't backfilled yet can't be
-  // addressed by slug, so it simply isn't listed rather than linking nowhere.
-  const { data: corps } = await service
-    .from('corporation')
-    .select('corporation_id, name')
-    .in('corporation_id', corporationIds)
-    .not('name', 'is', null)
-    .returns<Array<{ corporation_id: number | string; name: string }>>()
-  const named = sort((a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name), corps ?? [])
-  if (named.length === 0) return null
+  const corpLibrary = (id: number, note: string): Library[] => {
+    const name = corpName.get(id)
+    return name ? [libraryOf(name, note, `corp-${id}`)] : []
+  }
+
+  const mine: Library[] = [
+    ...(main ? [libraryOf(main.name, 'every original across your characters', 'own')] : []),
+    ...sort(
+      byLabel,
+      chain((id: number) => corpLibrary(id, 'every original in the corporation’s hangars'), [...directorCorpIds])
+    ),
+  ]
+
+  // Membership first, since that is the closest of these to being ours.
+  const shared: Library[] = [
+    ...sort(
+      byLabel,
+      chain(
+        (id: number) => corpLibrary(id, 'your corporation’s hangars'),
+        filter((id: number) => memberCorpIds.has(id) && !directorCorpIds.has(id), sharedCorpIds)
+      )
+    ),
+    ...sort(
+      byLabel,
+      chain(
+        (id: number) => corpLibrary(id, 'another corporation’s hangars'),
+        filter((id: number) => !memberCorpIds.has(id), sharedCorpIds)
+      )
+    ),
+    ...sort(
+      byLabel,
+      chain((id: string) => {
+        const name = mainByUser.get(id)
+        return name ? [libraryOf(name, 'another player’s originals', `user-${id}`)] : []
+      }, sharedUserIds)
+    ),
+  ]
+
+  if (mine.length === 0 && shared.length === 0) return null
+
+  const List = ({ heading, libraries }: { heading: string; libraries: Library[] }) => (
+    <>
+      <h2>{heading}</h2>
+      <ul>
+        {libraries.map((library) => (
+          <li key={library.key}>
+            <Link href={library.href}>{library.label}</Link> — {library.note}
+          </li>
+        ))}
+      </ul>
+    </>
+  )
 
   return (
     <>
-      {named.map((corp) => (
-        <p key={corp.corporation_id}>
-          <Link href={`/bpos/${characterSlug(corp.name)}`}>{corp.name}&rsquo;s blueprint originals</Link> — every
-          original in the corporation&rsquo;s hangars.
-        </p>
-      ))}
+      {mine.length > 0 && <List heading="Your blueprint libraries" libraries={mine} />}
+      {shared.length > 0 && <List heading="Shared with you" libraries={shared} />}
     </>
   )
 }
@@ -127,8 +213,7 @@ const BlueprintPage = () => (
     <h1>Blueprint</h1>
     <p>Given a blueprint, this tool will tell you which Upwell rigs give it a bonus.</p>
     <TypeSearch />
-    <OwnBposLink />
-    <CorpBposLinks />
+    <BposLibraries />
   </>
 )
 
