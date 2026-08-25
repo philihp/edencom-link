@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import {
+  ascend,
   chain,
   concat,
   descend,
@@ -35,6 +36,7 @@ import {
   structureIndexActivities,
 } from './industryIndex'
 import { costAvoidance } from './costAvoidance'
+import { groupByTier, jobLocationId, jobStructureIds } from './roster'
 import { foldTaxLedger } from './taxLedger'
 import { fetchTaxRates, formatRate } from '../settings/tax/rates'
 import { StructureSilhouette } from './silhouette'
@@ -68,15 +70,22 @@ const fetchAllRows = async <T,>(
 
 type Structure = {
   structure_id: number
-  corporation_id: number
-  type_id: number
-  system_id: number
+  corporation_id: number | null
+  // Null for a structure the directory has never resolved: we know a job of
+  // ours ran there, and nothing else. Every render of these guards.
+  type_id: number | null
+  system_id: number | null
   name: string | null
   state: string | null
   fuel_expires: string | null
   unanchors_at: string | null
   services: Array<{ name: string; state: string }> | null
-  last_seen_at: string
+  last_seen_at: string | null
+  // True when the row came from corp_structure — i.e. a director token scans
+  // it, which is what makes state/services/fuel/rigs available at all. False
+  // for a structure discovered from a job location and named from the public
+  // directory.
+  scanned: boolean
 }
 
 type JobRow = {
@@ -114,6 +123,17 @@ type RigRow = {
   type_id: number | string
 }
 
+// universe_structure: the public directory, everything ESI hands a visitor
+// about a structure they don't have a director in.
+type DirectoryRow = {
+  structure_id: number | string
+  name: string | null
+  system_id: number | string | null
+  type_id: number | string | null
+  owner_corporation_id: number | string | null
+  resolved_at: string | null
+}
+
 type StructuresParams = {
   searchParams: Promise<{ days?: string }>
 }
@@ -134,98 +154,25 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
   const windowDays = structureWindowDays(daysParam)
   const windowStart = new Date(Date.now() - windowDays * 86_400_000).toISOString()
 
+  // ── The roster ────────────────────────────────────────────────────────────
+  // Two sources, unioned (src/app/structure/roster.ts). corp_structure is the
+  // rich one — state, services, fuel, rigs — and needs a director in the owning
+  // corporation, so it covers only what we scan. Everything else we USE reaches
+  // us as a bare facility id on one of our own industry jobs, named afterwards
+  // from the public `universe_structure` directory.
   const { data: structures } = await supabase
     .from('corp_structure')
     .select('structure_id, corporation_id, type_id, system_id, name, state, unanchors_at, services, last_seen_at')
     .order('corporation_id', { ascending: true })
     .order('structure_id', { ascending: true })
 
-  // Tier 1 of the page (docs/structure-universe/design.md): the caller's pinned
-  // structures sort above everything else, in their own `position` order.
-  // Tier 2 is every other structure in the alliance — which is exactly what the
-  // select above already returns, since corp_structure's RLS is own-corps OR
-  // alliance-mates. There is no tier 3: structures outside the alliance are
-  // deliberately not shown here, so a favorite is always something the caller
-  // can already see and the star only ever re-sorts this list.
-  const { data: favoriteRows } = await supabase
-    .from('structure_favorite')
-    .select('structure_id, position')
-    .order('position', { ascending: true })
-  const favoritePosition = new Map<string, number>(
-    ((favoriteRows ?? []) as Array<{ structure_id: number | string; position: number }>).map((r) => [
-      String(r.structure_id),
-      r.position,
-    ])
-  )
-  const isFavorite = (s: Structure) => favoritePosition.has(String(s.structure_id))
-
-  // Stable within each block: favorites by their drag order, the rest keeping
-  // the corporation/structure_id order the select asked for.
-  const list = ((structures ?? []) as Structure[]).slice().sort((a, b) => {
-    const aFav = isFavorite(a)
-    const bFav = isFavorite(b)
-    if (aFav !== bFav) return aFav ? -1 : 1
-    if (aFav && bFav) {
-      return (favoritePosition.get(String(a.structure_id)) ?? 0) - (favoritePosition.get(String(b.structure_id)) ?? 0)
-    }
-    return 0
-  })
-
-  // Tax revenue each structure generates. Each industry-tax journal entry references its job via
-  // context_id (context_id_type = industry_job_id); outer-join those job ids to the industry-job
-  // tables to find the structure (station_id, falling back to facility_id) the job is installed in,
-  // then sum the journal amounts. The installer pays the tax and isn't necessarily one of this app's
-  // linked characters (character_industry_job only covers those) — anyone in the corp can run a job
-  // here (reactions in a refinery are often run by a dedicated alt), so corp_industry_job (pulled by
-  // a director, covering every corp member) is unioned in too, mirroring /structure/revenue.
-  // Otherwise a corp-run job's tax lands in "unaccounted" instead of its structure. Bigint ids can
-  // come back from PostgREST as strings, so key every map by string.
-  //
-  // Both selects are drained rather than issued once: a corp with any history has far more than
-  // max_rows (1000) jobs across its structures — 3.5k here — and a single request silently returns
-  // an arbitrary 1000 of them, so most jobs failed to resolve and their tax fell into
-  // "unaccounted". Paging needs a total order, hence order by job_id.
-  const structureIds = list.map((s) => Number(s.structure_id))
-  const jobStructureFilter = `station_id.in.(${structureIds.join(',')}),facility_id.in.(${structureIds.join(',')})`
-  const fetchJobs = (table: 'character_industry_job' | 'corp_industry_job') =>
-    fetchAllRows<JobRow>((from, to) =>
-      supabase
-        .from(table)
-        .select(
-          table === 'corp_industry_job'
-            ? 'job_id, station_id, facility_id, corporation_id'
-            : 'job_id, station_id, facility_id, registration_id'
-        )
-        .or(jobStructureFilter)
-        .order('job_id', { ascending: true })
-        .range(from, to)
-    )
-  const [characterJobs, corpJobs] = structureIds.length
-    ? await Promise.all([fetchJobs('character_industry_job'), fetchJobs('corp_industry_job')])
-    : [[], []]
-
-  const structureByJob = new Map<string, string>()
-  forEach(
-    (j: JobRow) => {
-      const structureId = j.station_id ?? j.facility_id
-      if (structureId != null) structureByJob.set(String(j.job_id), String(structureId))
-    },
-    concat(characterJobs, corpJobs)
-  )
-
-  // The jobs that are OURS — our characters' and our corporations' alike. A job
-  // of ours run in a structure of ours is billed our own rate whichever way it
-  // was installed, so cost avoidance turns on this set and on who owns the
-  // structure, never on which corporation the installer belonged to.
-  const ownJobIds = new Set(map((j: JobRow) => String(j.job_id), concat(characterJobs, corpJobs)))
-  // The character-installed subset. This decides nothing about avoidance; it is
-  // only how one charge gets billed once — a corp job's payment is the outgoing
-  // entry in that corp's own wallet, while a character's has no entry to read.
-  const personalJobIds = new Set(map((j: JobRow) => String(j.job_id), characterJobs))
+  const scannedList = map((s: Structure): Structure => ({ ...s, scanned: true }), (structures ?? []) as Structure[])
+  const scannedIds = new Set(map((s: Structure) => String(s.structure_id), scannedList))
 
   // Our own corporations, from our own registrations (RLS-scoped to the
   // caller). A structure any of them owns is a structure we own — including one
-  // owned by a corp none of the installing characters are in.
+  // owned by a corp none of the installing characters are in, and including one
+  // we can't scan because no linked character is a director there.
   const { data: ownRegistrations } = await supabase.from('registration').select('corporation_id')
   const ownCorporationIds = new Set(
     map(
@@ -237,14 +184,198 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
     )
   )
 
+  // Every industry job of ours, both tables, drained. Two jobs at once:
+  //
+  //   - the job -> structure map the tax attribution below is built on, and
+  //   - discovery, since a job's facility id is the only trace a structure we
+  //     don't scan leaves in our data.
+  //
+  // Unfiltered, where this used to ask only about structures already on the
+  // page — that filter was what made the page unable to see anything but its
+  // own corp's structures. Drained rather than issued once: a corp with any
+  // history has far more than max_rows (1000) jobs, and a single request
+  // silently returns an arbitrary 1000 of them, so most jobs failed to resolve
+  // and their tax fell into "unaccounted". Paging needs a total order, hence
+  // order by job_id.
+  const fetchJobs = (table: 'character_industry_job' | 'corp_industry_job') =>
+    fetchAllRows<JobRow>((from, to) =>
+      supabase
+        .from(table)
+        .select(
+          table === 'corp_industry_job'
+            ? 'job_id, station_id, facility_id, corporation_id'
+            : 'job_id, station_id, facility_id, registration_id'
+        )
+        .order('job_id', { ascending: true })
+        .range(from, to)
+    )
+  const [characterJobs, corpJobs] = await Promise.all([
+    fetchJobs('character_industry_job'),
+    fetchJobs('corp_industry_job'),
+  ])
+  const allJobs = concat(characterJobs, corpJobs)
+
+  // Structures our jobs ran in that no director of ours scans. NPC stations are
+  // filtered out by the id floor, and anything already in corp_structure is
+  // dropped so a structure is never listed twice.
+  const externalIds = reject((id: string) => scannedIds.has(id), jobStructureIds(allJobs))
+
+  // What ESI tells a visitor: a name, a system, a type and an owner. Asked in
+  // batches, because a long `in` list is a URL a proxy is entitled to refuse —
+  // and because a select is capped at max_rows like any other.
+  const directoryBatches = externalIds.length
+    ? await Promise.all(
+        map(
+          (batch: string[]) =>
+            supabase
+              .from('universe_structure')
+              .select('structure_id, name, system_id, type_id, owner_corporation_id, resolved_at')
+              .in('structure_id', batch.map(Number)),
+          splitEvery(RPC_BATCH, externalIds)
+        )
+      )
+    : []
+  const directory = new Map<string, DirectoryRow>(
+    map(
+      (r: DirectoryRow) => [String(r.structure_id), r] as [string, DirectoryRow],
+      chain(({ data }) => (data ?? []) as DirectoryRow[], directoryBatches)
+    )
+  )
+
+  // A structure the directory has never resolved still gets a tile: we know a
+  // job of ours ran there, which is worth saying, and the fields it can't fill
+  // render as "—" rather than being invented. Sorted by name so the block reads
+  // alphabetically, with the unnamed ones last.
+  const externalList: Structure[] = sortWith(
+    [ascend((s: Structure) => (s.name == null ? 1 : 0)), ascend((s: Structure) => s.name ?? String(s.structure_id))],
+    map((id: string): Structure => {
+      const row = directory.get(id)
+      return {
+        structure_id: Number(id),
+        corporation_id: row?.owner_corporation_id != null ? Number(row.owner_corporation_id) : null,
+        type_id: row?.type_id != null ? Number(row.type_id) : null,
+        system_id: row?.system_id != null ? Number(row.system_id) : null,
+        name: row?.name ?? null,
+        state: null,
+        fuel_expires: null,
+        unanchors_at: null,
+        services: null,
+        last_seen_at: row?.resolved_at ?? null,
+        scanned: false,
+      }
+    }, externalIds)
+  )
+
+  // Owner names for the structures we can't scan — the one thing a tile with no
+  // services, rigs or fuel timer can still lead with. From the world-readable
+  // corporation directory the character-directory job maintains.
+  const externalOwnerIds = uniq(
+    map(
+      Number,
+      reject(
+        isNil,
+        map((s: Structure) => s.corporation_id, externalList)
+      )
+    )
+  ) as number[]
+  const { data: externalOwners } = externalOwnerIds.length
+    ? await supabase.from('corporation').select('corporation_id, name').in('corporation_id', externalOwnerIds)
+    : { data: [] }
+  const ownerNames = new Map<string, string>(
+    chain(
+      (c: { corporation_id: number | string; name: string | null }) =>
+        c.name != null ? [[String(c.corporation_id), c.name] as [string, string]] : [],
+      (externalOwners ?? []) as Array<{ corporation_id: number | string; name: string | null }>
+    )
+  )
+
+  // Tier 1 of the page (docs/structure-universe/design.md): the caller's pinned
+  // structures sort above everything else, in their own `position` order.
+  const { data: favoriteRows } = await supabase
+    .from('structure_favorite')
+    .select('structure_id, position')
+    .order('position', { ascending: true })
+  const favoritePosition = new Map<string, number>(
+    map(
+      (r: { structure_id: number | string; position: number }) =>
+        [String(r.structure_id), r.position] as [string, number],
+      (favoriteRows ?? []) as Array<{ structure_id: number | string; position: number }>
+    )
+  )
+  const isFavorite = (s: Structure) => favoritePosition.has(String(s.structure_id))
+
+  const tiers = groupByTier(
+    map(
+      (s: Structure) => ({
+        structureId: String(s.structure_id),
+        ownerCorporationId: s.corporation_id != null ? String(s.corporation_id) : null,
+        scanned: s.scanned,
+        structure: s,
+      }),
+      concat(scannedList, externalList)
+    ),
+    { favoritePosition, ownCorporationIds }
+  )
+  const blocks = [
+    { key: 'favorites' as const, heading: 'Favorites', structures: map((t) => t.structure, tiers.favorites) },
+    { key: 'ours' as const, heading: 'Our structures', structures: map((t) => t.structure, tiers.ours) },
+    {
+      key: 'others' as const,
+      heading: "Everyone else's structures",
+      structures: map((t) => t.structure, tiers.others),
+    },
+  ]
+  // Everything downstream — tax attribution, rigs, indexes, names — works off
+  // one flat list; the blocks above only decide where each tile renders.
+  const list = chain((block) => block.structures, blocks)
+
+  // Tax revenue each structure generates. Each industry-tax journal entry references its job via
+  // context_id (context_id_type = industry_job_id); outer-join those job ids to the industry-job
+  // tables to find the structure (station_id, falling back to facility_id) the job is installed in,
+  // then sum the journal amounts. The installer pays the tax and isn't necessarily one of this app's
+  // linked characters (character_industry_job only covers those) — anyone in the corp can run a job
+  // here (reactions in a refinery are often run by a dedicated alt), so corp_industry_job (pulled by
+  // a director, covering every corp member) is unioned in too, mirroring /structure/revenue.
+  // Otherwise a corp-run job's tax lands in "unaccounted" instead of its structure. Bigint ids can
+  // come back from PostgREST as strings, so key every map by string.
+  const structureIds = map((s: Structure) => Number(s.structure_id), list)
+  // Keep the invariant the rest of this function depends on: every value in
+  // structureByJob is a structure with a tile on this page. A job that ran in
+  // an NPC station, or in a structure discovery filtered out, resolves to
+  // nothing and its tax stays unaccounted rather than accruing to a row nothing
+  // renders.
+  const onPage = new Set(map(String, structureIds))
+  const structureByJob = new Map<string, string>()
+  forEach((j: JobRow) => {
+    const structureId = jobLocationId(j)
+    if (structureId != null && onPage.has(structureId)) structureByJob.set(String(j.job_id), structureId)
+  }, allJobs)
+
+  // The jobs that are OURS — our characters' and our corporations' alike. A job
+  // of ours run in a structure of ours is billed our own rate whichever way it
+  // was installed, so cost avoidance turns on this set and on who owns the
+  // structure, never on which corporation the installer belonged to.
+  const ownJobIds = new Set(map((j: JobRow) => String(j.job_id), allJobs))
+  // The character-installed subset. This decides nothing about avoidance; it is
+  // only how one charge gets billed once — a corp job's payment is the outgoing
+  // entry in that corp's own wallet, while a character's has no entry to read.
+  const personalJobIds = new Set(map((j: JobRow) => String(j.job_id), characterJobs))
   // The two rates behind the cost-avoidance figures live on /settings/tax.
   const taxRates = await fetchTaxRates(supabase, user.id)
 
   // Fuel timers live in corp_structure_status now (own-corp only). RLS returns a
   // row only for structures the caller's corp owns, so an alliance-mate's
   // structure that's visible via corp_structure simply has no fuel here.
-  const { data: statusRows } = structureIds.length
-    ? await supabase.from('corp_structure_status').select('structure_id, fuel_expires').in('structure_id', structureIds)
+  // Scanned ids only: both tables are own-corp data that exists precisely
+  // because a director pulled it, so asking about a structure we don't scan can
+  // only ever come back empty — and would pad the URL with every id discovered
+  // from a job.
+  const scannedStructureIds = map((s: Structure) => Number(s.structure_id), scannedList)
+  const { data: statusRows } = scannedStructureIds.length
+    ? await supabase
+        .from('corp_structure_status')
+        .select('structure_id, fuel_expires')
+        .in('structure_id', scannedStructureIds)
     : { data: [] }
   const fuelByStructure = new Map<string, string | null>(
     ((statusRows ?? []) as Array<{ structure_id: number | string; fuel_expires: string | null }>).map((r) => [
@@ -257,11 +388,11 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
   }, list)
 
   // Rigs fitted to each structure (pulled from corp assets by the corp-assets job).
-  const { data: rigRows } = structureIds.length
+  const { data: rigRows } = scannedStructureIds.length
     ? await supabase
         .from('corp_structure_rig')
         .select('structure_id, location_flag, type_id')
-        .in('structure_id', structureIds)
+        .in('structure_id', scannedStructureIds)
         .order('location_flag', { ascending: true })
     : { data: [] }
 
@@ -282,22 +413,30 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
     rigList
   )
 
-  const systemNames = await fetchSystemNames(list.map((s) => Number(s.system_id)))
-  const structureTypeNames = await fetchTypeNames(list.map((s) => Number(s.type_id)))
+  // A structure the directory hasn't resolved has no system and no type, and
+  // `Number(null)` is 0 — a perfectly finite id every one of these resolvers
+  // would dutifully go looking for. Drop the nulls instead.
+  const ids = (pick: (s: Structure) => number | null) => uniq(map(Number, reject(isNil, map(pick, list)))) as number[]
+
+  const systemNames = await fetchSystemNames(ids((s) => s.system_id))
+  const structureTypeNames = await fetchTypeNames(ids((s) => s.type_id))
 
   // Latest industry cost indices for the systems we hold structures in. We only
   // show, per structure, the activities its fitted service modules enable.
   const indexesBySystem = await fetchLatestSystemIndexes(
     supabase,
-    list.map((s) => Number(s.system_id))
+    ids((s) => s.system_id)
   )
   // The same window that drives the revenue footer also scopes the index
   // sparklines. Widen the bucket for longer windows so the point count stays
   // sane on a 100px sparkline (~180 points max: 24h/day ÷ bucketHours).
   const indexHistoryBySystem = await fetchSystemIndexHistory(
     supabase,
-    list.map((s) => Number(s.system_id)),
-    { days: windowDays, bucketHours: Math.max(1, Math.ceil((windowDays * 24) / 180)) }
+    ids((s) => s.system_id),
+    {
+      days: windowDays,
+      bucketHours: Math.max(1, Math.ceil((windowDays * 24) / 180)),
+    }
   )
 
   // Both signs, sorted out by foldTaxLedger below rather than here. industry_job_tax cuts both ways
@@ -344,25 +483,34 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
     )
   )
 
-  // Keep the invariant the structure-seeded queries above establish: every value in the map is a
-  // structure on this page. A job taxed into our wallet from somewhere not in `list` (an NPC
-  // station, a structure we've stopped monitoring) stays unaccounted rather than accruing to a
-  // row nothing renders — as does one ESI gave no location at all.
-  const onPage = new Set(map(String, structureIds))
-  const locationOf = (j: JobRow) => j.station_id ?? j.facility_id
+  // The same on-page invariant the map was built under: a job taxed into our
+  // wallet from somewhere not in `list` (an NPC station, a structure that has
+  // dropped out of every source) stays unaccounted rather than accruing to a
+  // row nothing renders — as does one ESI gave no location at all. These jobs
+  // belong to other players, so they never widen the roster: discovery is
+  // seeded from OUR jobs only.
   forEach(
-    (j) => structureByJob.set(String(j.job_id), String(locationOf(j))),
-    filter(
-      (j: JobRow) => locationOf(j) != null && onPage.has(String(locationOf(j))),
-      chain(({ data }) => (data ?? []) as JobRow[], taxedBatches)
-    )
+    (j: JobRow) => {
+      const structureId = jobLocationId(j)
+      if (structureId != null && onPage.has(structureId)) structureByJob.set(String(j.job_id), structureId)
+    },
+    chain(({ data }) => (data ?? []) as JobRow[], taxedBatches)
   )
 
   // Who owns each structure on the page. corp_structure's RLS is own-corps OR alliance-mates, so a
   // tile here is not necessarily ours — and tax our corp paid into an ally's structure is a real
   // expense, not an expense avoided. Comparing this against the paying corporation is what tells
   // the two apart.
-  const structureOwner = new Map<string, string>(list.map((st) => [String(st.structure_id), String(st.corporation_id)]))
+  // A structure the directory has never resolved has no known owner, so it maps
+  // to nothing: `weOwn` reads it as not ours (correct — we can't say it is) and
+  // it adds no corporation to `listedOwners`.
+  const structureOwner = new Map<string, string>(
+    chain(
+      (st: Structure) =>
+        st.corporation_id != null ? [[String(st.structure_id), String(st.corporation_id)] as [string, string]] : [],
+      list
+    )
+  )
   // Every corporation with a tile here. Tax paid to anyone else went to a
   // landlord this page doesn't list, and is totalled separately below.
   const listedOwners = new Set<string>(structureOwner.values())
@@ -565,127 +713,159 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
       </p>
       {list.length > 0 ? (
         <>
-          <ul className={styles.grid}>
-            {list.map((s) => {
-              const rigs = rigsByStructure.get(String(s.structure_id)) ?? []
-              const services = s.services?.map((svc) => svc.name) ?? []
-              const indexActivities = structureIndexActivities(s.services)
-              const systemIndexes = indexesBySystem.get(Number(s.system_id))
-              const systemHistory = indexHistoryBySystem.get(Number(s.system_id))
-              return (
-                <li key={`structure-${s.structure_id}`} className={styles.tile}>
-                  <StructureSilhouette typeId={s.type_id} className={styles.silhouette} />
-                  <div className={styles.head}>
-                    <div>
-                      <Link href={`/structure/${s.structure_id}`} className={styles.name}>
-                        {s.name ?? `Structure #${s.structure_id}`}
-                        <LinkSpinner />
-                      </Link>
-                      {/* Upwell structures share their structure_id with the station/facility id industry jobs run at. */}
-                      <span className={styles.subId}>#{s.structure_id}</span>
-                    </div>
-                    <FavoriteStar structureId={String(s.structure_id)} favorite={isFavorite(s)} />
-                  </div>
+          {blocks.map((block) =>
+            block.structures.length === 0 ? null : (
+              <section key={block.key}>
+                <h2 className={styles.blockHeading}>{block.heading}</h2>
+                {block.key === 'others' && (
+                  <p className={styles.blockNote}>
+                    <em>
+                      Structures our jobs run in that no director of ours can scan, so only what ESI tells a visitor is
+                      known: no fitting, no services, no fuel timer.
+                    </em>
+                  </p>
+                )}
+                <ul className={styles.grid}>
+                  {block.structures.map((s) => {
+                    const rigs = rigsByStructure.get(String(s.structure_id)) ?? []
+                    const services = s.services?.map((svc) => svc.name) ?? []
+                    const indexActivities = structureIndexActivities(s.services)
+                    const systemIndexes = indexesBySystem.get(Number(s.system_id))
+                    const systemHistory = indexHistoryBySystem.get(Number(s.system_id))
+                    return (
+                      <li key={`structure-${s.structure_id}`} className={styles.tile}>
+                        {s.type_id != null && <StructureSilhouette typeId={s.type_id} className={styles.silhouette} />}
+                        <div className={styles.head}>
+                          <div>
+                            <Link href={`/structure/${s.structure_id}`} className={styles.name}>
+                              {s.name ?? `Structure #${s.structure_id}`}
+                              <LinkSpinner />
+                            </Link>
+                            {/* Upwell structures share their structure_id with the station/facility id industry jobs run at. */}
+                            <span className={styles.subId}>#{s.structure_id}</span>
+                          </div>
+                          <FavoriteStar structureId={String(s.structure_id)} favorite={isFavorite(s)} />
+                        </div>
 
-                  <div className={styles.fields}>
-                    {totalByStructure.get(String(s.structure_id)) && (
-                      <>
-                        <span className={styles.label}>Revenue</span>
-                        <span className={`${styles.value} ${styles.num}`}>
-                          {formatIsk(totalByStructure.get(String(s.structure_id)) ?? 0)}
-                        </span>
-                      </>
-                    )}
-                    {taxesPaidByStructure.get(String(s.structure_id)) && (
-                      <>
-                        <span className={styles.label}>Taxes Paid</span>
-                        <span className={`${styles.value} ${styles.num}`}>
-                          {formatIsk(taxesPaidByStructure.get(String(s.structure_id)) ?? 0)}
-                        </span>
-                      </>
-                    )}
-                    {avoidedByStructure.has(String(s.structure_id)) && (
-                      <>
-                        <span className={styles.label}>Cost Avoidance</span>
-                        <span className={`${styles.value} ${styles.num}`}>
-                          {formatIsk(avoidedByStructure.get(String(s.structure_id)) ?? 0)}
-                        </span>
-                      </>
-                    )}
-                    <span className={styles.label}>Type</span>
-                    <span className={styles.value}>
-                      <Name name={structureTypeNames[Number(s.type_id)]} id={s.type_id} />
-                    </span>
-                    <span className={styles.label}>System</span>
-                    <span className={styles.value}>
-                      <SystemName name={systemNames[Number(s.system_id)]} id={s.system_id} />
-                    </span>
-                    {s.fuel_expires && (
-                      <>
-                        <span className={styles.label}>Fuel Expires</span>
-                        <span className={styles.value}>
-                          <DateTime value={s.fuel_expires} />
-                        </span>
-                      </>
-                    )}
-                  </div>
+                        <div className={styles.fields}>
+                          {totalByStructure.get(String(s.structure_id)) && (
+                            <>
+                              <span className={styles.label}>Revenue</span>
+                              <span className={`${styles.value} ${styles.num}`}>
+                                {formatIsk(totalByStructure.get(String(s.structure_id)) ?? 0)}
+                              </span>
+                            </>
+                          )}
+                          {taxesPaidByStructure.get(String(s.structure_id)) && (
+                            <>
+                              <span className={styles.label}>Taxes Paid</span>
+                              <span className={`${styles.value} ${styles.num}`}>
+                                {formatIsk(taxesPaidByStructure.get(String(s.structure_id)) ?? 0)}
+                              </span>
+                            </>
+                          )}
+                          {avoidedByStructure.has(String(s.structure_id)) && (
+                            <>
+                              <span className={styles.label}>Cost Avoidance</span>
+                              <span className={`${styles.value} ${styles.num}`}>
+                                {formatIsk(avoidedByStructure.get(String(s.structure_id)) ?? 0)}
+                              </span>
+                            </>
+                          )}
+                          <span className={styles.label}>Type</span>
+                          <span className={styles.value}>
+                            <Name
+                              name={s.type_id != null ? structureTypeNames[Number(s.type_id)] : undefined}
+                              id={s.type_id}
+                            />
+                          </span>
+                          <span className={styles.label}>System</span>
+                          <span className={styles.value}>
+                            <SystemName
+                              name={s.system_id != null ? systemNames[Number(s.system_id)] : undefined}
+                              id={s.system_id}
+                            />
+                          </span>
+                          {!s.scanned && (
+                            <>
+                              <span className={styles.label}>Owner</span>
+                              <span className={styles.value}>
+                                <Name
+                                  name={s.corporation_id != null ? ownerNames.get(String(s.corporation_id)) : undefined}
+                                  id={s.corporation_id}
+                                />
+                              </span>
+                            </>
+                          )}
+                          {s.fuel_expires && (
+                            <>
+                              <span className={styles.label}>Fuel Expires</span>
+                              <span className={styles.value}>
+                                <DateTime value={s.fuel_expires} />
+                              </span>
+                            </>
+                          )}
+                        </div>
 
-                  {services.length > 0 && (
-                    <div className={styles.section}>
-                      <span className={styles.sectionLabel}>Services</span>
-                      {
-                        <ul className={styles.chips}>
-                          {services.map((svc, i) => (
-                            <li key={`svc-${s.structure_id}-${i}`} className={styles.chip}>
-                              {svc}
-                            </li>
-                          ))}
-                        </ul>
-                      }
-                    </div>
-                  )}
+                        {services.length > 0 && (
+                          <div className={styles.section}>
+                            <span className={styles.sectionLabel}>Services</span>
+                            {
+                              <ul className={styles.chips}>
+                                {services.map((svc, i) => (
+                                  <li key={`svc-${s.structure_id}-${i}`} className={styles.chip}>
+                                    {svc}
+                                  </li>
+                                ))}
+                              </ul>
+                            }
+                          </div>
+                        )}
 
-                  {rigs.length > 0 && (
-                    <div className={styles.section}>
-                      <span className={styles.sectionLabel}>Rigs</span>
-                      <ul className={styles.chips}>
-                        {rigs.map((rig, i) => (
-                          <li key={`rig-${s.structure_id}-${i}`} className={styles.chip}>
-                            {rig}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
+                        {rigs.length > 0 && (
+                          <div className={styles.section}>
+                            <span className={styles.sectionLabel}>Rigs</span>
+                            <ul className={styles.chips}>
+                              {rigs.map((rig, i) => (
+                                <li key={`rig-${s.structure_id}-${i}`} className={styles.chip}>
+                                  {rig}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
 
-                  {indexActivities.length > 0 && (
-                    <div className={styles.section}>
-                      <span className={styles.sectionLabel}>Industry Indexes</span>
-                      <ul className={styles.indexes}>
-                        {indexActivities.map((activity) => {
-                          const cost = systemIndexes?.get(activity)
-                          const series = systemHistory?.get(activity)
-                          const values = series?.values ?? []
-                          return (
-                            <li key={`idx-${s.structure_id}-${activity}`} className={styles.indexRow}>
-                              <span className={styles.indexLabel}>{INDEX_ACTIVITY_LABELS[activity]}</span>
-                              <Sparkline
-                                values={values}
-                                liveCount={series?.liveCount}
-                                updatedAt={series?.updatedAt}
-                                label={INDEX_ACTIVITY_LABELS[activity]}
-                              />
-                              <span className={styles.indexValue}>{cost != null ? formatIndex(cost) : '—'}</span>
-                            </li>
-                          )
-                        })}
-                      </ul>
-                    </div>
-                  )}
-                </li>
-              )
-            })}
-          </ul>
+                        {indexActivities.length > 0 && (
+                          <div className={styles.section}>
+                            <span className={styles.sectionLabel}>Industry Indexes</span>
+                            <ul className={styles.indexes}>
+                              {indexActivities.map((activity) => {
+                                const cost = systemIndexes?.get(activity)
+                                const series = systemHistory?.get(activity)
+                                const values = series?.values ?? []
+                                return (
+                                  <li key={`idx-${s.structure_id}-${activity}`} className={styles.indexRow}>
+                                    <span className={styles.indexLabel}>{INDEX_ACTIVITY_LABELS[activity]}</span>
+                                    <Sparkline
+                                      values={values}
+                                      liveCount={series?.liveCount}
+                                      updatedAt={series?.updatedAt}
+                                      label={INDEX_ACTIVITY_LABELS[activity]}
+                                    />
+                                    <span className={styles.indexValue}>{cost != null ? formatIndex(cost) : '—'}</span>
+                                  </li>
+                                )
+                              })}
+                            </ul>
+                          </div>
+                        )}
+                      </li>
+                    )
+                  })}
+                </ul>
+              </section>
+            )
+          )}
 
           <div className={styles.footer}>
             {unaccountedParties.length > 0 && (
