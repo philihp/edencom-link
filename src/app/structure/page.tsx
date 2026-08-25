@@ -1,6 +1,21 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
-import { chain, concat, filter, forEach, map, splitEvery, uniq } from 'ramda'
+import {
+  chain,
+  concat,
+  descend,
+  filter,
+  forEach,
+  isNil,
+  map,
+  reduce,
+  reject,
+  sort,
+  sortWith,
+  splitEvery,
+  sum,
+  uniq,
+} from 'ramda'
 
 import { createClient } from '@/utils/supabase/server'
 
@@ -84,6 +99,14 @@ type JournalRow = {
   first_party_id: number | string | null
   second_party_id: number | string | null
 }
+
+// universe_name rows, and the id -> name map they turn into.
+type IdName = { id: number | string; name: string }
+
+const nameById = (rows: readonly IdName[]): Map<string, string> =>
+  new Map(map((r: IdName) => [String(r.id), r.name] as [string, string], rows))
+
+type AffiliationRow = { character_id: number | string; corporation_id: number | string }
 
 type RigRow = {
   structure_id: number | string
@@ -190,26 +213,29 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
     concat(characterJobs, corpJobs)
   )
 
-  // Our characters' PERSONAL jobs, mapped to the corporation each installer was
-  // in. That corporation is what decides cost avoidance (a job is only billed
-  // our own rate by a structure its own corp owns), and the presence of a job
-  // here is what decides whether an incoming receipt also counts as tax we paid
-  // — see taxLedger.ts. Corp jobs are deliberately excluded: their payment is
-  // readable as the outgoing entry in the paying corp's own wallet.
-  //
-  // registration is RLS-scoped to the caller, so this only ever resolves our
-  // own characters; a job whose registration we can't see contributes nothing.
-  const { data: ownRegistrations } = await supabase.from('registration').select('id, corporation_id')
-  const corpByRegistration = new Map<string, string>(
-    ((ownRegistrations ?? []) as Array<{ id: string; corporation_id: number | string | null }>)
-      .filter((r) => r.corporation_id != null)
-      .map((r) => [r.id, String(r.corporation_id)])
+  // The jobs that are OURS — our characters' and our corporations' alike. A job
+  // of ours run in a structure of ours is billed our own rate whichever way it
+  // was installed, so cost avoidance turns on this set and on who owns the
+  // structure, never on which corporation the installer belonged to.
+  const ownJobIds = new Set(map((j: JobRow) => String(j.job_id), concat(characterJobs, corpJobs)))
+  // The character-installed subset. This decides nothing about avoidance; it is
+  // only how one charge gets billed once — a corp job's payment is the outgoing
+  // entry in that corp's own wallet, while a character's has no entry to read.
+  const personalJobIds = new Set(map((j: JobRow) => String(j.job_id), characterJobs))
+
+  // Our own corporations, from our own registrations (RLS-scoped to the
+  // caller). A structure any of them owns is a structure we own — including one
+  // owned by a corp none of the installing characters are in.
+  const { data: ownRegistrations } = await supabase.from('registration').select('corporation_id')
+  const ownCorporationIds = new Set(
+    map(
+      String,
+      reject(
+        isNil,
+        map((r: { corporation_id: number | string | null }) => r.corporation_id, ownRegistrations ?? [])
+      )
+    )
   )
-  const personalJobCorp = new Map<string, string>()
-  forEach((j: JobRow) => {
-    const corporationId = j.registration_id != null ? corpByRegistration.get(j.registration_id) : undefined
-    if (corporationId != null) personalJobCorp.set(String(j.job_id), corporationId)
-  }, characterJobs)
 
   // The two rates behind the cost-avoidance figures live on /settings/tax.
   const taxRates = await fetchTaxRates(supabase, user.id)
@@ -226,7 +252,9 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
       r.fuel_expires,
     ])
   )
-  for (const s of list) s.fuel_expires = fuelByStructure.get(String(s.structure_id)) ?? null
+  forEach((st: Structure) => {
+    st.fuel_expires = fuelByStructure.get(String(st.structure_id)) ?? null
+  }, list)
 
   // Rigs fitted to each structure (pulled from corp assets by the corp-assets job).
   const { data: rigRows } = structureIds.length
@@ -238,15 +266,21 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
     : { data: [] }
 
   const rigList = (rigRows ?? []) as RigRow[]
-  const rigTypeNames = await fetchTypeNames(rigList.map((r) => Number(r.type_id)))
-  const rigsByStructure = new Map<string, string[]>()
-  for (const r of rigList) {
-    const key = String(r.structure_id)
-    const name = rigTypeNames[Number(r.type_id)] ?? String(r.type_id)
-    const existing = rigsByStructure.get(key)
-    if (existing) existing.push(name)
-    else rigsByStructure.set(key, [name])
-  }
+  const rigTypeNames = await fetchTypeNames(map((r: RigRow) => Number(r.type_id), rigList))
+  // Push-mutated per structure rather than re-spread per rig: the order the
+  // select asked for is the order they render in.
+  const rigsByStructure = reduce(
+    (acc: Map<string, string[]>, r: RigRow) => {
+      const key = String(r.structure_id)
+      const name = rigTypeNames[Number(r.type_id)] ?? String(r.type_id)
+      const existing = acc.get(key)
+      if (existing) existing.push(name)
+      else acc.set(key, [name])
+      return acc
+    },
+    new Map<string, string[]>(),
+    rigList
+  )
 
   const systemNames = await fetchSystemNames(list.map((s) => Number(s.system_id)))
   const structureTypeNames = await fetchTypeNames(list.map((s) => Number(s.type_id)))
@@ -349,12 +383,12 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
       }),
       (journal ?? []) as JournalRow[]
     ),
-    { structureByJob, personalJobCorp, structureOwner, listedOwners }
+    { structureByJob, ownJobIds, personalJobIds, ownCorporationIds, structureOwner, listedOwners }
   )
 
   const totalByStructure = ledger.revenueByStructure
   const taxesPaidByStructure = ledger.taxesPaidByStructure
-  const taxesPaidTotal = [...taxesPaidByStructure.values()].reduce((sum, v) => sum + v, 0)
+  const taxesPaidTotal = sum([...taxesPaidByStructure.values()])
   const unaccounted = ledger.unaccounted
   const unaccountedByParty = ledger.unaccountedByParty
 
@@ -420,8 +454,11 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
     if (systemId != null) row.systemIds.add(systemId)
     unlistedByCorp.set(key, row)
   }, ledger.unlistedPayments)
-  const unlistedLandlords = [...unlistedByCorp.entries()].sort((a, b) => b[1].amount - a[1].amount)
-  const unlistedTotal = unlistedLandlords.reduce((sum, [, row]) => sum + row.amount, 0)
+  const unlistedLandlords = sortWith(
+    [descend(([, row]: [string, { amount: number }]) => row.amount)],
+    [...unlistedByCorp.entries()]
+  )
+  const unlistedTotal = sum(map(([, row]) => row.amount, unlistedLandlords))
 
   // Landlord names from the world-readable corporation directory, and system
   // names alongside the ones the tiles already resolve.
@@ -444,47 +481,48 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
   )
 
   // Largest payers first.
-  const unaccountedParties = [...unaccountedByParty.entries()].sort((a, b) => b[1] - a[1])
+  const unaccountedParties = sortWith([descend(([, isk]: [string, number]) => isk)], [...unaccountedByParty.entries()])
 
   // Resolve each payer (a character) to their name and the corp they fly for. Names come from the
   // universe_name table (populated by the universe-names job) and corp affiliations from
   // character_affiliation (populated by the character-directory job); ids not yet resolved fall
   // back to showing the raw id.
-  const partyIds = unaccountedParties.map(([party]) => party).filter((p) => p !== 'unknown')
-  const payerNames = new Map<string, string>()
-  const payerCorps = new Map<string, string>()
-  if (partyIds.length > 0) {
-    const partyIdNums = partyIds.map(Number)
-    const { data: charNames } = await supabase.from('universe_name').select('id, name').in('id', partyIdNums)
-    for (const r of (charNames ?? []) as Array<{ id: number | string; name: string }>) {
-      payerNames.set(String(r.id), r.name)
-    }
+  const partyIds = map(
+    Number,
+    reject(
+      (p: string) => p === 'unknown',
+      map(([party]: [string, number]) => party, unaccountedParties)
+    )
+  )
 
-    const { data: affiliations } = await supabase
-      .from('character_affiliation')
-      .select('character_id, corporation_id')
-      .in('character_id', partyIdNums)
-    const corpByParty = new Map<string, string>()
-    const corpIds = new Set<number>()
-    for (const a of (affiliations ?? []) as Array<{ character_id: number | string; corporation_id: number | string }>) {
-      corpByParty.set(String(a.character_id), String(a.corporation_id))
-      corpIds.add(Number(a.corporation_id))
-    }
-    if (corpIds.size > 0) {
-      const { data: corpNames } = await supabase
-        .from('universe_name')
-        .select('id, name')
-        .in('id', [...corpIds])
-      const corpNameById = new Map<string, string>()
-      for (const r of (corpNames ?? []) as Array<{ id: number | string; name: string }>) {
-        corpNameById.set(String(r.id), r.name)
-      }
-      for (const [party, corpId] of corpByParty) {
-        const name = corpNameById.get(corpId)
-        if (name) payerCorps.set(party, name)
-      }
-    }
-  }
+  const { data: charNames } = partyIds.length
+    ? await supabase.from('universe_name').select('id, name').in('id', partyIds)
+    : { data: [] }
+  const payerNames = nameById((charNames ?? []) as IdName[])
+
+  const { data: affiliations } = partyIds.length
+    ? await supabase.from('character_affiliation').select('character_id, corporation_id').in('character_id', partyIds)
+    : { data: [] }
+  const affiliationRows = (affiliations ?? []) as AffiliationRow[]
+  const corpByParty = map(
+    (a: AffiliationRow) => [String(a.character_id), String(a.corporation_id)] as [string, string],
+    affiliationRows
+  )
+  const corpIds = uniq(map((a: AffiliationRow) => Number(a.corporation_id), affiliationRows))
+
+  const { data: corpNames } = corpIds.length
+    ? await supabase.from('universe_name').select('id, name').in('id', corpIds)
+    : { data: [] }
+  const corpNameById = nameById((corpNames ?? []) as IdName[])
+
+  // A party whose corporation the directory hasn't named yet simply has no corp
+  // line, rather than one reading as an id.
+  const payerCorps = new Map<string, string>(
+    chain(([party, corpId]: [string, string]) => {
+      const name = corpNameById.get(corpId)
+      return name ? [[party, name] as [string, string]] : []
+    }, corpByParty)
+  )
 
   // Revenue from structure clone bays (jump clone installation and activation
   // fees), over the same window as the tax revenue above.
@@ -498,7 +536,7 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
       .range(from, to)
   )
 
-  const cloneRevenue = cloneJournal.reduce((sum, entry) => sum + Number(entry.amount ?? 0), 0)
+  const cloneRevenue = sum(map((entry: { amount: number | string | null }) => Number(entry.amount ?? 0), cloneJournal))
 
   // When the Structures background job last finished. Each scheduled run writes a
   // public.heartbeat row stamped with ended_at and a link to the workflow run; we
@@ -722,9 +760,10 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
                   // Systems we could place the jobs in. A structure the cache
                   // has never resolved contributes none, so the ISK still shows
                   // with no system rather than being hidden.
-                  const systems = [...row.systemIds]
-                    .map((id) => unlistedSystemNames[Number(id)] ?? `#${id}`)
-                    .sort((a, b) => a.localeCompare(b))
+                  const systems = sort(
+                    (a: string, b: string) => a.localeCompare(b),
+                    map((id: string) => unlistedSystemNames[Number(id)] ?? `#${id}`, [...row.systemIds])
+                  )
                   return (
                     <span key={`landlord-${corporationId}`} className={styles.breakdownRow}>
                       <span className={styles.payer}>

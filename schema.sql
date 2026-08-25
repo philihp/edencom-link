@@ -4939,10 +4939,11 @@ grant  execute on function public.industry_job_tax_facility(bigint[]) to authent
 --               that payment). A corp job's payment is already the outgoing
 --               entry in that corp's own wallet, so counting the landlord's
 --               receipt too would bill it twice.
---   isk_self_paid  the subset billed at our own rate — the installer's own
---               corporation owns this structure. Only that can be scaled into a
---               saving; a structure bills a corporation it does not contain at
---               whatever rate it likes.
+--   isk_self_paid  the subset billed at our own rate — the job was ours and one
+--               of OUR corporations owns this structure. Not a match between the
+--               installing corporation and the owning one: characters commonly
+--               sit in one corp while the structures belong to another, and the
+--               ISK stays with us either way.
 --   isk_total   every entry once, whichever direction. What the payer
 --               leaderboard ranks; revenue and taxes paid deliberately overlap
 --               (a member billing their own corp is both), so they cannot be
@@ -4967,49 +4968,61 @@ returns table (
 language sql
 stable
 as $$
-  with owner as (
-    select cs.corporation_id
-    from public.corp_structure cs
-    where cs.structure_id = structure_tax_revenue.structure_id
-    limit 1
-  ),
-  tax as (
+  with tax as (
     select w.first_party_id, w.corporation_id, w.date, w.amount, w.context_id
     from public.corp_wallet_journal w
     where w.ref_type = 'industry_job_tax'
       and w.context_id is not null
       and w.date >= since
   ),
+  taxed_jobs as (
+    select distinct t.context_id as job_id from tax t
+  ),
+  -- Do WE own this structure? Any of our corporations owning it is enough; an
+  -- alliance-mate's tile is on the page too, and paying them is rent.
+  owned as (
+    select exists (
+      select 1
+      from public.corp_structure cs
+      where cs.structure_id = structure_tax_revenue.structure_id
+        and cs.corporation_id in (select public.my_corporation_ids())
+    ) as ours
+  ),
   -- One call for the whole window rather than per row; the function dedupes to
   -- at most one location per job.
   located as (
     select f.job_id, f.station_id, f.facility_id
-    from public.industry_job_tax_facility(array(select distinct t.context_id from tax t)) f
+    from public.industry_job_tax_facility(array(select j.job_id from taxed_jobs j)) f
   ),
-  -- Our characters' personal jobs, and the corporation each installer was in.
-  -- Corp jobs are deliberately absent: it is the outgoing entry in the paying
-  -- corp's own wallet that records those, not the receipt.
+  -- Jobs of ours, either way they were installed. Both views are RLS-scoped to
+  -- the caller, so somebody else's job renting our slots is absent.
+  ours as (
+    select cij.job_id from public.character_industry_job cij where cij.job_id in (select job_id from taxed_jobs)
+    union
+    select coj.job_id from public.corp_industry_job coj where coj.job_id in (select job_id from taxed_jobs)
+  ),
+  -- The character-installed subset, which decides only that a charge is billed
+  -- once — never whether it was billed at our own rate.
   personal as (
-    select cij.job_id, r.corporation_id
-    from public.character_industry_job cij
-    join public.registration r on r.id = cij.registration_id
+    select cij.job_id from public.character_industry_job cij where cij.job_id in (select job_id from taxed_jobs)
   ),
   scoped as (
     select
       t.first_party_id,
-      t.corporation_id,
       t.date,
       t.amount,
-      p.corporation_id is not null as is_personal,
-      -- Was this charge billed at our own rate? For an outgoing entry the payer
-      -- IS the installer; for an incoming one the wallet belongs to the
-      -- landlord, so the installer comes from the job instead.
+      p.job_id is not null as is_personal,
       case
-        when t.amount < 0 then t.corporation_id = (select corporation_id from owner)
-        else p.corporation_id is not null and p.corporation_id = (select corporation_id from owner)
+        -- We paid it, so the job was ours; all that remains is whether the
+        -- structure is.
+        when t.amount < 0 then (select ours from owned)
+        -- Somebody paid us. It is an own-rate charge when the job was ours and
+        -- we own the structure it ran in.
+        else o.job_id is not null and (select ours from owned)
       end as own_rate
     from tax t
     join located l on l.job_id = t.context_id
+    left join ours o on o.job_id = t.context_id
     left join personal p on p.job_id = t.context_id
     -- Upwell structures share the id between station_id and facility_id; jobs in
     -- NPC stations carry only station_id. Same coalesce the revenue page uses.

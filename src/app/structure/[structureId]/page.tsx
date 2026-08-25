@@ -1,9 +1,12 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
+import { chain, descend, map, reduce, reject, sortWith, sum, uniq } from 'ramda'
 
 import { createClient } from '@/utils/supabase/server'
 
 import { establishedUser } from '../../account/lib/establishedUser'
+import { fetchTaxRates, formatRate } from '../../settings/tax/rates'
+import { costAvoidance } from '../costAvoidance'
 import { DateTime } from '../../DateTime'
 import { ACTIVITY_NAMES } from '../../industry/jobFields'
 import { formatIskValue } from '../../isk'
@@ -80,6 +83,14 @@ type TaxRow = {
   total_jobs: number | string
   isk_total: number | string | null
 }
+
+// universe_name rows, and the id -> name map every one of them turns into.
+type IdName = { id: number | string; name: string }
+
+const nameById = (rows: readonly IdName[]): Map<string, string> =>
+  new Map(map((r: IdName) => [String(r.id), r.name] as [string, string], rows))
+
+type AffiliationRow = { character_id: number | string; corporation_id: number | string }
 
 type StructureParams = {
   params: Promise<{
@@ -176,44 +187,63 @@ const StructurePage = async ({ params, searchParams }: StructureParams) => {
   // Payer names and the corp they fly for, same sources as /structure/revenue:
   // universe_name (the universe-names job) and character_affiliation (the
   // character-directory job).
-  const payerIds = [...new Set(taxRows.map((r) => r.payer_id).filter((p) => p != null))].map(Number)
-  const payerNames = new Map<string, string>()
-  const payerCorps = new Map<string, string>()
-  if (payerIds.length > 0) {
-    const [{ data: charNames }, { data: affiliations }] = await Promise.all([
-      supabase.from('universe_name').select('id, name').in('id', payerIds),
-      supabase.from('character_affiliation').select('character_id, corporation_id').in('character_id', payerIds),
-    ])
-    for (const r of (charNames ?? []) as Array<{ id: number | string; name: string }>) {
-      payerNames.set(String(r.id), r.name)
-    }
-    const corpByPayer = new Map<string, string>()
-    const corpIds = new Set<number>()
-    for (const a of (affiliations ?? []) as Array<{ character_id: number | string; corporation_id: number | string }>) {
-      corpByPayer.set(String(a.character_id), String(a.corporation_id))
-      corpIds.add(Number(a.corporation_id))
-    }
-    if (corpIds.size > 0) {
-      const { data: corpNames } = await supabase
-        .from('universe_name')
-        .select('id, name')
-        .in('id', [...corpIds])
-      const corpNameById = new Map<string, string>()
-      for (const r of (corpNames ?? []) as Array<{ id: number | string; name: string }>) {
-        corpNameById.set(String(r.id), r.name)
-      }
-      for (const [payer, corpId] of corpByPayer) {
-        const name = corpNameById.get(corpId)
-        if (name) payerCorps.set(payer, name)
-      }
-    }
-  }
+  const payerIds = uniq(
+    map(
+      Number,
+      reject(
+        (id): id is null => id == null,
+        map((r: TaxRow) => r.payer_id, taxRows)
+      )
+    )
+  )
 
-  const taxTotalIsk = taxRows.reduce((sum, r) => sum + Number(r.isk ?? 0), 0)
-  const taxTotalJobs = taxRows.reduce((sum, r) => sum + Number(r.jobs ?? 0), 0)
-  const selfPaidIsk = taxRows.reduce((sum, r) => sum + Number(r.isk_self_paid ?? 0), 0)
-  const paidIsk = taxRows.reduce((sum, r) => sum + Number(r.isk_paid ?? 0), 0)
-  const paidJobs = taxRows.reduce((sum, r) => sum + Number(r.paid_jobs ?? 0), 0)
+  const [{ data: charNames }, { data: affiliations }] = payerIds.length
+    ? await Promise.all([
+        supabase.from('universe_name').select('id, name').in('id', payerIds),
+        supabase.from('character_affiliation').select('character_id, corporation_id').in('character_id', payerIds),
+      ])
+    : [{ data: [] }, { data: [] }]
+
+  const payerNames = nameById((charNames ?? []) as IdName[])
+
+  const affiliationRows = (affiliations ?? []) as AffiliationRow[]
+  const corpByPayer = map(
+    (a: AffiliationRow) => [String(a.character_id), String(a.corporation_id)] as [string, string],
+    affiliationRows
+  )
+  const corpIds = uniq(map((a: AffiliationRow) => Number(a.corporation_id), affiliationRows))
+
+  const { data: corpNames } = corpIds.length
+    ? await supabase.from('universe_name').select('id, name').in('id', corpIds)
+    : { data: [] }
+  const corpNameById = nameById((corpNames ?? []) as IdName[])
+
+  // A payer whose corporation the directory hasn't named yet simply has no corp
+  // line, rather than one reading as an id.
+  const payerCorps = new Map<string, string>(
+    chain(([payer, corpId]: [string, string]) => {
+      const name = corpNameById.get(corpId)
+      return name ? [[payer, name] as [string, string]] : []
+    }, corpByPayer)
+  )
+
+  const totalOf = (pick: (r: TaxRow) => number | string | null) =>
+    sum(map((r: TaxRow) => Number(pick(r) ?? 0), taxRows))
+  const taxTotalIsk = totalOf((r) => r.isk)
+  const taxTotalJobs = totalOf((r) => r.jobs)
+  const selfPaidIsk = totalOf((r) => r.isk_self_paid)
+  const paidIsk = totalOf((r) => r.isk_paid)
+  const paidJobs = totalOf((r) => r.paid_jobs)
+  const selfPaidJobs = totalOf((r) => r.self_paid_jobs)
+
+  // The same arithmetic the list page's Cost Avoidance tile runs, over this
+  // structure's own-rate charges alone — reusing costAvoidance() rather than
+  // repeating the formula, so the two can't disagree about what a saving is.
+  const taxRates = await fetchTaxRates(supabase, user.id)
+  const avoidance = costAvoidance([{ structureId: String(s.structure_id), amount: selfPaidIsk }], taxRates)
+  // What we paid that was NOT billed at our own rate: a landlord charges a
+  // corporation it doesn't contain whatever it likes, so none of it is a saving.
+  const paidAtOtherRate = paidIsk - selfPaidIsk
   // A structure whose corp installs everything under corp ownership has only
   // outgoing rows, so the received column would be all zeroes; the extra column
   // earns its width only when there is something in it.
@@ -227,15 +257,19 @@ const StructurePage = async ({ params, searchParams }: StructureParams) => {
   // which is the same question whichever wallet the tax came out of — so it
   // ranks on isk_total, every charge counted once. Adding revenue to taxes paid
   // would count a member's own-corp job twice, since that one charge is both.
-  const byPayer = new Map<string, { payerId: string; isk: number; jobs: number }>()
-  for (const r of taxRows) {
-    const payerId = r.payer_id != null ? String(r.payer_id) : 'unknown'
-    const entry = byPayer.get(payerId) ?? { payerId, isk: 0, jobs: 0 }
-    entry.isk += Number(r.isk_total ?? 0)
-    entry.jobs += Number(r.total_jobs ?? 0)
-    byPayer.set(payerId, entry)
-  }
-  const leaderboard = [...byPayer.values()].sort((a, b) => b.isk - a.isk)
+  type PayerTotal = { payerId: string; isk: number; jobs: number }
+  const byPayer = reduce(
+    (acc: Map<string, PayerTotal>, r: TaxRow) => {
+      const payerId = r.payer_id != null ? String(r.payer_id) : 'unknown'
+      const entry = acc.get(payerId) ?? { payerId, isk: 0, jobs: 0 }
+      entry.isk += Number(r.isk_total ?? 0)
+      entry.jobs += Number(r.total_jobs ?? 0)
+      return acc.set(payerId, entry)
+    },
+    new Map<string, PayerTotal>(),
+    taxRows
+  )
+  const leaderboard = sortWith([descend((p: PayerTotal) => p.isk)], [...byPayer.values()])
 
   const typeNames = await fetchTypeNames([
     Number(s.type_id),
@@ -463,13 +497,83 @@ const StructurePage = async ({ params, searchParams }: StructureParams) => {
             ISK is tax that arrived here; Paid ISK is what we were charged to run our own jobs here, whoever owns the
             structure. One charge can be both — a member billing their own corporation pays it and we receive it — so
             the two columns describe the same events from different sides rather than summing to a balance.
-            {selfPaidIsk > 0 && (
-              <>
-                {' '}
-                Of what we paid, {formatIskValue(selfPaidIsk)} was billed at our own rate, which is the part{' '}
-                <Link href="/structure">cost avoidance</Link> prices against a public structure.
-              </>
-            )}
+          </em>
+        </p>
+      )}
+
+      {selfPaidIsk > 0 && (
+        <>
+          <h2>Cost Avoidance</h2>
+          <table className={retro.retro}>
+            <tbody>
+              <tr>
+                <td>
+                  <span className={structureStyles.payer}>
+                    <span>
+                      Billed at our own rate <span className={retro.muted}>({formatRate(taxRates.own)})</span>
+                    </span>
+                    <span className={structureStyles.payerCorp}>
+                      {selfPaidJobs.toLocaleString()} charge{selfPaidJobs === 1 ? '' : 's'} on jobs of ours run in a
+                      structure we own
+                    </span>
+                  </span>
+                </td>
+                <td className={retro.num}>{formatIskValue(selfPaidIsk)}</td>
+              </tr>
+              <tr>
+                <td>
+                  <span className={structureStyles.payer}>
+                    <span>
+                      The same jobs in a public structure{' '}
+                      <span className={retro.muted}>({formatRate(taxRates.public)})</span>
+                    </span>
+                    <span className={structureStyles.payerCorp}>
+                      what they would have been billed, and kept none of
+                    </span>
+                  </span>
+                </td>
+                <td className={retro.num}>
+                  {avoidance.counterfactual == null ? '—' : formatIskValue(avoidance.counterfactual)}
+                </td>
+              </tr>
+              <tr>
+                <th>Avoided</th>
+                <th className={retro.num}>{avoidance.total == null ? '—' : formatIskValue(avoidance.total)}</th>
+              </tr>
+            </tbody>
+          </table>
+          <p className={structureStyles.unaccountedNote}>
+            <em>
+              {avoidance.total == null ? (
+                <>
+                  Cost avoidance needs a non-zero rate for your own characters — nothing was billed, so there is no
+                  receipt to price a public structure against.{' '}
+                </>
+              ) : (
+                <>
+                  The tax receipt is {formatRate(taxRates.own)} of the job&rsquo;s Estimated Item Value, so the same
+                  jobs at {formatRate(taxRates.public)} come to {formatRate(taxRates.public)} ÷{' '}
+                  {formatRate(taxRates.own)} times as much, and the difference is the expense never incurred. No ISK
+                  changed hands, so it is not revenue.{' '}
+                </>
+              )}
+              {paidAtOtherRate > 0 && (
+                <>
+                  A further {formatIskValue(paidAtOtherRate)} of tax we paid here is excluded — it was not billed at our
+                  own rate, so there is no own rate to scale.{' '}
+                </>
+              )}
+              <Link href="/settings/tax">Change the rates &raquo;</Link>
+            </em>
+          </p>
+        </>
+      )}
+
+      {selfPaidIsk === 0 && paidIsk > 0 && (
+        <p className={structureStyles.unaccountedNote}>
+          <em>
+            No cost avoidance here: none of the {formatIskValue(paidIsk)} we paid was billed at our own rate, because
+            this structure isn&rsquo;t ours. A landlord bills us whatever rate it likes, so there is no saving to price.
           </em>
         </p>
       )}

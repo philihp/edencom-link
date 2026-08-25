@@ -11,11 +11,14 @@
 -- revenue).
 --
 -- It also pins the measures apart. `isk_self_paid` is the subset billed at OUR
--- OWN RATE — the installer's own corporation owns the structure — so rent paid
--- into somebody else's must never land in it, which is what the earlier
--- every-outgoing-entry reading got wrong. `isk_paid` is the wider figure: every
--- charge we paid, including a member's personal job, whose only record is the
--- incoming receipt because no character wallet journal exists.
+-- OWN RATE, and that turns on OWNERSHIP: the job was ours and one of our
+-- corporations owns the structure. It is NOT a match between the installing
+-- corporation and the owning one — characters commonly sit in one corp while
+-- the structures belong to another, and reading it that way zeroed the figure
+-- for exactly those accounts. Rent paid into a structure we do not own must
+-- still never land in it. `isk_paid` is the wider figure: every charge we paid,
+-- including a member's personal job, whose only record is the incoming receipt
+-- because no character wallet journal exists.
 --
 -- Run against a THROWAWAY database from the repo root (same harness as
 -- asset_share.sql): DATABASE_URL='postgresql://…/throwaway' pnpm run test:sql
@@ -29,6 +32,8 @@ create schema if not exists auth;
 create or replace function auth.uid() returns uuid
 language sql stable
 as $$ select nullif(current_setting('test.uid', true), '')::uuid $$;
+
+do $$ begin create schema if not exists public; end $$;
 
 create table public.registration (
   id uuid primary key,
@@ -52,8 +57,27 @@ create table public.corp_wallet_journal (
 );
 
 insert into public.registration (id, user_id, corporation_id) values
-  ('11111111-1111-1111-1111-111111111111', '99999999-0000-0000-0000-000000000001', 1000);
-insert into public.corp_structure values (60000001, 1000), (60000003, 2000);
+  ('11111111-1111-1111-1111-111111111111', '99999999-0000-0000-0000-000000000001', 1000),
+  -- A second character of ours, in a different corporation of ours.
+  ('22222222-2222-2222-2222-222222222222', '99999999-0000-0000-0000-000000000001', 1500);
+insert into public.corp_structure values (60000001, 1000), (60000003, 2000), (60000004, 1500);
+
+-- Ownership is decided by my_corporation_ids(), the corporations the caller has
+-- a character in — corp 1000 here, via the registration above.
+create or replace function public.my_corporation_ids()
+returns setof bigint
+language sql
+stable
+as $$
+  select r.corporation_id
+  from public.registration r
+  where r.user_id = (select auth.uid()) and r.corporation_id is not null;
+$$;
+
+-- The corp-jobs live view the ownership test reads alongside the character one.
+create view public.corp_industry_job as
+  select * from public.corp_industry_job_over_time
+  where is_current and corporation_id in (select public.my_corporation_ids());
 
 -- The live-rows view the aggregation reads to tell a personal job from a corp
 -- one; the real schema defines it the same way.
@@ -67,7 +91,10 @@ insert into public.character_industry_job_over_time values
   (2, '11111111-1111-1111-1111-111111111111', 60000001, 60000001, true),
   (3, '11111111-1111-1111-1111-111111111111', 60000001, 60000001, true),
   (4, '11111111-1111-1111-1111-111111111111', 60000002, 60000002, true),
-  (6, '11111111-1111-1111-1111-111111111111', 60000001, null,     true);
+  (6, '11111111-1111-1111-1111-111111111111', 60000001, null,     true),
+  -- Installed by the character in corp 1000, but run in 60000004, which corp
+  -- 1500 owns. Both corporations are ours.
+  (8, '11111111-1111-1111-1111-111111111111', 60000004, 60000004, true);
 insert into public.corp_industry_job_over_time values
   (5, 3000, null, 60000001, true),
   -- Our own corporation's job, run in a structure somebody else owns.
@@ -89,12 +116,15 @@ insert into public.corp_wallet_journal values
   -- any of the row/day counts asserted below.
   (1000, 1, 8, '2026-08-08T02:00:00Z', 'industry_job_tax', 3, -300.00, 7001),
   -- Rent: our corporation paying tax into a structure it does not own.
-  (1000, 1, 9, '2026-08-08T03:00:00Z', 'industry_job_tax', 7, -450.00, 7001);
+  (1000, 1, 9, '2026-08-08T03:00:00Z', 'industry_job_tax', 7, -450.00, 7001),
+  -- Our character's job in a structure another of OUR corporations owns.
+  (1500, 1, 10, '2026-08-08T04:00:00Z', 'industry_job_tax', 8, 600.00, 7001);
 
 \i supabase/migrations/20260809000000_industry_job_tax_facility.sql
 \i supabase/migrations/20260809080000_structure_tax_revenue.sql
 \i supabase/migrations/20260822120000_structure_tax_revenue_split_signs.sql
 \i supabase/migrations/20260824234011_structure_tax_paid.sql
+\i supabase/migrations/20260825015233_structure_tax_own_rate_by_ownership.sql
 
 set local test.uid = '99999999-0000-0000-0000-000000000001';
 
@@ -220,6 +250,22 @@ begin
   assert got.isk_paid = 450.00, 'expected 450 paid as rent, got ' || got.isk_paid;
   assert got.isk_self_paid = 0, 'rent is not billed at our own rate, got ' || got.isk_self_paid;
   assert got.self_paid_jobs = 0, 'expected 0 own-rate charges, got ' || got.self_paid_jobs;
+end $$;
+
+-- The case a corporation-identity test drops: the character who installed job 8
+-- is in corp 1000, while 60000004 belongs to corp 1500. Both are ours, so the
+-- tax never left the group and the whole 600 is an own-rate charge.
+do $$
+declare got record;
+begin
+  select * into got
+  from public.structure_tax_revenue(60000004, '2026-08-01T00:00:00Z')
+  where payer_id = 7001 and day = date '2026-08-08';
+  assert got.isk = 600.00, 'expected 600 revenue, got ' || got.isk;
+  assert got.isk_self_paid = 600.00,
+    'a job of ours in a structure of ours is own-rate however the corps line up, got ' || got.isk_self_paid;
+  assert got.self_paid_jobs = 1, 'expected 1 own-rate charge, got ' || got.self_paid_jobs;
+  assert got.isk_paid = 600.00, 'the character paid it, so it is tax we paid, got ' || got.isk_paid;
 end $$;
 
 -- A caller with no journal entries of their own gets nothing, since the
