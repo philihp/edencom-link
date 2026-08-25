@@ -59,6 +59,31 @@ test('the owner filter is on every list, including the character-only ones', () 
   }
 })
 
+// The hangar dimension (ESI's location_flag) is on the three lists whose rows
+// carry one — assets, the restock sum over them, and blueprints. Nothing else
+// has a hangar to sit in: an order, a job or a transaction names a place, not
+// a compartment.
+test('the hangar filter is on every list whose rows carry a location flag', () => {
+  const schema = buildSchema(typeDefs)
+  const fields = (schema.getQueryType() as GraphQLObjectType).getFields()
+  for (const name of ['assets', 'blueprints', 'restock']) {
+    const args = new Map(fields[name].args.map((a) => [a.name, String(a.type)]))
+    assert.equal(args.get('hangar'), 'String', `${name}.hangar`)
+    assert.equal(args.get('hangars'), '[String!]', `${name}.hangars`)
+  }
+  for (const name of ['industryJobs', 'marketOrders', 'walletTransactions']) {
+    const args = fields[name].args.map((a) => a.name)
+    assert.ok(!args.includes('hangar'), `${name} has no hangar filter`)
+  }
+})
+
+test('the rows a hangar filter selects on expose the flag they filtered by', () => {
+  const schema = buildSchema(typeDefs)
+  for (const name of ['Asset', 'Blueprint']) {
+    assert.ok(objectType(schema, name).getFields().locationFlag, `${name}.locationFlag`)
+  }
+})
+
 test('the SDL parses and exposes the expected query fields', () => {
   const schema = buildSchema(typeDefs)
   const query = schema.getQueryType() as GraphQLObjectType

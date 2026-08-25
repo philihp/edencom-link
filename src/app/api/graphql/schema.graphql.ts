@@ -35,9 +35,11 @@
 // each filled only on their own side, and ownerId/ownerName coalesce the two.
 //
 // FILTERS COME IN SINGULAR/PLURAL PAIRS: owner/owners, location/locations,
-// type/types. An OWNER is a character or a corporation — one dimension, since
-// a row is owned by one or the other and asking "what do these own" shouldn't
-// care which. The singular is a
+// type/types, hangar/hangars. An OWNER is a character or a corporation — one
+// dimension, since a row is owned by one or the other and asking "what do
+// these own" shouldn't care which. A HANGAR is the compartment a stack sits in
+// (ESI's location_flag) rather than the place it sits at, so "in a Deliveries
+// hangar" is a hangar filter and "at Jita" a location one. The singular is a
 // case-insensitive substring SEARCH over names; the plural is an EXACT list
 // whose entries are ids or whole names, mixed freely. The two are mutually
 // exclusive, an entry matching nothing is an error, and each entity type's
@@ -53,9 +55,12 @@ export const typeDefs = /* GraphQL */ `
     """
     Current asset rows (live inventory) across your characters AND the
     corporations they belong to. Filters are the schema's singular/plural pairs
-    — type/types, location/locations, owner/owners, where an owner is a
-    character OR a corporation (see Owner and Corporation). includeShared
-    additionally
+    — type/types, location/locations, hangar/hangars, owner/owners, where an
+    owner is a character OR a corporation (see Owner and Corporation).
+    hangar/hangars narrow to the HANGAR a stack sits in rather than the place
+    it sits at, so \`hangar: "Deliveries"\` is everything waiting in a delivery
+    hangar — a character's and a corporation's alike (see locationFlag on
+    Asset). includeShared additionally
     returns rows other users have shared with you (session auth only — the
     api_token path is own-data only; a Link is the way to hand shared data to
     external tools).
@@ -65,6 +70,8 @@ export const typeDefs = /* GraphQL */ `
       types: [String!]
       location: String
       locations: [String!]
+      hangar: String
+      hangars: [String!]
       owner: String
       owners: [String!]
       limit: Int
@@ -75,9 +82,10 @@ export const typeDefs = /* GraphQL */ `
     A restock (shopping) list. You give TARGETS — an item type and the quantity
     you want on hand — and each line sums your current stacks of that type
     (across your characters AND their corporations, like assets) and reports
-    what you're missing. location/locations and owner/owners narrow which
-    hangars count as "on hand", exactly as they do on assets; the types come
-    from the targets, so there is no type filter here.
+    what you're missing. location/locations, hangar/hangars and owner/owners
+    narrow which hangars count as "on hand", exactly as they do on assets; the
+    types come from the targets, so there is no type filter here. Counting only
+    what is sitting in a delivery hangar is \`hangar: "Deliveries"\`.
 
     By default only lines below target come back; onlyBelowTarget: false keeps
     every target, including the covered ones.
@@ -86,6 +94,8 @@ export const typeDefs = /* GraphQL */ `
       targets: [RestockTarget!]!
       location: String
       locations: [String!]
+      hangar: String
+      hangars: [String!]
       owner: String
       owners: [String!]
       onlyBelowTarget: Boolean = true
@@ -94,8 +104,16 @@ export const typeDefs = /* GraphQL */ `
     "Asset shares other users have aimed at you (corporation/alliance/public). Session auth only."
     sharedWithMe: [ShareGrant!]!
 
-    "Current blueprint rows (BPOs and BPCs) across your characters and their corporations, filtered by item type and owner."
-    blueprints(type: String, types: [String!], owner: String, owners: [String!], limit: Int): BlueprintPage!
+    "Current blueprint rows (BPOs and BPCs) across your characters and their corporations, filtered by item type, hangar and owner."
+    blueprints(
+      type: String
+      types: [String!]
+      hangar: String
+      hangars: [String!]
+      owner: String
+      owners: [String!]
+      limit: Int
+    ): BlueprintPage!
 
     "Open market orders. Character-owned only: corp market orders are not extracted yet, so an owner filter naming only corporations is refused here rather than silently returning nothing."
     marketOrders(owner: String, owners: [String!]): [MarketOrder!]!
@@ -261,6 +279,7 @@ export const typeDefs = /* GraphQL */ `
     typeName: String
     quantity: String!
     locationId: String
+    "Which hangar or bay the stack sits in, as ESI names it: Hangar, Deliveries, CorpDeliveries, CorpSAG1…7, DroneBay… What the hangar:/hangars: filter selects on."
     locationFlag: String
     locationType: String
     locationName: String
