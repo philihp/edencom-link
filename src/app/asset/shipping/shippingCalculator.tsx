@@ -41,11 +41,7 @@ const Pending = () => (
     <span className={styles.srOnly} role="status">
       Pricing…
     </span>
-    <p className={styles.pendingLabel}>
-      Appraising and quoting freight…
-      <br />
-      <span className={styles.muted}>Appraisals share one queue site-wide, so this can wait its turn.</span>
-    </p>
+    <p className={styles.pendingLabel}>Appraising and quoting freight…</p>
     <SkeletonLines count={6} />
   </div>
 )
