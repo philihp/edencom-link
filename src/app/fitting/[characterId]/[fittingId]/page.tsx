@@ -7,11 +7,13 @@ import { establishedUser } from '../../../account/lib/establishedUser'
 import { createServiceClient } from '@/utils/supabase/service'
 import { ShipFitViewDynamic } from '../../../ship/[itemId]/shipFitViewDynamic'
 import { Name } from '../../../names'
-import { fetchTypeNames } from '../../../typeNames'
+import { getSdeTypes } from '@/sdeTypes'
 import { ShareDialog } from '../../../asset/shareDialog'
 import { ShareUrlCleanup } from '../../../shareUrlCleanup'
 import { verifySignedFittingShare } from '../../access'
 import { saveFittingShare, revokeFittingShare } from '../../actions'
+import { EftExport } from '../../eftExport'
+import { toEft, type EftType } from '../../eft'
 import { toEsiFit, type FittingItem, type FittingRow } from '../../fit'
 import { resolveFittingOwner } from '../../resolveCharacter'
 import { fetchFittingShareDialogData } from '../../shareData'
@@ -76,7 +78,15 @@ const FittingDetailPage = async ({
   if (!fit) notFound()
 
   const items: FittingItem[] = fit.items ?? []
-  const typeNames = await fetchTypeNames([Number(fit.ship_type_id), ...items.map((i) => Number(i.type_id))])
+  // Categories ride along with the names because the EFT export needs them:
+  // a charge shares its module's slot flag in an ESI fitting, and only the
+  // category tells the two apart (src/app/fitting/eft.ts).
+  const sdeTypes = await getSdeTypes([Number(fit.ship_type_id), ...items.map((i) => Number(i.type_id))])
+  const entries = Object.values(sdeTypes)
+  const types: Record<number, EftType> = Object.fromEntries(
+    entries.map((t) => [t.typeID, { name: t.name, categoryID: t.categoryID }])
+  )
+  const typeNames: Record<number, string> = Object.fromEntries(entries.map((t) => [t.typeID, t.name]))
   const hull = typeNames[Number(fit.ship_type_id)] ?? `#${fit.ship_type_id}`
 
   // resolveFittingOwner set this from `registration`, which RLS scopes to the
@@ -131,6 +141,8 @@ const FittingDetailPage = async ({
       <ShipFitViewDynamic esiFit={toEsiFit(fit)} />
 
       <SlotGroups items={items} typeNames={typeNames} />
+
+      <EftExport eft={toEft(fit, types)} />
     </div>
   )
 }
