@@ -40,15 +40,21 @@
 //     the outgoing entry in that corp's own wallet, so counting the incoming
 //     side too would bill one charge twice.
 //
-// COST AVOIDANCE is narrower than either: only a job whose OWN corporation owns
-// the structure it ran in, because only then was it billed at our own rate,
-// which is what the counterfactual scales. That test is the installer's
-// corporation against the structure's owner — not the wallet's, which for an
-// incoming entry is the landlord rather than the installer. A job one of our
-// corps ran in a SISTER corp's structure is therefore revenue for the owner and
-// tax paid by the installer, but avoidance for neither: a structure bills a
-// corporation it does not contain at whatever rate it likes, and scaling that
-// receipt as though it were the own rate would invent a saving.
+// COST AVOIDANCE is the one that turns on OWNERSHIP, and it is where the ISK is:
+// a job WE initiated, run in a structure WE own, was billed our own rate, and
+// the gap to a public rate is the expense never incurred. Whether the job was
+// installed by a character or as a corporation does not enter into it — the tax
+// is levied on the job either way, and either way we kept it.
+//
+// So the test is: is the job ours, and does one of our corporations own the
+// structure. NOT whether the installing corporation is the owning one. Those
+// differ exactly when one of our corps runs a job in another of our corps'
+// structure, which is a saving like any other — the ISK stays with us. Reading
+// it as a corporation-identity match dropped that case, and with it the whole
+// figure for anyone whose characters sit in a corp that owns no structures.
+//
+// Paying a landlord we do not own — an ally's structure, or a stranger's — is
+// rent. It is tax paid, and no saving at all.
 import { find, forEach, sum } from 'ramda'
 
 import type { OwnTaxReceipt } from './costAvoidance'
@@ -72,15 +78,22 @@ export type TaxEntry = {
 export type TaxLedgerInput = {
   // job id -> the structure it ran in, for every job we could resolve.
   structureByJob: ReadonlyMap<string, string>
-  // job id -> the corporation of the CHARACTER who installed it, for our
-  // characters' personal jobs only.
-  //
-  // Corp jobs are deliberately absent: their payment is readable as the
-  // outgoing entry in the paying corp's own wallet, and it is that entry, not
-  // the landlord's receipt, that says who installed them. Jobs resolved only
+  // The jobs that are OURS — our characters' and our corporations' alike. Which
+  // of the two it was does not matter to avoidance: a job we initiated in a
+  // structure we own is billed our own rate either way. Jobs resolved only
   // through industry_job_tax_facility() are other players' renting our slots
-  // and are absent for the older reason — they were never ours.
-  personalJobCorp: ReadonlyMap<string, string>
+  // and are deliberately absent.
+  ownJobIds: ReadonlySet<string>
+  // The subset of those installed by a CHARACTER rather than as a corporation.
+  // This decides nothing about avoidance; it exists only so one charge is
+  // billed once. A corp job's payment is readable as the outgoing entry in the
+  // paying corp's own wallet, so counting the landlord's receipt too would
+  // double it — a character's payment has no such entry to read.
+  personalJobIds: ReadonlySet<string>
+  // Our own corporations. A structure one of them owns is a structure we own,
+  // whichever of our corps installed the job — that is what separates a saving
+  // from rent.
+  ownCorporationIds: ReadonlySet<string>
   // structure id -> the corporation that owns it. Covers every structure on
   // the page, which includes alliance-mates' as well as our own.
   structureOwner: ReadonlyMap<string, string>
@@ -116,7 +129,7 @@ export type TaxLedger = {
 }
 
 export const foldTaxLedger = (entries: readonly TaxEntry[], input: TaxLedgerInput): TaxLedger => {
-  const { structureByJob, personalJobCorp, structureOwner, listedOwners } = input
+  const { structureByJob, ownJobIds, personalJobIds, ownCorporationIds, structureOwner, listedOwners } = input
 
   const revenueByStructure = new Map<string, number>()
   const taxesPaidByStructure = new Map<string, number>()
@@ -131,6 +144,10 @@ export const foldTaxLedger = (entries: readonly TaxEntry[], input: TaxLedgerInpu
 
   // Every per-key total here accumulates the same way. Mutating the map rather
   // than rebuilding it per entry is the accepted shape for a fold this size.
+  // Ours if one of our corporations owns it. An alliance-mate's tile is on this
+  // page too, and paying them is rent, not a saving.
+  const weOwn = (structureId: string) => ownCorporationIds.has(structureOwner.get(structureId) ?? '')
+
   const bump = (into: Map<string, number>, key: string, amount: number) => into.set(key, (into.get(key) ?? 0) + amount)
 
   const credit = (jobId: string, structureId: string, amount: number) => {
@@ -157,13 +174,13 @@ export const foldTaxLedger = (entries: readonly TaxEntry[], input: TaxLedgerInpu
         bump(revenueByStructure, structureId, amount)
         // Somebody paid us. If it was one of our own characters, that payment is
         // recorded nowhere else — no character wallet journal is ingested — so
-        // this receipt is also the record of tax we paid, and of an own-rate
-        // charge when their corporation is the one that owns the structure.
-        const installerCorp = jobId != null ? personalJobCorp.get(jobId) : undefined
-        if (jobId != null && installerCorp != null) {
-          payTax(jobId, structureId, amount)
-          if (installerCorp === structureOwner.get(structureId)) credit(jobId, structureId, amount)
-        }
+        // this receipt is the only record of tax we paid.
+        if (jobId != null && personalJobIds.has(jobId)) payTax(jobId, structureId, amount)
+        // And a job of ours run in a structure of ours was billed our own rate,
+        // which is the charge the counterfactual scales. A corp job's receipt
+        // reaches us only when a DIFFERENT corp installed it, so the credit is
+        // gated on the job being ours rather than on which wallet paid.
+        if (jobId != null && ownJobIds.has(jobId) && weOwn(structureId)) credit(jobId, structureId, amount)
       } else {
         // Tax we received but can't tie to one of our structures (e.g. jobs not
         // in our tables, or a structure we've stopped monitoring).
@@ -188,11 +205,11 @@ export const foldTaxLedger = (entries: readonly TaxEntry[], input: TaxLedgerInpu
     }
     payTax(jobId, structureId, -amount)
 
-    // ...but only a charge our corporation levied on ITSELF was billed at our
-    // own rate, so only that is avoidance. Paying a landlord — an ally's
-    // structure, or a sister corp's — is a real expense and no saving at all.
-    if (entry.corporationId == null) return
-    if (structureOwner.get(structureId) !== entry.corporationId) return
+    // ...and it is a saving whenever the structure is ours: we initiated the job
+    // (our wallet paid for it) and kept the tax inside the group. Paying a
+    // landlord we don't own — an ally's structure, or a stranger's — is a real
+    // expense and no saving at all.
+    if (!weOwn(structureId)) return
     credit(jobId, structureId, -amount)
   }, entries)
 

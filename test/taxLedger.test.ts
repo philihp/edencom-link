@@ -8,9 +8,9 @@
 //
 // What the three measures must not do is collapse into each other. One charge
 // can be revenue AND tax we paid (a member billing their own corp), or tax we
-// paid and no revenue at all (the corp billing itself), and it is avoidance
-// only when the installer's own corporation owns the structure — never merely
-// because the job was ours.
+// paid and no revenue at all (the corp billing itself). Avoidance is the one
+// that turns on OWNERSHIP: a job of ours in a structure of ours, whichever of
+// our corporations owns it and whichever installed the job.
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
@@ -20,14 +20,12 @@ import type { TaxEntry } from '../src/app/structure/taxLedger.ts'
 const OURS = 'corp-1'
 const ALLY = 'corp-2'
 // An alt corp of ours: we hold a director in it, so its wallet is readable and
-// its jobs are ours — but it is still a different corporation from the one that
-// owns S1, which is what cost avoidance turns on.
+// both it and its structures are ours.
 const SISTER = 'corp-3'
 
 // J1 and J3 ran in our structure S1, J2 in an alliance-mate's S2, J4 in the
-// sister corp's own S3. J1 and J4 are personal jobs of our characters; J2 is a
-// personal job of a character in the sister corp; J3 belongs to somebody else
-// entirely (it resolves to a structure but to no character of ours).
+// sister corp's own S3. J3 is somebody else's job renting our slots; the rest
+// are ours.
 const input = {
   structureByJob: new Map([
     ['J1', 'S1'],
@@ -35,11 +33,12 @@ const input = {
     ['J3', 'S1'],
     ['J4', 'S3'],
   ]),
-  personalJobCorp: new Map([
-    ['J1', OURS],
-    ['J2', SISTER],
-    ['J4', SISTER],
-  ]),
+  // J1, J2 and J4 are ours; J3 is somebody else's, renting our slots.
+  ownJobIds: new Set(['J1', 'J2', 'J4']),
+  // Of ours, the character-installed ones. J4 stands in for a corp job.
+  personalJobIds: new Set(['J1', 'J2']),
+  // OURS and SISTER are both our corporations; ALLY is not.
+  ownCorporationIds: new Set([OURS, SISTER]),
   structureOwner: new Map([
     ['S1', OURS],
     ['S2', ALLY],
@@ -70,26 +69,35 @@ test('an incoming payment for our own job is revenue, tax we paid, and an own-ra
   assert.deepEqual(ledger.ownReceipts, [{ structureId: 'S1', amount: 5_000 }])
 })
 
-test("a sister corp's character paying into our structure is revenue and tax paid, never avoidance", () => {
-  // J4's installer is in SISTER, which owns S3 — so in its own corp's structure
-  // it does avoid. The point of the pair below is the corp/owner comparison,
-  // not who we are.
-  const own = foldTaxLedger([entry({ amount: 4_000, corporationId: SISTER, jobIds: ['J4'] })], input)
-  assert.deepEqual(own.ownReceipts, [{ structureId: 'S3', amount: 4_000 }])
+test("a job of ours in a SISTER corp's structure still avoids — the ISK stays with us", () => {
+  // The installer's corporation is not the owner here, and that is precisely
+  // the case a corporation-identity test dropped. Both corps are ours, so the
+  // tax never left the group and the saving is real.
+  const ledger = foldTaxLedger([entry({ amount: 4_000, corporationId: SISTER, jobIds: ['J4'] })], input)
+  assert.deepEqual(ledger.ownReceipts, [{ structureId: 'S3', amount: 4_000 }])
+})
 
-  // J2's installer is in SISTER but S2 belongs to an ally: billed at whatever
-  // rate a stranger gets, so there is no own-rate receipt to scale.
+test("tax into an ALLY's structure is paid, never avoided — we do not own it", () => {
   const rented = foldTaxLedger([entry({ amount: 4_000, jobIds: ['J2'] })], input)
   assert.deepEqual([...rented.revenueByStructure], [['S2', 4_000]])
   assert.deepEqual([...rented.taxesPaidByStructure], [['S2', 4_000]])
   assert.deepEqual(rented.ownReceipts, [])
 })
 
-test('an incoming payment for a CORP job is revenue only — its own wallet records the payment', () => {
-  // J3 is in no personalJobCorp entry, so nothing here bills it a second time.
+test('a CORP job of ours in our own structure avoids, though no character installed it', () => {
+  // J4 is a corp job (absent from personalJobIds) run in SISTER's own S3.
+  // Avoidance must not be gated on the character/corp distinction.
+  const ledger = foldTaxLedger([entry({ amount: -4_000, corporationId: SISTER, jobIds: ['J4'] })], input)
+  assert.deepEqual(ledger.ownReceipts, [{ structureId: 'S3', amount: 4_000 }])
+  assert.deepEqual([...ledger.taxesPaidByStructure], [['S3', 4_000]])
+})
+
+test("an incoming payment for somebody else's job is revenue only", () => {
+  // J3 is neither ours nor personal, so it bills us nothing and avoids nothing.
   const ledger = foldTaxLedger([entry({ amount: 7_000, jobIds: ['J3'] })], input)
   assert.deepEqual([...ledger.revenueByStructure], [['S1', 7_000]])
   assert.equal(ledger.taxesPaidByStructure.size, 0)
+  assert.deepEqual(ledger.ownReceipts, [])
 })
 
 test("tax paid into an ally's structure is counted as paid, on their tile", () => {
@@ -189,8 +197,8 @@ test('both sides of one charge credit the job once, not twice', () => {
   assert.deepEqual([...ledger.taxesPaidByStructure], [['S1', 5_000]])
 })
 
-test('an outgoing entry from a corporation that does not own the structure is dropped', () => {
-  const ledger = foldTaxLedger([entry({ amount: -9_007, corporationId: ALLY, jobIds: ['J1'] })], input)
+test('an outgoing entry for a structure we do not own credits no saving', () => {
+  const ledger = foldTaxLedger([entry({ amount: -9_007, jobIds: ['J2'] })], input)
   assert.deepEqual(ledger.ownReceipts, [])
 })
 

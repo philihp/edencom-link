@@ -513,8 +513,8 @@ const StructurePage = async ({ params, searchParams }: StructureParams) => {
                       Billed at our own rate <span className={retro.muted}>({formatRate(taxRates.own)})</span>
                     </span>
                     <span className={structureStyles.payerCorp}>
-                      {selfPaidJobs.toLocaleString()} charge{selfPaidJobs === 1 ? '' : 's'} on jobs whose own
-                      corporation owns this structure
+                      {selfPaidJobs.toLocaleString()} charge{selfPaidJobs === 1 ? '' : 's'} on jobs of ours run in a
+                      structure we own
                     </span>
                   </span>
                 </td>
@@ -559,9 +559,8 @@ const StructurePage = async ({ params, searchParams }: StructureParams) => {
               )}
               {paidAtOtherRate > 0 && (
                 <>
-                  A further {formatIskValue(paidAtOtherRate)} of tax we paid here is excluded: it was billed by a
-                  corporation that does not own this structure, at whatever rate that corporation sets, so there is no
-                  own rate to scale.{' '}
+                  A further {formatIskValue(paidAtOtherRate)} of tax we paid here is excluded — it was not billed at our
+                  own rate, so there is no own rate to scale.{' '}
                 </>
               )}
               <Link href="/settings/tax">Change the rates &raquo;</Link>
@@ -573,9 +572,8 @@ const StructurePage = async ({ params, searchParams }: StructureParams) => {
       {selfPaidIsk === 0 && paidIsk > 0 && (
         <p className={structureStyles.unaccountedNote}>
           <em>
-            No cost avoidance here: none of the {formatIskValue(paidIsk)} we paid was billed at our own rate. That
-            happens when the jobs were installed by characters or corporations that this structure&rsquo;s owner
-            doesn&rsquo;t contain — a landlord bills them at its own rate, so there is no saving to price.
+            No cost avoidance here: none of the {formatIskValue(paidIsk)} we paid was billed at our own rate, because
+            this structure isn&rsquo;t ours. A landlord bills us whatever rate it likes, so there is no saving to price.
           </em>
         </p>
       )}

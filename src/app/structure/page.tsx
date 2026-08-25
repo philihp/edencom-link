@@ -6,6 +6,7 @@ import {
   descend,
   filter,
   forEach,
+  isNil,
   map,
   reduce,
   reject,
@@ -212,26 +213,29 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
     concat(characterJobs, corpJobs)
   )
 
-  // Our characters' PERSONAL jobs, mapped to the corporation each installer was
-  // in. That corporation is what decides cost avoidance (a job is only billed
-  // our own rate by a structure its own corp owns), and the presence of a job
-  // here is what decides whether an incoming receipt also counts as tax we paid
-  // — see taxLedger.ts. Corp jobs are deliberately excluded: their payment is
-  // readable as the outgoing entry in the paying corp's own wallet.
-  //
-  // registration is RLS-scoped to the caller, so this only ever resolves our
-  // own characters; a job whose registration we can't see contributes nothing.
-  const { data: ownRegistrations } = await supabase.from('registration').select('id, corporation_id')
-  const corpByRegistration = new Map<string, string>(
-    ((ownRegistrations ?? []) as Array<{ id: string; corporation_id: number | string | null }>)
-      .filter((r) => r.corporation_id != null)
-      .map((r) => [r.id, String(r.corporation_id)])
+  // The jobs that are OURS — our characters' and our corporations' alike. A job
+  // of ours run in a structure of ours is billed our own rate whichever way it
+  // was installed, so cost avoidance turns on this set and on who owns the
+  // structure, never on which corporation the installer belonged to.
+  const ownJobIds = new Set(map((j: JobRow) => String(j.job_id), concat(characterJobs, corpJobs)))
+  // The character-installed subset. This decides nothing about avoidance; it is
+  // only how one charge gets billed once — a corp job's payment is the outgoing
+  // entry in that corp's own wallet, while a character's has no entry to read.
+  const personalJobIds = new Set(map((j: JobRow) => String(j.job_id), characterJobs))
+
+  // Our own corporations, from our own registrations (RLS-scoped to the
+  // caller). A structure any of them owns is a structure we own — including one
+  // owned by a corp none of the installing characters are in.
+  const { data: ownRegistrations } = await supabase.from('registration').select('corporation_id')
+  const ownCorporationIds = new Set(
+    map(
+      String,
+      reject(
+        isNil,
+        map((r: { corporation_id: number | string | null }) => r.corporation_id, ownRegistrations ?? [])
+      )
+    )
   )
-  const personalJobCorp = new Map<string, string>()
-  forEach((j: JobRow) => {
-    const corporationId = j.registration_id != null ? corpByRegistration.get(j.registration_id) : undefined
-    if (corporationId != null) personalJobCorp.set(String(j.job_id), corporationId)
-  }, characterJobs)
 
   // The two rates behind the cost-avoidance figures live on /settings/tax.
   const taxRates = await fetchTaxRates(supabase, user.id)
@@ -379,7 +383,7 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
       }),
       (journal ?? []) as JournalRow[]
     ),
-    { structureByJob, personalJobCorp, structureOwner, listedOwners }
+    { structureByJob, ownJobIds, personalJobIds, ownCorporationIds, structureOwner, listedOwners }
   )
 
   const totalByStructure = ledger.revenueByStructure
