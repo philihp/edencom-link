@@ -242,6 +242,33 @@ ids, since a structure we don't scan can only ever come back empty.
 A favorite may now be a structure the caller can't scan, which the star already
 handled: `structure_favorite` has no FK to any structure table, deliberately.
 
+### Why "Taxes Paid" is blank on a rented structure
+
+Both tax measures are folded from `corp_wallet_journal`, so they can only see a
+charge that touched a **corporation** wallet of ours. The ordinary case behind a
+block 3 tile touches neither side: a character installs a job in somebody else's
+Raitaru, the ISK leaves that character's personal wallet (no character journal is
+ingested) and lands in a corporation wallet RLS will never show us. The figure is
+blank however much work we run there — unknown, not zero.
+
+`foldJobCost` (`roster.ts`, tested) is the measure that survives it. ESI stamps
+every industry job with the `cost` it was installed for, and that is ISK we
+demonstrably paid to run a job at that structure. Counted on `start_date`
+(installation is when the charge lands), deduped by `job_id` (the character and
+corp extracts can both list one job), and scoped to structures with a tile, like
+the tax fold.
+
+It is **not** a facility tax and is never labelled as one: the figure bundles the
+system-cost-index job fee and the SCC surcharge — sinks, paid to nobody — in with
+the tax the owner receives. Splitting them needs the job's Estimated Item Value,
+which needs an `adjusted_price` feed nothing ingests; docs/cost-avoidance.md makes
+the same point about why avoidance is derived from tax receipts rather than from
+`cost`. So it is reported whole, under its own name.
+
+Not yet on `/structure/[structureId]`, whose measures still come from
+`structure_tax_revenue()` alone — so a rented structure's detail page stays blank
+where its tile now shows a figure.
+
 That does _not_ make the directory pointless: naming structures is what it is
 for. Asset paths, market orders, industry job locations and contract endpoints
 all render structure ids elsewhere in the app, and the daily job is what turns

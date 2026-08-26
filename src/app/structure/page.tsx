@@ -36,7 +36,7 @@ import {
   structureIndexActivities,
 } from './industryIndex'
 import { costAvoidance } from './costAvoidance'
-import { groupByTier, jobLocationId, jobStructureIds } from './roster'
+import { foldJobCost, groupByTier, jobLocationId, jobStructureIds } from './roster'
 import { foldTaxLedger } from './taxLedger'
 import { fetchTaxRates, formatRate } from '../settings/tax/rates'
 import { StructureSilhouette } from './silhouette'
@@ -92,6 +92,11 @@ type JobRow = {
   job_id: number | string
   station_id: number | string | null
   facility_id: number | string | null
+  // What ESI charged to install the job, and when it was charged. Only the
+  // per-structure job-cost fold reads these; the tax measures come from the
+  // corp journal (see foldJobCost in ./roster).
+  cost?: number | string | null
+  start_date?: string | null
   // Who installed it, and so who was billed. corp_industry_job names the
   // corporation directly; character_industry_job names the registration, whose
   // corporation is looked up below. Absent on rows from
@@ -203,8 +208,8 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
         .from(table)
         .select(
           table === 'corp_industry_job'
-            ? 'job_id, station_id, facility_id, corporation_id'
-            : 'job_id, station_id, facility_id, registration_id'
+            ? 'job_id, station_id, facility_id, cost, start_date, corporation_id'
+            : 'job_id, station_id, facility_id, cost, start_date, registration_id'
         )
         .order('job_id', { ascending: true })
         .range(from, to)
@@ -360,6 +365,16 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
   // only how one charge gets billed once — a corp job's payment is the outgoing
   // entry in that corp's own wallet, while a character's has no entry to read.
   const personalJobIds = new Set(map((j: JobRow) => String(j.job_id), characterJobs))
+
+  // What our jobs cost to install at each structure, over the same window as
+  // the tax figures. This is the one measure that survives a rented structure:
+  // a character's job pays out of a wallet we have no journal for and into a
+  // corporation's we can't read, so both tax measures go blank there while the
+  // job rows themselves still say exactly what we were charged. Not a facility
+  // tax — see foldJobCost.
+  const jobCostByStructure = foldJobCost(allJobs, { onPage, since: windowStart })
+  const jobCostTotal = sum(map((row) => row.isk, [...jobCostByStructure.values()]))
+  const jobCostJobs = sum(map((row) => row.jobs, [...jobCostByStructure.values()]))
   // The two rates behind the cost-avoidance figures live on /settings/tax.
   const taxRates = await fetchTaxRates(supabase, user.id)
 
@@ -764,6 +779,14 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
                               </span>
                             </>
                           )}
+                          {jobCostByStructure.has(String(s.structure_id)) && (
+                            <>
+                              <span className={styles.label}>Job Cost</span>
+                              <span className={`${styles.value} ${styles.num}`}>
+                                {formatIsk(jobCostByStructure.get(String(s.structure_id))?.isk ?? 0)}
+                              </span>
+                            </>
+                          )}
                           {avoidedByStructure.has(String(s.structure_id)) && (
                             <>
                               <span className={styles.label}>Cost Avoidance</span>
@@ -886,6 +909,12 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
                 <span className={styles.footerValue}>{formatIsk(unlistedTotal)}</span>
               </>
             )}
+            {jobCostTotal > 0 && (
+              <>
+                <span>Job cost:</span>
+                <span className={styles.footerValue}>{formatIsk(jobCostTotal)}</span>
+              </>
+            )}
             <span>Clone revenue:</span>
             <span className={styles.footerValue}>{formatKisk(cloneRevenue)}</span>
             <span>Cost avoidance:</span>
@@ -917,6 +946,19 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
                 including the {formatRate(taxRates.own)} our own structures bill us. Tax paid to a corporation with no
                 structure here is counted separately, since it has no tile to belong to. Neither figure can see what a
                 character paid to a corporation that isn&rsquo;t ours: that leaves a wallet we have no journal for.
+              </em>
+            </p>
+          )}
+          {jobCostTotal > 0 && (
+            <p className={styles.unaccountedNote}>
+              <em>
+                Job cost is what ESI charged to install our {jobCostJobs.toLocaleString()} job
+                {jobCostJobs === 1 ? '' : 's'} at the structures above, counted on the day each was installed. It is not
+                a facility tax: the figure bundles the system cost index fee and the SCC surcharge, which are sinks paid
+                to nobody, in with the tax the owner receives, and splitting them needs an Estimated Item Value nothing
+                here ingests. It is shown because it is the only record that survives a structure we rent &mdash; a
+                character&rsquo;s job pays out of a wallet we have no journal for, so both tax figures beside it stay
+                blank no matter how much work we run there.
               </em>
             </p>
           )}
