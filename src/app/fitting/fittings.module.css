@@ -240,3 +240,41 @@
   color: var(--ink-faint);
   white-space: nowrap;
 }
+
+/* The EFT export block at the foot of a fitting page: the whole fit as the
+ * plain text the in-game fitting window imports. Read-only and click-to-copy. */
+.eftExport {
+  margin: 24px 0;
+}
+
+.eftHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.eftHint {
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+.eftText {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--paper-raised);
+  color: var(--ink-soft);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre;
+  overflow-wrap: normal;
+  overflow-x: auto;
+  cursor: pointer;
+}
