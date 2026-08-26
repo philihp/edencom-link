@@ -58,6 +58,7 @@
     "anon-sweep": "node src/jobs/anonSweep.js",
     "industry-systems": "node src/jobs/industrySystems.js",
     "market-prices": "node src/jobs/marketPrices.js",
+    "market-adjusted-prices": "node src/jobs/marketAdjustedPrices.js",
     "universe-names": "node src/jobs/universeNames.js",
     "structure-directory": "node src/jobs/structureDirectory.js",
     "universe-structures": "node src/jobs/universeStructures.js",
