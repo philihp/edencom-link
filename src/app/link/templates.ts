@@ -393,6 +393,38 @@ export const LINK_TEMPLATES: LinkTemplate[] = [
     variables: { container: ['1046809423988'], types: ['16273', '17887'] },
   },
   {
+    // The hangar dimension on its own: WHERE IN a place a stack sits, rather
+    // than which place. Deliveries is the courier drop, so "what just landed"
+    // is a hangar filter with nothing else on it.
+    id: 'deliveries',
+    label: 'Deliveries hangars',
+    description:
+      'Everything sitting in a Deliveries hangar — a character’s and a corporation’s alike — i.e. what couriers have dropped off and nobody has unpacked.',
+    query: `query Deliveries($hangar: String, $owners: [String!]) {
+  assets(hangar: $hangar, owners: $owners, limit: 500) {
+    totalCount
+    truncated
+    rows {
+      typeName
+      quantity
+      locationName
+      locationFlag
+      ownerName
+    }
+  }
+}`,
+    variables: { hangar: 'Deliveries' },
+    variableFields: [
+      {
+        name: 'hangar',
+        label: 'Hangar',
+        kind: 'text',
+        hint: 'A hangar name search — "Deliveries" catches both delivery hangars, "corp hangar 3" one division.',
+      },
+      OWNERS_FIELD,
+    ],
+  },
+  {
     id: 'restock',
     label: 'Restock list',
     description:
