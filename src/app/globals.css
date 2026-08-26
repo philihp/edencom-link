@@ -36,6 +36,10 @@
   --ok: #15803d;
   --warn: #a16207;
   --danger: #b3261e;
+  /* Informational-but-fine, distinct from ok/warn/danger — added for the
+     /registration grant matrix's "granted but not requested" ring
+     (docs/registrations-page/00a-design-extraction.md §4). */
+  --info: #1d4ed8;
 
   --radius: 10px;
   --radius-sm: 7px;
@@ -70,6 +74,7 @@
     --ok: #4ade80;
     --warn: #fcd34d;
     --danger: #fca5a5;
+    --info: #93c5fd;
   }
 }
 

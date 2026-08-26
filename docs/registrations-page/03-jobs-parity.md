@@ -1,5 +1,13 @@
 # Phase 3 — jobs sections at parity
 
+> **Shipped** (with phase 4, one PR). The jobs side landed as the design's
+> grant matrix rather than the /jobs tables: one cell per (character, job)
+> fusing grant state and last run, columns derived from
+> `jobsInSection('character')` (nine, not the mockup's five), corporations as
+> a second matrix with per-cell runs-as, and the shared-universe + recent
+> activity tables below. The checklist held; deviations and deferrals are
+> recorded at the end of 04-integration.md.
+
 Adds the extract-jobs half of `/registration`, over `fetchJobsOverview` from
 phase 1, presented per the phase-0 extraction. Whatever the mockup's visual
 treatment, the information and actions are exactly `/jobs`'s.
