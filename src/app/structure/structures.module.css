@@ -142,10 +142,11 @@
 }
 
 /* Rigs/services rendered as tiles-within-the-tile. An equal-column grid keeps
- * every chip the same width as they wrap, instead of flex's ragged widths. */
+ * every chip the same width as they wrap, instead of flex's ragged widths. The
+ * columns are wide enough for the 64px icon each chip stacks above its name. */
 .chips {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
   gap: 6px;
   list-style: none;
   padding: 0;
@@ -153,9 +154,15 @@
 }
 
 .chip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 5px;
   font-family: var(--serif);
   font-size: 12px;
-  padding: 3px 9px;
+  text-align: center;
+  padding: 8px 6px;
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   background: var(--paper);
@@ -459,28 +466,90 @@
   font-size: 12px;
 }
 
-/* The structure's in-game render, replacing the line-art silhouette wherever
- * the type is known. CCP's renders are square on a space background, so the
- * tile crops a letterboxed band out of the middle rather than stacking a big
- * black square above the name. */
-.tileArt {
-  display: block;
+/* The structure's in-game render, now the backdrop for its name rather than a
+ * band above it. CCP serves these at 512px around a small subject, so scaled to
+ * tile width they read as pixelated; blurring hard turns that liability into a
+ * soft field of the structure's own colours, which is all a backdrop needs to
+ * be. Only used where the type is known — otherwise the line-art silhouette
+ * above still stands in. */
+.hero {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  min-height: 96px;
+  padding: 14px;
+  overflow: hidden;
+  border-radius: calc(var(--radius) - 4px);
+  /* Keeps the negative z-indexes below from escaping behind the tile itself. */
+  isolation: isolate;
+}
+
+.heroArt {
+  position: absolute;
+  inset: 0;
   width: 100%;
-  height: 96px;
+  height: 100%;
   object-fit: cover;
   object-position: center 38%;
-  border-radius: calc(var(--radius) - 4px);
-  margin-bottom: 4px;
+  filter: blur(10px);
+  /* A blur samples past the element's edges, so without an overscan the corners
+   * fade to transparent and the tile shows through them. */
+  transform: scale(1.25);
+  z-index: -2;
 }
 
-/* Item icon leading a service/rig chip. */
+/* A scrim between render and letters. The text-shadow below is what makes the
+ * title stand off the image, but the renders run from near-black to bright hull
+ * plating and a shadow alone can't carry light letters over the bright ones. */
+.hero::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to right, rgb(8 10 14 / 70%), rgb(8 10 14 / 44%));
+  z-index: -1;
+}
+
+/* Light letters over the render — the backdrop is dark in both themes, so these
+ * are literal colours rather than theme tokens, which would flip to dark-on-dark
+ * in one of them. */
+.heroHead .name {
+  color: #f2f5f9 !important;
+  text-shadow: 0 1px 3px rgb(0 0 0 / 70%);
+}
+
+.heroHead .name:hover {
+  color: #ffffff !important;
+}
+
+.heroHead .subId {
+  color: rgb(236 241 247 / 90%);
+  text-shadow: 0 1px 3px rgb(0 0 0 / 75%);
+}
+
+/* An unpinned star only; a pinned one keeps its accent colour, which reads fine
+ * over the scrim. */
+.heroHead .favorite:not([aria-pressed='true']) {
+  color: rgb(233 238 245 / 82%);
+  text-shadow: 0 1px 3px rgb(0 0 0 / 70%);
+}
+
+/* Item icon stacked above a service/rig chip's name. */
 .chipIcon {
-  vertical-align: -3px;
-  margin-right: 5px;
+  display: block;
+  flex: none;
 }
 
-/* Muted qualifier after a value: the relative fuel countdown, the recovered
- * tax rate. */
+/* The fuel countdown, dropped below the timestamp rather than trailing it. The
+ * two are one fact read two ways, and inline they ran together into a single
+ * long string that wrapped mid-phrase at tile width. */
+.subLine {
+  display: block;
+  color: var(--ink-faint);
+  font-size: 11px;
+}
+
+/* Muted qualifier after a value, inline: the recovered tax rate. */
 .subValue {
   color: var(--ink-faint);
   font-size: 11px;

@@ -382,7 +382,7 @@ const StructurePage = async ({ params, searchParams }: StructureParams) => {
               {s.fuel_expires &&
                 (() => {
                   const relative = formatRelativeFuture(s.fuel_expires, new Date())
-                  return relative ? <span className={structureStyles.subValue}> {relative}</span> : null
+                  return relative ? <span className={structureStyles.subLine}>{relative}</span> : null
                 })()}
             </td>
           </tr>
