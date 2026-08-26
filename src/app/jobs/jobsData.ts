@@ -30,7 +30,7 @@ export type OpenBeat = { job: string; registration_id: string | null; corporatio
 
 export type Task = ActivityTask & { registration_id: string | null }
 
-export type Registration = { id: string; name: string; corporation_id: number | null }
+export type Registration = { id: string; name: string; corporation_id: number | null; is_main: boolean }
 
 export type JobsOverview = {
   registrations: Registration[]
@@ -41,6 +41,10 @@ export type JobsOverview = {
   activity: ReturnType<typeof activityRows>
   // Whether any corporation rows exist at all — the section is hidden without.
   corporationCount: number
+  // Resolved corp names (universe_name) for the caller's corporations, for
+  // callers that label registrations by corp rather than rendering the corp
+  // entity rows (which carry their own resolved name already).
+  corporationNames: Map<number, string>
   anyActive: boolean
   chancellor: boolean
   now: number
@@ -59,7 +63,10 @@ export const fetchJobsOverview = async (supabase: SupabaseClient, userId: string
 
   const [{ data: registrationsData }, { data: beatsData }, { data: openData }, { data: tasksData }] = await Promise.all(
     [
-      supabase.from('registration').select('id, name, corporation_id').order('created_at', { ascending: true }),
+      supabase
+        .from('registration')
+        .select('id, name, corporation_id, is_main')
+        .order('created_at', { ascending: true }),
       supabase.rpc('latest_heartbeats'),
       // Open runs — started, not yet ended. This is what makes a *scheduled* run
       // visible as running; latest_heartbeats() returns completed rows only. The
@@ -212,6 +219,7 @@ export const fetchJobsOverview = async (supabase: SupabaseClient, userId: string
     runFor,
     activity: activityRows(tasks),
     corporationCount: corporations.size,
+    corporationNames: corpName,
     anyActive,
     chancellor,
     now,

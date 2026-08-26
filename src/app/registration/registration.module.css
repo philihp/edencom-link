@@ -1,14 +1,16 @@
 /* /registration — the registrations matrix from the phase-0 design extraction
-   (docs/registrations-page/00a-design-extraction.md §1, §4). Design tokens map
-   onto the app's own: bg-surface/canvas → --paper, bg-elevated → --paper-raised,
+   (docs/registrations-page/00a-design-extraction.md). Design tokens map onto
+   the app's own: bg-surface/canvas → --paper, bg-elevated → --paper-raised,
    border-subtle → --line-soft, border-strong → --line, text-secondary/tertiary
-   → --ink-soft/--ink-faint.
+   → --ink-soft/--ink-faint, status-info → --info (added in globals.css).
 
-   Phase 2 builds the shell and the character rows; the per-scope job columns
-   land in phase 3, which widens .row's grid template rather than replacing it. */
+   The matrix is a CSS grid per row: identity column, one column per job in the
+   registry's section (var(--cols), set inline — the column set is derived, not
+   hardcoded), and a row-tail column. Narrow widths collapse each row into a
+   per-character card (§6, the responsive intent). */
 
-/* Page header: title + status line on the left, actions right, baseline-ish
-   aligned per the mockup's flex-end row. */
+/* ── Page header ─────────────────────────────────────────────────────── */
+
 .header {
   display: flex;
   align-items: flex-end;
@@ -37,33 +39,53 @@
   color: var(--ink);
 }
 
+.statusWarn {
+  color: var(--warn);
+}
+
 .headerActions {
   display: flex;
+  align-items: center;
   gap: 8pt;
+}
+
+.registerForm {
   margin: 0;
 }
 
-/* The matrix: one bordered, rounded container, rows separated by hairlines and
-   clipped to the radius. */
-.matrix {
+/* ── The matrix ──────────────────────────────────────────────────────── */
+
+/* The bordered container scrolls sideways on middling widths rather than the
+   page — nine job columns have a real minimum. Mobile switches to cards and
+   needs no scroll. */
+.matrixScroll {
   border: 1px solid var(--line-soft);
   border-radius: var(--radius);
-  overflow: hidden;
+  overflow-x: auto;
+  margin-bottom: 8pt;
 }
 
-.columns {
+.matrix {
+  min-width: min-content;
+}
+
+.row {
   display: grid;
-  /* Phase 3 inserts `repeat(N, 1fr)` for the scope columns between these two. */
-  grid-template-columns: 230px 1fr;
-  gap: 14px;
-  align-items: start;
+  grid-template-columns: 220px repeat(var(--cols), minmax(72px, 1fr)) 74px;
+  gap: 10px;
+  align-items: center;
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.matrix > .row:last-child,
+.matrix > *:last-child .row:last-child {
+  border-bottom: none;
 }
 
 .headerRow {
-  composes: columns;
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--line-soft);
   background: var(--paper-raised);
+  align-items: start;
 }
 
 .columnLabel {
@@ -73,18 +95,92 @@
   color: var(--ink-faint);
 }
 
-.row {
-  composes: columns;
-  padding: 11px 14px;
-  border-bottom: 1px solid var(--line-soft);
+.columnHead {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  min-width: 0;
+}
+
+.columnNext {
+  font-family: var(--mono);
+  font-size: 7.5pt;
+  color: var(--ink-faint);
+  white-space: nowrap;
+}
+
+.overdue {
+  color: var(--danger);
+  font-size: 8pt;
+  white-space: nowrap;
+}
+
+/* ── Template row ────────────────────────────────────────────────────── */
+
+/* Row zero: elevated, strongly separated — editable state, not data. */
+.templateRow {
+  background: var(--paper-raised);
+  border-bottom: 2px solid var(--line);
+}
+
+.templateLabel {
+  min-width: 0;
+}
+
+.templateTitle {
+  display: block;
+  color: var(--accent);
+  font-weight: bold;
+  font-size: 9.5pt;
+}
+
+.templateSub {
+  display: block;
+  font-size: 8pt;
+  color: var(--ink-faint);
+}
+
+.templateCount {
+  font-family: var(--mono);
+  font-size: 9pt;
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+
+/* The checkbox: filled accent ✓ when the column's scopes are requested,
+   hollow when not, a mixed ~ when the template asks for only part of a
+   multi-scope column. */
+.templateBox {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  display: inline-flex;
   align-items: center;
+  justify-content: center;
+  font: inherit;
+  font-size: 11px;
+  line-height: 1;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: transparent;
+  cursor: pointer;
 }
 
-.row:last-child {
-  border-bottom: none;
+.templateBox[data-check='all'] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--paper-raised);
 }
 
-/* Identity cell: portrait, name, and the job-slot bubbles beneath it. */
+.templateBox[data-check='some'] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* ── Identity column ─────────────────────────────────────────────────── */
+
 .identity {
   display: flex;
   align-items: flex-start;
@@ -114,14 +210,58 @@
   white-space: nowrap;
 }
 
-/* Character state — the fields the mockup's row omits and parity keeps
-   (docs/registrations-page/00a-design-extraction.md §2). Phase 4 rules on
-   where these finally live. */
+/* Corp name + main for a healthy character; the re-auth warning when the
+   token's grants trail the template. Mono per the mockup's `[DSWB] · main`. */
+.subline {
+  font-family: var(--mono);
+  font-size: 8pt;
+  color: var(--ink-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sublineWarn {
+  color: var(--warn);
+  font-family: var(--sans);
+}
+
+.reauthForm {
+  display: inline;
+  margin: 0;
+}
+
+/* The re-auth control is a server-action submit styled as the design's link. */
+.reauth {
+  font: inherit;
+  font-family: var(--sans);
+  font-weight: bold;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--warn);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* Character-state fields (ISK, location, ship, clones, implants) — parity from
+   /character, one disclosure away so the matrix row stays scannable (the
+   extraction's "expandable row" resolution for §2's gap list). */
+.stateDetails {
+  margin-top: 2px;
+  font-size: 8.5pt;
+}
+
+.stateDetails summary {
+  cursor: pointer;
+  color: var(--ink-faint);
+}
+
 .state {
   display: flex;
-  flex-wrap: wrap;
-  gap: 4px 24px;
-  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 0 2px;
   font-size: 9pt;
   color: var(--ink-soft);
 }
@@ -140,21 +280,291 @@
   padding-left: 16pt;
 }
 
-.list li {
-  white-space: nowrap;
-}
-
 .cloneList {
   list-style: none;
   padding-left: 0;
 }
 
-/* First run: the matrix, ghosted — one dashed row where the first character
-   will appear, then the invitation (design extraction, "First-run empty
-   state"). */
+/* ── Cells ───────────────────────────────────────────────────────────── */
+
+/* A cell stacks the grant icon over the last-run line; the label span only
+   shows once the row collapses into a card. */
+.cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+}
+
+.cellLabel {
+  display: none;
+}
+
+.cellBody {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.grantIcon {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  line-height: 1;
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
+}
+
+.grantIcon[data-grant='on'] {
+  color: var(--ok);
+}
+
+.grantIcon[data-grant='missing'] {
+  color: var(--danger);
+}
+
+.grantIcon[data-grant='extra'] {
+  color: var(--info);
+}
+
+.grantIcon[data-grant='off'] {
+  color: var(--warn);
+  border-style: dotted;
+}
+
+.cellTime,
+.cellNote,
+.cellOff,
+.cellRunsAs {
+  font-family: var(--mono);
+  font-size: 7.5pt;
+  color: var(--ink-faint);
+  white-space: nowrap;
+}
+
+/* Freshness carries over from /jobs as text colour rather than the dot: green
+   is quiet, aging warns, stale alarms — same scale (freshness.ts). */
+.cellTime[data-fresh='aging'] {
+  color: var(--warn);
+}
+
+.cellTime[data-fresh='stale'] {
+  color: var(--danger);
+}
+
+.cellRunning {
+  font-family: var(--mono);
+  font-size: 7.5pt;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.cellFailed {
+  font-family: var(--mono);
+  font-size: 7.5pt;
+  color: var(--danger);
+  white-space: nowrap;
+}
+
+/* "never — no grant": the ✕ explains why the job never runs. */
+.cellBlocked {
+  font-family: var(--mono);
+  font-size: 7.5pt;
+  color: var(--danger);
+  white-space: nowrap;
+}
+
+.cellNote {
+  font-style: italic;
+}
+
+.retry {
+  font: inherit;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--danger);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* ── Refresh triggers ────────────────────────────────────────────────── */
+
+.kick,
+.rowKick {
+  font: inherit;
+  font-size: 11px;
+  line-height: 1;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+
+.kick:hover,
+.rowKick:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.rowKick {
+  width: 26px;
+  height: 26px;
+  font-size: 13px;
+}
+
+.rowTail {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* ── Legend ──────────────────────────────────────────────────────────── */
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 18px;
+  margin: 0 2px 16pt;
+  font-size: 8.5pt;
+  color: var(--ink-faint);
+}
+
+.legend .grantIcon {
+  width: 13px;
+  height: 13px;
+  font-size: 8px;
+  vertical-align: -2px;
+}
+
+.legendBlocked {
+  margin-left: auto;
+  color: var(--warn);
+}
+
+/* ── Scope sweeps as a sheet (narrow widths only) ────────────────────── */
+
+.sweepSheet {
+  display: none;
+  margin: 0 0 16pt;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  padding: 8pt 12pt;
+  font-size: 9pt;
+}
+
+.sweepSheet summary {
+  cursor: pointer;
+  color: var(--ink-soft);
+}
+
+.sweepList {
+  list-style: none;
+  margin: 6pt 0 0;
+  padding: 0;
+}
+
+.sweepList li {
+  display: flex;
+  align-items: center;
+  gap: 8pt;
+  padding: 4pt 0;
+  border-top: 1px solid var(--line-soft);
+}
+
+.sweepCount {
+  margin-left: auto;
+  font-family: var(--mono);
+  color: var(--ink-faint);
+}
+
+/* ── Sections below the matrix ───────────────────────────────────────── */
+
+.sectionIntro {
+  font-size: 9.5pt;
+  color: var(--ink-soft);
+  max-width: 72em;
+}
+
+.table {
+  border-collapse: collapse;
+  margin-bottom: 16pt;
+}
+
+.table th {
+  text-align: left;
+  font-size: 8pt;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  font-weight: normal;
+  padding: 4pt 14pt 4pt 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.table td {
+  padding: 5pt 14pt 5pt 0;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 9.5pt;
+  vertical-align: top;
+}
+
+.jobName {
+  display: block;
+  font-family: var(--mono);
+  font-size: 0.75em;
+  color: var(--ink-faint);
+}
+
+.statusCell {
+  white-space: nowrap;
+}
+
+.statusCell[data-status='running'] {
+  color: var(--accent);
+}
+
+.statusCell[data-status='queued'],
+.statusCell[data-status='pending'],
+.statusCell[data-status='idle'] {
+  color: var(--ink-faint);
+}
+
+.statusCell[data-status='failed'],
+.statusCell[data-status='error'],
+.statusCell[data-status='abandoned'] {
+  color: var(--danger);
+}
+
+.statusCell[data-status='skipped'] {
+  color: var(--ink-faint);
+  font-style: italic;
+}
+
+.statusCell[data-status='done'] {
+  color: var(--ok);
+}
+
+.errorText {
+  color: var(--danger);
+  font-size: 0.85em;
+}
+
+/* ── Empty state ─────────────────────────────────────────────────────── */
+
 .ghostRow {
-  composes: columns;
-  padding: 11px 14px;
   opacity: 0.45;
 }
 
@@ -172,6 +582,13 @@
   margin-top: 8px;
   border: 1px dashed var(--line);
   border-radius: var(--radius-sm);
+}
+
+.ghostCell {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1px dashed var(--line);
 }
 
 .empty {
@@ -203,8 +620,8 @@
   color: var(--ink-faint);
 }
 
-/* Same treatment as /character's: an account that shares nothing optional gets
-   almost no data, so say so where characters are added. */
+/* ── The no-optional-scopes warning (parity from /character) ─────────── */
+
 .warning {
   margin: 12pt 0;
   padding: 10pt 12pt;
@@ -226,20 +643,63 @@
   color: var(--ink-soft);
 }
 
-/* Narrow widths: the matrix becomes per-character cards (design extraction §6
-   — the responsive intent). The grid collapses to one column and the identity
-   block sits above the state fields. */
-@media (max-width: 720px) {
-  .columns {
-    grid-template-columns: 1fr;
-    gap: 8px;
+/* ── Narrow widths: rows become cards (§6) ───────────────────────────── */
+
+@media (max-width: 760px) {
+  .row {
+    grid-template-columns: 1fr 1fr;
+    gap: 6px 10px;
+    align-items: start;
   }
 
   .headerRow {
     display: none;
   }
 
-  .row {
-    align-items: flex-start;
+  /* Identity spans the card's top; the row ↻ sits beside it. */
+  .identity {
+    grid-column: 1 / -1;
+  }
+
+  .rowTail {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+  }
+
+  /* Cells become labelled lines: icon · scope name · time. */
+  .cell {
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .cellLabel {
+    display: inline;
+    order: 1;
+    font-size: 8.5pt;
+    color: var(--ink-soft);
+    min-width: 5.5em;
+  }
+
+  .grantIcon {
+    order: 0;
+  }
+
+  .cellBody {
+    order: 2;
+  }
+
+  .cell > :global(button) {
+    order: 3;
+  }
+
+  .templateLabel,
+  .templateCount {
+    grid-column: 1 / -1;
+  }
+
+  /* The column sweeps live in the sheet on narrow screens. */
+  .sweepSheet {
+    display: block;
   }
 }
