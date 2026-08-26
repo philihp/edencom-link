@@ -10,6 +10,7 @@ import { costAvoidance } from '../costAvoidance'
 import { DateTime } from '../../DateTime'
 import { ACTIVITY_NAMES } from '../../industry/jobFields'
 import { formatIskValue } from '../../isk'
+import { formatRelativeFuture } from '../../relativeTime'
 import { CharacterName, Name, SystemName } from '../../names'
 import { fetchSystemNames } from '../../systemNames'
 import { fetchTypeNames } from '../../typeNames'
@@ -378,6 +379,11 @@ const StructurePage = async ({ params, searchParams }: StructureParams) => {
             <th>Fuel Expires</th>
             <td>
               <DateTime value={s.fuel_expires} />
+              {s.fuel_expires &&
+                (() => {
+                  const relative = formatRelativeFuture(s.fuel_expires, new Date())
+                  return relative ? <span className={structureStyles.subValue}> {relative}</span> : null
+                })()}
             </td>
           </tr>
           <tr>

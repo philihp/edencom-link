@@ -251,19 +251,26 @@ Raitaru, the ISK leaves that character's personal wallet (no character journal i
 ingested) and lands in a corporation wallet RLS will never show us. The figure is
 blank however much work we run there — unknown, not zero.
 
-`foldJobCost` (`roster.ts`, tested) is the measure that survives it. ESI stamps
-every industry job with the `cost` it was installed for, and that is ISK we
-demonstrably paid to run a job at that structure. Counted on `start_date`
-(installation is when the charge lands), deduped by `job_id` (the character and
-corp extracts can both list one job), and scoped to structures with a tile, like
-the tax fold.
+`foldEiv` (`eiv.ts`, tested) is the measure that survives it — and with the
+`market-adjusted-prices` extract feeding CCP's `adjusted_price`, it splits the
+charge rather than reporting it whole (which is what the interim `foldJobCost`
+did before it). A job's billed cost is
 
-It is **not** a facility tax and is never labelled as one: the figure bundles the
-system-cost-index job fee and the SCC surcharge — sinks, paid to nobody — in with
-the tax the owner receives. Splitting them needs the job's Estimated Item Value,
-which needs an `adjusted_price` feed nothing ingests; docs/cost-avoidance.md makes
-the same point about why avoidance is derived from tax receipts rather than from
-`cost`. So it is reported whole, under its own name.
+```
+cost = EIV × (system cost index × hull bonus + facility tax + SCC surcharge)
+```
+
+EIV is the job's ME0 bill (`sde_blueprint_product`) priced at adjusted prices;
+the index comes from `industry_system_index` as it stood at install (the job now
+tracks rented structures' systems too, learned from our own job locations); the
+hull bonus is 3/4/5% for Raitaru/Azbel/Sotiyo; SCC is a flat 4% sink. The
+remainder is the facility tax, and ÷ EIV gives the owner's rate — usually
+0.25–1%. Deliberate refusals: manufacturing and reactions only (research/copy/
+invention charge on a different EIV base), never at structures we own (the
+journal is exact there), never for a job the ledger already billed
+(`taxLedger.paidJobIds`), and a job missing a bill, a price, or an index sample
+counts as skipped rather than guessed. Tiles show the recovered tax and rate as
+**Taxes Paid (est.)**, plus **Total EIV** as throughput.
 
 Not yet on `/structure/[structureId]`, whose measures still come from
 `structure_tax_revenue()` alone — so a rented structure's detail page stays blank

@@ -183,6 +183,7 @@ export const JOBS: readonly JobEntry[] = [
   // like the other shared-universe pulls: one account's button spends everyone's
   // goodwill with someone else's bandwidth.
   { job: 'market-prices', label: 'market prices', section: 'universe', kickable: 'chancellor', scopes: [] },
+  { job: 'market-adjusted-prices', label: 'adjusted prices', section: 'universe', kickable: 'chancellor', scopes: [] },
 ]
 
 export const jobsInSection = (section: JobSection) => JOBS.filter((entry) => entry.section === section)

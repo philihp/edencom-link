@@ -18,6 +18,7 @@ import {
   uniq,
 } from 'ramda'
 
+import { getBlueprintsByTypeIDs } from '@/sdeBlueprints'
 import { createClient } from '@/utils/supabase/server'
 
 import { establishedUser } from '../account/lib/establishedUser'
@@ -36,10 +37,14 @@ import {
   structureIndexActivities,
 } from './industryIndex'
 import { costAvoidance } from './costAvoidance'
-import { foldJobCost, groupByTier, jobLocationId, jobStructureIds } from './roster'
+import { groupByTier, jobLocationId, jobStructureIds } from './roster'
 import { foldTaxLedger } from './taxLedger'
 import { fetchTaxRates, formatRate } from '../settings/tax/rates'
+import { foldEiv, recoveredRate, type IndexSample } from './eiv'
+import { formatRelativeFuture } from '../relativeTime'
+import { resolveServiceIcons } from './serviceIcons'
 import { StructureSilhouette } from './silhouette'
+import { TypeIcon } from '../typeIcon'
 import { Sparkline } from './sparkline'
 import { WindowSelect } from './windowSelect'
 import { structureWindowDays } from './windows'
@@ -92,11 +97,15 @@ type JobRow = {
   job_id: number | string
   station_id: number | string | null
   facility_id: number | string | null
-  // What ESI charged to install the job, and when it was charged. Only the
-  // per-structure job-cost fold reads these; the tax measures come from the
-  // corp journal (see foldJobCost in ./roster).
+  // What ESI charged to install the job, when it was charged, and the shape of
+  // the work — everything the EIV fold (./eiv.ts) needs to price the job's
+  // material bill and split the charge. The tax measures still come from the
+  // corp journal.
   cost?: number | string | null
   start_date?: string | null
+  activity_id?: number | string | null
+  blueprint_type_id?: number | string | null
+  runs?: number | string | null
   // Who installed it, and so who was billed. corp_industry_job names the
   // corporation directly; character_industry_job names the registration, whose
   // corporation is looked up below. Absent on rows from
@@ -208,8 +217,8 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
         .from(table)
         .select(
           table === 'corp_industry_job'
-            ? 'job_id, station_id, facility_id, cost, start_date, corporation_id'
-            : 'job_id, station_id, facility_id, cost, start_date, registration_id'
+            ? 'job_id, station_id, facility_id, cost, start_date, activity_id, blueprint_type_id, runs, corporation_id'
+            : 'job_id, station_id, facility_id, cost, start_date, activity_id, blueprint_type_id, runs, registration_id'
         )
         .order('job_id', { ascending: true })
         .range(from, to)
@@ -366,15 +375,6 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
   // entry in that corp's own wallet, while a character's has no entry to read.
   const personalJobIds = new Set(map((j: JobRow) => String(j.job_id), characterJobs))
 
-  // What our jobs cost to install at each structure, over the same window as
-  // the tax figures. This is the one measure that survives a rented structure:
-  // a character's job pays out of a wallet we have no journal for and into a
-  // corporation's we can't read, so both tax measures go blank there while the
-  // job rows themselves still say exactly what we were charged. Not a facility
-  // tax — see foldJobCost.
-  const jobCostByStructure = foldJobCost(allJobs, { onPage, since: windowStart })
-  const jobCostTotal = sum(map((row) => row.isk, [...jobCostByStructure.values()]))
-  const jobCostJobs = sum(map((row) => row.jobs, [...jobCostByStructure.values()]))
   // The two rates behind the cost-avoidance figures live on /settings/tax.
   const taxRates = await fetchTaxRates(supabase, user.id)
 
@@ -416,17 +416,28 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
   // Push-mutated per structure rather than re-spread per rig: the order the
   // select asked for is the order they render in.
   const rigsByStructure = reduce(
-    (acc: Map<string, string[]>, r: RigRow) => {
+    (acc: Map<string, Array<{ typeID: number; name: string }>>, r: RigRow) => {
       const key = String(r.structure_id)
-      const name = rigTypeNames[Number(r.type_id)] ?? String(r.type_id)
+      const rig = { typeID: Number(r.type_id), name: rigTypeNames[Number(r.type_id)] ?? String(r.type_id) }
       const existing = acc.get(key)
-      if (existing) existing.push(name)
-      else acc.set(key, [name])
+      if (existing) existing.push(rig)
+      else acc.set(key, [rig])
       return acc
     },
-    new Map<string, string[]>(),
+    new Map<string, Array<{ typeID: number; name: string }>>(),
     rigList
   )
+
+  // Icons for the Services chips: ESI names services rather than modules, so
+  // each known name resolves to its providing Standup module's type id through
+  // the SDE (./serviceIcons.ts); an unknown name keeps a bare chip.
+  const serviceIcons = await resolveServiceIcons(
+    uniq(chain((st: Structure) => map((svc) => svc.name, st.services ?? []), list))
+  )
+
+  // Anchor for the relative fuel countdowns. Computed once in the server
+  // render so every tile agrees and hydration has fixed text to adopt.
+  const now = new Date()
 
   // A structure the directory hasn't resolved has no system and no type, and
   // `Number(null)` is 0 — a perfectly finite id every one of these resolvers
@@ -560,6 +571,123 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
   // whose RLS is own-corps only — so, exactly like the Revenue beside it, a
   // structure shows a figure only to callers who can read that corp's ledger.
   const avoidedByStructure = new Map(avoidance.byStructure)
+
+  // ── EIV and the recovered facility tax ────────────────────────────────────
+  // With CCP's adjusted prices mirrored (market-adjusted-prices →
+  // market_adjusted_price), each manufacturing/reaction job's Estimated Item
+  // Value is computable from its blueprint's ME0 bill — and at a structure we
+  // don't own, subtracting the index fee and SCC surcharge from the job's
+  // billed `cost` leaves the facility tax the owner charged, a number ESI
+  // publishes nowhere. See src/app/structure/eiv.ts for the arithmetic and its
+  // deliberate refusals.
+  const systemOf = new Map<string, string>(
+    chain(
+      (st: Structure) =>
+        st.system_id != null ? [[String(st.structure_id), String(Number(st.system_id))] as [string, string]] : [],
+      list
+    )
+  )
+
+  const eivJobs = filter((j: JobRow) => {
+    const a = Number(j.activity_id)
+    return a === 1 || a === 9
+  }, allJobs)
+
+  // ME0 bills for the blueprints those jobs run. getBlueprintsByTypeIDs
+  // prefers a blueprint's manufacturing activity and falls through to its
+  // reaction, which is exactly the bill each job kind consumes.
+  const blueprints = await getBlueprintsByTypeIDs(
+    map((j: JobRow) => Number(j.blueprint_type_id), eivJobs).filter(Number.isFinite)
+  )
+  const bills = Object.fromEntries(Object.entries(blueprints).map(([typeId, bp]) => [typeId, bp.materials]))
+
+  // Adjusted prices for every material any bill names, batched under the RPC
+  // cap like the other id-list fetches on this page.
+  const materialIds = uniq(
+    chain((bp) => map((m: { typeID: number }) => m.typeID, bp.materials), Object.values(blueprints))
+  )
+  const priceBatches = materialIds.length
+    ? await Promise.all(
+        map(
+          (batch: number[]) =>
+            supabase.from('market_adjusted_price').select('type_id, adjusted_price').in('type_id', batch),
+          splitEvery(RPC_BATCH, materialIds)
+        )
+      )
+    : []
+  const adjustedPrices = new Map<number, number>(
+    map(
+      (r: { type_id: number | string; adjusted_price: number }) =>
+        [Number(r.type_id), Number(r.adjusted_price)] as [number, number],
+      chain(({ data }) => (data ?? []) as Array<{ type_id: number | string; adjusted_price: number }>, priceBatches)
+    )
+  )
+
+  const ownStructureIds = new Set(
+    filter((sid: string) => ownCorporationIds.has(structureOwner.get(sid) ?? ''), [...onPage])
+  )
+
+  // Cost-index history over the window, but only for the systems where the
+  // recovery can actually run: structures our priced jobs point at that we
+  // don't own. Every tile's system would be tens of thousands of hourly rows a
+  // render; the rented structures are a handful (industry-systems tracks their
+  // systems precisely for this, learned from our own job locations).
+  const recoverySystems = uniq(
+    reject(
+      isNil,
+      map((j: JobRow) => {
+        const sid = jobLocationId(j)
+        if (sid == null || !onPage.has(sid) || ownStructureIds.has(sid)) return null
+        const system = systemOf.get(sid)
+        return system != null ? Number(system) : null
+      }, eivJobs)
+    )
+  ) as number[]
+  const indexSystemIds = recoverySystems
+  const indexRows = indexSystemIds.length
+    ? await fetchAllRows<{ system_id: number | string; activity: string; cost_index: number; recorded_at: string }>(
+        (from, to) =>
+          supabase
+            .from('industry_system_index')
+            .select('system_id, activity, cost_index, recorded_at')
+            .in('system_id', indexSystemIds)
+            .in('activity', ['manufacturing', 'reaction'])
+            .gte('recorded_at', windowStart)
+            .order('recorded_at', { ascending: true })
+            .range(from, to)
+      )
+    : []
+  const indexSamples = reduce(
+    (
+      acc: Map<string, IndexSample[]>,
+      r: { system_id: number | string; activity: string; cost_index: number; recorded_at: string }
+    ) => {
+      const key = `${Number(r.system_id)}:${r.activity}`
+      const sample = { recordedAt: r.recorded_at, costIndex: Number(r.cost_index) }
+      const existing = acc.get(key)
+      if (existing) existing.push(sample)
+      else acc.set(key, [sample])
+      return acc
+    },
+    new Map<string, IndexSample[]>(),
+    indexRows
+  )
+
+  const hullOf = new Map<string, number | null>(list.map((st) => [String(st.structure_id), st.type_id]))
+
+  const eiv = foldEiv(eivJobs, {
+    onPage,
+    since: windowStart,
+    bills,
+    prices: adjustedPrices,
+    indexSamples,
+    systemOf,
+    hullOf,
+    ownStructureIds,
+    journalPaidJobIds: ledger.paidJobIds,
+  })
+  const eivByStructure = eiv.byStructure
+  const eivSkipped = eiv.skipped.noBill + eiv.skipped.noPrice + eiv.skipped.noIndex
 
   // Tax that left for a landlord with no tile here. The recipient corporation
   // comes straight off the journal entry, so the total is known even when the
@@ -749,7 +877,11 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
                     const systemHistory = indexHistoryBySystem.get(Number(s.system_id))
                     return (
                       <li key={`structure-${s.structure_id}`} className={styles.tile}>
-                        {s.type_id != null && <StructureSilhouette typeId={s.type_id} className={styles.silhouette} />}
+                        {s.type_id != null ? (
+                          <TypeIcon id={s.type_id} size={256} prefer="render" className={styles.tileArt} />
+                        ) : (
+                          <StructureSilhouette typeId={0} className={styles.silhouette} />
+                        )}
                         <div className={styles.head}>
                           <div>
                             <Link href={`/structure/${s.structure_id}`} className={styles.name}>
@@ -779,14 +911,30 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
                               </span>
                             </>
                           )}
-                          {jobCostByStructure.has(String(s.structure_id)) && (
-                            <>
-                              <span className={styles.label}>Job Cost</span>
-                              <span className={`${styles.value} ${styles.num}`}>
-                                {formatIsk(jobCostByStructure.get(String(s.structure_id))?.isk ?? 0)}
-                              </span>
-                            </>
-                          )}
+                          {(() => {
+                            const row = eivByStructure.get(String(s.structure_id))
+                            if (!row) return null
+                            const rate = recoveredRate(row)
+                            return (
+                              <>
+                                {row.recoveredTax > 0 && (
+                                  <>
+                                    <span className={styles.label}>Taxes Paid (est.)</span>
+                                    <span className={`${styles.value} ${styles.num}`}>
+                                      {formatIsk(row.recoveredTax)}
+                                      {rate != null && <span className={styles.subValue}> ≈{formatRate(rate)}</span>}
+                                    </span>
+                                  </>
+                                )}
+                                {row.eiv > 0 && (
+                                  <>
+                                    <span className={styles.label}>Total EIV</span>
+                                    <span className={`${styles.value} ${styles.num}`}>{formatIsk(row.eiv)}</span>
+                                  </>
+                                )}
+                              </>
+                            )
+                          })()}
                           {avoidedByStructure.has(String(s.structure_id)) && (
                             <>
                               <span className={styles.label}>Cost Avoidance</span>
@@ -825,6 +973,10 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
                               <span className={styles.label}>Fuel Expires</span>
                               <span className={styles.value}>
                                 <DateTime value={s.fuel_expires} />
+                                {(() => {
+                                  const relative = formatRelativeFuture(s.fuel_expires, now)
+                                  return relative ? <span className={styles.subValue}> {relative}</span> : null
+                                })()}
                               </span>
                             </>
                           )}
@@ -837,6 +989,9 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
                               <ul className={styles.chips}>
                                 {services.map((svc, i) => (
                                   <li key={`svc-${s.structure_id}-${i}`} className={styles.chip}>
+                                    {serviceIcons.has(svc) && (
+                                      <TypeIcon id={serviceIcons.get(svc)!} size={16} className={styles.chipIcon} />
+                                    )}
                                     {svc}
                                   </li>
                                 ))}
@@ -851,7 +1006,8 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
                             <ul className={styles.chips}>
                               {rigs.map((rig, i) => (
                                 <li key={`rig-${s.structure_id}-${i}`} className={styles.chip}>
-                                  {rig}
+                                  <TypeIcon id={rig.typeID} size={16} className={styles.chipIcon} />
+                                  {rig.name}
                                 </li>
                               ))}
                             </ul>
@@ -909,10 +1065,16 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
                 <span className={styles.footerValue}>{formatIsk(unlistedTotal)}</span>
               </>
             )}
-            {jobCostTotal > 0 && (
+            {eiv.totalRecoveredTax > 0 && (
               <>
-                <span>Job cost:</span>
-                <span className={styles.footerValue}>{formatIsk(jobCostTotal)}</span>
+                <span>Taxes paid (est.):</span>
+                <span className={styles.footerValue}>{formatIsk(eiv.totalRecoveredTax)}</span>
+              </>
+            )}
+            {eiv.totalEiv > 0 && (
+              <>
+                <span>Total EIV:</span>
+                <span className={styles.footerValue}>{formatIsk(eiv.totalEiv)}</span>
               </>
             )}
             <span>Clone revenue:</span>
@@ -949,16 +1111,23 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
               </em>
             </p>
           )}
-          {jobCostTotal > 0 && (
+          {eiv.totalEiv > 0 && (
             <p className={styles.unaccountedNote}>
               <em>
-                Job cost is what ESI charged to install our {jobCostJobs.toLocaleString()} job
-                {jobCostJobs === 1 ? '' : 's'} at the structures above, counted on the day each was installed. It is not
-                a facility tax: the figure bundles the system cost index fee and the SCC surcharge, which are sinks paid
-                to nobody, in with the tax the owner receives, and splitting them needs an Estimated Item Value nothing
-                here ingests. It is shown because it is the only record that survives a structure we rent &mdash; a
-                character&rsquo;s job pays out of a wallet we have no journal for, so both tax figures beside it stay
-                blank no matter how much work we run there.
+                Total EIV is the Estimated Item Value of our manufacturing and reaction jobs installed at these
+                structures over the window &mdash; each job&rsquo;s ME0 material bill priced at CCP&rsquo;s adjusted
+                prices, the base the game levies every install fee against. Estimated taxes recover the facility tax at
+                structures we don&rsquo;t own, where the charge leaves a wallet no journal of ours covers: a job&rsquo;s
+                billed cost minus its system-index fee (at the index when it was installed) and the 4% SCC surcharge
+                leaves the owner&rsquo;s cut, and dividing by EIV gives their rate. The estimate assumes Omega
+                installers and current adjusted prices
+                {eivSkipped > 0 && (
+                  <>
+                    ; {eivSkipped.toLocaleString()} job{eivSkipped === 1 ? '' : 's'} could not be priced (missing bill,
+                    price, or index history) and count{eivSkipped === 1 ? 's' : ''} toward nothing
+                  </>
+                )}
+                .
               </em>
             </p>
           )}

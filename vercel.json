@@ -100,6 +100,10 @@
     {
       "path": "/api/cron/anon-sweep",
       "schedule": "13 4 * * *"
+    },
+    {
+      "path": "/api/cron/market-adjusted-prices",
+      "schedule": "52 11 * * *"
     }
   ],
   "functions": {

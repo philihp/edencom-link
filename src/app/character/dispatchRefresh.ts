@@ -93,6 +93,7 @@ const JOB_WORKFLOWS: Record<string, () => Promise<(target?: OnDemandTarget) => P
   'universe-names': async () => (await import('@/workflows/universeNames')).universeNamesWorkflow,
   'industry-systems': async () => (await import('@/workflows/industrySystems')).industrySystemsWorkflow,
   'market-prices': async () => (await import('@/workflows/marketPrices')).marketPricesWorkflow,
+  'market-adjusted-prices': async () => (await import('@/workflows/marketAdjustedPrices')).marketAdjustedPricesWorkflow,
   'corp-structures': async () => (await import('@/workflows/corpStructures')).corpStructuresWorkflow,
   'structure-directory': async () => (await import('@/workflows/structureDirectory')).structureDirectoryWorkflow,
 }

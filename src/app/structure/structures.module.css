@@ -458,3 +458,30 @@
   color: var(--ink-faint);
   font-size: 12px;
 }
+
+/* The structure's in-game render, replacing the line-art silhouette wherever
+ * the type is known. CCP's renders are square on a space background, so the
+ * tile crops a letterboxed band out of the middle rather than stacking a big
+ * black square above the name. */
+.tileArt {
+  display: block;
+  width: 100%;
+  height: 96px;
+  object-fit: cover;
+  object-position: center 38%;
+  border-radius: calc(var(--radius) - 4px);
+  margin-bottom: 4px;
+}
+
+/* Item icon leading a service/rig chip. */
+.chipIcon {
+  vertical-align: -3px;
+  margin-right: 5px;
+}
+
+/* Muted qualifier after a value: the relative fuel countdown, the recovered
+ * tax rate. */
+.subValue {
+  color: var(--ink-faint);
+  font-size: 11px;
+}

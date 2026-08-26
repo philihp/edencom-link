@@ -340,6 +340,15 @@ export const industrySystems = () =>
     label: `industrySystems`,
   })
 
+// Public (no token): CCP's adjusted price per type — the EIV price base. One
+// unpaginated response (~15.8k rows); each entry is
+// { type_id, adjusted_price, average_price? } (average_price is omitted for
+// types CCP publishes no average for).
+export const marketPrices = () =>
+  esiJson(`/markets/prices/`, {
+    label: `marketPrices`,
+  })
+
 export const universeNames = (ids) =>
   esiJson(`/universe/names/`, {
     method: 'POST',

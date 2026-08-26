@@ -126,6 +126,9 @@ and inverting your own job's cost:
 their_rate = cost/EIV − system_cost_index × structure_bonus − 0.04 − alpha_tax
 ```
 
-Every term on the right is knowable — but it needs the `/markets/prices`
-`adjusted_price` extract that doesn't exist yet, and it only works for
-manufacturing (copy/invention/research use different EIV bases). Not built.
+Every term on the right is knowable, and this is now **built**: the
+`market-adjusted-prices` job mirrors `/markets/prices` → `market_adjusted_price`,
+and `src/app/structure/eiv.ts` performs exactly this inversion for /structure's
+"Taxes Paid (est.)" figure — manufacturing and reactions only (copy/invention/
+research use different EIV bases), and never for a charge the journal already
+recorded.

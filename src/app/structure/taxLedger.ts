@@ -113,6 +113,10 @@ export type UnlistedTaxPayment = {
 
 export type TaxLedger = {
   revenueByStructure: Map<string, number>
+  // The jobs whose facility tax the fold billed (either side of the pair).
+  // Exposed so the EIV recovery (./eiv.ts) never re-derives a charge the
+  // journal already recorded — one job, one tax, whichever source saw it.
+  paidJobIds: Set<string>
   // Tax we actually paid, positive, keyed by the structure it was paid for —
   // ours or somebody else's. Overlaps revenueByStructure on purpose where a
   // member paid their own corp: one charge, two true statements about it.
@@ -215,6 +219,7 @@ export const foldTaxLedger = (entries: readonly TaxEntry[], input: TaxLedgerInpu
 
   return {
     revenueByStructure,
+    paidJobIds: paid,
     taxesPaidByStructure,
     ownReceipts,
     unlistedPayments,
