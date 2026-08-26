@@ -1,5 +1,6 @@
 import { chain, collectBy, last, map, pipe, pluck, sum, uniq } from 'ramda'
 import type { createClient } from '@/utils/supabase/server'
+import { INDEX_BUCKET_HOURS } from './windows'
 
 // Per-structure industry cost indices. EVE's /industry/systems/ endpoint reports
 // a cost index per solar system for each industry activity; the structures job
@@ -120,7 +121,9 @@ export const fetchLatestSystemIndexes = async (
   return result
 }
 
-type HistoryRow = IndexRow & { recorded_at: string }
+// A row of the pre-bucketed view: cost_index is already the mean of the readings
+// in the bucket, and recorded_at the newest reading in it.
+type HistoryRow = IndexRow & { bucket_at: string; recorded_at: string }
 
 export type IndexSeries = {
   values: number[]
@@ -169,18 +172,23 @@ type Reading = {
 }
 
 // One row → zero or one readings (rows with an unusable cost or timestamp are
-// dropped). Returning a list lets `chain` map-and-filter in a single pass.
+// dropped). Returning a list lets `chain` map-and-filter in a single pass. The
+// view buckets on the same epoch grid this divides by, so bucket_at lands
+// exactly on a bucket boundary and the index round-trips without drift.
 const toReadings = (r: HistoryRow, bucketMs: number): Reading[] => {
   const cost = r.cost_index == null ? null : Number(r.cost_index)
   if (cost == null || !Number.isFinite(cost)) return []
-  const bucket = Math.floor(Date.parse(r.recorded_at) / bucketMs)
+  const bucket = Math.floor(Date.parse(r.bucket_at) / bucketMs)
   if (!Number.isFinite(bucket)) return []
   return [{ system: Number(r.system_id), activity: r.activity as Activity, bucket, cost, recordedAt: r.recorded_at }]
 }
 
-// Collapse one activity's readings into time buckets — averaging readings that
-// share a bucket — then densify into an evenly-spaced series. Readings arrive in
-// ascending recorded_at, so the last one carries the exact `updatedAt`.
+// Collapse one activity's readings into time buckets, then densify into an
+// evenly-spaced series. The view already averaged within a bucket and returns
+// one row per bucket, so the sum/count here is arithmetically a passthrough —
+// it stays because it costs nothing and keeps this fold correct if a caller
+// ever hands it more than one reading per bucket. Readings arrive in ascending
+// bucket order, so the last one carries the exact `updatedAt`.
 const seriesFrom = (nowBucket: number, readings: Reading[]): IndexSeries => {
   const buckets = new Map<number, Bucket>(
     collectBy((r: Reading) => r.bucket, readings).map((forBucket: Reading[]): [number, Bucket] => [
@@ -192,8 +200,10 @@ const seriesFrom = (nowBucket: number, readings: Reading[]): IndexSeries => {
   return { values, liveCount, updatedAt: last(readings)!.recordedAt }
 }
 
-// PostgREST caps a single select; page through industry_system_index so a busy
-// week of readings doesn't get silently truncated.
+// PostgREST caps a single select; page through the view so a wide window doesn't
+// get silently truncated. Bucketing bounds this at ~180 points per system per
+// activity, so the page count is a fixed handful however long the source table
+// accumulates.
 const HISTORY_PAGE = 1000
 
 export type HistoryOptions = {
@@ -201,16 +211,20 @@ export type HistoryOptions = {
   days?: number
   // Width of each averaged bucket, in hours — 1 gives an hourly series (the
   // pull job runs hourly); wider buckets keep long windows to a sane number of
-  // sparkline points.
+  // sparkline points. Must be one of INDEX_BUCKET_HOURS, the widths the view
+  // actually materializes; anything else is snapped up to the next one that
+  // exists, since asking for an unmaterialized width would match no rows and
+  // draw an empty sparkline rather than an obviously wrong one.
   bucketHours?: number
 }
 
 // Cost-index history per system per activity, in chronological order. Used to
-// draw sparklines next to each index. The pull job runs on GitHub Actions and
-// fires irregularly — sometimes several times an hour, sometimes with
-// multi-hour gaps — so raw points would space unevenly across the sparkline's
-// time axis. We bucket readings into fixed UTC intervals (averaging any that
-// share a bucket) and carry the previous bucket's value across empty ones,
+// draw sparklines next to each index. The pull job fires irregularly —
+// sometimes several times an hour, sometimes with multi-hour gaps — so raw
+// points would space unevenly across the sparkline's time axis. Readings are
+// bucketed into fixed UTC intervals (averaging any that share a bucket) by the
+// industry_system_index_bucket materialized view, which the pull job refreshes;
+// here we carry the previous bucket's value across empty ones,
 // giving one evenly-spaced point per bucket from the first reading to the
 // last. Returning `updatedAt` alongside the values lets the sparkline surface
 // "last updated" in a tooltip without a second lookup.
@@ -222,15 +236,18 @@ export const fetchSystemIndexHistory = async (
   const ids = uniq([...systemIds].filter((n) => Number.isFinite(n)))
   if (ids.length === 0) return new Map<number, Map<Activity, IndexSeries>>()
 
+  const width = INDEX_BUCKET_HOURS.find((h) => h >= bucketHours) ?? INDEX_BUCKET_HOURS[INDEX_BUCKET_HOURS.length - 1]
+
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString()
   const rows: HistoryRow[] = []
   for (let from = 0; ; from += HISTORY_PAGE) {
     const { data: page } = await supabase
-      .from('industry_system_index')
-      .select('system_id, activity, cost_index, recorded_at')
-      .gte('recorded_at', since)
+      .from('industry_system_index_bucket')
+      .select('system_id, activity, cost_index, bucket_at, recorded_at')
+      .eq('bucket_hours', width)
+      .gte('bucket_at', since)
       .in('system_id', ids)
-      .order('recorded_at', { ascending: true })
+      .order('bucket_at', { ascending: true })
       .range(from, from + HISTORY_PAGE - 1)
     if (!page || page.length === 0) break
     rows.push(...(page as HistoryRow[]))
@@ -240,7 +257,7 @@ export const fetchSystemIndexHistory = async (
   // Group the readings system → activity, then collapse each activity's readings
   // into its bucketed series. `collectBy` keeps the rows' ascending order within
   // each group, so a group's first row identifies it and its last row is latest.
-  const bucketMs = bucketHours * 3_600_000
+  const bucketMs = width * 3_600_000
   const nowBucket = Math.floor(Date.now() / bucketMs)
   const readings = chain((r: HistoryRow) => toReadings(r, bucketMs), rows)
 

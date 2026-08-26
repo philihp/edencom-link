@@ -29,3 +29,20 @@ export const structureWindowDays = (raw: string | undefined): number => {
   const n = Number(raw)
   return STRUCTURE_WINDOW_OPTIONS.some((o) => o.days === n) ? n : fallback.days
 }
+
+// A sparkline is ~100px wide, so past roughly 180 points the extra readings are
+// invisible — and fetching them is what made the 90-day window time out. The
+// bucketed history (industry_system_index_bucket) is materialized at these three
+// granularities only, so this both sizes the series and names the rows to read.
+// Keep in step with the retention cuts in the materialized view: each width must
+// be kept back at least as far as the widest window that selects it.
+export const INDEX_BUCKET_HOURS = [1, 6, 24]
+
+const MAX_SPARKLINE_POINTS = 180
+
+// The coarsest-to-finest first fit: the narrowest bucket whose point count over
+// `days` still fits the sparkline. 7 days → hourly (168 points), 30 days → 6h
+// (120), 90 days → daily (90).
+export const indexBucketHours = (days: number): number =>
+  INDEX_BUCKET_HOURS.find((h) => (days * 24) / h <= MAX_SPARKLINE_POINTS) ??
+  INDEX_BUCKET_HOURS[INDEX_BUCKET_HOURS.length - 1]

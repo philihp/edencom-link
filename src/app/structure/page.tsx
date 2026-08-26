@@ -47,7 +47,7 @@ import { StructureSilhouette } from './silhouette'
 import { TypeIcon } from '../typeIcon'
 import { Sparkline } from './sparkline'
 import { WindowSelect } from './windowSelect'
-import { structureWindowDays } from './windows'
+import { indexBucketHours, structureWindowDays } from './windows'
 import styles from './structures.module.css'
 
 const PAGE_SIZE = 1000
@@ -454,15 +454,13 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
     ids((s) => s.system_id)
   )
   // The same window that drives the revenue footer also scopes the index
-  // sparklines. Widen the bucket for longer windows so the point count stays
-  // sane on a 100px sparkline (~180 points max: 24h/day ÷ bucketHours).
+  // sparklines. indexBucketHours widens the bucket for longer windows so the
+  // point count stays sane on a 100px sparkline, and names one of the widths
+  // the bucketed view materializes.
   const indexHistoryBySystem = await fetchSystemIndexHistory(
     supabase,
     ids((s) => s.system_id),
-    {
-      days: windowDays,
-      bucketHours: Math.max(1, Math.ceil((windowDays * 24) / 180)),
-    }
+    { days: windowDays, bucketHours: indexBucketHours(windowDays) }
   )
 
   // Both signs, sorted out by foldTaxLedger below rather than here. industry_job_tax cuts both ways
