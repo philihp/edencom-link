@@ -163,10 +163,10 @@
 .warning {
   margin: 12pt 0;
   padding: 10pt 12pt;
-  border: 1px solid #d9a441;
+  border: 1px solid var(--warn);
   border-left-width: 3px;
   border-radius: var(--radius);
-  background: color-mix(in srgb, #d9a441 12%, var(--paper-raised));
+  background: color-mix(in srgb, var(--warn) 12%, var(--paper-raised));
 }
 
 .warningTitle {

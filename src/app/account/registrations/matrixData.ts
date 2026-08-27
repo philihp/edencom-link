@@ -14,7 +14,7 @@ import { forEach } from 'ramda'
 
 import { createServiceClient } from '@/utils/supabase/service'
 
-import { getEnabledScopes } from '../character/userScopes'
+import { getEnabledScopes } from '../../character/userScopes'
 
 export type GrantOverview = {
   // Per registration uuid: the scopes its token actually carries. A

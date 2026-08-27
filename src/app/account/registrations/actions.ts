@@ -15,9 +15,9 @@ import { redirect } from 'next/navigation'
 
 import { createClient } from '@/utils/supabase/server'
 
-import { establishedUser } from '../account/lib/establishedUser'
-import { dispatchRefresh } from '../character/dispatchRefresh'
-import { defaultScopes, optionalScopes, requiredScopes } from '../character/scopes'
+import { establishedUser } from '../lib/establishedUser'
+import { dispatchRefresh } from '../../character/dispatchRefresh'
+import { defaultScopes, optionalScopes, requiredScopes } from '../../character/scopes'
 
 // Kick every on-demand job for one character of the caller's.
 export const refreshCharacter = async (characterId: string) => {
@@ -34,7 +34,7 @@ export const refreshCharacter = async (characterId: string) => {
   if (!character) throw new Error('unknown character')
 
   await dispatchRefresh(user.id, [character])
-  revalidatePath('/registration')
+  revalidatePath('/account/registrations')
 }
 
 // Kick every on-demand job for every character — the header's "refresh all".
@@ -53,7 +53,7 @@ export const refreshEverything = async () => {
   if (!characters?.length) return
 
   await dispatchRefresh(user.id, characters)
-  revalidatePath('/registration')
+  revalidatePath('/account/registrations')
 }
 
 // Toggle a set of optional scopes in the account's request template — the
@@ -95,5 +95,5 @@ export const setTemplateScopes = async (scopes: string[], on: boolean) => {
     .upsert({ user_id: user.id, enabled_scopes, updated_at: new Date().toISOString() }, { onConflict: 'user_id' })
   if (error) throw new Error(error.message)
 
-  revalidatePath('/registration')
+  revalidatePath('/account/registrations')
 }

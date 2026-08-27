@@ -8,17 +8,17 @@
   width: 0.55em;
   height: 0.55em;
   border-radius: 50%;
-  background: #888;
+  background: var(--ink-faint);
 }
 
 .freshness[data-level='fresh'] .dot {
-  background: #00af00;
+  background: var(--ok);
 }
 
 .freshness[data-level='aging'] .dot {
-  background: #d8a800;
+  background: var(--warn);
 }
 
 .freshness[data-level='stale'] .dot {
-  background: #ff4040;
+  background: var(--danger);
 }

@@ -1,0 +1,8 @@
+/* Focus-visible state — blue outline box, seen on keyboard-focused nav links (e.g. "structures") */
+a:focus-visible,
+button:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--status-info);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}

@@ -111,7 +111,7 @@ const Home = async () => {
             <Link href="/asset" className={styles.primary}>
               Open your assets
             </Link>
-            <Link href="/character/" className={styles.secondary}>
+            <Link href="/account/registrations" className={styles.secondary}>
               Add a character
             </Link>
           </div>
@@ -211,7 +211,7 @@ const Home = async () => {
         </p>
         {user ? (
           <div className={styles.actions}>
-            <Link href="/jobs" className={styles.primary}>
+            <Link href="/account/registrations" className={styles.primary}>
               Review pipeline status
             </Link>
             <Link href="/settings/grants" className={styles.secondary}>

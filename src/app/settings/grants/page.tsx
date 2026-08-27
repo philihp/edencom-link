@@ -35,7 +35,7 @@ const GrantsPage = async ({ searchParams }: GrantsPageProps) => {
   return (
     <>
       {dest === 'characters' ? (
-        <Link href="/character">&laquo; Back to characters</Link>
+        <Link href="/account/registrations">&laquo; Back to registrations</Link>
       ) : (
         <Link href="/account/settings">&laquo; Back to settings</Link>
       )}

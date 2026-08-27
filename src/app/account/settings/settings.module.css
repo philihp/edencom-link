@@ -1,0 +1,432 @@
+/* /account/settings — the control panel (design docs turn 11): four groups of
+   panels, every panel tagged by how its contents change ([credential] /
+   [declared] / [live] / [elevated]), readouts first and forms second. */
+
+/* ── Page header ─────────────────────────────────────────────────────── */
+
+.header {
+  display: flex;
+  align-items: flex-end;
+  gap: 14px;
+}
+
+.headerText {
+  flex: 1;
+  min-width: 0;
+}
+
+.header h1 {
+  margin: 0;
+}
+
+.subtitle {
+  font-size: 12px;
+  color: var(--ink-faint);
+  margin-top: 5px;
+}
+
+.subtitleStrong {
+  color: var(--ink-soft);
+}
+
+/* The tag legend, taught once under the title. */
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  margin-top: 12px;
+  font-size: 10.5px;
+  color: var(--ink-faint);
+  white-space: nowrap;
+}
+
+/* ── Change-kind tags ────────────────────────────────────────────────── */
+
+.tag {
+  font-family: var(--mono);
+  font-weight: 600;
+  font-size: 9.5px;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.tagCredential {
+  color: var(--ink-soft);
+}
+
+.tagDeclared {
+  color: var(--accent);
+}
+
+.tagLive {
+  color: var(--ok);
+}
+
+.tagElevated {
+  color: var(--warn);
+}
+
+.tagDeprecated {
+  color: var(--warn);
+}
+
+/* ── Group labels ────────────────────────────────────────────────────── */
+
+.group {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 24px 0 10px;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.groupNote {
+  font-size: 10.5px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.groupRule {
+  flex: 1;
+  height: 1px;
+  background: var(--line-soft);
+  align-self: center;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  align-items: start;
+}
+
+@media (max-width: 860px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── Panels ──────────────────────────────────────────────────────────── */
+
+.panel {
+  background: var(--paper-raised);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.panelHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 14px;
+  background: var(--paper);
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.panelHead > .spacer,
+.spacer {
+  flex: 1;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 110px 1fr auto;
+  gap: 12px;
+  align-items: baseline;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 12px;
+}
+
+.row:last-child {
+  border-bottom: none;
+}
+
+/* Row variants the mockup uses: value+action, or a single full span. */
+.rowSplit {
+  grid-template-columns: 1fr auto;
+}
+
+.rowWide {
+  grid-template-columns: 1fr;
+}
+
+.label {
+  color: var(--ink-faint);
+  font-size: 11px;
+}
+
+.value {
+  min-width: 0;
+}
+
+.valueQuiet {
+  color: var(--ink-faint);
+}
+
+.mono {
+  font-family: var(--mono);
+}
+
+.note {
+  padding: 9px 14px;
+  font-size: 10.5px;
+  line-height: 1.55;
+  color: var(--ink-faint);
+  border-top: 1px solid var(--line-soft);
+}
+
+.note:first-child {
+  border-top: none;
+}
+
+/* Panel action links: the design's 600-weight no-underline action link. */
+.act {
+  font-size: 11.5px;
+  white-space: nowrap;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+/* Inline action rendered by a server-action form. */
+.actForm {
+  display: inline;
+  margin: 0;
+}
+
+.actButton {
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--link);
+}
+
+.actButton:hover {
+  color: var(--link-hover);
+  background: none;
+  border: none;
+}
+
+.dangerAct {
+  color: var(--danger);
+}
+
+.dangerAct:hover {
+  color: var(--danger);
+}
+
+/* Inline change forms live behind a details disclosure so the panel stays a
+   readout ("editing is an action you take, not two inputs staring at you"). */
+.disclosure summary {
+  cursor: pointer;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--link);
+  list-style: none;
+}
+
+.disclosure summary::-webkit-details-marker {
+  display: none;
+}
+
+.disclosure[open] summary {
+  margin-bottom: 6px;
+}
+
+.disclosureBody {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+  padding: 4px 0;
+}
+
+/* ── Readout pieces ──────────────────────────────────────────────────── */
+
+/* Scope chips (grant template panel). */
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 13px 14px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  font-size: 11.5px;
+}
+
+.chipOff {
+  color: var(--ink-faint);
+}
+
+.check {
+  display: inline-flex;
+  width: 15px;
+  height: 15px;
+  border-radius: 4px;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  flex: none;
+}
+
+.checkOn {
+  background: var(--accent);
+  color: #17181a;
+}
+
+.checkOff {
+  border: 1.5px solid var(--line);
+}
+
+/* Big instrument reading (tax rates). */
+.stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  padding: 13px 14px;
+  gap: 14px;
+}
+
+.stat + .stat {
+  border-left: 1px solid var(--line-soft);
+  padding-left: 14px;
+}
+
+.statLabel {
+  display: block;
+  font-size: 10.5px;
+  color: var(--ink-faint);
+}
+
+.statValue {
+  display: block;
+  font-family: var(--mono);
+  font-size: 20px;
+  margin-top: 3px;
+}
+
+.statNote {
+  display: block;
+  font-size: 10px;
+  color: var(--ink-faint);
+  margin-top: 2px;
+}
+
+/* Health dots on live panels. */
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.dotGood {
+  background: var(--ok);
+}
+
+.dotWarn {
+  background: var(--warn);
+}
+
+.dotBad {
+  background: var(--danger);
+}
+
+.dotLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10.5px;
+  white-space: nowrap;
+}
+
+.dotLabelGood {
+  color: var(--ok);
+}
+
+.dotLabelBad {
+  color: var(--danger);
+}
+
+.badRowNote {
+  display: block;
+  font-size: 10px;
+  color: var(--danger);
+  margin-top: 2px;
+}
+
+.rowSub {
+  display: block;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-faint);
+  margin-top: 2px;
+}
+
+/* Endpoint pills (sheets feeds). */
+.pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.pill {
+  display: inline-flex;
+  padding: 3px 7px;
+  background: var(--paper);
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-soft);
+}
+
+/* Main-character picker row. */
+.mainRow {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 13px 14px;
+}
+
+.mainAvatar {
+  width: 34px;
+  height: 34px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--line-soft);
+  border: 1px solid var(--line);
+}
+
+.mainText {
+  flex: 1;
+  min-width: 0;
+}
+
+.mainName {
+  display: block;
+  font-size: 13px;
+}
+
+.feedback {
+  font-size: 11px;
+  padding: 0 14px 9px;
+}

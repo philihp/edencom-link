@@ -50,7 +50,7 @@ export const refreshCell = async (job: string, characterId: string | null) => {
   }
 
   await dispatchSingleJob(user.id, job, character)
-  revalidatePath('/jobs')
+  revalidatePath('/account/registrations')
 }
 
 // Kick one job for every character the caller has registered — the "refresh
@@ -87,5 +87,5 @@ export const refreshAllCharacters = async (job: string) => {
   if (!characters?.length) return
 
   await dispatchJobForCharacters(user.id, job, characters)
-  revalidatePath('/jobs')
+  revalidatePath('/account/registrations')
 }

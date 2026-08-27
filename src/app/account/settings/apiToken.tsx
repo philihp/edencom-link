@@ -4,17 +4,31 @@ import { useEffect, useState } from 'react'
 
 import { generateApiToken } from './actions'
 import Dot from './dot'
+import styles from './settings.module.css'
+
+// Every feed the token unlocks; the panel lists them as pills and folds the
+// full =IMPORTDATA formulas behind a disclosure so the token row stays a
+// readout.
+const FEEDS = [
+  { path: 'character/assets', label: 'Assets (one row per item stack)' },
+  { path: 'character/blueprints', label: 'Blueprints (one row per blueprint stack)' },
+  { path: 'character/jobs', label: 'Industry jobs' },
+  { path: 'character/orders', label: 'Market orders (open)' },
+  { path: 'corp/assets', label: 'Corp assets (one row per item stack)' },
+  { path: 'corp/blueprints', label: 'Corp blueprints (one row per blueprint stack)' },
+  { path: 'corp/jobs', label: 'Corp industry jobs' },
+]
 
 // `linkEnabled`: the account carries the `link` dark-launch flag, so links
-// are presented as the primary Sheets integration and the token URLs move
-// under a Deprecated heading (docs/sharing-layer/09-sheets-parity.md). For
-// unflagged accounts the token URLs stay the only offer — deprecating a thing
-// someone has no replacement for would just be rude.
+// are presented as the primary Sheets integration and the token URLs are
+// marked deprecated (docs/sharing-layer/09-sheets-parity.md). For unflagged
+// accounts the token URLs stay the only offer — deprecating a thing someone
+// has no replacement for would just be rude.
 const ApiToken = ({ initialToken, linkEnabled }: { initialToken: string | null; linkEnabled: boolean }) => {
   const [token, setToken] = useState(initialToken)
   const [origin, setOrigin] = useState('')
   const [response, setResponse] = useState('')
-  const [color, setColor] = useState('#000000')
+  const [color, setColor] = useState('var(--ink)')
 
   // The example URL needs the deployment's own host, only known in the browser.
   useEffect(() => setOrigin(window.location.origin), [])
@@ -22,81 +36,76 @@ const ApiToken = ({ initialToken, linkEnabled }: { initialToken: string | null; 
   const generate = async () => {
     const result = await generateApiToken()
     if (result.error) {
-      setColor('#FF0000')
+      setColor('var(--danger)')
       setResponse(result.error)
       return
     }
     setToken(result.token ?? null)
-    setColor('#00AF00')
+    setColor('var(--ok)')
     setResponse(initialToken ? 'Token regenerated — update your sheet' : 'Token generated')
   }
 
-  const assetsUrl = token ? `${origin}/api/character/assets?token=${token}` : null
-  const blueprintsUrl = token ? `${origin}/api/character/blueprints?token=${token}` : null
-  const industryUrl = token ? `${origin}/api/character/jobs?token=${token}` : null
-  const ordersUrl = token ? `${origin}/api/character/orders?token=${token}` : null
-  const corpAssetsUrl = token ? `${origin}/api/corp/assets?token=${token}` : null
-  const corpBlueprintsUrl = token ? `${origin}/api/corp/blueprints?token=${token}` : null
-  const corpJobsUrl = token ? `${origin}/api/corp/jobs?token=${token}` : null
-
   return (
     <>
-      <h2>API Access (Google Sheets)</h2>
-      {linkEnabled && (
-        <p>
-          The current way to feed a spreadsheet is a <a href="/link">Link</a>: pick a &quot;Sheets drop-in&quot;
-          template (same columns as the URLs below), issue it with a signed URL, and paste the{' '}
-          <code>=IMPORTDATA(…)</code> formula it shows you. A Link exposes only that one query — unlike the API token
-          below, which unlocks everything at once.
-        </p>
+      <div className={styles.row}>
+        <span className={styles.label}>token</span>
+        <span className={`${styles.value} ${styles.mono}`} style={{ fontSize: '11px' }}>
+          {token ?? <span className={styles.valueQuiet}>none yet</span>}
+        </span>
+        <form className={styles.actForm}>
+          <button formAction={generate}>{token ? 'regenerate' : 'generate token'}</button>
+        </form>
+      </div>
+      <div className={styles.row} style={{ gridTemplateColumns: '110px 1fr' }}>
+        <span className={styles.label}>feeds</span>
+        <span className={styles.pills}>
+          {FEEDS.map((feed) => (
+            <span key={feed.path} className={styles.pill}>
+              {feed.path}
+            </span>
+          ))}
+        </span>
+      </div>
+      {token && origin && (
+        <div className={`${styles.row} ${styles.rowWide}`}>
+          <details className={styles.disclosure}>
+            <summary>=IMPORTDATA formulas</summary>
+            <ul style={{ margin: '6px 0 0', paddingLeft: '18px' }}>
+              {FEEDS.map((feed) => (
+                <li key={feed.path} style={{ fontSize: '11px' }}>
+                  {feed.label}:{' '}
+                  <code>
+                    =IMPORTDATA(&quot;{origin}/api/{feed.path}?token={token}&quot;)
+                  </code>
+                </li>
+              ))}
+            </ul>
+            <p className={styles.valueQuiet} style={{ fontSize: '10.5px' }}>
+              The assets URL accepts an optional <code>at</code> timestamp (e.g. <code>&amp;at=2026-05-30</code>) to
+              reconstruct your inventory as it was at that moment; the first row is the column headers.
+            </p>
+          </details>
+        </div>
       )}
-      {linkEnabled ? (
-        <h3>Deprecated: token URLs</h3>
-      ) : (
-        <p>
-          Pull your data into a spreadsheet with <code>=IMPORTDATA(url)</code> (the first row is the column headers):
-        </p>
+      <div className={styles.note}>
+        {linkEnabled ? (
+          <>
+            <span className={`${styles.tag} ${styles.tagDeprecated}`}>[ deprecated ]</span> new sheets should use a{' '}
+            <a href="/link">link</a> — one query per signed URL instead of one token that unlocks everything. Token URLs
+            stay for <code>at=</code> history. Regenerating invalidates any sheet still on the old token.
+          </>
+        ) : (
+          <>
+            Pull your data into a spreadsheet with <code>=IMPORTDATA(url)</code>. Regenerating invalidates the previous
+            token and any sheet still using it.
+          </>
+        )}
+      </div>
+      {response && (
+        <div className={styles.feedback}>
+          <Dot color={color} response={response} />
+        </div>
       )}
-      {linkEnabled && (
-        <p>
-          These keep working, but new sheets should use a Link. The one thing staying here for now is <code>at=</code>{' '}
-          history — a Link reads current data only.
-        </p>
-      )}
-      {assetsUrl && blueprintsUrl && industryUrl && ordersUrl && corpAssetsUrl && corpBlueprintsUrl && corpJobsUrl && (
-        <ul>
-          <li>
-            Assets (one row per item stack): <code>=IMPORTDATA(&quot;{assetsUrl}&quot;)</code>
-          </li>
-          <li>
-            Blueprints (one row per blueprint stack): <code>=IMPORTDATA(&quot;{blueprintsUrl}&quot;)</code>
-          </li>
-          <li>
-            Industry jobs: <code>=IMPORTDATA(&quot;{industryUrl}&quot;)</code>
-          </li>
-          <li>
-            Market orders (open): <code>=IMPORTDATA(&quot;{ordersUrl}&quot;)</code>
-          </li>
-          <li>
-            Corp assets (one row per item stack): <code>=IMPORTDATA(&quot;{corpAssetsUrl}&quot;)</code>
-          </li>
-          <li>
-            Corp blueprints (one row per blueprint stack): <code>=IMPORTDATA(&quot;{corpBlueprintsUrl}&quot;)</code>
-          </li>
-          <li>
-            Corp industry jobs: <code>=IMPORTDATA(&quot;{corpJobsUrl}&quot;)</code>
-          </li>
-        </ul>
-      )}
-      <p>
-        The assets URL accepts an optional <code>at</code> timestamp (e.g. <code>&amp;at=2026-05-30</code>) to
-        reconstruct your inventory as it was at that moment; omit it for the current inventory.
-      </p>
-      <form>
-        <button formAction={generate}>{token ? 'Regenerate API token' : 'Generate API token'}</button>
-      </form>
-      {token && <p>Regenerating invalidates the previous token and any sheet still using it.</p>}
-      <p>{response && <Dot color={color} response={response} />}</p>
     </>
   )
 }

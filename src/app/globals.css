@@ -1,80 +1,136 @@
 /*
- * Claude Code inspired theme.
+ * Edencom Link design system (docs/design-system/) — dark EVE-terminal
+ * palette with a matching light variant, Eve Sans Neue throughout, one
+ * lavender accent that only clickable things get to wear.
  *
- * Warm Anthropic palette (cream paper + indigo accent). Following the
- * claude.ai convention: a sans for static UI (labels, chrome, headers), a
- * Claude-style serif (Tiempos/Copernicus, with a free serif fallback) for the
- * dynamic text specific to a thing (names, titles), and a monospace face for
- * code and numeric data. Light by default, dark via prefers-color-scheme.
+ * The site keeps its original token NAMES (--paper, --ink, --line, …) so no
+ * module stylesheet had to move when the palette swapped; the VALUES map from
+ * the design system's tokens: bg-canvas → --paper, bg-elevated → --paper-raised,
+ * border-subtle → --line-soft, border-strong → --line, text-secondary →
+ * --ink-soft, text-tertiary → --ink-faint, accent-primary → --accent.
+ * Light follows the device's prefers-color-scheme, same as before.
  */
 
+/* Eve Sans Neue — brand typeface, self-hosted from /public/fonts. */
+@font-face {
+  font-family: 'Eve Sans Neue';
+  src: url('/fonts/evesansneue-regular.otf') format('opentype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Eve Sans Neue';
+  src: url('/fonts/evesansneue-italic.otf') format('opentype');
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Eve Sans Neue';
+  src: url('/fonts/evesansneue-bold.otf') format('opentype');
+  font-weight: 500 800;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Eve Sans Neue';
+  src: url('/fonts/evesansneue-bolditalic.otf') format('opentype');
+  font-weight: 500 800;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Eve Sans Neue Expanded';
+  src: url('/fonts/evesansneue-expanded.otf') format('opentype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Eve Sans Neue Expanded';
+  src: url('/fonts/evesansneue-expandeditalic.otf') format('opentype');
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Eve Sans Neue Expanded';
+  src: url('/fonts/evesansneue-expandedbold.otf') format('opentype');
+  font-weight: 500 800;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Eve Sans Neue Expanded';
+  src: url('/fonts/evesansneue-expandedbolditalic.otf') format('opentype');
+  font-weight: 500 800;
+  font-style: italic;
+  font-display: swap;
+}
+
 :root {
-  /* Anthropic warm neutrals */
-  --paper: #f0eee6;
-  --paper-raised: #faf9f5;
-  --ink: #1f1e1d;
-  --ink-soft: #53514c;
-  --ink-faint: #8a877e;
-  --line: #ddd9cc;
-  --line-soft: #e8e5da;
+  /* Light variant of the design system's dark surface scale. */
+  --paper: #f4f4f5;
+  --paper-raised: #ffffff;
+  --ink: #17181a;
+  --ink-soft: #54585f;
+  --ink-faint: #6b6e75;
+  --line: #c2c2c9;
+  --line-soft: #d9d9dd;
 
-  /* Indigo accent */
-  --accent: #4f46e5;
-  --accent-strong: #4338ca;
-  --accent-tint: #e7e6fb;
+  /* The one accent: lavender. Only clickable things wear it. */
+  --accent: #7a7aef;
+  --accent-strong: #6a6ae8;
+  --accent-tint: #e6e6fb;
 
-  /* Hyperlinks use the classic browser blue / purple. */
-  --link: #0000ee;
-  --link-visited: #551a8b;
+  /* Links share the accent hue; no visited distinction — in this app a link
+     is an action, not a trail of where you've been. */
+  --link: #5b4fc4;
+  --link-hover: #463aa8;
+  --link-visited: #5b4fc4;
 
-  /*
-   * Status colors, theme-aware. The account forms have long hardcoded a
-   * #00AF00 / #FF0000 pair straight into <Dot color=…>, which reads the same in
-   * both themes and is too hot against the dark paper; these are the
-   * successors, adopted by the sign-on surfaces first.
-   */
-  --ok: #15803d;
-  --warn: #a16207;
-  --danger: #b3261e;
-  /* Informational-but-fine, distinct from ok/warn/danger — added for the
-     /registration grant matrix's "granted but not requested" ring
-     (docs/registrations-page/00a-design-extraction.md §4). */
-  --info: #1d4ed8;
+  /* Status colors — freshness and sync state, never decorative. */
+  --ok: #177a44;
+  --warn: #8a6114;
+  --danger: #b32c33;
+  --info: #2b49b0;
 
-  --radius: 10px;
-  --radius-sm: 7px;
+  /* Sharp-ish corners: small and consistent, not pill, not boxy. */
+  --radius: 8px;
+  --radius-sm: 5px;
 
-  /* Claude reading serif — Tiempos/Copernicus with a free serif fallback. */
-  --serif:
-    'Tiempos Text', Tiempos, Copernicus, ui-serif, Charter, 'Iowan Old Style', Georgia, Cambria, 'Times New Roman',
-    serif;
-
-  /* Proportional sans for interactive controls. */
-  --sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  /* Typography roles. The serif role is RETIRED — the design system is
+     sans-only — but the variable stays so nothing that asked for a name face
+     breaks: it now resolves to the brand sans, and .serif is a no-op alias. */
+  --sans: 'Eve Sans Neue', ui-sans-serif, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --serif: 'Eve Sans Neue', ui-sans-serif, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --expanded: 'Eve Sans Neue Expanded', 'Eve Sans Neue', ui-sans-serif, sans-serif;
 
   /* Fixed-width face — reserved for code and numbers. */
   --mono: 'SF Mono', 'JetBrains Mono', 'Fira Code', 'Cascadia Code', ui-monospace, 'Menlo', 'Consolas', monospace;
 }
 
-/* Dark theme, driven by the device's prefers-color-scheme. */
+/* Dark theme — the design system's native palette. */
 @media (prefers-color-scheme: dark) {
   :root {
-    --paper: #1a1815;
-    --paper-raised: #24211d;
-    --ink: #f0eee6;
-    --ink-soft: #c4bfb3;
-    --ink-faint: #8a877e;
-    --line: #38342d;
-    --line-soft: #2d2a24;
-    --accent: #a5b4fc;
-    --accent-strong: #818cf8;
-    --accent-tint: #25244a;
-    --link: #6ea8fe;
-    --link-visited: #c699f7;
-    --ok: #4ade80;
-    --warn: #fcd34d;
-    --danger: #fca5a5;
-    --info: #93c5fd;
+    --paper: #17181a;
+    --paper-raised: #1f2024;
+    --ink: #f4f4f5;
+    --ink-soft: #9a9da5;
+    --ink-faint: #6c6f76;
+    --line: #34353b;
+    --line-soft: #2b2c31;
+    --accent: #8f8ff5;
+    --accent-strong: #a3a3f7;
+    --accent-tint: #2a2a4c;
+    --link: #a996f0;
+    --link-hover: #c3b6f7;
+    --link-visited: #a996f0;
+    --ok: #3ecf7e;
+    --warn: #e3b341;
+    --danger: #f0555c;
+    --info: #4f7cff;
   }
 }
 
@@ -107,9 +163,18 @@ img {
   display: block;
 }
 
+/*
+ * The clickable-vs-readout rule (design system turn 12): one hue means
+ * clickable. Links own the lavender; buttons borrow it — same color, same
+ * weight. An outline in that color is a button; bare, it's a link. Gray is
+ * demoted to readout: a gray border marks an inert field or a reading, never
+ * an action.
+ */
+
 a {
   color: var(--link);
-  text-decoration: none;
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 a:visited {
@@ -117,46 +182,44 @@ a:visited {
 }
 
 a:hover {
-  text-decoration: underline;
-  text-underline-offset: 2px;
+  color: var(--link-hover);
+}
+
+/* Action link: a link standing alone as a control (not mid-sentence) drops
+   the underline and takes the weight. */
+.action {
+  font-weight: 600;
+  text-decoration: none;
 }
 
 h1,
 h2,
 h3 {
-  font-weight: 600;
+  font-family: var(--expanded);
+  font-weight: 700;
   letter-spacing: -0.01em;
   line-height: 1.25;
 }
 
 h1 {
-  font-size: 22px;
+  font-size: 21px;
 }
 
 h2 {
-  font-size: 17px;
+  font-size: 16px;
 }
 
 /*
  * Typography roles:
- *   --serif  dynamic, item-specific text — a thing's name, title or value
- *   --sans   static UI chrome — labels, headers, controls (the page default)
- *   --mono   numbers and code (see `.num` in retro.module.css, `code`/`pre` below)
+ *   --sans      Eve Sans Neue — everything (the page default)
+ *   --expanded  Eve Sans Neue Expanded — headings and the wordmark only
+ *   --mono      numbers and code (see `.num` in retro.module.css, `code`/`pre` below)
  *
- * Prefer the self-serif components (`TypeName`, `DateTime`, and the `Name`
- * family in names.tsx) for entity names and timestamps; reach for this `.serif`
- * utility for one-off dynamic text that has no dedicated component.
- *
- * A HEADING TAKES ONE FACE FOR ITS WHOLE LENGTH. The roles above sort text
- * within a page; they do not licence mixing faces inside a single title. A sans
- * sentence with the name in it set in serif — "The Blueprint Library of
- * <span class="serif">Sir Cuddles</span>" — almost always looks bad, so choose
- * the face for the heading as a whole: `<h1 class="serif">` when the heading IS
- * a thing's name (structures, ships, fittings, assembled items all do this), the
- * page default when it is a sentence that happens to contain one (/corpses,
- * /bpos). The one exception is a heading that is code or a command, which takes
- * --mono — and that exception overrides the serif role rather than carving a
- * second face out of the title, so it too applies to the whole heading.
+ * The old serif name-face role is retired with the design system — --serif
+ * and the .serif utility now resolve to the brand sans, so the Name/TypeName/
+ * DateTime components render like their surroundings. The one-face-per-heading
+ * rule still stands: never mix faces inside a single title (mono for a heading
+ * that is code or a command applies to the whole heading).
  */
 .serif {
   font-family: var(--serif);
@@ -176,19 +239,17 @@ header {
   padding: 14px 18px;
   margin-top: 20px;
   background: var(--paper-raised);
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-soft);
   border-radius: var(--radius);
   font-family: var(--sans);
   font-size: 13px;
   color: var(--ink-soft);
 }
 
-/* Nav links use the standard blue / visited-purple link colors. */
-
-/* The leading "✻ EVE Hangar" mark, set apart from the nav. */
+/* The leading brand mark, set apart from the nav. Not a logo — a stand-in. */
 header::before {
-  content: '✻';
-  color: var(--ink-soft);
+  content: '❄';
+  color: var(--accent);
   margin-right: 8px;
   font-size: 15px;
 }
@@ -200,36 +261,95 @@ hr {
   margin: 18px auto;
 }
 
-/* Buttons styled like a focused prompt action. */
+/*
+ * Buttons (design system turn 12). The DEFAULT button is the standard
+ * outline: lavender border and text, the same hue links wear. Variants:
+ *   .primary  the one action a screen exists for — solid fill, never two per view
+ *   .quiet    bare — a link with padding
+ *   .danger   destructive commit — swaps the lavender for status-bad
+ * A busy button keeps its lavender (it's still live, just occupied);
+ * disabled drops to tertiary with no hue.
+ */
 button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   margin: 6px 0;
-  padding: 7px 14px;
+  padding: 8px 14px;
   font-family: var(--sans);
-  font-size: 13px;
-  color: var(--paper-raised);
-  background: var(--accent);
-  border: 1px solid var(--accent-strong);
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--link);
+  background: transparent;
+  border: 1px solid var(--link);
   border-radius: var(--radius-sm);
   cursor: pointer;
   transition:
     background 0.12s ease,
+    border-color 0.12s ease,
+    color 0.12s ease,
     transform 0.04s ease;
 }
 
 button:hover {
-  background: var(--accent-strong);
+  color: var(--link-hover);
+  border-color: var(--link-hover);
+  background: var(--paper-raised);
 }
 
 button:active {
   transform: translateY(1px);
 }
 
-button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+button.primary {
+  color: #17181a;
+  background: var(--accent);
+  border-color: var(--accent);
+  font-weight: 700;
 }
 
-/* Inputs read like terminal fields. */
+button.primary:hover {
+  color: #17181a;
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+}
+
+button.quiet {
+  border-color: transparent;
+  background: transparent;
+}
+
+button.quiet:hover {
+  background: var(--paper-raised);
+}
+
+button.danger {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+button.danger:hover {
+  color: var(--danger);
+  border-color: var(--danger);
+  background: var(--paper-raised);
+}
+
+button:disabled {
+  color: var(--ink-faint);
+  border-color: var(--line-soft);
+  background: transparent;
+  cursor: not-allowed;
+  transform: none;
+}
+
+button.primary:disabled {
+  color: var(--ink-faint);
+  background: var(--line-soft);
+  border-color: var(--line-soft);
+}
+
+/* Inputs are readouts you can type in: gray border, never the accent hue. */
 input,
 select,
 textarea {
@@ -242,12 +362,21 @@ textarea {
   padding: 6px 10px;
 }
 
+/* Keyboard focus — the system's 2px info outline, offset from the element. */
+a:focus-visible,
+button:focus-visible,
+select:focus-visible,
+summary:focus-visible {
+  outline: 2px solid var(--info);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
 input:focus,
 select:focus,
 textarea:focus {
-  outline: none;
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px var(--accent-tint);
+  outline: 2px solid var(--info);
+  outline-offset: 1px;
 }
 
 label {

@@ -9,7 +9,7 @@
 import { useRouter } from 'next/navigation'
 import { useTransition } from 'react'
 
-import { refreshAllCharacters, refreshCell } from '../jobs/actions'
+import { refreshAllCharacters, refreshCell } from '../../jobs/actions'
 import { refreshCharacter, refreshEverything, setTemplateScopes } from './actions'
 import type { TemplateCheck } from './matrix'
 import styles from './registration.module.css'

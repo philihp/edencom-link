@@ -1,5 +1,12 @@
 # `/registration` — one page for characters and their extract jobs
 
+> **Update (design-system restyle):** the page now lives at
+> **`/account/registrations`** — `/registration`, `/character` and `/jobs` all
+> permanently redirect there, their pages deleted (the sunset phase 5 reserved
+> happened with the site-wide design-system adoption; docs/design-system/).
+> The header's `[refresh]` link points there and the `characters` nav item is
+> gone; `/account/settings`'s grant-template panel links it.
+>
 > **Planned.** Nothing here is built yet. These documents are the project plan
 > for combining `/character` (the character tiles) and `/jobs` (the extract-job
 > matrix) into a single page at **`/registration`**, laid out per the Claude

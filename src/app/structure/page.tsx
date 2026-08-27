@@ -1200,8 +1200,8 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
         </>
       ) : (
         <p>
-          No structures visible. Re-link a director character on the <Link href="/character">Characters</Link> page so
-          the hourly job can fetch them.
+          No structures visible. Re-link a director character on the{' '}
+          <Link href="/account/registrations">Registrations</Link> page so the hourly job can fetch them.
         </p>
       )}
       <p className={styles.lastRun}>

@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics>
+<meta name="design_doc_mode" content="canvas">
+<link rel="stylesheet" href="_ds/edencom-link-design-80a92c6f-29aa-4e04-8f29-c0c9bc110814/fonts/fonts.css">
+<link rel="stylesheet" href="_ds/edencom-link-design-80a92c6f-29aa-4e04-8f29-c0c9bc110814/tokens/colors.css">
+<link rel="stylesheet" href="_ds/edencom-link-design-80a92c6f-29aa-4e04-8f29-c0c9bc110814/tokens/interactions.css">
+<link rel="stylesheet" href="_ds/edencom-link-design-80a92c6f-29aa-4e04-8f29-c0c9bc110814/styles.css">
+<script src="_ds/edencom-link-design-80a92c6f-29aa-4e04-8f29-c0c9bc110814/_ds_bundle.js"></script>
+<style>
+html,body{background:#101113}
+body{margin:0;font-family:'Eve Sans Neue',ui-sans-serif,sans-serif}
+a{color:var(--link)}a:hover{color:var(--link-hover)}
+.lt{
+  --bg-canvas:#f4f4f5;--bg-surface:#ffffff;--bg-elevated:#ececee;--bg-overlay:#e2e2e5;
+  --border-subtle:#d9d9dd;--border-strong:#c2c2c9;
+  --text-primary:#17181a;--text-secondary:#54585f;--text-tertiary:#6b6e75;
+  --accent-primary:#7a7aef;--accent-primary-hover:#6a6ae8;--accent-text:#5451c9;
+  --link:#5b4fc4;--link-hover:#463aa8;
+  --status-good:#177a44;--status-warn:#8a6114;--status-bad:#b32c33;--status-info:#2b49b0;
+}
+.av{display:flex;flex:none}
+.lt .av{--text-primary:#f4f4f5}
+.dv-turn{--accent-text:var(--accent-primary);padding:40px 44px 32px;border-bottom:1px solid #26272c}
+.dv-thd{display:flex;align-items:baseline;gap:10px;margin:0 0 20px}
+.dv-tid{font:600 10px ui-monospace,Menlo,monospace;padding:3px 7px;background:#f4f4f5;color:#17181a;border-radius:4px;text-decoration:none}
+.dv-tname{font:600 13px/1.2 'Eve Sans Neue',sans-serif;color:#f4f4f5}
+.dv-opts{display:flex;flex-direction:column;gap:34px;align-items:flex-start}
+.dv-opt{display:flex;flex-direction:column;gap:9px;scroll-margin-top:16px}
+.dv-oid{font:600 10.5px ui-monospace,Menlo,monospace;padding:3px 7px;background:#26272c;color:#f4f4f5;border-radius:5px;text-decoration:none}
+.dv-olabel{display:flex;align-items:baseline;gap:8px;font:400 11px/1.35 'Eve Sans Neue',sans-serif;color:#9a9da5;max-width:920px}
+.dv-opt:target .dv-oid{background:#8f8ff5;color:#17181a}
+.dv-pair{display:flex;gap:18px;padding:16px;border:1px solid #26272c;border-radius:10px}
+.dv-app{width:1180px;background:var(--bg-canvas);border:1px solid var(--border-subtle);border-radius:8px;overflow:hidden;color:var(--text-primary);box-sizing:border-box}
+.dv-next{margin:26px 0 0;font:12px/1.5 'Eve Sans Neue',sans-serif;color:#6c6f76}
+.m{font-family:ui-monospace,Menlo,monospace}
+.tag{font:600 9.5px ui-monospace,Menlo,monospace;letter-spacing:.04em;white-space:nowrap}
+.t-cred{color:var(--text-secondary)}
+.t-decl{color:var(--accent-text)}
+.t-live{color:var(--status-good)}
+.t-elev{color:var(--status-warn)}
+.t-depr{color:var(--status-warn)}
+.pnl{background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:6px;overflow:hidden;display:flex;flex-direction:column}
+.phd{display:flex;align-items:center;gap:8px;padding:9px 14px;background:var(--bg-elevated);border-bottom:1px solid var(--border-subtle);font-size:12.5px;font-weight:600}
+.prow{display:grid;grid-template-columns:130px 1fr auto;gap:12px;align-items:baseline;padding:10px 14px;border-bottom:1px solid var(--border-subtle);font-size:12px}
+.plbl{color:var(--text-tertiary);font-size:11px}
+.pnote{padding:9px 14px;font-size:10.5px;line-height:1.55;color:var(--text-tertiary)}
+.pact{font-size:11.5px;white-space:nowrap;font-weight:600;text-decoration:none}
+.bt{display:inline-flex;align-items:center;gap:7px;padding:9px 15px;border:1px solid transparent;border-radius:6px;background:transparent;font-family:'Eve Sans Neue',sans-serif;font-weight:600;font-size:12.5px;line-height:1;color:var(--link);cursor:pointer}
+.bt:hover{color:var(--link-hover)}
+.bt-out{border-color:var(--link)}
+.bt-out:hover{border-color:var(--link-hover);background:var(--bg-elevated)}
+.bt-pri{background:var(--accent-primary);border-color:var(--accent-primary);color:#17181a;font-weight:700}
+.bt-pri:hover{background:var(--accent-primary-hover);color:#17181a}
+.bt-bad{color:var(--status-bad);border-color:var(--status-bad)}
+.bt-bad:hover{color:var(--status-bad);border-color:var(--status-bad);background:var(--bg-elevated)}
+.bt-sm{padding:7px 11px;font-size:11.5px}
+.bt-dis{color:var(--text-tertiary);border-color:var(--border-subtle);cursor:default}
+.bt-dis:hover{color:var(--text-tertiary);border-color:var(--border-subtle);background:transparent}
+.bt-foc{outline:2px solid var(--status-info);outline-offset:2px}
+.alk{font-weight:600;text-decoration:none}
+.fld{display:inline-flex;align-items:center;gap:6px;padding:7px 11px;border:1px solid var(--border-strong);border-radius:5px;font-size:11px;color:var(--text-primary);white-space:nowrap}
+@keyframes rot{to{transform:rotate(360deg)}}
+.rot{display:inline-block;animation:rot 1.1s linear infinite}
+.spl{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--text-tertiary);margin:0 0 9px}
+.spc{font-size:10px;color:var(--text-tertiary);margin-top:7px;line-height:1.5}
+.glbl{display:flex;align-items:baseline;gap:10px;margin:24px 0 10px;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--text-tertiary)}
+.grule{flex:1;height:1px;background:var(--border-subtle);align-self:center}
+.gnote{font-size:10.5px;letter-spacing:0;text-transform:none;color:var(--text-tertiary)}
+.cb{display:inline-flex;width:15px;height:15px;border-radius:4px;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex:none}
+.cb-on{background:var(--accent-primary);color:#17181a}
+.cb-off{border:1.5px solid var(--border-strong);box-sizing:border-box}
+.chip{display:inline-flex;align-items:center;gap:7px;padding:6px 10px;border:1px solid var(--border-subtle);border-radius:5px;font-size:11.5px}
+.gbtn{display:inline-flex;align-items:center;padding:5px 10px;border:1px solid var(--border-strong);border-radius:5px;font-size:11px;color:var(--text-secondary);white-space:nowrap}
+.ep{display:inline-flex;padding:3px 7px;background:var(--bg-elevated);border-radius:4px;font-size:10px;color:var(--text-secondary)}
+</style>
+</helmet>
+
+<section class="dv-turn" id="t12">
+<div class="dv-thd"><a class="dv-tid" href="#t12">12</a><span class="dv-tname">Buttons &amp; links — lavender means clickable, gray means readout · dark and light</span></div>
+<div style="max-width:1060px;margin:0 0 26px;font-size:12px;line-height:1.7;color:var(--text-secondary);background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:8px;padding:15px 18px">
+<b style="color:var(--text-primary)">One hue means clickable.</b> Links already own the lavender — buttons now borrow it: same color, same 600 weight. An outline in that color is a button; bare, it's a link. Nothing inert gets to wear it.<br>
+<b style="color:var(--text-primary)">Primary is the same rule, filled.</b> The one action a screen exists for gets the solid fill; everything else is outline or bare. Never two solids in one view. Destructive commits swap the lavender for <span class="tag" style="color:var(--status-bad)">status-bad</span>, in both button and link form.<br>
+<b style="color:var(--text-primary)">Gray is demoted to readout.</b> The gray-bordered ghost button is retired from actions: a gray border now marks an inert field or a reading — a token, a rate, a select's body (its lavender chevron is the clickable part). Already applied to <a href="#11a">11a</a> below: log off, regenerate, generate new code.
+</div>
+<div class="dv-opts">
+
+<div class="dv-opt" id="12a">
+<div class="dv-olabel"><a class="dv-oid" href="#12a">12a</a>The control vocabulary — hierarchy, links, states, and the clickable-vs-readout rule side by side.</div>
+<div class="dv-pair">
+
+<div class="dv-app" style="width:640px" data-screen-label="Buttons and links specimen (dark)">
+  <div style="padding:22px 24px 26px">
+    <div class="spl">buttons — one solid per view</div>
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <button class="bt bt-pri">+ register a character</button>
+      <button class="bt bt-out">↻ refresh all</button>
+      <button class="bt">cancel</button>
+    </div>
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:10px">
+      <button class="bt bt-pri bt-sm">save rates</button>
+      <button class="bt bt-out bt-sm">regenerate</button>
+      <button class="bt bt-out bt-bad bt-sm">remove channel</button>
+      <button class="bt bt-sm">dismiss</button>
+    </div>
+    <div class="spc">primary (filled) · standard (outline) · quiet (bare — a link with padding) · destructive commits wear status-bad</div>
+
+    <div class="spl" style="margin-top:24px">links</div>
+    <div style="font-size:12px;color:var(--text-secondary);line-height:1.7">inline, mid-sentence: structures reports the <span class="m">0.900%</span> gap as <a href="#12a">cost avoidance</a>.</div>
+    <div style="display:flex;gap:22px;margin-top:9px;font-size:12px">
+      <a class="alk" href="#12a">manage codes →</a>
+      <a class="alk" href="#12a">re-auth</a>
+      <a class="alk" href="#12a" style="color:var(--status-bad)">remove</a>
+      <span class="alk" style="color:var(--text-tertiary);cursor:default">unavailable</span>
+    </div>
+    <div class="spc">inline links keep the underline; action links drop it and take the 600 weight · destructive = status-bad · disabled = tertiary, no hue</div>
+
+    <div class="spl" style="margin-top:24px">states</div>
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <button class="bt bt-out bt-sm bt-foc">focused</button>
+      <button class="bt bt-out bt-sm bt-dis">disabled</button>
+      <button class="bt bt-out bt-sm"><span class="rot">↻</span> refreshing…</button>
+    </div>
+    <div class="spc">focus = the 2px info outline from the system · busy keeps the lavender — it's still live, just occupied</div>
+
+    <div class="spl" style="margin-top:24px">the rule</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+      <div style="border:1px solid var(--border-subtle);border-radius:6px;padding:12px 14px">
+        <div style="font-size:10.5px;color:var(--text-secondary);margin-bottom:9px">wears the lavender — click it</div>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><button class="bt bt-out bt-sm">generate new code</button><a class="alk" href="#12a" style="font-size:11.5px">edit rates</a></div>
+      </div>
+      <div style="border:1px solid var(--border-subtle);border-radius:6px;padding:12px 14px">
+        <div style="font-size:10.5px;color:var(--text-secondary);margin-bottom:9px">gray — read it (or type in it)</div>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span class="fld m">4c1f••••••••88ab</span><span class="fld m">Aria Valis <span style="color:var(--link);font-weight:700">▾</span></span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="dv-app lt" style="width:640px" data-screen-label="Buttons and links specimen (light)">
+  <div style="padding:22px 24px 26px">
+    <div class="spl">buttons — one solid per view</div>
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <button class="bt bt-pri">+ register a character</button>
+      <button class="bt bt-out">↻ refresh all</button>
+      <button class="bt">cancel</button>
+    </div>
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:10px">
+      <button class="bt bt-pri bt-sm">save rates</button>
+      <button class="bt bt-out bt-sm">regenerate</button>
+      <button class="bt bt-out bt-bad bt-sm">remove channel</button>
+      <button class="bt bt-sm">dismiss</button>
+    </div>
+    <div class="spc">primary (filled) · standard (outline) · quiet (bare — a link with padding) · destructive commits wear status-bad</div>
+
+    <div class="spl" style="margin-top:24px">links</div>
+    <div style="font-size:12px;color:var(--text-secondary);line-height:1.7">inline, mid-sentence: structures reports the <span class="m">0.900%</span> gap as <a href="#12a">cost avoidance</a>.</div>
+    <div style="display:flex;gap:22px;margin-top:9px;font-size:12px">
+      <a class="alk" href="#12a">manage codes →</a>
+      <a class="alk" href="#12a">re-auth</a>
+      <a class="alk" href="#12a" style="color:var(--status-bad)">remove</a>
+      <span class="alk" style="color:var(--text-tertiary);cursor:default">unavailable</span>
+    </div>
+    <div class="spc">inline links keep the underline; action links drop it and take the 600 weight · destructive = status-bad · disabled = tertiary, no hue</div>
+
+    <div class="spl" style="margin-top:24px">states</div>
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <button class="bt bt-out bt-sm bt-foc">focused</button>
+      <button class="bt bt-out bt-sm bt-dis">disabled</button>
+      <button class="bt bt-out bt-sm"><span class="rot">↻</span> refreshing…</button>
+    </div>
+    <div class="spc">focus = the 2px info outline from the system · busy keeps the lavender — it's still live, just occupied</div>
+
+    <div class="spl" style="margin-top:24px">the rule</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+      <div style="border:1px solid var(--border-subtle);border-radius:6px;padding:12px 14px">
+        <div style="font-size:10.5px;color:var(--text-secondary);margin-bottom:9px">wears the lavender — click it</div>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><button class="bt bt-out bt-sm">generate new code</button><a class="alk" href="#12a" style="font-size:11.5px">edit rates</a></div>
+      </div>
+      <div style="border:1px solid var(--border-subtle);border-radius:6px;padding:12px 14px">
+        <div style="font-size:10.5px;color:var(--text-secondary);margin-bottom:9px">gray — read it (or type in it)</div>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span class="fld m">4c1f••••••••88ab</span><span class="fld m">Aria Valis <span style="color:var(--link);font-weight:700">▾</span></span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</div>
+</div>
+
+</div>
+<div class="dv-next">If this reads right, it becomes the Button component's new ghost/outline treatment in the design system (and a Link/action-link addition) — say the word and I'll fold it back into the DS. 11a below already uses it.</div>
+</section>
+
+<section class="dv-turn" id="t11">
+<div class="dv-thd"><a class="dv-tid" href="#t11">11</a><span class="dv-tname">Account settings as a control panel — grouped by data direction, every panel labeled by how it changes · dark and light</span></div>
+<div style="max-width:1060px;margin:0 0 26px;font-size:12px;line-height:1.7;color:var(--text-secondary);background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:8px;padding:15px 18px">
+<b style="color:var(--text-primary)">Every panel is tagged by how it changes.</b> <span class="tag t-cred">[ credential ]</span> is how you get back in; <span class="tag t-decl">[ declared ]</span> changes only when you edit it; <span class="tag t-live">[ live ]</span> moves on its own. The tag answers the question a settings page never answers: is this value stale because I forgot it, or fresh because the system maintains it? A legend under the title teaches the vocabulary once.<br>
+<b style="color:var(--text-primary)">Grouped by direction of data, not by feature.</b> Today's page is ten h2s in the order they were built. Here: <i>identity</i> (who you are), <i>declared inputs</i> (what you've told us — grants template, tax rates), <i>live connections</i> (what flows out — Discord, Sheets), <i>administration</i>. A new panel has an obvious home.<br>
+<b style="color:var(--text-primary)">Readouts first, forms second.</b> Every panel shows its current value as an instrument reading (mono, glanceable) — the tax panel shows 0.100% / 1.000% without a form in sight; editing is an action you take, not two number inputs permanently staring at you. The current page renders every form expanded forever.
+</div>
+<div class="dv-opts">
+
+<div class="dv-opt" id="11a">
+<div class="dv-olabel"><a class="dv-oid" href="#11a">11a</a>Desktop — four groups, eight panels. Group rules carry an annotation ("changes only when you edit" vs "moves on its own"); live panels get a health dot in the header. Log off is a header action, not a section.</div>
+<div class="dv-pair">
+
+<div class="dv-app" data-screen-label="Account settings — control panel (dark)">
+  <div style="display:flex;align-items:center;gap:14px;padding:12px 24px;border-bottom:1px solid var(--border-subtle);background:var(--bg-surface)">
+    <span style="display:flex;align-items:baseline;gap:7px;font-size:14px"><span style="color:var(--accent-text)">❄</span><span style="font-family:'Eve Sans Neue Expanded',sans-serif;font-weight:700">edencom link</span></span>
+    <span style="font-size:12px;color:var(--text-tertiary)">[ characters | registrations | links | assets | <span style="color:var(--text-primary)">account</span> ]</span>
+    <span style="flex:1"></span>
+    <span class="av"><x-import component-from-global-scope="DesignSystem_80a92c.Avatar" name="Aria Valis" size="{{ 26 }}" hint-size="26px,26px"></x-import></span>
+  </div>
+  <div style="padding:22px 24px 26px">
+    <div style="display:flex;align-items:flex-end;gap:14px">
+      <div style="flex:1">
+        <div style="font-family:'Eve Sans Neue Expanded',sans-serif;font-size:21px;font-weight:700">account</div>
+        <div style="font-size:12px;color:var(--text-tertiary);margin-top:5px"><span style="color:var(--text-secondary)">aria.valis@gmail.com</span> · main: Aria Valis · pilot since <span class="m">2026-03-02</span></div>
+      </div>
+      <button class="bt bt-out bt-sm">log off</button>
+    </div>
+    <div style="display:flex;gap:18px;margin-top:12px;font-size:10.5px;color:var(--text-tertiary);white-space:nowrap">
+      <span><span class="tag t-cred">[ credential ]</span> how you get back in</span>
+      <span><span class="tag t-decl">[ declared ]</span> changes only when you edit it</span>
+      <span><span class="tag t-live">[ live ]</span> moves on its own</span>
+    </div>
+
+    <div class="glbl"><span>identity</span><span class="gnote">who this account is</span><span class="grule"></span></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+      <div class="pnl">
+        <div class="phd"><span>sign-in methods</span><span style="flex:1"></span><span class="tag t-cred">[ credential ]</span></div>
+        <div class="prow"><span class="plbl">email</span><span>aria.valis@gmail.com</span><a class="pact" href="#11a">change</a></div>
+        <div class="prow"><span class="plbl">password</span><span class="m" style="color:var(--text-tertiary);font-size:11px">last changed 2026-06-11</span><a class="pact" href="#11a">change</a></div>
+        <div class="prow"><span class="plbl">gice</span><span>linked as <b>Aria Valis</b></span><span></span></div>
+        <div class="prow" style="border-bottom:none"><span class="plbl">discord</span><span style="color:var(--text-tertiary)">not linked</span><a class="pact" href="#11a">link</a></div>
+        <div class="pnote" style="border-top:1px solid var(--border-subtle)">at least one of these must stay set — it's how you get back into everything below.</div>
+      </div>
+      <div class="pnl">
+        <div class="phd"><span>main character</span><span style="flex:1"></span><span class="tag t-decl">[ declared ]</span></div>
+        <div style="display:flex;align-items:center;gap:11px;padding:13px 14px">
+          <span class="av"><x-import component-from-global-scope="DesignSystem_80a92c.Avatar" name="Aria Valis" size="{{ 34 }}" hint-size="34px,34px"></x-import></span>
+          <span style="flex:1;min-width:0"><span style="display:block;font-size:13px">Aria Valis</span><span class="m" style="display:block;font-size:10.5px;color:var(--text-tertiary)">[DSWB] · main</span></span>
+          <span class="fld m">Aria Valis <span style="color:var(--link);font-weight:700">▾</span></span>
+        </div>
+        <div class="pnote">represents the account on shared links and the footer sign-off. every view still covers all 4 characters.</div>
+      </div>
+    </div>
+
+    <div class="glbl"><span>declared inputs</span><span class="gnote">changes only when you edit</span><span class="grule"></span></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+      <div class="pnl">
+        <div class="phd"><span>esi grant template</span><span style="flex:1"></span><span class="tag t-decl">[ declared ]</span></div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;padding:13px 14px">
+          <span class="chip"><span class="cb cb-on">✓</span>assets</span>
+          <span class="chip"><span class="cb cb-on">✓</span>wallet</span>
+          <span class="chip"><span class="cb cb-on">✓</span>location</span>
+          <span class="chip"><span class="cb cb-on">✓</span>industry</span>
+          <span class="chip" style="color:var(--text-tertiary)"><span class="cb cb-off"></span>market</span>
+        </div>
+        <div class="prow" style="grid-template-columns:1fr auto;border-bottom:none;border-top:1px solid var(--border-subtle)">
+          <span style="color:var(--text-tertiary);font-size:11px"><span class="m">4 of 5</span> optional scopes · applies to the next character you register</span>
+          <a class="pact" href="#11a">edit on registrations</a>
+        </div>
+        <div class="pnote">already-registered characters keep the grants they were added with — re-auth a character to upgrade it.</div>
+      </div>
+      <div class="pnl">
+        <div class="phd"><span>industry tax rates</span><span style="flex:1"></span><span class="tag t-decl">[ declared ]</span></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;padding:13px 14px;gap:14px">
+          <span><span style="display:block;font-size:10.5px;color:var(--text-tertiary)">your structures</span><span class="m" style="display:block;font-size:20px;margin-top:3px">0.100%</span><span style="display:block;font-size:10px;color:var(--text-tertiary);margin-top:2px">members rate you set in-client</span></span>
+          <span style="border-left:1px solid var(--border-subtle);padding-left:14px"><span style="display:block;font-size:10.5px;color:var(--text-tertiary)">public structures</span><span class="m" style="display:block;font-size:20px;margin-top:3px">1.000%</span><span style="display:block;font-size:10px;color:var(--text-tertiary);margin-top:2px">what someone else's slots charge</span></span>
+        </div>
+        <div class="prow" style="grid-template-columns:1fr auto;border-bottom:none;border-top:1px solid var(--border-subtle)">
+          <span style="color:var(--text-tertiary);font-size:11px">declared, not extracted — no ESI endpoint carries structure tax. structures reports the <span class="m">0.900%</span> gap as cost avoidance.</span>
+          <a class="pact" href="#11a">edit rates</a>
+        </div>
+      </div>
+    </div>
+
+    <div class="glbl"><span>live connections</span><span class="gnote">moves on its own — the dot is current health</span><span class="grule"></span></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+      <div class="pnl">
+        <div class="phd"><span>discord alerts</span><x-import component-from-global-scope="DesignSystem_80a92c.StatusDot" tone="warn" label="" size="{{ 7 }}" hint-size="7px,16px"></x-import><span style="flex:1"></span><span class="tag t-live">[ live ]</span></div>
+        <div class="prow" style="grid-template-columns:1fr auto auto">
+          <span><span style="display:block">Deepwater Syndicate / <b>#industry-alerts</b></span><span class="m" style="display:block;font-size:10px;color:var(--text-tertiary);margin-top:2px">linked 2026-05-02 · last alert 3h ago</span></span>
+          <x-import component-from-global-scope="DesignSystem_80a92c.StatusDot" tone="good" label="healthy" size="{{ 6 }}" hint-size="60px,16px"></x-import>
+          <span class="pact"><a href="#11a">test</a> · <a href="#11a">remove</a></span>
+        </div>
+        <div class="prow" style="grid-template-columns:1fr auto auto">
+          <span><span style="display:block">Deepwater Syndicate / <b>#ops</b></span><span style="display:block;font-size:10px;color:var(--status-bad);margin-top:2px">bot lost access — remove and re-link</span></span>
+          <x-import component-from-global-scope="DesignSystem_80a92c.StatusDot" tone="bad" label="down" size="{{ 6 }}" hint-size="48px,16px"></x-import>
+          <span class="pact"><a href="#11a">remove</a></span>
+        </div>
+        <div class="prow" style="grid-template-columns:130px 1fr auto;border-bottom:none">
+          <span class="plbl">link a channel</span>
+          <span class="m" style="font-size:11px">9f3a1c22e07b4d10 <span style="color:var(--text-tertiary)">· expires 8:42</span></span>
+          <button class="bt bt-out bt-sm">generate new code</button>
+        </div>
+        <div class="pnote">add the bot to your server, then run <span class="m">/edencom link &lt;code&gt;</span> in the channel that should get alerts.</div>
+      </div>
+      <div class="pnl">
+        <div class="phd"><span>api access — google sheets</span><x-import component-from-global-scope="DesignSystem_80a92c.StatusDot" tone="good" label="" size="{{ 7 }}" hint-size="7px,16px"></x-import><span style="flex:1"></span><span class="tag t-live">[ live ]</span></div>
+        <div class="prow">
+          <span class="plbl">token</span>
+          <span class="m" style="font-size:11px">4c1f••••••••88ab <span style="color:var(--text-tertiary)">· minted 2026-08-15 · read 41× this week</span></span>
+          <button class="bt bt-out bt-sm">regenerate</button>
+        </div>
+        <div class="prow" style="grid-template-columns:130px 1fr">
+          <span class="plbl">feeds</span>
+          <span style="display:flex;flex-wrap:wrap;gap:5px"><span class="ep m">character/assets</span><span class="ep m">character/blueprints</span><span class="ep m">character/jobs</span><span class="ep m">character/orders</span><span class="ep m">corp/assets</span><span class="ep m">corp/blueprints</span><span class="ep m">corp/jobs</span></span>
+        </div>
+        <div class="pnote" style="border-top:1px solid var(--border-subtle)"><span class="tag t-depr">[ deprecated ]</span> new sheets should use a <a href="#11a">link</a> — one query per signed URL instead of one token that unlocks everything. token URLs stay for <span class="m">at=</span> history. regenerating invalidates any sheet still on the old token.</div>
+      </div>
+    </div>
+
+    <div class="glbl"><span>administration</span><span class="grule"></span></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+      <div class="pnl">
+        <div class="phd"><span>invite codes</span><span style="flex:1"></span><span class="tag t-live">[ live ]</span></div>
+        <div class="prow" style="grid-template-columns:1fr auto;border-bottom:none">
+          <span><span class="m" style="font-size:16px">3</span> <span style="color:var(--text-secondary)">unclaimed codes</span> <span class="m" style="font-size:10.5px;color:var(--text-tertiary)">· next earned 2026-09-04</span></span>
+          <a class="pact" href="#11a">manage codes</a>
+        </div>
+      </div>
+      <div class="pnl">
+        <div class="phd"><span>chancellor</span><span style="flex:1"></span><span class="tag t-elev">[ elevated ]</span></div>
+        <div class="prow" style="grid-template-columns:1fr auto;border-bottom:none">
+          <span style="color:var(--text-secondary);font-size:11.5px">manage chancellors, set feature flags on other accounts, mint invite codes anytime.</span>
+          <a class="pact" href="#11a">chancellor tools</a>
+        </div>
+      </div>
+    </div>
+
+    <div style="margin-top:26px;font-size:10.5px;color:var(--text-tertiary)">Made with love by Aria Valis — 2026-08-27</div>
+  </div>
+</div>
+
+<div class="dv-app lt" data-screen-label="Account settings — control panel (light)">
+  <div style="display:flex;align-items:center;gap:14px;padding:12px 24px;border-bottom:1px solid var(--border-subtle);background:var(--bg-surface)">
+    <span style="display:flex;align-items:baseline;gap:7px;font-size:14px"><span style="color:var(--accent-text)">❄</span><span style="font-family:'Eve Sans Neue Expanded',sans-serif;font-weight:700">edencom link</span></span>
+    <span style="font-size:12px;color:var(--text-tertiary)">[ characters | registrations | links | assets | <span style="color:var(--text-primary)">account</span> ]</span>
+    <span style="flex:1"></span>
+    <span class="av"><x-import component-from-global-scope="DesignSystem_80a92c.Avatar" name="Aria Valis" size="{{ 26 }}" hint-size="26px,26px"></x-import></span>
+  </div>
+  <div style="padding:22px 24px 26px">
+    <div style="display:flex;align-items:flex-end;gap:14px">
+      <div style="flex:1">
+        <div style="font-family:'Eve Sans Neue Expanded',sans-serif;font-size:21px;font-weight:700">account</div>
+        <div style="font-size:12px;color:var(--text-tertiary);margin-top:5px"><span style="color:var(--text-secondary)">aria.valis@gmail.com</span> · main: Aria Valis · pilot since <span class="m">2026-03-02</span></div>
+      </div>
+      <button class="bt bt-out bt-sm">log off</button>
+    </div>
+    <div style="display:flex;gap:18px;margin-top:12px;font-size:10.5px;color:var(--text-tertiary);white-space:nowrap">
+      <span><span class="tag t-cred">[ credential ]</span> how you get back in</span>
+      <span><span class="tag t-decl">[ declared ]</span> changes only when you edit it</span>
+      <span><span class="tag t-live">[ live ]</span> moves on its own</span>
+    </div>
+
+    <div class="glbl"><span>identity</span><span class="gnote">who this account is</span><span class="grule"></span></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+      <div class="pnl">
+        <div class="phd"><span>sign-in methods</span><span style="flex:1"></span><span class="tag t-cred">[ credential ]</span></div>
+        <div class="prow"><span class="plbl">email</span><span>aria.valis@gmail.com</span><a class="pact" href="#11a">change</a></div>
+        <div class="prow"><span class="plbl">password</span><span class="m" style="color:var(--text-tertiary);font-size:11px">last changed 2026-06-11</span><a class="pact" href="#11a">change</a></div>
+        <div class="prow"><span class="plbl">gice</span><span>linked as <b>Aria Valis</b></span><span></span></div>
+        <div class="prow" style="border-bottom:none"><span class="plbl">discord</span><span style="color:var(--text-tertiary)">not linked</span><a class="pact" href="#11a">link</a></div>
+        <div class="pnote" style="border-top:1px solid var(--border-subtle)">at least one of these must stay set — it's how you get back into everything below.</div>
+      </div>
+      <div class="pnl">
+        <div class="phd"><span>main character</span><span style="flex:1"></span><span class="tag t-decl">[ declared ]</span></div>
+        <div style="display:flex;align-items:center;gap:11px;padding:13px 14px">
+          <span class="av"><x-import component-from-global-scope="DesignSystem_80a92c.Avatar" name="Aria Valis" size="{{ 34 }}" hint-size="34px,34px"></x-import></span>
+          <span style="flex:1;min-width:0"><span style="display:block;font-size:13px">Aria Valis</span><span class="m" style="display:block;font-size:10.5px;color:var(--text-tertiary)">[DSWB] · main</span></span>
+          <span class="fld m">Aria Valis <span style="color:var(--link);font-weight:700">▾</span></span>
+        </div>
+        <div class="pnote">represents the account on shared links and the footer sign-off. every view still covers all 4 characters.</div>
+      </div>
+    </div>
+
+    <div class="glbl"><span>declared inputs</span><span class="gnote">changes only when you edit</span><span class="grule"></span></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+      <div class="pnl">
+        <div class="phd"><span>esi grant template</span><span style="flex:1"></span><span class="tag t-decl">[ declared ]</span></div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;padding:13px 14px">
+          <span class="chip"><span class="cb cb-on">✓</span>assets</span>
+          <span class="chip"><span class="cb cb-on">✓</span>wallet</span>
+          <span class="chip"><span class="cb cb-on">✓</span>location</span>
+          <span class="chip"><span class="cb cb-on">✓</span>industry</span>
+          <span class="chip" style="color:var(--text-tertiary)"><span class="cb cb-off"></span>market</span>
+        </div>
+        <div class="prow" style="grid-template-columns:1fr auto;border-bottom:none;border-top:1px solid var(--border-subtle)">
+          <span style="color:var(--text-tertiary);font-size:11px"><span class="m">4 of 5</span> optional scopes · applies to the next character you register</span>
+          <a class="pact" href="#11a">edit on registrations</a>
+        </div>
+        <div class="pnote">already-registered characters keep the grants they were added with — re-auth a character to upgrade it.</div>
+      </div>
+      <div class="pnl">
+        <div class="phd"><span>industry tax rates</span><span style="flex:1"></span><span class="tag t-decl">[ declared ]</span></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;padding:13px 14px;gap:14px">
+          <span><span style="display:block;font-size:10.5px;color:var(--text-tertiary)">your structures</span><span class="m" style="display:block;font-size:20px;margin-top:3px">0.100%</span><span style="display:block;font-size:10px;color:var(--text-tertiary);margin-top:2px">members rate you set in-client</span></span>
+          <span style="border-left:1px solid var(--border-subtle);padding-left:14px"><span style="display:block;font-size:10.5px;color:var(--text-tertiary)">public structures</span><span class="m" style="display:block;font-size:20px;margin-top:3px">1.000%</span><span style="display:block;font-size:10px;color:var(--text-tertiary);margin-top:2px">what someone else's slots charge</span></span>
+        </div>
+        <div class="prow" style="grid-template-columns:1fr auto;border-bottom:none;border-top:1px solid var(--border-subtle)">
+          <span style="color:var(--text-tertiary);font-size:11px">declared, not extracted — no ESI endpoint carries structure tax. structures reports the <span class="m">0.900%</span> gap as cost avoidance.</span>
+          <a class="pact" href="#11a">edit rates</a>
+        </div>
+      </div>
+    </div>
+
+    <div class="glbl"><span>live connections</span><span class="gnote">moves on its own — the dot is current health</span><span class="grule"></span></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+      <div class="pnl">
+        <div class="phd"><span>discord alerts</span><x-import component-from-global-scope="DesignSystem_80a92c.StatusDot" tone="warn" label="" size="{{ 7 }}" hint-size="7px,16px"></x-import><span style="flex:1"></span><span class="tag t-live">[ live ]</span></div>
+        <div class="prow" style="grid-template-columns:1fr auto auto">
+          <span><span style="display:block">Deepwater Syndicate / <b>#industry-alerts</b></span><span class="m" style="display:block;font-size:10px;color:var(--text-tertiary);margin-top:2px">linked 2026-05-02 · last alert 3h ago</span></span>
+          <x-import component-from-global-scope="DesignSystem_80a92c.StatusDot" tone="good" label="healthy" size="{{ 6 }}" hint-size="60px,16px"></x-import>
+          <span class="pact"><a href="#11a">test</a> · <a href="#11a">remove</a></span>
+        </div>
+        <div class="prow" style="grid-template-columns:1fr auto auto">
+          <span><span style="display:block">Deepwater Syndicate / <b>#ops</b></span><span style="display:block;font-size:10px;color:var(--status-bad);margin-top:2px">bot lost access — remove and re-link</span></span>
+          <x-import component-from-global-scope="DesignSystem_80a92c.StatusDot" tone="bad" label="down" size="{{ 6 }}" hint-size="48px,16px"></x-import>
+          <span class="pact"><a href="#11a">remove</a></span>
+        </div>
+        <div class="prow" style="grid-template-columns:130px 1fr auto;border-bottom:none">
+          <span class="plbl">link a channel</span>
+          <span class="m" style="font-size:11px">9f3a1c22e07b4d10 <span style="color:var(--text-tertiary)">· expires 8:42</span></span>
+          <button class="bt bt-out bt-sm">generate new code</button>
+        </div>
+        <div class="pnote">add the bot to your server, then run <span class="m">/edencom link &lt;code&gt;</span> in the channel that should get alerts.</div>
+      </div>
+      <div class="pnl">
+        <div class="phd"><span>api access — google sheets</span><x-import component-from-global-scope="DesignSystem_80a92c.StatusDot" tone="good" label="" size="{{ 7 }}" hint-size="7px,16px"></x-import><span style="flex:1"></span><span class="tag t-live">[ live ]</span></div>
+        <div class="prow">
+          <span class="plbl">token</span>
+          <span class="m" style="font-size:11px">4c1f••••••••88ab <span style="color:var(--text-tertiary)">· minted 2026-08-15 · read 41× this week</span></span>
+          <button class="bt bt-out bt-sm">regenerate</button>
+        </div>
+        <div class="prow" style="grid-template-columns:130px 1fr">
+          <span class="plbl">feeds</span>
+          <span style="display:flex;flex-wrap:wrap;gap:5px"><span class="ep m">character/assets</span><span class="ep m">character/blueprints</span><span class="ep m">character/jobs</span><span class="ep m">character/orders</span><span class="ep m">corp/assets</span><span class="ep m">corp/blueprints</span><span class="ep m">corp/jobs</span></span>
+        </div>
+        <div class="pnote" style="border-top:1px solid var(--border-subtle)"><span class="tag t-depr">[ deprecated ]</span> new sheets should use a <a href="#11a">link</a> — one query per signed URL instead of one token that unlocks everything. token URLs stay for <span class="m">at=</span> history. regenerating invalidates any sheet still on the old token.</div>
+      </div>
+    </div>
+
+    <div class="glbl"><span>administration</span><span class="grule"></span></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+      <div class="pnl">
+        <div class="phd"><span>invite codes</span><span style="flex:1"></span><span class="tag t-live">[ live ]</span></div>
+        <div class="prow" style="grid-template-columns:1fr auto;border-bottom:none">
+          <span><span class="m" style="font-size:16px">3</span> <span style="color:var(--text-secondary)">unclaimed codes</span> <span class="m" style="font-size:10.5px;color:var(--text-tertiary)">· next earned 2026-09-04</span></span>
+          <a class="pact" href="#11a">manage codes</a>
+        </div>
+      </div>
+      <div class="pnl">
+        <div class="phd"><span>chancellor</span><span style="flex:1"></span><span class="tag t-elev">[ elevated ]</span></div>
+        <div class="prow" style="grid-template-columns:1fr auto;border-bottom:none">
+          <span style="color:var(--text-secondary);font-size:11.5px">manage chancellors, set feature flags on other accounts, mint invite codes anytime.</span>
+          <a class="pact" href="#11a">chancellor tools</a>
+        </div>
+      </div>
+    </div>
+
+    <div style="margin-top:26px;font-size:10.5px;color:var(--text-tertiary)">Made with love by Aria Valis — 2026-08-27</div>
+  </div>
+</div>
+
+</div>
+</div>
+
+</div>
+<div class="dv-next">Next: mobile (panels stack, groups become collapsible), the first-run state (live panels ghosted until a character exists), or fold this into Site Shell. The Discord header dot is warn because one channel is down — it rolls up the worst row.</div>
+</section>
+
+</x-dc>
+</body>
+</html>
