@@ -120,6 +120,16 @@ export const runIndustrySystems = async () => {
     throw insertErr
   }
   console.log(`[${TAG}] recorded ${rows.length} industry index row(s)`)
+
+  // Roll the fresh readings into industry_system_index_bucket, the pre-averaged
+  // history the /structure and /indexes sparklines read. Refreshing here is what
+  // keeps that view within an hour of the source table. Best-effort: the rows
+  // above are already committed, and failing the run over a stale sparkline
+  // would cost us the next hour's readings too — the following run refreshes
+  // again and catches up.
+  const { error: refreshErr } = await sudoSupabase.rpc('refresh_industry_index_buckets')
+  if (refreshErr) console.error(`[${TAG}] bucket refresh FAILED (sparklines will lag): ${refreshErr.message}`)
+  else console.log(`[${TAG}] refreshed industry index buckets`)
 }
 
 cli(import.meta.url, TAG, runIndustrySystems)

@@ -47,7 +47,7 @@ import { StructureSilhouette } from './silhouette'
 import { TypeIcon } from '../typeIcon'
 import { Sparkline } from './sparkline'
 import { WindowSelect } from './windowSelect'
-import { structureWindowDays } from './windows'
+import { indexBucketHours, structureWindowDays } from './windows'
 import styles from './structures.module.css'
 
 const PAGE_SIZE = 1000
@@ -454,15 +454,13 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
     ids((s) => s.system_id)
   )
   // The same window that drives the revenue footer also scopes the index
-  // sparklines. Widen the bucket for longer windows so the point count stays
-  // sane on a 100px sparkline (~180 points max: 24h/day ÷ bucketHours).
+  // sparklines. indexBucketHours widens the bucket for longer windows so the
+  // point count stays sane on a 100px sparkline, and names one of the widths
+  // the bucketed view materializes.
   const indexHistoryBySystem = await fetchSystemIndexHistory(
     supabase,
     ids((s) => s.system_id),
-    {
-      days: windowDays,
-      bucketHours: Math.max(1, Math.ceil((windowDays * 24) / 180)),
-    }
+    { days: windowDays, bucketHours: indexBucketHours(windowDays) }
   )
 
   // Both signs, sorted out by foldTaxLedger below rather than here. industry_job_tax cuts both ways
@@ -875,24 +873,35 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
                     const indexActivities = structureIndexActivities(s.services)
                     const systemIndexes = indexesBySystem.get(Number(s.system_id))
                     const systemHistory = indexHistoryBySystem.get(Number(s.system_id))
+                    // The render backs the title rather than sitting above it, so the
+                    // head carries the over-image treatment only when there is an image
+                    // to sit on — the silhouette fallback keeps the plain tile colours.
+                    const head = (
+                      <div className={s.type_id != null ? `${styles.head} ${styles.heroHead}` : styles.head}>
+                        <div>
+                          <Link href={`/structure/${s.structure_id}`} className={styles.name}>
+                            {s.name ?? `Structure #${s.structure_id}`}
+                            <LinkSpinner />
+                          </Link>
+                          {/* Upwell structures share their structure_id with the station/facility id industry jobs run at. */}
+                          <span className={styles.subId}>#{s.structure_id}</span>
+                        </div>
+                        <FavoriteStar structureId={String(s.structure_id)} favorite={isFavorite(s)} />
+                      </div>
+                    )
                     return (
                       <li key={`structure-${s.structure_id}`} className={styles.tile}>
                         {s.type_id != null ? (
-                          <TypeIcon id={s.type_id} size={256} prefer="render" className={styles.tileArt} />
-                        ) : (
-                          <StructureSilhouette typeId={0} className={styles.silhouette} />
-                        )}
-                        <div className={styles.head}>
-                          <div>
-                            <Link href={`/structure/${s.structure_id}`} className={styles.name}>
-                              {s.name ?? `Structure #${s.structure_id}`}
-                              <LinkSpinner />
-                            </Link>
-                            {/* Upwell structures share their structure_id with the station/facility id industry jobs run at. */}
-                            <span className={styles.subId}>#{s.structure_id}</span>
+                          <div className={styles.hero}>
+                            <TypeIcon id={s.type_id} size={256} prefer="render" className={styles.heroArt} />
+                            {head}
                           </div>
-                          <FavoriteStar structureId={String(s.structure_id)} favorite={isFavorite(s)} />
-                        </div>
+                        ) : (
+                          <>
+                            <StructureSilhouette typeId={0} className={styles.silhouette} />
+                            {head}
+                          </>
+                        )}
 
                         <div className={styles.fields}>
                           {totalByStructure.get(String(s.structure_id)) && (
@@ -975,7 +984,7 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
                                 <DateTime value={s.fuel_expires} />
                                 {(() => {
                                   const relative = formatRelativeFuture(s.fuel_expires, now)
-                                  return relative ? <span className={styles.subValue}> {relative}</span> : null
+                                  return relative ? <span className={styles.subLine}>{relative}</span> : null
                                 })()}
                               </span>
                             </>
@@ -990,7 +999,7 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
                                 {services.map((svc, i) => (
                                   <li key={`svc-${s.structure_id}-${i}`} className={styles.chip}>
                                     {serviceIcons.has(svc) && (
-                                      <TypeIcon id={serviceIcons.get(svc)!} size={16} className={styles.chipIcon} />
+                                      <TypeIcon id={serviceIcons.get(svc)!} size={64} className={styles.chipIcon} />
                                     )}
                                     {svc}
                                   </li>
@@ -1006,7 +1015,7 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
                             <ul className={styles.chips}>
                               {rigs.map((rig, i) => (
                                 <li key={`rig-${s.structure_id}-${i}`} className={styles.chip}>
-                                  <TypeIcon id={rig.typeID} size={16} className={styles.chipIcon} />
+                                  <TypeIcon id={rig.typeID} size={64} className={styles.chipIcon} />
                                   {rig.name}
                                 </li>
                               ))}
