@@ -183,12 +183,12 @@ export const GET = async (request: NextRequest) => {
   })
 
   // Pull this character's ESI data right away so it's populated by the time the
-  // user looks, and drop them on the refresh page to watch it land (it shows
-  // the just-dispatched tasks without needing the batch id).
+  // user looks, and drop them on the registrations matrix to watch it land (it
+  // shows the just-dispatched tasks without needing the batch id).
   await dispatchRefresh(user_id, [{ id: registration_id, name }])
 
   const redirectTo = request.nextUrl.clone()
-  redirectTo.pathname = '/jobs'
+  redirectTo.pathname = '/account/registrations'
   redirectTo.search = ''
   return NextResponse.redirect(redirectTo)
 }

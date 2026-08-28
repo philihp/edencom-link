@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics>
+<meta name="design_doc_mode" content="canvas">
+<link rel="stylesheet" href="_ds/edencom-link-design-80a92c6f-29aa-4e04-8f29-c0c9bc110814/fonts/fonts.css">
+<link rel="stylesheet" href="_ds/edencom-link-design-80a92c6f-29aa-4e04-8f29-c0c9bc110814/tokens/colors.css">
+<link rel="stylesheet" href="_ds/edencom-link-design-80a92c6f-29aa-4e04-8f29-c0c9bc110814/tokens/interactions.css">
+<link rel="stylesheet" href="_ds/edencom-link-design-80a92c6f-29aa-4e04-8f29-c0c9bc110814/styles.css">
+<script src="_ds/edencom-link-design-80a92c6f-29aa-4e04-8f29-c0c9bc110814/_ds_bundle.js"></script>
+<style>
+html,body{background:#101113}
+body{margin:0;font-family:'Eve Sans Neue',ui-sans-serif,sans-serif}
+a{color:var(--link)}a:hover{color:var(--link-hover)}
+.lt{
+  --bg-canvas:#f4f4f5;--bg-surface:#ffffff;--bg-elevated:#ececee;--bg-overlay:#e2e2e5;
+  --border-subtle:#d9d9dd;--border-strong:#c2c2c9;
+  --text-primary:#17181a;--text-secondary:#54585f;--text-tertiary:#6b6e75;
+  --accent-primary:#7a7aef;--accent-primary-hover:#6a6ae8;
+  --link:#5b4fc4;--link-hover:#463aa8;
+  --status-good:#177a44;--status-warn:#8a6114;--status-bad:#b32c33;--status-info:#2b49b0;
+}
+.av{display:flex;flex:none}
+.lt .av{--text-primary:#f4f4f5}
+.dv-turn{padding:40px 44px 32px;border-bottom:1px solid #26272c}
+.dv-thd{display:flex;align-items:baseline;gap:10px;margin:0 0 20px}
+.dv-tid{font:600 10px ui-monospace,Menlo,monospace;padding:3px 7px;background:#f4f4f5;color:#17181a;border-radius:4px;text-decoration:none}
+.dv-tname{font:600 13px/1.2 'Eve Sans Neue',sans-serif;color:#f4f4f5}
+.dv-opts{display:flex;flex-direction:column;gap:34px;align-items:flex-start}
+.dv-opt{display:flex;flex-direction:column;gap:9px;scroll-margin-top:16px}
+.dv-oid{font:600 10.5px ui-monospace,Menlo,monospace;padding:3px 7px;background:#26272c;color:#f4f4f5;border-radius:5px;text-decoration:none}
+.dv-olabel{display:flex;align-items:baseline;gap:8px;font:400 11px/1.35 'Eve Sans Neue',sans-serif;color:#9a9da5;max-width:900px}
+.dv-opt:target .dv-oid{background:#8f8ff5;color:#17181a}
+.dv-pair{display:flex;gap:18px;padding:16px;border:1px solid #26272c;border-radius:10px}
+.dv-app{width:1280px;height:820px;background:var(--bg-canvas);border:1px solid var(--border-subtle);border-radius:8px;overflow:hidden;display:flex;color:var(--text-primary)}
+.dv-next{margin:26px 0 0;font:12px/1.5 'Eve Sans Neue',sans-serif;color:#6c6f76}
+.m{font-family:ui-monospace,Menlo,monospace}
+</style>
+</helmet>
+
+<section class="dv-turn" id="t1">
+<div class="dv-thd"><a class="dv-tid" href="#t1">1</a><span class="dv-tname">Site shell — sidebar nav, hamburger on mobile, new footer · dark and light</span></div>
+<div style="max-width:1000px;margin:0 0 26px;font-size:12px;line-height:1.7;color:var(--text-secondary);background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:8px;padding:15px 18px">
+<b style="color:var(--text-primary)">What replaces the header.</b> The bracket nav was a flat row of five sections; it can't hold a growing app. Desktop moves to a persistent left rail: <span style="color:var(--text-primary)">scope switcher</span> at top (which corp/alt set you're looking at — the Supabase project picker equivalent), <span style="color:var(--text-primary)">grouped sections</span> in the middle, <span style="color:var(--text-primary)">account</span> pinned at the bottom. The rail collapses to icons at <span class="m">64px</span>. The bracket motif survives as the section-group label style, so it still reads as this product.<br>
+<b style="color:var(--text-primary)">The ERP rethink.</b> A classic ERP puts a hundred modules in a mega-menu and makes you know where things live. Here the rail carries only the eight nouns you actually navigate, and the <span style="color:var(--text-primary)">ask bar</span> (⌘K, pinned above the account block) covers the long tail — questions, jumps, and actions that would otherwise be buried menu leaves. <span style="color:var(--text-primary)">Agent runs</span> get a first-class rail item with a live count, because work now happens while you're away and needs somewhere to land.<br>
+<b style="color:var(--text-primary)">Footer.</b> No link farm. Desktop gets a one-line status bar welded to the bottom of the content pane — sync state, ESI health, build, sign-off. Mobile keeps the same line, stacked, under the content.
+</div>
+<div class="dv-opts">
+
+<div class="dv-opt" id="1a">
+<div class="dv-olabel"><a class="dv-oid" href="#1a">1a</a>Desktop — rail expanded, assets section active. Status bar replaces the footer.</div>
+<div class="dv-pair">
+<div class="dv-app">
+  <div style="width:248px;flex:none;border-right:1px solid var(--border-subtle);display:flex;flex-direction:column;background:var(--bg-surface)">
+    <div style="flex:none;padding:14px 14px 12px;border-bottom:1px solid var(--border-subtle)">
+      <div style="display:flex;align-items:baseline;gap:8px;font-size:14px"><span style="color:var(--accent-primary)">❄</span><span style="font-family:'Eve Sans Neue Expanded',sans-serif;font-weight:700">edencom link</span></div>
+      <div style="margin-top:11px;display:flex;align-items:center;gap:9px;border:1px solid var(--border-subtle);border-radius:6px;padding:8px 10px">
+        <span class="av"><x-import component-from-global-scope="DesignSystem_80a92c.Avatar" name="Dead Space Wolves" size="{{ 22 }}" hint-size="22px,22px"></x-import></span>
+        <span style="flex:1;min-width:0"><span style="display:block;font-size:12.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Dead Space Wolves</span><span style="display:block;font-size:10.5px;color:var(--text-tertiary)" class="m">[DSWB] · 9 alts</span></span>
+        <span style="color:var(--text-tertiary);font-size:11px">⌄</span>
+      </div>
+    </div>
+    <div style="flex:1;overflow:auto;padding:12px 0">
+      <div style="padding:4px 16px 8px;font-size:10.5px;letter-spacing:.09em;color:var(--text-tertiary)">[ operate ]</div>
+      <div style="display:flex;align-items:center;gap:11px;padding:8px 16px;font-size:13px;color:var(--text-secondary)"><span style="width:16px;text-align:center;color:var(--text-tertiary)">◇</span>characters</div>
+      <div style="display:flex;align-items:center;gap:11px;padding:8px 16px;font-size:13px;color:var(--text-primary);font-weight:700;background:var(--bg-elevated);border-left:2px solid var(--accent-primary);padding-left:14px"><span style="width:16px;text-align:center;color:var(--accent-primary)">▤</span>assets</div>
+      <div style="display:flex;align-items:center;gap:11px;padding:6px 16px 6px 41px;font-size:12.5px;color:var(--text-primary)">browser</div>
+      <div style="display:flex;align-items:center;gap:11px;padding:6px 16px 6px 41px;font-size:12.5px;color:var(--text-secondary)">lenses</div>
+      <div style="display:flex;align-items:center;gap:11px;padding:6px 16px 6px 41px;font-size:12.5px;color:var(--text-secondary)">valuation</div>
+      <div style="display:flex;align-items:center;gap:11px;padding:8px 16px;font-size:13px;color:var(--text-secondary)"><span style="width:16px;text-align:center;color:var(--text-tertiary)">↕</span>market</div>
+      <div style="display:flex;align-items:center;gap:11px;padding:8px 16px;font-size:13px;color:var(--text-secondary)"><span style="width:16px;text-align:center;color:var(--text-tertiary)">⚙</span>industry</div>
+      <div style="display:flex;align-items:center;gap:11px;padding:8px 16px;font-size:13px;color:var(--text-secondary)"><span style="width:16px;text-align:center;color:var(--text-tertiary)">✻</span>supply chain</div>
+      <div style="padding:16px 16px 8px;font-size:10.5px;letter-spacing:.09em;color:var(--text-tertiary)">[ automate ]</div>
+      <div style="display:flex;align-items:center;gap:11px;padding:8px 16px;font-size:13px;color:var(--text-secondary)"><span style="width:16px;text-align:center;color:var(--text-tertiary)">◈</span><span style="flex:1">agent runs</span><x-import component-from-global-scope="DesignSystem_80a92c.Badge" tone="good" hint-size="34px,16px">2 live</x-import></div>
+      <div style="display:flex;align-items:center;gap:11px;padding:8px 16px;font-size:13px;color:var(--text-secondary)"><span style="width:16px;text-align:center;color:var(--text-tertiary)">⌁</span><span style="flex:1">rules</span><span class="m" style="font-size:11px;color:var(--text-tertiary)">14</span></div>
+      <div style="display:flex;align-items:center;gap:11px;padding:8px 16px;font-size:13px;color:var(--text-secondary)"><span style="width:16px;text-align:center;color:var(--text-tertiary)">▣</span>reports</div>
+    </div>
+    <div style="flex:none;border-top:1px solid var(--border-subtle);padding:11px 12px 12px">
+      <div style="display:flex;align-items:center;gap:9px;border:1px solid var(--border-subtle);border-radius:6px;padding:8px 10px;font-size:12.5px;color:var(--text-tertiary)"><span>⌕</span><span style="flex:1">ask or jump to…</span><span class="m" style="font-size:11px">⌘K</span></div>
+      <div style="margin-top:10px;display:flex;align-items:center;gap:9px;padding:6px 4px">
+        <span class="av"><x-import component-from-global-scope="DesignSystem_80a92c.Avatar" name="Aria Valis" size="{{ 26 }}" hint-size="26px,26px"></x-import></span>
+        <span style="flex:1;min-width:0"><span style="display:block;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Aria Valis</span><span style="display:block;font-size:10.5px;color:var(--text-tertiary)">account &amp; settings</span></span>
+        <span style="color:var(--text-tertiary);font-size:11px">⌃</span>
+      </div>
+    </div>
+  </div>
+  <div style="flex:1;display:flex;flex-direction:column;min-width:0">
+    <div style="flex:none;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:13px 22px;border-bottom:1px solid var(--border-subtle)">
+      <div style="font-size:12px;color:var(--text-tertiary)">assets <span style="color:var(--text-tertiary)">/</span> <span style="color:var(--text-primary)">browser</span></div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <x-import component-from-global-scope="DesignSystem_80a92c.RangePicker" value="14 days" hint-size="112px,34px"></x-import>
+        <x-import component-from-global-scope="DesignSystem_80a92c.Button" variant="ghost" size="sm" hint-size="96px,32px">no lens ⌄</x-import>
+      </div>
+    </div>
+    <div style="flex:1;min-height:0;padding:22px;display:flex;flex-direction:column;gap:14px">
+      <div style="display:flex;align-items:flex-end;justify-content:space-between">
+        <div>
+          <div style="font-family:'Eve Sans Neue Expanded',sans-serif;font-size:20px;font-weight:700">assets</div>
+          <div style="font-size:12px;color:var(--text-secondary);margin-top:3px"><span class="m">128,441</span> items across 62 systems · est. <span class="m">214.8B</span></div>
+        </div>
+        <x-import component-from-global-scope="DesignSystem_80a92c.Button" variant="primary" size="sm" hint-size="118px,32px">new lens</x-import>
+      </div>
+      <div style="flex:1;min-height:0;border:1px dashed var(--border-subtle);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--text-tertiary)">page content — the asset browser mounts here</div>
+    </div>
+    <div style="flex:none;display:flex;align-items:center;gap:18px;padding:9px 22px;border-top:1px solid var(--border-subtle);font-size:11.5px;color:var(--text-tertiary)">
+      <x-import component-from-global-scope="DesignSystem_80a92c.StatusDot" tone="good" label="ESI healthy" size="{{ 7 }}" hint-size="94px,16px"></x-import>
+      <span>synced <span class="m">4m</span> ago</span>
+      <span>9 of 9 characters authorized</span>
+      <span style="flex:1"></span>
+      <span class="m">build 2026.08.07</span>
+      <span>Made with love by Aria V</span>
+    </div>
+  </div>
+</div>
+<div class="lt">
+<div class="dv-app">
+  <div style="width:248px;flex:none;border-right:1px solid var(--border-subtle);display:flex;flex-direction:column;background:var(--bg-surface)">
+    <div style="flex:none;padding:14px 14px 12px;border-bottom:1px solid var(--border-subtle)">
+      <div style="display:flex;align-items:baseline;gap:8px;font-size:14px"><span style="color:var(--accent-primary)">❄</span><span style="font-family:'Eve Sans Neue Expanded',sans-serif;font-weight:700">edencom link</span></div>
+      <div style="margin-top:11px;display:flex;align-items:center;gap:9px;border:1px solid var(--border-subtle);border-radius:6px;padding:8px 10px">
+        <span class="av"><x-import component-from-global-scope="DesignSystem_80a92c.Avatar" name="Dead Space Wolves" size="{{ 22 }}" hint-size="22px,22px"></x-import></span>
+        <span style="flex:1;min-width:0"><span style="display:block;font-size:12.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Dead Space Wolves</span><span style="display:block;font-size:10.5px;color:var(--text-tertiary)" class="m">[DSWB] · 9 alts</span></span>
+        <span style="color:var(--text-tertiary);font-size:11px">⌄</span>
+      </div>
+    </div>
+    <div style="flex:1;overflow:auto;padding:12px 0">
+      <div style="padding:4px 16px 8px;font-size:10.5px;letter-spacing:.09em;color:var(--text-tertiary)">[ operate ]</div>
+      <div style="display:flex;align-items:center;gap:11px;padding:8px 16px;font-size:13px;color:var(--text-secondary)"><span style="width:16px;text-align:center;color:var(--text-tertiary)">◇</span>characters</div>
+      <div style="display:flex;align-items:center;gap:11px;padding:8px 16px;font-size:13px;color:var(--text-primary);font-weight:700;background:var(--bg-elevated);border-left:2px solid var(--accent-primary);padding-left:14px"><span style="width:16px;text-align:center;color:var(--accent-primary)">▤</span>assets</div>
+      <div style="display:flex;align-items:center;gap:11px;padding:6px 16px 6px 41px;font-size:12.5px;color:var(--text-primary)">browser</div>
+      <div style="display:flex;align-items:center;gap:11px;padding:6px 16px 6px 41px;font-size:12.5px;color:var(--text-secondary)">lenses</div>
+      <div style="display:flex;align-items:center;gap:11px;padding:6px 16px 6px 41px;font-size:12.5px;color:var(--text-secondary)">valuation</div>
+      <div style="display:flex;align-items:center;gap:11px;padding:8px 16px;font-size:13px;color:var(--text-secondary)"><span style="width:16px;text-align:center;color:var(--text-tertiary)">↕</span>market</div>
+      <div style="display:flex;align-items:center;gap:11px;padding:8px 16px;font-size:13px;color:var(--text-secondary)"><span style="width:16px;text-align:center;color:var(--text-tertiary)">⚙</span>industry</div>
+      <div style="display:flex;align-items:center;gap:11px;padding:8px 16px;font-size:13px;color:var(--text-secondary)"><span style="width:16px;text-align:center;color:var(--text-tertiary)">✻</span>supply chain</div>
+      <div style="padding:16px 16px 8px;font-size:10.5px;letter-spacing:.09em;color:var(--text-tertiary)">[ automate ]</div>
+      <div style="display:flex;align-items:center;gap:11px;padding:8px 16px;font-size:13px;color:var(--text-secondary)"><span style="width:16px;text-align:center;color:var(--text-tertiary)">◈</span><span style="flex:1">agent runs</span><x-import component-from-global-scope="DesignSystem_80a92c.Badge" tone="good" hint-size="34px,16px">2 live</x-import></div>
+      <div style="display:flex;align-items:center;gap:11px;padding:8px 16px;font-size:13px;color:var(--text-secondary)"><span style="width:16px;text-align:center;color:var(--text-tertiary)">⌁</span><span style="flex:1">rules</span><span class="m" style="font-size:11px;color:var(--text-tertiary)">14</span></div>
+      <div style="display:flex;align-items:center;gap:11px;padding:8px 16px;font-size:13px;color:var(--text-secondary)"><span style="width:16px;text-align:center;color:var(--text-tertiary)">▣</span>reports</div>
+    </div>
+    <div style="flex:none;border-top:1px solid var(--border-subtle);padding:11px 12px 12px">
+      <div style="display:flex;align-items:center;gap:9px;border:1px solid var(--border-subtle);border-radius:6px;padding:8px 10px;font-size:12.5px;color:var(--text-tertiary)"><span>⌕</span><span style="flex:1">ask or jump to…</span><span class="m" style="font-size:11px">⌘K</span></div>
+      <div style="margin-top:10px;display:flex;align-items:center;gap:9px;padding:6px 4px">
+        <span class="av"><x-import component-from-global-scope="DesignSystem_80a92c.Avatar" name="Aria Valis" size="{{ 26 }}" hint-size="26px,26px"></x-import></span>
+        <span style="flex:1;min-width:0"><span style="display:block;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Aria Valis</span><span style="display:block;font-size:10.5px;color:var(--text-tertiary)">account &amp; settings</span></span>
+        <span style="color:var(--text-tertiary);font-size:11px">⌃</span>
+      </div>
+    </div>
+  </div>
+  <div style="flex:1;display:flex;flex-direction:column;min-width:0">
+    <div style="flex:none;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:13px 22px;border-bottom:1px solid var(--border-subtle)">
+      <div style="font-size:12px;color:var(--text-tertiary)">assets <span style="color:var(--text-tertiary)">/</span> <span style="color:var(--text-primary)">browser</span></div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <x-import component-from-global-scope="DesignSystem_80a92c.RangePicker" value="14 days" hint-size="112px,34px"></x-import>
+        <x-import component-from-global-scope="DesignSystem_80a92c.Button" variant="ghost" size="sm" hint-size="96px,32px">no lens ⌄</x-import>
+      </div>
+    </div>
+    <div style="flex:1;min-height:0;padding:22px;display:flex;flex-direction:column;gap:14px">
+      <div style="display:flex;align-items:flex-end;justify-content:space-between">
+        <div>
+          <div style="font-family:'Eve Sans Neue Expanded',sans-serif;font-size:20px;font-weight:700">assets</div>
+          <div style="font-size:12px;color:var(--text-secondary);margin-top:3px"><span class="m">128,441</span> items across 62 systems · est. <span class="m">214.8B</span></div>
+        </div>
+        <x-import component-from-global-scope="DesignSystem_80a92c.Button" variant="primary" size="sm" hint-size="118px,32px">new lens</x-import>
+      </div>
+      <div style="flex:1;min-height:0;border:1px dashed var(--border-subtle);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--text-tertiary)">page content — the asset browser mounts here</div>
+    </div>
+    <div style="flex:none;display:flex;align-items:center;gap:18px;padding:9px 22px;border-top:1px solid var(--border-subtle);font-size:11.5px;color:var(--text-tertiary)">
+      <x-import component-from-global-scope="DesignSystem_80a92c.StatusDot" tone="good" label="ESI healthy" size="{{ 7 }}" hint-size="94px,16px"></x-import>
+      <span>synced <span class="m">4m</span> ago</span>
+      <span>9 of 9 characters authorized</span>
+      <span style="flex:1"></span>
+      <span class="m">build 2026.08.07</span>
+      <span>Made with love by Aria V</span>
+    </div>
+  </div>
+</div>
+</div>
+</div>
+</div>
+
+<div class="dv-opt" id="1b">
+<div class="dv-olabel"><a class="dv-oid" href="#1b">1b</a>Desktop, rail collapsed to <span class="m">64px</span> — the state a power user keeps. Active section keeps its accent bar; the ask bar becomes the ⌘K glyph.</div>
+<div class="dv-pair">
+<div class="dv-app" style="height:560px">
+  <div style="width:64px;flex:none;border-right:1px solid var(--border-subtle);display:flex;flex-direction:column;align-items:center;background:var(--bg-surface)">
+    <div style="flex:none;padding:15px 0 13px;border-bottom:1px solid var(--border-subtle);width:100%;display:flex;flex-direction:column;align-items:center;gap:12px">
+      <span style="color:var(--accent-primary);font-size:16px">❄</span>
+      <span class="av"><x-import component-from-global-scope="DesignSystem_80a92c.Avatar" name="Dead Space Wolves" size="{{ 26 }}" hint-size="26px,26px"></x-import></span>
+    </div>
+    <div style="flex:1;width:100%;padding:12px 0;display:flex;flex-direction:column;align-items:center;gap:4px;font-size:15px;color:var(--text-tertiary)">
+      <span style="width:100%;text-align:center;padding:9px 0">◇</span>
+      <span style="width:100%;text-align:center;padding:9px 0;background:var(--bg-elevated);border-left:2px solid var(--accent-primary);color:var(--accent-primary)">▤</span>
+      <span style="width:100%;text-align:center;padding:9px 0">↕</span>
+      <span style="width:100%;text-align:center;padding:9px 0">⚙</span>
+      <span style="width:100%;text-align:center;padding:9px 0">✻</span>
+      <span style="width:32px;height:1px;background:var(--border-subtle);margin:8px 0"></span>
+      <span style="position:relative;width:100%;text-align:center;padding:9px 0">◈<span style="position:absolute;top:6px;left:50%;margin-left:5px;width:6px;height:6px;border-radius:50%;background:var(--status-good)"></span></span>
+      <span style="width:100%;text-align:center;padding:9px 0">⌁</span>
+      <span style="width:100%;text-align:center;padding:9px 0">▣</span>
+    </div>
+    <div style="flex:none;width:100%;border-top:1px solid var(--border-subtle);padding:11px 0;display:flex;flex-direction:column;align-items:center;gap:11px">
+      <span style="font-size:14px;color:var(--text-tertiary)">⌕</span>
+      <span class="av"><x-import component-from-global-scope="DesignSystem_80a92c.Avatar" name="Aria Valis" size="{{ 26 }}" hint-size="26px,26px"></x-import></span>
+    </div>
+  </div>
+  <div style="flex:1;display:flex;flex-direction:column;min-width:0">
+    <div style="flex:none;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:13px 22px;border-bottom:1px solid var(--border-subtle)">
+      <div style="display:flex;align-items:center;gap:12px"><span style="font-size:14px;color:var(--text-tertiary)">»</span><span style="font-size:12px;color:var(--text-tertiary)">assets <span style="color:var(--text-tertiary)">/</span> <span style="color:var(--text-primary)">browser</span></span></div>
+      <x-import component-from-global-scope="DesignSystem_80a92c.RangePicker" value="14 days" hint-size="112px,34px"></x-import>
+    </div>
+    <div style="flex:1;min-height:0;padding:22px;display:flex;flex-direction:column;gap:14px">
+      <div style="font-family:'Eve Sans Neue Expanded',sans-serif;font-size:20px;font-weight:700">assets</div>
+      <div style="flex:1;min-height:0;border:1px dashed var(--border-subtle);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--text-tertiary)">content gains <span class="m" style="margin:0 5px">184px</span> of width</div>
+    </div>
+    <div style="flex:none;display:flex;align-items:center;gap:18px;padding:9px 22px;border-top:1px solid var(--border-subtle);font-size:11.5px;color:var(--text-tertiary)">
+      <x-import component-from-global-scope="DesignSystem_80a92c.StatusDot" tone="good" label="ESI healthy" size="{{ 7 }}" hint-size="94px,16px"></x-import>
+      <span>synced <span class="m">4m</span> ago</span>
+      <span style="flex:1"></span>
+      <span class="m">build 2026.08.07</span>
+      <span>Made with love by Aria V</span>
+    </div>
+  </div>
+</div>
+<div class="lt">
+<div class="dv-app" style="height:560px">
+  <div style="width:64px;flex:none;border-right:1px solid var(--border-subtle);display:flex;flex-direction:column;align-items:center;background:var(--bg-surface)">
+    <div style="flex:none;padding:15px 0 13px;border-bottom:1px solid var(--border-subtle);width:100%;display:flex;flex-direction:column;align-items:center;gap:12px">
+      <span style="color:var(--accent-primary);font-size:16px">❄</span>
+      <span class="av"><x-import component-from-global-scope="DesignSystem_80a92c.Avatar" name="Dead Space Wolves" size="{{ 26 }}" hint-size="26px,26px"></x-import></span>
+    </div>
+    <div style="flex:1;width:100%;padding:12px 0;display:flex;flex-direction:column;align-items:center;gap:4px;font-size:15px;color:var(--text-tertiary)">
+      <span style="width:100%;text-align:center;padding:9px 0">◇</span>
+      <span style="width:100%;text-align:center;padding:9px 0;background:var(--bg-elevated);border-left:2px solid var(--accent-primary);color:var(--accent-primary)">▤</span>
+      <span style="width:100%;text-align:center;padding:9px 0">↕</span>
+      <span style="width:100%;text-align:center;padding:9px 0">⚙</span>
+      <span style="width:100%;text-align:center;padding:9px 0">✻</span>
+      <span style="width:32px;height:1px;background:var(--border-subtle);margin:8px 0"></span>
+      <span style="position:relative;width:100%;text-align:center;padding:9px 0">◈<span style="position:absolute;top:6px;left:50%;margin-left:5px;width:6px;height:6px;border-radius:50%;background:var(--status-good)"></span></span>
+      <span style="width:100%;text-align:center;padding:9px 0">⌁</span>
+      <span style="width:100%;text-align:center;padding:9px 0">▣</span>
+    </div>
+    <div style="flex:none;width:100%;border-top:1px solid var(--border-subtle);padding:11px 0;display:flex;flex-direction:column;align-items:center;gap:11px">
+      <span style="font-size:14px;color:var(--text-tertiary)">⌕</span>
+      <span class="av"><x-import component-from-global-scope="DesignSystem_80a92c.Avatar" name="Aria Valis" size="{{ 26 }}" hint-size="26px,26px"></x-import></span>
+    </div>
+  </div>
+  <div style="flex:1;display:flex;flex-direction:column;min-width:0">
+    <div style="flex:none;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:13px 22px;border-bottom:1px solid var(--border-subtle)">
+      <div style="display:flex;align-items:center;gap:12px"><span style="font-size:14px;color:var(--text-tertiary)">»</span><span style="font-size:12px;color:var(--text-tertiary)">assets <span style="color:var(--text-tertiary)">/</span> <span style="color:var(--text-primary)">browser</span></span></div>
+      <x-import component-from-global-scope="DesignSystem_80a92c.RangePicker" value="14 days" hint-size="112px,34px"></x-import>
+    </div>
+    <div style="flex:1;min-height:0;padding:22px;display:flex;flex-direction:column;gap:14px">
+      <div style="font-family:'Eve Sans Neue Expanded',sans-serif;font-size:20px;font-weight:700">assets</div>
+      <div style="flex:1;min-height:0;border:1px dashed var(--border-subtle);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--text-tertiary)">content gains <span class="m" style="margin:0 5px">184px</span> of width</div>
+    </div>
+    <div style="flex:none;display:flex;align-items:center;gap:18px;padding:9px 22px;border-top:1px solid var(--border-subtle);font-size:11.5px;color:var(--text-tertiary)">
+      <x-import component-from-global-scope="DesignSystem_80a92c.StatusDot" tone="good" label="ESI healthy" size="{{ 7 }}" hint-size="94px,16px"></x-import>
+      <span>synced <span class="m">4m</span> ago</span>
+      <span style="flex:1"></span>
+      <span class="m">build 2026.08.07</span>
+      <span>Made with love by Aria V</span>
+    </div>
+  </div>
+</div>
+</div>
+</div>
+</div>
+
+<div class="dv-opt" id="1c">
+<div class="dv-olabel"><a class="dv-oid" href="#1c">1c</a>Mobile, menu closed — hamburger left, scope avatar right, ask bar under the title. Footer is the same status line, stacked.</div>
+<div class="dv-pair">
+<x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="{{ true }}" hint-size="402px,874px">
+<div style="height:100%;display:flex;flex-direction:column;background:var(--bg-canvas);color:var(--text-primary);font-family:'Eve Sans Neue',sans-serif">
+  <div style="flex:none;padding:60px 18px 12px;border-bottom:1px solid var(--border-subtle);background:var(--bg-surface);display:flex;align-items:center;gap:14px">
+    <span style="display:flex;flex-direction:column;gap:4px;width:20px"><span style="height:1.5px;background:var(--text-primary)"></span><span style="height:1.5px;background:var(--text-primary)"></span><span style="height:1.5px;background:var(--text-primary)"></span></span>
+    <span style="flex:1;display:flex;align-items:baseline;gap:7px;font-size:14px"><span style="color:var(--accent-primary)">❄</span><span style="font-family:'Eve Sans Neue Expanded',sans-serif;font-weight:700">edencom link</span></span>
+    <span class="av"><x-import component-from-global-scope="DesignSystem_80a92c.Avatar" name="Aria Valis" size="{{ 28 }}" hint-size="28px,28px"></x-import></span>
+  </div>
+  <div style="flex:1;overflow:auto;padding:20px 18px 18px;display:flex;flex-direction:column;gap:14px">
+    <div style="font-size:12px;color:var(--text-tertiary)">assets <span style="color:var(--text-tertiary)">/</span> <span style="color:var(--text-primary)">browser</span></div>
+    <div>
+      <div style="font-family:'Eve Sans Neue Expanded',sans-serif;font-size:21px;font-weight:700">assets</div>
+      <div style="font-size:12.5px;color:var(--text-secondary);margin-top:4px"><span class="m">128,441</span> items · <span class="m">62</span> systems · <span class="m">214.8B</span></div>
+    </div>
+    <div style="display:flex;align-items:center;gap:9px;border:1px solid var(--border-subtle);border-radius:6px;padding:12px 12px;font-size:13px;color:var(--text-tertiary)"><span>⌕</span>ask or jump to…</div>
+    <div style="flex:1;min-height:220px;border:1px dashed var(--border-subtle);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--text-tertiary)">page content</div>
+    <div style="border-top:1px solid var(--border-subtle);padding-top:12px;display:flex;flex-direction:column;gap:7px;font-size:11.5px;color:var(--text-tertiary)">
+      <x-import component-from-global-scope="DesignSystem_80a92c.StatusDot" tone="good" label="ESI healthy · synced 4m ago" size="{{ 7 }}" hint-size="200px,16px"></x-import>
+      <span>9 of 9 characters authorized · <span class="m">build 2026.08.07</span></span>
+      <span>Made with love by Aria V — 2026-08-07</span>
+    </div>
+  </div>
+</div>
+</x-import>
+<div class="lt">
+<x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="{{ false }}" hint-size="402px,874px">
+<div style="height:100%;display:flex;flex-direction:column;background:var(--bg-canvas);color:var(--text-primary);font-family:'Eve Sans Neue',sans-serif">
+  <div style="flex:none;padding:60px 18px 12px;border-bottom:1px solid var(--border-subtle);background:var(--bg-surface);display:flex;align-items:center;gap:14px">
+    <span style="display:flex;flex-direction:column;gap:4px;width:20px"><span style="height:1.5px;background:var(--text-primary)"></span><span style="height:1.5px;background:var(--text-primary)"></span><span style="height:1.5px;background:var(--text-primary)"></span></span>
+    <span style="flex:1;display:flex;align-items:baseline;gap:7px;font-size:14px"><span style="color:var(--accent-primary)">❄</span><span style="font-family:'Eve Sans Neue Expanded',sans-serif;font-weight:700">edencom link</span></span>
+    <span class="av"><x-import component-from-global-scope="DesignSystem_80a92c.Avatar" name="Aria Valis" size="{{ 28 }}" hint-size="28px,28px"></x-import></span>
+  </div>
+  <div style="flex:1;overflow:auto;padding:20px 18px 18px;display:flex;flex-direction:column;gap:14px">
+    <div style="font-size:12px;color:var(--text-tertiary)">assets <span style="color:var(--text-tertiary)">/</span> <span style="color:var(--text-primary)">browser</span></div>
+    <div>
+      <div style="font-family:'Eve Sans Neue Expanded',sans-serif;font-size:21px;font-weight:700">assets</div>
+      <div style="font-size:12.5px;color:var(--text-secondary);margin-top:4px"><span class="m">128,441</span> items · <span class="m">62</span> systems · <span class="m">214.8B</span></div>
+    </div>
+    <div style="display:flex;align-items:center;gap:9px;border:1px solid var(--border-subtle);border-radius:6px;padding:12px 12px;font-size:13px;color:var(--text-tertiary)"><span>⌕</span>ask or jump to…</div>
+    <div style="flex:1;min-height:220px;border:1px dashed var(--border-subtle);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--text-tertiary)">page content</div>
+    <div style="border-top:1px solid var(--border-subtle);padding-top:12px;display:flex;flex-direction:column;gap:7px;font-size:11.5px;color:var(--text-tertiary)">
+      <x-import component-from-global-scope="DesignSystem_80a92c.StatusDot" tone="good" label="ESI healthy · synced 4m ago" size="{{ 7 }}" hint-size="200px,16px"></x-import>
+      <span>9 of 9 characters authorized · <span class="m">build 2026.08.07</span></span>
+      <span>Made with love by Aria V — 2026-08-07</span>
+    </div>
+  </div>
+</div>
+</x-import>
+</div>
+</div>
+</div>
+
+<div class="dv-opt" id="1d">
+<div class="dv-olabel"><a class="dv-oid" href="#1d">1d</a>Mobile, menu open — the desktop rail as a full-height drawer, same groups and order. Scope switcher on top, account pinned at the bottom.</div>
+<div class="dv-pair">
+<x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="{{ true }}" hint-size="402px,874px">
+<div style="height:100%;position:relative;background:var(--bg-canvas);color:var(--text-primary);font-family:'Eve Sans Neue',sans-serif">
+  <div style="position:absolute;inset:0;background:rgba(0,0,0,.55)"></div>
+  <div style="position:absolute;left:0;top:0;bottom:0;width:326px;background:var(--bg-surface);border-right:1px solid var(--border-subtle);display:flex;flex-direction:column">
+    <div style="flex:none;padding:58px 16px 13px;border-bottom:1px solid var(--border-subtle)">
+      <div style="display:flex;align-items:center;gap:12px">
+        <span style="flex:1;display:flex;align-items:baseline;gap:7px;font-size:14px"><span style="color:var(--accent-primary)">❄</span><span style="font-family:'Eve Sans Neue Expanded',sans-serif;font-weight:700">edencom link</span></span>
+        <span style="font-size:16px;color:var(--text-tertiary)">✕</span>
+      </div>
+      <div style="margin-top:13px;display:flex;align-items:center;gap:10px;border:1px solid var(--border-subtle);border-radius:6px;padding:10px 11px">
+        <span class="av"><x-import component-from-global-scope="DesignSystem_80a92c.Avatar" name="Dead Space Wolves" size="{{ 26 }}" hint-size="26px,26px"></x-import></span>
+        <span style="flex:1;min-width:0"><span style="display:block;font-size:13px;font-weight:700">Dead Space Wolves</span><span style="display:block;font-size:11px;color:var(--text-tertiary)" class="m">[DSWB] · 9 alts</span></span>
+        <span style="color:var(--text-tertiary);font-size:11px">⌄</span>
+      </div>
+    </div>
+    <div style="flex:1;overflow:auto;padding:14px 0">
+      <div style="padding:4px 18px 9px;font-size:10.5px;letter-spacing:.09em;color:var(--text-tertiary)">[ operate ]</div>
+      <div style="display:flex;align-items:center;gap:13px;padding:12px 18px;font-size:14px;color:var(--text-secondary)"><span style="width:18px;text-align:center;color:var(--text-tertiary)">◇</span>characters</div>
+      <div style="display:flex;align-items:center;gap:13px;padding:12px 18px 12px 16px;font-size:14px;color:var(--text-primary);font-weight:700;background:var(--bg-elevated);border-left:2px solid var(--accent-primary)"><span style="width:18px;text-align:center;color:var(--accent-primary)">▤</span>assets</div>
+      <div style="display:flex;align-items:center;padding:10px 18px 10px 49px;font-size:13px;color:var(--text-primary)">browser</div>
+      <div style="display:flex;align-items:center;padding:10px 18px 10px 49px;font-size:13px;color:var(--text-secondary)">lenses</div>
+      <div style="display:flex;align-items:center;padding:10px 18px 10px 49px;font-size:13px;color:var(--text-secondary)">valuation</div>
+      <div style="display:flex;align-items:center;gap:13px;padding:12px 18px;font-size:14px;color:var(--text-secondary)"><span style="width:18px;text-align:center;color:var(--text-tertiary)">↕</span>market</div>
+      <div style="display:flex;align-items:center;gap:13px;padding:12px 18px;font-size:14px;color:var(--text-secondary)"><span style="width:18px;text-align:center;color:var(--text-tertiary)">⚙</span>industry</div>
+      <div style="display:flex;align-items:center;gap:13px;padding:12px 18px;font-size:14px;color:var(--text-secondary)"><span style="width:18px;text-align:center;color:var(--text-tertiary)">✻</span>supply chain</div>
+      <div style="padding:16px 18px 9px;font-size:10.5px;letter-spacing:.09em;color:var(--text-tertiary)">[ automate ]</div>
+      <div style="display:flex;align-items:center;gap:13px;padding:12px 18px;font-size:14px;color:var(--text-secondary)"><span style="width:18px;text-align:center;color:var(--text-tertiary)">◈</span><span style="flex:1">agent runs</span><x-import component-from-global-scope="DesignSystem_80a92c.Badge" tone="good" hint-size="34px,16px">2 live</x-import></div>
+      <div style="display:flex;align-items:center;gap:13px;padding:12px 18px;font-size:14px;color:var(--text-secondary)"><span style="width:18px;text-align:center;color:var(--text-tertiary)">⌁</span><span style="flex:1">rules</span><span class="m" style="font-size:11.5px;color:var(--text-tertiary)">14</span></div>
+      <div style="display:flex;align-items:center;gap:13px;padding:12px 18px;font-size:14px;color:var(--text-secondary)"><span style="width:18px;text-align:center;color:var(--text-tertiary)">▣</span>reports</div>
+    </div>
+    <div style="flex:none;border-top:1px solid var(--border-subtle);padding:13px 14px 34px">
+      <div style="display:flex;align-items:center;gap:10px;border:1px solid var(--border-subtle);border-radius:6px;padding:12px 12px;font-size:13px;color:var(--text-tertiary)"><span>⌕</span>ask or jump to…</div>
+      <div style="margin-top:12px;display:flex;align-items:center;gap:11px;padding:4px 2px">
+        <span class="av"><x-import component-from-global-scope="DesignSystem_80a92c.Avatar" name="Aria Valis" size="{{ 30 }}" hint-size="30px,30px"></x-import></span>
+        <span style="flex:1;min-width:0"><span style="display:block;font-size:13.5px">Aria Valis</span><span style="display:block;font-size:11px;color:var(--text-tertiary)">account &amp; settings</span></span>
+        <span style="color:var(--text-tertiary);font-size:12px">›</span>
+      </div>
+    </div>
+  </div>
+</div>
+</x-import>
+<div class="lt">
+<x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="{{ false }}" hint-size="402px,874px">
+<div style="height:100%;position:relative;background:var(--bg-canvas);color:var(--text-primary);font-family:'Eve Sans Neue',sans-serif">
+  <div style="position:absolute;inset:0;background:rgba(23,24,26,.34)"></div>
+  <div style="position:absolute;left:0;top:0;bottom:0;width:326px;background:var(--bg-surface);border-right:1px solid var(--border-subtle);display:flex;flex-direction:column">
+    <div style="flex:none;padding:58px 16px 13px;border-bottom:1px solid var(--border-subtle)">
+      <div style="display:flex;align-items:center;gap:12px">
+        <span style="flex:1;display:flex;align-items:baseline;gap:7px;font-size:14px"><span style="color:var(--accent-primary)">❄</span><span style="font-family:'Eve Sans Neue Expanded',sans-serif;font-weight:700">edencom link</span></span>
+        <span style="font-size:16px;color:var(--text-tertiary)">✕</span>
+      </div>
+      <div style="margin-top:13px;display:flex;align-items:center;gap:10px;border:1px solid var(--border-subtle);border-radius:6px;padding:10px 11px">
+        <span class="av"><x-import component-from-global-scope="DesignSystem_80a92c.Avatar" name="Dead Space Wolves" size="{{ 26 }}" hint-size="26px,26px"></x-import></span>
+        <span style="flex:1;min-width:0"><span style="display:block;font-size:13px;font-weight:700">Dead Space Wolves</span><span style="display:block;font-size:11px;color:var(--text-tertiary)" class="m">[DSWB] · 9 alts</span></span>
+        <span style="color:var(--text-tertiary);font-size:11px">⌄</span>
+      </div>
+    </div>
+    <div style="flex:1;overflow:auto;padding:14px 0">
+      <div style="padding:4px 18px 9px;font-size:10.5px;letter-spacing:.09em;color:var(--text-tertiary)">[ operate ]</div>
+      <div style="display:flex;align-items:center;gap:13px;padding:12px 18px;font-size:14px;color:var(--text-secondary)"><span style="width:18px;text-align:center;color:var(--text-tertiary)">◇</span>characters</div>
+      <div style="display:flex;align-items:center;gap:13px;padding:12px 18px 12px 16px;font-size:14px;color:var(--text-primary);font-weight:700;background:var(--bg-elevated);border-left:2px solid var(--accent-primary)"><span style="width:18px;text-align:center;color:var(--accent-primary)">▤</span>assets</div>
+      <div style="display:flex;align-items:center;padding:10px 18px 10px 49px;font-size:13px;color:var(--text-primary)">browser</div>
+      <div style="display:flex;align-items:center;padding:10px 18px 10px 49px;font-size:13px;color:var(--text-secondary)">lenses</div>
+      <div style="display:flex;align-items:center;padding:10px 18px 10px 49px;font-size:13px;color:var(--text-secondary)">valuation</div>
+      <div style="display:flex;align-items:center;gap:13px;padding:12px 18px;font-size:14px;color:var(--text-secondary)"><span style="width:18px;text-align:center;color:var(--text-tertiary)">↕</span>market</div>
+      <div style="display:flex;align-items:center;gap:13px;padding:12px 18px;font-size:14px;color:var(--text-secondary)"><span style="width:18px;text-align:center;color:var(--text-tertiary)">⚙</span>industry</div>
+      <div style="display:flex;align-items:center;gap:13px;padding:12px 18px;font-size:14px;color:var(--text-secondary)"><span style="width:18px;text-align:center;color:var(--text-tertiary)">✻</span>supply chain</div>
+      <div style="padding:16px 18px 9px;font-size:10.5px;letter-spacing:.09em;color:var(--text-tertiary)">[ automate ]</div>
+      <div style="display:flex;align-items:center;gap:13px;padding:12px 18px;font-size:14px;color:var(--text-secondary)"><span style="width:18px;text-align:center;color:var(--text-tertiary)">◈</span><span style="flex:1">agent runs</span><x-import component-from-global-scope="DesignSystem_80a92c.Badge" tone="good" hint-size="34px,16px">2 live</x-import></div>
+      <div style="display:flex;align-items:center;gap:13px;padding:12px 18px;font-size:14px;color:var(--text-secondary)"><span style="width:18px;text-align:center;color:var(--text-tertiary)">⌁</span><span style="flex:1">rules</span><span class="m" style="font-size:11.5px;color:var(--text-tertiary)">14</span></div>
+      <div style="display:flex;align-items:center;gap:13px;padding:12px 18px;font-size:14px;color:var(--text-secondary)"><span style="width:18px;text-align:center;color:var(--text-tertiary)">▣</span>reports</div>
+    </div>
+    <div style="flex:none;border-top:1px solid var(--border-subtle);padding:13px 14px 34px">
+      <div style="display:flex;align-items:center;gap:10px;border:1px solid var(--border-subtle);border-radius:6px;padding:12px 12px;font-size:13px;color:var(--text-tertiary)"><span>⌕</span>ask or jump to…</div>
+      <div style="margin-top:12px;display:flex;align-items:center;gap:11px;padding:4px 2px">
+        <span class="av"><x-import component-from-global-scope="DesignSystem_80a92c.Avatar" name="Aria Valis" size="{{ 30 }}" hint-size="30px,30px"></x-import></span>
+        <span style="flex:1;min-width:0"><span style="display:block;font-size:13.5px">Aria Valis</span><span style="display:block;font-size:11px;color:var(--text-tertiary)">account &amp; settings</span></span>
+        <span style="color:var(--text-tertiary);font-size:12px">›</span>
+      </div>
+    </div>
+  </div>
+</div>
+</x-import>
+</div>
+</div>
+</div>
+
+</div>
+<p class="dv-next">Try next: "show the ⌘K ask bar open, with results" · "design the account &amp; settings panel" · "apply the shell to the asset browser" · "agent runs section"</p>
+</section>
+</x-dc>
+</body>
+</html>

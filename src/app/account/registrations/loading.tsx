@@ -1,4 +1,4 @@
-import { LoadingShell, SkeletonLines } from '../skeleton'
+import { LoadingShell, SkeletonLines } from '../../skeleton'
 
 // The matrix's width depends on how many characters the caller has and, from
 // phase 3, how many job columns their grants earn — so bars rather than a

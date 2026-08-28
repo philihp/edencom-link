@@ -90,7 +90,7 @@ export const AssetsTable = ({ locations, owners }: AssetsTableProps) => {
       {locations.length === 0 ? (
         <p>
           No assets visible. Link a character with the <code>esi-assets.read_assets.v1</code> scope on the{' '}
-          <a href="/character">Characters</a> page so the hourly job can fetch them.
+          <a href="/account/registrations">Registrations</a> page so the hourly job can fetch them.
         </p>
       ) : groups.length > 0 ? (
         <>

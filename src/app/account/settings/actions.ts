@@ -164,6 +164,6 @@ export const setMainCharacter = async (id: string): Promise<{ error?: string }> 
   }
 
   revalidatePath('/account/settings')
-  revalidatePath('/character')
+  revalidatePath('/account/registrations')
   return {}
 }

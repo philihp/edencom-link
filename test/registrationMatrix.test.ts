@@ -12,7 +12,7 @@ import {
   soonestNextRun,
   templateCheck,
   trailingScopes,
-} from '../src/app/registration/matrix.ts'
+} from '../src/app/account/registrations/matrix.ts'
 
 const ASSETS = ['esi-assets.read_assets.v1']
 const STATUS = ['esi-wallet.read_character_wallet.v1', 'esi-location.read_location.v1']

@@ -55,7 +55,7 @@ const Header = async () => {
             <span className={styles.refresh}>
               <Freshness at={lastRefreshedAt} prefix="Refreshed" never="never refreshed" />
               <span className={styles.bracket}>[</span>
-              <Link href="/jobs">refresh</Link>
+              <Link href="/account/registrations">refresh</Link>
               <span className={styles.bracket}>]</span>
             </span>
           )}
@@ -75,8 +75,6 @@ const Header = async () => {
           ) : (
             <>
               <Link href="/indexes">indexes</Link>
-              <span className={styles.sep}>|</span>
-              <Link href="/character/">characters</Link>
               <span className={styles.sep}>|</span>
               <Link href="/asset">assets</Link>
               <span className={styles.sep}>|</span>

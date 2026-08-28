@@ -80,8 +80,8 @@ export const FittingMatrix = ({ entries, types, ownCharacters, sharedCharacters 
       {entries.length === 0 ? (
         <p className={styles.empty}>
           No fittings yet. Add a character with the <code>esi-fittings.read_fittings.v1</code> scope on the{' '}
-          <Link href="/account/settings">settings page</Link>, then refresh from <Link href="/jobs">the jobs page</Link>
-          .
+          <Link href="/account/settings">settings page</Link>, then refresh from{' '}
+          <Link href="/account/registrations">the registrations page</Link>.
         </p>
       ) : matrix.length === 0 ? (
         <p className={styles.empty}>No fittings for this character.</p>

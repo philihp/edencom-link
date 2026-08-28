@@ -11,7 +11,7 @@
 
 .table th,
 .table td {
-  border: 1px solid var(--border, #444);
+  border: 1px solid var(--line);
   padding: 0.35rem 0.75rem;
   text-align: left;
   vertical-align: top;
@@ -35,7 +35,7 @@
 }
 
 .lagging {
-  color: #d8a800;
+  color: var(--warn);
 }
 
 .cell {
@@ -50,16 +50,16 @@
 }
 
 .status[data-status='running'] {
-  color: #d8a800;
+  color: var(--warn);
 }
 
 .status[data-status='queued'] {
-  color: #888;
+  color: var(--ink-faint);
 }
 
 .status[data-status='failed'],
 .status[data-status='error'] {
-  color: #ff4040;
+  color: var(--danger);
 }
 
 /* A run that was permitted to do nothing (no in-game role). Deliberately the
@@ -74,7 +74,7 @@
 }
 
 .status[data-status='done'] {
-  color: #40a040;
+  color: var(--ok);
 }
 
 .nextRun {
@@ -82,7 +82,7 @@
 }
 
 .overdue {
-  color: #ff4040;
+  color: var(--danger);
   white-space: nowrap;
 }
 
@@ -139,6 +139,6 @@
 }
 
 .errorText {
-  color: #ff4040;
+  color: var(--danger);
   font-size: 0.9em;
 }

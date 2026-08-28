@@ -85,7 +85,7 @@ const InvitesPage = async () => {
       {!firstSsoAt && (
         <p>
           The clock hasn&rsquo;t started yet. Your first invite code unlocks a week after you{' '}
-          <Link href="/character">add a character</Link> through EVE SSO.
+          <Link href="/account/registrations">add a character</Link> through EVE SSO.
         </p>
       )}
 
