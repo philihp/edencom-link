@@ -125,10 +125,13 @@ export type EivResult = {
   skipped: { noBill: number; noPrice: number; noIndex: number }
 }
 
-// The recovered owner's rate for one structure, or null when nothing was
-// recovered (or the EIV base is degenerate).
+// The recovered owner's rate for one structure, or null when recovery never
+// ran (or the EIV base is degenerate). Zero is a real answer, not an absence:
+// a private structure whose owner charges no facility tax recovers a tax of 0
+// over a positive EIV, and hiding that read as "broken" on every tile where
+// the landlord was simply free.
 export const recoveredRate = (s: StructureEiv): number | null =>
-  s.recoveredEiv > 0 && s.recoveredTax > 0 ? s.recoveredTax / s.recoveredEiv : null
+  s.recoveredEiv > 0 ? s.recoveredTax / s.recoveredEiv : null
 
 // Latest sample at or before `iso`, else the earliest after it — the index is
 // hourly and slow-moving, so the nearest observation is the honest stand-in

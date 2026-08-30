@@ -158,3 +158,17 @@ test('hull bonuses and the nearest-sample fallback', () => {
   assert.equal(indexAt([], '2026-08-15T00:00:00Z'), null)
   assert.equal(SCC_SURCHARGE, 0.04)
 })
+
+test('a free landlord recovers a zero rate, not a missing one', () => {
+  // Cost exactly index fee + SCC (the AGCP-I case): the owner charges nothing.
+  // The fold must still count the job as recovered so the tile can SAY 0%,
+  // and recoveredRate must report 0 rather than null.
+  const input = baseInput()
+  const idx = 0.03
+  const eiv = 1000
+  const result = foldEiv([job({ cost: eiv * (idx * 0.95 + SCC_SURCHARGE) })], input)
+  const row = result.byStructure.get(RENTED)!
+  assert.equal(row.recoveredJobs, 1)
+  assert.equal(row.recoveredTax, 0)
+  assert.equal(recoveredRate(row), 0)
+})
