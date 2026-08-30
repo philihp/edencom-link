@@ -61,7 +61,7 @@ importers:
         version: 16.3.3(@types/node@26.2.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       protobufjs:
         specifier: ^8.7.0
-        version: 8.7.2
+        version: 8.8.0
       ramda:
         specifier: ^0.32.0
         version: 0.32.0
@@ -2750,8 +2750,8 @@ packages:
     resolution: {integrity: sha512-gjVS5hOP+M3wMm5nmNOucbIrqudzs9v/57bWRHQWLYklXqoXKrVfYW2W9+glfGsqtPgpiz5WwyEEB+ksXIx3gQ==}
     engines: {node: '>=18'}
 
-  protobufjs@8.7.2:
-    resolution: {integrity: sha512-oTVHV+oelUBtiu5iTuTNNZ0eLYsXSMxry4cgr30mayNkgIZL6qZ0IOQVPuSWGcyAaXKl/XgqwWHIC3a0khYVBA==}
+  protobufjs@8.8.0:
+    resolution: {integrity: sha512-N3xhQ5yyBx3vQq4gubBfASzYhJGNzeDbjqBpu61g7UVylsN/qyffU96TKWD3GbbLOKF82VGNRNvv1+BFgE31Eg==}
     engines: {node: '>=12.0.0'}
 
   proxy-addr@2.0.7:
@@ -5707,7 +5707,7 @@ snapshots:
     dependencies:
       parse-ms: 4.0.0
 
-  protobufjs@8.7.2:
+  protobufjs@8.8.0:
     dependencies:
       long: 5.3.2
 
