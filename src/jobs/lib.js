@@ -1,6 +1,6 @@
 import { randomInt } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
-import { range, reduce } from 'ramda'
+import { range, reduce, splitEvery, sum } from 'ramda'
 
 import { character as fetchCharacter, isRoleDenial } from '../esi.js'
 import { recordHeartbeat, sudoSupabase } from '../supabase.js'
@@ -63,6 +63,38 @@ const withHeartbeat = async (tag, owner, fn, { skipReasonOf } = {}) => {
 // from the rest, as most callers below do.
 export const forEachSequential = (items, fn) =>
   reduce((settled, item) => settled.then(() => fn(item)), Promise.resolve(), items)
+
+// Open new SCD versions through the table's `*_claim(p_rows)` function instead
+// of a plain insert (migration 20260831043706_asset_handoff_claim.sql).
+//
+// The four snapshot tables index one open row per `item_id` across the *whole*
+// table, because an EVE item_id names one object and one holder at a time — but
+// each reconcile only ever looked up its own owner's rows. An item that changed
+// hands therefore looked new to whoever received it, and its insert collided
+// with the previous owner's still-open row, aborting that whole extract. The
+// claim closes the open row for each incoming item_id whoever holds it and
+// inserts the new versions in one transaction, so a handoff either lands on
+// both sides or on neither.
+//
+// Chunked for the same reason the insert was: a large hangar's worth of new
+// rows in one request overruns PostgREST. Each chunk is its own transaction,
+// which is fine — a chunk only has to be atomic with respect to the items it
+// carries. Returns the number of rows opened.
+//
+// Through writeWithSchemaRetry because the deploy that first ships one of these
+// functions leaves a window where the migration has run but PostgREST still
+// answers from a schema cache without it (PGRST202).
+const CLAIM_CHUNK = 1000
+
+export const claimRows = async (claimFn, rows) => {
+  const opened = []
+  await forEachSequential(splitEvery(CLAIM_CHUNK, rows), async (chunk) => {
+    const { data, error } = await writeWithSchemaRetry(claimFn, () => sudoSupabase.rpc(claimFn, { p_rows: chunk }))
+    if (error) throw error
+    opened.push(Number(data ?? 0))
+  })
+  return sum(opened)
+}
 
 // Load the registration id -> name / user_id maps once per run, shared by the
 // token loops below. Throws on a lookup failure.
@@ -305,7 +337,12 @@ export const fetchAllPages = async (fetchPage) => {
 // three weeks because its migration was recorded as applied but never ran (see
 // 20260814000000_repair_sheet_csv.sql). No retry helps there — the ladder just
 // runs out and the caller reports the same failure ~15s later.
-const SCHEMA_CACHE_MISS = 'PGRST205'
+//
+// PGRST202 is the same situation for a *function* ("Could not find the function
+// public.<name>"), which the claim RPCs land in for one window only: between
+// the migration that creates them and PostgREST reloading. Retrying costs
+// nothing and keeps the deploy that introduces a new RPC from failing a run.
+const SCHEMA_CACHE_MISS = ['PGRST205', 'PGRST202']
 const RELOAD_BACKOFF_MS = [500, 1000, 2000, 4000, 8000]
 
 export const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -315,7 +352,7 @@ export const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 // `write` is a thunk (not a promise) because each attempt needs a fresh request.
 export const writeWithSchemaRetry = async (label, write, attempt = 0) => {
   const result = await write()
-  if (result.error?.code !== SCHEMA_CACHE_MISS || attempt >= RELOAD_BACKOFF_MS.length) return result
+  if (!SCHEMA_CACHE_MISS.includes(result.error?.code) || attempt >= RELOAD_BACKOFF_MS.length) return result
   const wait = RELOAD_BACKOFF_MS[attempt]
   console.log(`[schema-cache] ${label} not in PostgREST's schema cache yet, retrying in ${wait}ms`)
   await sleep(wait)

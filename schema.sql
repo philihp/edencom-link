@@ -757,6 +757,71 @@ grant select on public.character_asset_over_time to authenticated;
 grant select on public.character_asset           to authenticated;
 grant all    on public.character_asset_over_time to service_role;
 
+-- ── character asset claim ──────────────────────────────────────────────
+-- One open row per item_id across the whole table (the partial unique index
+-- above) is the right invariant — an EVE item names one object with one holder
+-- — but each reconcile only looks up its *own* owner's rows, so an item that
+-- changed hands looked new to whoever received it and its insert collided with
+-- the previous holder's still-open row. This closes the open row for each
+-- incoming item_id whoever holds it, then inserts the new versions, in one
+-- transaction. See supabase/migrations/20260831043706_asset_handoff_claim.sql.
+--
+-- SECURITY INVOKER on purpose: it carries no privilege of its own, so the fact
+-- that a reconcile may expire another account's row rests on the caller holding
+-- INSERT/UPDATE — which only service_role does. The advisory lock serializes
+-- just the claim window, because the per-character workflow runs owners
+-- concurrently and atomicity alone does not stop two of them racing for one
+-- item under READ COMMITTED.
+create or replace function public.character_asset_claim(p_rows jsonb)
+returns integer
+language plpgsql
+security invoker
+set search_path to 'public'
+as $$
+declare
+  v_items    bigint[];
+  v_inserted integer;
+begin
+  if p_rows is null or jsonb_array_length(p_rows) = 0 then
+    return 0;
+  end if;
+
+  select array_agg(distinct (r->>'item_id')::bigint)
+    into v_items
+    from jsonb_array_elements(p_rows) r;
+
+  perform pg_advisory_xact_lock(hashtext('public.character_asset_over_time')::bigint);
+
+  update public.character_asset_over_time
+     set is_current = false
+   where is_current
+     and item_id = any (v_items);
+
+  insert into public.character_asset_over_time
+    (item_id, registration_id, type_id, location_id, location_flag, location_type,
+     quantity, is_singleton, is_blueprint_copy, valid_until, name)
+  select (r->>'item_id')::bigint,
+         (r->>'registration_id')::uuid,
+         (r->>'type_id')::bigint,
+         (r->>'location_id')::bigint,
+         r->>'location_flag',
+         r->>'location_type',
+         (r->>'quantity')::bigint,
+         (r->>'is_singleton')::boolean,
+         coalesce((r->>'is_blueprint_copy')::boolean, false),
+         coalesce((r->>'valid_until')::timestamptz, now()),
+         r->>'name'
+    from jsonb_array_elements(p_rows) r;
+
+  get diagnostics v_inserted = row_count;
+  return v_inserted;
+end
+$$;
+
+revoke execute on function public.character_asset_claim(jsonb) from public, anon, authenticated;
+grant execute on function public.character_asset_claim(jsonb) to service_role;
+
+
 -- ── character asset aggregation functions ─────────────────────────────────
 -- Items nest (a module in a ship in a station), so the UI used to page every
 -- live asset into Node and walk the location_id chains there — tens of
@@ -1239,6 +1304,70 @@ create view public.character_blueprint with (security_invoker = on) as
 grant select on public.character_blueprint_over_time to authenticated;
 grant select on public.character_blueprint           to authenticated;
 grant all    on public.character_blueprint_over_time to service_role;
+
+-- ── character blueprint claim ──────────────────────────────────────────
+-- One open row per item_id across the whole table (the partial unique index
+-- above) is the right invariant — an EVE item names one object with one holder
+-- — but each reconcile only looks up its *own* owner's rows, so an item that
+-- changed hands looked new to whoever received it and its insert collided with
+-- the previous holder's still-open row. This closes the open row for each
+-- incoming item_id whoever holds it, then inserts the new versions, in one
+-- transaction. See supabase/migrations/20260831043706_asset_handoff_claim.sql.
+--
+-- SECURITY INVOKER on purpose: it carries no privilege of its own, so the fact
+-- that a reconcile may expire another account's row rests on the caller holding
+-- INSERT/UPDATE — which only service_role does. The advisory lock serializes
+-- just the claim window, because the per-character workflow runs owners
+-- concurrently and atomicity alone does not stop two of them racing for one
+-- item under READ COMMITTED.
+create or replace function public.character_blueprint_claim(p_rows jsonb)
+returns integer
+language plpgsql
+security invoker
+set search_path to 'public'
+as $$
+declare
+  v_items    bigint[];
+  v_inserted integer;
+begin
+  if p_rows is null or jsonb_array_length(p_rows) = 0 then
+    return 0;
+  end if;
+
+  select array_agg(distinct (r->>'item_id')::bigint)
+    into v_items
+    from jsonb_array_elements(p_rows) r;
+
+  perform pg_advisory_xact_lock(hashtext('public.character_blueprint_over_time')::bigint);
+
+  update public.character_blueprint_over_time
+     set is_current = false
+   where is_current
+     and item_id = any (v_items);
+
+  insert into public.character_blueprint_over_time
+    (item_id, registration_id, type_id, location_id, location_flag, quantity,
+     material_efficiency, time_efficiency, runs, valid_until)
+  select (r->>'item_id')::bigint,
+         (r->>'registration_id')::uuid,
+         (r->>'type_id')::bigint,
+         (r->>'location_id')::bigint,
+         r->>'location_flag',
+         (r->>'quantity')::bigint,
+         (r->>'material_efficiency')::smallint,
+         (r->>'time_efficiency')::smallint,
+         (r->>'runs')::integer,
+         coalesce((r->>'valid_until')::timestamptz, now())
+    from jsonb_array_elements(p_rows) r;
+
+  get diagnostics v_inserted = row_count;
+  return v_inserted;
+end
+$$;
+
+revoke execute on function public.character_blueprint_claim(jsonb) from public, anon, authenticated;
+grant execute on function public.character_blueprint_claim(jsonb) to service_role;
+
 
 -- /api/character/blueprints IMPORTDATA endpoint: the player's current
 -- blueprint rows across all of their characters, with the owning character's
@@ -3989,6 +4118,70 @@ grant select on public.corp_asset_over_time to authenticated;
 grant select on public.corp_asset           to authenticated;
 grant all    on public.corp_asset_over_time to service_role;
 
+-- ── corp asset claim ───────────────────────────────────────────────────
+-- One open row per item_id across the whole table (the partial unique index
+-- above) is the right invariant — an EVE item names one object with one holder
+-- — but each reconcile only looks up its *own* owner's rows, so an item that
+-- changed hands looked new to whoever received it and its insert collided with
+-- the previous holder's still-open row. This closes the open row for each
+-- incoming item_id whoever holds it, then inserts the new versions, in one
+-- transaction. See supabase/migrations/20260831043706_asset_handoff_claim.sql.
+--
+-- SECURITY INVOKER on purpose: it carries no privilege of its own, so the fact
+-- that a reconcile may expire another account's row rests on the caller holding
+-- INSERT/UPDATE — which only service_role does. The advisory lock serializes
+-- just the claim window, because the per-character workflow runs owners
+-- concurrently and atomicity alone does not stop two of them racing for one
+-- item under READ COMMITTED.
+create or replace function public.corp_asset_claim(p_rows jsonb)
+returns integer
+language plpgsql
+security invoker
+set search_path to 'public'
+as $$
+declare
+  v_items    bigint[];
+  v_inserted integer;
+begin
+  if p_rows is null or jsonb_array_length(p_rows) = 0 then
+    return 0;
+  end if;
+
+  select array_agg(distinct (r->>'item_id')::bigint)
+    into v_items
+    from jsonb_array_elements(p_rows) r;
+
+  perform pg_advisory_xact_lock(hashtext('public.corp_asset_over_time')::bigint);
+
+  update public.corp_asset_over_time
+     set is_current = false
+   where is_current
+     and item_id = any (v_items);
+
+  insert into public.corp_asset_over_time
+    (item_id, corporation_id, type_id, location_id, location_flag, location_type,
+     quantity, is_singleton, is_blueprint_copy, valid_until)
+  select (r->>'item_id')::bigint,
+         (r->>'corporation_id')::bigint,
+         (r->>'type_id')::bigint,
+         (r->>'location_id')::bigint,
+         r->>'location_flag',
+         r->>'location_type',
+         (r->>'quantity')::bigint,
+         (r->>'is_singleton')::boolean,
+         coalesce((r->>'is_blueprint_copy')::boolean, false),
+         coalesce((r->>'valid_until')::timestamptz, now())
+    from jsonb_array_elements(p_rows) r;
+
+  get diagnostics v_inserted = row_count;
+  return v_inserted;
+end
+$$;
+
+revoke execute on function public.corp_asset_claim(jsonb) from public, anon, authenticated;
+grant execute on function public.corp_asset_claim(jsonb) to service_role;
+
+
 -- ── corp asset aggregation functions ──────────────────────────────────────
 -- Mirrors the character asset aggregation functions above over the corp asset
 -- history, so the assets pages can show corp hangars beside character hangars
@@ -4513,6 +4706,70 @@ create view public.corp_blueprint with (security_invoker = on) as
 grant select on public.corp_blueprint_over_time to authenticated;
 grant select on public.corp_blueprint           to authenticated;
 grant all    on public.corp_blueprint_over_time to service_role;
+
+-- ── corp blueprint claim ───────────────────────────────────────────────
+-- One open row per item_id across the whole table (the partial unique index
+-- above) is the right invariant — an EVE item names one object with one holder
+-- — but each reconcile only looks up its *own* owner's rows, so an item that
+-- changed hands looked new to whoever received it and its insert collided with
+-- the previous holder's still-open row. This closes the open row for each
+-- incoming item_id whoever holds it, then inserts the new versions, in one
+-- transaction. See supabase/migrations/20260831043706_asset_handoff_claim.sql.
+--
+-- SECURITY INVOKER on purpose: it carries no privilege of its own, so the fact
+-- that a reconcile may expire another account's row rests on the caller holding
+-- INSERT/UPDATE — which only service_role does. The advisory lock serializes
+-- just the claim window, because the per-character workflow runs owners
+-- concurrently and atomicity alone does not stop two of them racing for one
+-- item under READ COMMITTED.
+create or replace function public.corp_blueprint_claim(p_rows jsonb)
+returns integer
+language plpgsql
+security invoker
+set search_path to 'public'
+as $$
+declare
+  v_items    bigint[];
+  v_inserted integer;
+begin
+  if p_rows is null or jsonb_array_length(p_rows) = 0 then
+    return 0;
+  end if;
+
+  select array_agg(distinct (r->>'item_id')::bigint)
+    into v_items
+    from jsonb_array_elements(p_rows) r;
+
+  perform pg_advisory_xact_lock(hashtext('public.corp_blueprint_over_time')::bigint);
+
+  update public.corp_blueprint_over_time
+     set is_current = false
+   where is_current
+     and item_id = any (v_items);
+
+  insert into public.corp_blueprint_over_time
+    (item_id, corporation_id, type_id, location_id, location_flag, quantity,
+     material_efficiency, time_efficiency, runs, valid_until)
+  select (r->>'item_id')::bigint,
+         (r->>'corporation_id')::bigint,
+         (r->>'type_id')::bigint,
+         (r->>'location_id')::bigint,
+         r->>'location_flag',
+         (r->>'quantity')::bigint,
+         (r->>'material_efficiency')::smallint,
+         (r->>'time_efficiency')::smallint,
+         (r->>'runs')::integer,
+         coalesce((r->>'valid_until')::timestamptz, now())
+    from jsonb_array_elements(p_rows) r;
+
+  get diagnostics v_inserted = row_count;
+  return v_inserted;
+end
+$$;
+
+revoke execute on function public.corp_blueprint_claim(jsonb) from public, anon, authenticated;
+grant execute on function public.corp_blueprint_claim(jsonb) to service_role;
+
 
 -- /api/corp/blueprints IMPORTDATA endpoint: the caller's corporation(s)
 -- current blueprint rows, mirroring corp_assets()'s shape for the
