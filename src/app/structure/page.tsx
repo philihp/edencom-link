@@ -990,7 +990,7 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
                                     <span className={`${styles.value} ${styles.num}`}>{formatIsk(row.eiv)}</span>
                                   </>
                                 )}
-                                {journalPaid != null ? (
+                                {journalPaid != null && (
                                   <>
                                     <span className={styles.label}>Taxes Paid</span>
                                     <span className={`${styles.value} ${styles.num}`}>
@@ -1003,19 +1003,22 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
                                       )}
                                     </span>
                                   </>
-                                ) : (
-                                  row != null &&
-                                  row.recoveredJobs > 0 && (
-                                    <>
-                                      <span className={styles.label}>Taxes Paid (est.)</span>
-                                      <span className={`${styles.value} ${styles.num}`}>
-                                        {formatIsk(row.recoveredTax)}
-                                        {rate != null && (
-                                          <span className={styles.subValue}> ≈{formatRate(rate)} of EIV</span>
-                                        )}
-                                      </span>
-                                    </>
-                                  )
+                                )}
+                                {/* Not an else: the ledger's paidJobIds keeps recovery off every
+                                    journal-billed job, so the two figures are disjoint shares of
+                                    the same structure — corp-installed jobs land in the exact row
+                                    above, personal jobs at a rented structure only in this one.
+                                    A mixed structure legitimately shows both. */}
+                                {row != null && row.recoveredJobs > 0 && (
+                                  <>
+                                    <span className={styles.label}>Taxes Paid (est.)</span>
+                                    <span className={`${styles.value} ${styles.num}`}>
+                                      {formatIsk(row.recoveredTax)}
+                                      {rate != null && (
+                                        <span className={styles.subValue}> ≈{formatRate(rate)} of EIV</span>
+                                      )}
+                                    </span>
+                                  </>
                                 )}
                                 {revenue != null && (
                                   <>
