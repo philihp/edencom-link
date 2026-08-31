@@ -2,7 +2,7 @@ import { filter, map, pipe, prop, reduce, splitEvery } from 'ramda'
 
 import { corpBlueprints } from '../esi.js'
 import { sudoSupabase } from '../supabase.js'
-import { cli, fetchAllPages, forEachCorporation, forEachSequential } from './lib.js'
+import { claimRows, cli, fetchAllPages, forEachCorporation, forEachSequential } from './lib.js'
 
 const TAG = 'corp-blueprints'
 const SCOPE = 'esi-corporations.read_blueprints.v1'
@@ -101,17 +101,18 @@ const reconcile = async (corporation_id, fetched) => {
     const { error } = await sudoSupabase.from('corp_blueprint_over_time').update({ valid_until: now }).in('id', ids)
     if (error) throw error
   })
-  // Close before inserting so the unique-current-per-item index never collides.
+  // Close this owner's superseded and vanished rows. The claim below handles
+  // the open row of any *other* owner whose item we are taking over.
   await forEachSequential(splitEvery(200, allCloseIds), async (ids) => {
     const { error } = await sudoSupabase.from('corp_blueprint_over_time').update({ is_current: false }).in('id', ids)
     if (error) throw error
   })
-  await forEachSequential(splitEvery(1000, inserts), async (rows) => {
-    const { error } = await sudoSupabase.from('corp_blueprint_over_time').insert(rows)
-    if (error) throw error
-  })
+  // Open the new versions through the claim function: it also closes any open
+  // row for these item_ids under a *different* owner, which is what an item
+  // changing hands looks like and what a plain insert collided with.
+  const opened = await claimRows('corp_blueprint_claim', inserts)
 
-  return { touched: touchIds.length, opened: inserts.length, closed: allCloseIds.length }
+  return { touched: touchIds.length, opened, closed: allCloseIds.length }
 }
 
 export const runCorpBlueprints = ({ registrationIds } = {}) =>
