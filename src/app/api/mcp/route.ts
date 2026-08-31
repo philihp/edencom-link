@@ -2,8 +2,9 @@
 // via OAuth 2.1 against Supabase Auth acting as the authorization server (the
 // consent page lives at /oauth/consent; discovery metadata at
 // /.well-known/oauth-protected-resource). Tools are read-only queries over
-// the extracted DB — see tools.ts — with one exception: linkTools.ts can
-// create and share a link, the server's only write surface.
+// the extracted DB — see tools.ts — with two exceptions: linkTools.ts can
+// create and share a link, and watchedSystemTools.ts can edit the caller's
+// /indexes watch list. Both write only rows the caller owns.
 import { createMcpHandler, withMcpAuth } from 'mcp-handler'
 
 import { verifySupabaseToken } from './auth'
@@ -14,6 +15,7 @@ import { registerLinkTools } from './linkTools'
 import { registerShippingTools } from './shippingTools'
 import { registerSkillTools } from './skillTools'
 import { registerTools } from './tools'
+import { registerWatchedSystemTools } from './watchedSystemTools'
 
 // mcp-handler 2.x serves the 2026-07-28 spec (stateless, no sessions), falling
 // back to stateless Streamable HTTP for 2025-era clients from the same handler.
@@ -31,6 +33,7 @@ const handler = createMcpHandler(
     registerShippingTools(server)
     registerLinkTools(server)
     registerSkillTools(server)
+    registerWatchedSystemTools(server)
   },
   {
     serverInfo: { name: 'edencom-link', version: '1.0.0' },
