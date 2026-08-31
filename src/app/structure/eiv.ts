@@ -118,6 +118,9 @@ export type StructureEiv = {
 
 export type EivResult = {
   byStructure: Map<string, StructureEiv>
+  // job id -> that job's EIV, for every job the fold priced. What lets the
+  // Characters tab attribute throughput to installers without re-pricing.
+  eivByJob: Map<string, number>
   totalEiv: number
   totalRecoveredTax: number
   // Jobs that would have counted but were missing an input. Surfaced so a
@@ -163,6 +166,7 @@ export const foldEiv = (jobs: readonly EivJob[], input: EivInput): EivResult => 
   const { onPage, since, bills, prices, indexSamples, systemOf, hullOf, ownStructureIds, journalPaidJobIds } = input
 
   const byStructure = new Map<string, StructureEiv>()
+  const eivByJob = new Map<string, number>()
   const skipped = { noBill: 0, noPrice: 0, noIndex: 0 }
   // The character and corp extracts can both list one job; one job is priced
   // once — the same reason the tax fold keeps `credited`/`paid` sets.
@@ -191,6 +195,7 @@ export const foldEiv = (jobs: readonly EivJob[], input: EivInput): EivResult => 
       return
     }
 
+    eivByJob.set(String(job.job_id), eiv)
     const row = byStructure.get(key) ?? { eiv: 0, jobs: 0, recoveredTax: 0, recoveredEiv: 0, recoveredJobs: 0 }
     row.eiv += eiv
     row.jobs += 1
@@ -226,5 +231,5 @@ export const foldEiv = (jobs: readonly EivJob[], input: EivInput): EivResult => 
     totalEiv += row.eiv
     totalRecoveredTax += row.recoveredTax
   })
-  return { byStructure, totalEiv, totalRecoveredTax, skipped }
+  return { byStructure, eivByJob, totalEiv, totalRecoveredTax, skipped }
 }
