@@ -978,7 +978,7 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
                                   <HelpTip
                                     text={[
                                       'Total EIV — the materials value (at CCP adjusted prices) of manufacturing and reaction jobs installed here in the window; the base every install fee is charged on.',
-                                      "Taxes Paid — facility tax paid to this structure's owner: exact from the corp wallet journal where we can read it, estimated from job costs elsewhere (cost minus index fee minus 4% SCC surcharge). 0% means the owner charges nothing — the rest of the install cost goes to CCP.",
+                                      "Taxes Paid — facility tax paid to this structure's owner: exact from the corp wallet journal where we can read it, estimated from job costs elsewhere (cost minus index fee minus 4% SCC surcharge). The subtracted fees are ~14× the typical tax, so the estimate resolves whole fractions of a percent at best: ≈0% means at or below what it can distinguish from free, not that the owner provably charges nothing.",
                                       'Revenue — industry tax received into our corp wallets from jobs run in this structure.',
                                       'Cost Avoidance — facility tax never incurred because our own jobs ran at our own rate instead of a public one.',
                                     ].join('\n\n')}
