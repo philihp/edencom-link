@@ -16,6 +16,11 @@ const input = (over: Partial<InstallerInput> = {}): InstallerInput => ({
     ['reg-b', { name: 'Quuixote', characterId: null }],
   ]),
   characterNames: new Map([['90000002', 'William Ralston']]),
+  eivByJob: new Map([
+    ['1', 120_000_000],
+    ['2', 80_000_000],
+    ['3', 40_000_000],
+  ]),
   ...over,
 })
 
@@ -37,8 +42,8 @@ test('personal and corp jobs land under their installer, busiest first', () => {
     input()
   )
   assert.deepEqual(roster.get(STRUCT), [
-    { key: 'char:90000001', name: 'Sir Cuddles', jobs: 2 },
-    { key: 'char:90000002', name: 'William Ralston', jobs: 1 },
+    { key: 'char:90000001', name: 'Sir Cuddles', jobs: 2, eiv: 200_000_000 },
+    { key: 'char:90000002', name: 'William Ralston', jobs: 1, eiv: 40_000_000 },
   ])
 })
 
@@ -49,7 +54,7 @@ test('the same person through both extracts is one row', () => {
     [job({ job_id: 1, registration_id: 'reg-a' }), job({ job_id: 2, installer_id: '90000001' })],
     input()
   )
-  assert.deepEqual(roster.get(STRUCT), [{ key: 'char:90000001', name: 'Sir Cuddles', jobs: 2 }])
+  assert.deepEqual(roster.get(STRUCT), [{ key: 'char:90000001', name: 'Sir Cuddles', jobs: 2, eiv: 200_000_000 }])
 })
 
 test('one job listed by both extracts counts once', () => {
@@ -57,17 +62,19 @@ test('one job listed by both extracts counts once', () => {
     [job({ job_id: 7, registration_id: 'reg-a' }), job({ job_id: 7, installer_id: '90000001' })],
     input()
   )
-  assert.deepEqual(roster.get(STRUCT), [{ key: 'char:90000001', name: 'Sir Cuddles', jobs: 1 }])
+  assert.deepEqual(roster.get(STRUCT), [{ key: 'char:90000001', name: 'Sir Cuddles', jobs: 1, eiv: 0 }])
 })
 
 test('a registration without an EVE id still gets a row', () => {
   const roster = foldInstallers([job({ job_id: 1, registration_id: 'reg-b' })], input())
-  assert.deepEqual(roster.get(STRUCT), [{ key: 'reg:reg-b', name: 'Quuixote', jobs: 1 }])
+  assert.deepEqual(roster.get(STRUCT), [{ key: 'reg:reg-b', name: 'Quuixote', jobs: 1, eiv: 120_000_000 }])
 })
 
 test('an unresolved corp installer falls back to a labelled id', () => {
   const roster = foldInstallers([job({ job_id: 1, installer_id: '90000099' })], input())
-  assert.deepEqual(roster.get(STRUCT), [{ key: 'char:90000099', name: 'Character #90000099', jobs: 1 }])
+  assert.deepEqual(roster.get(STRUCT), [
+    { key: 'char:90000099', name: 'Character #90000099', jobs: 1, eiv: 120_000_000 },
+  ])
 })
 
 test('window and page scope apply, ties sort by name', () => {
@@ -80,8 +87,10 @@ test('window and page scope apply, ties sort by name', () => {
     ],
     input()
   )
+  // reg-b's job 3 priced at 40m; job 4 has no EIV entry (unpriceable) -> 0,
+  // so the EIV-descending sort also puts Quuixote first here.
   assert.deepEqual(roster.get(STRUCT), [
-    { key: 'reg:reg-b', name: 'Quuixote', jobs: 1 },
-    { key: 'char:90000002', name: 'William Ralston', jobs: 1 },
+    { key: 'reg:reg-b', name: 'Quuixote', jobs: 1, eiv: 40_000_000 },
+    { key: 'char:90000002', name: 'William Ralston', jobs: 1, eiv: 0 },
   ])
 })

@@ -31,12 +31,16 @@ export type InstallerInput = {
   registrations: ReadonlyMap<string, { name: string; characterId: string | null }>
   // EVE character id -> name, from the universe_name cache.
   characterNames: ReadonlyMap<string, string>
+  // job id -> the job's EIV, from the EIV fold. A job it couldn't price (or a
+  // research job, which pushes no materials) contributes 0 — the roster keeps
+  // the person, with the throughput it can vouch for.
+  eivByJob: ReadonlyMap<string, number>
 }
 
-export type InstallerRow = { key: string; name: string; jobs: number }
+export type InstallerRow = { key: string; name: string; jobs: number; eiv: number }
 
 export const foldInstallers = (jobs: readonly InstallerJob[], input: InstallerInput): Map<string, InstallerRow[]> => {
-  const { onPage, since, registrations, characterNames } = input
+  const { onPage, since, registrations, characterNames, eivByJob } = input
 
   // structure -> installer key -> row. Both extracts can list one job (a
   // character's job at their corp's structure appears in each), so a job id is
@@ -65,8 +69,9 @@ export const foldInstallers = (jobs: readonly InstallerJob[], input: InstallerIn
     }
 
     const roster = byStructure.get(structureId) ?? new Map<string, InstallerRow>()
-    const row = roster.get(key) ?? { key, name, jobs: 0 }
+    const row = roster.get(key) ?? { key, name, jobs: 0, eiv: 0 }
     row.jobs += 1
+    row.eiv += eivByJob.get(String(job.job_id)) ?? 0
     // A corp row can know the name where an earlier fallback didn't.
     if (row.name.startsWith('Character #') && !name.startsWith('Character #')) row.name = name
     roster.set(key, row)
@@ -76,7 +81,7 @@ export const foldInstallers = (jobs: readonly InstallerJob[], input: InstallerIn
   return new Map(
     [...byStructure.entries()].map(([structureId, roster]) => [
       structureId,
-      [...roster.values()].sort((a, b) => b.jobs - a.jobs || a.name.localeCompare(b.name)),
+      [...roster.values()].sort((a, b) => b.eiv - a.eiv || b.jobs - a.jobs || a.name.localeCompare(b.name)),
     ])
   )
 }

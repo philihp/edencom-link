@@ -735,6 +735,7 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
     since: windowStart,
     registrations: registrationsById,
     characterNames: installerNames,
+    eivByJob: eiv.eivByJob,
   })
 
   // Tax that left for a landlord with no tile here. The recipient corporation
@@ -977,7 +978,7 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
                                 {hasMeasures && (
                                   <HelpTip
                                     text={[
-                                      'Total EIV — the materials value (at CCP adjusted prices) of manufacturing and reaction jobs installed here in the window; the base every install fee is charged on.',
+                                      "Industry EIV — the Estimated Item Value of the manufacturing and reaction jobs installed here in the window: the total industrial impact on the system's cost index. The index fee, the owner's facility tax, and the 4% SCC surcharge are all charged as fractions of it — think of it as this structure's market share of the system's industry.",
                                       "Taxes Paid — facility tax paid to this structure's owner: exact from the corp wallet journal where we can read it, estimated from job costs elsewhere (cost minus index fee minus 4% SCC surcharge). The subtracted fees are ~14× the typical tax, so the estimate resolves whole fractions of a percent at best: ≈0% means at or below what it can distinguish from free, not that the owner provably charges nothing.",
                                       'Revenue — industry tax received into our corp wallets from jobs run in this structure.',
                                       'Cost Avoidance — facility tax never incurred because our own jobs ran at our own rate instead of a public one.',
@@ -986,36 +987,38 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
                                 )}
                                 {row != null && row.eiv > 0 && (
                                   <>
-                                    <span className={styles.label}>Total EIV</span>
+                                    <span className={styles.label}>Industry EIV</span>
                                     <span className={`${styles.value} ${styles.num}`}>{formatIsk(row.eiv)}</span>
                                   </>
                                 )}
-                                {journalPaid != null ? (
+                                {journalPaid != null && (
                                   <>
                                     <span className={styles.label}>Taxes Paid</span>
                                     <span className={`${styles.value} ${styles.num}`}>
                                       {formatIsk(journalPaid)}
                                       {row != null && row.eiv > 0 && (
-                                        <span className={styles.subValue}>
-                                          {' '}
+                                        <span className={styles.hoverPct}>
                                           ≈{formatRate(journalPaid / row.eiv)} of EIV
                                         </span>
                                       )}
                                     </span>
                                   </>
-                                ) : (
-                                  row != null &&
-                                  row.recoveredJobs > 0 && (
-                                    <>
-                                      <span className={styles.label}>Taxes Paid (est.)</span>
-                                      <span className={`${styles.value} ${styles.num}`}>
-                                        {formatIsk(row.recoveredTax)}
-                                        {rate != null && (
-                                          <span className={styles.subValue}> ≈{formatRate(rate)} of EIV</span>
-                                        )}
-                                      </span>
-                                    </>
-                                  )
+                                )}
+                                {/* Not an else: the ledger's paidJobIds keeps recovery off every
+                                    journal-billed job, so the two figures are disjoint shares of
+                                    the same structure — corp-installed jobs land in the exact row
+                                    above, personal jobs at a rented structure only in this one.
+                                    A mixed structure legitimately shows both. */}
+                                {row != null && row.recoveredJobs > 0 && (
+                                  <>
+                                    <span className={styles.label}>Taxes Paid (est.)</span>
+                                    <span className={`${styles.value} ${styles.num}`}>
+                                      {formatIsk(row.recoveredTax)}
+                                      {rate != null && (
+                                        <span className={styles.hoverPct}>≈{formatRate(rate)} of EIV</span>
+                                      )}
+                                    </span>
+                                  </>
                                 )}
                                 {revenue != null && (
                                   <>

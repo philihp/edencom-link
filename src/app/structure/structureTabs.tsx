@@ -12,7 +12,14 @@ import styles from './structures.module.css'
 
 export type ServiceChip = { name: string; typeID: number | null }
 export type RigChip = { name: string; typeID: number }
-export type CharacterRow = { key: string; name: string; jobs: number }
+export type CharacterRow = { key: string; name: string; jobs: number; eiv: number }
+
+// Approximate throughput, to the nearest million ISK. The EIV fold prices at
+// CCP adjusted prices, so this is already an estimate — millions is the honest
+// precision, and "—" is a person whose jobs here carried no priceable EIV
+// (research, or a bill the mirror couldn't price).
+const formatEivM = (eiv: number): string =>
+  eiv > 0 ? `~${Math.round(eiv / 1_000_000).toLocaleString('en-US')}m ISK` : '—'
 
 type TabDef = { id: 'services' | 'rigs' | 'characters'; label: string; count: number }
 
@@ -80,9 +87,7 @@ export const StructureTabs = ({
           {characters.map((c) => (
             <li key={c.key} className={styles.characterRow}>
               <span className={styles.characterName}>{c.name}</span>
-              <span className={styles.characterJobs}>
-                {c.jobs} job{c.jobs === 1 ? '' : 's'}
-              </span>
+              <span className={styles.characterJobs}>{formatEivM(c.eiv)}</span>
             </li>
           ))}
         </ul>

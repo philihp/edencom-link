@@ -115,6 +115,8 @@
   text-align: right;
   min-width: 0;
   overflow-wrap: anywhere;
+  /* Anchor for the hover-revealed "% of EIV" qualifier below. */
+  position: relative;
 }
 
 .num {
@@ -164,7 +166,6 @@
   text-align: center;
   padding: 8px 6px;
   border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
   background: var(--paper);
   color: var(--ink-soft);
   overflow-wrap: anywhere;
@@ -675,6 +676,30 @@
   display: block;
   color: var(--ink-faint);
   font-size: 11px;
+}
+
+/* The "% of EIV" qualifier on the tax rows: revealed on mouse-over (or
+ * keyboard focus of the row's cell) rather than printed inline — trailing it
+ * after the amount broke the money column's right alignment. Absolutely
+ * positioned below the value so the amount never moves when it appears. */
+.hoverPct {
+  display: none;
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 5;
+  white-space: nowrap;
+  padding: 2px 7px;
+  border: 1px solid var(--line);
+  background: var(--paper-raised);
+  color: var(--ink-faint);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.value:hover .hoverPct,
+.value:focus-within .hoverPct {
+  display: block;
 }
 
 /* Muted qualifier after a value, inline: the recovered tax rate. */
