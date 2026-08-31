@@ -534,10 +534,138 @@
   text-shadow: 0 1px 3px rgb(0 0 0 / 70%);
 }
 
-/* Item icon stacked above a service/rig chip's name. */
+/* Item icon stacked above a service/rig chip's name (32px — 64 crowded the
+ * chip once the pane went tabbed). */
 .chipIcon {
   display: block;
   flex: none;
+}
+
+/* The tile's lower pane: Services / Rigs / Characters behind tabs. */
+.tabbed {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tabList {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--line);
+}
+
+/* Quiet text tabs; the active one carries the accent underline. Deliberately
+ * not the default button chrome — these switch a pane, they don't act. */
+.tab {
+  border: 0;
+  background: none;
+  cursor: pointer;
+  padding: 4px 8px 6px;
+  font-size: 12px;
+  color: var(--ink-faint);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+
+.tab:hover {
+  color: var(--ink);
+}
+
+.tabActive {
+  color: var(--ink);
+  border-bottom-color: var(--accent);
+}
+
+.tabCount {
+  margin-left: 5px;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 10px;
+  color: var(--ink-faint);
+}
+
+/* The Characters pane: who ran industry jobs here in the window. */
+.characterList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 168px;
+  overflow-y: auto;
+}
+
+.characterRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  padding: 2px 0;
+}
+
+.characterName {
+  overflow-wrap: anywhere;
+}
+
+.characterJobs {
+  flex: none;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+/* The ?-in-a-circle explaining the tile's measures. The bubble opens on hover
+ * and on focus, sits above the fields grid, and keeps the explainer's line
+ * breaks. Spans both grid columns so it doesn't occupy a label cell. */
+.helpTip {
+  position: relative;
+  grid-column: 1 / -1;
+  justify-self: end;
+  width: 15px;
+  height: 15px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  line-height: 1;
+  color: var(--ink-faint);
+  cursor: help;
+}
+
+.helpTip:hover,
+.helpTip:focus-visible {
+  color: var(--ink);
+  border-color: var(--accent);
+}
+
+.helpTipBody {
+  display: none;
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 10;
+  width: 280px;
+  max-width: 74vw;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--paper-raised);
+  color: var(--ink-soft);
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre-line;
+  box-shadow: 0 4px 16px rgb(0 0 0 / 25%);
+}
+
+.helpTip:hover .helpTipBody,
+.helpTip:focus-visible .helpTipBody,
+.helpTip:focus .helpTipBody {
+  display: block;
 }
 
 /* The fuel countdown, dropped below the timestamp rather than trailing it. The

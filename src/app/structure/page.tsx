@@ -41,8 +41,11 @@ import { groupByTier, jobLocationId, jobStructureIds } from './roster'
 import { foldTaxLedger } from './taxLedger'
 import { fetchTaxRates, formatRate } from '../settings/tax/rates'
 import { foldEiv, recoveredRate, type IndexSample } from './eiv'
+import { HelpTip } from './helpTip'
+import { foldInstallers } from './installers'
 import { formatRelativeFuture } from '../relativeTime'
 import { resolveServiceIcons } from './serviceIcons'
+import { StructureTabs } from './structureTabs'
 import { StructureSilhouette } from './silhouette'
 import { TypeIcon } from '../typeIcon'
 import { Sparkline } from './sparkline'
@@ -112,6 +115,8 @@ type JobRow = {
   // industry_job_tax_facility(), which discloses only a location.
   corporation_id?: number | string | null
   registration_id?: string | null
+  // The EVE character who installed a corp job (ESI stamps corp rows only).
+  installer_id?: number | string | null
 }
 
 type JournalRow = {
@@ -217,11 +222,14 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
         .from(table)
         .select(
           table === 'corp_industry_job'
-            ? 'job_id, station_id, facility_id, cost, start_date, activity_id, blueprint_type_id, runs, corporation_id'
+            ? 'job_id, station_id, facility_id, cost, start_date, activity_id, blueprint_type_id, runs, corporation_id, installer_id'
             : 'job_id, station_id, facility_id, cost, start_date, activity_id, blueprint_type_id, runs, registration_id'
         )
         .order('job_id', { ascending: true })
         .range(from, to)
+        // The typed query parser gives up past a dozen columns ("Unexpected
+        // input"); the shape is pinned explicitly instead.
+        .returns<JobRow[]>()
     )
   const [characterJobs, corpJobs] = await Promise.all([
     fetchJobs('character_industry_job'),
@@ -687,6 +695,48 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
   const eivByStructure = eiv.byStructure
   const eivSkipped = eiv.skipped.noBill + eiv.skipped.noPrice + eiv.skipped.noIndex
 
+  // ── Who ran jobs at each structure (the tile's Characters tab) ────────────
+  // Our own registrations name the personal jobs; corp jobs carry the
+  // installer's EVE id, resolved through the universe_name cache the
+  // universe-names job keeps warm (it resolves corp job installers already).
+  const { data: registrationRows } = await supabase.from('registration').select('id, name, character_id')
+  const registrationsById = new Map(
+    map(
+      (r: { id: string; name: string; character_id: number | string | null }) =>
+        [r.id, { name: r.name, characterId: r.character_id != null ? String(r.character_id) : null }] as [
+          string,
+          { name: string; characterId: string | null },
+        ],
+      (registrationRows ?? []) as Array<{ id: string; name: string; character_id: number | string | null }>
+    )
+  )
+  const installerIds = uniq(
+    reject(
+      isNil,
+      map((j: JobRow) => (j.installer_id != null ? Number(j.installer_id) : null), corpJobs)
+    )
+  ) as number[]
+  const installerNameBatches = installerIds.length
+    ? await Promise.all(
+        map(
+          (batch: number[]) => supabase.from('universe_name').select('id, name').in('id', batch),
+          splitEvery(RPC_BATCH, installerIds)
+        )
+      )
+    : []
+  const installerNames = new Map<string, string>(
+    map(
+      (r: { id: number | string; name: string }) => [String(r.id), r.name] as [string, string],
+      chain(({ data }) => (data ?? []) as Array<{ id: number | string; name: string }>, installerNameBatches)
+    )
+  )
+  const installersByStructure = foldInstallers(allJobs, {
+    onPage,
+    since: windowStart,
+    registrations: registrationsById,
+    characterNames: installerNames,
+  })
+
   // Tax that left for a landlord with no tile here. The recipient corporation
   // comes straight off the journal entry, so the total is known even when the
   // job doesn't resolve; the SYSTEM needs the job, which was never fetched above
@@ -904,54 +954,86 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
                         )}
 
                         <div className={styles.fields}>
-                          {totalByStructure.get(String(s.structure_id)) && (
-                            <>
-                              <span className={styles.label}>Revenue</span>
-                              <span className={`${styles.value} ${styles.num}`}>
-                                {formatIsk(totalByStructure.get(String(s.structure_id)) ?? 0)}
-                              </span>
-                            </>
-                          )}
-                          {taxesPaidByStructure.get(String(s.structure_id)) && (
-                            <>
-                              <span className={styles.label}>Taxes Paid</span>
-                              <span className={`${styles.value} ${styles.num}`}>
-                                {formatIsk(taxesPaidByStructure.get(String(s.structure_id)) ?? 0)}
-                              </span>
-                            </>
-                          )}
                           {(() => {
-                            const row = eivByStructure.get(String(s.structure_id))
-                            if (!row) return null
-                            const rate = recoveredRate(row)
+                            const key = String(s.structure_id)
+                            const row = eivByStructure.get(key)
+                            const journalPaid = taxesPaidByStructure.get(key)
+                            const revenue = totalByStructure.get(key)
+                            const hasMeasures =
+                              (row != null && (row.eiv > 0 || row.recoveredJobs > 0)) ||
+                              journalPaid != null ||
+                              revenue != null ||
+                              avoidedByStructure.has(key)
+                            // A journal receipt is exact and wins; the recovered
+                            // estimate stands in where no journal can see the
+                            // charge. Either way the rate is the tax against
+                            // this structure's EIV over the same window — and 0
+                            // is shown, not hidden: it means the owner charges
+                            // nothing, while the index fee and SCC surcharge in
+                            // the job cost went to CCP, not to them.
+                            const rate = row != null ? recoveredRate(row) : null
                             return (
                               <>
-                                {row.recoveredTax > 0 && (
-                                  <>
-                                    <span className={styles.label}>Taxes Paid (est.)</span>
-                                    <span className={`${styles.value} ${styles.num}`}>
-                                      {formatIsk(row.recoveredTax)}
-                                      {rate != null && <span className={styles.subValue}> ≈{formatRate(rate)}</span>}
-                                    </span>
-                                  </>
+                                {hasMeasures && (
+                                  <HelpTip
+                                    text={[
+                                      'Total EIV — the materials value (at CCP adjusted prices) of manufacturing and reaction jobs installed here in the window; the base every install fee is charged on.',
+                                      "Taxes Paid — facility tax paid to this structure's owner: exact from the corp wallet journal where we can read it, estimated from job costs elsewhere (cost minus index fee minus 4% SCC surcharge). The subtracted fees are ~14× the typical tax, so the estimate resolves whole fractions of a percent at best: ≈0% means at or below what it can distinguish from free, not that the owner provably charges nothing.",
+                                      'Revenue — industry tax received into our corp wallets from jobs run in this structure.',
+                                      'Cost Avoidance — facility tax never incurred because our own jobs ran at our own rate instead of a public one.',
+                                    ].join('\n\n')}
+                                  />
                                 )}
-                                {row.eiv > 0 && (
+                                {row != null && row.eiv > 0 && (
                                   <>
                                     <span className={styles.label}>Total EIV</span>
                                     <span className={`${styles.value} ${styles.num}`}>{formatIsk(row.eiv)}</span>
                                   </>
                                 )}
+                                {journalPaid != null ? (
+                                  <>
+                                    <span className={styles.label}>Taxes Paid</span>
+                                    <span className={`${styles.value} ${styles.num}`}>
+                                      {formatIsk(journalPaid)}
+                                      {row != null && row.eiv > 0 && (
+                                        <span className={styles.subValue}>
+                                          {' '}
+                                          ≈{formatRate(journalPaid / row.eiv)} of EIV
+                                        </span>
+                                      )}
+                                    </span>
+                                  </>
+                                ) : (
+                                  row != null &&
+                                  row.recoveredJobs > 0 && (
+                                    <>
+                                      <span className={styles.label}>Taxes Paid (est.)</span>
+                                      <span className={`${styles.value} ${styles.num}`}>
+                                        {formatIsk(row.recoveredTax)}
+                                        {rate != null && (
+                                          <span className={styles.subValue}> ≈{formatRate(rate)} of EIV</span>
+                                        )}
+                                      </span>
+                                    </>
+                                  )
+                                )}
+                                {revenue != null && (
+                                  <>
+                                    <span className={styles.label}>Revenue</span>
+                                    <span className={`${styles.value} ${styles.num}`}>{formatIsk(revenue)}</span>
+                                  </>
+                                )}
+                                {avoidedByStructure.has(key) && (
+                                  <>
+                                    <span className={styles.label}>Cost Avoidance</span>
+                                    <span className={`${styles.value} ${styles.num}`}>
+                                      {formatIsk(avoidedByStructure.get(key) ?? 0)}
+                                    </span>
+                                  </>
+                                )}
                               </>
                             )
                           })()}
-                          {avoidedByStructure.has(String(s.structure_id)) && (
-                            <>
-                              <span className={styles.label}>Cost Avoidance</span>
-                              <span className={`${styles.value} ${styles.num}`}>
-                                {formatIsk(avoidedByStructure.get(String(s.structure_id)) ?? 0)}
-                              </span>
-                            </>
-                          )}
                           <span className={styles.label}>Type</span>
                           <span className={styles.value}>
                             <Name
@@ -991,37 +1073,11 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
                           )}
                         </div>
 
-                        {services.length > 0 && (
-                          <div className={styles.section}>
-                            <span className={styles.sectionLabel}>Services</span>
-                            {
-                              <ul className={styles.chips}>
-                                {services.map((svc, i) => (
-                                  <li key={`svc-${s.structure_id}-${i}`} className={styles.chip}>
-                                    {serviceIcons.has(svc) && (
-                                      <TypeIcon id={serviceIcons.get(svc)!} size={64} className={styles.chipIcon} />
-                                    )}
-                                    {svc}
-                                  </li>
-                                ))}
-                              </ul>
-                            }
-                          </div>
-                        )}
-
-                        {rigs.length > 0 && (
-                          <div className={styles.section}>
-                            <span className={styles.sectionLabel}>Rigs</span>
-                            <ul className={styles.chips}>
-                              {rigs.map((rig, i) => (
-                                <li key={`rig-${s.structure_id}-${i}`} className={styles.chip}>
-                                  <TypeIcon id={rig.typeID} size={64} className={styles.chipIcon} />
-                                  {rig.name}
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-                        )}
+                        <StructureTabs
+                          services={services.map((svc) => ({ name: svc, typeID: serviceIcons.get(svc) ?? null }))}
+                          rigs={rigs.map((rig) => ({ name: rig.name, typeID: rig.typeID }))}
+                          characters={installersByStructure.get(String(s.structure_id)) ?? []}
+                        />
 
                         {indexActivities.length > 0 && (
                           <div className={styles.section}>
