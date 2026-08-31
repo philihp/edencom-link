@@ -535,6 +535,69 @@
   text-shadow: 0 1px 3px rgb(0 0 0 / 70%);
 }
 
+/* ── The hero in light mode: inverted backdrop, black letters ──────────────
+ * The render is mostly dark space, which reads as a dark band on a light
+ * page; inverting the blurred image flips it into a pale field of the same
+ * colours, the scrim goes white, and the letters go black with a soft light
+ * halo. Theme state per globals.css: an explicit data-theme wins in both
+ * directions, and the bare-system case is the media query guarded against an
+ * explicit dark choice — so every rule here appears twice, once per path. */
+@media (prefers-color-scheme: light) {
+  :global(:root:not([data-theme='dark'])) .heroArt {
+    filter: blur(10px) invert(1);
+  }
+
+  :global(:root:not([data-theme='dark'])) .hero::after {
+    background: linear-gradient(to right, rgb(248 249 251 / 72%), rgb(248 249 251 / 46%));
+  }
+
+  :global(:root:not([data-theme='dark'])) .heroHead .name {
+    color: #0b0d10 !important;
+    text-shadow: 0 1px 3px rgb(255 255 255 / 75%);
+  }
+
+  :global(:root:not([data-theme='dark'])) .heroHead .name:hover {
+    color: #000000 !important;
+  }
+
+  :global(:root:not([data-theme='dark'])) .heroHead .subId {
+    color: rgb(20 24 30 / 85%);
+    text-shadow: 0 1px 3px rgb(255 255 255 / 80%);
+  }
+
+  :global(:root:not([data-theme='dark'])) .heroHead .favorite:not([aria-pressed='true']) {
+    color: rgb(20 24 30 / 75%);
+    text-shadow: 0 1px 3px rgb(255 255 255 / 75%);
+  }
+}
+
+:global(:root[data-theme='light']) .heroArt {
+  filter: blur(10px) invert(1);
+}
+
+:global(:root[data-theme='light']) .hero::after {
+  background: linear-gradient(to right, rgb(248 249 251 / 72%), rgb(248 249 251 / 46%));
+}
+
+:global(:root[data-theme='light']) .heroHead .name {
+  color: #0b0d10 !important;
+  text-shadow: 0 1px 3px rgb(255 255 255 / 75%);
+}
+
+:global(:root[data-theme='light']) .heroHead .name:hover {
+  color: #000000 !important;
+}
+
+:global(:root[data-theme='light']) .heroHead .subId {
+  color: rgb(20 24 30 / 85%);
+  text-shadow: 0 1px 3px rgb(255 255 255 / 80%);
+}
+
+:global(:root[data-theme='light']) .heroHead .favorite:not([aria-pressed='true']) {
+  color: rgb(20 24 30 / 75%);
+  text-shadow: 0 1px 3px rgb(255 255 255 / 75%);
+}
+
 /* Item icon stacked above a service/rig chip's name (32px — 64 crowded the
  * chip once the pane went tabbed). */
 .chipIcon {
