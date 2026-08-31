@@ -4,6 +4,14 @@ import { resolveLibraries, type Library } from './libraries'
 import { SharedSearchBox } from './sharedSearchBox'
 import { TypeSearch } from './typeSearch'
 
+// A corporation's library reaches us because a PERSON published it, and the
+// label names the corporation rather than them — so say who, the same way the
+// shared-library search does. An account's library needs no such line: the
+// label is already its owner's main. A row whose publisher has since deleted
+// their account (created_by nulls out) simply goes without.
+const sharedByNote = (library: Library) =>
+  library.subject.kind === 'corporation' && library.sharedBy ? `, shared by ${library.sharedBy}` : ''
+
 const List = ({ heading, libraries }: { heading: string; libraries: Library[] }) => (
   <>
     <h2>{heading}</h2>
@@ -11,6 +19,7 @@ const List = ({ heading, libraries }: { heading: string; libraries: Library[] })
       {libraries.map((library) => (
         <li key={library.key}>
           <Link href={library.href}>{library.label}</Link> — {library.note}
+          {sharedByNote(library)}
         </li>
       ))}
     </ul>
