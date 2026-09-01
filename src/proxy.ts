@@ -33,7 +33,21 @@ export async function proxy(request: NextRequest) {
       },
     })
 
-    await supabase.auth.getUser()
+    // Called for its side effect, not its answer: @supabase/ssr refreshes an
+    // access token that is at or near expiry and writes the new cookies back
+    // through setAll() above. That refresh is what keeps a session alive across
+    // requests, so this call cannot simply be dropped.
+    //
+    // getClaims() rather than getUser() because getUser() asks the Auth server
+    // on *every* request — a single-region round trip in front of every page,
+    // and the page then paid a second one in establishedUser(). getClaims()
+    // still goes through getSession() first (auth-js GoTrueClient.getClaims →
+    // getSession → __loadSession, which refreshes inside EXPIRY_MARGIN_MS), so
+    // the refresh behaviour is unchanged; what goes away is the per-request
+    // confirmation call, replaced by local verification against the project's
+    // JWKS. See the note in account/lib/establishedUser.ts for the liveness
+    // tradeoff that buys, and why this project can verify locally at all.
+    await supabase.auth.getClaims()
   } catch (err) {
     console.error('proxy: supabase auth threw', err)
   }

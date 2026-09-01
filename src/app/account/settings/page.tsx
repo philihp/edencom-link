@@ -55,11 +55,17 @@ const SettingsPage = async ({ searchParams }: { searchParams: Promise<{ gice?: s
   const chancellor = await isChancellor(user.id)
   const { data: giceAccount } = await supabase.from('gice_account').select('gice_id, name').maybeSingle()
   const placeholderEmail = isSsoPlaceholderEmail(user.email)
-  // Which providers this account can sign in with. Supabase owns the list
-  // (EVE SSO isn't on it — that's a registration row, not an identity), so ask
-  // it rather than inferring from anything of ours.
-  const { data: identities } = await supabase.auth.getUserIdentities()
-  const discordLinked = (identities?.identities ?? []).some(({ provider }) => provider === 'discord')
+  // The Supabase profile record. Two things need it, and one call covers both:
+  // the providers this account can sign in with — Supabase owns that list (EVE
+  // SSO isn't on it; that's a registration row, not an identity), so ask rather
+  // than infer — and `created_at`, which the access token does not carry and
+  // establishedUser() therefore no longer returns. This replaces the
+  // getUserIdentities() call that used to sit here, so the page still makes
+  // exactly one Auth-server request.
+  const {
+    data: { user: profile },
+  } = await supabase.auth.getUser()
+  const discordLinked = (profile?.identities ?? []).some(({ provider }) => provider === 'discord')
   const { data: discordChannels } = await supabase
     .from('discord_channel')
     .select('id, guild_id, channel_id, guild_name, channel_name, created_at, disabled_at')
@@ -86,10 +92,10 @@ const SettingsPage = async ({ searchParams }: { searchParams: Promise<{ gice?: s
           <div className={styles.subtitle}>
             {placeholderEmail ? 'no email yet' : <span className={styles.subtitleStrong}>{user.email}</span>}
             {main && <> · main: {main.name}</>}
-            {user.created_at && (
+            {profile?.created_at && (
               <>
                 {' '}
-                · pilot since <span className={styles.mono}>{user.created_at.slice(0, 10)}</span>
+                · pilot since <span className={styles.mono}>{profile.created_at.slice(0, 10)}</span>
               </>
             )}
           </div>

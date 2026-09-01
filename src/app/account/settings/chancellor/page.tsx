@@ -69,11 +69,18 @@ const ChancellorPage = async () => {
     .eq('user_id', user.id)
     .maybeSingle()
 
+  // created_at/last_sign_in_at are profile fields, not access-token claims, so
+  // establishedUser() cannot supply them. This page already holds a
+  // service-role client and reads other accounts through it the same way; one
+  // more lookup for the caller's own record is in keeping, and this is a
+  // Chancellor-only page where an extra Auth call costs nothing anyone notices.
+  const { data: profile } = await service.auth.admin.getUserById(user.id)
+
   const debugInfo = {
     user_id: user.id,
     email: user.email,
-    created_at: user.created_at,
-    last_sign_in_at: user.last_sign_in_at,
+    created_at: profile?.user?.created_at ?? null,
+    last_sign_in_at: profile?.user?.last_sign_in_at ?? null,
     enabled_scopes: settings?.enabled_scopes ?? [],
     api_token: settings?.api_token ?? null,
     flags: settings?.flags ?? [],
