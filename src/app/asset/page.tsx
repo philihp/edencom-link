@@ -12,7 +12,7 @@ import { resolveLocations, type LocationRef } from '../resolveLocations'
 import { AssetSearchForm } from './assetSearchForm'
 import styles from './assets.module.css'
 import { AssetsTable, type Location } from './assetsTable'
-import { assetExtractStamp, fetchLocationSummary } from './locationSummary'
+import { fetchLocationSummary } from './locationSummary'
 
 const AssetsPage = async () => {
   const supabase = await createClient()
@@ -22,28 +22,26 @@ const AssetsPage = async () => {
     redirect('/')
   }
 
-  // The location buckets are expensive to build (two location-summary RPCs plus
-  // a name-resolution pass), so the wait is covered by ./loading.tsx — which
-  // paints the instant the link is clicked, rather than only once the server
-  // has started responding, as an in-page Suspense fallback did.
+  // Kept as a child component so ./loading.tsx still covers the wait — it paints
+  // the instant the link is clicked, rather than only once the server has
+  // started responding, as an in-page Suspense fallback did. The buckets are no
+  // longer expensive (see below), but the name-resolution pass behind them is
+  // still several round trips.
   //
-  // The client is handed down rather than made again so the summary's cache
-  // lookup runs against one whose session is already resolved in memory.
-  return <Locations supabase={supabase} userId={user.id} />
+  // The client is handed down rather than made again so this runs against one
+  // whose session is already resolved in memory.
+  return <Locations supabase={supabase} />
 }
 export default AssetsPage
 
-const Locations = async ({ supabase, userId }: { supabase: SupabaseClient; userId: string }) => {
-  // A hangar can hold tens of thousands of nested items; paging them all into
-  // Node and walking the location_id chains here timed the page out. The
-  // *_asset_location_summary() functions do the walk in Postgres and return one
-  // small row per location/owner pair instead (RLS still scopes character rows
-  // to us and corp rows to corps we have a registered character in). The
-  // "last refreshed" heartbeat doesn't depend on any of this, so it's fetched
-  // in the same batch instead of after everything else resolves — alongside the
-  // cache stamp the summary itself is keyed on.
-  const [stamp, owners, { data: lastRun }, { data: mainCharacter }] = await Promise.all([
-    assetExtractStamp(supabase),
+const Locations = async ({ supabase }: { supabase: SupabaseClient }) => {
+  // A hangar can hold tens of thousands of nested items, and walking their
+  // location_id chains is far too expensive to do per render — it was ~6.3s of
+  // database time. The extract jobs now maintain that walk's result in
+  // asset_location_summary_cache, so this is a small keyed read (0.2ms) and
+  // joins the same batch as everything else the page needs.
+  const [summary, owners, { data: lastRun }, { data: mainCharacter }] = await Promise.all([
+    fetchLocationSummary(supabase),
     fetchOwners(),
     supabase
       .from('heartbeat')
@@ -64,10 +62,6 @@ const Locations = async ({ supabase, userId }: { supabase: SupabaseClient; userI
       .maybeSingle(),
   ])
   const mainCharacterId = mainCharacter?.character_id ?? null
-
-  // Served from the data cache unless an asset extract has completed since the
-  // last render; only then is the whole-hangar walk paid for again.
-  const summary = await fetchLocationSummary(supabase, userId, stamp)
 
   // Tally stacks per location, split by the owner (character or corporation)
   // of each stack so the client can filter by owner.

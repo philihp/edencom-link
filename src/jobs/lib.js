@@ -96,6 +96,26 @@ export const claimRows = async (claimFn, rows) => {
   return sum(opened)
 }
 
+// Rebuild the /asset location rollup for whoever the extract just touched
+// (migration 20260901031842_asset_location_summary_cache.sql).
+//
+// Throws rather than logging, deliberately. /asset reads
+// asset_location_summary_cache directly and has no live fallback behind it — a
+// fallback that fired on an empty read would fire for every account that
+// genuinely owns nothing — so a reconcile that lands without rebuilding the
+// rollup leaves that account's page silently wrong until the next cycle. The
+// per-character and per-corp loops already catch and continue, so one failure
+// does not kill the run; a failed heartbeat is the honest signal that this
+// account's page is stale.
+//
+// Through writeWithSchemaRetry for the same reason claimRows is: the deploy
+// that first ships one of these functions leaves a window where the migration
+// has run but PostgREST still answers from a schema cache without it.
+export const refreshAssetSummary = async (fn, params) => {
+  const { error } = await writeWithSchemaRetry(fn, () => sudoSupabase.rpc(fn, params))
+  if (error) throw error
+}
+
 // Load the registration id -> name / user_id maps once per run, shared by the
 // token loops below. Throws on a lookup failure.
 const loadCharacterMaps = async (tag) => {

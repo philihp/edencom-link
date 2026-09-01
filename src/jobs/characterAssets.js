@@ -2,7 +2,7 @@ import { filter, forEach, identity, juxt, map, pipe, prop, reduce, splitEvery } 
 
 import { assets, assetNames } from '../esi.js'
 import { sudoSupabase } from '../supabase.js'
-import { claimRows, cli, fetchAllPages, forEachCharacter, forEachSequential } from './lib.js'
+import { claimRows, cli, fetchAllPages, forEachCharacter, forEachSequential, refreshAssetSummary } from './lib.js'
 
 const TAG = 'character-assets'
 const SCOPE = 'esi-assets.read_assets.v1'
@@ -161,11 +161,15 @@ export const runCharacterAssets = ({ registrationIds } = {}) =>
   forEachCharacter(
     TAG,
     { scope: SCOPE, registrationIds },
-    async ({ access_token, characterID, registration_id, ctx }) => {
+    async ({ access_token, characterID, registration_id, userId, ctx }) => {
       const t0 = Date.now()
       const fetched = await fetchAllPages((page) => assets(access_token, characterID, page))
       const names = await fetchNames(access_token, characterID, fetched)
       const { touched, opened, closed } = await reconcile(registration_id, fetched, names)
+
+      // /asset reads a rollup of the container walk rather than recomputing it,
+      // so the reconcile is only half done until that rollup agrees with it.
+      await refreshAssetSummary('refresh_asset_location_summary_cache', { p_user_id: userId })
 
       const dt = Date.now() - t0
       console.log(
