@@ -2,7 +2,7 @@ import { forEach, reduce, splitEvery } from 'ramda'
 
 import { corpAssets } from '../esi.js'
 import { sudoSupabase } from '../supabase.js'
-import { claimRows, cli, fetchAllPages, forEachCorporation, forEachSequential } from './lib.js'
+import { claimRows, cli, fetchAllPages, forEachCorporation, forEachSequential, refreshAssetSummary } from './lib.js'
 
 const TAG = 'corp-assets'
 export const SCOPE = 'esi-assets.read_corporation_assets.v1'
@@ -144,6 +144,14 @@ export const runCorpAssets = ({ registrationIds } = {}) =>
     console.log(
       `[${TAG}] ${ctx}: corp ${corporation_id} ${assets.length} asset(s); ${touched} unchanged, ${opened} opened, ${closed} closed`
     )
+
+    // Corp assets sit in the same /asset rollup as the character ones, and a
+    // corp's holdings show on the page of every account with a character in it
+    // — not just the one whose token ran this job. The function fans out to all
+    // of them.
+    await refreshAssetSummary('refresh_asset_location_summary_cache_for_corporation', {
+      p_corporation_id: corporation_id,
+    })
 
     const now = new Date().toISOString()
     const rigRows = assets

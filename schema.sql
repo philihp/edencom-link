@@ -4182,6 +4182,178 @@ revoke execute on function public.corp_asset_claim(jsonb) from public, anon, aut
 grant execute on function public.corp_asset_claim(jsonb) to service_role;
 
 
+-- ── /asset location rollup ────────────────────────────────────────────────
+-- The container walk the two *_asset_location_summary() functions do, kept as a
+-- table instead of recomputed per render. /asset cost ~6.3s of database time
+-- without it (5,290ms character walk + 320ms corp walk + a 669ms heartbeat read
+-- that existed only to key the Next.js data cache); reading this is 0.2ms.
+-- Maintained by the character-assets and corp-assets extracts. See
+-- supabase/migrations/20260901031842_asset_location_summary_cache.sql, which
+-- also records why shared assets are deliberately not in it.
+create table public.asset_location_summary_cache (
+  user_id       uuid   not null references auth.users(id) on delete cascade,
+  -- Which side of the union a row came from. The page keys its counts by
+  -- owner_id alone (a registration uuid, or a corporation id as text, exactly
+  -- as fetchOwners() labels them), but the two id spaces are different types
+  -- flattened to text, so the scope is what keeps the primary key honest.
+  owner_scope   text   not null check (owner_scope in ('character', 'corporation')),
+  owner_id      text   not null,
+  location_id   bigint not null,
+  location_type text,
+  stacks        bigint not null,
+  refreshed_at  timestamptz not null default now(),
+  primary key (user_id, owner_scope, owner_id, location_id)
+);
+
+alter table public.asset_location_summary_cache enable row level security;
+
+create policy "Users read own asset summary cache"
+  on public.asset_location_summary_cache
+  for select
+  using (user_id = (select auth.uid()));
+
+grant select on public.asset_location_summary_cache to authenticated;
+grant select, insert, update, delete on public.asset_location_summary_cache to service_role;
+
+-- Scoped to one account by argument rather than by auth.uid(), and SECURITY
+-- DEFINER so the "Audience reads shared assets" policy on
+-- character_asset_over_time never enters the plan — that policy ORs a recursive
+-- asset_share_covers() call alongside the ownership test, which makes the
+-- registration_id index unusable and costs ~2.3s per scan.
+create or replace function public.refresh_asset_location_summary_cache(p_user_id uuid)
+returns integer
+language plpgsql
+security definer
+set search_path to 'public'
+as $$
+declare
+  v_rows integer;
+begin
+  if p_user_id is null then
+    return 0;
+  end if;
+
+  -- One transaction: the page must never observe a half-rebuilt account.
+  delete from public.asset_location_summary_cache where user_id = p_user_id;
+
+  with recursive
+  mine as (
+    select id, corporation_id from public.registration where user_id = p_user_id
+  ),
+  char_visible as (
+    select a.item_id, a.location_id, a.location_type, a.registration_id, a.is_current, a.valid_until
+    from public.character_asset_over_time a
+    where a.registration_id in (select id from mine)
+  ),
+  -- One best-known parent per item, so the walk can bridge a container that has
+  -- momentarily dropped out of the current snapshot — one handed between the
+  -- account's own characters, whose extracts run at different times. Narrowed to
+  -- ids that appear as somebody's location, which is all the walk can probe.
+  char_parent as (
+    select distinct on (item_id) item_id, location_id, location_type
+    from char_visible
+    where item_id in (select location_id from char_visible where location_id is not null)
+    order by item_id, is_current desc, valid_until desc
+  ),
+  char_walk as (
+    select v.item_id as start_item, v.registration_id, v.location_id, v.location_type, 1 as depth
+    from char_visible v
+    where v.is_current
+    union all
+    select w.start_item, w.registration_id, p.location_id, p.location_type, w.depth + 1
+    from char_walk w
+    join char_parent p on p.item_id = w.location_id
+    where w.depth < 64
+  ),
+  char_rows as (
+    select 'character'::text as owner_scope,
+           w.registration_id::text as owner_id,
+           w.location_id,
+           w.location_type,
+           count(*) as stacks
+    from char_walk w
+    where w.location_id is not null
+      and not exists (select 1 from char_parent o where o.item_id = w.location_id)
+    group by w.registration_id, w.location_id, w.location_type
+  ),
+  -- Same shape over corp assets, scoped to the corporations this account has a
+  -- character in — exactly what corp_asset_over_time's RLS keys off, so the row
+  -- set matches what the caller could read live.
+  corp_visible as (
+    select a.item_id, a.location_id, a.location_type, a.corporation_id, a.is_current, a.valid_until
+    from public.corp_asset_over_time a
+    where a.corporation_id in (select corporation_id from mine where corporation_id is not null)
+  ),
+  corp_parent as (
+    select distinct on (item_id) item_id, location_id, location_type
+    from corp_visible
+    where item_id in (select location_id from corp_visible where location_id is not null)
+    order by item_id, is_current desc, valid_until desc
+  ),
+  corp_walk as (
+    select v.item_id as start_item, v.corporation_id, v.location_id, v.location_type, 1 as depth
+    from corp_visible v
+    where v.is_current
+    union all
+    select w.start_item, w.corporation_id, p.location_id, p.location_type, w.depth + 1
+    from corp_walk w
+    join corp_parent p on p.item_id = w.location_id
+    where w.depth < 64
+  ),
+  corp_rows as (
+    select 'corporation'::text as owner_scope,
+           w.corporation_id::text as owner_id,
+           w.location_id,
+           w.location_type,
+           count(*) as stacks
+    from corp_walk w
+    where w.location_id is not null
+      and not exists (select 1 from corp_parent o where o.item_id = w.location_id)
+    group by w.corporation_id, w.location_id, w.location_type
+  )
+  insert into public.asset_location_summary_cache
+    (user_id, owner_scope, owner_id, location_id, location_type, stacks)
+  select p_user_id, owner_scope, owner_id, location_id, location_type, stacks
+  from (select * from char_rows union all select * from corp_rows) r;
+
+  get diagnostics v_rows = row_count;
+  return v_rows;
+end
+$$;
+
+-- A corp extract moves the corporation half for every account with a character
+-- in that corp, not just the one whose token ran the job.
+create or replace function public.refresh_asset_location_summary_cache_for_corporation(p_corporation_id bigint)
+returns integer
+language plpgsql
+security definer
+set search_path to 'public'
+as $$
+declare
+  v_user  uuid;
+  v_users integer := 0;
+begin
+  if p_corporation_id is null then
+    return 0;
+  end if;
+
+  for v_user in
+    select distinct user_id from public.registration where corporation_id = p_corporation_id and user_id is not null
+  loop
+    perform public.refresh_asset_location_summary_cache(v_user);
+    v_users := v_users + 1;
+  end loop;
+
+  return v_users;
+end
+$$;
+
+revoke execute on function public.refresh_asset_location_summary_cache(uuid) from public, anon, authenticated;
+revoke execute on function public.refresh_asset_location_summary_cache_for_corporation(bigint)
+  from public, anon, authenticated;
+grant execute on function public.refresh_asset_location_summary_cache(uuid) to service_role;
+grant execute on function public.refresh_asset_location_summary_cache_for_corporation(bigint) to service_role;
+
 -- ── corp asset aggregation functions ──────────────────────────────────────
 -- Mirrors the character asset aggregation functions above over the corp asset
 -- history, so the assets pages can show corp hangars beside character hangars

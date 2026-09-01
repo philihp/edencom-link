@@ -1,25 +1,12 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { unstable_cache } from 'next/cache'
-import { map } from 'ramda'
+import { forEach } from 'ramda'
 
 // Bigint ids arrive from PostgREST as strings, so every id is kept as a string
 // and only converted to a number at the API/system-lookup boundary.
-type CharacterSummaryRow = {
-  location_id: number | string
-  location_type: string | null
-  registration_id: string
-  stacks: number | string
-}
-
-type CorpSummaryRow = {
-  location_id: number | string
-  location_type: string | null
-  corporation_id: number | string
-  stacks: number | string
-}
-
-// A summary row from either source, keyed by whoever owns the stacks: a
-// character (registration uuid) or a corporation (EVE corporation id).
+//
+// A summary row keyed by whoever owns the stacks: a character (registration
+// uuid) or a corporation (EVE corporation id), exactly as fetchOwners() labels
+// them.
 export type SummaryRow = {
   location_id: number | string
   location_type: string | null
@@ -27,87 +14,46 @@ export type SummaryRow = {
   stacks: number | string
 }
 
-// The two extract jobs whose completion can move an asset's location bucket.
-const ASSET_JOBS = ['character-assets', 'corp-assets']
-
-// A stamp that changes exactly when the caller's asset data can have changed:
-// the most recent completion of either asset extract they can see. `ended_at`
-// only ever moves forward, so the max across both jobs is enough — there is no
-// need to track the two separately. RLS scopes the read the same way it scopes
-// the assets themselves (own character rows, plus corp rows for corps we have a
-// registered character in), so a corp extract another member's account
-// triggered still moves our stamp. Indexed by heartbeat_job_ended_at_idx.
-export const assetExtractStamp = async (supabase: SupabaseClient): Promise<string> => {
-  const { data } = await supabase
-    .from('heartbeat')
-    .select('ended_at')
-    .in('job', ASSET_JOBS)
-    .not('ended_at', 'is', null)
-    .order('ended_at', { ascending: false })
-    .limit(1)
-    .maybeSingle()
-  return data?.ended_at ?? 'never'
-}
-
-// character_asset_location_summary() and corp_asset_location_summary() walk
-// *every* current asset up its container chain to bucket it by location —
-// ~600ms and ~130ms on production (see the header of migration
-// 20260807010000_asset_location_summary_scope.sql). They were being paid on
-// every render, to produce ~1.5k rows from data that only changes when the
-// 6-hourly extract runs.
+// Read the caller's location buckets out of asset_location_summary_cache
+// (migration 20260901031842).
 //
-// So key the result on the caller plus that extract's completion stamp and put
-// it in the data cache. A new stamp is a new key, which is what makes this
-// safe: nothing is ever served across an extract, including an on-demand
-// "Refresh ESI" (the dispatched job writes a heartbeat when it finishes, after
-// its reconcile has landed). `revalidate` is only the backstop for a key that
-// somehow stops moving; an hour is far inside the 6-hour cadence.
+// This used to call character_asset_location_summary() and
+// corp_asset_location_summary() per render and hold the result in the Next.js
+// data cache, keyed on the most recent asset-extract heartbeat. That cost about
+// 6.3 seconds of database time on a cold key — 5,290 ms for the character walk,
+// 320 ms for the corp one, and 669 ms for the heartbeat read that existed only
+// to compute the key — and the key moved 75 times a day for a nine-character
+// account, because character-assets writes one heartbeat per character and the
+// heartbeat policy also exposes corp-scoped rows. So the expensive path was the
+// common one, not the tail.
 //
-// The user id is in the key because these rows are RLS-scoped to the caller and
-// the data cache is not — two accounts must never share an entry.
-//
-// This is the cheap half of the fix. The real one is to stop recomputing the
-// walk per request at all (a rollup table maintained by the extract job), which
-// would also help /asset/[locationId] and the MCP browse_assets tool; this
-// helps only what renders through here.
-const CACHE_TTL_SECONDS = 3600
+// The rollup is now maintained by the extract jobs, which means this is a
+// primary-key range read of ~500 rows: 0.2 ms measured on production. There is
+// nothing left worth caching in front of it, so both the data cache and the
+// stamp query are gone.
+const PAGE = 1000
 
-export const fetchLocationSummary = async (
-  supabase: SupabaseClient,
-  userId: string,
-  stamp: string
-): Promise<SummaryRow[]> => {
-  const load = unstable_cache(
-    async (): Promise<SummaryRow[]> => {
-      const [{ data: characterSummary, error: characterError }, { data: corpSummary, error: corpError }] =
-        await Promise.all([
-          supabase.rpc('character_asset_location_summary'),
-          supabase.rpc('corp_asset_location_summary'),
-        ])
-      // Throw rather than fall back to empty: an empty result is indistinguishable
-      // from "you own nothing", and caching that for an hour would turn a blip
-      // into an hour of a blank asset page. A rejected callback is not cached.
-      if (characterError) throw characterError
-      if (corpError) throw corpError
-      return [
-        ...map(
-          (row: CharacterSummaryRow): SummaryRow => ({ ...row, owner_id: row.registration_id }),
-          (characterSummary ?? []) as CharacterSummaryRow[]
-        ),
-        ...map(
-          (row: CorpSummaryRow): SummaryRow => ({ ...row, owner_id: String(row.corporation_id) }),
-          (corpSummary ?? []) as CorpSummaryRow[]
-        ),
-      ]
-    },
-    ['asset-location-summary', userId, stamp],
-    { revalidate: CACHE_TTL_SECONDS }
-  )
-
-  // The page rendered an empty table when these RPCs failed; keep that, but
-  // decide it out here so the failure never reaches the cache.
-  return load().catch((error) => {
-    console.error(`[asset] location summary failed: ${error?.message ?? error}`)
-    return []
-  })
+export const fetchLocationSummary = async (supabase: SupabaseClient): Promise<SummaryRow[]> => {
+  // PostgREST caps a single select, and rows here are (location x owner) pairs
+  // — a many-character account can exceed the cap. Page tail-recursively, the
+  // house shape for unbounded reads.
+  const readPage = async (from = 0, acc: SummaryRow[] = []): Promise<SummaryRow[]> => {
+    const { data, error } = await supabase
+      .from('asset_location_summary_cache')
+      .select('location_id, location_type, owner_id, stacks')
+      .order('location_id', { ascending: true })
+      .order('owner_id', { ascending: true })
+      .range(from, from + PAGE - 1)
+    // Returning empty on failure keeps the page rendering, as it did before —
+    // but say so, because an empty summary is indistinguishable from "you own
+    // nothing" and this table has no live fallback behind it.
+    if (error) {
+      console.error(`[asset] location summary cache read failed: ${error.message}`)
+      return acc
+    }
+    const rows = (data ?? []) as SummaryRow[]
+    forEach((row: SummaryRow) => acc.push(row), rows)
+    return rows.length < PAGE ? acc : readPage(from + PAGE, acc)
+  }
+  return readPage()
 }
