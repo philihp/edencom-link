@@ -1,7 +1,7 @@
 import { notFound, redirect } from 'next/navigation'
 
 import { FIT_UI_FLAG, hasFlag } from '@/flags'
-import { getSdeType } from '@/sdeTypes'
+import { getSdeType, getSdeTypes } from '@/sdeTypes'
 import { createClient } from '@/utils/supabase/server'
 
 import { establishedUser } from '../../account/lib/establishedUser'
@@ -10,6 +10,8 @@ import { AssetPath, fetchAssetPath, type Crumb } from '../../assetPath'
 import { toEsiFit } from '../../ship/[itemId]/esfFit'
 import { fetchShipOwner } from '../../ship/[itemId]/shipOwner'
 import { SHIP_CATEGORY_ID, fittingOrder } from '../../ship/[itemId]/shipRows'
+import { eftTypes, shipEft } from './eft'
+import { FitExport } from './fitExport'
 import { ShipIdentity } from './identity'
 import { ShipViewDynamic } from './shipViewDynamic'
 
@@ -109,6 +111,10 @@ const ItemFitPage = async ({ params }: { params: Promise<{ itemId: string }> }) 
     }))
   )
 
+  // Names and categories for the EFT export: the hull (already cached by the
+  // lookup above) plus everything fitted or aboard.
+  const types = eftTypes(await getSdeTypes([Number(self.type_id), ...rows.map((row) => row.typeId)]))
+
   const typeName = selfType?.name ?? `#${self.type_id}`
 
   return (
@@ -122,9 +128,13 @@ const ItemFitPage = async ({ params }: { params: Promise<{ itemId: string }> }) 
         owner={owner}
         location={locationLabel(crumbs)}
         actions={
-          /* The hull plus everything nested inside it — the same set the bays
-             below list, priced in one request. */
-          <AppraisalPanel targets={[itemId]} label="Appraise" />
+          <>
+            {/* The hull plus everything nested inside it — the same set the
+                bays below list, priced in one request. */}
+            <AppraisalPanel targets={[itemId]} label="Appraise" />
+            {/* The same rows, as the text the game imports. */}
+            <FitExport eft={shipEft(Number(self.type_id), self.name ?? null, rows, types)} />
+          </>
         }
       />
       <ShipViewDynamic esiFit={toEsiFit(Number(self.type_id), self.name ?? null, rows)} />

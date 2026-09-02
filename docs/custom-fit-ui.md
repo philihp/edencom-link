@@ -3,8 +3,10 @@
 Feasibility assessment and staged plan for rendering the ship-fitting view
 (wheel + statistics) with our own components and look & feel, while keeping
 eveship.fit's calculation model. **Stages 0, 2 and 3 are done**
-(see their sections below); stage 1 was folded into them, and stages 4–5 are
-not started.
+(see their sections below); stage 1 was folded into them. Stage 4 — making the
+new viewer _the_ ship page and retiring `@eveshipfit/react` — is under way as
+the three phases in "Stage 4 — adoption and retirement" below; stage 5 is not
+started.
 
 ## Verdict
 
@@ -279,14 +281,99 @@ resource bars needed and the two-colour `--ok`/`--danger` pair didn't have.
 
 ### Stage 4 — adoption and retirement
 
-- Render the new component on `/ship/[itemId]` and
-  `/fitting/[characterId]/[fittingId]` for flagged users; everyone else keeps
-  the eveship.fit embed.
-- Soak, then flip the default and drop the flag.
-- Remove `/item/[itemId]` (or keep it as a redirect), delete
-  `shipFitView.tsx`/`fitPlaceholder.tsx` and the dynamic-import wrapper,
-  un-vendor `eveshipfit-react-*.tgz` and `data-stub/`, trim
-  `bump-eveshipfit.yml` to dogma-engine only.
+The original sketch here was "render the new component on `/ship` for flagged
+users, soak, flip the default". The viewer has had its soak behind the `fit-ui`
+flag, so the rollout is three PR-sized phases instead, each leaving the site
+consistent on its own:
+
+#### Phase 1 — export the fit from `/item` (done)
+
+One feature the old page never had and the new one needs before it can be the
+only ship page: getting the fit _out_, as the text the in-game fitting window
+reads through "Import from clipboard". The identity strip's actions gain an
+**Export fit** button beside Appraise, opening a native `<dialog>` with the
+ship as EFT text and a button that copies it (`fitExport.tsx`). The text comes
+from the same `toEft` writer the fitting pages already use
+(`src/app/fitting/eft.ts`), fed by a small pure adapter from the ship's asset
+rows (`eft.ts`, tested): a row with no location flag sits in no slot and no
+bay, so it is dropped; a null quantity counts as one; the hull's own name is
+the fit's title, its type when it has none. Type names and categories are
+resolved server-side from the SDE mirror, so the dialog opens with the text
+already there — no wait on the engine.
+
+#### Phase 2 — swap the paths
+
+`/ship/[itemId]` becomes the new viewer and `/item/[itemId]` the old one, so
+every existing link (the asset browser, `/asset/search`, the registrations
+page, `/asset/[id]`'s ship redirect, `shareActions`' `revalidatePath`, the
+`/asset/:itemId/fit` redirect in `next.config.mjs`) lands on the new page
+untouched. Mechanically it is two directory moves: the new page's files go to
+`src/app/ship/[itemId]/`, the old page's to `src/app/item/[itemId]/`. The
+helpers both pages import — `shipRows.ts`, `shipOwner.ts`, `esfFit.ts`, the
+`ShipOwner` type and portrait helpers in `shipHeading.tsx` — stay under
+`ship/`, since the new page depends on them too; the old page's relative
+imports are repointed.
+
+What the new page must carry before it is the canonical `/ship`, because the
+old one does and links to it exist:
+
+- **The anonymous share path.** `?share=` links (signed, recursive over the
+  shared subtree) and legacy `?token=` links to `/ship/123` are in the wild.
+  `SharedShipPage` — service-role client, explicitly scoped to the sharer's
+  characters and corporations, location deliberately omitted — moves over
+  with the viewer swapped in.
+- **The Share dialog** in the actions, for a character item the caller owns
+  (`fetchShareDialogData`, and `saveAssetShare`/`revokeAssetShare` bound to
+  the item), so a ship can still be shared from its own page.
+- **The non-ship redirect.** `/ship/<container>` sends the caller to
+  `/asset/<id>` today; the new page 404s. Keep the redirect.
+- **The `fit-ui` flag gate comes off** — the page is the ship page now — and
+  `FIT_UI_FLAG` leaves `flagCatalog.ts` (and the Chancellor flag list with
+  it). Its only job was gating this route.
+- The `loading.tsx` skeleton and the `AssetPath` breadcrumb the old page
+  renders; the new page already has both.
+
+One thing the old page has that the new one deliberately does not: the
+sortable `LocationAssets` module/cargo table (`shipContents.tsx`, streamed
+under Suspense), whose rows drill into nested containers — a can inside a
+fleet hangar. The new page's bay cards list what is aboard but link nowhere.
+**Decide before the swap** whether the table rides along beneath the viewer
+(it is a self-contained server component) or is let go; nothing else in the
+site relies on the drill-down from a ship.
+
+Also in this phase: `esfFit.ts` and `src/app/fitting/fit.ts` take their
+`EsiFit` type from `esf/fit.ts` instead of `@eveshipfit/react` — same shape,
+declared by us — so the type no longer ties the fitting pages to the package.
+`flagCatalog.ts`'s label, this document, `docs/README.md` and `CLAUDE.md`'s
+layout line say which page is which.
+
+#### Phase 3 — delete the old page and its dependencies
+
+- **The fitting page moves first.** `/fitting/[characterId]/[fittingId]`
+  still renders the embed (`ShipFitViewDynamic`); it switches to the new
+  `ShipViewDynamic`, which takes the same `EsiFit` its `toEsiFit` already
+  builds. Nothing else imports the embed after that.
+- Delete `src/app/item/[itemId]/` — the old `page.tsx`, `shipFitView.tsx`,
+  `shipFitViewDynamic.tsx`, `fitPlaceholder.tsx`, `shipFit.module.css`,
+  `shipContents.tsx` (unless phase 2 kept the table, in which case it lives
+  under `ship/`), `loading.tsx`. Optionally a permanent redirect
+  `/item/:itemId` → `/ship/:itemId` in `next.config.mjs`; the route was never
+  linked, so nothing depends on it.
+- **Dependencies out:** `@eveshipfit/react` and its
+  `vendor/eveshipfit/eveshipfit-react-4.7.2.tgz`, and the `@eveshipfit/data`
+  stub (`vendor/eveshipfit/data-stub/`), which exists only to satisfy react's
+  one import. `pnpm install` to rewrite the lockfile.
+- **Dependencies that stay:** `@eveshipfit/dogma-engine` (the WASM engine _is_
+  the calculation model; `useFit.ts` loads it directly), `protobufjs`
+  (`src/buildEsfData.js` encodes the six `.pb2` files server-side; the client
+  decoder in `esf/protobuf.ts` is our own), `src/esf.proto` and
+  `src/esfPatches.json` (the encoder's schema and the synthetic attributes the
+  readout reads), and `turbopack: {}` in `next.config.mjs` (the WASM import).
+- Trim `bump-eveshipfit.yml` and `.github/scripts/bump-eveshipfit.mjs` to
+  `@eveshipfit/dogma-engine` only: `PACKAGES` loses react, and the block that
+  bumps the data stub to match react's peer range goes with it.
+- `CLAUDE.md`'s "Vendored `@eveshipfit/*`" note shrinks to the one tarball;
+  this document's "What we keep vs. what we write" table is then simply true.
 
 ### Stage 5 (optional, later)
 
