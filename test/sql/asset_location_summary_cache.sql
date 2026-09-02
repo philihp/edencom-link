@@ -72,6 +72,8 @@ begin
     return 0;
   end if;
 
+  perform pg_advisory_xact_lock(hashtext('asset_location_summary_cache'), hashtext(p_user_id::text));
+
   delete from public.asset_location_summary_cache where user_id = p_user_id;
 
   with recursive
@@ -103,12 +105,12 @@ begin
     select 'character'::text as owner_scope,
            w.registration_id::text as owner_id,
            w.location_id,
-           w.location_type,
+           min(w.location_type) as location_type,
            count(*) as stacks
     from char_walk w
     where w.location_id is not null
       and not exists (select 1 from char_parent o where o.item_id = w.location_id)
-    group by w.registration_id, w.location_id, w.location_type
+    group by w.registration_id, w.location_id
   ),
   corp_visible as (
     select a.item_id, a.location_id, a.location_type, a.corporation_id, a.is_current, a.valid_until
@@ -135,12 +137,12 @@ begin
     select 'corporation'::text as owner_scope,
            w.corporation_id::text as owner_id,
            w.location_id,
-           w.location_type,
+           min(w.location_type) as location_type,
            count(*) as stacks
     from corp_walk w
     where w.location_id is not null
       and not exists (select 1 from corp_parent o where o.item_id = w.location_id)
-    group by w.corporation_id, w.location_id, w.location_type
+    group by w.corporation_id, w.location_id
   )
   insert into public.asset_location_summary_cache
     (user_id, owner_scope, owner_id, location_id, location_type, stacks)
@@ -323,6 +325,50 @@ begin
   end if;
   if v_bob = 0 then
     raise exception 'the second account built no rows';
+  end if;
+end $$;
+
+-- ── One location cannot become two rows ──────────────────────────────────
+-- The primary key is (user_id, owner_scope, owner_id, location_id) — no
+-- location_type. Grouping by the type as well would emit two rows for one
+-- location seen under two type strings, and they collide on insert. ESI does
+-- report a location under different type strings across sightings, so this is
+-- reachable from data alone, with no concurrency involved.
+insert into public.character_asset_over_time (item_id, registration_id, location_id, location_type) values
+  (960, :'reg_a1', 60009999, 'station'),
+  (961, :'reg_a1', 60009999, 'other');
+
+select public.refresh_asset_location_summary_cache(:'alice');
+
+do $$
+declare n int; v_stacks bigint;
+begin
+  select count(*), max(stacks) into n, v_stacks
+    from public.asset_location_summary_cache
+   where user_id = 'aaaaaaaa-0000-0000-0000-000000000001'
+     and location_id = 60009999;
+  if n <> 1 then
+    raise exception 'one location produced % rows — the group by does not match the primary key', n;
+  end if;
+  if v_stacks <> 2 then
+    raise exception 'the two sightings did not collapse into one bucket (stacks=%)', v_stacks;
+  end if;
+end $$;
+
+-- ── The rebuild is serialized per account ────────────────────────────────
+-- Two of an account's characters reconcile in concurrent workflow lanes and
+-- both rebuild the same user_id; without a lock their delete-then-insert
+-- transactions collide on the primary key, because neither delete sees the
+-- rows the other just inserted. That race needs two sessions and so cannot be
+-- driven from one transaction — but the guard it depends on can be pinned
+-- here, so a later refactor cannot quietly drop it.
+do $$
+declare n int;
+begin
+  select count(*) into n from pg_locks
+   where locktype = 'advisory' and pid = pg_backend_pid();
+  if n = 0 then
+    raise exception 'the refresh took no advisory lock: concurrent rebuilds of one account will collide';
   end if;
 end $$;
 
