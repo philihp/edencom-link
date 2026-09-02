@@ -66,14 +66,18 @@
   }
 }
 
-/* Network topology diagram — scales to the container, capped so it doesn't
- * balloon on wide screens. */
+/* Network topology diagram. The drawing is as long as the run of systems in it
+ * really is, so it keeps a fixed density (graph.ts's PX_PER_UNIT) and scrolls
+ * sideways when it outgrows the column — the same treatment the den table gets
+ * below. Shrinking it to fit instead is what makes the labels unreadable. */
+.topologyScroll {
+  overflow-x: auto;
+  margin: 8pt 0 4pt;
+}
+
 .topology {
   display: block;
-  width: 100%;
-  max-width: 960px;
-  height: auto;
-  margin: 8pt 0 4pt;
+  max-width: none;
 }
 
 .edge {
@@ -94,22 +98,11 @@
 }
 
 /* Second line inside a node's circle: one globe per temperate planet. Sized so
- * even a four-planet row (XR-ZL7) fits the circle's lower chord. */
+ * even a four-planet row fits the circle's lower chord. */
 .nodeCount {
   fill: var(--ink-soft);
   font-family: var(--mono);
   font-size: 18px;
-}
-
-/* The staging system stands apart with the indigo accent. */
-.nodeStaging .nodeBox {
-  fill: var(--accent-tint);
-  stroke: var(--accent);
-}
-
-.nodeStaging .nodeLabel {
-  fill: var(--accent-strong);
-  font-weight: 600;
 }
 
 /* The details table can outgrow narrow screens — let it scroll on its own
