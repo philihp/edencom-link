@@ -4233,6 +4233,15 @@ begin
     return 0;
   end if;
 
+  -- Serialize this account against itself. The per-character workflow runs an
+  -- account's characters across concurrent lanes, so several of them call this
+  -- for one user_id at once; two delete-then-insert transactions under READ
+  -- COMMITTED collide on the primary key, because neither delete can see the
+  -- rows the other has just inserted (20260902040610). Keyed on the account, so
+  -- different accounts still rebuild concurrently; the two-argument form
+  -- namespaces the key against the table-name locks the *_claim() functions take.
+  perform pg_advisory_xact_lock(hashtext('asset_location_summary_cache'), hashtext(p_user_id::text));
+
   -- One transaction: the page must never observe a half-rebuilt account.
   delete from public.asset_location_summary_cache where user_id = p_user_id;
 
@@ -4269,12 +4278,17 @@ begin
     select 'character'::text as owner_scope,
            w.registration_id::text as owner_id,
            w.location_id,
-           w.location_type,
+           -- Aggregated, not grouped: the primary key carries no location_type,
+           -- so grouping by it could emit two rows that collide on insert. A
+           -- location's type is a property of the location rather than of who
+           -- is looking, so a disagreement means one sighting is stale — and
+           -- picking deterministically beats failing the extract.
+           min(w.location_type) as location_type,
            count(*) as stacks
     from char_walk w
     where w.location_id is not null
       and not exists (select 1 from char_parent o where o.item_id = w.location_id)
-    group by w.registration_id, w.location_id, w.location_type
+    group by w.registration_id, w.location_id
   ),
   -- Same shape over corp assets, scoped to the corporations this account has a
   -- character in — exactly what corp_asset_over_time's RLS keys off, so the row
@@ -4304,12 +4318,12 @@ begin
     select 'corporation'::text as owner_scope,
            w.corporation_id::text as owner_id,
            w.location_id,
-           w.location_type,
+           min(w.location_type) as location_type,
            count(*) as stacks
     from corp_walk w
     where w.location_id is not null
       and not exists (select 1 from corp_parent o where o.item_id = w.location_id)
-    group by w.corporation_id, w.location_id, w.location_type
+    group by w.corporation_id, w.location_id
   )
   insert into public.asset_location_summary_cache
     (user_id, owner_scope, owner_id, location_id, location_type, stacks)
@@ -4338,7 +4352,12 @@ begin
   end if;
 
   for v_user in
-    select distinct user_id from public.registration where corporation_id = p_corporation_id and user_id is not null
+    -- Ordered: this takes several per-account locks in one transaction, and two
+    -- corp refreshes with overlapping members would deadlock taking them in
+    -- different sequences.
+    select distinct user_id from public.registration
+    where corporation_id = p_corporation_id and user_id is not null
+    order by user_id
   loop
     perform public.refresh_asset_location_summary_cache(v_user);
     v_users := v_users + 1;
