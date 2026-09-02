@@ -99,9 +99,17 @@ export type EivInput = {
   systemOf: ReadonlyMap<string, string>
   // structure id -> hull type id, for the job-cost bonus.
   hullOf: ReadonlyMap<string, number | null>
-  // Structures owned by one of our corporations: EIV still counts, recovery
-  // never runs (the journal is the exact record there).
-  ownStructureIds: ReadonlySet<string>
+  // Structures whose facility tax the corp wallet journal actually bills for us:
+  // EIV still counts, recovery never runs, because the journal is the exact
+  // record there and estimating on top of it would double-count.
+  //
+  // This is journal *coverage*, not ownership, and the two come apart. A
+  // structure owned by a corporation we merely have a character in is not
+  // covered unless some token of ours holds the wallet roles to read that
+  // corporation's journal — and where it does not, suppressing recovery hides
+  // the charge entirely, because nothing else can see it either. The caller
+  // decides which corporations qualify; see src/app/structure/page.tsx.
+  journalCoveredStructureIds: ReadonlySet<string>
   // Jobs whose tax the journal already billed as an outgoing corp entry.
   journalPaidJobIds: ReadonlySet<string>
 }
@@ -163,7 +171,17 @@ const priceBill = (bill: Bill, runs: number, prices: ReadonlyMap<number, number>
 }
 
 export const foldEiv = (jobs: readonly EivJob[], input: EivInput): EivResult => {
-  const { onPage, since, bills, prices, indexSamples, systemOf, hullOf, ownStructureIds, journalPaidJobIds } = input
+  const {
+    onPage,
+    since,
+    bills,
+    prices,
+    indexSamples,
+    systemOf,
+    hullOf,
+    journalCoveredStructureIds,
+    journalPaidJobIds,
+  } = input
 
   const byStructure = new Map<string, StructureEiv>()
   const eivByJob = new Map<string, number>()
@@ -201,10 +219,15 @@ export const foldEiv = (jobs: readonly EivJob[], input: EivInput): EivResult => 
     row.jobs += 1
     byStructure.set(key, row)
 
-    // Recovery: only away from home, only for a charge the journal didn't
-    // already record, and only with a real cost to invert.
+    // Recovery: only where no journal of ours bills the charge, only for a job
+    // the journal didn't already record, and only with a real cost to invert.
     const cost = Number(job.cost)
-    if (ownStructureIds.has(key) || journalPaidJobIds.has(String(job.job_id)) || !Number.isFinite(cost) || cost <= 0) {
+    if (
+      journalCoveredStructureIds.has(key) ||
+      journalPaidJobIds.has(String(job.job_id)) ||
+      !Number.isFinite(cost) ||
+      cost <= 0
+    ) {
       return
     }
     const systemId = systemOf.get(key)

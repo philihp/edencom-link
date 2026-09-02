@@ -41,6 +41,7 @@ import { groupByTier, jobLocationId, jobStructureIds } from './roster'
 import { foldTaxLedger } from './taxLedger'
 import { fetchTaxRates, formatRate } from '../settings/tax/rates'
 import { foldEiv, recoveredRate, type IndexSample } from './eiv'
+import { journalCoveredStructures } from './journalCoverage'
 import { HelpTip } from './helpTip'
 import { foldInstallers } from './installers'
 import { formatRelativeFuture } from '../relativeTime'
@@ -629,21 +630,56 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
     )
   )
 
-  const ownStructureIds = new Set(
-    filter((sid: string) => ownCorporationIds.has(structureOwner.get(sid) ?? ''), [...onPage])
+  // Which of our corporations we can actually read a wallet journal for.
+  //
+  // Recovery is suppressed where the journal already bills the charge exactly,
+  // and that used to be decided by *ownership*: a structure owned by any corp
+  // this account has a character in counted as covered. Those are different
+  // facts, and they come apart on a shared corp where no token of ours holds
+  // the accountant/director roles. There the journal is not merely inexact,
+  // it is empty — corp-wallet-journal fails every run — so suppressing recovery
+  // hid the facility tax entirely: neither the exact row nor the estimate had
+  // anything to show, on structures this account pays real ISK to use.
+  //
+  // Asked as one cheap existence probe per candidate corporation rather than a
+  // distinct over the journal: PostgREST has no DISTINCT, the table runs to
+  // six figures of rows for an active corp, and the candidate set is the
+  // handful of our corporations that own a tile here. `limit(1)` makes each an
+  // index probe. Deliberately not scoped to the page's window or to
+  // ref_type=industry_job_tax — the question is whether the journal is being
+  // ingested at all, and a corp with no industry tax this month still has an
+  // exact record of that fact.
+  const candidateCoveredCorps = uniq(
+    filter((corp: string) => ownCorporationIds.has(corp), [...structureOwner.values()])
   )
+  const coverageProbes = candidateCoveredCorps.length
+    ? await Promise.all(
+        map(async (corp: string) => {
+          const { data } = await supabase
+            .from('corp_wallet_journal')
+            .select('corporation_id')
+            .eq('corporation_id', Number(corp))
+            .limit(1)
+          return (data ?? []).length > 0 ? corp : null
+        }, candidateCoveredCorps)
+      )
+    : []
+  const journalCoveredCorps = new Set(reject(isNil, coverageProbes) as string[])
+
+  const journalCoveredStructureIds = journalCoveredStructures({ onPage, structureOwner, journalCoveredCorps })
 
   // Cost-index history over the window, but only for the systems where the
-  // recovery can actually run: structures our priced jobs point at that we
-  // don't own. Every tile's system would be tens of thousands of hourly rows a
-  // render; the rented structures are a handful (industry-systems tracks their
-  // systems precisely for this, learned from our own job locations).
+  // recovery can actually run: structures our priced jobs point at whose tax no
+  // journal of ours bills. Every tile's system would be tens of thousands of
+  // hourly rows a render; those structures are a handful (industry-systems
+  // tracks their systems precisely for this, learned from our own job
+  // locations).
   const recoverySystems = uniq(
     reject(
       isNil,
       map((j: JobRow) => {
         const sid = jobLocationId(j)
-        if (sid == null || !onPage.has(sid) || ownStructureIds.has(sid)) return null
+        if (sid == null || !onPage.has(sid) || journalCoveredStructureIds.has(sid)) return null
         const system = systemOf.get(sid)
         return system != null ? Number(system) : null
       }, eivJobs)
@@ -689,7 +725,7 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
     indexSamples,
     systemOf,
     hullOf,
-    ownStructureIds,
+    journalCoveredStructureIds,
     journalPaidJobIds: ledger.paidJobIds,
   })
   const eivByStructure = eiv.byStructure
