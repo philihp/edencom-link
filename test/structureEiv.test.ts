@@ -48,7 +48,7 @@ const baseInput = (over: Partial<EivInput> = {}): EivInput => ({
     [RENTED, 35827], // Sotiyo: 5% off the index term
     [OURS, 35825],
   ]),
-  ownStructureIds: new Set([OURS]),
+  journalCoveredStructureIds: new Set([OURS]),
   journalPaidJobIds: new Set(),
   ...over,
 })
@@ -88,9 +88,9 @@ test('the index is read as it stood when the job was installed', () => {
   assert.ok(Math.abs(result.byStructure.get(RENTED)!.recoveredTax - 2.5) < 1e-9)
 })
 
-test('recovery never runs at home, and never re-bills a journaled job', () => {
-  // Our own structure: the journal is exact, an estimate would be worse — EIV
-  // still counts.
+test('recovery never runs where the journal bills it, nor re-bills a journaled job', () => {
+  // A structure whose owner's wallet journal we can read: the journal is exact,
+  // an estimate would be worse — EIV still counts.
   const home = foldEiv([job({ station_id: OURS, cost: 75 })], baseInput())
   assert.equal(home.byStructure.get(OURS)?.eiv, 1000)
   assert.equal(home.byStructure.get(OURS)?.recoveredTax, 0)
@@ -171,4 +171,38 @@ test('a free landlord recovers a zero rate, not a missing one', () => {
   assert.equal(row.recoveredJobs, 1)
   assert.equal(row.recoveredTax, 0)
   assert.equal(recoveredRate(row), 0)
+})
+
+// ── Ownership is not journal coverage ────────────────────────────────────
+// The case this whole measure exists for, and the one it got wrong: a
+// structure owned by a corporation the account has a character in, where no
+// token of ours holds the wallet roles. corp-wallet-journal fails every run
+// for such a corp, so there is no journal row to bill the charge — and the
+// old gate, which suppressed recovery on *ownership*, left the facility tax
+// invisible under both measures at once. In production that hid ~624M ISK
+// across three structures this account pays real ISK to use.
+//
+// The fold is told about coverage, not ownership, so the suppression follows
+// what can actually be read. A structure owned by our own corp but absent from
+// the covered set must therefore recover exactly like a landlord's.
+test('a structure our corp owns but whose wallet we cannot read still recovers', () => {
+  // OURS is a Raitaru (0.97 on the index term) and the index standing when the
+  // job was installed is 0.03, so a billed cost of 75 leaves:
+  //   75 - 1000 × 0.03 × 0.97 - 1000 × 0.04  =  5.9 ISK of facility tax
+  const expected = 75 - 1000 * 0.03 * 0.97 - 1000 * SCC_SURCHARGE
+
+  const uncovered = foldEiv([job({ station_id: OURS, cost: 75 })], baseInput({ journalCoveredStructureIds: new Set() }))
+  const row = uncovered.byStructure.get(OURS)!
+  assert.equal(row.recoveredJobs, 1, 'the tile must show an estimate where no journal can bill the charge')
+  assert.ok(Math.abs(row.recoveredTax - expected) < 1e-9)
+
+  // The same job at the same structure, once its corporation's journal is
+  // readable again: suppressed, because the exact row now exists.
+  const covered = foldEiv([job({ station_id: OURS, cost: 75 })], baseInput())
+  assert.equal(covered.byStructure.get(OURS)?.recoveredJobs, 0)
+  assert.equal(covered.byStructure.get(OURS)?.recoveredTax, 0)
+
+  // Either way the throughput is the same: coverage decides who bills the tax,
+  // never whether the jobs happened.
+  assert.equal(row.eiv, covered.byStructure.get(OURS)?.eiv)
 })
