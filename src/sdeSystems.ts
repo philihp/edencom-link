@@ -15,6 +15,10 @@ export type SdeSystem = {
   security: number
   constellationName: string | null
   regionName: string | null
+  // True position in the galaxy, in metres (migration 20260902092205). x/z are
+  // the top-down galaxy-map plane the in-game star map draws on; y is galactic
+  // "up". Null for a mirror row that predates the column.
+  position: { x: number; y: number; z: number } | null
 }
 
 type SystemRow = {
@@ -23,7 +27,12 @@ type SystemRow = {
   security: number
   constellation_name: string | null
   region_name: string | null
+  position_x: number | null
+  position_y: number | null
+  position_z: number | null
 }
+
+const COLUMNS = 'system_id, name, security, constellation_name, region_name, position_x, position_y, position_z'
 
 const cache = createByIdCache<SdeSystem>()
 
@@ -33,14 +42,15 @@ const rowToSystem = (r: SystemRow): SdeSystem => ({
   security: r.security,
   constellationName: r.constellation_name,
   regionName: r.region_name,
+  position:
+    r.position_x != null && r.position_y != null && r.position_z != null
+      ? { x: r.position_x, y: r.position_y, z: r.position_z }
+      : null,
 })
 
 export const getSdeSystems = (systemIDs: Iterable<number>): Promise<Record<number, SdeSystem>> =>
   bulkLookup(cache, systemIDs, async (chunk) => {
-    const { data, error } = await sdeSupabase()
-      .from('sde_kspace_system')
-      .select('system_id, name, security, constellation_name, region_name')
-      .in('system_id', chunk)
+    const { data, error } = await sdeSupabase().from('sde_kspace_system').select(COLUMNS).in('system_id', chunk)
     if (error) {
       console.error(`[sdeSystems] lookup failed: ${error.message}`)
       return []

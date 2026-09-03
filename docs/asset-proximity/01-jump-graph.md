@@ -1,5 +1,12 @@
 # PR 1 — `sde_system_jump` view + jump-distance loader
 
+> **Part of this has landed.** The `sde_system_jump` view (migration
+> `20260902092205_sde_system_jump.sql`, dual-written into `schema.sql`) and a
+> loader `src/sdeJumps.ts` shipped with the data-driven `/mercenary-dens` map.
+> The loader exposes only `getSystemJumpGraph()` — the cached adjacency map
+> described below — so what is left of this PR is the BFS on top of it
+> (`getJumpDistances`/`getJumpDistance`) and its gate checks.
+
 Foundation PR: expose the stargate graph as an app-shaped view and add a
 DB-backed loader `src/sdeJumps.ts` that answers "how many jumps from system A
 to systems B, C, D…" with an in-process BFS. No UI changes; nothing consumes

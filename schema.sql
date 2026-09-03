@@ -164,6 +164,7 @@ drop function if exists public.sde_search_system(text, int)        cascade;
 drop materialized view if exists public.sde_blueprint_product cascade;
 drop view if exists public.sde_published_type cascade;
 drop view if exists public.sde_kspace_system  cascade;
+drop view if exists public.sde_system_jump    cascade;
 drop view if exists public.sde_station        cascade;
 drop view if exists public.sde_planet         cascade;
 drop view if exists public.sde_group          cascade;
@@ -330,7 +331,7 @@ grant execute on function public.ensure_sde_mirror_table(text, text) to service_
 select public.ensure_sde_mirror_table(stem)
 from unnest(
   array['types', 'groups', 'categories', 'map_solar_systems', 'map_constellations', 'map_regions',
-        'npc_stations', 'blueprints', 'map_planets']
+        'npc_stations', 'blueprints', 'map_planets', 'map_stargates']
 ) as stem;
 
 -- One row per SDE build the ingest has seen; completed_at set only when every
@@ -442,7 +443,9 @@ where (t.data ->> 'published')::boolean
 
 -- Known-space systems (30M id band): wormhole/abyssal systems never appear in
 -- the industry cost-index feed — mirrors buildSde.js's buildSystems() cut. The
--- constellation/region columns come from migration 20260719120000.
+-- constellation/region columns come from migration 20260719120000, the
+-- position (metres — x/z are the top-down galaxy-map plane, y is galactic
+-- "up") from 20260902092205.
 create view public.sde_kspace_system
 with (security_invoker = true) as
 select
@@ -452,7 +455,10 @@ select
   c._key as constellation_id,
   c.data -> 'name' ->> 'en' as constellation_name,
   r._key as region_id,
-  r.data -> 'name' ->> 'en' as region_name
+  r.data -> 'name' ->> 'en' as region_name,
+  (s.data -> 'position' ->> 'x')::double precision as position_x,
+  (s.data -> 'position' ->> 'y')::double precision as position_y,
+  (s.data -> 'position' ->> 'z')::double precision as position_z
 from public.sde_map_solar_systems s
 left join public.sde_map_constellations c on c._key = (s.data ->> 'constellationID')::bigint
 left join public.sde_map_regions r on r._key = (c.data ->> 'regionID')::bigint
@@ -522,11 +528,22 @@ where _key >= 10000000
   and _key < 11000000
   and coalesce(trim(data -> 'name' ->> 'en'), '') <> '';
 
+-- Directed system→system stargate edges (migration 20260902092205). CCP ships
+-- every gate with its paired return gate, so the row set is a complete
+-- directed adjacency list.
+create view public.sde_system_jump
+with (security_invoker = true) as
+select
+  (data ->> 'solarSystemID')::bigint as from_system_id,
+  (data -> 'destination' ->> 'solarSystemID')::bigint as to_system_id
+from public.sde_map_stargates;
+
 grant select on public.sde_published_type, public.sde_kspace_system, public.sde_station, public.sde_planet,
-  public.sde_group, public.sde_category, public.sde_region
+  public.sde_group, public.sde_category, public.sde_region, public.sde_system_jump
   to anon, authenticated, service_role;
 revoke insert, update, delete on public.sde_published_type, public.sde_kspace_system, public.sde_station,
-  public.sde_planet, public.sde_group, public.sde_category, public.sde_region from anon, authenticated;
+  public.sde_planet, public.sde_group, public.sde_category, public.sde_region, public.sde_system_jump
+  from anon, authenticated;
 
 -- Blueprint "consume materials → produce output" bill, unnested from the
 -- activities jsonb once per ingest rather than per query: manufacturing (1)

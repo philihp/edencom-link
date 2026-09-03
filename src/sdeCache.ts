@@ -7,7 +7,9 @@
 // lands — a miss must re-query on the next call.
 import { splitEvery } from 'ramda'
 
-const TTL_MS = 6 * 60 * 60 * 1000
+// Exported so the whole-graph caches that can't use createByIdCache (see
+// src/sdeJumps.ts) age on the same clock as the by-id ones.
+export const TTL_MS = 6 * 60 * 60 * 1000
 
 export type ByIdCache<T> = {
   get: (id: number) => T | null
