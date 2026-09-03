@@ -1,0 +1,48 @@
+.dialog {
+  width: min(36em, calc(100vw - 32px));
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--paper-raised);
+  color: var(--ink);
+  padding: 12pt 16pt;
+}
+
+.dialog::backdrop {
+  background: rgb(0 0 0 / 40%);
+}
+
+.dialog h2 {
+  margin-top: 0;
+}
+
+.hint {
+  margin: 0 0 8pt;
+  font-size: 9pt;
+  color: var(--ink-soft);
+}
+
+/* The same block the fitting page shows at its foot, minus the click-to-copy
+   cursor: here the copy is a button, and the text is only for reading. */
+.text {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--paper);
+  color: var(--ink-soft);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre;
+  overflow-wrap: normal;
+  overflow-x: auto;
+}
+
+.footer {
+  display: flex;
+  gap: 6pt;
+  margin-top: 10pt;
+}
