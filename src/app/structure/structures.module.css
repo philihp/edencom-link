@@ -673,6 +673,15 @@
   overflow-wrap: anywhere;
 }
 
+/* What the row stands for — a corporation, or an account covering several
+   characters. A gloss on the name, so it reads quieter than the name does. */
+.characterKind {
+  margin-left: 6px;
+  font-size: 10px;
+  color: var(--ink-faint);
+  white-space: nowrap;
+}
+
 .characterJobs {
   flex: none;
   font-family: var(--mono);
