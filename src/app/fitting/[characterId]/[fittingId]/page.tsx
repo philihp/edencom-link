@@ -5,7 +5,7 @@ import { createClient } from '@/utils/supabase/server'
 
 import { establishedUser } from '../../../account/lib/establishedUser'
 import { createServiceClient } from '@/utils/supabase/service'
-import { ShipFitViewDynamic } from '../../../item/[itemId]/shipFitViewDynamic'
+import { ShipViewDynamic } from '../../../ship/[itemId]/shipViewDynamic'
 import { Name } from '../../../names'
 import { getSdeTypes } from '@/sdeTypes'
 import { ShareDialog } from '../../../asset/shareDialog'
@@ -20,7 +20,11 @@ import { fetchFittingShareDialogData } from '../../shareData'
 import { SlotGroups } from '../../slotGroups'
 import styles from '../../fittings.module.css'
 
-// One saved fitting, rendered in the eveship.fit wheel.
+// One saved fitting, drawn by the same viewer /ship/[itemId] uses — our own
+// fitting stack over the dogma engine (docs/custom-fit-ui.md). A saved fit and
+// a real hull are the same thing to it: `toEsiFit` hands it ESI's fitting
+// JSON either way, and the flag on a stored fitting arrives as a number rather
+// than a name, which esf/fit.ts already resolves.
 //
 // The route carries the owner's EVE character id as well as the fitting id
 // because ESI numbers fittings per pilot (every character has a fitting 1), so
@@ -138,7 +142,7 @@ const FittingDetailPage = async ({
         </div>
       ) : null}
 
-      <ShipFitViewDynamic esiFit={toEsiFit(fit)} />
+      <ShipViewDynamic esiFit={toEsiFit(fit)} />
 
       <SlotGroups items={items} typeNames={typeNames} />
 

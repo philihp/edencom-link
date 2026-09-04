@@ -1,13 +1,14 @@
 name: Bump vendored @eveshipfit
 
-# Renovate can't track the vendored @eveshipfit tarballs (they're `file:`
-# specifiers pointing at committed .tgz blobs, and the upstream registry is
-# GitHub Packages behind auth), so this replaces it for those two packages:
-# weekly it checks npm.pkg.github.com for a newer @eveshipfit/react or
-# @eveshipfit/dogma-engine, re-packs the tarball into vendor/eveshipfit/,
-# rewrites package.json + the lockfile, and opens (or updates) a PR.
-# See .github/scripts/bump-eveshipfit.mjs and the "Vendored @eveshipfit/*
-# packages" note in CLAUDE.md.
+# Renovate can't track the vendored @eveshipfit/dogma-engine tarball (it's a
+# `file:` specifier pointing at a committed .tgz blob, and the upstream
+# registry is GitHub Packages behind auth), so this replaces it for that one
+# package: weekly it checks npm.pkg.github.com for a newer release, re-packs
+# the tarball into vendor/eveshipfit/, rewrites package.json + the lockfile,
+# and opens (or updates) a PR. It covered @eveshipfit/react as well until
+# stage 4 of docs/custom-fit-ui.md retired that dependency.
+# See .github/scripts/bump-eveshipfit.mjs and the "Vendored @eveshipfit/*"
+# note in CLAUDE.md.
 
 on:
   workflow_dispatch:
@@ -38,8 +39,8 @@ jobs:
           cache-dependency-path: pnpm-lock.yaml
 
       # npm auth for GitHub Packages, written to a runner-temp file so the token
-      # never lands in the repo working tree (and can't be committed). Public
-      # @eveshipfit packages read fine with the default GITHUB_TOKEN; set the
+      # never lands in the repo working tree (and can't be committed). The
+      # public @eveshipfit package reads fine with the default GITHUB_TOKEN; set the
       # EVESHIPFIT_PACKAGES_TOKEN secret (a PAT with read:packages) only if that
       # ever 403s.
       - name: Configure GitHub Packages auth

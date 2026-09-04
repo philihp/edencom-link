@@ -76,6 +76,10 @@ const nextConfig = {
     { source: '/registration', destination: '/account/registrations', permanent: true },
     // The short-lived bare fit view moved when ships got their own page.
     { source: '/asset/:itemId/fit', destination: '/ship/:itemId', permanent: false },
+    // /item was where the new fit viewer was dark-launched, then briefly where
+    // the eveship.fit embed it replaced went to be retired. Nobody's bookmark
+    // should land on a 404 for that (docs/custom-fit-ui.md, stage 4 phase 3).
+    { source: '/item/:itemId', destination: '/ship/:itemId', permanent: false },
     // The Chancellor tools became a settings subpage.
     { source: '/account/chancellor', destination: '/account/settings/chancellor', permanent: true },
     // The debug dump and impersonate form folded into the Chancellor tools.
