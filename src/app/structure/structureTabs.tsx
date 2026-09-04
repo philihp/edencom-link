@@ -4,11 +4,10 @@
 // industry jobs at the structure inside the page's window, so a tile answers
 // "who actually uses this place" without leaving the page.
 //
-// A row is a person or a corporation rather than a character: our own alts
-// fold into one row under the account's main, and a corp job counts for the
-// corporation it was run for (see ./installers.ts for why those group
-// differently). The row says which it is, so a corporation is never read as a
-// pilot.
+// A row is a character or a corporation: a personal job counts for the
+// character who ran it, and a corp job for the corporation it was run for (see
+// ./installers.ts for why those group differently). The row says which it is,
+// so a corporation is never read as a pilot.
 import { useState } from 'react'
 
 import { TypeIcon } from '../typeIcon'
@@ -19,7 +18,7 @@ export type RigChip = { name: string; typeID: number }
 export type CharacterRow = {
   key: string
   name: string
-  kind: 'account' | 'character' | 'corporation'
+  kind: 'character' | 'corporation'
   jobs: number
   eiv: number
   // Distinct characters behind the row; more than one is what grouping bought.
@@ -27,10 +26,11 @@ export type CharacterRow = {
 }
 
 // What the row is, said plainly — but only where the name alone would mislead.
-// One pilot standing for themselves needs no gloss.
+// A character standing for themselves needs no gloss; a corporation does, and
+// says how many of its pilots ran the jobs.
 const describe = (row: CharacterRow): string | null => {
-  if (row.kind === 'corporation') return row.characters > 1 ? `corp · ${row.characters} pilots` : 'corp'
-  return row.characters > 1 ? `${row.characters} characters` : null
+  if (row.kind !== 'corporation') return null
+  return row.characters > 1 ? `corp · ${row.characters} pilots` : 'corp'
 }
 
 // Approximate throughput, to the nearest million ISK. The EIV fold prices at
