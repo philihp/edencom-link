@@ -33,7 +33,7 @@ export const useFit = (esiFit: EsiFit) => {
       const dogma = await loadDogmaEngine()
 
       // All skills at V: the standard "what can this hull do" baseline, and
-      // the one the eveship.fit embed on /ship is pinned to, so the two pages
+      // the one the eveship.fit embed on /item is pinned to, so the two pages
       // stay comparable. Stage 5 is where the owner's real skills come in.
       const fit = esiFitToEsfFit(esiFit, eveData)
       const calculation = calculateFit(dogma, fit, allSkillsAtLevel(eveData, 5))

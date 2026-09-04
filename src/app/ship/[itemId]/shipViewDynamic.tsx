@@ -4,7 +4,7 @@ import dynamic from 'next/dynamic'
 
 import { ShipViewSkeleton } from './shipViewSkeleton'
 
-// Same shape as ../../ship/[itemId]/shipFitViewDynamic.tsx, and for the same
+// Same shape as ../../item/[itemId]/shipFitViewDynamic.tsx, and for the same
 // two reasons: `dynamic(…, { ssr: false })` has to be called from a Client
 // Component, and isolating it keeps the WASM engine and the several-MB
 // protobuf decode out of every other route's bundle.

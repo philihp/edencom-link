@@ -5,8 +5,9 @@ Feasibility assessment and staged plan for rendering the ship-fitting view
 eveship.fit's calculation model. **Stages 0, 2 and 3 are done**
 (see their sections below); stage 1 was folded into them. Stage 4 — making the
 new viewer _the_ ship page and retiring `@eveshipfit/react` — is under way as
-the three phases in "Stage 4 — adoption and retirement" below; stage 5 is not
-started.
+the three phases in "Stage 4 — adoption and retirement" below: **phases 1 and
+2 are done, so `/ship/[itemId]` is the new viewer and the embed has moved to
+`/item/[itemId]`**; phase 3 (the deletion) is next. Stage 5 is not started.
 
 ## Verdict
 
@@ -301,18 +302,20 @@ the fit's title, its type when it has none. Type names and categories are
 resolved server-side from the SDE mirror, so the dialog opens with the text
 already there — no wait on the engine.
 
-#### Phase 2 — swap the paths
+#### Phase 2 — swap the paths (done)
 
 `/ship/[itemId]` becomes the new viewer and `/item/[itemId]` the old one, so
 every existing link (the asset browser, `/asset/search`, the registrations
 page, `/asset/[id]`'s ship redirect, `shareActions`' `revalidatePath`, the
 `/asset/:itemId/fit` redirect in `next.config.mjs`) lands on the new page
-untouched. Mechanically it is two directory moves: the new page's files go to
+untouched. Mechanically it was two directory moves: the new page's files went to
 `src/app/ship/[itemId]/`, the old page's to `src/app/item/[itemId]/`. The
 helpers both pages import — `shipRows.ts`, `shipOwner.ts`, `esfFit.ts`, the
-`ShipOwner` type and portrait helpers in `shipHeading.tsx` — stay under
+`ShipOwner` type and portrait helpers in `shipHeading.tsx` — stayed under
 `ship/`, since the new page depends on them too; the old page's relative
-imports are repointed.
+imports were repointed, as were the three test files' (`shipEft`,
+`shipPanels`, `shipRing`). `loading.tsx` stayed where it is, since it belongs
+to the route rather than to either page.
 
 What the new page must carry before it is the canonical `/ship`, because the
 old one does and links to it exist:
@@ -333,13 +336,25 @@ old one does and links to it exist:
 - The `loading.tsx` skeleton and the `AssetPath` breadcrumb the old page
   renders; the new page already has both.
 
-One thing the old page has that the new one deliberately does not: the
+One thing the old page had that the new one deliberately did not: the
 sortable `LocationAssets` module/cargo table (`shipContents.tsx`, streamed
 under Suspense), whose rows drill into nested containers — a can inside a
 fleet hangar. The new page's bay cards list what is aboard but link nowhere.
-**Decide before the swap** whether the table rides along beneath the viewer
-(it is a self-contained server component) or is let go; nothing else in the
-site relies on the drill-down from a ship.
+**Decided: the table rides along**, beneath the viewer, still streamed. It is
+the only way into a container nested inside a ship, and the only place a
+ship's contents can be sorted, filtered by owner, or selected for appraisal —
+losing all of that to gain a shorter page was not a trade worth making.
+
+It is no longer self-contained, though: the page already reads the child rows
+for the viewer and the EFT export, so it hands them down rather than letting
+the component query for them twice. What stayed behind the Suspense boundary
+is what actually costs — the `*_location_contents()` subtree walk for the
+nested counts, and the owner list the table's filter needs. `shipContents.tsx`
+now exports two components, so the two tables can't drift: `ShipContents` for
+the signed-in view and `SharedShipContents` for the share path, which has no
+drill-down (a nested container would need a share token of its own), no
+nested counts (the walk RPCs are skipped, so it reports none rather than a
+guess) and no appraisal.
 
 Also in this phase: `esfFit.ts` and `src/app/fitting/fit.ts` take their
 `EsiFit` type from `esf/fit.ts` instead of `@eveshipfit/react` — same shape,

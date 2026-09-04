@@ -1,7 +1,8 @@
 import styles from './shipView.module.css'
 
 // The shape of the view, held while the several-MB protobuf decode and the
-// WASM engine load — the same reason /ship has a FitPlaceholder. In its own
+// WASM engine load — the same reason the old embed page has a FitPlaceholder.
+// In its own
 // module so the dynamic wrapper can show it without pulling the view (and the
 // engine chunk behind it) into the page's first load.
 export const ShipViewSkeleton = () => (

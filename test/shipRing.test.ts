@@ -6,8 +6,8 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { ringCells } from '../src/app/item/[itemId]/ring.ts'
-import type { SlotCounts } from '../src/app/item/[itemId]/esf/attributes.ts'
+import { ringCells } from '../src/app/ship/[itemId]/ring.ts'
+import type { SlotCounts } from '../src/app/ship/[itemId]/esf/attributes.ts'
 
 const counts = (over: Partial<SlotCounts> = {}): SlotCounts => ({
   High: 0,

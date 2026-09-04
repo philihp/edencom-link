@@ -33,8 +33,8 @@ export type Hull = { item_id: number | string; type_id: number | string; name?: 
 // server order the unsorted table shows, so the listing reads top-to-bottom
 // the way the ship does.
 // Generic over the row: the callers that render the module table pass full
-// ItemRows, while a caller that only needs the fit order (the /item spike)
-// passes the handful of fields the comparator actually reads.
+// ItemRows, while a caller that only needs the fit order (the viewer and the
+// EFT export) passes the handful of fields the comparator actually reads.
 export const fittingOrder = <T extends Pick<ItemRow, 'flag' | 'typeId'>>(rows: T[]): T[] =>
   sortWith<T>([ascend((r) => flagSortKey(r.flag ?? '')), ascend((r) => r.flag ?? ''), ascend((r) => r.typeId)])(rows)
 

@@ -1,4 +1,4 @@
-import type { EsiFit } from '@eveshipfit/react'
+import type { EsiFit } from './esf/fit'
 
 import type { ItemRow } from '../../asset/[locationId]/locationAssets'
 
@@ -8,11 +8,10 @@ import type { ItemRow } from '../../asset/[locationId]/locationAssets'
 type EsiFitRow = Pick<ItemRow, 'itemId' | 'typeId' | 'flag' | 'quantity'>
 
 // Shapes a ship's fitted-module/cargo/drone rows (the same ItemRow[] fed to
-// the module table) into the ESI-fitting-JSON shape @eveshipfit/react's
-// useImportEsiFitting() hook expects. Slot vs. charge disambiguation and
-// cargo/drone-bay routing happen inside that hook (it already has the full
-// type/dogma dataset loaded), so this is a plain reshape — no location-flag
-// parsing needed here.
+// the module table) into ESI's fitting JSON — the shape `esiFitToEsfFit` in
+// ./esf/fit.ts reads. Slot vs. charge disambiguation and cargo/drone-bay
+// routing happen there (it has the full type/dogma dataset loaded), so this is
+// a plain reshape — no location-flag parsing needed here.
 export const toEsiFit = (shipTypeId: number, shipName: string | null, rows: EsiFitRow[]): EsiFit => ({
   name: shipName ?? '',
   description: '',

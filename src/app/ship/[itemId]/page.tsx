@@ -3,47 +3,73 @@ import { Suspense } from 'react'
 
 import { getSdeType, getSdeTypes } from '@/sdeTypes'
 import { createClient } from '@/utils/supabase/server'
+import { createServiceClient } from '@/utils/supabase/service'
 
 import { establishedUser } from '../../account/lib/establishedUser'
-import { createServiceClient } from '@/utils/supabase/service'
-import { AssetPath, fetchAssetPath } from '../../assetPath'
-import { ShareUrlCleanup } from '../../shareUrlCleanup'
-import { typeFacts } from '../../assetTypeFacts'
-import type { Owners } from '../../ownerFilter'
-import { SkeletonTable } from '../../skeleton'
-import { fetchTypeNames } from '../../typeNames'
 import { AppraisalPanel } from '../../asset/[locationId]/appraisalPanel'
-import { LocationAssets, type ItemRow } from '../../asset/[locationId]/locationAssets'
 import { resolveShareParams } from '../../asset/access'
-import { saveAssetShare, revokeAssetShare } from '../../asset/shareActions'
+import { revokeAssetShare, saveAssetShare } from '../../asset/shareActions'
 import { fetchShareDialogData } from '../../asset/shareData'
 import { ShareDialog } from '../../asset/shareDialog'
+import { AssetPath, fetchAssetPath, type Crumb } from '../../assetPath'
+import { ShareUrlCleanup } from '../../shareUrlCleanup'
+import { SkeletonTable } from '../../skeleton'
+import { eftTypes, shipEft } from './eft'
 import { toEsiFit } from './esfFit'
-import { FitPlaceholder } from './fitPlaceholder'
-import { characterPortrait, corporationLogo, ShipHeading, type ShipOwner } from './shipHeading'
+import { FitExport } from './fitExport'
+import { ShipIdentity } from './identity'
+import { ShipContents, SharedShipContents } from './shipContents'
+import { characterPortrait, corporationLogo, type ShipOwner } from './shipHeading'
 import { fetchShipOwner } from './shipOwner'
-import { ShipContents } from './shipContents'
-import { ShipFitViewDynamic } from './shipFitViewDynamic'
-import { SHIP_CATEGORY_ID, fittingOrder, hullRow, type ChildRow } from './shipRows'
+import { SHIP_CATEGORY_ID, fittingOrder, type ChildRow } from './shipRows'
+import { ShipViewDynamic } from './shipViewDynamic'
+
+// A ship's own page: the fitting ring, what's fitted to it, what's aboard and
+// what the dogma engine makes of the whole thing, over the module/cargo table
+// that drills into whatever is nested inside. The viewer is our own stack
+// (docs/custom-fit-ui.md) rather than the eveship.fit embed; the old embed page
+// still stands at /item/[itemId] until stage 4 phase 3 deletes it.
+//
+// Reachable authenticated (RLS scopes everything to the caller), or anonymously
+// with a valid share token — the token path uses the service-role client, so
+// every query there is explicitly filtered to the sharing user's
+// characters/corps, and location is deliberately omitted (a share link
+// shouldn't broadcast where the ship is).
 
 type ShipRow = {
   item_id: number | string
   type_id: number | string
-  location_id?: number | string | null
-  location_type?: string | null
   name: string | null
   registration_id?: string
   corporation_id?: number | string
 }
 
-// A ship's own page: the eveship.fit wheel + stats built from its fitted
-// modules, a full module/cargo table in fitting order (the same sortable
-// LocationAssets table the asset browser uses), owner and location. Reachable
-// authenticated (RLS scopes everything to the caller), or anonymously with a
-// valid share token — the token path uses the service-role client, so every
-// query there is explicitly filtered to the sharing user's characters/corps,
-// and location is deliberately omitted (a share link shouldn't broadcast
-// where the ship is).
+// Where the hull sits, as the identity strip says it: the nearest named place
+// and the system holding it ("Cold Storage, C-J6MT"). The breadcrumb above
+// already spells the whole chain out, so this is deliberately its tail.
+const locationLabel = (crumbs: Crumb[]): string | null => {
+  const places = crumbs.filter((crumb) => crumb.label !== 'Assets')
+  if (places.length === 0) return null
+  return places
+    .slice(-2)
+    .reverse()
+    .map((crumb) => crumb.label)
+    .join(', ')
+}
+
+// Only the four fields toEsiFit and the EFT writer read — the rest of an
+// ItemRow describes the table, which builds its own rows from the same
+// children.
+const fitRows = (children: ChildRow[]) =>
+  fittingOrder(
+    children.map((child) => ({
+      itemId: String(child.item_id),
+      typeId: Number(child.type_id),
+      flag: child.location_flag,
+      quantity: child.quantity,
+    }))
+  )
+
 const ShipPage = async ({
   params,
   searchParams,
@@ -58,9 +84,7 @@ const ShipPage = async ({
 
   const supabase = await createClient()
   const user = await establishedUser(supabase)
-  if (!user) {
-    redirect('/')
-  }
+  if (!user) redirect('/')
 
   // The ship row, from whichever hangar owns it. Both hangars are probed at
   // once and the character row wins: an item lives in exactly one of them, so
@@ -69,14 +93,10 @@ const ShipPage = async ({
   const [{ data: characterSelf }, { data: corpSelf }] = await Promise.all([
     supabase
       .from('character_asset')
-      .select('item_id, registration_id, type_id, location_id, location_type, name')
+      .select('item_id, registration_id, type_id, name')
       .eq('item_id', itemId)
       .maybeSingle<ShipRow>(),
-    supabase
-      .from('corp_asset')
-      .select('item_id, corporation_id, type_id, location_id, location_type')
-      .eq('item_id', itemId)
-      .maybeSingle<ShipRow>(),
+    supabase.from('corp_asset').select('item_id, corporation_id, type_id').eq('item_id', itemId).maybeSingle<ShipRow>(),
   ])
   const self = characterSelf ?? corpSelf
   if (!self) notFound()
@@ -87,34 +107,50 @@ const ShipPage = async ({
   // Non-ships (containers, loose stacks) live on the asset browser instead.
   if (selfType?.categoryID !== SHIP_CATEGORY_ID) redirect(`/asset/${itemId}`)
 
-  const typeName = selfType?.name ?? `#${self.type_id}`
-  const heading = self.name && self.name !== typeName ? `${self.name} (${typeName})` : typeName
-
-  // Who this ship is and where it sits — all independent of each other, and of
-  // the contents below, so they go out together.
-  const [owner, crumbs, shareData] = await Promise.all([
-    fetchShipOwner(supabase, characterSelf, corpSelf),
+  const [{ data: characterChildren }, { data: corpChildren }, crumbs, owner, shareData] = await Promise.all([
+    supabase
+      .from('character_asset')
+      .select('item_id, registration_id, type_id, location_flag, quantity, is_singleton, is_blueprint_copy, name')
+      .eq('location_id', itemId),
+    supabase
+      .from('corp_asset')
+      .select('item_id, corporation_id, type_id, location_flag, quantity, is_singleton, is_blueprint_copy')
+      .eq('location_id', itemId),
     // The full container chain up to its station / structure / system,
     // rendered as the breadcrumb above the heading.
     fetchAssetPath(itemId, supabase),
+    fetchShipOwner(supabase, characterSelf, corpSelf),
     // The share dialog appears only for a character item the caller actually
-    // owns — with phase 2's widening policy, RLS visibility alone can also mean
-    // "shared with me", which must not offer the dialog.
+    // owns — RLS visibility alone can also mean "shared with me", which must
+    // not offer the dialog.
     fetchShareDialogData(supabase, itemId),
   ])
+  const children = [...((characterChildren ?? []) as ChildRow[]), ...((corpChildren ?? []) as ChildRow[])]
+  const rows = fitRows(children)
+
+  // Names and categories for the EFT export: the hull (already cached by the
+  // lookup above) plus everything fitted or aboard.
+  const types = eftTypes(await getSdeTypes([Number(self.type_id), ...rows.map((row) => row.typeId)]))
+
+  const typeName = selfType?.name ?? `#${self.type_id}`
 
   return (
     <>
-      <AssetPath crumbs={crumbs} current={heading} />
-      <ShipHeading
-        typeId={Number(self.type_id)}
-        heading={heading}
+      <AssetPath crumbs={crumbs} current={self.name ?? typeName} />
+      <ShipIdentity
+        name={self.name && self.name !== typeName ? self.name : typeName}
+        typeName={typeName}
+        groupName={selfType?.groupName ?? null}
+        itemId={itemId}
         owner={owner}
+        location={locationLabel(crumbs)}
         actions={
           <>
             {/* The hull plus everything nested inside it — the same set the
-                table below lists, priced in one request. */}
-            <AppraisalPanel targets={[itemId]} label="Appraise ship" />
+                bays and the table below list, priced in one request. */}
+            <AppraisalPanel targets={[itemId]} label="Appraise" />
+            {/* The same rows, as the text the game imports. */}
+            <FitExport eft={shipEft(Number(self.type_id), self.name ?? null, rows, types)} />
             {shareData ? (
               <ShareDialog
                 subjectLabel="ship"
@@ -127,36 +163,35 @@ const ShipPage = async ({
           </>
         }
       />
+      <ShipViewDynamic esiFit={toEsiFit(Number(self.type_id), self.name ?? null, rows)} />
       <Suspense fallback={<ContentsFallback />}>
         <ShipContents
           supabase={supabase}
           itemId={itemId}
           self={self}
           ownerId={characterSelf?.registration_id ?? String(corpSelf?.corporation_id)}
+          childRows={children}
         />
       </Suspense>
     </>
   )
 }
 
-// While the child query and its subtree walk are in flight: the fit viewer's
-// own reserved footprint (it has a second, client-side wait after this) above a
-// stand-in for the module table.
+// While the subtree walk behind the table's nested counts is in flight. The
+// viewer above it is already drawn, so this stands in for the table alone.
 const ContentsFallback = () => (
-  <>
-    <FitPlaceholder />
-    <SkeletonTable
-      columns={['Quantity', 'Item', 'Volume (m³)', 'Group', 'Category', 'Owner', 'Hangar', 'Contents']}
-      numeric={['Quantity', 'Volume (m³)', 'Contents']}
-      rows={8}
-    />
-  </>
+  <SkeletonTable
+    columns={['Quantity', 'Item', 'Volume (m³)', 'Group', 'Category', 'Owner', 'Hangar', 'Contents']}
+    numeric={['Quantity', 'Volume (m³)', 'Contents']}
+    rows={8}
+  />
 )
 
-// Anonymous share-link view: wheel + name + owner only. All queries run on
-// the service client, explicitly filtered to the sharer's characters/corps.
-// Accepts both link generations — the signed ?share= param (recursive over
-// the shared subtree) and the legacy ?token= (exact id).
+// Anonymous share-link view: the viewer, the ship's identity and its contents,
+// with no breadcrumb and no location. All queries run on the service client,
+// explicitly filtered to the sharer's characters/corps. Accepts both link
+// generations — the signed ?share= param (recursive over the shared subtree)
+// and the legacy ?token= (exact id).
 const SharedShipPage = async ({
   itemId,
   shareParams,
@@ -183,8 +218,10 @@ const SharedShipPage = async ({
         .in('corporation_id', scope.corporationIds.length > 0 ? scope.corporationIds : [-1])
         .maybeSingle<ShipRow>()
   const self = characterSelf ?? corpSelf
+  if (!self) notFound()
+  const selfType = await getSdeType(Number(self.type_id))
   // The share outlived the ship (sold, transferred, unlinked): dead link.
-  if (!self || (await getSdeType(Number(self.type_id)))?.categoryID !== SHIP_CATEGORY_ID) notFound()
+  if (selfType?.categoryID !== SHIP_CATEGORY_ID) notFound()
 
   const [{ data: characterChildren }, { data: corpChildren }] = await Promise.all([
     supabase
@@ -227,52 +264,32 @@ const SharedShipPage = async ({
     owner = { name: corpName?.name ?? `Corporation #${corporationId}`, portrait: corporationLogo(corporationId) }
   }
 
-  const typeNames = await fetchTypeNames([Number(self.type_id)])
-  const typeName = typeNames[Number(self.type_id)] ?? `#${self.type_id}`
-  const heading = self.name && self.name !== typeName ? `${self.name} (${typeName})` : typeName
-
-  const typeNamesPromise = fetchTypeNames([Number(self.type_id), ...children.map((c) => Number(c.type_id))])
-  // The same bulk lookup the signed-in view does, for the volume/group/category
-  // columns and each row's icon variation. Pure SDE data — public-read, nothing
-  // owner-specific — so it's as safe on the share path as the type names are.
-  const childTypes = await getSdeTypes([Number(self.type_id), ...children.map((c) => Number(c.type_id))])
-  // Display-only in the shared view: no href (a nested container would need its
-  // own share token to open), and contents is unused without drill-down links.
-  const rows: ItemRow[] = fittingOrder(
-    children.map((c) => ({
-      itemId: String(c.item_id),
-      ownerId,
-      typeId: Number(c.type_id),
-      name: c.name ?? null,
-      quantity: c.quantity,
-      isSingleton: c.is_singleton,
-      flag: c.location_flag,
-      contents: 0,
-      isCurrentShip: false,
-      href: null,
-      ...typeFacts(childTypes[Number(c.type_id)], c.is_blueprint_copy),
-    }))
-  )
-
-  // The table's owner column/filter only ever sees the sharing owner — the
-  // anonymous viewer has no owner context of their own to offer.
-  const owners: Owners = characterSelf?.registration_id
-    ? { characters: [{ id: characterSelf.registration_id, name: owner.name }], corporations: [] }
-    : { characters: [], corporations: [{ id: String(corpSelf?.corporation_id), name: owner.name }] }
+  const typeName = selfType?.name ?? `#${self.type_id}`
+  const rows = fitRows(children)
 
   return (
     <>
       {shareParams.share && <ShareUrlCleanup />}
-      <ShipHeading typeId={Number(self.type_id)} heading={heading} owner={owner} />
-      <ShipFitViewDynamic esiFit={toEsiFit(Number(self.type_id), self.name ?? null, rows)} />
-      {/* Hull first here too, so a shared ship lists the same things the
-          owner's own view does. Contents counts are unavailable on this path
-          (the walk RPCs are skipped), so it reports none rather than a guess. */}
-      <LocationAssets
-        rows={[hullRow(self, ownerId, childTypes[Number(self.type_id)], 0), ...rows]}
-        owners={owners}
-        typeNamesPromise={typeNamesPromise}
-        canAppraise={false}
+      <ShipIdentity
+        name={self.name && self.name !== typeName ? self.name : typeName}
+        typeName={typeName}
+        groupName={selfType?.groupName ?? null}
+        itemId={itemId}
+        owner={owner}
+        // A share link says what the ship is, never where it is.
+        location={null}
+      />
+      <ShipViewDynamic esiFit={toEsiFit(Number(self.type_id), self.name ?? null, rows)} />
+      {/* The same table the owner sees, minus the drill-down: a nested
+          container would need a share token of its own to open. */}
+      <SharedShipContents
+        self={self}
+        owner={{
+          id: ownerId,
+          name: owner.name,
+          kind: characterSelf?.registration_id ? 'character' : 'corporation',
+        }}
+        childRows={children}
       />
     </>
   )

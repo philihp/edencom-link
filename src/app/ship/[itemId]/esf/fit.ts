@@ -1,6 +1,6 @@
 import type { EveData } from './eveData'
 
-// ESI's fitting JSON, as `toEsiFit` in ../../ship/[itemId]/esfFit.ts builds it
+// ESI's fitting JSON, as `toEsiFit` in ../esfFit.ts builds it
 // from a ship's asset rows. Declared here rather than imported from
 // @eveshipfit/react: it's ESI's shape, not that package's, and this stack is
 // meant to outlive the dependency (docs/custom-fit-ui.md, stage 4).
