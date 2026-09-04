@@ -3,8 +3,8 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { characterPortrait, corporationLogo, type ShipOwner } from './shipHeading'
 
 // Who a hull belongs to, resolved the same way for every page that draws one:
-// /ship, its share-link view, and the new /item viewer. In its own module so
-// the three can't drift — an owner that reads one way on one page and another
+// /ship, its share-link view, and the retiring embed page at /item. In its own
+// module so the three can't drift — an owner that reads one way on one page and another
 // way on the next is the kind of difference nobody notices until it matters.
 
 // Only the two owner columns are read; a caller passes whichever hangar row it

@@ -1,11 +1,11 @@
-// The EFT export on the ship viewer (src/app/item/[itemId]/eft.ts): the
+// The EFT export on the ship viewer (src/app/ship/[itemId]/eft.ts): the
 // adapter from a hull's asset rows to the fitting record the shared writer
 // reads. The notation itself is pinned in fittingEft.test.ts; this covers
 // what the adapter decides on its own.
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { eftTypes, shipEft } from '../src/app/item/[itemId]/eft.ts'
+import { eftTypes, shipEft } from '../src/app/ship/[itemId]/eft.ts'
 import type { SdeType } from '../src/sdeTypes.ts'
 
 const sdeType = (typeID: number, name: string, categoryID: number): SdeType => ({

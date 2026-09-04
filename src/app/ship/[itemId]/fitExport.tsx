@@ -5,7 +5,7 @@ import { useRef, useState } from 'react'
 import styles from './fitExport.module.css'
 
 // The "Export fit" action on the identity strip: a native <dialog> holding the
-// ship as EFT text (src/app/item/[itemId]/eft.ts), with a button that puts it
+// ship as EFT text (./eft.ts), with a button that puts it
 // on the clipboard ready for the in-game fitting window's "Import from
 // clipboard". The text stays visible and selectable in a read-only textarea,
 // so when the clipboard API is refused (insecure context, permission denied)

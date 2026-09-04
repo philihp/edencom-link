@@ -5,9 +5,9 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { groupBays, slotSections } from '../src/app/item/[itemId]/panels.ts'
-import type { SlotCounts } from '../src/app/item/[itemId]/esf/attributes.ts'
-import type { EsfModule } from '../src/app/item/[itemId]/esf/fit.ts'
+import { groupBays, slotSections } from '../src/app/ship/[itemId]/panels.ts'
+import type { SlotCounts } from '../src/app/ship/[itemId]/esf/attributes.ts'
+import type { EsfModule } from '../src/app/ship/[itemId]/esf/fit.ts'
 
 const counts = (over: Partial<SlotCounts> = {}): SlotCounts => ({
   High: 0,

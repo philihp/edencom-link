@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 
-import type { ShipOwner } from '../../ship/[itemId]/shipHeading'
+import type { ShipOwner } from './shipHeading'
 import styles from './identity.module.css'
 
 // The block the viewer opens with: what this hull is called, what it is, whose

@@ -21,7 +21,8 @@ import { useFit, type FitCalculation } from './useFit'
 // The ship viewer: the fitting ring, what's fitted to it, what's aboard, and
 // what the dogma engine makes of the whole thing. Stages 2 and 3 of
 // docs/custom-fit-ui.md — our own components over our own fitting stack, in
-// place of the eveship.fit embed /ship/[itemId] still renders.
+// place of the eveship.fit embed, which /item/[itemId] still renders until
+// stage 4 phase 3 retires it.
 //
 // One component tree serves both layouts. On a phone the three panels are
 // tabs; from 900px up the tab bar disappears and all three are simply on the

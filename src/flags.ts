@@ -3,7 +3,7 @@ import { createServiceClient } from '@/utils/supabase/service'
 // The flag names and catalog live in src/flagCatalog.ts (dependency-free, so
 // client components can import them); re-exported here so every server caller
 // keeps its single '@/flags' import.
-export { FIT_UI_FLAG, GRAPHQL_FLAG, KNOWN_FLAGS, LINK_FLAG } from '@/flagCatalog'
+export { GRAPHQL_FLAG, KNOWN_FLAGS, LINK_FLAG } from '@/flagCatalog'
 
 // user_settings.flags is the per-user dark-launch flag list (see the
 // add_user_settings_flags migration, whose comment points at this module).

@@ -5,7 +5,7 @@ import { createClient } from '@/utils/supabase/server'
 
 import { establishedUser } from '../../../account/lib/establishedUser'
 import { createServiceClient } from '@/utils/supabase/service'
-import { ShipFitViewDynamic } from '../../../ship/[itemId]/shipFitViewDynamic'
+import { ShipFitViewDynamic } from '../../../item/[itemId]/shipFitViewDynamic'
 import { Name } from '../../../names'
 import { getSdeTypes } from '@/sdeTypes'
 import { ShareDialog } from '../../../asset/shareDialog'

@@ -1,4 +1,4 @@
-import type { EsiFit } from '@eveshipfit/react'
+import type { EsiFit } from '../ship/[itemId]/esf/fit'
 
 // One saved fitting as it comes out of the character_fitting view. `items` is
 // the jsonb blob the extract job normalized and slot-sorted (see
@@ -29,13 +29,13 @@ export type FittingRow = {
 export const fittingRoute = (characterId: number | string, fittingId: number | string): string =>
   `/fitting/${characterId}/${fittingId}`
 
-// Shapes a stored fitting into the ESI-fitting-JSON shape @eveshipfit/react's
-// useImportEsiFitting() hook expects — nearly a pass-through, since the table
-// stores ESI's own field names.
+// Shapes a stored fitting into ESI's fitting JSON — the shape a viewer's ESI
+// import reads. Nearly a pass-through, since the table stores ESI's own field
+// names.
 //
 // The one difference: ESI's *fitting* items carry no item_id (unlike the
-// hangar-asset rows /ship/[itemId] feeds through the same hook), while the
-// viewer's EsiFit type requires one. The array index stands in. It's only an
+// hangar-asset rows /ship/[itemId] builds the same shape from), while the
+// EsiFit type requires one. The array index stands in. It's only an
 // identity key for the viewer's own slot bookkeeping — it never leaves the
 // browser and is never persisted.
 export const toEsiFit = (row: Pick<FittingRow, 'name' | 'description' | 'ship_type_id' | 'items'>): EsiFit => ({
