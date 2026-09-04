@@ -425,6 +425,39 @@ export const LINK_TEMPLATES: LinkTemplate[] = [
     ],
   },
   {
+    // The hangar dimension read the other way. A stockpile count is wrong in
+    // both directions if it counts fuel sitting in a structure's bay or goods
+    // already committed to a delivery hangar, and neither is something you can
+    // post-filter out of a link — so the exclusion is the query.
+    id: 'excluding-hangars',
+    label: 'Stock, minus fuel and deliveries',
+    description:
+      'Everything you hold at a place EXCEPT what is in the hangars you name — fuel in a structure’s bay and goods already in a delivery hangar are committed, not stock.',
+    query: `query StockExcludingHangars($excludeHangars: [String!], $owners: [String!]) {
+  assets(excludeHangars: $excludeHangars, owners: $owners, limit: 500) {
+    totalCount
+    truncated
+    rows {
+      typeName
+      quantity
+      locationName
+      locationFlag
+      ownerName
+    }
+  }
+}`,
+    variables: { excludeHangars: ['Fuel bay', 'Deliveries'] },
+    variableFields: [
+      {
+        name: 'excludeHangars',
+        label: 'Hangars to leave out',
+        kind: 'list',
+        hint: 'Exact hangar names — "Deliveries" drops both delivery hangars, "Fuel bay" both fuel bays. A stack in no hangar at all is kept.',
+      },
+      OWNERS_FIELD,
+    ],
+  },
+  {
     id: 'restock',
     label: 'Restock list',
     description:

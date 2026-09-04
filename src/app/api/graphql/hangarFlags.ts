@@ -112,9 +112,12 @@ export type HangarMatch = { ok: true; flags: string[] | null } | { ok: false; me
 // dimension the same way.
 export const matchHangarFilter = (
   hangar: string | null | undefined,
-  hangars: readonly string[] | null | undefined
+  hangars: readonly string[] | null | undefined,
+  // Which pair is being parsed, so a refusal names the arguments the caller
+  // actually passed — `hangar`/`hangars` or `excludeHangar`/`excludeHangars`.
+  label = 'hangar'
 ): HangarMatch => {
-  const parsed = parseRefFilter(hangar, hangars, 'hangar')
+  const parsed = parseRefFilter(hangar, hangars, label)
   if (!parsed.ok) return { ok: false, message: parsed.message }
   const query = parsed.query
   if (query.kind === 'none') return { ok: true, flags: null }
@@ -143,3 +146,66 @@ export const matchHangarFilter = (
   }
   return { ok: true, flags: [...new Set(matched.flatMap((m) => m.flags))] }
 }
+
+// The hangar dimension as the resolvers apply it: which flags to keep, and
+// which to drop.
+//
+// Exclusion is its own pair rather than a negation syntax inside the existing
+// one, for the same reason the schema splits singular from plural: a stored
+// link is read by someone a year later, and `excludeHangar: "fuel bay"` says
+// what it does where a `!` prefix would have to be learned. It resolves
+// through exactly the same catalog, so "deliveries" excludes both delivery
+// hangars just as it includes both.
+//
+// The two compose, and composing is the useful case: `hangar: "deliveries",
+// excludeHangar: "corp deliveries"` is a character's delivery hangar alone.
+// Rather than hand the resolvers two clauses to AND, the overlap is settled
+// here — an include list comes back already narrowed, and `exclude` is only
+// non-null when there was nothing to narrow.
+export type HangarFilters =
+  { ok: true; include: string[] | null; exclude: string[] | null } | { ok: false; message: string }
+
+export const resolveHangarFilters = (args: {
+  hangar?: string | null
+  hangars?: readonly string[] | null
+  excludeHangar?: string | null
+  excludeHangars?: readonly string[] | null
+}): HangarFilters => {
+  const included = matchHangarFilter(args.hangar, args.hangars)
+  if (!included.ok) return included
+  const excluded = matchHangarFilter(args.excludeHangar, args.excludeHangars, 'excludeHangar')
+  if (!excluded.ok) return excluded
+
+  if (excluded.flags === null) return { ok: true, include: included.flags, exclude: null }
+  if (included.flags === null) return { ok: true, include: null, exclude: excluded.flags }
+
+  // Both given: subtract, and refuse the result that names no hangar at all.
+  // An empty result set here is arithmetic the caller got wrong, and a link
+  // nobody re-reads for a year would just look broken.
+  const dropped = new Set(excluded.flags)
+  const remaining = included.flags.filter((flag) => !dropped.has(flag))
+  if (remaining.length === 0) {
+    return {
+      ok: false,
+      message: `Every hangar the filter included is also excluded (${included.flags.join(', ')}), so nothing could match.`,
+    }
+  }
+  return { ok: true, include: remaining, exclude: null }
+}
+
+// The PostgREST `or=` expression that drops the excluded flags **without
+// dropping the rows that have no flag at all**. `location_flag NOT IN (…)` is
+// NULL for a null flag, so SQL filters those rows out — but a stack with no
+// flag is not in the fuel bay, and excluding the fuel bay must keep it.
+//
+// The values are interpolated rather than passed as parameters because
+// PostgREST's `or` takes one opaque string. That is safe only because they
+// come from HANGAR_FLAGS, never from the caller: the catalog is closed, and
+// `hangarFlagsAreBareWords` below is the assertion keeping it that way.
+export const excludeFlagsExpression = (flags: readonly string[]): string =>
+  `location_flag.is.null,location_flag.not.in.(${flags.join(',')})`
+
+// Every catalog token is a bare word, so interpolating one into the `or=`
+// expression above cannot end the list or start another clause. Asserted by
+// the test rather than trusted, since a future entry is the way this breaks.
+export const hangarFlagsAreBareWords = (): boolean => HANGAR_FLAGS.every((e) => /^[A-Za-z0-9]+$/.test(e.flag))

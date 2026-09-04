@@ -21,7 +21,7 @@ import { guessLocationRef, resolveTypeFilter } from '@/app/api/mcp/lib'
 import { resolveLocations, type LocationRef, type ResolvedLocations } from '@/app/resolveLocations'
 import { getSdeTypes, searchSdeTypesAll, type SdeType } from '@/sdeTypes'
 import { clampLimit, matchExactNames, matchOwnerFilter, parseRefFilter, parseSince, splitRefEntries } from './filters'
-import { matchHangarFilter } from './hangarFlags'
+import { excludeFlagsExpression, resolveHangarFilters } from './hangarFlags'
 import { resolveLocationByTokens, searchLocationCandidates } from './locationSearch'
 import { resolveTargets, restockLines, type Stack } from './restock'
 import type { NamedRef, OwnerScopes } from './filters'
@@ -110,13 +110,31 @@ const locationIdsFor = async (
   return [...new Set([...ids, ...matched.ids, ...guessed.map(([, ref]) => (ref as NamedRef).id)])]
 }
 
-// The hangar dimension → `location_flag` values, or null for no filter. No
-// I/O: unlike the other dimensions there is no directory to resolve against,
-// so the catalog in hangarFlags.ts is the directory (and the refusal list).
-const hangarFlagsFor = (args: { hangar?: string | null; hangars?: readonly string[] | null }): string[] | null => {
-  const matched = matchHangarFilter(args.hangar, args.hangars)
+// The hangar dimension → which `location_flag` values to keep and which to
+// drop, or nulls for no filter. No I/O: unlike the other dimensions there is
+// no directory to resolve against, so the catalog in hangarFlags.ts is the
+// directory (and the refusal list). Include and exclude are already reconciled
+// there, so at most one of the two comes back non-null.
+type HangarClause = { include: string[] | null; exclude: string[] | null }
+
+const hangarClauseFor = (args: {
+  hangar?: string | null
+  hangars?: readonly string[] | null
+  excludeHangar?: string | null
+  excludeHangars?: readonly string[] | null
+}): HangarClause => {
+  const matched = resolveHangarFilters(args)
   if (!matched.ok) return badRequest(matched.message)
-  return matched.flags
+  return { include: matched.include, exclude: matched.exclude }
+}
+
+// Both halves onto one builder. The exclusion goes through `or=` rather than
+// `.not.in()` so a row with no flag survives it — see excludeFlagsExpression.
+const applyHangar = (query: any, clause: HangarClause): any => {
+  let q = query
+  if (clause.include !== null) q = q.in('location_flag', clause.include)
+  if (clause.exclude !== null) q = q.or(excludeFlagsExpression(clause.exclude))
+  return q
 }
 
 // Page a filtered select up to `cap` rows — PostgREST caps a single request at
@@ -434,7 +452,7 @@ export const resolvers = {
       const scopedIds = [...scopes.registrationIds, ...sharedIds]
       const typeIds = await typeIdsFor(args)
       const locationIds = await locationIdsFor(ctx, args)
-      const hangarFlags = hangarFlagsFor(args)
+      const hangar = hangarClauseFor(args)
       const cap = clampLimit(args.limit, ctx.caps.asset)
 
       // The same filter set applies to the head-only count and the row pages,
@@ -444,7 +462,7 @@ export const resolvers = {
         let q = query.in(ownerColumn, ownerIds)
         if (typeIds !== null) q = q.in('type_id', typeIds)
         if (locationIds !== null) q = q.in('location_id', locationIds)
-        if (hangarFlags !== null) q = q.in('location_flag', hangarFlags)
+        q = applyHangar(q, hangar)
         return q
       }
 
@@ -561,7 +579,7 @@ export const resolvers = {
 
       const scopes = await ownerScopesFor(ctx, args)
       const locationIds = await locationIdsFor(ctx, args)
-      const hangarFlags = hangarFlagsFor(args)
+      const hangar = hangarClauseFor(args)
 
       // A TARGETED read: only the target types, only the two columns the sum
       // needs. Filtering by type keeps this far below the cap that paging the
@@ -570,7 +588,7 @@ export const resolvers = {
       const filtered = (query: any, ownerColumn: string, ownerIds: string[]): any => {
         let q = query.in(ownerColumn, ownerIds).in('type_id', targetTypeIds)
         if (locationIds !== null) q = q.in('location_id', locationIds)
-        if (hangarFlags !== null) q = q.in('location_flag', hangarFlags)
+        q = applyHangar(q, hangar)
         return q
       }
 
@@ -683,7 +701,7 @@ export const resolvers = {
     ) => {
       const scopes = await ownerScopesFor(ctx, args)
       const typeIds = await typeIdsFor(args)
-      const hangarFlags = hangarFlagsFor(args)
+      const hangar = hangarClauseFor(args)
       const cap = clampLimit(args.limit, ctx.caps.list)
 
       type BlueprintRow = {
@@ -702,7 +720,7 @@ export const resolvers = {
       const filtered = (query: any, ownerColumn: string, ownerIds: string[]): any => {
         let q = query.in(ownerColumn, ownerIds)
         if (typeIds !== null) q = q.in('type_id', typeIds)
-        if (hangarFlags !== null) q = q.in('location_flag', hangarFlags)
+        q = applyHangar(q, hangar)
         return q
       }
 

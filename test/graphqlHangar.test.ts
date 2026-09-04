@@ -7,7 +7,13 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { HANGAR_FLAGS, matchHangarFilter } from '../src/app/api/graphql/hangarFlags.ts'
+import {
+  HANGAR_FLAGS,
+  excludeFlagsExpression,
+  hangarFlagsAreBareWords,
+  matchHangarFilter,
+  resolveHangarFilters,
+} from '../src/app/api/graphql/hangarFlags.ts'
 
 const flagsOf = (result: ReturnType<typeof matchHangarFilter>): string[] => {
   assert.ok(result.ok, `expected a match, got: ${result.ok ? '' : result.message}`)
@@ -98,4 +104,63 @@ test('every catalog entry is a distinct ESI token with a label', () => {
   for (const flag of ['Hangar', 'Deliveries', 'CorpDeliveries', 'CorpSAG1']) {
     assert.ok(flags.includes(flag), `${flag} is in the catalog`)
   }
+})
+
+// ── Exclusion ──────────────────────────────────────────────────────────────
+// The other way to name the dimension: which hangars to keep OUT. It resolves
+// through the same catalog, so what matters here is how it composes with the
+// include pair and what it does to a stack that has no hangar at all.
+
+test('excludeHangar resolves through the same catalog as hangar', () => {
+  const result = resolveHangarFilters({ excludeHangar: 'deliveries' })
+  assert.ok(result.ok)
+  assert.equal(result.include, null)
+  assert.deepEqual([...(result.exclude as string[])].sort(), ['CorpDeliveries', 'Deliveries'])
+})
+
+test('no hangar arguments at all means no clause of either kind', () => {
+  const result = resolveHangarFilters({})
+  assert.ok(result.ok)
+  assert.equal(result.include, null)
+  assert.equal(result.exclude, null)
+})
+
+test('include and exclude compose into one narrowed include list', () => {
+  // "Both delivery hangars, but not the corporation's" — the useful overlap,
+  // settled before it reaches the query rather than as two clauses.
+  const result = resolveHangarFilters({ hangar: 'deliveries', excludeHangar: 'corp deliveries' })
+  assert.ok(result.ok)
+  assert.deepEqual(result.include, ['Deliveries'])
+  assert.equal(result.exclude, null)
+})
+
+test('excluding everything that was included is refused, not silently empty', () => {
+  const result = resolveHangarFilters({ hangar: 'Deliveries', excludeHangars: ['Deliveries', 'CorpDeliveries'] })
+  assert.ok(!result.ok)
+  assert.match(result.message, /also excluded/)
+})
+
+test('a refusal names the argument the caller actually passed', () => {
+  const both = resolveHangarFilters({ excludeHangar: 'fuel', excludeHangars: ['Cargo'] })
+  assert.ok(!both.ok)
+  assert.match(both.message, /excludeHangar or excludeHangars/)
+
+  const unknown = resolveHangarFilters({ excludeHangar: 'not a hangar' })
+  assert.ok(!unknown.ok)
+  assert.match(unknown.message, /No hangar matched/)
+})
+
+test('the exclusion expression keeps rows that have no hangar at all', () => {
+  // `location_flag NOT IN (…)` is NULL for a null flag, so plain SQL would drop
+  // those rows — but a stack with no flag is not in the fuel bay, and excluding
+  // the fuel bay must keep it.
+  const expression = excludeFlagsExpression(['StructureFuel', 'SpecializedFuelBay'])
+  assert.equal(expression, 'location_flag.is.null,location_flag.not.in.(StructureFuel,SpecializedFuelBay)')
+})
+
+test('every catalog flag is a bare word, so it is safe to interpolate', () => {
+  // excludeFlagsExpression builds one opaque PostgREST string, so a token
+  // carrying a comma or a parenthesis could end the list or start another
+  // clause. Nothing in the catalog may.
+  assert.ok(hangarFlagsAreBareWords())
 })
