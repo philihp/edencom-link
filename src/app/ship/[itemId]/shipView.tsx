@@ -16,6 +16,7 @@ import type { EsiFit, SlotType } from './esf/fit'
 import { groupBays, slotSections, type Bay, type BayRow, type ModuleGroup } from './panels'
 import { ringCells } from './ring'
 import { ShipViewSkeleton } from './shipViewSkeleton'
+import type { PilotSkills } from './pilotSkills'
 import { useFit, type FitCalculation } from './useFit'
 
 // The ship viewer: the fitting ring, what's fitted to it, what's aboard, and
@@ -31,6 +32,9 @@ import { useFit, type FitCalculation } from './useFit'
 // at render time, which would have to guess before hydration.
 
 type Tab = 'fit' | 'cargo' | 'info'
+
+// Which skill sheet the numbers are calculated against.
+type Basis = 'pilot' | 'all-v'
 
 const TABS: [Tab, string][] = [
   ['fit', 'fit'],
@@ -53,8 +57,13 @@ const barWidth = (used: number, total: number): string =>
 const barTone = (used: number, total: number): string =>
   total > 0 && used > total ? styles.over : total > 0 && used / total >= 0.95 ? styles.tight : ''
 
-export const ShipView = ({ esiFit }: { esiFit: EsiFit }) => {
-  const { loaded, error } = useFit(esiFit)
+export const ShipView = ({ esiFit, pilot }: { esiFit: EsiFit; pilot?: PilotSkills | null }) => {
+  // The pilot's own skills are the basis when we have them — that is the
+  // point of reading them — with all-V one click away, since it is the basis
+  // every other fitting tool quotes and the one a fit gets shared under.
+  const [basis, setBasis] = useState<Basis>('pilot')
+  const skills = pilot && basis === 'pilot' ? pilot.levels : null
+  const { loaded, error } = useFit(esiFit, skills)
   const [tab, setTab] = useState<Tab>('fit')
 
   if (error) return <p className={styles.failed}>The fitting stack could not read this ship: {error}</p>
@@ -103,7 +112,7 @@ export const ShipView = ({ esiFit }: { esiFit: EsiFit }) => {
         <BayPanel bays={bays} eveData={loaded.eveData} />
       </section>
       <section className={styles.panel} data-active={tab === 'info' ? '' : undefined}>
-        <StatsPanel loaded={loaded} />
+        <StatsPanel loaded={loaded} pilot={pilot} basis={basis} onBasis={setBasis} />
       </section>
     </div>
   )
@@ -279,10 +288,36 @@ const BayPanel = ({ bays, eveData }: { bays: Bay[]; eveData: FitCalculation['eve
 // The readout. Every figure is an attribute the engine produced — the panel
 // only formats — so this is the same model eveship.fit comes up with, with the
 // resist grid pulled out of the list because twelve resonances are a table.
-const StatsPanel = ({ loaded }: { loaded: FitCalculation }) => (
+const StatsPanel = ({
+  loaded,
+  pilot,
+  basis,
+  onBasis,
+}: {
+  loaded: FitCalculation
+  pilot?: PilotSkills | null
+  basis: Basis
+  onBasis: (basis: Basis) => void
+}) => (
   <>
     <h2 className={styles.panelHeading}>Statistics</h2>
-    <p className={styles.baseline}>Calculated against all skills at level V.</p>
+    {/* The sentence that states the assumption is also where you change it.
+        Without a pilot to offer (a corp hull, a shared fit, an account with no
+        skills scope) it stays the plain claim it has always been. */}
+    <p className={styles.baseline}>
+      {pilot && basis === 'pilot'
+        ? `Calculated against ${pilot.name}'s trained skills.`
+        : 'Calculated against all skills at level V.'}
+      {pilot ? (
+        <button
+          type="button"
+          className={`quiet ${styles.basisToggle}`}
+          onClick={() => onBasis(basis === 'pilot' ? 'all-v' : 'pilot')}
+        >
+          {basis === 'pilot' ? 'show all V' : `show ${pilot.name}'s skills`}
+        </button>
+      ) : null}
+    </p>
     <div className={styles.stats}>
       <div className={`${styles.statGroup} ${styles.resistGroup}`}>
         <h3 className={styles.legend}>Resistances</h3>

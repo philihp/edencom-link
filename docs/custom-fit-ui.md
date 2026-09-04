@@ -4,8 +4,9 @@ Feasibility assessment and staged plan for rendering the ship-fitting view
 (wheel + statistics) with our own components and look & feel, while keeping
 eveship.fit's calculation model.
 
-**This is done.** Stages 0 through 4 have all shipped (stage 1 was folded into
-0, 2 and 3); only the optional stage 5 remains. `/ship/[itemId]` and
+**This is done.** Stages 0 through 5 have all shipped (stage 1 was folded into
+0, 2 and 3); only the optional simulation work in stage 6 remains.
+`/ship/[itemId]` and
 `/fitting/[characterId]/[fittingId]` both draw our own viewer, `@eveshipfit/react`
 and the `@eveshipfit/data` stub are gone from `package.json`, and the one piece
 of eveship.fit still vendored is `@eveshipfit/dogma-engine` — the WASM
@@ -86,9 +87,9 @@ Incidental wins: the fit becomes renderable without the placeholder
 choreography (`fitPlaceholder.tsx` exists only because `EveDataProvider`
 renders nothing until decode); the localStorage `currentCharacter` footgun
 documented in `shipFitView.tsx` disappears; bundle shrinks; and since we have
-real trained skills in `character_skill`, a later stage can compute stats
-against the _owner's actual skills_ instead of the all-V baseline — something
-the current embed can't do.
+real trained skills in `character_skill`, stats can be computed against the
+_owner's actual skills_ instead of the all-V baseline — something the embed
+never could. (Stage 5 did exactly that.)
 
 ## Risks / unknowns (each pinned to a stage)
 
@@ -399,10 +400,61 @@ are attribution for the pieces ported from it under MIT (the ESI-flag→slot
 mapping, the attribute list and formatting rules, the engine's callback
 contract). The dependency is gone; the credit is not.
 
-### Stage 5 (optional, later)
+### Stage 5 — real skills (done)
 
-- Real skills: feed the viewing owner's `character_skill` rows into
-  `calculate()` instead of all-V, with a baseline toggle.
+The readout now answers "what does this hull do **for me**" rather than "for a
+pilot with everything at V". `character_skill` was already extracted (it drives
+the job-slot bubbles), so this is plumbing plus one decision per surface about
+whose skills may be quoted.
+
+**The map is exactly the injected skills, and that is the whole contract.**
+ESI's `/characters/{id}/skills/` reports the skills a pilot has injected and
+nothing else, `character_skill` stores that verbatim, and eveship.fit feeds the
+same engine the same thing for a logged-in character — its ESI import is
+literally `for (const s of skills) map[s.skill_id] = s.active_skill_level`.
+Matching it row for row is what keeps our numbers comparable with theirs. It
+also sidesteps the question the all-V path had to answer: the engine treats a
+skill it was **not told about** differently from one named at a level, which is
+why `allSkillsAtLevel` names every skill explicitly and why the pilot map must
+not invent a zero for one the pilot never injected. `toSkillLevels` therefore
+drops a row whose level is null rather than reading it as 0 — `Number(null)`
+being 0 is exactly the trap, and the test that says so caught the first
+implementation falling into it.
+
+**Active, not trained.** A pilot who lost skill points, or dropped to Alpha,
+flies at the active level. Same column the job-slot bubbles read.
+
+**Who may be quoted is decided by RLS, not by a rule in the page.** The query
+runs on the caller's own client, so it answers only for a registration the
+caller holds:
+
+| Surface                                | Basis                                                                                                            |
+| -------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `/ship/[itemId]`, own hull             | the holding character's skills                                                                                    |
+| `/ship/[itemId]`, corp hull            | all-V — a corporation has no skill sheet                                                                          |
+| `/ship/[itemId]`, shared in            | all-V — RLS returns no rows for someone else's registration                                                       |
+| `/ship/[itemId]?share=` / `?token=`    | all-V, **deliberately**: that path holds a service-role client and *could* read the sharer's sheet. A share covers the ship, not what its owner has trained |
+| `/fitting/[characterId]/[fittingId]`   | the fit's own pilot when `owner.isOwn` (RLS-proven), else all-V                                                   |
+| no `esi-skills.read_skills.v1` grant   | all-V — no rows, so no claim about the pilot                                                                      |
+
+**The toggle lives in the sentence that states the assumption.** The stats
+panel's baseline line ("Calculated against …") carries a `.quiet` button that
+flips between the pilot's skills and all V. The pilot's own skills are the
+default where we have them — that is the point of reading them — and all-V is
+one click away, since it is the basis every other fitting tool quotes and the
+one a fit gets shared under. Where there is no pilot to offer, the line stays
+the plain claim it always was.
+
+Flipping recalculates through `useFit`, which keeps the previous calculation on
+screen while it does: the SDE and the engine are both module-cached by then, so
+the second pass is just `calculate()` and blanking back to the skeleton would
+be a worse lie than a brief stale number.
+
+Seams: `pilotSkills.ts` (`toSkillLevels` pure and tested, `fetchPilotSkills`,
+`pilotSkills`), `useFit(esiFit, skills)`, `ShipView`'s `pilot` prop.
+
+### Stage 6 (optional, later)
+
 - Simulation (drag-to-fit / offlining) if ever wanted — the engine supports it
   (`calculate` is just a pure function of the fit), it's purely UI work.
 

@@ -5,6 +5,7 @@ import { createClient } from '@/utils/supabase/server'
 
 import { establishedUser } from '../../../account/lib/establishedUser'
 import { createServiceClient } from '@/utils/supabase/service'
+import { fetchPilotSkills, pilotSkills } from '../../../ship/[itemId]/pilotSkills'
 import { ShipViewDynamic } from '../../../ship/[itemId]/shipViewDynamic'
 import { Name } from '../../../names'
 import { getSdeTypes } from '@/sdeTypes'
@@ -81,6 +82,16 @@ const FittingDetailPage = async ({
   }
   if (!fit) notFound()
 
+  // The fit's own pilot, when the caller is that pilot: a saved fitting is a
+  // plan for a specific character, so their trained skills are the honest
+  // basis for its numbers. `isOwn` is RLS-proven — a fit shared in from
+  // another account, or opened through a signed link while signed out, gets
+  // the all-V baseline instead, since the share covers the fit and not its
+  // author's skill sheet.
+  const pilot = owner.isOwn
+    ? pilotSkills(owner.name ?? 'your character', await fetchPilotSkills(supabase, owner.registrationId))
+    : null
+
   const items: FittingItem[] = fit.items ?? []
   // Categories ride along with the names because the EFT export needs them:
   // a charge shares its module's slot flag in an ESI fitting, and only the
@@ -142,7 +153,7 @@ const FittingDetailPage = async ({
         </div>
       ) : null}
 
-      <ShipViewDynamic esiFit={toEsiFit(fit)} />
+      <ShipViewDynamic esiFit={toEsiFit(fit)} pilot={pilot} />
 
       <SlotGroups items={items} typeNames={typeNames} />
 

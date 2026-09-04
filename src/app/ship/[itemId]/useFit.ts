@@ -3,7 +3,14 @@
 import { useEffect, useState } from 'react'
 
 import { calculateSlots, type SlotCounts } from './esf/attributes'
-import { allSkillsAtLevel, calculateFit, installDataCallbacks, loadDogmaEngine, type Calculation } from './esf/dogma'
+import {
+  allSkillsAtLevel,
+  calculateFit,
+  installDataCallbacks,
+  loadDogmaEngine,
+  type Calculation,
+  type Skills,
+} from './esf/dogma'
 import { loadEveData, type EveData } from './esf/eveData'
 import { esiFitToEsfFit, type EsfFit, type EsiFit } from './esf/fit'
 
@@ -20,7 +27,13 @@ export type FitCalculation = {
   slots: SlotCounts
 }
 
-export const useFit = (esiFit: EsiFit) => {
+// `skills` names the basis: a pilot's own levels, or null for the all-V
+// baseline every fitting tool opens with. Changing it recalculates — and
+// deliberately leaves the previous `loaded` in place while that happens, so
+// flipping the basis updates the numbers rather than blanking the viewer back
+// to its skeleton. The SDE and the engine are both module-cached by then, so
+// the second pass is just `calculate()`.
+export const useFit = (esiFit: EsiFit, skills: Skills | null = null) => {
   const [loaded, setLoaded] = useState<FitCalculation | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -32,11 +45,8 @@ export const useFit = (esiFit: EsiFit) => {
       installDataCallbacks(eveData)
       const dogma = await loadDogmaEngine()
 
-      // All skills at V: the standard "what can this hull do" baseline, and
-      // the one the eveship.fit embed on /item is pinned to, so the two pages
-      // stay comparable. Stage 5 is where the owner's real skills come in.
       const fit = esiFitToEsfFit(esiFit, eveData)
-      const calculation = calculateFit(dogma, fit, allSkillsAtLevel(eveData, 5))
+      const calculation = calculateFit(dogma, fit, skills ?? allSkillsAtLevel(eveData, 5))
 
       if (!live) return
       setLoaded({ eveData, fit, calculation, slots: calculateSlots(eveData, calculation) })
@@ -49,7 +59,7 @@ export const useFit = (esiFit: EsiFit) => {
     return () => {
       live = false
     }
-  }, [esiFit])
+  }, [esiFit, skills])
 
   return { loaded, error }
 }
