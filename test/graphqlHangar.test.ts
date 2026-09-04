@@ -164,3 +164,58 @@ test('every catalog flag is a bare word, so it is safe to interpolate', () => {
   // clause. Nothing in the catalog may.
   assert.ok(hangarFlagsAreBareWords())
 })
+
+// ── The whitelist's two spellings ──────────────────────────────────────────
+// `includeHangar`/`includeHangars` is the name, so the exclusion pair reads as
+// the opposite of something. `hangar`/`hangars` is the older spelling of the
+// same filter, kept working because a Link is a STORED query — renaming would
+// break every one already saved.
+
+test('includeHangar means exactly what hangar means', () => {
+  const named = resolveHangarFilters({ includeHangar: 'deliveries' })
+  const older = resolveHangarFilters({ hangar: 'deliveries' })
+  assert.ok(named.ok)
+  assert.ok(older.ok)
+  assert.deepEqual([...(named.include as string[])].sort(), ['CorpDeliveries', 'Deliveries'])
+  assert.deepEqual(named.include, older.include)
+})
+
+test('the plural spellings agree too', () => {
+  const named = resolveHangarFilters({ includeHangars: ['Cargo'] })
+  const older = resolveHangarFilters({ hangars: ['Cargo'] })
+  assert.ok(named.ok)
+  assert.ok(older.ok)
+  assert.deepEqual(named.include, ['Cargo'])
+  assert.deepEqual(named.include, older.include)
+})
+
+test('includeHangar composes with excludeHangar like hangar does', () => {
+  const result = resolveHangarFilters({ includeHangar: 'deliveries', excludeHangar: 'corp deliveries' })
+  assert.ok(result.ok)
+  assert.deepEqual(result.include, ['Deliveries'])
+  assert.equal(result.exclude, null)
+})
+
+test('both spellings at once is refused — they are one filter', () => {
+  const result = resolveHangarFilters({ includeHangar: 'Cargo', hangar: 'Deliveries' })
+  assert.ok(!result.ok)
+  assert.match(result.message, /includeHangar\/includeHangars or hangar\/hangars/)
+})
+
+test('a blank older spelling does not count as using it', () => {
+  // Absent, empty and whitespace read alike everywhere else in the filters, so
+  // `hangar: ""` alongside a real includeHangar is not a clash.
+  const result = resolveHangarFilters({ includeHangar: 'Cargo', hangar: '  ', hangars: [] })
+  assert.ok(result.ok)
+  assert.deepEqual(result.include, ['Cargo'])
+})
+
+test('a refusal names the spelling the caller actually used', () => {
+  const named = resolveHangarFilters({ includeHangar: 'nope' })
+  assert.ok(!named.ok)
+  assert.match(named.message, /No hangar matched "nope"/)
+
+  const bothForms = resolveHangarFilters({ includeHangar: 'Cargo', includeHangars: ['Deliveries'] })
+  assert.ok(!bothForms.ok)
+  assert.match(bothForms.message, /includeHangar or includeHangars/)
+})

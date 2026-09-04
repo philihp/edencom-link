@@ -21,7 +21,7 @@ import { guessLocationRef, resolveTypeFilter } from '@/app/api/mcp/lib'
 import { resolveLocations, type LocationRef, type ResolvedLocations } from '@/app/resolveLocations'
 import { getSdeTypes, searchSdeTypesAll, type SdeType } from '@/sdeTypes'
 import { clampLimit, matchExactNames, matchOwnerFilter, parseRefFilter, parseSince, splitRefEntries } from './filters'
-import { excludeFlagsExpression, resolveHangarFilters } from './hangarFlags'
+import { excludeFlagsExpression, resolveHangarFilters, type HangarArgs } from './hangarFlags'
 import { resolveLocationByTokens, searchLocationCandidates } from './locationSearch'
 import { resolveTargets, restockLines, type Stack } from './restock'
 import type { NamedRef, OwnerScopes } from './filters'
@@ -117,12 +117,7 @@ const locationIdsFor = async (
 // there, so at most one of the two comes back non-null.
 type HangarClause = { include: string[] | null; exclude: string[] | null }
 
-const hangarClauseFor = (args: {
-  hangar?: string | null
-  hangars?: readonly string[] | null
-  excludeHangar?: string | null
-  excludeHangars?: readonly string[] | null
-}): HangarClause => {
+const hangarClauseFor = (args: HangarArgs): HangarClause => {
   const matched = resolveHangarFilters(args)
   if (!matched.ok) return badRequest(matched.message)
   return { include: matched.include, exclude: matched.exclude }

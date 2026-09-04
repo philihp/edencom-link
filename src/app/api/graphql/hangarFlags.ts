@@ -157,6 +157,15 @@ export const matchHangarFilter = (
 // through exactly the same catalog, so "deliveries" excludes both delivery
 // hangars just as it includes both.
 //
+// **The whitelist has two spellings.** `includeHangar`/`includeHangars` is the
+// name, because a pair called `excludeHangar` reads as the opposite of
+// something called `includeHangar` and as the opposite of nothing at all when
+// its counterpart is bare `hangar`. `hangar`/`hangars` is the older spelling of
+// the very same thing, kept working verbatim: a Link is a STORED query that
+// runs untouched whenever a viewer opens it, so a rename would quietly break
+// every one already saved. Both spellings at once is a refusal — they are one
+// dimension, and a link that set both is one nobody can predict a year later.
+//
 // The two compose, and composing is the useful case: `hangar: "deliveries",
 // excludeHangar: "corp deliveries"` is a character's delivery hangar alone.
 // Rather than hand the resolvers two clauses to AND, the overlap is settled
@@ -165,13 +174,41 @@ export const matchHangarFilter = (
 export type HangarFilters =
   { ok: true; include: string[] | null; exclude: string[] | null } | { ok: false; message: string }
 
-export const resolveHangarFilters = (args: {
+export type HangarArgs = {
+  includeHangar?: string | null
+  includeHangars?: readonly string[] | null
+  // The older spelling of includeHangar/includeHangars, still honoured.
   hangar?: string | null
   hangars?: readonly string[] | null
   excludeHangar?: string | null
   excludeHangars?: readonly string[] | null
-}): HangarFilters => {
-  const included = matchHangarFilter(args.hangar, args.hangars)
+}
+
+// Which spelling of the whitelist the caller used, or a refusal when they used
+// both. `null` for either half means "not passed at all", which is what lets a
+// blank string still read as absent inside matchHangarFilter.
+type IncludeSpelling =
+  | { ok: true; single: string | null | undefined; list: readonly string[] | null | undefined; label: string }
+  | { ok: false; message: string }
+
+const includeSpelling = (args: HangarArgs): IncludeSpelling => {
+  const usedNew = (args.includeHangar ?? '').trim() !== '' || (args.includeHangars ?? []).length > 0
+  const usedOld = (args.hangar ?? '').trim() !== '' || (args.hangars ?? []).length > 0
+  if (usedNew && usedOld) {
+    return {
+      ok: false,
+      message: 'Pass includeHangar/includeHangars or hangar/hangars, not both — they are the same filter.',
+    }
+  }
+  return usedOld
+    ? { ok: true, single: args.hangar, list: args.hangars, label: 'hangar' }
+    : { ok: true, single: args.includeHangar, list: args.includeHangars, label: 'includeHangar' }
+}
+
+export const resolveHangarFilters = (args: HangarArgs): HangarFilters => {
+  const spelling = includeSpelling(args)
+  if (!spelling.ok) return spelling
+  const included = matchHangarFilter(spelling.single, spelling.list, spelling.label)
   if (!included.ok) return included
   const excluded = matchHangarFilter(args.excludeHangar, args.excludeHangars, 'excludeHangar')
   if (!excluded.ok) return excluded

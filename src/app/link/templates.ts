@@ -400,8 +400,8 @@ export const LINK_TEMPLATES: LinkTemplate[] = [
     label: 'Deliveries hangars',
     description:
       'Everything sitting in a Deliveries hangar — a character’s and a corporation’s alike — i.e. what couriers have dropped off and nobody has unpacked.',
-    query: `query Deliveries($hangar: String, $owners: [String!]) {
-  assets(hangar: $hangar, owners: $owners, limit: 500) {
+    query: `query Deliveries($includeHangar: String, $owners: [String!]) {
+  assets(includeHangar: $includeHangar, owners: $owners, limit: 500) {
     totalCount
     truncated
     rows {
@@ -413,10 +413,10 @@ export const LINK_TEMPLATES: LinkTemplate[] = [
     }
   }
 }`,
-    variables: { hangar: 'Deliveries' },
+    variables: { includeHangar: 'Deliveries' },
     variableFields: [
       {
-        name: 'hangar',
+        name: 'includeHangar',
         label: 'Hangar',
         kind: 'text',
         hint: 'A hangar name search — "Deliveries" catches both delivery hangars, "corp hangar 3" one division.',
