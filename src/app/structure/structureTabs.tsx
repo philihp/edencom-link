@@ -1,10 +1,14 @@
 'use client'
 // The tile's lower pane: Services, Rigs and Characters share one footprint
-// behind tabs instead of stacking three full sections. Characters are the
-// people who ran industry jobs at the structure inside the page's window —
-// our own characters by registration, corpmates by the installer id the corp
-// extract carries — so a tile answers "who actually uses this place" without
-// leaving the page.
+// behind tabs instead of stacking three full sections. Characters are who ran
+// industry jobs at the structure inside the page's window, so a tile answers
+// "who actually uses this place" without leaving the page.
+//
+// A row is a person or a corporation rather than a character: our own alts
+// fold into one row under the account's main, and a corp job counts for the
+// corporation it was run for (see ./installers.ts for why those group
+// differently). The row says which it is, so a corporation is never read as a
+// pilot.
 import { useState } from 'react'
 
 import { TypeIcon } from '../typeIcon'
@@ -12,7 +16,22 @@ import styles from './structures.module.css'
 
 export type ServiceChip = { name: string; typeID: number | null }
 export type RigChip = { name: string; typeID: number }
-export type CharacterRow = { key: string; name: string; jobs: number; eiv: number }
+export type CharacterRow = {
+  key: string
+  name: string
+  kind: 'account' | 'character' | 'corporation'
+  jobs: number
+  eiv: number
+  // Distinct characters behind the row; more than one is what grouping bought.
+  characters: number
+}
+
+// What the row is, said plainly — but only where the name alone would mislead.
+// One pilot standing for themselves needs no gloss.
+const describe = (row: CharacterRow): string | null => {
+  if (row.kind === 'corporation') return row.characters > 1 ? `corp · ${row.characters} pilots` : 'corp'
+  return row.characters > 1 ? `${row.characters} characters` : null
+}
 
 // Approximate throughput, to the nearest million ISK. The EIV fold prices at
 // CCP adjusted prices, so this is already an estimate — millions is the honest
@@ -86,7 +105,10 @@ export const StructureTabs = ({
         <ul role="tabpanel" className={styles.characterList}>
           {characters.map((c) => (
             <li key={c.key} className={styles.characterRow}>
-              <span className={styles.characterName}>{c.name}</span>
+              <span className={styles.characterName}>
+                {c.name}
+                {describe(c) ? <span className={styles.characterKind}>{describe(c)}</span> : null}
+              </span>
               <span className={styles.characterJobs}>{formatEivM(c.eiv)}</span>
             </li>
           ))}
