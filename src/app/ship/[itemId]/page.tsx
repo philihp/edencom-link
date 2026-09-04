@@ -18,6 +18,7 @@ import { eftTypes, shipEft } from './eft'
 import { toEsiFit } from './esfFit'
 import { FitExport } from './fitExport'
 import { ShipIdentity } from './identity'
+import { fetchPilotSkills, pilotSkills } from './pilotSkills'
 import { ShipContents, SharedShipContents } from './shipContents'
 import { characterPortrait, corporationLogo, type ShipOwner } from './shipHeading'
 import { fetchShipOwner } from './shipOwner'
@@ -107,24 +108,30 @@ const ShipPage = async ({
   // Non-ships (containers, loose stacks) live on the asset browser instead.
   if (selfType?.categoryID !== SHIP_CATEGORY_ID) redirect(`/asset/${itemId}`)
 
-  const [{ data: characterChildren }, { data: corpChildren }, crumbs, owner, shareData] = await Promise.all([
-    supabase
-      .from('character_asset')
-      .select('item_id, registration_id, type_id, location_flag, quantity, is_singleton, is_blueprint_copy, name')
-      .eq('location_id', itemId),
-    supabase
-      .from('corp_asset')
-      .select('item_id, corporation_id, type_id, location_flag, quantity, is_singleton, is_blueprint_copy')
-      .eq('location_id', itemId),
-    // The full container chain up to its station / structure / system,
-    // rendered as the breadcrumb above the heading.
-    fetchAssetPath(itemId, supabase),
-    fetchShipOwner(supabase, characterSelf, corpSelf),
-    // The share dialog appears only for a character item the caller actually
-    // owns — RLS visibility alone can also mean "shared with me", which must
-    // not offer the dialog.
-    fetchShareDialogData(supabase, itemId),
-  ])
+  const [{ data: characterChildren }, { data: corpChildren }, crumbs, owner, shareData, skillLevels] =
+    await Promise.all([
+      supabase
+        .from('character_asset')
+        .select('item_id, registration_id, type_id, location_flag, quantity, is_singleton, is_blueprint_copy, name')
+        .eq('location_id', itemId),
+      supabase
+        .from('corp_asset')
+        .select('item_id, corporation_id, type_id, location_flag, quantity, is_singleton, is_blueprint_copy')
+        .eq('location_id', itemId),
+      // The full container chain up to its station / structure / system,
+      // rendered as the breadcrumb above the heading.
+      fetchAssetPath(itemId, supabase),
+      fetchShipOwner(supabase, characterSelf, corpSelf),
+      // The share dialog appears only for a character item the caller actually
+      // owns — RLS visibility alone can also mean "shared with me", which must
+      // not offer the dialog.
+      fetchShareDialogData(supabase, itemId),
+      // The holding character's own skills, so the readout answers "what does
+      // this hull do for me" rather than "for a pilot with everything at V". RLS
+      // decides: a corp hull has no character, and a ship shared with the caller
+      // returns nothing, so both fall back to the all-V baseline.
+      fetchPilotSkills(supabase, characterSelf?.registration_id),
+    ])
   const children = [...((characterChildren ?? []) as ChildRow[]), ...((corpChildren ?? []) as ChildRow[])]
   const rows = fitRows(children)
 
@@ -163,7 +170,10 @@ const ShipPage = async ({
           </>
         }
       />
-      <ShipViewDynamic esiFit={toEsiFit(Number(self.type_id), self.name ?? null, rows)} />
+      <ShipViewDynamic
+        esiFit={toEsiFit(Number(self.type_id), self.name ?? null, rows)}
+        pilot={pilotSkills(owner.name, skillLevels)}
+      />
       <Suspense fallback={<ContentsFallback />}>
         <ShipContents
           supabase={supabase}
@@ -279,6 +289,9 @@ const SharedShipPage = async ({
         // A share link says what the ship is, never where it is.
         location={null}
       />
+      {/* No `pilot`: all-V, deliberately. This path holds a service-role
+          client, so it *could* read the sharer's skill sheet — a share covers
+          the ship, not what its owner has trained. */}
       <ShipViewDynamic esiFit={toEsiFit(Number(self.type_id), self.name ?? null, rows)} />
       {/* The same table the owner sees, minus the drill-down: a nested
           container would need a share token of its own to open. */}
