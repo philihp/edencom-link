@@ -3,23 +3,24 @@
 // lookups it already has, and gets back one roster per structure, busiest
 // first.
 //
-// **A row is a person or a corporation, never an alt.** A wall of alts answers
-// nothing — you already know which of your characters you are — so the two
-// extracts group differently, because that is how much each one actually tells
-// us about who is behind a job:
+// The two extracts group differently, because that is how much each one
+// actually tells us about who is behind a job:
 //
-//   * A personal job names one of our own registrations. Every registration on
-//     the account belongs to the same person, so they all fold into one row
-//     labelled with the account's main character.
+//   * A personal job names one of our own registrations, and the registration
+//     names a character. That character IS the row — see below.
 //   * A corp job names the corporation it was installed for, and an installer
-//     whose account we know nothing about — EVE publishes no link between a
-//     stranger's characters, so there is no main to group them under. The
-//     corporation is the honest unit, and it is also the one that owns the
-//     output.
+//     whose account we know nothing about. The corporation is the honest unit
+//     there, and it is also the one that owns the output, so a corp job counts
+//     for the corp even when one of our own characters installed it.
 //
-// Which means a corp job installed by one of our own alts counts for the corp,
-// not for us: it was run as the corporation, and the materials landed in the
-// corporation's hangar.
+// **Personal jobs are one row per character, deliberately.** An earlier version
+// folded every registration on the account into one row under the account's
+// main, on the reading that they are all the same person. They are not
+// necessarily: an account can hold the characters of several people sharing one
+// tracker, and `registration.is_main` cannot tell them apart — it is ONE main
+// per account (setting it clears every other row for that user), so the fold
+// collapsed nine people's work into a single line and hid eight of them.
+// Grouping by person needs a per-character main the schema does not have.
 import { forEach } from 'ramda'
 
 import { jobLocationId, type JobLocation } from './roster.ts'
@@ -40,13 +41,7 @@ export type InstallerInput = {
   onPage: ReadonlySet<string>
   // ISO window start — the same window every other measure on the tile uses.
   since: string
-  // The account's own row: its main character's name, and a stable key. Null
-  // when no main resolves (an account with no registrations at all), in which
-  // case personal jobs fall back to one row per registration rather than
-  // vanishing.
-  account: { key: string; name: string } | null
-  // registration uuid -> { name, characterId }, for that fallback and for
-  // counting how many characters a row covers.
+  // registration uuid -> { name, characterId }: who a personal job's row is.
   registrations: ReadonlyMap<string, { name: string; characterId: string | null }>
   // corporation id -> name, from the `corporation` directory.
   corporationNames: ReadonlyMap<string, string>
@@ -61,7 +56,7 @@ export type InstallerRow = {
   name: string
   // What the row stands for, so the tile can say so rather than implying every
   // line is one pilot.
-  kind: 'account' | 'character' | 'corporation'
+  kind: 'character' | 'corporation'
   jobs: number
   eiv: number
   // Distinct characters folded into the row. More than one is the whole point
@@ -109,17 +104,6 @@ const attribute = (job: InstallerJob, input: InstallerInput): Attribution | null
   if (job.registration_id != null) {
     const registrationId = String(job.registration_id)
     const registration = input.registrations.get(registrationId)
-    // Every registration is the same person, so they share the account's row.
-    if (input.account) {
-      return {
-        structureId,
-        key: input.account.key,
-        name: input.account.name,
-        kind: 'account',
-        characterKey: registration?.characterId ?? `reg:${registrationId}`,
-        fromCorp: false,
-      }
-    }
     return {
       structureId,
       key: registration?.characterId != null ? `char:${registration.characterId}` : `reg:${registrationId}`,

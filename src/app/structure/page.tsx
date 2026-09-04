@@ -44,7 +44,6 @@ import { foldEiv, recoveredRate, type IndexSample } from './eiv'
 import { journalCoveredStructures } from './journalCoverage'
 import { HelpTip } from './helpTip'
 import { foldInstallers } from './installers'
-import { pickMain } from '../bpos/slug'
 import { formatRelativeFuture } from '../relativeTime'
 import { resolveServiceIcons } from './serviceIcons'
 import { StructureTabs } from './structureTabs'
@@ -733,22 +732,14 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
   const eivSkipped = eiv.skipped.noBill + eiv.skipped.noPrice + eiv.skipped.noIndex
 
   // ── Who ran jobs at each structure (the tile's Characters tab) ────────────
-  // Personal jobs name one of our own registrations; every registration here
-  // belongs to this account (RLS), so they all fold into one row labelled with
-  // the account's main. Corp jobs name the corporation they were run for,
-  // which is the only honest unit for them — EVE publishes no link between a
-  // stranger's characters, so a corpmate's installer id has no main to group
-  // under. See ./installers.ts.
-  type RegistrationRow = {
-    id: string
-    name: string
-    character_id: number | string | null
-    is_main: boolean | null
-    created_at: string | null
-  }
+  // Personal jobs name one of our own registrations, and each is its own row:
+  // an account can hold several people's characters, and nothing in the
+  // registration tells them apart. Corp jobs name the corporation they were run
+  // for, which is the only honest unit for them. See ./installers.ts.
+  type RegistrationRow = { id: string; name: string; character_id: number | string | null }
   const { data: registrationRows } = await supabase
     .from('registration')
-    .select('id, name, character_id, is_main, created_at')
+    .select('id, name, character_id')
     .returns<RegistrationRow[]>()
   const registrationsById = new Map(
     map(
@@ -760,11 +751,6 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
       registrationRows ?? []
     )
   )
-  // The same main the header and /bpos label an account by: the flagged
-  // character, else the oldest.
-  const main = pickMain(registrationRows ?? [])
-  const account = main ? { key: `account:${main.id}`, name: main.name } : null
-
   // Corp-job rows group by their corporation, so they need its name. The
   // `corporation` directory is what the external-owner lookup above already
   // reads; a corporation missing from it falls back to a labelled id.
@@ -795,7 +781,6 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
   const installersByStructure = foldInstallers(allJobs, {
     onPage,
     since: windowStart,
-    account,
     registrations: registrationsById,
     corporationNames: jobCorporationNames,
     eivByJob: eiv.eivByJob,

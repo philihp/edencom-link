@@ -1,9 +1,8 @@
 // The Characters-tab fold: who ran industry jobs at each structure. The
 // interesting cases are all identity — how much each extract actually tells us
-// about who is behind a job, and so what a row is allowed to stand for. Our own
-// alts fold into one row under the account's main; a corp job counts for the
-// corporation it was run for, because a stranger's characters have no
-// discoverable main to group under.
+// about who is behind a job, and so what a row is allowed to stand for. A
+// personal job counts for the character who ran it; a corp job counts for the
+// corporation it was run for, whoever installed it.
 import assert from 'node:assert'
 import test from 'node:test'
 
@@ -15,7 +14,6 @@ const CORP = '98000001'
 const input = (over: Partial<InstallerInput> = {}): InstallerInput => ({
   onPage: new Set([STRUCT]),
   since: '2026-08-01T00:00:00Z',
-  account: { key: 'account:reg-a', name: 'Sir Cuddles' },
   registrations: new Map([
     ['reg-a', { name: 'Sir Cuddles', characterId: '90000001' }],
     ['reg-b', { name: 'Quuixote', characterId: null }],
@@ -37,15 +35,17 @@ const job = (over: object) => ({
   ...over,
 })
 
-test('our own characters fold into one row under the account main', () => {
-  // Two different alts, one row: you already know which of your characters you
-  // are, and a wall of alts answers nothing.
+test('each of our characters keeps its own row', () => {
+  // An account can hold the characters of several people sharing one tracker,
+  // and nothing in the registration tells them apart — folding them under one
+  // main hid eight people's work when this shipped that way.
   const roster = foldInstallers(
     [job({ job_id: 1, registration_id: 'reg-a' }), job({ job_id: 2, registration_id: 'reg-b' })],
     input()
   )
   assert.deepEqual(roster.get(STRUCT), [
-    { key: 'account:reg-a', name: 'Sir Cuddles', kind: 'account', jobs: 2, eiv: 200_000_000, characters: 2 },
+    { key: 'char:90000001', name: 'Sir Cuddles', kind: 'character', jobs: 1, eiv: 120_000_000, characters: 1 },
+    { key: 'reg:reg-b', name: 'Quuixote', kind: 'character', jobs: 1, eiv: 80_000_000, characters: 1 },
   ])
 })
 
@@ -56,15 +56,16 @@ test('a corp job counts for its corporation, not its installer', () => {
   ])
 })
 
-test('a corp job installed by one of our own alts still counts for the corp', () => {
+test('a corp job installed by one of our own characters still counts for the corp', () => {
   // It was run as the corporation and the output landed in the corporation's
-  // hangar — the installing character is incidental.
+  // hangar — the installing character is incidental. Their own personal job at
+  // the same structure stays their own row.
   const roster = foldInstallers(
     [job({ job_id: 1, registration_id: 'reg-a' }), job({ job_id: 2, corporation_id: CORP, installer_id: '90000001' })],
     input()
   )
   assert.deepEqual(roster.get(STRUCT), [
-    { key: 'account:reg-a', name: 'Sir Cuddles', kind: 'account', jobs: 1, eiv: 120_000_000, characters: 1 },
+    { key: 'char:90000001', name: 'Sir Cuddles', kind: 'character', jobs: 1, eiv: 120_000_000, characters: 1 },
     { key: `corp:${CORP}`, name: 'Sanguine Systems', kind: 'corporation', jobs: 1, eiv: 80_000_000, characters: 1 },
   ])
 })
@@ -115,19 +116,6 @@ test('an unnamed corporation falls back to a labelled id', () => {
   ])
 })
 
-test('without a main, personal jobs stay one row per registration', () => {
-  // An account with no registrations to pick a main from must not lose its
-  // jobs; it falls back to the pre-grouping behaviour.
-  const roster = foldInstallers(
-    [job({ job_id: 1, registration_id: 'reg-a' }), job({ job_id: 2, registration_id: 'reg-b' })],
-    input({ account: null })
-  )
-  assert.deepEqual(roster.get(STRUCT), [
-    { key: 'char:90000001', name: 'Sir Cuddles', kind: 'character', jobs: 1, eiv: 120_000_000, characters: 1 },
-    { key: 'reg:reg-b', name: 'Quuixote', kind: 'character', jobs: 1, eiv: 80_000_000, characters: 1 },
-  ])
-})
-
 test('a corp row naming no corporation belongs to its installer', () => {
   // Nothing in the extract produces this today, but a job is never dropped for
   // want of a corporation id.
@@ -150,7 +138,7 @@ test('window and page scope apply, ties sort by name', () => {
   // reg-b's job 3 priced at 40m; job 4 has no EIV entry (unpriceable) -> 0,
   // so the EIV-descending sort puts the account row first here.
   assert.deepEqual(roster.get(STRUCT), [
-    { key: 'account:reg-a', name: 'Sir Cuddles', kind: 'account', jobs: 1, eiv: 40_000_000, characters: 1 },
+    { key: 'reg:reg-b', name: 'Quuixote', kind: 'character', jobs: 1, eiv: 40_000_000, characters: 1 },
     { key: `corp:${CORP}`, name: 'Sanguine Systems', kind: 'corporation', jobs: 1, eiv: 0, characters: 1 },
   ])
 })
