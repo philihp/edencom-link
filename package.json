@@ -5,9 +5,7 @@
   "type": "module",
   "packageManager": "pnpm@11.24.0",
   "dependencies": {
-    "@eveshipfit/data": "file:vendor/eveshipfit/data-stub",
     "@eveshipfit/dogma-engine": "file:vendor/eveshipfit/eveshipfit-dogma-engine-7.1.0.tgz",
-    "@eveshipfit/react": "file:vendor/eveshipfit/eveshipfit-react-4.7.2.tgz",
     "@modelcontextprotocol/server": "2.0.0",
     "@philihp/eve-sso": "2.1.0",
     "@supabase/ssr": "0.12.5",
@@ -80,7 +78,7 @@
     "start": "next start",
     "test": "node --test --import ./test/lib/offlineGuard.ts \"test/**/*.test.ts\"",
     "test:branch": "RUN_BRANCH_TESTS=1 node --test test/signupBranch.test.ts",
-    "test:sql": "for f in test/sql/*.sql; do echo \"── $f\" && psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f \"$f\" || exit 1; done"
+    "test:sql": "for f in test/sql/*.sql; do echo \"\u2500\u2500 $f\" && psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f \"$f\" || exit 1; done"
   },
   "prettier": "@philihp/prettier-config",
   "devDependencies": {

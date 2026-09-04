@@ -2,12 +2,15 @@
 
 Feasibility assessment and staged plan for rendering the ship-fitting view
 (wheel + statistics) with our own components and look & feel, while keeping
-eveship.fit's calculation model. **Stages 0, 2 and 3 are done**
-(see their sections below); stage 1 was folded into them. Stage 4 — making the
-new viewer _the_ ship page and retiring `@eveshipfit/react` — is under way as
-the three phases in "Stage 4 — adoption and retirement" below: **phases 1 and
-2 are done, so `/ship/[itemId]` is the new viewer and the embed has moved to
-`/item/[itemId]`**; phase 3 (the deletion) is next. Stage 5 is not started.
+eveship.fit's calculation model.
+
+**This is done.** Stages 0 through 4 have all shipped (stage 1 was folded into
+0, 2 and 3); only the optional stage 5 remains. `/ship/[itemId]` and
+`/fitting/[characterId]/[fittingId]` both draw our own viewer, `@eveshipfit/react`
+and the `@eveshipfit/data` stub are gone from `package.json`, and the one piece
+of eveship.fit still vendored is `@eveshipfit/dogma-engine` — the WASM
+calculation model, which was always the point of keeping it. The sections below
+are kept as the record of how it was done and why each choice was made.
 
 ## Verdict
 
@@ -362,18 +365,19 @@ declared by us — so the type no longer ties the fitting pages to the package.
 `flagCatalog.ts`'s label, this document, `docs/README.md` and `CLAUDE.md`'s
 layout line say which page is which.
 
-#### Phase 3 — delete the old page and its dependencies
+#### Phase 3 — delete the old page and its dependencies (done)
 
 - **The fitting page moves first.** `/fitting/[characterId]/[fittingId]`
   still renders the embed (`ShipFitViewDynamic`); it switches to the new
   `ShipViewDynamic`, which takes the same `EsiFit` its `toEsiFit` already
   builds. Nothing else imports the embed after that.
 - Delete `src/app/item/[itemId]/` — the old `page.tsx`, `shipFitView.tsx`,
-  `shipFitViewDynamic.tsx`, `fitPlaceholder.tsx`, `shipFit.module.css`,
-  `shipContents.tsx` (unless phase 2 kept the table, in which case it lives
-  under `ship/`), `loading.tsx`. Optionally a permanent redirect
-  `/item/:itemId` → `/ship/:itemId` in `next.config.mjs`; the route was never
-  linked, so nothing depends on it.
+  `shipFitViewDynamic.tsx`, `fitPlaceholder.tsx`, `shipFit.module.css` and the
+  copy of `shipContents.tsx` phase 2 left there (the table itself lives under
+  `ship/`). `/item/:itemId` now redirects to `/ship/:itemId` in
+  `next.config.mjs` — **temporary, not permanent**, matching `/asset/:itemId/fit`
+  next to it: the route was never linked, but flagged users spent the whole
+  soak with it bookmarked, and a 308 would outlive any later reuse of the path.
 - **Dependencies out:** `@eveshipfit/react` and its
   `vendor/eveshipfit/eveshipfit-react-4.7.2.tgz`, and the `@eveshipfit/data`
   stub (`vendor/eveshipfit/data-stub/`), which exists only to satisfy react's
@@ -389,6 +393,11 @@ layout line say which page is which.
   bumps the data stub to match react's peer range goes with it.
 - `CLAUDE.md`'s "Vendored `@eveshipfit/*`" note shrinks to the one tarball;
   this document's "What we keep vs. what we write" table is then simply true.
+
+The `esf/` modules keep their `@eveshipfit/react` mentions on purpose: those
+are attribution for the pieces ported from it under MIT (the ESI-flag→slot
+mapping, the attribute list and formatting rules, the engine's callback
+contract). The dependency is gone; the credit is not.
 
 ### Stage 5 (optional, later)
 

@@ -1,4 +1,4 @@
-// Encodes the 6 protobuf data files @eveshipfit/react's EveDataProvider
+// Encodes the 6 protobuf data files the ship viewer's own loader
 // expects (types/groups/marketGroups/typeDogma/dogmaEffects/dogmaAttributes)
 // from the SDE, per src/esf.proto (vendored from
 // https://github.com/EVEShipFit/data). Reads its inputs from the

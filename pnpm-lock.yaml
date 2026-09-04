@@ -8,15 +8,9 @@ importers:
 
   .:
     dependencies:
-      '@eveshipfit/data':
-        specifier: file:vendor/eveshipfit/data-stub
-        version: file:vendor/eveshipfit/data-stub
       '@eveshipfit/dogma-engine':
         specifier: file:vendor/eveshipfit/eveshipfit-dogma-engine-7.1.0.tgz
         version: file:vendor/eveshipfit/eveshipfit-dogma-engine-7.1.0.tgz
-      '@eveshipfit/react':
-        specifier: file:vendor/eveshipfit/eveshipfit-react-4.7.2.tgz
-        version: file:vendor/eveshipfit/eveshipfit-react-4.7.2.tgz(@eveshipfit/data@file:vendor/eveshipfit/data-stub)(@eveshipfit/dogma-engine@file:vendor/eveshipfit/eveshipfit-dogma-engine-7.1.0.tgz)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@modelcontextprotocol/server':
         specifier: 2.0.0
         version: 2.0.0
@@ -359,21 +353,9 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@eveshipfit/data@file:vendor/eveshipfit/data-stub':
-    resolution: {directory: vendor/eveshipfit/data-stub, type: directory}
-
   '@eveshipfit/dogma-engine@file:vendor/eveshipfit/eveshipfit-dogma-engine-7.1.0.tgz':
     resolution: {integrity: sha512-/tykXG0TUKPHz8ppNkx2A78veqK/0spFDNY2uVn3NaKgl4yOJbPfry5ZeoXmihYqyks4WeWssC/zydWOlR8Jow==, tarball: file:vendor/eveshipfit/eveshipfit-dogma-engine-7.1.0.tgz}
     version: 7.1.0
-
-  '@eveshipfit/react@file:vendor/eveshipfit/eveshipfit-react-4.7.2.tgz':
-    resolution: {integrity: sha512-cEKDoMA1IKsm5pQS0jPX1HTjHpKEE9pRzCXCPXCWfRNepUP/WvGFt9wCZtSeTgyEKl2iNyFP1KS1Qh6PjoSdEw==, tarball: file:vendor/eveshipfit/eveshipfit-react-4.7.2.tgz}
-    version: 4.7.2
-    peerDependencies:
-      '@eveshipfit/data': ^10
-      '@eveshipfit/dogma-engine': ^7
-      react: ^18
-      react-dom: ^18
 
   '@fastify/busboy@3.2.2':
     resolution: {integrity: sha512-yXSS27qPExaXeuLvMRMXOLtpipzfQYNjG3FkunDWKGfMYjKuhFXko9CVzqxm8jcF+lmtS9Fd89QNdh9XDjnbNg==}
@@ -1800,10 +1782,6 @@ packages:
     resolution: {integrity: sha512-JQHZ2QMW6l3aH/j6xCqQThY/9OH4D/9ls34cgkUBiEeocRTU04tHfKPBsUK1PqZCUQM7GiA0IIXJSuXHI64Kbg==}
     engines: {node: '>=0.8'}
 
-  clsx@2.1.1:
-    resolution: {integrity: sha512-eYm0QWBtUrBWZWG0d386OGAw16Z995PiOVo2B7bjWSbHedGl5e0ZWaq65kOGgUSNesEIDkB9ISbTg/JK9dhCZA==}
-    engines: {node: '>=6'}
-
   color-convert@2.0.1:
     resolution: {integrity: sha512-RRECPsj7iu/xb5oKYcsFHSppFNnsj/52OVTRKb4zP5onXwVF3zVmmToNcOfGC+CRDpfK/U584fMg38ZHCaElKQ==}
     engines: {node: '>=7.0.0'}
@@ -2384,10 +2362,6 @@ packages:
 
   jws@4.0.1:
     resolution: {integrity: sha512-EKI/M/yqPncGUUh44xz0PxSidXFr/+r0pA70+gIYhjv+et7yxM+s29Y+VGDkovRofQem0fs7Uvf4+YmAdyRduA==}
-
-  jwt-decode@4.0.0:
-    resolution: {integrity: sha512-+KJGIyHgkGuIq3IEBNftfhW/LfWhXUIY6OmyVWjliu5KH1y0fw7VQ8YndE2O4qZdMSd9SqbnC8GOcZEy0Om7sA==}
-    engines: {node: '>=18'}
 
   keyv@5.6.0:
     resolution: {integrity: sha512-CYDD3SOtsHtyXeEORYRx2qBtpDJFjRTGXUtmNEMGyzYOKj1TE3tycdlho7kA1Ufx9OYWZzg52QFBGALTirzDSw==}
@@ -3418,18 +3392,7 @@ snapshots:
   '@esbuild/win32-x64@0.28.2':
     optional: true
 
-  '@eveshipfit/data@file:vendor/eveshipfit/data-stub': {}
-
   '@eveshipfit/dogma-engine@file:vendor/eveshipfit/eveshipfit-dogma-engine-7.1.0.tgz': {}
-
-  '@eveshipfit/react@file:vendor/eveshipfit/eveshipfit-react-4.7.2.tgz(@eveshipfit/data@file:vendor/eveshipfit/data-stub)(@eveshipfit/dogma-engine@file:vendor/eveshipfit/eveshipfit-dogma-engine-7.1.0.tgz)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
-    dependencies:
-      '@eveshipfit/data': file:vendor/eveshipfit/data-stub
-      '@eveshipfit/dogma-engine': file:vendor/eveshipfit/eveshipfit-dogma-engine-7.1.0.tgz
-      clsx: 2.1.1
-      jwt-decode: 4.0.0
-      react: 19.2.8
-      react-dom: 19.2.8(react@19.2.8)
 
   '@fastify/busboy@3.2.2': {}
 
@@ -4796,8 +4759,6 @@ snapshots:
   clone@1.0.4:
     optional: true
 
-  clsx@2.1.1: {}
-
   color-convert@2.0.1:
     dependencies:
       color-name: 1.1.4
@@ -5379,8 +5340,6 @@ snapshots:
     dependencies:
       jwa: 2.0.1
       safe-buffer: 5.2.1
-
-  jwt-decode@4.0.0: {}
 
   keyv@5.6.0:
     dependencies:

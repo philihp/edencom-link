@@ -1,8 +1,10 @@
-// Vendored from https://github.com/EVEShipFit/data/blob/main/esf.proto —
-// the wire format @eveshipfit/react's EveDataProvider expects for the 6
-// .pb2 files it fetches (types/groups/marketGroups/typeDogma/dogmaEffects/
-// dogmaAttributes). Generated from CCP's SDE by src/buildEsfData.js. Do not
-// edit without checking upstream for schema changes.
+// Vendored from https://github.com/EVEShipFit/data/blob/main/esf.proto — the
+// wire format of the 6 .pb2 files the ship viewer fetches (types/groups/
+// marketGroups/typeDogma/dogmaEffects/dogmaAttributes). Encoded from CCP's SDE
+// by src/buildEsfData.js and decoded by src/app/ship/[itemId]/esf/protobuf.ts,
+// both ours; the schema stays upstream's so the files remain the ones
+// eveship.fit itself reads. Do not edit without checking upstream for schema
+// changes.
 syntax = "proto2";
 package esf;
 
