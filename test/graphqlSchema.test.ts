@@ -23,7 +23,7 @@ const ENTITY_TYPES = ['Character', 'Corporation', 'ItemType', 'Location']
 
 // Rows a corporation can own: their owner edge is nullable and paired with a
 // corporation edge, with ownerType saying which side a row came from.
-const CORP_OWNABLE = ['Asset', 'Blueprint', 'IndustryJob']
+const CORP_OWNABLE = ['Asset', 'Blueprint', 'Contract', 'IndustryJob']
 
 // Every type whose values are rows of a result set — except RestockLine, which
 // is deliberately absent: it's the schema's one AGGREGATE row, summing stacks
@@ -32,6 +32,7 @@ const CORP_OWNABLE = ['Asset', 'Blueprint', 'IndustryJob']
 const ROW_TYPES = [
   'Asset',
   'Blueprint',
+  'Contract',
   'IndustryJob',
   'MarketOrder',
   'ShareGrant',
@@ -52,7 +53,15 @@ const objectType = (schema: GraphQLSchema, name: string): GraphQLObjectType => {
 test('the owner filter is on every list, including the character-only ones', () => {
   const schema = buildSchema(typeDefs)
   const fields = (schema.getQueryType() as GraphQLObjectType).getFields()
-  for (const name of ['assets', 'blueprints', 'industryJobs', 'marketOrders', 'restock', 'walletTransactions']) {
+  for (const name of [
+    'assets',
+    'blueprints',
+    'contracts',
+    'industryJobs',
+    'marketOrders',
+    'restock',
+    'walletTransactions',
+  ]) {
     const args = new Map(fields[name].args.map((a) => [a.name, String(a.type)]))
     assert.equal(args.get('owner'), 'String', `${name}.owner`)
     assert.equal(args.get('owners'), '[String!]', `${name}.owners`)
@@ -91,6 +100,7 @@ test('the SDL parses and exposes the expected query fields', () => {
     'assets',
     'blueprints',
     'characters',
+    'contracts',
     'corporations',
     'industryJobs',
     'marketOrders',

@@ -20,7 +20,24 @@ import { uniq } from 'ramda'
 import { guessLocationRef, resolveTypeFilter } from '@/app/api/mcp/lib'
 import { resolveLocations, type LocationRef, type ResolvedLocations } from '@/app/resolveLocations'
 import { getSdeTypes, searchSdeTypesAll, type SdeType } from '@/sdeTypes'
-import { clampLimit, matchExactNames, matchOwnerFilter, parseRefFilter, parseSince, splitRefEntries } from './filters'
+import {
+  EXPORT_CAP,
+  clampLimit,
+  matchExactNames,
+  matchOwnerFilter,
+  parseRefFilter,
+  parseSince,
+  splitRefEntries,
+} from './filters'
+import {
+  contractDirection,
+  contractSide,
+  matchKindFilter,
+  parseDirectionFilter,
+  summariseItems,
+  type ContractItemRow,
+  type OurIds,
+} from './contracts'
 import { excludeFlagsExpression, resolveHangarFilters, type HangarArgs } from './hangarFlags'
 import { resolveLocationByTokens, searchLocationCandidates } from './locationSearch'
 import { resolveTargets, restockLines, type Stack } from './restock'
@@ -170,6 +187,21 @@ const locationNamesFor = async (ctx: GraphqlContext, refs: Array<LocationRef | n
 }
 
 const str = (v: number | string | null | undefined): string | null => (v == null ? null : String(v))
+
+// Names for the parties a contract names — its issuer and whoever accepted it.
+// Neither is necessarily ours (that is the point of a contract), so they resolve
+// through the world-readable `universe_name` cache the universe-names job keeps
+// warm rather than through the caller's own registrations. An id it has never
+// seen simply has no name; the id itself is always on the row.
+const partyNamesFor = async (
+  ctx: GraphqlContext,
+  ids: Array<number | string | null | undefined>
+): Promise<Map<string, string>> => {
+  const wanted = uniq(ids.filter((id): id is number | string => id != null).map(Number))
+  if (wanted.length === 0) return new Map()
+  const { data } = await ctx.supabase.from('universe_name').select('id, name').in('id', wanted)
+  return new Map(((data ?? []) as Array<{ id: number | string; name: string }>).map((r) => [String(r.id), r.name]))
+}
 
 // --- The entity edges -------------------------------------------------------
 // Three pure reshapes of what the root resolver already holds. Each returns a
@@ -1002,6 +1034,223 @@ export const resolvers = {
           ),
         }))
         .sort((a, b) => a.ownerName.localeCompare(b.ownerName))
+    },
+
+    contracts: async (
+      _parent: unknown,
+      args: {
+        type?: string | null
+        types?: readonly string[] | null
+        kind?: string | null
+        kinds?: readonly string[] | null
+        status?: string | null
+        statuses?: readonly string[] | null
+        direction?: string | null
+        owner?: string | null
+        owners?: readonly string[] | null
+        since?: string | null
+        limit?: number | null
+      },
+      ctx: GraphqlContext
+    ) => {
+      const scopes = await ownerScopesFor(ctx, args)
+      const typeIds = await typeIdsFor(args)
+      const kinds = matchKindFilter(args.kind, args.kinds)
+      if (!kinds.ok) return badRequest(kinds.message)
+      const statuses = matchKindFilter(args.status, args.statuses)
+      if (!statuses.ok) return badRequest(statuses.message)
+      const direction = parseDirectionFilter(args.direction)
+      if (!direction.ok) return badRequest(direction.message)
+      const since = parseSince(args.since)
+      if (!since.ok) return badRequest(since.message)
+      const cap = clampLimit(args.limit, ctx.caps.list)
+
+      type ContractDbRow = {
+        contract_id: number | string
+        registration_id?: string
+        corporation_id?: number | string
+        type: string
+        status: string
+        availability: string
+        for_corporation: boolean
+        issuer_id: number | string
+        issuer_corporation_id: number | string
+        acceptor_id: number | string | null
+        start_location_id: number | string | null
+        end_location_id: number | string | null
+        title: string | null
+        price: number | string | null
+        reward: number | string | null
+        collateral: number | string | null
+        volume: number | null
+        date_issued: string
+        date_expired: string
+        date_accepted: string | null
+        date_completed: string | null
+      }
+
+      const COLUMNS =
+        'contract_id, type, status, availability, for_corporation, issuer_id, issuer_corporation_id, acceptor_id, start_location_id, end_location_id, title, price, reward, collateral, volume, date_issued, date_expired, date_accepted, date_completed'
+
+      // An item-type filter is a question about the CONTENTS, which live in a
+      // second table — so it becomes a contract-id list first, per owner side.
+      // Empty means "no contract carried that item", which must return nothing
+      // rather than degrade to no filter.
+      const contractIdsWithItems = async (
+        table: string,
+        ownerColumn: string,
+        ownerIds: readonly string[]
+      ): Promise<string[] | null> => {
+        if (typeIds === null) return null
+        if (ownerIds.length === 0) return []
+        const { data, error } = await ctx.supabase
+          .from(table)
+          .select('contract_id')
+          .in(ownerColumn, ownerIds)
+          .in('type_id', typeIds)
+          .limit(EXPORT_CAP)
+        if (error) return queryFailed()
+        return [...new Set(((data ?? []) as Array<{ contract_id: number | string }>).map((r) => String(r.contract_id)))]
+      }
+
+      const read = async (
+        table: string,
+        itemTable: string,
+        ownerColumn: string,
+        ownerIds: readonly string[]
+      ): Promise<ContractDbRow[]> => {
+        if (ownerIds.length === 0) return []
+        const withItem = await contractIdsWithItems(itemTable, ownerColumn, ownerIds)
+        if (withItem !== null && withItem.length === 0) return []
+        return fetchCapped<ContractDbRow>((from, to) => {
+          let q = ctx.supabase
+            .from(table)
+            .select(`${COLUMNS}, ${ownerColumn}`)
+            .in(ownerColumn, ownerIds)
+            .order('date_issued', { ascending: false })
+            .range(from, to)
+          if (kinds.kinds !== null) q = q.in('type', kinds.kinds)
+          if (statuses.kinds !== null) q = q.in('status', statuses.kinds)
+          if (since.iso !== null) q = q.gte('date_issued', since.iso)
+          if (withItem !== null) q = q.in('contract_id', withItem)
+          // The typed query parser gives up past a dozen columns; the shape is
+          // pinned explicitly instead, as the structure page does.
+          return q.returns<ContractDbRow[]>()
+        }, cap)
+      }
+
+      const [characterRows, corpRows] = await Promise.all([
+        read('character_contract', 'character_contract_item', 'registration_id', scopes.registrationIds),
+        read('corp_contract', 'corp_contract_item', 'corporation_id', scopes.corporationIds),
+      ])
+
+      // Who we are, as a contract names us: EVE character ids (never the
+      // registration uuid — issuer_id is CCP's id) and corporation ids.
+      const ours: OurIds = {
+        characterIds: new Set(
+          [...ctx.ownerCharacterIdById.values()].filter((id): id is string => id != null).map(String)
+        ),
+        corporationIds: new Set(ctx.corporationIds.map(String)),
+      }
+
+      const rows = [...characterRows, ...corpRows]
+        .map((r) => ({ ...r, direction: contractDirection(r, ours), side: contractSide(r, ours) }))
+        .filter((r) => direction.direction === null || r.direction === direction.direction)
+        .sort((a, b) => b.date_issued.localeCompare(a.date_issued))
+        .slice(0, cap)
+
+      // Contents for the rows that survived, both sides at once, so the summary
+      // costs one query rather than one per contract.
+      const itemsOf = async (
+        table: string,
+        ownerColumn: string,
+        owned: ContractDbRow[]
+      ): Promise<Map<string, ContractItemRow[]>> => {
+        const ids = [...new Set(owned.map((r) => String(r.contract_id)))]
+        if (ids.length === 0) return new Map()
+        const { data, error } = await ctx.supabase
+          .from(table)
+          .select(`contract_id, type_id, quantity, is_included, ${ownerColumn}`)
+          .in('contract_id', ids)
+          // Interpolated owner column, so the typed parser can't read the list.
+          .returns<Array<ContractItemRow & { contract_id: number | string }>>()
+        if (error) return queryFailed()
+        const byContract = new Map<string, ContractItemRow[]>()
+        ;(data ?? []).forEach((item) => {
+          const key = String(item.contract_id)
+          byContract.set(key, [...(byContract.get(key) ?? []), item])
+        })
+        return byContract
+      }
+
+      const [characterItems, corpItems] = await Promise.all([
+        itemsOf(
+          'character_contract_item',
+          'registration_id',
+          rows.filter((r) => r.registration_id != null)
+        ),
+        itemsOf(
+          'corp_contract_item',
+          'corporation_id',
+          rows.filter((r) => r.corporation_id != null)
+        ),
+      ])
+
+      const allItems = [...characterItems.values(), ...corpItems.values()].flat()
+      const [types, locations, corporationNames, identities] = await Promise.all([
+        typesFor(allItems.map((i) => i.type_id)),
+        locationNamesFor(
+          ctx,
+          rows.flatMap((r) => [guessLocationRef(r.start_location_id), guessLocationRef(r.end_location_id)])
+        ),
+        corporationNamesFor(ctx),
+        partyNamesFor(
+          ctx,
+          rows.flatMap((r) => [r.issuer_id, r.acceptor_id])
+        ),
+      ])
+
+      return rows.map((r) => {
+        const key = String(r.contract_id)
+        const items = r.registration_id != null ? (characterItems.get(key) ?? []) : (corpItems.get(key) ?? [])
+        const start = guessLocationRef(r.start_location_id)
+        const end = guessLocationRef(r.end_location_id)
+        return {
+          contractId: key,
+          kind: r.type,
+          status: r.status,
+          availability: r.availability,
+          forCorporation: r.for_corporation,
+          direction: r.direction,
+          side: r.side,
+          title: r.title,
+          price: r.price == null ? null : Number(r.price),
+          reward: r.reward == null ? null : Number(r.reward),
+          collateral: r.collateral == null ? null : Number(r.collateral),
+          volume: r.volume == null ? null : Number(r.volume),
+          itemSummary: summariseItems(items, (typeId) => typeNameOf(types, typeId)),
+          issuerId: String(r.issuer_id),
+          issuerName: identities.get(String(r.issuer_id)) ?? null,
+          acceptorId: str(r.acceptor_id),
+          acceptorName: r.acceptor_id == null ? null : (identities.get(String(r.acceptor_id)) ?? null),
+          startLocationId: str(r.start_location_id),
+          startLocationName: start ? locations.nameFor(start) : null,
+          endLocationId: str(r.end_location_id),
+          endLocationName: end ? locations.nameFor(end) : null,
+          dateIssued: r.date_issued,
+          dateExpired: r.date_expired,
+          dateAccepted: r.date_accepted,
+          dateCompleted: r.date_completed,
+          ...ownerFieldsOf(
+            r.registration_id != null
+              ? { kind: 'character', registrationId: r.registration_id }
+              : { kind: 'corporation', corporationId: String(r.corporation_id) },
+            ownCharacters(ctx),
+            corporationNames,
+            scopes.registrationIds
+          ),
+        }
+      })
     },
 
     walletTransactions: async (

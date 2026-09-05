@@ -458,6 +458,45 @@ export const LINK_TEMPLATES: LinkTemplate[] = [
     ],
   },
   {
+    // Contracts are the half of your trading the market pages never show: a
+    // contract's ISK never touches an order book. Direction is the whole point
+    // — ESI stores neither "bought" nor "sold", only who issued and who
+    // accepted, so a report has to be told which way round you mean.
+    id: 'contract-purchases',
+    label: 'Recent contract purchases',
+    description:
+      'Contracts that took ISK off you — what you bought by contract rather than on the market, newest first, with what was in each one.',
+    query: `query ContractPurchases($direction: String, $since: String) {
+  contracts(direction: $direction, since: $since, limit: 500) {
+    dateIssued
+    dateCompleted
+    status
+    kind
+    itemSummary
+    price
+    reward
+    issuerName
+    acceptorName
+    ownerName
+  }
+}`,
+    variables: { direction: 'bought' },
+    variableFields: [
+      {
+        name: 'direction',
+        label: 'Direction',
+        kind: 'text',
+        hint: '"bought" for what you paid for, "sold" for what you were paid for, "neither" for couriers and loans.',
+      },
+      {
+        name: 'since',
+        label: 'Issued since',
+        kind: 'text',
+        hint: 'An ISO date like 2026-06-01, or leave it empty for everything the cap allows.',
+      },
+    ],
+  },
+  {
     id: 'restock',
     label: 'Restock list',
     description:
