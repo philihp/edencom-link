@@ -13,13 +13,9 @@
 //   still resolve, and the viewer rewrites them to the short form in the
 //   address bar.
 //
-// Either way the run is gated on the CREATOR still holding the link flag —
-// un-flagging an account turns its shared links off, the dark-launch lever.
-//
 // The path id may be truncated (any canonical-format prefix of ≥8 hex digits,
 // e.g. /link/da204490): it expands to the oldest-created matching link before
 // either door is tried — see expandLinkId.
-import { LINK_FLAG, hasFlag } from '@/flags'
 import { parseShareParam, tokenSalt, verifyShareToken } from '@/shareToken'
 import { createClient } from '@/utils/supabase/server'
 import { createServiceClient } from '@/utils/supabase/service'
@@ -85,7 +81,6 @@ export const resolveLink = async (linkId: string, shareParam?: string): Promise<
 
   const link = rlsLink ?? (shareParam ? await resolveSignedLink(id, shareParam) : null)
   if (!link) return null
-  if (!(await hasFlag(link.user_id, LINK_FLAG))) return null
 
   return { link, viewerIsOwner: viewerId !== null && viewerId === link.user_id }
 }

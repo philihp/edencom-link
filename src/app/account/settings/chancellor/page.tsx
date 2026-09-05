@@ -8,7 +8,6 @@ import { createClient } from '@/utils/supabase/server'
 import { establishedUser } from '../../lib/establishedUser'
 
 import { isChancellor } from './chancellor'
-import FlagForm from './flagForm'
 import GrantForm from './grantForm'
 import ImpersonateForm from './impersonateForm'
 import RevokeButton from './revokeButton'
@@ -110,13 +109,6 @@ const ChancellorPage = async () => {
       <h2>Make someone a chancellor</h2>
       <p>Enter one of the account&rsquo;s EVE character names. The whole account gains Chancellor powers.</p>
       <GrantForm />
-
-      <h2>Feature flags</h2>
-      <p>
-        Turn a dark-launched feature on or off for one account. Load an account by one of its EVE character names, then
-        tick what it should have — saving replaces its whole flag list.
-      </p>
-      <FlagForm />
 
       <h2>Impersonate</h2>
       <p>Swaps this session for a real session as another account. Sign back in as yourself to return.</p>

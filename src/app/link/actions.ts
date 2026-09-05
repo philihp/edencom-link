@@ -6,7 +6,6 @@ import { revalidatePath } from 'next/cache'
 import { contextForUser } from '@/app/api/graphql/context'
 import { schema } from '@/app/api/graphql/schema'
 import type { SaveShareInput, SaveShareResult } from '@/app/asset/shareActions'
-import { LINK_FLAG, hasFlag } from '@/flags'
 import { createClient } from '@/utils/supabase/server'
 import { resolveLink } from './access'
 import { applyLinkShare, fetchOwnAudiences } from './share'
@@ -14,18 +13,14 @@ import { parseLinkVariables, validateLinkQuery } from './validate'
 
 // Server actions behind the /link editor (docs/sharing-layer/07-link.md).
 // Cookie-session client throughout, like every share writer: RLS pins link
-// rows to their owner. Everything here is additionally gated on the caller's
-// own link flag — the editor is dark-launched.
+// rows to their owner. Signing in is the whole gate.
 
-// Every action here refuses the same way when the caller has no Link
-// clearance: the account exists, the capability is not issued to it. Stated
-// plainly first — a model or a person reading this needs to know who to ask.
-const NOT_CLEARED = 'Link clearance is not held on this account. Ask the site owner to issue it.'
+// Every action here refuses the same way when nobody is signed in.
+const NOT_SIGNED_IN = 'Sign in to manage Links.'
 
-const flaggedUser = async (supabase: Awaited<ReturnType<typeof createClient>>): Promise<string | null> => {
+const signedInUser = async (supabase: Awaited<ReturnType<typeof createClient>>): Promise<string | null> => {
   const { data: auth, error } = await supabase.auth.getUser()
-  if (error || !auth?.user) return null
-  return (await hasFlag(auth.user.id, LINK_FLAG)) ? auth.user.id : null
+  return error || !auth?.user ? null : auth.user.id
 }
 
 export type SaveLinkInput = { name: string; query: string; variables: string }
@@ -33,8 +28,8 @@ export type SaveLinkResult = { error?: string; id?: string }
 
 export const saveLink = async (linkId: string | null, input: SaveLinkInput): Promise<SaveLinkResult> => {
   const supabase = await createClient()
-  const userId = await flaggedUser(supabase)
-  if (!userId) return { error: NOT_CLEARED }
+  const userId = await signedInUser(supabase)
+  if (!userId) return { error: NOT_SIGNED_IN }
 
   const name = input.name.trim()
   if (name === '') return { error: 'Give the Link a name.' }
@@ -63,8 +58,8 @@ export const saveLink = async (linkId: string | null, input: SaveLinkInput): Pro
 
 export const deleteLink = async (linkId: string): Promise<{ error?: string }> => {
   const supabase = await createClient()
-  const userId = await flaggedUser(supabase)
-  if (!userId) return { error: NOT_CLEARED }
+  const userId = await signedInUser(supabase)
+  if (!userId) return { error: NOT_SIGNED_IN }
 
   const { error } = await supabase.from('link').delete().eq('id', linkId).eq('user_id', userId)
   if (error) return { error: error.message }
@@ -82,8 +77,8 @@ export const previewLink = async (input: {
   variables: string
 }): Promise<{ error?: string; data?: unknown; errors?: string[] }> => {
   const supabase = await createClient()
-  const userId = await flaggedUser(supabase)
-  if (!userId) return { error: NOT_CLEARED }
+  const userId = await signedInUser(supabase)
+  if (!userId) return { error: NOT_SIGNED_IN }
 
   const validation = validateLinkQuery(input.query)
   if (!validation.ok) return { error: validation.message }
@@ -112,8 +107,8 @@ export const previewLink = async (input: {
 // sharing.
 export const copyLink = async (linkId: string, share?: string): Promise<{ error?: string; id?: string }> => {
   const supabase = await createClient()
-  const userId = await flaggedUser(supabase)
-  if (!userId) return { error: NOT_CLEARED }
+  const userId = await signedInUser(supabase)
+  if (!userId) return { error: NOT_SIGNED_IN }
 
   const resolved = await resolveLink(linkId, share)
   if (!resolved) return { error: 'Not found' }
@@ -145,8 +140,8 @@ export const copyLink = async (linkId: string, share?: string): Promise<{ error?
 // so the two can't disagree about what "public" or "not shared" mean.
 export const saveLinkShare = async (linkId: string, input: SaveShareInput): Promise<SaveShareResult> => {
   const supabase = await createClient()
-  const userId = await flaggedUser(supabase)
-  if (!userId) return { error: NOT_CLEARED }
+  const userId = await signedInUser(supabase)
+  if (!userId) return { error: NOT_SIGNED_IN }
 
   const { data: existing } = await supabase
     .from('link')
@@ -188,8 +183,8 @@ export const saveLinkShare = async (linkId: string, input: SaveShareInput): Prom
 
 export const revokeLinkShare = async (linkId: string): Promise<{ error?: string }> => {
   const supabase = await createClient()
-  const userId = await flaggedUser(supabase)
-  if (!userId) return { error: NOT_CLEARED }
+  const userId = await signedInUser(supabase)
+  if (!userId) return { error: NOT_SIGNED_IN }
 
   // Back to the unshared state — NOT an empty audience, which would be public.
   const applied = await applyLinkShare(

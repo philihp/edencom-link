@@ -41,8 +41,7 @@ const handler = createMcpHandler(
     // with `ttlMs: 0` (immediately stale) and `cacheScope: 'private'` unless
     // told otherwise, so without this every client re-fetches the tool list on
     // every use. Both of these results are the same for every caller: tools are
-    // registered unconditionally above — the `link` dark-launch flag is checked
-    // inside the link handlers, not at registration — so nothing here varies by
+    // registered unconditionally above, so nothing here varies by
     // who is asking, and `public` is honest even though the endpoint is
     // authenticated. RLS, not the cache scope, is what scopes the *data* a tool
     // returns. The TTL is how long a deploy that changes the tool list can take

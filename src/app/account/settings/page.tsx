@@ -6,7 +6,6 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 
-import { LINK_FLAG, hasFlag } from '@/flags'
 import { createClient } from '@/utils/supabase/server'
 
 import { getEnabledScopes } from '../../character/userScopes'
@@ -288,7 +287,7 @@ const SettingsPage = async ({ searchParams }: { searchParams: Promise<{ gice?: s
             <span className={styles.spacer} />
             <Tag kind="Live" label="live" />
           </div>
-          <ApiToken initialToken={settings?.api_token ?? null} linkEnabled={await hasFlag(user.id, LINK_FLAG)} />
+          <ApiToken initialToken={settings?.api_token ?? null} />
         </div>
       </div>
 

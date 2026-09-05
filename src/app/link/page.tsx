@@ -1,7 +1,6 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 
-import { LINK_FLAG, hasFlag } from '@/flags'
 import { createClient } from '@/utils/supabase/server'
 
 import { DateTime } from '../DateTime'
@@ -29,9 +28,6 @@ const LinkPage = async () => {
   const user = await establishedUser(supabase)
   if (!user) {
     redirect('/account/login')
-  }
-  if (!(await hasFlag(user.id, LINK_FLAG))) {
-    redirect('/')
   }
 
   // RLS shows the caller's own links AND ones shared with them (the audience
