@@ -55,12 +55,18 @@ export const typeDefs = /* GraphQL */ `
     """
     Current asset rows (live inventory) across your characters AND the
     corporations they belong to. Filters are the schema's singular/plural pairs
-    — type/types, location/locations, hangar/hangars, owner/owners, where an
-    owner is a character OR a corporation (see Owner and Corporation).
-    hangar/hangars narrow to the HANGAR a stack sits in rather than the place
-    it sits at, so \`hangar: "Deliveries"\` is everything waiting in a delivery
-    hangar — a character's and a corporation's alike (see locationFlag on
-    Asset). includeShared additionally
+    — type/types, location/locations, includeHangar/includeHangars,
+    owner/owners, where an owner is a character OR a corporation (see Owner and
+    Corporation). includeHangar/includeHangars narrow to the HANGAR a stack sits
+    in rather than the place it sits at, so \`includeHangar: "Deliveries"\` is
+    everything waiting in a delivery hangar — a character's and a corporation's
+    alike (see locationFlag on Asset). excludeHangar/excludeHangars are the same
+    pair read the other way, for the hangars kept OUT — \`excludeHangar: "fuel
+    bay"\` is everything except what is fuelling a structure. They compose
+    (include first, then exclude), and a stack in no hangar at all survives an
+    exclusion. hangar/hangars is the older spelling of
+    includeHangar/includeHangars, still honoured so saved links keep working;
+    passing both spellings is an error. includeShared additionally
     returns rows other users have shared with you (session auth only — the
     api_token path is own-data only; a Link is the way to hand shared data to
     external tools).
@@ -70,8 +76,12 @@ export const typeDefs = /* GraphQL */ `
       types: [String!]
       location: String
       locations: [String!]
+      includeHangar: String
+      includeHangars: [String!]
       hangar: String
       hangars: [String!]
+      excludeHangar: String
+      excludeHangars: [String!]
       owner: String
       owners: [String!]
       limit: Int
@@ -82,10 +92,12 @@ export const typeDefs = /* GraphQL */ `
     A restock (shopping) list. You give TARGETS — an item type and the quantity
     you want on hand — and each line sums your current stacks of that type
     (across your characters AND their corporations, like assets) and reports
-    what you're missing. location/locations, hangar/hangars and owner/owners
-    narrow which hangars count as "on hand", exactly as they do on assets; the
-    types come from the targets, so there is no type filter here. Counting only
-    what is sitting in a delivery hangar is \`hangar: "Deliveries"\`.
+    what you're missing. location/locations, includeHangar/includeHangars,
+    excludeHangar/excludeHangars and owner/owners narrow which hangars count as
+    "on hand", exactly as they do on assets; the types come from the targets, so
+    there is no type filter here. Counting only what is sitting in a delivery
+    hangar is \`includeHangar: "Deliveries"\`; not counting what is already
+    committed to one is \`excludeHangar: "Deliveries"\`.
 
     By default only lines below target come back; onlyBelowTarget: false keeps
     every target, including the covered ones.
@@ -94,8 +106,12 @@ export const typeDefs = /* GraphQL */ `
       targets: [RestockTarget!]!
       location: String
       locations: [String!]
+      includeHangar: String
+      includeHangars: [String!]
       hangar: String
       hangars: [String!]
+      excludeHangar: String
+      excludeHangars: [String!]
       owner: String
       owners: [String!]
       onlyBelowTarget: Boolean = true
@@ -104,12 +120,16 @@ export const typeDefs = /* GraphQL */ `
     "Asset shares other users have aimed at you (corporation/alliance/public). Session auth only."
     sharedWithMe: [ShareGrant!]!
 
-    "Current blueprint rows (BPOs and BPCs) across your characters and their corporations, filtered by item type, hangar and owner."
+    "Current blueprint rows (BPOs and BPCs) across your characters and their corporations, filtered by item type, hangar and owner. includeHangar/includeHangars keep only the named hangars; excludeHangar/excludeHangars drop them instead. hangar/hangars is the older spelling of the include pair."
     blueprints(
       type: String
       types: [String!]
+      includeHangar: String
+      includeHangars: [String!]
       hangar: String
       hangars: [String!]
+      excludeHangar: String
+      excludeHangars: [String!]
       owner: String
       owners: [String!]
       limit: Int

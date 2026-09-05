@@ -1,9 +1,15 @@
-# Hangar filter: `hangar:` / `hangars:` on the GraphQL lists
+# Hangar filter: including and excluding hangars on the GraphQL lists
 
-**Status: ✅ done** — `hangar`/`hangars` ship on `assets`, `restock` and
-`blueprints` in `schema.graphql.ts`/`resolvers.ts` over the pure seam
+**Status: ✅ done** — `includeHangar`/`includeHangars` and
+`excludeHangar`/`excludeHangars` ship on `assets`, `restock` and `blueprints`
+in `schema.graphql.ts`/`resolvers.ts` over the pure seam
 `src/app/api/graphql/hangarFlags.ts`, with `test/graphqlHangar.test.ts` and the
 `test/graphqlSchema.test.ts` drift guard covering them.
+
+`hangar`/`hangars` was the original spelling of the include pair and still
+works verbatim — a Link is a **stored** query that runs untouched whenever a
+viewer opens it, so renaming it would have broken every link already saved.
+Passing both spellings is refused; they are one filter.
 
 ## Context
 
@@ -60,3 +66,42 @@ names a place, not a compartment.
   examples and the MCP `link_schema` examples, since all three read that list.
 - `restock(hangar: …)` — narrows which hangars count as "on hand", so a buffer
   can be measured over a staging division rather than everything you own.
+
+
+## Excluding hangars
+
+Selecting a hangar answers "what is in Deliveries". The other half — "what do I
+hold here that ISN'T fuel or already committed to a delivery" — needs the
+dimension read the other way, and a Link viewer cannot post-filter, so it has
+to be part of the stored query.
+
+`excludeHangar:`/`excludeHangars:` are that pair, resolving through the same
+catalog: `"fuel bay"` drops both fuel bays exactly as it would select both.
+Its own arguments rather than a negation syntax inside the include pair, for
+the reason the schema already splits singular from plural — a stored link is
+read by someone a year later, and `excludeHangar: "fuel bay"` says what it does
+where a `!` prefix would have to be learned. Naming the include pair
+`includeHangar` is the other half of that: `excludeHangar` reads as the
+opposite of `includeHangar` and as the opposite of nothing at all next to a
+bare `hangar`.
+
+**The two compose, and the overlap is settled before the query.** `includeHangar:
+"deliveries", excludeHangar: "corp deliveries"` is a character's delivery hangar
+alone; `resolveHangarFilters` subtracts and hands the resolvers one `.in()`
+rather than two clauses to AND. An exclusion that removes every hangar the
+filter included is an **error** — an empty result there is arithmetic the
+caller got wrong, and a link nobody re-reads for a year would just look broken.
+
+**The null trap is the load-bearing detail.** `location_flag` is nullable, and
+`location_flag NOT IN (…)` evaluates to NULL for a null flag, so plain SQL
+drops those rows. A stack in **no** hangar is not in the fuel bay, and
+excluding the fuel bay must keep it — so the exclusion goes through
+`location_flag.is.null,location_flag.not.in.(…)`, pinned by a test. That string
+is interpolated because PostgREST's `or=` takes one opaque clause, which is
+safe only because the values come from the closed catalog and never from the
+caller; `hangarFlagsAreBareWords` is the test that keeps a future entry from
+ending the list.
+
+Surface: the **Stock, minus fuel and deliveries** link template
+(`src/app/link/templates.ts`), which the `/link` picker, the `/graphql`
+examples and the MCP `link_schema` examples all read from that one list.

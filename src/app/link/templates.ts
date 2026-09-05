@@ -400,8 +400,8 @@ export const LINK_TEMPLATES: LinkTemplate[] = [
     label: 'Deliveries hangars',
     description:
       'Everything sitting in a Deliveries hangar — a character’s and a corporation’s alike — i.e. what couriers have dropped off and nobody has unpacked.',
-    query: `query Deliveries($hangar: String, $owners: [String!]) {
-  assets(hangar: $hangar, owners: $owners, limit: 500) {
+    query: `query Deliveries($includeHangar: String, $owners: [String!]) {
+  assets(includeHangar: $includeHangar, owners: $owners, limit: 500) {
     totalCount
     truncated
     rows {
@@ -413,13 +413,46 @@ export const LINK_TEMPLATES: LinkTemplate[] = [
     }
   }
 }`,
-    variables: { hangar: 'Deliveries' },
+    variables: { includeHangar: 'Deliveries' },
     variableFields: [
       {
-        name: 'hangar',
+        name: 'includeHangar',
         label: 'Hangar',
         kind: 'text',
         hint: 'A hangar name search — "Deliveries" catches both delivery hangars, "corp hangar 3" one division.',
+      },
+      OWNERS_FIELD,
+    ],
+  },
+  {
+    // The hangar dimension read the other way. A stockpile count is wrong in
+    // both directions if it counts fuel sitting in a structure's bay or goods
+    // already committed to a delivery hangar, and neither is something you can
+    // post-filter out of a link — so the exclusion is the query.
+    id: 'excluding-hangars',
+    label: 'Stock, minus fuel and deliveries',
+    description:
+      'Everything you hold at a place EXCEPT what is in the hangars you name — fuel in a structure’s bay and goods already in a delivery hangar are committed, not stock.',
+    query: `query StockExcludingHangars($excludeHangars: [String!], $owners: [String!]) {
+  assets(excludeHangars: $excludeHangars, owners: $owners, limit: 500) {
+    totalCount
+    truncated
+    rows {
+      typeName
+      quantity
+      locationName
+      locationFlag
+      ownerName
+    }
+  }
+}`,
+    variables: { excludeHangars: ['Fuel bay', 'Deliveries'] },
+    variableFields: [
+      {
+        name: 'excludeHangars',
+        label: 'Hangars to leave out',
+        kind: 'list',
+        hint: 'Exact hangar names — "Deliveries" drops both delivery hangars, "Fuel bay" both fuel bays. A stack in no hangar at all is kept.',
       },
       OWNERS_FIELD,
     ],
