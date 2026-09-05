@@ -171,16 +171,18 @@
   color: var(--ink-faint);
 }
 
-/* Double the size the ring shipped with. At this size neighbouring cells on a
-   crowded hull overlap, which is accepted: reading what is fitted matters more
-   than keeping the slots apart, and the ring is ~400px wide on a phone and a
-   desktop alike (.ringBox is capped at 438px and fills the width below that),
-   so the crowding is the same everywhere rather than a small-screen surprise. */
+/* Double the size the ring shipped with, and no larger than the icon it holds:
+   the border hugs the artwork rather than framing it with air. At this size
+   neighbouring cells on a crowded hull overlap, which is accepted — reading
+   what is fitted matters more than keeping the slots apart, and the ring is
+   ~400px wide on a phone and a desktop alike (.ringBox is capped at 438px and
+   fills the width below that), so the crowding is the same everywhere rather
+   than a small-screen surprise. */
 .cell {
   position: absolute;
-  width: 68px;
-  height: 68px;
-  margin: -34px 0 0 -34px;
+  width: 48px;
+  height: 48px;
+  margin: -24px 0 0 -24px;
   border-radius: var(--radius-sm);
   display: flex;
   align-items: center;
@@ -196,12 +198,6 @@
   border: 1px dashed var(--line);
 }
 
-.innerCell {
-  width: 56px;
-  height: 56px;
-  margin: -28px 0 0 -28px;
-}
-
 .innerCell.filled {
   border-color: var(--accent);
 }
@@ -210,11 +206,6 @@
   width: 48px;
   height: 48px;
   margin: 0;
-}
-
-.innerCell .cellIcon {
-  width: 40px;
-  height: 40px;
 }
 
 /* A module with something loaded in it carries a mark, so an unloaded weapon
