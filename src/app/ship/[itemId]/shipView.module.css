@@ -171,11 +171,16 @@
   color: var(--ink-faint);
 }
 
+/* Double the size the ring shipped with. At this size neighbouring cells on a
+   crowded hull overlap, which is accepted: reading what is fitted matters more
+   than keeping the slots apart, and the ring is ~400px wide on a phone and a
+   desktop alike (.ringBox is capped at 438px and fills the width below that),
+   so the crowding is the same everywhere rather than a small-screen surprise. */
 .cell {
   position: absolute;
-  width: 34px;
-  height: 34px;
-  margin: -17px 0 0 -17px;
+  width: 68px;
+  height: 68px;
+  margin: -34px 0 0 -34px;
   border-radius: var(--radius-sm);
   display: flex;
   align-items: center;
@@ -192,9 +197,9 @@
 }
 
 .innerCell {
-  width: 28px;
-  height: 28px;
-  margin: -14px 0 0 -14px;
+  width: 56px;
+  height: 56px;
+  margin: -28px 0 0 -28px;
 }
 
 .innerCell.filled {
@@ -202,24 +207,26 @@
 }
 
 .cellIcon {
-  width: 24px;
-  height: 24px;
+  width: 48px;
+  height: 48px;
   margin: 0;
 }
 
 .innerCell .cellIcon {
-  width: 20px;
-  height: 20px;
+  width: 40px;
+  height: 40px;
 }
 
 /* A module with something loaded in it carries a mark, so an unloaded weapon
    is visible without opening the list. */
+/* Scaled with the cell, so a loaded weapon still reads as marked rather than
+   as a speck in a corner. */
 .chargeDot {
   position: absolute;
-  right: -2px;
-  bottom: -2px;
-  width: 7px;
-  height: 7px;
+  right: -3px;
+  bottom: -3px;
+  width: 12px;
+  height: 12px;
   border-radius: 50%;
   background: var(--accent);
 }

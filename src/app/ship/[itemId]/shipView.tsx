@@ -222,7 +222,7 @@ const Ring = ({ loaded }: { loaded: FitCalculation }) => {
               style={{ left: `${(cell.x * 100).toFixed(3)}%`, top: `${(cell.y * 100).toFixed(3)}%` }}
               title={module ? typeName(loaded, module.typeId) : `empty ${cell.family.toLowerCase()} slot`}
             >
-              {module ? <TypeIcon id={module.typeId} size={24} className={styles.cellIcon} /> : null}
+              {module ? <TypeIcon id={module.typeId} size={48} className={styles.cellIcon} /> : null}
               {module?.charge ? <span className={styles.chargeDot} aria-hidden="true" /> : null}
             </span>
           )
