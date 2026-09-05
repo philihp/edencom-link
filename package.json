@@ -3,7 +3,7 @@
   "version": "0.1.1",
   "private": true,
   "type": "module",
-  "packageManager": "pnpm@11.24.0",
+  "packageManager": "pnpm@11.25.0",
   "dependencies": {
     "@eveshipfit/dogma-engine": "file:vendor/eveshipfit/eveshipfit-dogma-engine-7.1.0.tgz",
     "@modelcontextprotocol/server": "2.0.0",
