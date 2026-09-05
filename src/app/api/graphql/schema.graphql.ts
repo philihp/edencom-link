@@ -153,6 +153,42 @@ export const typeDefs = /* GraphQL */ `
       since: String
       limit: Int
     ): [WalletTransaction!]!
+
+    """
+    Contracts across your characters AND their corporations — what you bought
+    and sold by contract rather than on the market, plus couriers and auctions.
+
+    ESI stores a contract from nobody's point of view: it names an issuer, an
+    acceptor, a price and a reward, and whether that was a purchase or a sale
+    depends on which side you were. \`direction\` answers it — "bought" when the
+    contract took ISK off you, "sold" when it brought some in, "neither" for a
+    courier, a loan or a gift (only an item exchange or an auction can be a
+    trade, so a hauling reward is never filed as a purchase). Filter on it to
+    get just the one you mean.
+
+    type/types is the ITEM type, as on every other list: naming one keeps the
+    contracts that included it. kind/kinds is ESI's own contract type
+    (item_exchange, courier, auction, loan) — a different question, so a
+    different word. status/statuses take ESI's raw values (outstanding,
+    finished, cancelled...), since the extract stores whatever CCP sends.
+
+    since and the ordering both read date ISSUED, the one date every contract
+    has; itemSummary names what was included, so a row says what it was without
+    a second query.
+    """
+    contracts(
+      type: String
+      types: [String!]
+      kind: String
+      kinds: [String!]
+      status: String
+      statuses: [String!]
+      direction: String
+      owner: String
+      owners: [String!]
+      since: String
+      limit: Int
+    ): [Contract!]!
   }
 
   """
@@ -525,6 +561,59 @@ export const typeDefs = /* GraphQL */ `
     characterName: String
     "The owning character, for its registration id and corp/alliance."
     character: Character
+  }
+
+  """
+  One contract, from the side you were on. The owner block is the account of
+  yours it reached — a character's own contract, or a corporation's.
+  """
+  type Contract {
+    contractId: String!
+    "ESI's contract type: item_exchange, courier, auction, loan (what kind/kinds filters)."
+    kind: String!
+    "ESI's raw status: outstanding, in_progress, finished, cancelled, rejected, failed..."
+    status: String!
+    "public, personal, corporation or alliance — who could see it."
+    availability: String!
+    "True when it was issued on behalf of the corporation rather than the character."
+    forCorporation: Boolean!
+    "bought, sold, or neither — see the contracts field. Computed, not stored."
+    direction: String!
+    "issuer, acceptor, or null when neither side is one of yours (a corp contract you could see but did not touch)."
+    side: String
+    title: String
+    "What the acceptor pays the issuer. Whether that is money in or out depends on side."
+    price: Float
+    "What the issuer pays the acceptor — a courier's hauling fee, or a want-to-buy offer."
+    reward: Float
+    collateral: Float
+    volume: Float
+    "The included items as one flat cell, e.g. 12 x Tritanium, 1 x Rifter. Null when it carried none."
+    itemSummary: String
+    "The EVE character who created it, whoever it was for."
+    issuerId: String!
+    issuerName: String
+    "Null until somebody takes it."
+    acceptorId: String
+    acceptorName: String
+    startLocationId: String
+    startLocationName: String
+    endLocationId: String
+    endLocationName: String
+    dateIssued: String!
+    dateExpired: String!
+    dateAccepted: String
+    dateCompleted: String
+    "character or corporation — which of yours this row reached."
+    ownerType: String!
+    ownerId: String!
+    ownerName: String!
+    characterId: String
+    characterName: String
+    corporationId: String
+    corporationName: String
+    character: Character
+    corporation: Corporation
   }
 
   type WalletTransaction {
