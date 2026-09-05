@@ -1,18 +1,16 @@
 import { createYoga } from 'graphql-yoga'
 import type { NextRequest } from 'next/server'
 
-import { GRAPHQL_FLAG, hasFlag } from '@/flags'
 import { timed, withServerTiming } from '@/serverTiming'
 import { createClient } from '@/utils/supabase/server'
 import { buildContext } from './context'
 import { schema } from './schema'
 import { timingPlugin } from './timingPlugin'
 
-// The dark-launched GraphQL endpoint (see /graphql for the in-browser editor).
-// Auth is either the Supabase session cookie (same-origin, the editor page) or
+// The GraphQL endpoint (see /graphql for the in-browser editor). Auth is
+// either the Supabase session cookie (same-origin, the editor page) or
 // `Authorization: Bearer <api_token>` (external stockpile UIs — the same
-// per-user token the Sheets CSV endpoints use); both are additionally gated on
-// the account's `graphql` dark-launch flag (src/flags.ts). buildContext throws
+// per-user token the Sheets CSV endpoints use). buildContext throws
 // GraphQLErrors carrying extensions.http.status, which yoga maps to 401/403.
 export const dynamic = 'force-dynamic'
 // Headroom over Vercel's default function timeout for a large hangar, matching
@@ -21,14 +19,12 @@ export const maxDuration = 60
 
 // GraphiQL is served on GET, and rendering it never touches a resolver — so
 // without this the IDE shell would answer anonymous requests at a public path.
-// The factory keeps the dark launch honest: only a signed-in account carrying
-// the `graphql` flag gets the IDE, everyone else gets yoga's 404. Queries are
+// Signing in is the whole test; everyone else gets yoga's 404. Queries are
 // still authorized independently by buildContext.
 const graphiqlForRequest = async (): Promise<boolean> => {
   const supabase = await createClient()
   const { data, error } = await supabase.auth.getUser()
-  if (error || !data?.user) return false
-  return hasFlag(data.user.id, GRAPHQL_FLAG)
+  return !error && data?.user != null
 }
 
 const { handleRequest } = createYoga({

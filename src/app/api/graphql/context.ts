@@ -1,7 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { GraphQLError } from 'graphql'
 
-import { GRAPHQL_FLAG, hasFlag } from '@/flags'
 import { resolvePlayer } from '@/utils/apiToken'
 import { createClient } from '@/utils/supabase/server'
 import { createServiceClient } from '@/utils/supabase/service'
@@ -281,10 +280,6 @@ export const buildContext = async (request: Request): Promise<GraphqlContext> =>
     if (error || !data?.user) return deny('Not signed in. Send Authorization: Bearer <api_token>, or sign in.', 401)
     userId = data.user.id
     mode = 'session'
-  }
-
-  if (!(await hasFlag(userId, GRAPHQL_FLAG))) {
-    deny('The GraphQL API is not enabled for this account.', 403)
   }
 
   return contextFor(supabase, mode, userId)

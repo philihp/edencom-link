@@ -2,7 +2,6 @@ import { notFound } from 'next/navigation'
 
 import { ShareDialog } from '@/app/asset/shareDialog'
 import { fetchShareAudiences, shareRowToState, type OwnRegistration } from '@/app/asset/shareData'
-import { LINK_FLAG, hasFlag } from '@/flags'
 import { parseShareParam } from '@/shareToken'
 import { createClient } from '@/utils/supabase/server'
 import { siteUrl } from '@/utils/siteUrl'
@@ -66,7 +65,7 @@ const LinkViewerPage = async ({
   // list — that's what a link shared with you being a "prewritten query" means.
   const supabase = await createClient()
   const { data: auth } = await supabase.auth.getUser()
-  const canCopy = !viewerIsOwner && auth?.user != null && (await hasFlag(auth.user.id, LINK_FLAG))
+  const canCopy = !viewerIsOwner && auth?.user != null
 
   // Only the owner gets the share dialog, and only the owner's read of
   // `registration` can name the corporations a Link may be aimed at.

@@ -19,12 +19,12 @@ const FEEDS = [
   { path: 'corp/jobs', label: 'Corp industry jobs' },
 ]
 
-// `linkEnabled`: the account carries the `link` dark-launch flag, so links
-// are presented as the primary Sheets integration and the token URLs are
-// marked deprecated (docs/sharing-layer/09-sheets-parity.md). For unflagged
-// accounts the token URLs stay the only offer — deprecating a thing someone
-// has no replacement for would just be rude.
-const ApiToken = ({ initialToken, linkEnabled }: { initialToken: string | null; linkEnabled: boolean }) => {
+// Links are the primary Sheets integration and the token URLs are marked
+// deprecated (docs/sharing-layer/09-sheets-parity.md). Unconditional now that
+// every account has a link to be pointed at; while Links were dark-launched
+// this depended on the flag, since deprecating a thing someone has no
+// replacement for would have been rude.
+const ApiToken = ({ initialToken }: { initialToken: string | null }) => {
   const [token, setToken] = useState(initialToken)
   const [origin, setOrigin] = useState('')
   const [response, setResponse] = useState('')
@@ -88,18 +88,9 @@ const ApiToken = ({ initialToken, linkEnabled }: { initialToken: string | null; 
         </div>
       )}
       <div className={styles.note}>
-        {linkEnabled ? (
-          <>
-            <span className={`${styles.tag} ${styles.tagDeprecated}`}>[ deprecated ]</span> new sheets should use a{' '}
-            <a href="/link">link</a> — one query per signed URL instead of one token that unlocks everything. Token URLs
-            stay for <code>at=</code> history. Regenerating invalidates any sheet still on the old token.
-          </>
-        ) : (
-          <>
-            Pull your data into a spreadsheet with <code>=IMPORTDATA(url)</code>. Regenerating invalidates the previous
-            token and any sheet still using it.
-          </>
-        )}
+        <span className={`${styles.tag} ${styles.tagDeprecated}`}>[ deprecated ]</span> new sheets should use a{' '}
+        <a href="/link">link</a> — one query per signed URL instead of one token that unlocks everything. Token URLs
+        stay for <code>at=</code> history. Regenerating invalidates any sheet still on the old token.
       </div>
       {response && (
         <div className={styles.feedback}>

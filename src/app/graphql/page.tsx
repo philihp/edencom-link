@@ -1,15 +1,13 @@
 import { redirect } from 'next/navigation'
 
-import { GRAPHQL_FLAG, hasFlag } from '@/flags'
 import { createClient } from '@/utils/supabase/server'
 
 import { establishedUser } from '../account/lib/establishedUser'
 import { QueryEditor } from './queryEditor'
 import styles from './graphql.module.css'
 
-// Dark-launched GraphQL explorer (no nav link): query your own extracted data
-// and build external stockpile interfaces against /api/graphql. Gated on the
-// per-account `graphql` flag in user_settings.flags.
+// The GraphQL explorer: query your own extracted data and build external
+// stockpile interfaces against /api/graphql. Open to every signed-in account.
 export const dynamic = 'force-dynamic'
 
 const GraphqlPage = async () => {
@@ -18,9 +16,6 @@ const GraphqlPage = async () => {
   const user = await establishedUser(supabase)
   if (!user) {
     redirect('/account/login')
-  }
-  if (!(await hasFlag(user.id, GRAPHQL_FLAG))) {
-    redirect('/')
   }
 
   // The user's own api_token (RLS-scoped read), for the external-usage docs.

@@ -92,9 +92,9 @@ assumes a service client.
 
 ## Surfaces
 
-- **`/link` — the directory, a new top-level route, dark-launched behind a
-  feature flag** (`LINK_FLAG = 'link'` in `src/flags.ts`, the same
-  gate-and-redirect shape as `/graphql`): one line per Link — name, who it is
+- **`/link` — the directory, a new top-level route** (dark-launched behind a
+  `link` feature flag at first, launched to everyone once it had soaked; the
+  flag and the whole flag mechanism are gone): one line per Link — name, who it is
   issued to (`issuance.ts`, tested), when it last changed — plus the
   create-new editor at the top. **Amended after first use:** as built, this
   page stacked a full editor _and_ a share dialog into every row, so ten Links
@@ -214,9 +214,9 @@ other tool declares. What actually constrains it, as always, is not the hint:
 - the query goes through the **same `validateLinkQuery`** the editor uses, so a
   link saved from a tool is subject to every rule one saved from the browser
   is;
-- the whole surface is behind the **`link` dark-launch flag**, checked on the
-  caller — the same gate `/link` redirects on, so un-flagging an account turns
-  the tools off with it.
+- the tools were behind the **`link` dark-launch flag** while it existed,
+  checked on the caller — the same gate `/link` redirected on. Signing in is
+  the whole test now that Links are launched.
 
 `public` is exclusive here rather than absorbing: the dialog silently drops the
 corporation list when public is ticked, which is fine for a checkbox someone is

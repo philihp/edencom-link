@@ -15,8 +15,6 @@
 //   * The query is validated with the same validateLinkQuery the editor uses,
 //     so a link saved from here is subject to every rule one saved from the
 //     browser is: one operation, one top-level field, no session-only surfaces.
-//   * The whole surface sits behind the `link` dark-launch flag, checked on the
-//     caller, the same gate /link redirects on.
 //
 // The model is expected to call link_schema first: it can't write a valid
 // query against a schema it hasn't seen, and it can't name an audience without
@@ -34,7 +32,6 @@ import { applyLinkShare, fetchOwnAudiences } from '@/app/link/share'
 import { shortLinkId } from '@/app/link/shortId'
 import { LINK_TEMPLATES } from '@/app/link/templates'
 import { parseLinkVariables, SESSION_ONLY_ARGUMENTS, SESSION_ONLY_FIELDS, validateLinkQuery } from '@/app/link/validate'
-import { GRAPHQL_FLAG, LINK_FLAG, hasFlag } from '@/flags'
 import { signShare, tokenSalt } from '@/shareToken'
 import { createBearerClient } from '@/utils/supabase/bearer'
 import { siteUrl } from '@/utils/siteUrl'
@@ -57,17 +54,6 @@ const callerFor = (ctx: ServerCtx): Caller | null => {
   if (!token || typeof userId !== 'string') return null
   return { supabase: createBearerClient(token), userId }
 }
-
-// Un-flagging an account turns its links off site-wide; the tools say so in
-// the same words the editor's redirect implies, since a model needs to be able
-// to explain the refusal to the person who asked.
-const FLAG_REFUSAL =
-  'Link clearance is not held on this account: Links are still dark-launched and this account does not carry the "link" flag. Ask the site owner to issue it before creating one.'
-
-// run_query is the MCP face of the /graphql surface, so it rides that flag,
-// not the link one.
-const GRAPHQL_FLAG_REFUSAL =
-  'The GraphQL API is not enabled for this account: run_query needs the "graphql" flag, which is still dark-launched. Ask the site owner to issue it.'
 
 // How much of a run_query result to hand back. Matches the read tools'
 // MAX_ROWS — unlike a create_link preview, the result IS the answer here.
@@ -226,7 +212,6 @@ export const registerLinkTools = (server: McpServer): void => {
     async (_args, ctx: ServerCtx): Promise<ToolResult> => {
       const caller = callerFor(ctx)
       if (!caller) return textResult('Missing bearer token.')
-      if (!(await hasFlag(caller.userId, LINK_FLAG))) return textResult(FLAG_REFUSAL)
 
       const own = await fetchOwnAudiences(caller.supabase)
       return textResult({
@@ -266,7 +251,6 @@ export const registerLinkTools = (server: McpServer): void => {
     async ({ query, variables }, ctx: ServerCtx): Promise<ToolResult> => {
       const caller = callerFor(ctx)
       if (!caller) return textResult('Missing bearer token.')
-      if (!(await hasFlag(caller.userId, GRAPHQL_FLAG))) return textResult(GRAPHQL_FLAG_REFUSAL)
 
       const validation = validateLinkQuery(query)
       if (!validation.ok) {
@@ -341,7 +325,6 @@ export const registerLinkTools = (server: McpServer): void => {
     ): Promise<ToolResult> => {
       const caller = callerFor(ctx)
       if (!caller) return textResult('Missing bearer token.')
-      if (!(await hasFlag(caller.userId, LINK_FLAG))) return textResult(FLAG_REFUSAL)
 
       // Everything that can be rejected is rejected before anything is written:
       // a half-created link (saved but unshareable) is worse than a refusal.
@@ -433,7 +416,6 @@ export const registerLinkTools = (server: McpServer): void => {
     async ({ include_query }, ctx: ServerCtx): Promise<ToolResult> => {
       const caller = callerFor(ctx)
       if (!caller) return textResult('Missing bearer token.')
-      if (!(await hasFlag(caller.userId, LINK_FLAG))) return textResult(FLAG_REFUSAL)
 
       const [rows, own] = await Promise.all([
         fetchOwnLinks(caller.supabase, caller.userId),
@@ -509,7 +491,6 @@ export const registerLinkTools = (server: McpServer): void => {
     async (args, ctx: ServerCtx): Promise<ToolResult> => {
       const caller = callerFor(ctx)
       if (!caller) return textResult('Missing bearer token.')
-      if (!(await hasFlag(caller.userId, LINK_FLAG))) return textResult(FLAG_REFUSAL)
 
       const rows = await fetchOwnLinks(caller.supabase, caller.userId)
       if (rows.length === 0)
