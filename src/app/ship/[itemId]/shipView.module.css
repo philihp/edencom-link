@@ -171,23 +171,17 @@
   color: var(--ink-faint);
 }
 
-/* Double the size the ring shipped with, and no larger than the icon it holds:
-   the border hugs the artwork rather than framing it with air. At this size
-   neighbouring cells on a crowded hull overlap, which is accepted — reading
-   what is fitted matters more than keeping the slots apart, and the ring is
-   ~400px wide on a phone and a desktop alike (.ringBox is capped at 438px and
-   fills the width below that), so the crowding is the same everywhere rather
-   than a small-screen surprise.
-
-   50px, not 48: globals.css puts everything in `border-box`, so a 48px cell
-   with a 1px border has a 46px CONTENT box and the 48px icon spills over its
-   own border. Two more pixels make the content box exactly icon-sized, and the
-   border sits flush against the artwork with no padding anywhere. */
+/* Double the icon size the ring shipped with, in a cell barely larger than the
+   artwork it holds. At this size neighbouring cells on a crowded hull overlap,
+   which is accepted — reading what is fitted matters more than keeping the
+   slots apart, and the ring is ~400px wide on a phone and a desktop alike
+   (.ringBox is capped at 438px and fills the width below that), so the
+   crowding is the same everywhere rather than a small-screen surprise. */
 .cell {
   position: absolute;
-  width: 50px;
-  height: 50px;
-  margin: -25px 0 0 -25px;
+  width: 54px;
+  height: 54px;
+  margin: -27px 0 0 -27px;
   border-radius: var(--radius-sm);
   display: flex;
   align-items: center;
@@ -207,7 +201,12 @@
   border-color: var(--accent);
 }
 
-.cellIcon {
+/* Descendant selector, not a bare class: TypeIcon's own .icon carries the 6px
+   right margin that spaces it from a type name beside it, and two single-class
+   rules in different CSS modules have equal specificity — which of them wins
+   depends on the order the chunks happen to load. Here that margin pushed the
+   artwork 3px left of the cell's centre. Winning on specificity settles it. */
+.cell .cellIcon {
   width: 48px;
   height: 48px;
   margin: 0;

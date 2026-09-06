@@ -19,7 +19,6 @@
     "graphql-yoga": "^5.21.2",
     "mcp-handler": "^2.1.0",
     "next": "16.3.4",
-    "pointille": "^1.0.1",
     "protobufjs": "^8.7.0",
     "ramda": "^0.32.0",
     "react": "19.2.8",
