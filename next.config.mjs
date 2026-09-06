@@ -58,7 +58,28 @@ const nextConfig = {
   // going static is a 200 instead of the old 404; a non-200 with the same
   // zero-compute property would need a Vercel Firewall deny rule instead.)
   rewrites: async () => ({
-    beforeFiles: [{ source: '/xrpc/:method*', destination: '/xrpc-decommissioned.json' }],
+    beforeFiles: [
+      { source: '/xrpc/:method*', destination: '/xrpc-decommissioned.json' },
+      // Colon shorthand for Links: a leading `:` stands for `link/`, so
+      // /:da204490 is the /link/da204490 viewer and /:da204490/csv is its CSV
+      // route. A Link is a URL you hand to someone else, often by voice or in
+      // chat, and the truncated id (src/app/link/shortId.ts) already made it
+      // short — this makes the prefix short too, without a second identifier
+      // to resolve: the shorthand is spelling, not a new name, so every id
+      // form the /link routes accept (full uuid or >=8-hex prefix) works here
+      // unchanged, and nothing that emits Link URLs has to know about it.
+      //
+      // `\\:` is path-to-regexp's escape for a literal colon (an unescaped
+      // one would open a parameter name). `:rest*` carries whatever follows
+      // the id — /csv today — so a later subroute needs no rule of its own;
+      // it cannot repeat without its `/` prefix, which is why the id and the
+      // remainder are separate parameters rather than one catch-all.
+      //
+      // A rewrite, not a redirect: the short URL is the point, so it stays in
+      // the address bar. `beforeFiles` alongside the entry above (no file or
+      // route can begin with a literal colon, so nothing is shadowed).
+      { source: '/\\::id/:rest*', destination: '/link/:id/:rest*' },
+    ],
     afterFiles: [],
     fallback: [],
   }),

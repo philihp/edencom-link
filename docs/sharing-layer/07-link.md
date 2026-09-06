@@ -113,6 +113,16 @@ assumes a service client.
   renders the result as a table, shows the creator's name (via
   `character_directory`-safe display: link shares are user-scoped, so show
   the link name and nothing about alts).
+- **`/:<id>` — the colon shorthand.** A leading `:` stands for `link/`, so
+  `/:da204490` is the viewer and `/:da204490/csv` its CSV. One `beforeFiles`
+  rewrite in `next.config.mjs` (`/\::id/:rest*` → `/link/:id/:rest*`), so the
+  short form reaches the same routes under the same authorization — it is
+  spelling, not a second identifier: nothing resolves the `:`, every id form
+  the `/link` routes accept works unchanged, and no code that emits Link URLs
+  knows about it. A rewrite rather than a redirect, because the short URL is
+  the point and should survive in the address bar. What it buys is the half
+  of the URL the truncated id (`shortId.ts`) could not shorten, for a Link
+  read out loud or dropped in chat.
 - **`/link/[id].csv`** (or `?format=csv`) — the CSV rendering: find the
   **primary list** in the result (the single top-level list field; reject
   saving a link with more than one when CSV is enabled — "logical" must stay
