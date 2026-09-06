@@ -19,6 +19,7 @@
     "graphql-yoga": "^5.21.2",
     "mcp-handler": "^2.1.0",
     "next": "16.3.4",
+    "pointille": "^1.0.1",
     "protobufjs": "^8.7.0",
     "ramda": "^0.32.0",
     "react": "19.2.8",
@@ -77,7 +78,7 @@
     "start": "next start",
     "test": "node --test --import ./test/lib/offlineGuard.ts \"test/**/*.test.ts\"",
     "test:branch": "RUN_BRANCH_TESTS=1 node --test test/signupBranch.test.ts",
-    "test:sql": "for f in test/sql/*.sql; do echo \"\u2500\u2500 $f\" && psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f \"$f\" || exit 1; done"
+    "test:sql": "for f in test/sql/*.sql; do echo \"── $f\" && psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f \"$f\" || exit 1; done"
   },
   "prettier": "@philihp/prettier-config",
   "devDependencies": {
