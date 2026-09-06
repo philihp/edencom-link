@@ -177,12 +177,17 @@
    what is fitted matters more than keeping the slots apart, and the ring is
    ~400px wide on a phone and a desktop alike (.ringBox is capped at 438px and
    fills the width below that), so the crowding is the same everywhere rather
-   than a small-screen surprise. */
+   than a small-screen surprise.
+
+   50px, not 48: globals.css puts everything in `border-box`, so a 48px cell
+   with a 1px border has a 46px CONTENT box and the 48px icon spills over its
+   own border. Two more pixels make the content box exactly icon-sized, and the
+   border sits flush against the artwork with no padding anywhere. */
 .cell {
   position: absolute;
-  width: 48px;
-  height: 48px;
-  margin: -24px 0 0 -24px;
+  width: 50px;
+  height: 50px;
+  margin: -25px 0 0 -25px;
   border-radius: var(--radius-sm);
   display: flex;
   align-items: center;

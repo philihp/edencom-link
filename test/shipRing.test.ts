@@ -62,7 +62,7 @@ test('every cell lands inside the band, not on a circle', () => {
 })
 
 test('the whole ring stays inside its square, with room for a cell', () => {
-  // A cell is 48px on a 438px ring — 0.055 either side of its centre — so a
+  // A cell is 50px on a 438px ring — 0.057 either side of its centre — so a
   // centre past 0.445 would clip the panel edge.
   const cells = ringCells(counts({ High: 8, Medium: 8, Low: 8, Rig: 3, SubSystem: 5 }))
   assert.ok(cells.every((cell) => radius(cell) <= 0.445))
