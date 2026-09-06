@@ -85,7 +85,7 @@
     "@types/node": "26.4.1",
     "@types/ramda": "0.32.0",
     "@types/react": "19.2.18",
-    "@types/react-dom": "19.2.5",
+    "@types/react-dom": "19.2.7",
     "husky": "9.1.7",
     "lint-staged": "17.4.1",
     "oxlint": "1.81.0",
