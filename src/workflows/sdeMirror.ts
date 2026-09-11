@@ -12,6 +12,7 @@
 
 import { sleep } from 'workflow'
 
+import { DEFERRED_STEMS } from './sdeDeferred'
 import type { SdeFile } from './sdeIngestSteps'
 
 type PlanResult = { runId: number; build: number; zipUrl: string; commit: string; skip: boolean }
@@ -206,10 +207,20 @@ export async function sdeMirrorWorkflow() {
         failures.push({ stem, message: e instanceof Error ? e.message : String(e) })
       })
 
-    // Largest compressed entries first, so the longest chains (mapMoons, types)
+    // DEFERRED_STEMS have their own schedule and are not this run's work —
+    // today that is map_moons, half the mirror's footprint, now weekly (see
+    // src/workflows/sdeDeferred.ts). Filtering them here rather than inside
+    // listFiles keeps the step's return value a faithful listing of the export.
+    // Nothing sweeps the skipped tables either: ingestEntrySlice()'s stale sweep
+    // is scoped to the table it just wrote, so a table this run never touches
+    // keeps whatever build its own job last ingested.
+    //
+    // Largest remaining entries first, so the longest chains (types, map_planets)
     // start at t=0 and wall clock tracks the longest chain instead of whatever
     // happened to queue behind it.
-    const ordered = [...files].sort((a, b) => b.compressedSize - a.compressedSize)
+    const ordered = [...files]
+      .filter((file) => !DEFERRED_STEMS.includes(file.stem))
+      .sort((a, b) => b.compressedSize - a.compressedSize)
     const lanes: SdeFile[][] = Array.from({ length: INGEST_POOL }, () => [])
     ordered.forEach((file, i) => lanes[i % INGEST_POOL].push(file))
 

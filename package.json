@@ -60,6 +60,7 @@
     "structure-directory": "node src/jobs/structureDirectory.js",
     "universe-structures": "node src/jobs/universeStructures.js",
     "sde-mirror": "node src/jobs/sdeMirror.js",
+    "sde-moons": "node src/jobs/sdeMoons.js",
     "esf-data": "node src/jobs/esfData.js",
     "sheet-csv": "node src/jobs/sheetCsv.js",
     "connect": "node src/connect.js",

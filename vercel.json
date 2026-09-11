@@ -98,6 +98,10 @@
       "schedule": "21 12 * * *"
     },
     {
+      "path": "/api/cron/sde-moons",
+      "schedule": "41 5 * * 0"
+    },
+    {
       "path": "/api/cron/anon-sweep",
       "schedule": "13 4 * * *"
     },
