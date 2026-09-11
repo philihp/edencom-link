@@ -1,16 +1,18 @@
-// The SDE mirror as a Vercel Workflow (the second one after the
-// character-implants pilot): a full ingest is far too big for any single 60s
-// function invocation, so each step — build discovery, the zip's entry
-// listing, every bounded ingest slice, station-name resolution, finalize —
-// runs as its own invocation with its own duration budget and Workflows'
-// bounded retries. Files ingest concurrently across a bounded pool of lanes
-// (safe: each file owns its own sde_<stem> table and reads an immutable
-// build-pinned zip), and the tail steps start as soon as the specific files
-// they read have landed. All the real work lives in src/jobs/sdeMirror.js (also
-// CLI-runnable); every step lazy-imports it because the job module's
-// top-level supabase setup needs env vars absent at build time.
+// The SDE mirror as a Vercel Workflow: a full ingest is far too big for any
+// single 60s function invocation, so each step — build discovery, the zip's
+// entry listing, the tail encodes, finalize — runs as its own invocation with
+// its own duration budget and Workflows' bounded retries.
+//
+// This run is now an ORCHESTRATOR: it does not ingest anything itself. Each
+// file gets its own child workflow run (src/workflows/sdeIngestTable.ts),
+// dispatched a bounded INGEST_POOL at a time, and this run waits on their
+// terminal status. All the real work lives in src/jobs/sdeMirror.js (also
+// CLI-runnable); every step lazy-imports it because the job module's top-level
+// supabase setup needs env vars absent at build time.
 
-import { INGEST_STEPS, type IngestSliceStep, type SdeFile } from './sdeIngestSteps'
+import { sleep } from 'workflow'
+
+import type { SdeFile } from './sdeIngestSteps'
 
 type PlanResult = { runId: number; build: number; zipUrl: string; commit: string; skip: boolean }
 
@@ -52,25 +54,28 @@ async function listFiles(zipUrl: string): Promise<SdeFile[]> {
   return listEntries(zipUrl)
 }
 
-// One bounded slice of one entry: upserts rows until the entry is done
-// (returns -1) or the step's time budget runs out (returns the resume cursor).
-// Idempotent keyed upserts make the step's bounded retries safe.
-//
-// This is the GENERIC fallback step, used only for a file whose stem isn't in
-// the static INGEST_STEPS roster (a file CCP added since it was generated). The
-// common case dispatches to a per-stem named step (ingest_<stem>) so each file
-// shows under its own name in Vercel's Workflows observability rather than as a
-// wall of identical "ingestSlice" rows — see src/workflows/sdeIngestSteps.ts.
-async function ingestSlice(zipUrl: string, file: SdeFile, build: number, startLine: number): Promise<number> {
+// Start one file's ingest as its own workflow run and return its id. start()
+// throws in workflow context (workflow/api resolves to a stub there), so this
+// has to be a step — which is also what gets it Node resolution for the child
+// workflow module.
+async function dispatchTable(zipUrl: string, file: SdeFile, build: number): Promise<string> {
   'use step'
-  const { ingestEntrySlice } = await import('@/jobs/sdeMirror.js')
-  return ingestEntrySlice(zipUrl, file, build, startLine)
+  const { start } = await import('workflow/api')
+  const { sdeIngestTableWorkflow } = await import('./sdeIngestTable')
+  const run = await start(sdeIngestTableWorkflow, [zipUrl, file, build])
+  console.log(`[sde-mirror] ${file.stem}: dispatched run=${run.runId}`)
+  return run.runId
 }
 
-// The named ingest step for a file, or the generic fallback for a stem the
-// static roster doesn't know. Deterministic per stem, so a replay resolves the
-// same step name it recorded.
-const ingestStepFor = (file: SdeFile): IngestSliceStep => INGEST_STEPS[file.stem] ?? ingestSlice
+// One point-in-time read of a child run's status. Deliberately NOT Run.returnValue,
+// which polls every second inside the caller — that would pin a function
+// invocation for the whole of mapMoons' quarter hour. The orchestrator sleeps
+// between these instead, so it is suspended rather than billed while it waits.
+async function tableRunStatus(runId: string): Promise<string> {
+  'use step'
+  const { getRun } = await import('workflow/api')
+  return getRun(runId).status
+}
 
 async function stationNames(): Promise<void> {
   'use step'
@@ -127,49 +132,39 @@ async function encodeEsf(build: number): Promise<void> {
 // Re-encode the industry spreadsheet's static CSVs into the sheet_csv table from
 // the freshly-mirrored SDE. Its own step (own duration budget + retries), and
 // like encodeEsf only reached on a non-skipped run, so force: true re-encodes to
-// match the re-ingest. Reads only sde_types + sde_blueprints, so it starts as
-// soon as those two files have landed (see SHEET_INPUT_STEMS).
+// match the re-ingest.
 async function encodeSheets(build: number): Promise<void> {
   'use step'
   const { runSheetCsv } = await import('@/jobs/sheetCsv.js')
   await runSheetCsv({ build, force: true })
 }
 
-// Ingest fan-out sizing: how many per-file slice chains run concurrently.
-// Each file writes its own sde_<stem> table, so concurrent lanes share no rows
-// and each file's stale-row sweep stays self-contained; the cap is only about
-// being polite to CCP's CDN (concurrent Range readers of the same zip) and to
-// Supabase's PostgREST (concurrent upsert streams).
-const INGEST_LANES = 6
+// How many per-file ingest RUNS are in flight at once. This is the only knob
+// that sets the mirror's peak disk IO, so it is deliberately below the six
+// lanes whose concurrent upsert streams exhausted the IO budget on 2026-09-10.
+// The nightly mirror has all night; widening this to save wall clock trades a
+// resource we have for one we ran out of.
+const INGEST_POOL = 4
 
-// The sde_* stems encodeEsf() actually reads (the readMirror() calls in
-// src/buildEsfData.js) — it can start as soon as these files have fully
-// landed, instead of waiting for every entry in the export.
-const ESF_INPUT_STEMS = [
-  'types',
-  'groups',
-  'categories',
-  'market_groups',
-  'dogma_attributes',
-  'dogma_effects',
-  'type_dogma',
-]
+// How long the orchestrator sleeps between status reads of its in-flight child
+// runs. Long enough that a quarter-hour file costs tens of polls rather than
+// hundreds, short enough that the hundred small files don't each idle a minute
+// after finishing. sleep() suspends the run via a timer event — it does not
+// hold an invocation.
+const POLL_INTERVAL = '20s'
 
-// The sde_* stems encodeSheets() reads (buildSheets in src/buildSheetCsv.js) —
-// it can start as soon as these two files have landed.
-const SHEET_INPUT_STEMS = ['types', 'blueprints']
+// Terminal child-run statuses, per @workflow/world. Anything else ('pending',
+// 'running') means keep waiting.
+const isDone = (status: string) => status === 'completed' || status === 'failed' || status === 'cancelled'
 
 // Plain loops rather than the jobs' usual ramda/forEachSequential: the
 // orchestrator body is compiled by the workflow directive and should stay
-// simple, deterministic control flow over step calls — the cursor a step
-// returns is what drives each drain loop, and helpers imported at the top
-// level would execute in workflow context rather than inside a step.
+// simple, deterministic control flow over step calls — and helpers imported at
+// the top level would execute in workflow context rather than inside a step.
 //
-// Files are ingested in parallel lanes rather than one after another: lane
-// assignment is static (largest-first, round-robin), not pulled from a shared
-// queue, so the file→step-call mapping is identical on every replay
-// regardless of how the runtime resolves in-flight steps. Within a file the
-// slice chain stays sequential — each slice's cursor feeds the next.
+// Lane assignment is static (largest-first, round-robin), not pulled from a
+// shared queue, so the file→step-call mapping is identical on every replay
+// regardless of how the runtime resolves in-flight steps.
 export async function sdeMirrorWorkflow() {
   'use workflow'
   const plan = await planRun()
@@ -187,25 +182,21 @@ export async function sdeMirrorWorkflow() {
     }
     const files = await listFiles(plan.zipUrl)
 
-    // Drain one entry: chase its slice cursor until the entry reports done,
-    // through the file's own named step (ingest_<stem>) so the run tree names
-    // each file instead of showing a wall of "ingestSlice". A slice returning
-    // the cursor it was given can't happen today (a pause line is always past
-    // startLine), but if a regression ever makes it possible, fail the file
-    // rather than spawning steps forever.
-    const drainFile = async (file: SdeFile): Promise<void> => {
-      const step = ingestStepFor(file)
-      let cursor = 0
-      while (cursor !== -1) {
-        const next = await step(plan.zipUrl, file, plan.build, cursor)
-        if (next === cursor) throw new Error(`sde-mirror: ${file.stem} made no progress at line ${cursor}`)
-        cursor = next
+    // Run one file as its own child workflow: dispatch it, then wait on its
+    // terminal status. A failed or cancelled child throws here, which the lane
+    // chain below catches and collects like any other file failure.
+    const runTable = async (file: SdeFile): Promise<void> => {
+      const childRunId = await dispatchTable(plan.zipUrl, file, plan.build)
+      for (;;) {
+        await sleep(POLL_INTERVAL)
+        const status = await tableRunStatus(childRunId)
+        if (status === 'completed') return
+        if (isDone(status)) throw new Error(`ingest run ${childRunId} ${status}`)
       }
     }
 
-    // Per-file fault isolation (the characterAssets catch-collect shape): a
-    // file whose slices exhaust their bounded step retries should cost that
-    // file — and any tail step reading it — not the other 100 files' committed
+    // Per-file fault isolation: a file whose slices exhaust their bounded step
+    // retries should cost that file, not the other hundred files' committed
     // work. Failures are collected and thrown together after everything else
     // drains, so the run still reads failed and completed_at is never stamped.
     const failures: { stem: string; message: string }[] = []
@@ -215,56 +206,25 @@ export async function sdeMirrorWorkflow() {
         failures.push({ stem, message: e instanceof Error ? e.message : String(e) })
       })
 
-    // Largest compressed entries first, so the longest slice chains (typeDogma)
+    // Largest compressed entries first, so the longest chains (mapMoons, types)
     // start at t=0 and wall clock tracks the longest chain instead of whatever
     // happened to queue behind it.
     const ordered = [...files].sort((a, b) => b.compressedSize - a.compressedSize)
-    const lanes: SdeFile[][] = Array.from({ length: INGEST_LANES }, () => [])
-    ordered.forEach((file, i) => lanes[i % INGEST_LANES].push(file))
+    const lanes: SdeFile[][] = Array.from({ length: INGEST_POOL }, () => [])
+    ordered.forEach((file, i) => lanes[i % INGEST_POOL].push(file))
 
-    // Build each lane's sequential drain chain synchronously, keeping a per-file
-    // completion promise so the tail steps below can start on their actual
-    // inputs rather than on the whole ingest. The drained map holds the
-    // UNCAUGHT per-file promise — a tail step whose input failed must reject,
-    // not run over a half-ingested table — while the lane chains on the caught
-    // continuation so it proceeds past a failed file to its lane-mates.
-    const drained = new Map<string, Promise<void>>()
+    // Each lane dispatches its files one after another, so at most INGEST_POOL
+    // child runs exist at any moment. Built synchronously so the step-call
+    // order is fixed for replay.
     const laneDone = lanes.map((lane) => {
       let prev: Promise<void> = Promise.resolve()
       for (const file of lane) {
-        const attempt = prev.then(() => drainFile(file))
-        drained.set(file.stem, attempt)
-        prev = caught(file.stem, attempt)
+        prev = prev.then(() => caught(file.stem, runTable(file)))
       }
       return prev
     })
-    const allDrained = Promise.all(laneDone)
-    // Wait for specific files; if CCP ever renames one away, degrade to waiting
-    // for the full ingest rather than starting a tail step on a missing table.
-    const afterStems = (stems: string[]) => Promise.all(stems.map((stem) => drained.get(stem) ?? allDrained))
+    await Promise.all(laneDone)
 
-    // Tail steps overlap the remaining ingest: station-name resolution needs
-    // only sde_npc_stations, the esf_data re-encode needs only its 7 input
-    // tables, and the sheet_csv re-encode needs only sde_types + sde_blueprints.
-    // All are forced — a non-skipped run always re-does the full ingest, and the
-    // derived encodes re-write to match. Each is caught like the files are: a
-    // failed input file rejects its afterStems, so the tail step is skipped and
-    // recorded as its own failure (alongside the file's) instead of running
-    // over a half-ingested table or killing the run.
-    const stations = caught(
-      'station_names',
-      afterStems(['npc_stations']).then(() => stationNames())
-    )
-    const esf = caught(
-      'esf_data',
-      afterStems(ESF_INPUT_STEMS).then(() => encodeEsf(plan.build))
-    )
-    const sheets = caught(
-      'sheet_csv',
-      afterStems(SHEET_INPUT_STEMS).then(() => encodeSheets(plan.build))
-    )
-
-    await Promise.all([allDrained, stations, esf, sheets])
     // A partial ingest must not finalize: no view refresh over half-ingested
     // tables, no completed_at stamp (so the next night re-ingests). Throwing
     // lands in the catch below — finalizeFailed closes the heartbeat ok: false
@@ -275,12 +235,24 @@ export async function sdeMirrorWorkflow() {
         failures.map(({ stem, message }) => new Error(`${stem}: ${message}`)),
         // The message is what finalizeFailed records and /jobs renders, so
         // name the casualties rather than just counting them.
-        `sde-mirror: ${failures.length} step(s) failed: ${failures.map(({ stem }) => stem).join(', ')}`
+        `sde-mirror: ${failures.length} file(s) failed: ${failures.map(({ stem }) => stem).join(', ')}`
       )
     }
-    // Last, once every table has landed: refresh the derived views, stamp the
-    // build completed with this run's commit, and close the heartbeat planRun()
-    // opened.
+
+    // The tail encodes read the mirror back, and they run ONLY once every file
+    // has landed — one after another, with no ingest still writing underneath
+    // them. They used to start as soon as their own input tables drained, which
+    // put a full-table read of sde_types (220 MB) against a database still
+    // absorbing the other ~90 files; that read blew its statement timeout every
+    // night from 2026-08-31 onward, which is what kept completed_at null and
+    // forced the next night into another full re-ingest. Serialising them here
+    // costs a few minutes of wall clock we have and removes the contention.
+    await stationNames()
+    await encodeEsf(plan.build)
+    await encodeSheets(plan.build)
+
+    // Last: refresh the derived views, stamp the build completed with this
+    // run's commit, and close the heartbeat planRun() opened.
     await finalize(plan.build, plan.runId, plan.commit)
   } catch (e) {
     await finalizeFailed(plan.runId, e instanceof Error ? e.message : String(e))

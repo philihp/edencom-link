@@ -25,12 +25,17 @@ const PROTO_PATH = join(__dirname, 'esf.proto')
 // functions below consume it exactly as they did the downloaded file's lines.
 // The sde_categories rows aren't encoded into a .pb2 — they only resolve the
 // category-name targets in the eveship.fit patches below.
+// SERVICE key first, anon only as the fallback. The sde_* tables are public-read
+// so either key can see the rows, but the roles carry very different statement
+// timeouts: anon is capped at 3s and service_role has no role-level override.
+// Paging the mirror under the 3s cap is what failed this encode most nights
+// from 2026-08-31, and a failed encode is what kept sde_mirror_state's
+// completed_at null and forced a full re-ingest the following night.
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL
-const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? process.env.SUPABASE_KEY
+const SUPABASE_KEY =
+  process.env.SUPABASE_SERVICE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? process.env.SUPABASE_KEY
 if (!SUPABASE_URL || !SUPABASE_KEY) {
-  throw new Error(
-    'esf: missing NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY (needed to read the sde_* mirror)'
-  )
+  throw new Error('esf: missing SUPABASE_URL / SUPABASE_SERVICE_KEY (needed to read the sde_* mirror)')
 }
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: false, autoRefreshToken: false } })
 
