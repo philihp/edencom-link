@@ -2,7 +2,7 @@
 // mirror — a JS port of the inherited full_sheet_gen.py (kept for reference at
 // docs/sheet-csv/reference/full_sheet_gen.py). Shaped exactly like
 // src/buildEsfData.js: reads its inputs from the sde_* mirror tables through
-// the public-read anon key, transforms them in memory, and returns
+// the service-role key, transforms them in memory, and returns
 // { [fileName]: csvString } without touching disk. The sheet-csv job
 // (src/jobs/sheetCsv.js) upserts the result into the sheet_csv table and the
 // /sheets/[file] route serves it for Google Sheets =IMPORTDATA().
@@ -19,8 +19,16 @@ import { forEach } from 'ramda'
 // @supabase/supabase-js is imported lazily in encodeSheetCsv() so this module's
 // pure transform (buildSheets) loads with no runtime dependency and stays unit-
 // testable without a database.
+//
+// SERVICE key first, anon only as the fallback. The sde_* tables are public-read
+// so either key can see the rows, but the roles carry very different statement
+// timeouts: anon is capped at 3s and service_role has no role-level override.
+// Paging 220 MB of sde_types under the 3s cap is what failed this encode every
+// night from 2026-08-31, and a failed encode is what kept sde_mirror_state's
+// completed_at null and forced a full re-ingest the following night.
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL
-const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? process.env.SUPABASE_KEY
+const SUPABASE_KEY =
+  process.env.SUPABASE_SERVICE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? process.env.SUPABASE_KEY
 
 // PostgREST caps a response at 1000 rows, so page the mirror tables.
 const PAGE_SIZE = 1000
@@ -274,9 +282,7 @@ const readMirror = async (supabase, stem, from = 0, acc = []) => {
 /** Read the mirror and build all seven CSVs. @returns {Promise<Record<string,string>>} */
 export const encodeSheetCsv = async () => {
   if (!SUPABASE_URL || !SUPABASE_KEY) {
-    throw new Error(
-      'sheet-csv: missing NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY (needed to read the sde_* mirror)'
-    )
+    throw new Error('sheet-csv: missing SUPABASE_URL / SUPABASE_SERVICE_KEY (needed to read the sde_* mirror)')
   }
   const { createClient } = await import('@supabase/supabase-js')
   const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {

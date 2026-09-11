@@ -172,6 +172,9 @@ export const JOBS: readonly JobEntry[] = [
   },
 
   { job: 'sde-mirror', label: 'SDE mirror', section: 'universe', kickable: 'never', scopes: [] },
+  // Weekly, not nightly: sde_map_moons is half the mirror's footprint and
+  // nothing reads it (src/workflows/sdeDeferred.ts).
+  { job: 'sde-moons', label: 'SDE moons', section: 'universe', kickable: 'never', scopes: [] },
   { job: 'universe-names', label: 'names', section: 'universe', kickable: 'chancellor', scopes: [] },
   { job: 'universe-structures', label: 'structures', section: 'universe', kickable: 'never', scopes: [] },
   // Daily public-feed pull (ESI's public structure list + EVE Ref). Names
