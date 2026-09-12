@@ -18,8 +18,8 @@ importers:
         specifier: 2.1.0
         version: 2.1.0(supports-color@8.1.1)
       '@supabase/ssr':
-        specifier: 0.12.5
-        version: 0.12.5(@supabase/supabase-js@2.115.0)
+        specifier: 0.12.7
+        version: 0.12.7(@supabase/supabase-js@2.115.0)
       '@supabase/supabase-js':
         specifier: 2.115.0
         version: 2.115.0
@@ -1049,10 +1049,10 @@ packages:
     resolution: {integrity: sha512-5HyBkvlA/IUV2v8jX3uLTdy15jmTPRVXwXKoxvH2SKw5jZMNURxCxt+VpCEukscXQlY7pUpH8Cy4NH6io4iaRw==}
     engines: {node: '>=22.0.0'}
 
-  '@supabase/ssr@0.12.5':
-    resolution: {integrity: sha512-0GllaAtHe7FHs6tlSg1CwkFw0a7aai1Shs9rEqSs/HaVkJzPk35C9r0Z8WUtKJ3eY6G/Y5y47YvCro3LynrAJg==}
+  '@supabase/ssr@0.12.7':
+    resolution: {integrity: sha512-wiBtEie1KkRJi9RrZWY3R2imRhX1JY7qMyUCH2z9AUk15gQebNEplM+urbCKamdxaTJLXUU6LlpkJsaxhojCEg==}
     peerDependencies:
-      '@supabase/supabase-js': ^2.112.4
+      '@supabase/supabase-js': ^2.114.0
 
   '@supabase/storage-js@2.115.0':
     resolution: {integrity: sha512-dLyIxzbO+MCcKHhcce8rVUCQX1iyqXqQ8ytgkOVYJ7D+Zp0qKylPtQH3hamgxrGSxtDjaw47Urpzw2iK9PsKdA==}
@@ -3915,7 +3915,7 @@ snapshots:
       '@supabase/phoenix': 0.4.5
       tslib: 2.8.1
 
-  '@supabase/ssr@0.12.5(@supabase/supabase-js@2.115.0)':
+  '@supabase/ssr@0.12.7(@supabase/supabase-js@2.115.0)':
     dependencies:
       '@supabase/supabase-js': 2.115.0
       cookie: 1.1.1
