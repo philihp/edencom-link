@@ -21,8 +21,8 @@
     "next": "16.3.4",
     "protobufjs": "^8.7.0",
     "ramda": "^0.32.0",
-    "react": "19.2.8",
-    "react-dom": "19.2.8",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
     "ts-pattern": "^5.9.0",
     "workflow": "^4.6.0",
     "zod": "^4.4.3"
