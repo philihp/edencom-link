@@ -70,7 +70,7 @@ importers:
         version: 4.8.8(@nestjs/common@11.2.1(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@8.1.1))(@nestjs/core@11.2.1(@nestjs/common@11.2.1(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@8.1.1))(reflect-metadata@0.2.2)(rxjs@7.8.2))(@swc/cli@0.8.1(@swc/core@1.15.3(@swc/helpers@0.5.23))(chokidar@5.0.0)(supports-color@8.1.1))(@swc/core@1.15.3(@swc/helpers@0.5.23))(@swc/helpers@0.5.23)(next@16.3.4(@types/node@26.5.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(supports-color@8.1.1)(typescript@7.0.2)
       zod:
         specifier: ^4.4.3
-        version: 4.6.1
+        version: 4.6.5
     devDependencies:
       '@philihp/prettier-config':
         specifier: 1.0.0
@@ -3187,8 +3187,8 @@ packages:
   zod@4.3.6:
     resolution: {integrity: sha512-rftlrkhHZOcjDwkGlnUtZZkvaPHCsDATp4pGpuOOMDaTdDDXF91wuVDJoWoPsKX/3YPQ5fHuF3STjcYyKr+Qhg==}
 
-  zod@4.6.1:
-    resolution: {integrity: sha512-341aRWQsve0rvronKNTqZpjmzdbUDlFuzHaI/XLg/Ej82qffDJRRfBTCuv7+9q/rMjB6LSLyEBnW4InJeMtt/Q==}
+  zod@4.6.5:
+    resolution: {integrity: sha512-v5l/aFXZQeai4awLbOpSoHecE9UiMrnfx75tEXLjNonXVARxQ5mOeipTjROUchszUNCqnE+hqAMujRsRHsut2Q==}
 
 snapshots:
 
@@ -3561,12 +3561,12 @@ snapshots:
 
   '@modelcontextprotocol/core@2.0.0':
     dependencies:
-      zod: 4.6.1
+      zod: 4.6.5
 
   '@modelcontextprotocol/server@2.0.0':
     dependencies:
       '@modelcontextprotocol/core': 2.0.0
-      zod: 4.6.1
+      zod: 4.6.5
 
   '@napi-rs/nice-android-arm-eabi@1.1.1':
     optional: true
@@ -6175,4 +6175,4 @@ snapshots:
 
   zod@4.3.6: {}
 
-  zod@4.6.1: {}
+  zod@4.6.5: {}
