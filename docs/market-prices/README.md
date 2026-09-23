@@ -67,6 +67,49 @@ In a sample of C-J6MT, 2,839 of 20,536 types were `ccp`, i.e. not really
 priced by anyone. A sheet that treats those as market prices is pricing off
 CCP's index, and now it can tell.
 
+### Chunked prices for IMPORTXML
+
+`https://edencom.link/sheets/market/<market>/price_data?type_id=34,35,…` gives
+only the types you ask for, as XML. It has the same shape as goonmetrics'
+`price_data` API, so a sheet can price a long list one block of rows at a
+time. Replace the goonmetrics URL in the Prices formula:
+
+```
+=IF(NE(A2, ""), IMPORTXML("https://edencom.link/sheets/market/"&MarketHome&"/price_data?type_id="&JOIN(",",$A$2:$A$101)&"&"&RefreshSeed, "//price_data/type"), "")
+```
+
+`MarketHome` is a market name (`C-J6MT` or `jita`), not a station id.
+
+Each `type` node flattens to six columns, in the order of the CSV above:
+
+| Column     | Meaning                                                       |
+| ---------- | ------------------------------------------------------------- |
+| `type_id`  | the requested type id                                         |
+| `updated`  | when a run last confirmed this price                          |
+| `buy`      | best bid, empty when nothing is bid                           |
+| `sell`     | best ask, empty when nothing is offered                       |
+| `since`    | when this price took effect                                   |
+| `strategy` | how the service got the price (`orders`, `orders_universe`, `ccp`) |
+
+Differences from goonmetrics:
+
+- Every requested id gets a node, in request order. goonmetrics drops ids that
+  it has no price for, so the rows after the gap move up against column A.
+  Here, row n of the result is always id n of the request. An unpriced id has
+  only `type_id` filled.
+- The type id is the first column. IMPORTXML does not show attributes.
+- There is no `weekly_movement` and no `listed` volume. The capture does not
+  keep them (see "What is versioned" below).
+
+Other rules:
+
+- Empty entries (from blank cells in the `JOIN`) are skipped. Any other entry
+  that is not a type id gives a 400, because a dropped id would misalign the
+  rows.
+- At most 400 ids for each request.
+- `at=` works as it does on the CSV. Other query parameters (such as a refresh
+  seed) are ignored.
+
 ## Data flow
 
 ```
