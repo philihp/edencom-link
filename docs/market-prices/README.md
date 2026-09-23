@@ -110,6 +110,22 @@ Other rules:
 - `at=` works as it does on the CSV. Other query parameters (such as a refresh
   seed) are ignored.
 
+### CCP adjusted prices
+
+`https://edencom.link/sheets/adjusted-prices` gives the whole
+`market_adjusted_price` table as CSV, ordered by type id:
+`TypeID,AdjustedPrice,AveragePrice,Updated`. The `market-adjusted-prices` job
+fills the table from ESI `/markets/prices/` once a day.
+
+It replaces the Apps Script `getAdjustedPrices`. That script called ESI from
+Google's shared IP pool, and ESI gave 420 when other scripts on the same IPs
+used up the limit. Import the table once onto its own tab, then look types up:
+
+```
+=IMPORTDATA("https://edencom.link/sheets/adjusted-prices")
+=ARRAYFORMULA(IF(A2:A="", "", IFERROR(VLOOKUP(A2:A, AdjustedPrices!A:B, 2, FALSE), 0)))
+```
+
 ## Data flow
 
 ```
