@@ -1,13 +1,13 @@
+import type { Metadata, Viewport } from 'next'
+import { headers } from 'next/headers'
 import { notFound, redirect } from 'next/navigation'
 import { Suspense } from 'react'
 
 import { getSdeType, getSdeTypes } from '@/sdeTypes'
 import { createClient } from '@/utils/supabase/server'
-import { createServiceClient } from '@/utils/supabase/service'
 
 import { establishedUser } from '../../account/lib/establishedUser'
 import { AppraisalPanel } from '../../asset/[locationId]/appraisalPanel'
-import { resolveShareParams } from '../../asset/access'
 import { revokeAssetShare, saveAssetShare } from '../../asset/shareActions'
 import { fetchShareDialogData } from '../../asset/shareData'
 import { ShareDialog } from '../../asset/shareDialog'
@@ -15,13 +15,15 @@ import { AssetPath, fetchAssetPath, type Crumb } from '../../assetPath'
 import { ShareUrlCleanup } from '../../shareUrlCleanup'
 import { SkeletonTable } from '../../skeleton'
 import { eftTypes, shipEft } from './eft'
+import { CARD_HEIGHT, CARD_WIDTH } from './card/cardModel'
+import { loadShipCard } from './card/loadCard'
 import { toEsiFit } from './esfFit'
 import { FitExport } from './fitExport'
 import { ShipIdentity } from './identity'
 import { fetchPilotSkills, pilotSkills } from './pilotSkills'
 import { ShipContents, SharedShipContents } from './shipContents'
-import { characterPortrait, corporationLogo, type ShipOwner } from './shipHeading'
 import { fetchShipOwner } from './shipOwner'
+import { sharedShip, type ShipRow } from './sharedShip'
 import { SHIP_CATEGORY_ID, fittingOrder, type ChildRow } from './shipRows'
 import { ShipViewDynamic } from './shipViewDynamic'
 
@@ -36,14 +38,6 @@ import { ShipViewDynamic } from './shipViewDynamic'
 // every query there is explicitly filtered to the sharing user's
 // characters/corps, and location is deliberately omitted (a share link
 // shouldn't broadcast where the ship is).
-
-type ShipRow = {
-  item_id: number | string
-  type_id: number | string
-  name: string | null
-  registration_id?: string
-  corporation_id?: number | string
-}
 
 // Where the hull sits, as the identity strip says it: the nearest named place
 // and the system holding it ("Cold Storage, C-J6MT"). The breadcrumb above
@@ -71,13 +65,60 @@ const fitRows = (children: ChildRow[]) =>
     }))
   )
 
-const ShipPage = async ({
-  params,
-  searchParams,
-}: {
+type ShipPageProps = {
   params: Promise<{ itemId: string }>
   searchParams: Promise<{ token?: string; share?: string }>
-}) => {
+}
+
+// The origin a chat client reached this page on, so the preview image is an
+// absolute URL on the same host (production or a preview deployment).
+const requestOrigin = async (): Promise<string> => {
+  const headerList = await headers()
+  const host = headerList.get('x-forwarded-host') ?? headerList.get('host')
+  const proto = headerList.get('x-forwarded-proto') ?? (host?.startsWith('localhost') ? 'http' : 'https')
+  return host ? `${proto}://${host}` : ''
+}
+
+// The link preview a share link unfurls into in Discord, Slack or X: the
+// ship's name, a line about it, and the card image drawn by ./card. Only a
+// share link gets one — the signed-in page is private, and a chat client
+// fetching it is not signed in anyway. The card image takes the same share
+// parameter, so it opens exactly what the link opens.
+export const generateMetadata = async ({ params, searchParams }: ShipPageProps): Promise<Metadata> => {
+  const { itemId } = await params
+  const { token, share } = await searchParams
+  if (!share && !token) return {}
+  const card = await loadShipCard(itemId, share, token)
+  if (!card) return {}
+
+  const query = new URLSearchParams(share ? { share } : { token: token ?? '' })
+  const image = {
+    url: `${await requestOrigin()}/ship/${itemId}/card?${query}`,
+    width: CARD_WIDTH,
+    height: CARD_HEIGHT,
+    alt: `${card.title}, ${card.typeName}`,
+  }
+  const title = card.title === card.typeName ? card.title : `${card.title} (${card.typeName})`
+  return {
+    title: `${title} · Edencom Link`,
+    description: card.description,
+    openGraph: { type: 'website', siteName: 'Edencom Link', title, description: card.description, images: [image] },
+    // Discord and X draw the image full width only for a large-image card.
+    twitter: { card: 'summary_large_image', title, description: card.description, images: [image] },
+  }
+}
+
+// Discord colours the embed's side stripe from theme-color: the hull's
+// quality tier, as the card's border.
+export const generateViewport = async ({ params, searchParams }: ShipPageProps): Promise<Viewport> => {
+  const { itemId } = await params
+  const { token, share } = await searchParams
+  if (!share && !token) return {}
+  const card = await loadShipCard(itemId, share, token)
+  return card ? { themeColor: card.color } : {}
+}
+
+const ShipPage = async ({ params, searchParams }: ShipPageProps) => {
   const { itemId } = await params
   const { token, share } = await searchParams
 
@@ -209,70 +250,9 @@ const SharedShipPage = async ({
   itemId: string
   shareParams: { token?: string; share?: string }
 }) => {
-  const scope = await resolveShareParams(shareParams, itemId)
-  if (!scope) notFound()
-
-  const supabase = createServiceClient()
-  const { data: characterSelf } = await supabase
-    .from('character_asset')
-    .select('item_id, registration_id, type_id, name')
-    .eq('item_id', itemId)
-    .in('registration_id', scope.registrationIds)
-    .maybeSingle<ShipRow>()
-  const { data: corpSelf } = characterSelf
-    ? { data: null }
-    : await supabase
-        .from('corp_asset')
-        .select('item_id, corporation_id, type_id')
-        .eq('item_id', itemId)
-        .in('corporation_id', scope.corporationIds.length > 0 ? scope.corporationIds : [-1])
-        .maybeSingle<ShipRow>()
-  const self = characterSelf ?? corpSelf
-  if (!self) notFound()
-  const selfType = await getSdeType(Number(self.type_id))
-  // The share outlived the ship (sold, transferred, unlinked): dead link.
-  if (selfType?.categoryID !== SHIP_CATEGORY_ID) notFound()
-
-  const [{ data: characterChildren }, { data: corpChildren }] = await Promise.all([
-    supabase
-      .from('character_asset')
-      .select('item_id, type_id, location_flag, quantity, is_singleton, is_blueprint_copy, name')
-      .eq('location_id', itemId)
-      .in('registration_id', scope.registrationIds),
-    supabase
-      .from('corp_asset')
-      .select('item_id, type_id, location_flag, quantity, is_singleton, is_blueprint_copy')
-      .eq('location_id', itemId)
-      .in('corporation_id', scope.corporationIds.length > 0 ? scope.corporationIds : [-1]),
-  ])
-  const children = [...((characterChildren ?? []) as ChildRow[]), ...((corpChildren ?? []) as ChildRow[])]
-
-  // Everything inside a ship belongs to whoever owns the ship, so the whole
-  // cargo view carries a single owner.
-  const ownerId = characterSelf?.registration_id ?? String(corpSelf?.corporation_id)
-  let owner: ShipOwner
-  if (characterSelf?.registration_id) {
-    // The share scope carries the sharer's name but not their EVE id, which is
-    // what the portrait is keyed on — one lookup on the registration the scope
-    // already vouched for.
-    const { data: registration } = await supabase
-      .from('registration')
-      .select('character_id')
-      .eq('id', characterSelf.registration_id)
-      .maybeSingle<{ character_id: number | string | null }>()
-    owner = {
-      name: scope.characterNames.get(characterSelf.registration_id) ?? 'Unknown character',
-      portrait: registration?.character_id == null ? null : characterPortrait(registration.character_id),
-    }
-  } else {
-    const corporationId = Number(corpSelf?.corporation_id)
-    const { data: corpName } = await supabase
-      .from('universe_name')
-      .select('name')
-      .eq('id', corporationId)
-      .maybeSingle<{ name: string }>()
-    owner = { name: corpName?.name ?? `Corporation #${corporationId}`, portrait: corporationLogo(corporationId) }
-  }
+  const ship = await sharedShip(itemId, shareParams.share, shareParams.token)
+  if (!ship) notFound()
+  const { self, selfType, children, owner, ownerId, ownerKind } = ship
 
   const typeName = selfType?.name ?? `#${self.type_id}`
   const rows = fitRows(children)
@@ -295,15 +275,7 @@ const SharedShipPage = async ({
       <ShipViewDynamic esiFit={toEsiFit(Number(self.type_id), self.name ?? null, rows)} />
       {/* The same table the owner sees, minus the drill-down: a nested
           container would need a share token of its own to open. */}
-      <SharedShipContents
-        self={self}
-        owner={{
-          id: ownerId,
-          name: owner.name,
-          kind: characterSelf?.registration_id ? 'character' : 'corporation',
-        }}
-        childRows={children}
-      />
+      <SharedShipContents self={self} owner={{ id: ownerId, name: owner.name, kind: ownerKind }} childRows={children} />
     </>
   )
 }
