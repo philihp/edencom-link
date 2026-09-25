@@ -56,6 +56,9 @@ type AppraisalPanelProps = {
   label: string
   // Nothing to say when there's nothing selected; the caller words it.
   emptyHint?: string
+  // The one target is a ship: the route keeps the answer for the ship's
+  // link-preview card, which then need not ask the provider itself.
+  ship?: boolean
 }
 
 // Appraise a set of targets on demand: the high (sell) and low (buy) totals,
@@ -65,7 +68,7 @@ type AppraisalPanelProps = {
 // Deliberately lazy — pricing anything on load would blow the shared hourly
 // budget in a single page view — and deliberately not cached: the answer is
 // discarded when the selection changes, because it described the old one.
-export const AppraisalPanel = ({ targets, label, emptyHint }: AppraisalPanelProps) => {
+export const AppraisalPanel = ({ targets, label, emptyHint, ship }: AppraisalPanelProps) => {
   const [state, setState] = useState<State>({ phase: 'idle' })
   const [link, setLink] = useState<Link>({ phase: 'idle' })
   const [waited, setWaited] = useState(0)
@@ -90,7 +93,7 @@ export const AppraisalPanel = ({ targets, label, emptyHint }: AppraisalPanelProp
     const response = await fetch('/api/appraisal', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ targets, ...(save && { save: true }) }),
+      body: JSON.stringify({ targets, ...(save && { save: true }), ...(ship && { ship: true }) }),
     })
     const body = await response.json().catch(() => null)
     return { response, body }

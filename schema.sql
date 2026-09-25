@@ -86,6 +86,8 @@ drop table if exists public.character_directory   cascade;
 drop materialized view if exists public.industry_system_index_bucket cascade;
 drop table if exists public.industry_system_index cascade;
 drop table if exists public.market_adjusted_price cascade;
+drop table if exists public.hull_price            cascade;
+drop table if exists public.ship_appraisal        cascade;
 drop view  if exists public.market_price               cascade;
 drop table if exists public.market_price_over_time     cascade;
 drop table if exists public.corporation          cascade;
@@ -3692,6 +3694,67 @@ create policy "Everyone reads adjusted prices"
 
 grant select on public.market_adjusted_price to anon, authenticated;
 grant all    on public.market_adjusted_price to service_role;
+
+-- ── hull_price ────────────────────────────────────────────────────────────
+-- Prices for hulls no market prices: supercarriers and titans cannot enter
+-- high-sec, so they change hands by contract, mostly inside an alliance, and
+-- no order book (appraise.gnf.lt, innomin.at) holds a price for them. Without
+-- this table an appraisal of one leaves the hull out and reports a small
+-- fraction of its worth.
+--
+-- One row per hull type: the ISK a Chancellor sets on
+-- /account/settings/chancellor/hull-prices. A row wins over any market price
+-- for its type, in the ship card and in the Appraise button (src/hullPrices.ts).
+-- No row means "no set price", and the market price (if any) stands.
+--
+-- Readable by everyone, like market_price: an estimate of what a hull costs is
+-- not player data. updated_by is left out of that grant, so the table does not
+-- say which account set a price. Writes go through the service role only,
+-- after the Chancellor check in the page's server action.
+create table public.hull_price (
+  type_id bigint primary key,
+  price numeric not null check (price >= 0),
+  updated_at timestamptz not null default now(),
+  updated_by uuid references auth.users (id) on delete set null
+);
+
+alter table public.hull_price enable row level security;
+create policy "Everyone reads hull prices"
+  on public.hull_price
+  for select
+  to anon, authenticated
+  using (true);
+
+revoke all on public.hull_price from anon, authenticated;
+grant select (type_id, price, updated_at) on public.hull_price to anon, authenticated;
+grant all on public.hull_price to service_role;
+
+-- ── ship_appraisal ────────────────────────────────────────────────────────
+-- The last innomin.at appraisal of one ship: per line, the unit prices the
+-- provider answered with. The Appraise button on the ship page writes it, and
+-- the ship's link-preview card reads it, so posting and re-posting a share link
+-- does not send a new request to the provider each time (its budget is 200 an
+-- hour, for the whole deployment). The card asks again only when the row is
+-- older than its time limit (src/app/ship/[itemId]/card/loadCard.ts).
+--
+-- Unit prices, not totals: hull_price is applied when the row is read, so a
+-- Chancellor's price change shows at once, without a new appraisal.
+--
+-- Keyed by item id, so it says what a player's ship holds and is worth: no
+-- policy, service role only, like esi_etag. Both writers have already proved
+-- the caller may see the ship (an RLS walk, or a verified share link).
+create table public.ship_appraisal (
+  item_id bigint primary key,
+  market text not null,
+  -- [{ name, quantity, sell, buy }]; sell and buy are null for a line the
+  -- provider could not price.
+  lines jsonb not null,
+  appraised_at timestamptz not null default now()
+);
+
+alter table public.ship_appraisal enable row level security;
+revoke all on public.ship_appraisal from anon, authenticated;
+grant all on public.ship_appraisal to service_role;
 
 -- ── market_price_over_time (SCD type 2) ───────────────────────────────────
 -- https://appraise.gnf.lt/market/<market>/prices.json, written hourly by the

@@ -110,6 +110,12 @@ const ChancellorPage = async () => {
       <p>Enter one of the account&rsquo;s EVE character names. The whole account gains Chancellor powers.</p>
       <GrantForm />
 
+      <h2>Hull prices</h2>
+      <p>
+        Supercarriers and titans sell by contract, so no market prices them. Set their prices on the{' '}
+        <Link href="/account/settings/chancellor/hull-prices">hull prices</Link> page.
+      </p>
+
       <h2>Impersonate</h2>
       <p>Swaps this session for a real session as another account. Sign back in as yourself to return.</p>
       <ImpersonateForm />

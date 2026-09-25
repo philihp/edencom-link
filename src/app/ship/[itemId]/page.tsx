@@ -196,7 +196,7 @@ const ShipPage = async ({ params, searchParams }: ShipPageProps) => {
           <>
             {/* The hull plus everything nested inside it — the same set the
                 bays and the table below list, priced in one request. */}
-            <AppraisalPanel targets={[itemId]} label="Appraise" />
+            <AppraisalPanel targets={[itemId]} label="Appraise" ship />
             {/* The same rows, as the text the game imports. */}
             <FitExport eft={shipEft(Number(self.type_id), self.name ?? null, rows, types)} />
             {shareData ? (

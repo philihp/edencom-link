@@ -38,12 +38,7 @@ const TYPES: Record<number, SdeType> = {
   500: type(500, 4),
 }
 
-const child = (typeId: number, flag: string, quantity = 1, isBlueprintCopy = false): CardChild => ({
-  typeId,
-  flag,
-  quantity,
-  isBlueprintCopy,
-})
+const child = (typeId: number, flag: string, quantity = 1): CardChild => ({ typeId, flag, quantity })
 
 const FIT: CardChild[] = [
   child(100, 'HiSlot1'),
@@ -52,7 +47,7 @@ const FIT: CardChild[] = [
   child(100, 'LoSlot0'),
   child(300, 'DroneBay', 3),
   child(300, 'DroneBay', 2),
-  child(400, 'Cargo', 1, true),
+  child(400, 'Cargo', 1),
   child(500, 'Cargo', 1000),
 ]
 
@@ -90,33 +85,20 @@ test('metaColor falls back to Tech I for an unknown or missing tier', () => {
   assert.equal(metaColor(999), metaColor(1))
 })
 
-test('cardValue sums hull and contents at sell, skipping blueprints', () => {
-  const prices = new Map<number, number | null>([
-    [17738, 1_000_000_000],
-    [100, 10_000_000],
-    [101, 500_000_000],
-    [200, 100],
-    [300, 1_000_000],
-    [400, 999_999_999],
-    [500, 5],
-  ])
-  assert.deepEqual(cardValue(17738, FIT, TYPES, prices), {
-    sell: 1_000_000_000 + 2 * 10_000_000 + 500_000_000 + 40 * 100 + 5 * 1_000_000 + 1000 * 5,
-    unpriced: 0,
-  })
-})
-
-test('cardValue counts lines with no price and leaves them out', () => {
-  const prices = new Map<number, number | null>([
-    [17738, 1_000],
-    [100, null],
-  ])
-  const value = cardValue(17738, [child(100, 'HiSlot0'), child(500, 'Cargo')], TYPES, prices)
-  assert.deepEqual(value, { sell: 1_000, unpriced: 2 })
+test('cardValue sums priced lines and counts the rest', () => {
+  assert.deepEqual(
+    cardValue([
+      { name: 'Nyx', quantity: 1, sell: 42_000_000_000, buy: 42_000_000_000 },
+      { name: 'Fighter', quantity: 12, sell: 5_000_000, buy: 4_000_000 },
+      { name: 'Mystery', quantity: 2, sell: null, buy: null },
+    ]),
+    { sell: 42_060_000_000, unpriced: 1 }
+  )
 })
 
 test('cardValue is null when nothing has a price', () => {
-  assert.equal(cardValue(17738, [], TYPES, new Map()).sell, null)
+  assert.equal(cardValue([{ name: 'Nyx', quantity: 1, sell: null, buy: null }]).sell, null)
+  assert.equal(cardValue([]).sell, null)
 })
 
 test('compactIsk says ISK the way players do', () => {
@@ -131,7 +113,7 @@ test('cardDescription names the hull, the owner, the slots and the value', () =>
   const rows = cardRows(FIT, TYPES)
   assert.equal(
     cardDescription('Machariel', 'Battleship', 'Sir Cuddles', rows, { sell: 1_500_000_000, unpriced: 0 }),
-    'Machariel (Battleship), owned by Sir Cuddles. High 2 · Low 1 · Drones 5. Estimated value 1.5b ISK at Jita sell.'
+    'Machariel (Battleship), owned by Sir Cuddles. High 2 · Low 1 · Drones 5. Estimated value 1.5b ISK.'
   )
 })
 

@@ -16,6 +16,11 @@ import { loadShipCard, type ShipCard } from './loadCard'
 // it answers 404 for anything that link does not open, so the image can never
 // show more than the page does. Like the share page, it has no location.
 
+// A card with no stored appraisal asks the provider, waits a few seconds, and
+// lets the request finish after the response (loadCard.ts). The provider's
+// queue can take most of a minute, so the function needs that long.
+export const maxDuration = 60
+
 // Chat clients keep their own copy of an embed, so this only bounds how long
 // our CDN keeps serving a card after the share is revoked or the fit changes.
 const CACHE_CONTROL = 'public, max-age=600, s-maxage=600'
@@ -65,7 +70,8 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const token = searchParams.get('token') ?? undefined
   if (!share && !token) return new Response('Not found', { status: 404 })
 
-  const card = await loadShipCard(itemId, share, token)
+  // The one caller allowed to ask the appraisal provider (see loadCard.ts).
+  const card = await loadShipCard(itemId, share, token, true)
   if (!card) return new Response('Not found', { status: 404 })
 
   const [images, [regular, bold, expandedBold]] = await Promise.all([fetchImages(card), loadFonts()])
