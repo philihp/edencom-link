@@ -144,7 +144,7 @@ export const Card = ({ card, images }: { card: ShipCard; images: Images }) => (
               <div
                 style={{ display: 'flex', fontSize: 16, color: MUTED, textTransform: 'uppercase', letterSpacing: 1 }}
               >
-                {card.value.unpriced > 0 ? 'Est. value, Jita sell (partial)' : 'Est. value, Jita sell'}
+                {card.value.unpriced > 0 ? 'Est. value (partial)' : 'Est. value'}
               </div>
               <div style={{ display: 'flex', fontSize: 40, fontWeight: 700, color: GOLD }}>
                 {compactIsk(card.value.sell)}

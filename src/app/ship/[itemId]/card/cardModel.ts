@@ -11,6 +11,8 @@ import { ascend, sortWith } from 'ramda'
 
 import type { SdeType } from '@/sdeTypes'
 
+import { type PricedLine, pricedTotals } from '../../../api/appraisal/pricedLines.ts'
+
 // The card's size in pixels: the 1.91:1 shape Open Graph and X large-image
 // cards expect.
 export const CARD_WIDTH = 1200
@@ -18,13 +20,11 @@ export const CARD_HEIGHT = 630
 
 // invCategories ids the fold branches on.
 const CHARGE_CATEGORY_ID = 8
-const BLUEPRINT_CATEGORY_ID = 9
 
 export type CardChild = {
   typeId: number
   flag: string | null
   quantity: number
-  isBlueprintCopy: boolean
 }
 
 export type CardIcon = {
@@ -37,8 +37,9 @@ export type CardIcon = {
 export type CardRow = { label: string; icons: CardIcon[] }
 
 export type CardValue = {
-  // Σ quantity × best Jita ask over the hull and everything directly inside
-  // it. Null when not one line had a price.
+  // Σ quantity × sell price over the hull and everything directly inside it,
+  // at Jita, with Chancellor-set hull prices in place of the market's. Null
+  // when not one line had a price.
   sell: number | null
   // Lines with no price, left out of the sum (the card says so).
   unpriced: number
@@ -118,29 +119,14 @@ export const cardRows = (children: CardChild[], types: Record<number, SdeType>):
     .filter((row) => row.icons.length > 0)
     .map((row) => ({ ...row, icons: row.icons.slice(0, MAX_ICONS) }))
 
-// A blueprint copy has no market price, and an original's is an order book of
-// a few listings — neither says what the ship is worth, so both stay out, as
-// they do in the page's own appraisal.
-const isBlueprint = (child: CardChild, types: Record<number, SdeType>) =>
-  child.isBlueprintCopy || types[child.typeId]?.categoryID === BLUEPRINT_CATEGORY_ID
-
-export const cardValue = (
-  hullTypeId: number,
-  children: CardChild[],
-  types: Record<number, SdeType>,
-  sellPrices: Map<number, number | null>
-): CardValue => {
-  const lines = [
-    { typeId: hullTypeId, quantity: 1 },
-    ...children.filter((c) => !isBlueprint(c, types)).map((c) => ({ typeId: c.typeId, quantity: c.quantity })),
-  ]
-  const priced = lines.filter((line) => sellPrices.get(line.typeId) != null)
+// What the card says the ship is worth, from its priced lines (hull prices
+// already applied). Blueprints never reach here: the line fold leaves them
+// out, as the page's own appraisal does.
+export const cardValue = (lines: PricedLine[]): CardValue => {
+  const totals = pricedTotals(lines)
   return {
-    sell:
-      priced.length === 0
-        ? null
-        : priced.reduce((sum, line) => sum + line.quantity * Number(sellPrices.get(line.typeId)), 0),
-    unpriced: lines.length - priced.length,
+    sell: totals.unpriced.length === lines.length ? null : totals.sell,
+    unpriced: totals.unpriced.length,
   }
 }
 
@@ -174,7 +160,7 @@ export const cardDescription = (
     rows.length > 0
       ? `${rows.map((row) => `${row.label} ${row.icons.reduce((n, icon) => n + icon.count, 0)}`).join(' · ')}.`
       : null,
-    value.sell == null ? null : `Estimated value ${compactIsk(value.sell)} at Jita sell.`,
+    value.sell == null ? null : `Estimated value ${compactIsk(value.sell)}.`,
   ]
     .filter((part) => part != null)
     .join(' ')

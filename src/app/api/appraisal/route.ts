@@ -12,12 +12,15 @@
 import { NextResponse } from 'next/server'
 import { all, test, uniq } from 'ramda'
 
+import { getHullPricesByName } from '@/hullPrices'
 import { appraise, appraisalUrl, MARKETS, type Market } from '@/innominate'
 import { timed, withServerTiming } from '@/serverTiming'
 import { createClient } from '@/utils/supabase/server'
 
 import { MAX_LINES } from './assetLines'
 import { collectAssetLinesForTargets } from './collectAssetLines'
+import { applyHullPrices, fromAppraisal, pricedTotals } from './pricedLines'
+import { writeShipAppraisal } from './shipAppraisal'
 
 // appraise() blocks polling the shared row for up to 50s while the throttled
 // queue drains (POLL_BUDGET_MS in src/innominate.ts, which is sized against a
@@ -43,6 +46,7 @@ const handler = async (request: Request) => {
     targets?: unknown
     market?: unknown
     save?: unknown
+    ship?: unknown
   } | null
   // One target (a location, a ship, a container) or many (the asset table's
   // checkbox selection). Both shapes land in the same list — a selection of one
@@ -64,6 +68,9 @@ const handler = async (request: Request) => {
   // arrow. A saved appraisal is stored on the provider's side and gets an id we
   // can link to; everything else here stays side-effect free over there.
   const save = body?.save === true
+  // Set by the ship page's button: the one target is a ship, and its answer is
+  // kept in ship_appraisal for the ship's link-preview card to reuse.
+  const ship = body?.ship === true && targets.length === 1
 
   // Everything under the target, priced by name — the walk, the blueprint skip
   // and the name merge all live in ./assetLines so this route and the MCP
@@ -81,7 +88,7 @@ const handler = async (request: Request) => {
     return fail(422, `Too many distinct item types here to appraise at once (${lines.length}, limit ${MAX_LINES}).`)
   }
 
-  const result = await appraise(lines, market, save)
+  const [result, hullPrices] = await Promise.all([appraise(lines, market, save), getHullPricesByName()])
   if (!result.ok) {
     if (result.kind === 'unconfigured') return fail(503, "Appraisals aren't configured on this deployment.")
     if (result.kind === 'rate_limited') {
@@ -91,7 +98,13 @@ const handler = async (request: Request) => {
   }
 
   const { appraisal } = result
-  const unpriced = [...unnamed, ...appraisal.items.filter((i) => i.error != null).map((i) => i.name)]
+  // The provider's answer as unit prices, kept as it came for the card, then
+  // with the Chancellor-set hull prices applied: no order book prices a
+  // supercarrier or a titan, so without them the hull would be left out.
+  const provided = fromAppraisal(lines, appraisal.items)
+  if (ship) await writeShipAppraisal(targets[0], market, provided)
+  const totals = pricedTotals(applyHullPrices(provided, hullPrices))
+  const unpriced = [...unnamed, ...totals.unpriced]
 
   // Per-line prices are deliberately not returned: the UI shows totals only, and
   // a 500-type hangar's itemization would be pointless payload. The MCP
@@ -99,8 +112,8 @@ const handler = async (request: Request) => {
   return NextResponse.json({
     ok: true,
     market: appraisal.market,
-    total_sell_value: appraisal.totalSellValue,
-    total_buy_value: appraisal.totalBuyValue,
+    total_sell_value: totals.sell,
+    total_buy_value: totals.buy,
     price_split: appraisal.priceSplit,
     total_volume_m3: appraisal.totalVol,
     line_count: lines.length,
