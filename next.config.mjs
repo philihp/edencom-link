@@ -16,6 +16,12 @@ const nextConfig = {
   // function has no copy of the file to read.
   outputFileTracingIncludes: {
     '/api/mcp': ['docs/edencom-industry-SKILL.md'],
+    // The ship link-preview card reads its fonts from disk at request time.
+    '/ship/[itemId]/card': [
+      'public/fonts/evesansneue-regular.otf',
+      'public/fonts/evesansneue-bold.otf',
+      'public/fonts/evesansneue-expandedbold.otf',
+    ],
   },
   experimental: {
     staleTimes: {
