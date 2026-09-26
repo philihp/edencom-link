@@ -192,8 +192,11 @@ begin
     'the ship''s own subtree still works for bob';
   assert (select location_id from public.asset_ancestors(1004) order by depth desc limit 1) is null,
     'bob''s breadcrumb ends at the ship with no place';
-  assert not exists (select 1 from public.character_asset_search(array[34::bigint]) where root_location_id is not null),
-    'search names no root for bob';
+  -- Deliberate for now: search joins each item to its root, and a shared
+  -- item has no root for bob, so it is absent rather than shown with a null
+  -- place. Restoring it is a left join plus null handling in the pages.
+  assert (select count(*) from public.character_asset_search(array[34::bigint])) = 0,
+    'search lists nothing for bob';
 end $$;
 
 -- ── outsiders ─────────────────────────────────────────────────────────────
@@ -232,6 +235,61 @@ begin
   assert (select location_id from public.character_asset_over_time where item_id = 3001 and is_current) = 30000142,
     'a container in space: its system is its place';
 end $$;
+
+-- ── a child claimed before its parent is relinked when the parent lands ──
+-- The extract claims 1000 rows a call, in ESI's order, so a container's
+-- contents can arrive a call before the container. The child's parent id is
+-- filed as its place for want of a parent row; the parent's claim moves it
+-- back to a parent link.
+select public.character_asset_claim('[
+  {"item_id":9002,"registration_id":"00000000-0000-0000-0000-0000000000aa","type_id":34,"location_id":9001,"location_flag":"Unlocked","location_type":"item","quantity":7,"is_singleton":false}
+]'::jsonb);
+do $$
+begin
+  assert (select location_id from public.character_asset_version where item_id = 9002 and is_current) is null,
+    'with no parent row yet, the child''s link is filed as its place';
+end $$;
+select public.character_asset_claim('[
+  {"item_id":9001,"registration_id":"00000000-0000-0000-0000-0000000000aa","type_id":3467,"location_id":60003760,"location_flag":"Hangar","location_type":"station","quantity":1,"is_singleton":true}
+]'::jsonb);
+insert into public.character_asset_share (registration_id, item_id, corporation_ids) values
+  ('00000000-0000-0000-0000-0000000000aa', 9001, '{98001}');
+do $$
+begin
+  assert (select location_id from public.character_asset_version where item_id = 9002 and is_current) = 9001,
+    'the parent''s claim relinked the child';
+  assert (select location_flag from public.character_asset_version where item_id = 9002 and is_current) = 'Unlocked',
+    'with its flag';
+  assert not exists (select 1 from public.character_asset_location l
+                       join public.character_asset_version v on v.id = l.asset_id
+                      where v.item_id = 9002 and v.is_current),
+    'and the child has no place row of its own';
+  assert (select l.location_id from public.character_asset_location l
+            join public.character_asset_version v on v.id = l.asset_id
+           where v.item_id = 9001 and v.is_current) = 60003760,
+    'the parent''s place is the station';
+  perform set_config('test.uid', 'b0000000-0000-0000-0000-000000000000', true);
+  assert public.asset_share_covers(9002, '00000000-0000-0000-0000-0000000000aa'),
+    'the share walk climbs through the relinked child';
+end $$;
+
+-- ── a character item inside a corp-owned container keeps its breadcrumb ──
+-- The corp container is not one of the owner's own items, so it is the
+-- item's place; the walk continues into corp_asset from there, as before.
+insert into public.corp_asset (item_id, type_id, location_id, location_type) values (7001, 3467, 60003760, 'station');
+select public.character_asset_claim('[
+  {"item_id":7002,"registration_id":"00000000-0000-0000-0000-0000000000aa","type_id":34,"location_id":7001,"location_flag":"Unlocked","location_type":"item","quantity":1,"is_singleton":false}
+]'::jsonb);
+set local role authenticated;
+do $$
+begin
+  perform set_config('test.uid', 'a0000000-0000-0000-0000-000000000000', true);
+  assert (select location_id from public.asset_ancestors(7002) where depth = 1) = 7001,
+    'the item''s place is the corp container';
+  assert (select location_id from public.asset_ancestors(7002) where depth = 2) = 60003760,
+    'and the walk climbs through the corp container to its station';
+end $$;
+reset role;
 
 -- ── the share walk still reaches through the ship ─────────────────────────
 do $$

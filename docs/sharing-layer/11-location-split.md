@@ -70,21 +70,61 @@ only.
   `asset_ancestors` looks up the root's place once, at the end.
 - **`asset_share_covers()`** climbs the version table. It only ever needed
   parent links.
+- **Relink.** The extract claims 1000 rows a call, in ESI's order, so a
+  container's contents can arrive a call before the container (or a run
+  before it). The child then has no open parent row, and its parent's id is
+  filed as its place. The parent's claim moves it back: any current place row
+  of the same owner whose `location_id` is one of the items just inserted
+  becomes a parent link again. Without this the share walk could not climb
+  through that child, and a recipient would not see it.
+- **The one assumption** in both the backfill and the claim: a place id never
+  equals an item id of the same owner. Station ids (60M), system ids (30M) and
+  structure ids (1e12+) sit outside the item ids a character owns, so a place
+  is never mistaken for a parent link — which is the direction that would
+  leak. The other direction (a parent link mistaken for a place, when the
+  parent row is missing) costs a recipient that child's visibility, and the
+  relink repairs it once the parent lands.
+- **Names.** The table predates the migrations folder and was renamed once
+  before, and a table rename never renames constraints or the identity
+  sequence, so the migration discovers the primary key, the foreign key and
+  the sequence from the catalogs before renaming them.
 
 ### Measured (owner, 180k assets, local Postgres 16)
 
 | Query | Before | After |
 | --- | --- | --- |
-| Children of a ship (`location_id = ship`) | 2 ms | 3 ms |
-| Items at a station | 0.6 ms | 1.4 ms |
+| The migration itself (backfill included) | — | 0.35 s |
+| Children of a ship (`location_id = ship`) | 2 ms | 3.5 ms |
+| Items at a station | 0.6 ms | 2 ms |
 | `character_asset_location_contents(station)` | 7 ms | 8 ms |
-| `asset_ancestors` (breadcrumb) | ~600 ms | ~590 ms |
-| `character_asset_search` | ~1.1 s | ~1.45 s |
-| `character_asset_location_summary()` (live) | 1.4–1.9 s | 1.9–2.1 s |
+| `asset_ancestors` (breadcrumb) | ~600 ms | **2 ms** |
+| `character_asset_search` | ~1.1 s | ~1.55 s |
+| `character_asset_location_summary()` (live) | 1.4–1.9 s | ~2.0 s |
 
-The two slow rows were already seq scans before the split: the audience
-policy's `OR` defeats the registration index. `/asset` reads the summary
-cache, not the live function.
+The breadcrumb got ~300× faster because its recursive hop became an index
+probe (see `asset_ancestors` above); before, every hop scanned the table
+under RLS. The two slow rows were already seq scans before the split: the
+audience policy's `OR` defeats the registration index. `/asset` reads the
+summary cache, not the live function.
+
+### Known gaps
+
+- A recipient's `/asset/search` and MCP `list_assets` do not list a shared
+  item: those functions join each item to its root, and a shared item has no
+  root for the recipient. Restoring it is a `left join roots` plus null
+  handling in the pages.
+- A shared container nested inside an unshared ship shows the ship's item id
+  as its parent link. The id resolves to nothing for the recipient, so it
+  says only "inside another of the owner's items".
+- The old-code / new-code window at deploy: the migration and the Vercel
+  deploy start together on merge, so one `character-assets` run can fail its
+  writes (old code updating what is now a view, or new code before the
+  rename). The reconcile is idempotent and the next run recovers.
+- The jobs that page the whole current asset set through the view
+  (`universe-structures`, `resolveAssetStationNames`, `resolveAssetSystemNames`)
+  pay a sort of the union per page: ~65 ms a page against ~1 ms, so ~8 s a
+  day for 117k rows. Pointing them at `character_asset_location` directly
+  would remove it; not done here.
 
 ## Owner shown as the main character
 

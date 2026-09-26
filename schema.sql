@@ -914,6 +914,30 @@ begin
    where l.asset_id = v.id
      and v.id = any (v_ids);
 
+  -- A child that arrived before its parent — in an earlier chunk of this run
+  -- (the extract claims 1000 rows at a time, in ESI's order) or in an earlier
+  -- run — found no open parent row and filed the parent's item id as its
+  -- place. Now that the parent is an open item of the same owner, it is a
+  -- parent link again: back onto the version row, out of the place table.
+  -- Without this the share walk could not climb through it, and a recipient
+  -- would not see that child. Keyed on the items this call inserted, so it is
+  -- one indexed probe per new item rather than a sweep.
+  with relinked as (
+    delete from public.character_asset_location l
+     using public.character_asset_version c, public.character_asset_version p
+     where c.id = l.asset_id
+       and c.is_current
+       and p.is_current
+       and p.item_id = l.location_id
+       and p.registration_id = l.registration_id
+       and p.item_id = any (v_items)
+    returning l.asset_id, l.location_id, l.location_flag, l.location_type
+  )
+  update public.character_asset_version v
+     set location_id = r.location_id, location_flag = r.location_flag, location_type = r.location_type
+    from relinked r
+   where v.id = r.asset_id;
+
   return v_inserted;
 end
 $$;
@@ -4886,30 +4910,46 @@ returns table (item_id bigint, type_id bigint, name text, location_id bigint, lo
 language sql
 stable
 as $$
-  -- `not materialized` matters: parent_of is referenced twice (base term and
-  -- recursive term), so by default Postgres materializes all ~117k current
-  -- character+corp asset rows and then filters down to one, leaving the
-  -- item_id index unused. Inlined, the base term is an index seek.
-  with recursive parent_of as not materialized (
-    -- The version table itself, not the character_asset view: the view is a
-    -- UNION ALL with a join inside, which the planner cannot seek into per
-    -- step. The walk climbs parent links only; a character item's place is
-    -- looked up once, for the root, in the select below.
-    select v.id as version_id, v.item_id, v.type_id, v.name, v.location_id, v.location_type
-    from public.character_asset_version v
-    where v.is_current
+  -- Each hop is a `lateral … limit 1` probe straight on the two tables, the
+  -- shape asset_share_covers() uses. Walking a UNION ALL CTE of both hangars
+  -- instead (the earlier form) gave the recursive step no index path, so
+  -- every hop scanned the whole version table under RLS: ~600 ms per
+  -- breadcrumb at 180k assets, against ~2 ms here.
+  --
+  -- The next hop is the row's parent link, or else its place. A character
+  -- item's place is read from the owner-only character_asset_location, which
+  -- answers null to a share recipient — so their walk ends at the shared item
+  -- with no place — and, for the owner, is a corp-owned container when the
+  -- item sits in one (not one of their own items), from which the walk
+  -- continues into corp_asset as it did before the split.
+  with recursive walk as (
+    select h.version_id, h.item_id, h.type_id, h.name, h.next_id, h.next_type, 1 as depth
+    from (
+      select v.id as version_id, v.item_id, v.type_id, v.name,
+             coalesce(v.location_id, (select l.location_id from public.character_asset_location l where l.asset_id = v.id)) as next_id,
+             coalesce(v.location_type, (select l.location_type from public.character_asset_location l where l.asset_id = v.id)) as next_type
+      from public.character_asset_version v
+      where v.is_current and v.item_id = start_id
+      union all
+      select null::bigint, c.item_id, c.type_id, null::text, c.location_id, c.location_type
+      from public.corp_asset c
+      where c.item_id = start_id
+    ) h
     union all
-    select null::bigint as version_id, item_id, type_id, null::text as name, location_id, location_type
-    from public.corp_asset
-  ),
-  walk as (
-    select p.version_id, p.item_id, p.type_id, p.name, p.location_id, p.location_type, 1 as depth
-    from parent_of p
-    where p.item_id = start_id
-    union all
-    select p.version_id, p.item_id, p.type_id, p.name, p.location_id, p.location_type, w.depth + 1
+    select n.version_id, n.item_id, n.type_id, n.name, n.next_id, n.next_type, w.depth + 1
     from walk w
-    join parent_of p on p.item_id = w.location_id
+    cross join lateral (
+      select v.id as version_id, v.item_id, v.type_id, v.name,
+             coalesce(v.location_id, (select l.location_id from public.character_asset_location l where l.asset_id = v.id)) as next_id,
+             coalesce(v.location_type, (select l.location_type from public.character_asset_location l where l.asset_id = v.id)) as next_type
+      from public.character_asset_version v
+      where v.is_current and v.item_id = w.next_id
+      union all
+      select null::bigint, c.item_id, c.type_id, null::text, c.location_id, c.location_type
+      from public.corp_asset c
+      where c.item_id = w.next_id
+      limit 1
+    ) n
     where w.depth < 16
   )
   -- The type name is a scalar subquery, not a join: a recursive CTE's row
@@ -4921,11 +4961,8 @@ as $$
     w.item_id,
     w.type_id,
     w.name,
-    -- The root's place, from the owner-only location table: RLS answers null
-    -- to a share recipient, so their walk ends at the shared item with no
-    -- place. Corp rows (version_id null) keep their own location columns.
-    coalesce(w.location_id, (select l.location_id from public.character_asset_location l where l.asset_id = w.version_id)) as location_id,
-    coalesce(w.location_type, (select l.location_type from public.character_asset_location l where l.asset_id = w.version_id)) as location_type,
+    w.next_id as location_id,
+    w.next_type as location_type,
     w.depth,
     (select t.name from public.sde_published_type t where t.type_id = w.type_id) as type_name
   from walk w
