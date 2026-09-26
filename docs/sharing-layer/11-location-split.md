@@ -37,7 +37,11 @@ Migration `20260926054546_asset_location_split.sql`:
 | `character_asset` (view) | The current rows of the view above, as before. |
 
 The owner sees exactly what they saw before. A recipient sees the shared item
-and everything in it, with the item's place as null. They can still drill from
+and everything in it, with the item's place as null — and with the shared
+item's own parent link null too: a link shows only when the caller can see
+the parent row (the view probes it under the caller's RLS), so a shared
+container inside an unshared ship says nothing about what holds it.
+`asset_ancestors` applies the same rule to its output. They can still drill from
 a shared container into a ship and into the ship's containers, because those
 links are parent links on the version table.
 
@@ -97,15 +101,25 @@ only.
 | Children of a ship (`location_id = ship`) | 2 ms | 3.5 ms |
 | Items at a station | 0.6 ms | 2 ms |
 | `character_asset_location_contents(station)` | 7 ms | 8 ms |
-| `asset_ancestors` (breadcrumb) | ~600 ms | **2 ms** |
-| `character_asset_search` | ~1.1 s | ~1.55 s |
+| `asset_ancestors` (breadcrumb) | ~600 ms | **5 ms** |
+| `character_asset_search` | ~1.1 s | ~1.6 s |
 | `character_asset_location_summary()` (live) | 1.4–1.9 s | ~2.0 s |
 
-The breadcrumb got ~300× faster because its recursive hop became an index
+And at 832k rows (69% roots, a hangar-heavy shape): the migration took 26 s;
+children of a ship 5 ms; items at a station 280 ms both before and after;
+station contents 0.8 s → 0.85 s; search 3.9 s → 5.4 s.
+
+The breadcrumb got ~100× faster because its recursive hop became an index
 probe (see `asset_ancestors` above); before, every hop scanned the table
-under RLS. The two slow rows were already seq scans before the split: the
-audience policy's `OR` defeats the registration index. `/asset` reads the
+under RLS. Search pays for the parent-visibility probe on every row it
+climbs through; it was a full scan before the split (the audience policy's
+`OR` defeats the registration index) and stays one. `/asset` reads the
 summary cache, not the live function.
+
+Production, measured before merge: 393k rows (139k current, 25% roots,
+122 MB), 118 owners; no item id in the station/system range (the smallest is
+100,086,317); no cross-owner parent links; no current row whose parent is
+only history. Expect the lock to hold for well under 10 s.
 
 ### Safety: no value is deleted, and the migration proves it
 
@@ -159,13 +173,17 @@ select count(*) from public.character_asset_location;                           
 
 ### Known gaps
 
-- A recipient's `/asset/search` and MCP `list_assets` do not list a shared
-  item: those functions join each item to its root, and a shared item has no
-  root for the recipient. Restoring it is a `left join roots` plus null
-  handling in the pages.
-- A shared container nested inside an unshared ship shows the ship's item id
-  as its parent link. The id resolves to nothing for the recipient, so it
-  says only "inside another of the owner's items".
+- Intended, not a gap: a recipient's `/asset/search`, `/asset` index, MCP
+  `list_assets` and GraphQL `assets` (without `includeShared`) do not list
+  shared items. A shared item is reached by its link, or by drilling into
+  what holds it; it never appears in "show me all my X".
+- The one residual: the raw table `character_asset_version` is readable
+  through PostgREST by the same roles the views are (a security-invoker view
+  needs that grant), and there a recipient can read the shared item's parent
+  link — an item id that resolves to nothing for them. Closing it means
+  moving the security boundary into the views (definer semantics with the
+  policies restated) and revoking the location columns on the table; a
+  separate change.
 - The old-code / new-code window at deploy: the migration and the Vercel
   deploy start together on merge, so one `character-assets` run can fail its
   writes (old code updating what is now a view, or new code before the

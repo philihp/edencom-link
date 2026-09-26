@@ -17,14 +17,21 @@
 -- migration → this script gives the old schema's pg_dump and the same row
 -- fingerprint.
 
--- ── the same fingerprint the migration checked ───────────────────────────
+-- ── the same fingerprint the migration checked, from the two tables ──────
 create temp table asset_location_split_before as
   select count(*) as rows,
          count(location_id) as placed,
          sum(hashtextextended(
            id::text || ':' || coalesce(location_id::text, '') || ':' || coalesce(location_flag, '') || ':' || coalesce(location_type, ''),
            0))::numeric as fingerprint
-  from public.character_asset_over_time;
+  from (
+    select v.id,
+           coalesce(v.location_id,   l.location_id)   as location_id,
+           coalesce(v.location_flag, l.location_flag) as location_flag,
+           coalesce(v.location_type, l.location_type) as location_type
+    from public.character_asset_version v
+    left join public.character_asset_location l on l.asset_id = v.id
+  ) joined;
 
 -- ── places back onto the version rows ────────────────────────────────────
 update public.character_asset_version v

@@ -813,12 +813,37 @@ grant all on public.character_asset_location to service_role;
 -- first, the location table's in the second. coalesce() would hide the column
 -- from both and scan.
 create view public.character_asset_over_time with (security_invoker = on) as
+  -- Three branches, UNION ALL, so a filter on location_id reaches an index
+  -- in each: the version table's partial location index in the first, a
+  -- constant null the planner drops the branch on in the second, and the
+  -- place table's index in the third. (A CASE over the link instead of the
+  -- split hid the column from the index, and every "children of this ship"
+  -- query scanned every linked row.)
+  --
+  -- 1. A parent link the caller can see. The probe runs under the caller's
+  --    RLS (security invoker), so it is the same visibility the caller has
+  --    on the parent row itself. The owner sees every link. A share
+  --    recipient sees the links inside the shared tree.
   select v.id, v.item_id, v.registration_id, v.type_id,
          v.location_id, v.location_flag, v.location_type,
          v.quantity, v.is_singleton, v.is_blueprint_copy, v.is_current, v.valid_from, v.valid_until, v.name
   from public.character_asset_version v
   where v.location_id is not null
+    and exists (select 1 from public.character_asset_version p where p.item_id = v.location_id and p.is_current)
   union all
+  -- 2. A parent link the caller cannot see — the shared item's own link
+  --    upward, to a ship or container the share does not cover. It reads
+  --    null, flag and type included, so the row says nothing about what
+  --    holds it.
+  select v.id, v.item_id, v.registration_id, v.type_id,
+         null::bigint, null::text, null::text,
+         v.quantity, v.is_singleton, v.is_blueprint_copy, v.is_current, v.valid_from, v.valid_until, v.name
+  from public.character_asset_version v
+  where v.location_id is not null
+    and not exists (select 1 from public.character_asset_version p where p.item_id = v.location_id and p.is_current)
+  union all
+  -- 3. A root item and its place, from the owner-only table: null under a
+  --    recipient's RLS.
   select v.id, v.item_id, v.registration_id, v.type_id,
          l.location_id, l.location_flag, l.location_type,
          v.quantity, v.is_singleton, v.is_blueprint_copy, v.is_current, v.valid_from, v.valid_until, v.name
@@ -4910,47 +4935,63 @@ returns table (item_id bigint, type_id bigint, name text, location_id bigint, lo
 language sql
 stable
 as $$
-  -- Each hop is a `lateral … limit 1` probe straight on the two tables, the
-  -- shape asset_share_covers() uses. Walking a UNION ALL CTE of both hangars
-  -- instead (the earlier form) gave the recursive step no index path, so
+  -- Each hop is a `lateral … limit 1` probe on ONE table at a time, the
+  -- shape asset_share_covers() uses: the character hangar first, the corp
+  -- hangar only when that found nothing. Walking a UNION ALL of both — as a
+  -- CTE, or inside one lateral — gave the recursive step no index path, so
   -- every hop scanned the whole version table under RLS: ~600 ms per
-  -- breadcrumb at 180k assets, against ~2 ms here.
+  -- breadcrumb at 180k assets, against ~5 ms here.
   --
-  -- The next hop is the row's parent link, or else its place. A character
-  -- item's place is read from the owner-only character_asset_location, which
-  -- answers null to a share recipient — so their walk ends at the shared item
-  -- with no place — and, for the owner, is a corp-owned container when the
-  -- item sits in one (not one of their own items), from which the walk
-  -- continues into corp_asset as it did before the split.
+  -- A row carries its parent link (another asset of the owner) and its
+  -- place (character_asset_location, owner-only; a corp row's location is
+  -- read as its place) apart. The next hop is the link, or else the place:
+  -- for the owner that continues into a corp-owned container the item sits
+  -- in, as before the split; for a share recipient the place reads null and
+  -- the walk ends at the shared item.
+  --
+  -- The output names a parent only when the walk reached it. A link whose
+  -- target the caller cannot see (the shared item's own parent) comes out
+  -- null, so the breadcrumb says nothing about what holds the shared item.
   with recursive walk as (
-    select h.version_id, h.item_id, h.type_id, h.name, h.next_id, h.next_type, 1 as depth
+    select h.version_id, h.item_id, h.type_id, h.name, h.parent_id, h.parent_type, h.place_id, h.place_type,
+           coalesce(h.parent_id, h.place_id) as next_id, 1 as depth
     from (
       select v.id as version_id, v.item_id, v.type_id, v.name,
-             coalesce(v.location_id, (select l.location_id from public.character_asset_location l where l.asset_id = v.id)) as next_id,
-             coalesce(v.location_type, (select l.location_type from public.character_asset_location l where l.asset_id = v.id)) as next_type
+             v.location_id as parent_id, v.location_type as parent_type,
+             (select l.location_id   from public.character_asset_location l where l.asset_id = v.id) as place_id,
+             (select l.location_type from public.character_asset_location l where l.asset_id = v.id) as place_type
       from public.character_asset_version v
       where v.is_current and v.item_id = start_id
       union all
-      select null::bigint, c.item_id, c.type_id, null::text, c.location_id, c.location_type
+      select null::bigint, c.item_id, c.type_id, null::text, null::bigint, null::text, c.location_id, c.location_type
       from public.corp_asset c
       where c.item_id = start_id
     ) h
     union all
-    select n.version_id, n.item_id, n.type_id, n.name, n.next_id, n.next_type, w.depth + 1
+    select cv.version_id,
+           coalesce(cv.item_id, cc.item_id), coalesce(cv.type_id, cc.type_id), cv.name,
+           cv.parent_id, cv.parent_type,
+           coalesce(cv.place_id, cc.location_id), coalesce(cv.place_type, cc.location_type),
+           coalesce(cv.parent_id, cv.place_id, cc.location_id), w.depth + 1
     from walk w
-    cross join lateral (
+    left join lateral (
       select v.id as version_id, v.item_id, v.type_id, v.name,
-             coalesce(v.location_id, (select l.location_id from public.character_asset_location l where l.asset_id = v.id)) as next_id,
-             coalesce(v.location_type, (select l.location_type from public.character_asset_location l where l.asset_id = v.id)) as next_type
+             v.location_id as parent_id, v.location_type as parent_type,
+             (select l.location_id   from public.character_asset_location l where l.asset_id = v.id) as place_id,
+             (select l.location_type from public.character_asset_location l where l.asset_id = v.id) as place_type
       from public.character_asset_version v
       where v.is_current and v.item_id = w.next_id
-      union all
-      select null::bigint, c.item_id, c.type_id, null::text, c.location_id, c.location_type
-      from public.corp_asset c
-      where c.item_id = w.next_id
       limit 1
-    ) n
+    ) cv on true
+    left join lateral (
+      select c.item_id, c.type_id, c.location_id, c.location_type
+      from public.corp_asset c
+      where c.item_id = w.next_id and cv.item_id is null
+      limit 1
+    ) cc on true
     where w.depth < 16
+      and w.next_id is not null
+      and (cv.item_id is not null or cc.item_id is not null)
   )
   -- The type name is a scalar subquery, not a join: a recursive CTE's row
   -- estimate is wild (41,202 against an actual 1 on a real container), and
@@ -4961,8 +5002,10 @@ as $$
     w.item_id,
     w.type_id,
     w.name,
-    w.next_id as location_id,
-    w.next_type as location_type,
+    case when w.parent_id is not null and not exists (select 1 from walk x where x.depth = w.depth + 1)
+         then null else coalesce(w.parent_id, w.place_id) end as location_id,
+    case when w.parent_id is not null and not exists (select 1 from walk x where x.depth = w.depth + 1)
+         then null else coalesce(w.parent_type, w.place_type) end as location_type,
     w.depth,
     (select t.name from public.sde_published_type t where t.type_id = w.type_id) as type_name
   from walk w

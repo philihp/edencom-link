@@ -291,6 +291,36 @@ begin
 end $$;
 reset role;
 
+-- ── a shared container inside an unshared ship names no parent ──────────
+-- Alice shares container 5001 (in her unshared ship 5000) with the corp.
+-- Bob may see 5001 and its contents; he must not learn what holds 5001.
+select public.character_asset_claim('[
+  {"item_id":5000,"registration_id":"00000000-0000-0000-0000-0000000000aa","type_id":17738,"location_id":60003760,"location_flag":"Hangar","location_type":"station","quantity":1,"is_singleton":true},
+  {"item_id":5001,"registration_id":"00000000-0000-0000-0000-0000000000aa","type_id":3467,"location_id":5000,"location_flag":"Cargo","location_type":"item","quantity":1,"is_singleton":true},
+  {"item_id":5002,"registration_id":"00000000-0000-0000-0000-0000000000aa","type_id":34,"location_id":5001,"location_flag":"Unlocked","location_type":"item","quantity":3,"is_singleton":false}
+]'::jsonb);
+insert into public.character_asset_share (registration_id, item_id, corporation_ids) values
+  ('00000000-0000-0000-0000-0000000000aa', 5001, '{98001}');
+set local role authenticated;
+do $$
+begin
+  perform set_config('test.uid', 'a0000000-0000-0000-0000-000000000000', true);
+  assert (select location_id from public.character_asset where item_id = 5001) = 5000, 'the owner sees the container''s ship';
+  assert (select location_id from public.asset_ancestors(5002) where depth = 3) = 60003760, 'and the owner''s breadcrumb reaches the station';
+
+  perform set_config('test.uid', 'b0000000-0000-0000-0000-000000000000', true);
+  assert (select count(*) from public.character_asset where item_id in (5000, 5001, 5002)) = 2, 'bob sees the container and its contents, not the ship';
+  assert (select location_id from public.character_asset where item_id = 5001) is null, 'the container''s parent link reads null for bob';
+  assert (select location_flag from public.character_asset where item_id = 5001) is null, 'and so does its flag (Cargo would say "inside a ship")';
+  assert (select location_type from public.character_asset where item_id = 5001) is null, 'and its type';
+  assert (select location_id from public.character_asset where item_id = 5002) = 5001, 'links inside the shared tree still show';
+  assert (select count(*) from public.asset_ancestors(5002)) = 2, 'bob''s breadcrumb has the ore and the container';
+  assert (select location_id from public.asset_ancestors(5002) where depth = 2) is null, 'and ends at the container with no parent named';
+  assert (select location_id from public.asset_ancestors(5001) where depth = 1) is null, 'the container alone names no parent either';
+  assert (select count(*) from public.character_asset_search(array[3467::bigint])) = 0, 'search does not list the shared container for bob';
+end $$;
+reset role;
+
 -- ── the share walk still reaches through the ship ─────────────────────────
 do $$
 begin
