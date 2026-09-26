@@ -27,6 +27,9 @@ export type ShareScope = {
   characterNames: Map<string, string>
   // EVE corporation ids the sharer's characters belong to (corp_asset scope)
   corporationIds: number[]
+  // The share asks to show the account's main character as the owner
+  // (character_asset_share.show_as_main). Legacy ?token= links never do.
+  showAsMain: boolean
 }
 
 // `from` itself followed by its enclosing containers — climbing best-known
@@ -73,11 +76,14 @@ export const resolveSignedShare = async (param: string, itemId: string): Promise
   // one (if any) minted this link. A legacy link's id narrows it to one row.
   const supabase = createServiceClient()
   const chain = await ancestryChain(supabase, itemId)
-  const query = supabase.from('character_asset_share').select('id, registration_id, secret').in('item_id', chain)
+  const query = supabase
+    .from('character_asset_share')
+    .select('id, registration_id, secret, show_as_main')
+    .in('item_id', chain)
   const { data: covering } = await (shareId === null ? query : query.eq('id', shareId))
-  const share = ((covering ?? []) as Array<{ id: string; registration_id: string; secret: string | null }>).find(
-    (row) => row.secret != null && verifyShareToken(row.id, row.secret, salt, signature)
-  )
+  const share = (
+    (covering ?? []) as Array<{ id: string; registration_id: string; secret: string | null; show_as_main: boolean }>
+  ).find((row) => row.secret != null && verifyShareToken(row.id, row.secret, salt, signature))
   if (!share) return null
 
   const { data: registration } = await supabase
@@ -94,6 +100,7 @@ export const resolveSignedShare = async (param: string, itemId: string): Promise
     // Asset shares are character-scoped (docs/sharing-layer/02-recursive-rls.md);
     // corp assets never ride a signed link.
     corporationIds: [],
+    showAsMain: share.show_as_main === true,
   }
 }
 
@@ -119,6 +126,7 @@ export const resolveShareToken = async (token: string, itemId: string): Promise<
     registrationIds: rows.map((r) => r.id),
     characterNames: new Map(rows.map((r) => [r.id, r.name])),
     corporationIds: [...new Set(rows.filter((r) => r.corporation_id != null).map((r) => Number(r.corporation_id)))],
+    showAsMain: false,
   }
 }
 

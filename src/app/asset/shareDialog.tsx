@@ -41,6 +41,7 @@ export const ShareDialog = ({
   const [allianceIds, setAllianceIds] = useState<Set<number>>(new Set(data.share?.allianceIds ?? []))
   const [link, setLink] = useState(data.share?.hasLink ?? false)
   const [isPublic, setIsPublic] = useState(data.share?.isPublic ?? false)
+  const [showAsMain, setShowAsMain] = useState(data.share?.showAsMain ?? false)
   const [copied, setCopied] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
@@ -66,6 +67,7 @@ export const ShareDialog = ({
         link,
         rotateLink,
         isPublic,
+        ...(data.mainName ? { showAsMain } : {}),
       })
       if (result.error) setError(result.error)
       else if (result.share) {
@@ -85,6 +87,7 @@ export const ShareDialog = ({
         setAllianceIds(new Set())
         setLink(false)
         setIsPublic(false)
+        setShowAsMain(false)
         setCopied(false)
       }
     })
@@ -165,6 +168,13 @@ export const ShareDialog = ({
             </p>
           ) : null}
         </fieldset>
+
+        {data.mainName ? (
+          <label className={styles.publicRow}>
+            <input type="checkbox" checked={showAsMain} onChange={(e) => setShowAsMain(e.target.checked)} />
+            Show the owner as {data.mainName}
+          </label>
+        ) : null}
 
         {data.hasLegacyToken ? (
           <p className={styles.hint}>An old-style ?token= link exists for this item; saving replaces it.</p>

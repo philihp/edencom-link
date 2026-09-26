@@ -70,7 +70,9 @@ drop table if exists public.eve_name             cascade;
 drop table if exists public.character_corp       cascade;
 drop table if exists public.structure            cascade;
 drop view  if exists public.character_asset               cascade;
-drop table if exists public.character_asset_over_time     cascade;
+drop view  if exists public.character_asset_over_time     cascade;
+drop table if exists public.character_asset_location      cascade;
+drop table if exists public.character_asset_version       cascade;
 drop view  if exists public.character_blueprint            cascade;
 drop table if exists public.character_blueprint_over_time  cascade;
 drop table if exists public.character_wallet              cascade;
@@ -719,15 +721,19 @@ create policy "Users manage own tokens"
 -- XSS-to-EVE-account bridge for no benefit.
 grant all on public.token to service_role;
 
--- ── character_asset_over_time ─────────────────────────────────────────────
+-- ── character_asset_version ───────────────────────────────────────────────
 -- ESI /characters/{id}/assets/, written by the character-assets job. Assets as
 -- a slowly changing dimension (SCD type 2): each row is a versioned snapshot of
 -- one item's state. When the extract sees an item whose tracked attributes
 -- (location, quantity, ...) differ from its current row, that row is closed
 -- (is_current = false) and a new row inserted, so full history is retained.
 -- valid_until on the open row is extended every run the item is seen
--- unchanged. The `character_asset` view below exposes just the live rows.
-create table public.character_asset_over_time (
+-- unchanged. The table was character_asset_over_time until the location split
+-- (docs/sharing-layer/11-location-split.md): its location columns now hold
+-- only a parent that is another asset of the same owner, and a root item's
+-- place lives in character_asset_location below. The character_asset_over_time
+-- and character_asset views put the two back together.
+create table public.character_asset_version (
   id bigint generated always as identity primary key,
   item_id bigint not null,
   registration_id uuid not null references public.registration(id) on delete cascade,
@@ -745,20 +751,20 @@ create table public.character_asset_over_time (
   -- otherwise. Kept last to match the add-column migration's column order.
   name text
 );
-create index character_asset_over_time_registration_id_idx on public.character_asset_over_time (registration_id);
+create index character_asset_version_registration_id_idx on public.character_asset_version (registration_id);
 -- At most one live row per item; also the conflict target the extract relies on.
-create unique index character_asset_over_time_current_item_idx on public.character_asset_over_time (item_id) where is_current;
+create unique index character_asset_version_current_item_idx on public.character_asset_version (item_id) where is_current;
 -- Time-travel lookups walking an item's version history.
-create index character_asset_over_time_item_id_idx on public.character_asset_over_time (item_id, valid_until desc);
+create index character_asset_version_item_id_idx on public.character_asset_version (item_id, valid_until desc);
 -- "What is at this location": the root-item query behind /asset/[locationId]
 -- and the recursive descend in character_asset_location_contents(). Partial to
 -- match the character_asset view those go through — history rows are never
 -- location-filtered, so indexing them would only slow the extract's writes.
-create index character_asset_over_time_current_location_idx on public.character_asset_over_time (location_id) where is_current;
+create index character_asset_version_current_location_idx on public.character_asset_version (location_id) where is_current;
 
-alter table public.character_asset_over_time enable row level security;
+alter table public.character_asset_version enable row level security;
 create policy "Users read own assets"
-  on public.character_asset_over_time
+  on public.character_asset_version
   for select
   to authenticated
   using (
@@ -767,14 +773,64 @@ create policy "Users read own assets"
     )
   );
 
--- Live snapshot of assets. security_invoker keeps the underlying RLS in force
--- for the querying (authenticated) role rather than running as the view owner.
+grant select on public.character_asset_version to authenticated;
+grant all    on public.character_asset_version to service_role;
+
+-- ── the place ─────────────────────────────────────────────────────────────
+create table public.character_asset_location (
+  asset_id bigint primary key references public.character_asset_version (id) on delete cascade,
+  -- Denormalized from the version row, so the owner policy is one indexed
+  -- probe rather than a join back to the asset table.
+  registration_id uuid not null references public.registration (id) on delete cascade,
+  location_id bigint not null,
+  location_flag text,
+  location_type text
+);
+create index character_asset_location_location_id_idx on public.character_asset_location (location_id);
+create index character_asset_location_registration_id_idx on public.character_asset_location (registration_id);
+
+alter table public.character_asset_location enable row level security;
+create policy "Users read own asset locations"
+  on public.character_asset_location
+  for select
+  to authenticated
+  using (
+    registration_id in (
+      select id from public.registration where user_id = (select auth.uid())
+    )
+  );
+
+-- anon holds the grant but no policy, so it reads no rows: the views join
+-- this table, and a view that anon may read must not fail on it.
+revoke all on public.character_asset_location from anon, authenticated;
+grant select on public.character_asset_location to anon, authenticated;
+grant all on public.character_asset_location to service_role;
+
+-- ── the views ─────────────────────────────────────────────────────────────
+-- UNION ALL rather than one left join with coalesce(): a filter on
+-- location_id (children of a ship, the items at a station) then reaches an
+-- index in each branch — the version table's partial location index in the
+-- first, the location table's in the second. coalesce() would hide the column
+-- from both and scan.
+create view public.character_asset_over_time with (security_invoker = on) as
+  select v.id, v.item_id, v.registration_id, v.type_id,
+         v.location_id, v.location_flag, v.location_type,
+         v.quantity, v.is_singleton, v.is_blueprint_copy, v.is_current, v.valid_from, v.valid_until, v.name
+  from public.character_asset_version v
+  where v.location_id is not null
+  union all
+  select v.id, v.item_id, v.registration_id, v.type_id,
+         l.location_id, l.location_flag, l.location_type,
+         v.quantity, v.is_singleton, v.is_blueprint_copy, v.is_current, v.valid_from, v.valid_until, v.name
+  from public.character_asset_version v
+  left join public.character_asset_location l on l.asset_id = v.id
+  where v.location_id is null;
+
 create view public.character_asset with (security_invoker = on) as
   select * from public.character_asset_over_time where is_current;
 
-grant select on public.character_asset_over_time to authenticated;
-grant select on public.character_asset           to authenticated;
-grant all    on public.character_asset_over_time to service_role;
+grant select on public.character_asset_over_time to anon, authenticated, service_role;
+grant select on public.character_asset           to anon, authenticated, service_role;
 
 -- ── character asset claim ──────────────────────────────────────────────
 -- One open row per item_id across the whole table (the partial unique index
@@ -799,6 +855,7 @@ set search_path to 'public'
 as $$
 declare
   v_items    bigint[];
+  v_ids      bigint[];
   v_inserted integer;
 begin
   if p_rows is null or jsonb_array_length(p_rows) = 0 then
@@ -811,28 +868,52 @@ begin
 
   perform pg_advisory_xact_lock(hashtext('public.character_asset_over_time')::bigint);
 
-  update public.character_asset_over_time
+  update public.character_asset_version
      set is_current = false
    where is_current
      and item_id = any (v_items);
 
-  insert into public.character_asset_over_time
-    (item_id, registration_id, type_id, location_id, location_flag, location_type,
-     quantity, is_singleton, is_blueprint_copy, valid_until, name)
-  select (r->>'item_id')::bigint,
-         (r->>'registration_id')::uuid,
-         (r->>'type_id')::bigint,
-         (r->>'location_id')::bigint,
-         r->>'location_flag',
-         r->>'location_type',
-         (r->>'quantity')::bigint,
-         (r->>'is_singleton')::boolean,
-         coalesce((r->>'is_blueprint_copy')::boolean, false),
-         coalesce((r->>'valid_until')::timestamptz, now()),
-         r->>'name'
-    from jsonb_array_elements(p_rows) r;
+  with inserted as (
+    insert into public.character_asset_version
+      (item_id, registration_id, type_id, location_id, location_flag, location_type,
+       quantity, is_singleton, is_blueprint_copy, valid_until, name)
+    select (r->>'item_id')::bigint,
+           (r->>'registration_id')::uuid,
+           (r->>'type_id')::bigint,
+           (r->>'location_id')::bigint,
+           r->>'location_flag',
+           r->>'location_type',
+           (r->>'quantity')::bigint,
+           (r->>'is_singleton')::boolean,
+           coalesce((r->>'is_blueprint_copy')::boolean, false),
+           coalesce((r->>'valid_until')::timestamptz, now()),
+           r->>'name'
+      from jsonb_array_elements(p_rows) r
+    returning id
+  )
+  select array_agg(id) into v_ids from inserted;
+  v_inserted := coalesce(array_length(v_ids, 1), 0);
 
-  get diagnostics v_inserted = row_count;
+  -- Move each new root item's place into the owner-only table.
+  insert into public.character_asset_location (asset_id, registration_id, location_id, location_flag, location_type)
+  select v.id, v.registration_id, v.location_id, v.location_flag, v.location_type
+    from public.character_asset_version v
+   where v.id = any (v_ids)
+     and v.location_id is not null
+     and not exists (
+       select 1
+         from public.character_asset_version p
+        where p.is_current
+          and p.item_id = v.location_id
+          and p.registration_id = v.registration_id
+     );
+
+  update public.character_asset_version v
+     set location_id = null, location_flag = null, location_type = null
+    from public.character_asset_location l
+   where l.asset_id = v.id
+     and v.id = any (v_ids);
+
   return v_inserted;
 end
 $$;
@@ -930,7 +1011,7 @@ as $$
     union all
     select d.root_child, c.item_id, d.depth + 1
     from descend d
-    join public.character_asset c on c.location_id = d.node
+    join public.character_asset_version c on c.location_id = d.node and c.is_current
     where d.depth < 64
   )
   select root_child as item_id, count(*) - 1 as contents
@@ -960,7 +1041,7 @@ as $$
     union all
     select c.item_id, c.type_id, c.quantity, c.is_singleton, d.depth + 1
     from descend d
-    join public.character_asset c on c.location_id = d.item_id
+    join public.character_asset_version c on c.location_id = d.item_id and c.is_current
     where d.depth < 64
   )
   select
@@ -988,7 +1069,7 @@ as $$
     union all
     select c.item_id, c.type_id, c.quantity, c.is_singleton, d.depth + 1
     from descend d
-    join public.character_asset c on c.location_id = d.item_id
+    join public.character_asset_version c on c.location_id = d.item_id and c.is_current
     where d.depth < 64
   ),
   once as (
@@ -1062,7 +1143,7 @@ as $$
     union all
     select d.ancestor, c.item_id, d.depth + 1
     from descend d
-    join public.character_asset c on c.location_id = d.node
+    join public.character_asset_version c on c.location_id = d.node and c.is_current
     where d.depth < 64
   ),
   contents as (
@@ -1092,7 +1173,7 @@ as $$
   left join contents ct on ct.ancestor = m.item_id
   left join public.sde_published_type t on t.type_id = m.type_id
   left join public.sde_station st on st.station_id = r.root_location_id
-  left join public.character_asset p on p.item_id = m.location_id;
+  left join public.character_asset_version p on p.item_id = m.location_id and p.is_current;
 $$;
 
 grant execute on function public.character_asset_location_summary()        to authenticated;
@@ -1154,7 +1235,7 @@ as $$
     union all
     select c.item_id, i.depth + 1
     from inside i
-    join public.character_asset c on c.location_id = i.item_id
+    join public.character_asset_version c on c.location_id = i.item_id and c.is_current
     where i.depth < 64
   ),
   parent_of as (
@@ -1191,7 +1272,7 @@ as $$
     union all
     select d.ancestor, c.item_id, d.depth + 1
     from descend d
-    join public.character_asset c on c.location_id = d.node
+    join public.character_asset_version c on c.location_id = d.node and c.is_current
     where d.depth < 64
   ),
   contents as (
@@ -1221,7 +1302,7 @@ as $$
   left join contents ct on ct.ancestor = m.item_id
   left join public.sde_published_type t on t.type_id = m.type_id
   left join public.sde_station st on st.station_id = r.root_location_id
-  left join public.character_asset p on p.item_id = m.location_id;
+  left join public.character_asset_version p on p.item_id = m.location_id and p.is_current;
 $$;
 
 grant execute on function public.character_asset_filter(bigint[], bigint[], uuid[])   to authenticated;
@@ -3024,6 +3105,12 @@ create table public.character_asset_share (
   alliance_ids bigint[] not null default '{}',
   secret text,
   created_at timestamptz not null default now(),
+  -- Show the grantor account's main character as the owner, not the
+  -- character holding the item (an alt that sits in the ship). Presentation
+  -- only: the pages, the share card and the owner line read it. The asset
+  -- rows still carry the holder's registration_id, which character_directory
+  -- resolves, so a recipient reading the data API can still find the holder.
+  show_as_main boolean not null default false,
   unique (registration_id, item_id)
 );
 create index character_asset_share_item_id_idx on public.character_asset_share (item_id);
@@ -3148,7 +3235,7 @@ as $$
       from walk w
       cross join lateral (
         select o.location_id
-        from character_asset_over_time o
+        from character_asset_version o
         where o.item_id = w.node
         order by o.is_current desc, o.valid_until desc
         limit 1
@@ -3172,15 +3259,14 @@ grant execute on function public.asset_share_covers(bigint, uuid) to anon, authe
 -- Permissive, so it ORs with "Users read own assets". `to anon` so a
 -- fully-public share is readable signed-out.
 create policy "Audience reads shared assets"
-  on public.character_asset_over_time
+  on public.character_asset_version
   for select
   to anon, authenticated
   using (is_current and public.asset_share_covers(item_id, registration_id));
 
 -- anon had no select on the asset table/view before; RLS still scopes anon to
 -- rows a public share covers (the owner policy never matches a null uid).
-grant select on public.character_asset_over_time to anon;
-grant select on public.character_asset           to anon;
+grant select on public.character_asset_version   to anon;
 
 -- ── link ───────────────────────────────────────────────────────────────────
 -- Sharing layer Revision 3, phase 7 (docs/sharing-layer/07-link.md). A Link is
@@ -4805,18 +4891,23 @@ as $$
   -- character+corp asset rows and then filters down to one, leaving the
   -- item_id index unused. Inlined, the base term is an index seek.
   with recursive parent_of as not materialized (
-    select item_id, type_id, name, location_id, location_type
-    from public.character_asset
+    -- The version table itself, not the character_asset view: the view is a
+    -- UNION ALL with a join inside, which the planner cannot seek into per
+    -- step. The walk climbs parent links only; a character item's place is
+    -- looked up once, for the root, in the select below.
+    select v.id as version_id, v.item_id, v.type_id, v.name, v.location_id, v.location_type
+    from public.character_asset_version v
+    where v.is_current
     union all
-    select item_id, type_id, null::text as name, location_id, location_type
+    select null::bigint as version_id, item_id, type_id, null::text as name, location_id, location_type
     from public.corp_asset
   ),
   walk as (
-    select p.item_id, p.type_id, p.name, p.location_id, p.location_type, 1 as depth
+    select p.version_id, p.item_id, p.type_id, p.name, p.location_id, p.location_type, 1 as depth
     from parent_of p
     where p.item_id = start_id
     union all
-    select p.item_id, p.type_id, p.name, p.location_id, p.location_type, w.depth + 1
+    select p.version_id, p.item_id, p.type_id, p.name, p.location_id, p.location_type, w.depth + 1
     from walk w
     join parent_of p on p.item_id = w.location_id
     where w.depth < 16
@@ -4830,8 +4921,11 @@ as $$
     w.item_id,
     w.type_id,
     w.name,
-    w.location_id,
-    w.location_type,
+    -- The root's place, from the owner-only location table: RLS answers null
+    -- to a share recipient, so their walk ends at the shared item with no
+    -- place. Corp rows (version_id null) keep their own location columns.
+    coalesce(w.location_id, (select l.location_id from public.character_asset_location l where l.asset_id = w.version_id)) as location_id,
+    coalesce(w.location_type, (select l.location_type from public.character_asset_location l where l.asset_id = w.version_id)) as location_type,
     w.depth,
     (select t.name from public.sde_published_type t where t.type_id = w.type_id) as type_name
   from walk w
