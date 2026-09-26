@@ -84,6 +84,22 @@ alter index if exists public.character_asset_over_time_current_item_idx rename t
 alter index if exists public.character_asset_over_time_item_id_idx rename to character_asset_version_item_id_idx;
 alter index if exists public.character_asset_over_time_current_location_idx rename to character_asset_version_current_location_idx;
 
+-- ── the safety net ────────────────────────────────────────────────────────
+-- Nothing below deletes a value: a place is copied to the new table first
+-- and nulled on the version row second, in this one transaction. This
+-- fingerprint of every row's location data, taken before anything moves and
+-- compared through the new views after, turns that claim into a check: if
+-- the views do not reproduce the table byte for byte, the migration raises
+-- and the transaction rolls back with the table untouched. A sum of per-row
+-- hashes rather than an ordered string_agg, so it costs no memory at scale.
+create temp table asset_location_split_before as
+  select count(*) as rows,
+         count(location_id) as placed,
+         sum(hashtextextended(
+           id::text || ':' || coalesce(location_id::text, '') || ':' || coalesce(location_flag, '') || ':' || coalesce(location_type, ''),
+           0))::numeric as fingerprint
+  from public.character_asset_version;
+
 -- ── the place ─────────────────────────────────────────────────────────────
 create table public.character_asset_location (
   asset_id bigint primary key references public.character_asset_version (id) on delete cascade,
@@ -158,6 +174,37 @@ create view public.character_asset with (security_invoker = on) as
 
 grant select on public.character_asset_over_time to anon, authenticated, service_role;
 grant select on public.character_asset           to anon, authenticated, service_role;
+
+-- The check. Run as the migration's role (the table owner, exempt from RLS),
+-- so the view answers every row, as it will for the service role.
+do $$
+declare
+  before record;
+  after  record;
+begin
+  select * into before from asset_location_split_before;
+  select count(*) as rows,
+         count(location_id) as placed,
+         sum(hashtextextended(
+           id::text || ':' || coalesce(location_id::text, '') || ':' || coalesce(location_flag, '') || ':' || coalesce(location_type, ''),
+           0))::numeric as fingerprint
+    into after
+  from public.character_asset_over_time;
+
+  if before.rows <> after.rows
+     or before.placed <> after.placed
+     or before.fingerprint is distinct from after.fingerprint then
+    raise exception 'asset location split: the views do not reproduce the table (rows % -> %, placed % -> %, fingerprint % -> %). Rolling back.',
+      before.rows, after.rows, before.placed, after.placed, before.fingerprint, after.fingerprint;
+  end if;
+
+  -- And the physical split is total: no version row still carries a place,
+  -- and no place row is orphaned from its version.
+  if exists (select 1 from public.character_asset_version v join public.character_asset_location l on l.asset_id = v.id where v.location_id is not null) then
+    raise exception 'asset location split: a version row kept its place after the move. Rolling back.';
+  end if;
+end $$;
+drop table asset_location_split_before;
 
 -- ── writes ────────────────────────────────────────────────────────────────
 -- The claim now writes the version row and, for a root item, its place. A

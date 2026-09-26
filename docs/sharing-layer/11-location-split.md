@@ -107,6 +107,56 @@ under RLS. The two slow rows were already seq scans before the split: the
 audience policy's `OR` defeats the registration index. `/asset` reads the
 summary cache, not the live function.
 
+### Safety: no value is deleted, and the migration proves it
+
+The only destructive-looking statement is the `update` that nulls a version
+row's place — and it runs after the `insert` that copied that place, in the
+same transaction (`supabase db push` applies each file in one). So a place
+is moved, never dropped. The migration then checks that claim rather than
+trusting it: before anything moves it takes a fingerprint of every row's
+location data (row count, placed count, and a sum of per-row hashes, so it
+costs no memory at scale); after the views exist it takes the same
+fingerprint through `character_asset_over_time`, and raises if any of the
+three differ. A raise rolls the whole file back with the table untouched. It
+also raises if any version row still carries a place after the move.
+
+**Rollback.** `docs/sharing-layer/rollback-location-split.sql` (not a
+migration; run by hand, `psql --single-transaction`) moves every place back
+onto its version row — including versions the new claim wrote after the
+split — checks the same fingerprint, drops the views and the place table,
+renames the table back, recreates the plain `character_asset` view and
+restores the eight functions to their pre-split bodies. Proven by
+`test/sql/asset_location_split_rollback.sql` (old shape → migration →
+rollback: every row identical, `except` both ways empty) and by a round trip
+on 4,006 synthetic rows where a full `pg_dump` of the table was
+byte-identical afterwards. The one thing it leaves is the
+`character_asset_share.show_as_main` column, which the old code never reads.
+
+**Before merging**, take your own copy of the two tables the migration
+touches; it is the fastest way back if anything else goes wrong:
+
+```
+pg_dump "$DATABASE_URL" --data-only -t public.character_asset_over_time -t public.character_asset_share \
+  | gzip > asset-tables-before-split.sql.gz
+```
+
+And confirm the one assumption on real data (must print 0):
+
+```sql
+select count(*) from public.character_asset_over_time where item_id between 30000000 and 64999999;
+```
+
+**After the Migrate workflow runs**, these should hold:
+
+```sql
+-- every version row has either a parent link or a place row, never both
+select count(*) from public.character_asset_version v
+  join public.character_asset_location l on l.asset_id = v.id where v.location_id is not null;   -- 0
+-- the owner-only table holds one row per root version
+select count(*) from public.character_asset_location;                                             -- > 0
+-- anon reads no place (run as the anon key through PostgREST: GET /rest/v1/character_asset_location → [])
+```
+
 ### Known gaps
 
 - A recipient's `/asset/search` and MCP `list_assets` do not list a shared
