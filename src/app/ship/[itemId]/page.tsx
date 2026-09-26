@@ -162,7 +162,7 @@ const ShipPage = async ({ params, searchParams }: ShipPageProps) => {
       // The full container chain up to its station / structure / system,
       // rendered as the breadcrumb above the heading.
       fetchAssetPath(itemId, supabase),
-      fetchShipOwner(supabase, characterSelf, corpSelf),
+      fetchShipOwner(supabase, characterSelf, corpSelf, itemId),
       // The share dialog appears only for a character item the caller actually
       // owns — RLS visibility alone can also mean "shared with me", which must
       // not offer the dialog.

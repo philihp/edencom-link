@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 
+import { mainOwnerOf } from './mainOwner'
 import { characterPortrait, corporationLogo, type ShipOwner } from './shipHeading'
 
 // Who a hull belongs to, resolved the same way for every page that draws one:
@@ -15,10 +16,29 @@ export type OwnedRow = { registration_id?: string; corporation_id?: number | str
 // cached name and logo. `character_id` here is the EVE numeric id (what the
 // image server serves portraits for), not the registration uuid its sibling
 // asset columns misname.
+// A share recipient (the caller cannot read the holder's registration) sees
+// the account's main instead when a share covering the ship, or anything
+// holding it, asks for that. The share rows come through the recipient's own
+// RLS, which returns only shares aimed at them; `itemId` is the ship, to find
+// them by. The owner viewing their own ship always sees the true holder.
+const sharedAsMain = async (supabase: SupabaseClient, registrationId: string, itemId: string): Promise<boolean> => {
+  const { data: chain } = await supabase.rpc('asset_ancestors', { start_id: itemId })
+  const itemIds = [itemId, ...((chain ?? []) as Array<{ item_id: number | string }>).map((row) => String(row.item_id))]
+  const { data: shares } = await supabase
+    .from('character_asset_share')
+    .select('id')
+    .eq('registration_id', registrationId)
+    .eq('show_as_main', true)
+    .in('item_id', itemIds)
+    .limit(1)
+  return (shares ?? []).length > 0
+}
+
 export const fetchShipOwner = async (
   supabase: SupabaseClient,
   characterSelf: OwnedRow | null,
-  corpSelf: OwnedRow | null
+  corpSelf: OwnedRow | null,
+  itemId?: string
 ): Promise<ShipOwner> => {
   if (!characterSelf?.registration_id) {
     const corporationId = Number(corpSelf?.corporation_id)
@@ -45,6 +65,10 @@ export const fetchShipOwner = async (
       .eq('registration_id', characterSelf.registration_id)
       .maybeSingle<{ name: string | null; character_id: number | string | null }>(),
   ])
+  if (!registration && itemId && (await sharedAsMain(supabase, characterSelf.registration_id, itemId))) {
+    const main = await mainOwnerOf(characterSelf.registration_id)
+    if (main) return main
+  }
   const eveCharacterId = registration?.character_id ?? directory?.character_id ?? null
   return {
     name: registration?.name ?? directory?.name ?? 'Unknown character',
