@@ -147,13 +147,20 @@ export const compactIsk = (value: number): string => {
   return `${Number(scaled.toFixed(digits))}${unit} ISK`
 }
 
+// What the card says about when the ship was last seen, when that needs
+// saying: a ship no longer in the hangar, or one not seen for over a day
+// (lastSeen.ts). Null while the ship is in the hangar and recently seen —
+// the usual case, which the card should not clutter.
+export type CardSighting = { text: string; overdue: boolean }
+
 // The line under the title in a chat embed.
 export const cardDescription = (
   typeName: string,
   groupName: string | null,
   ownerName: string,
   rows: CardRow[],
-  value: CardValue
+  value: CardValue,
+  sighting: CardSighting | null = null
 ): string =>
   [
     `${groupName ? `${typeName} (${groupName})` : typeName}, owned by ${ownerName}.`,
@@ -161,6 +168,7 @@ export const cardDescription = (
       ? `${rows.map((row) => `${row.label} ${row.icons.reduce((n, icon) => n + icon.count, 0)}`).join(' · ')}.`
       : null,
     value.sell == null ? null : `Estimated value ${compactIsk(value.sell)}.`,
+    sighting == null ? null : `${sighting.text.charAt(0).toUpperCase()}${sighting.text.slice(1)}.`,
   ]
     .filter((part) => part != null)
     .join(' ')

@@ -120,3 +120,17 @@ test('cardDescription names the hull, the owner, the slots and the value', () =>
 test('cardDescription leaves out a value it does not have', () => {
   assert.equal(cardDescription('Rifter', null, 'Corp', [], { sell: null, unpriced: 1 }), 'Rifter, owned by Corp.')
 })
+
+test('cardDescription ends with the sighting when the ship has to say when it was last seen', () => {
+  assert.equal(
+    cardDescription(
+      'Rifter',
+      null,
+      'Corp',
+      [],
+      { sell: null, unpriced: 1 },
+      { text: 'last seen 3 days ago, not in this hangar now', overdue: true }
+    ),
+    'Rifter, owned by Corp. Last seen 3 days ago, not in this hangar now.'
+  )
+})

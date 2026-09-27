@@ -758,9 +758,13 @@ create unique index character_asset_version_current_item_idx on public.character
 create index character_asset_version_item_id_idx on public.character_asset_version (item_id, valid_until desc);
 -- "What is at this location": the root-item query behind /asset/[locationId]
 -- and the recursive descend in character_asset_location_contents(). Partial to
--- match the character_asset view those go through — history rows are never
--- location-filtered, so indexing them would only slow the extract's writes.
+-- match the character_asset view those go through.
 create index character_asset_version_current_location_idx on public.character_asset_version (location_id) where is_current;
+-- The one location-filtered query over history: what a vanished ship held
+-- when it was last seen (the share page's last-known state, lastSeen.ts).
+-- Partial on the closed rows, so an insert (always current) and a touch never
+-- write it; only closing a row does.
+create index character_asset_version_history_location_idx on public.character_asset_version (location_id, valid_until desc) where not is_current;
 
 alter table public.character_asset_version enable row level security;
 create policy "Users read own assets"
