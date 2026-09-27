@@ -4,6 +4,7 @@ import { getSdeType, type SdeType } from '@/sdeTypes'
 import { createServiceClient } from '@/utils/supabase/service'
 
 import { resolveShareParams } from '../../asset/access'
+import { mainOwnerOf } from './mainOwner'
 import { characterPortrait, corporationLogo, type ShipOwner } from './shipHeading'
 import { SHIP_CATEGORY_ID, type ChildRow } from './shipRows'
 
@@ -81,16 +82,20 @@ const loadSharedShip = async (itemId: string, share?: string, token?: string): P
     // The share scope carries the sharer's name but not their EVE id, which is
     // what the portrait is keyed on — one lookup on the registration the scope
     // already vouched for.
-    const { data: registration } = await supabase
-      .from('registration')
-      .select('character_id')
-      .eq('id', characterSelf.registration_id)
-      .maybeSingle<{ character_id: number | string | null }>()
+    const [{ data: registration }, main] = await Promise.all([
+      supabase
+        .from('registration')
+        .select('character_id')
+        .eq('id', characterSelf.registration_id)
+        .maybeSingle<{ character_id: number | string | null }>(),
+      // The share may ask to show the account's main rather than the holder.
+      scope.showAsMain ? mainOwnerOf(characterSelf.registration_id) : Promise.resolve(null),
+    ])
     return {
       self,
       selfType,
       children,
-      owner: {
+      owner: main ?? {
         name: scope.characterNames.get(characterSelf.registration_id) ?? 'Unknown character',
         portrait: registration?.character_id == null ? null : characterPortrait(registration.character_id),
       },

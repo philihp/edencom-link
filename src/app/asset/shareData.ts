@@ -19,6 +19,8 @@ export type ShareState = {
   // `<shareId>.<signature>` and still resolve; src/shareToken.ts).
   shareParam: string | null
   isPublic: boolean
+  // Asset shares only: show the account's main character as the owner.
+  showAsMain?: boolean
 }
 
 export type ShareDialogData = {
@@ -26,6 +28,9 @@ export type ShareDialogData = {
   corporations: ShareAudienceOption[]
   alliances: ShareAudienceOption[]
   hasLegacyToken: boolean
+  // The account's main character, when the item is held by another character
+  // of the account: the dialog then offers to show the main as the owner.
+  mainName?: string | null
 }
 
 export type OwnRegistration = { id: string; corporation_id: number | string | null }
@@ -88,6 +93,7 @@ export type ShareRowLike = {
   corporation_ids: number[] | null
   alliance_ids: number[] | null
   secret: string | null
+  show_as_main?: boolean | null
 }
 
 // A share row → the dialog's view of it, with the signed ?share= param when a
@@ -111,6 +117,7 @@ export const shareRowToState = (row: ShareRowLike | null): ShareState | null => 
     hasLink: row.secret != null,
     shareParam,
     isPublic: row.secret == null && corporationIds.length === 0 && allianceIds.length === 0,
+    showAsMain: row.show_as_main === true,
   }
 }
 
@@ -129,16 +136,18 @@ export const fetchShareDialogData = async (
       .select('item_id, registration_id')
       .eq('item_id', itemId)
       .maybeSingle<{ item_id: number | string; registration_id: string }>(),
-    supabase.from('registration').select('id, corporation_id'),
+    supabase.from('registration').select('id, corporation_id, name, is_main'),
   ])
-  const own = (regs ?? []) as OwnRegistration[]
+  const own = (regs ?? []) as Array<OwnRegistration & { name: string; is_main: boolean }>
   if (!item || !own.some((r) => r.id === item.registration_id)) return null
+  const main = own.find((r) => r.is_main)
+  const mainName = main && main.id !== item.registration_id ? main.name : null
 
   const { corporations, alliances } = await fetchShareAudiences(supabase, own)
 
   const { data: shareRow } = await supabase
     .from('character_asset_share')
-    .select('id, corporation_ids, alliance_ids, secret')
+    .select('id, corporation_ids, alliance_ids, secret, show_as_main')
     .eq('registration_id', item.registration_id)
     .eq('item_id', itemId)
     .maybeSingle<ShareRowLike>()
@@ -149,5 +158,5 @@ export const fetchShareDialogData = async (
     .eq('item_id', itemId)
     .maybeSingle<{ token: string }>()
 
-  return { share: shareRowToState(shareRow), corporations, alliances, hasLegacyToken: legacy != null }
+  return { share: shareRowToState(shareRow), corporations, alliances, hasLegacyToken: legacy != null, mainName }
 }

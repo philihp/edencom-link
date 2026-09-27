@@ -7,7 +7,7 @@ import { claimRows, cli, fetchAllPages, forEachCharacter, forEachSequential, ref
 const TAG = 'character-assets'
 const SCOPE = 'esi-assets.read_assets.v1'
 
-// GET /characters/{id}/assets/ → character_asset_over_time (SCD type 2), plus
+// GET /characters/{id}/assets/ → character_asset_version (SCD type 2), plus
 // POST /characters/{id}/assets/names/ for the player-assigned names of singleton
 // items fetched in the same pull.
 
@@ -50,7 +50,7 @@ const fetchNames = async (access_token, characterID, fetched) => {
 // PostgREST caps a single select; page through every open row so a large
 // hangar doesn't silently truncate the "current" set. Reading a truncated set
 // makes the un-read items look new, so they'd be re-inserted and collide with
-// their existing current row on character_asset_over_time_current_item_idx.
+// their existing current row on character_asset_version_current_item_idx.
 // Each page is folded into a compact item_id → { id, sig } map as it arrives
 // and then discarded — the classify step only ever compares signatures, so
 // holding every current row's full 10 columns just multiplied peak memory.
@@ -135,7 +135,7 @@ const reconcile = async (registration_id, fetched, names) => {
 
   await forEachSequential(splitEvery(200, touchIds), async (ids) => {
     const { error: touchErr } = await sudoSupabase
-      .from('character_asset_over_time')
+      .from('character_asset_version')
       .update({ valid_until: now })
       .in('id', ids)
     if (touchErr) throw touchErr
@@ -144,7 +144,7 @@ const reconcile = async (registration_id, fetched, names) => {
   // the open row of any *other* owner whose item we are taking over.
   await forEachSequential(splitEvery(200, allCloseIds), async (ids) => {
     const { error: closeErr } = await sudoSupabase
-      .from('character_asset_over_time')
+      .from('character_asset_version')
       .update({ is_current: false })
       .in('id', ids)
     if (closeErr) throw closeErr

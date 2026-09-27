@@ -75,8 +75,10 @@ const fetchLocationRows = async ({ table, columns, orderBy, current }, from = 0,
 // The item ids of everything our characters own. A location in the structure id
 // range that's also one of these is a ship or container, not a structure.
 const fetchOwnedItemIds = async (from = 0, acc = []) => {
+  // The version table, not the character_asset_over_time view: only item ids
+  // are wanted, and the view's place join is dead weight for them.
   const { data: rows, error } = await sudoSupabase
-    .from('character_asset_over_time')
+    .from('character_asset_version')
     .select('item_id')
     .eq('is_current', true)
     .order('id', { ascending: true })

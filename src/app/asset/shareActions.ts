@@ -19,6 +19,8 @@ export type SaveShareInput = {
   // Mint a fresh secret even if one exists — every previously issued URL dies.
   rotateLink: boolean
   isPublic: boolean
+  // Show the account's main character as the owner (asset shares only).
+  showAsMain?: boolean
 }
 
 export type SaveShareResult = { error?: string; share?: ShareState }
@@ -106,6 +108,7 @@ export const saveAssetShare = async (itemId: string, input: SaveShareInput): Pro
         corporation_ids: corporationIds,
         alliance_ids: allianceIds,
         secret,
+        show_as_main: input.showAsMain === true,
       },
       { onConflict: 'registration_id,item_id' }
     )
@@ -127,6 +130,7 @@ export const saveAssetShare = async (itemId: string, input: SaveShareInput): Pro
       hasLink: secret != null,
       shareParam: secret != null && salt != null ? signShare(saved.id, secret, salt) : null,
       isPublic: secret == null && corporationIds.length === 0 && allianceIds.length === 0,
+      showAsMain: input.showAsMain === true,
     },
   }
 }
