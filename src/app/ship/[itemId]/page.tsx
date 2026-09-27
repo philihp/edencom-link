@@ -239,7 +239,8 @@ const ContentsFallback = () => (
 )
 
 // Anonymous share-link view: the viewer, the ship's identity and its contents,
-// with no breadcrumb and no location. All queries run on the service client,
+// with no breadcrumb and no location. A ship the sharer no longer holds is
+// drawn as it was last seen, with the sighting line saying how long ago. All queries run on the service client,
 // explicitly filtered to the sharer's characters/corps. Accepts both link
 // generations — the signed ?share= param (recursive over the shared subtree)
 // and the legacy ?token= (exact id).
@@ -252,7 +253,7 @@ const SharedShipPage = async ({
 }) => {
   const ship = await sharedShip(itemId, shareParams.share, shareParams.token)
   if (!ship) notFound()
-  const { self, selfType, children, owner, ownerId, ownerKind } = ship
+  const { self, selfType, children, owner, ownerId, ownerKind, sighting } = ship
 
   const typeName = selfType?.name ?? `#${self.type_id}`
   const rows = fitRows(children)
@@ -268,6 +269,9 @@ const SharedShipPage = async ({
         owner={owner}
         // A share link says what the ship is, never where it is.
         location={null}
+        // ...but does say when: a link outlives the hull, and what the page
+        // shows may be its last state.
+        sighting={sighting}
       />
       {/* No `pilot`: all-V, deliberately. This path holds a service-role
           client, so it *could* read the sharer's skill sheet — a share covers

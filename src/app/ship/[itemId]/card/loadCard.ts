@@ -9,12 +9,14 @@ import { sdeSupabase } from '@/utils/supabase/sde'
 import { toAppraisalLines, type AppraisalLine } from '../../../api/appraisal/assetLines'
 import { applyHullPrices, fromAppraisal, type PricedLine } from '../../../api/appraisal/pricedLines'
 import { readShipAppraisal, writeShipAppraisal } from '../../../api/appraisal/shipAppraisal'
+import { isOverdue, type Sighting, sightingText } from '../lastSeen'
 import type { ShipOwner } from '../shipHeading'
 import { sharedShip } from '../sharedShip'
 import {
   type CardChild,
   cardDescription,
   cardRows,
+  type CardSighting,
   cardValue,
   type CardRow,
   type CardValue,
@@ -46,7 +48,18 @@ export type ShipCard = {
   owner: ShipOwner
   rows: CardRow[]
   value: CardValue
+  // Set when the card has to say when the ship was last seen (cardModel).
+  sighting: CardSighting | null
   description: string
+}
+
+// A chat client caches the card it fetched, so a sighting it draws is as of
+// that fetch; the page underneath is live. Worth saying only when the ship
+// is gone from the hangar or the extract has not seen it for a day.
+const cardSighting = (sighting: Sighting): CardSighting | null => {
+  const overdue = isOverdue(sighting)
+  if (sighting.inHangar && !overdue) return null
+  return { text: `${sightingText(sighting)}${sighting.inHangar ? '' : ', not in this hangar now'}`, overdue }
 }
 
 // Our own hourly Jita capture, per appraisal line. Only the last resort: the
@@ -152,6 +165,7 @@ export const loadShipCard = cache(
     const groupName = ship.selfType?.groupName ?? null
     const rows = cardRows(children, types)
     const value = cardValue(priced)
+    const sighting = cardSighting(ship.sighting)
     return {
       hullTypeId,
       title: ship.self.name && ship.self.name !== typeName ? ship.self.name : typeName,
@@ -161,7 +175,8 @@ export const loadShipCard = cache(
       owner: ship.owner,
       rows,
       value,
-      description: cardDescription(typeName, groupName, ship.owner.name, rows, value),
+      sighting,
+      description: cardDescription(typeName, groupName, ship.owner.name, rows, value, sighting),
     }
   }
 )

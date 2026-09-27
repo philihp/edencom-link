@@ -10,6 +10,9 @@ const PANEL = '#10141c'
 const MUTED = '#8b93a3'
 const TEXT = '#e8ebf1'
 const GOLD = '#f2c14e'
+// The alert colour for a ship not seen in over a day: the app's dark-theme
+// --danger, since Satori reads no stylesheet.
+const DANGER = '#f0555c'
 
 const ICON_SIZE = 52
 
@@ -132,6 +135,21 @@ export const Card = ({ card, images }: { card: ShipCard; images: Images }) => (
         <div style={{ display: 'flex', fontSize: 24, color: MUTED, marginTop: 6, marginBottom: 22 }}>
           {card.groupName ? `${card.typeName} · ${card.groupName}` : card.typeName}
         </div>
+        {/* When the ship was last seen, only when that needs saying: the fit
+            below is then its last known state, not what is in the hangar. */}
+        {card.sighting ? (
+          <div
+            style={{
+              display: 'flex',
+              fontSize: 20,
+              color: card.sighting.overdue ? DANGER : MUTED,
+              marginTop: -12,
+              marginBottom: 22,
+            }}
+          >
+            {card.sighting.text}
+          </div>
+        ) : null}
         <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
           {card.rows.map((row) => (
             <Row key={row.label} row={row} icons={images.icons} />

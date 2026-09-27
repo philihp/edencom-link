@@ -4,6 +4,7 @@ import { getSdeType, type SdeType } from '@/sdeTypes'
 import { createServiceClient } from '@/utils/supabase/service'
 
 import { resolveShareParams } from '../../asset/access'
+import { latestPerItem, sightingOf, type Sighting } from './lastSeen'
 import { mainOwnerOf } from './mainOwner'
 import { characterPortrait, corporationLogo, type ShipOwner } from './shipHeading'
 import { SHIP_CATEGORY_ID, type ChildRow } from './shipRows'
@@ -16,6 +17,12 @@ import { SHIP_CATEGORY_ID, type ChildRow } from './shipRows'
 // The service-role client bypasses RLS, so every query below is filtered to
 // the sharer's characters/corps from the resolved share scope. Location is
 // never read: a share link says what the ship is, never where it is.
+//
+// A link outlives the ship: once the hull leaves the sharer's hangar (sold,
+// moved, or the extract stopped seeing it), the newest version row is closed,
+// and the page shows that version and what was aboard at the last extract
+// that saw it (lastSeen.ts). Only a character's ship has that history here;
+// a corp ship on a legacy token link still goes dead with its row.
 
 export type ShipRow = {
   item_id: number | string
@@ -25,6 +32,8 @@ export type ShipRow = {
   corporation_id?: number | string
 }
 
+type ShipVersionRow = ShipRow & { is_current: boolean; valid_until: string }
+
 export type SharedShip = {
   self: ShipRow
   selfType: SdeType | undefined
@@ -32,9 +41,38 @@ export type SharedShip = {
   owner: ShipOwner
   ownerId: string
   ownerKind: 'character' | 'corporation'
+  sighting: Sighting
 }
 
 export type ShareParams = { token?: string; share?: string }
+
+const CHILD_COLUMNS = 'item_id, type_id, location_flag, quantity, is_singleton, is_blueprint_copy, name'
+
+type Service = ReturnType<typeof createServiceClient>
+
+// What was aboard at the last extract that saw the ship. Every row that
+// extract listed — the ship's and its contents' alike — carries its clock in
+// valid_until, so the contents are the rows linked to the ship with that
+// stamp or a later one; rows the extract closed before it hold an earlier
+// one and drop out. Read from the version table, not the view: the view
+// blanks a link to a parent with no open row, which a vanished ship is. The
+// service role reads the table without RLS, and the scope filter stands in.
+// Open rows are asked for separately, so each arm lands on its own partial
+// index (current_location / history_location).
+const childrenAsOf = async (supabase: Service, itemId: string, registrationIds: string[], lastSeen: string) => {
+  const linked = () =>
+    supabase
+      .from('character_asset_version')
+      .select(`${CHILD_COLUMNS}, is_current, valid_until`)
+      .eq('location_id', itemId)
+      .in('registration_id', registrationIds)
+  const [{ data: open }, { data: closed }] = await Promise.all([
+    linked().eq('is_current', true),
+    linked().eq('is_current', false).gte('valid_until', lastSeen),
+  ])
+  type Row = ChildRow & { is_current: boolean; valid_until: string }
+  return latestPerItem([...((open ?? []) as Row[]), ...((closed ?? []) as Row[])]) as ChildRow[]
+}
 
 const loadSharedShip = async (itemId: string, share?: string, token?: string): Promise<SharedShip | null> => {
   const scope = await resolveShareParams({ share, token }, itemId)
@@ -42,39 +80,48 @@ const loadSharedShip = async (itemId: string, share?: string, token?: string): P
 
   const supabase = createServiceClient()
   const corporationIds = scope.corporationIds.length > 0 ? scope.corporationIds : [-1]
+  // The newest version, open or closed: the open one where the ship is in
+  // the hangar, else the last one that was.
   const { data: characterSelf } = await supabase
-    .from('character_asset')
-    .select('item_id, registration_id, type_id, name')
+    .from('character_asset_over_time')
+    .select('item_id, registration_id, type_id, name, is_current, valid_until')
     .eq('item_id', itemId)
     .in('registration_id', scope.registrationIds)
-    .maybeSingle<ShipRow>()
+    .order('is_current', { ascending: false })
+    .order('valid_until', { ascending: false })
+    .limit(1)
+    .maybeSingle<ShipVersionRow>()
   const { data: corpSelf } = characterSelf
     ? { data: null }
     : await supabase
         .from('corp_asset')
-        .select('item_id, corporation_id, type_id')
+        .select('item_id, corporation_id, type_id, is_current, valid_until')
         .eq('item_id', itemId)
         .in('corporation_id', corporationIds)
-        .maybeSingle<ShipRow>()
+        .maybeSingle<ShipVersionRow>()
   const self = characterSelf ?? corpSelf
   if (!self) return null
   const selfType = await getSdeType(Number(self.type_id))
-  // The share outlived the ship (sold, transferred, unlinked): dead link.
+  // Not a ship: the share covers a container, and this page is for hulls.
   if (selfType?.categoryID !== SHIP_CATEGORY_ID) return null
+  const sighting = sightingOf(self)
 
-  const [{ data: characterChildren }, { data: corpChildren }] = await Promise.all([
-    supabase
-      .from('character_asset')
-      .select('item_id, type_id, location_flag, quantity, is_singleton, is_blueprint_copy, name')
-      .eq('location_id', itemId)
-      .in('registration_id', scope.registrationIds),
+  const [characterChildren, { data: corpChildren }] = await Promise.all([
+    characterSelf && !characterSelf.is_current
+      ? childrenAsOf(supabase, itemId, scope.registrationIds, characterSelf.valid_until)
+      : supabase
+          .from('character_asset')
+          .select(CHILD_COLUMNS)
+          .eq('location_id', itemId)
+          .in('registration_id', scope.registrationIds)
+          .then(({ data }) => (data ?? []) as ChildRow[]),
     supabase
       .from('corp_asset')
       .select('item_id, type_id, location_flag, quantity, is_singleton, is_blueprint_copy')
       .eq('location_id', itemId)
       .in('corporation_id', corporationIds),
   ])
-  const children = [...((characterChildren ?? []) as ChildRow[]), ...((corpChildren ?? []) as ChildRow[])]
+  const children = [...characterChildren, ...((corpChildren ?? []) as ChildRow[])]
 
   // Everything inside a ship belongs to whoever owns the ship, so the whole
   // cargo view carries a single owner.
@@ -101,6 +148,7 @@ const loadSharedShip = async (itemId: string, share?: string, token?: string): P
       },
       ownerId: characterSelf.registration_id,
       ownerKind: 'character',
+      sighting,
     }
   }
 
@@ -117,6 +165,7 @@ const loadSharedShip = async (itemId: string, share?: string, token?: string): P
     owner: { name: corpName?.name ?? `Corporation #${corporationId}`, portrait: corporationLogo(corporationId) },
     ownerId: String(corporationId),
     ownerKind: 'corporation',
+    sighting,
   }
 }
 

@@ -1,5 +1,7 @@
 import type { ReactNode } from 'react'
 
+import { DateTime } from '../../DateTime'
+import { isOverdue, type Sighting, sightingText } from './lastSeen'
 import type { ShipOwner } from './shipHeading'
 import styles from './identity.module.css'
 
@@ -18,10 +20,38 @@ export type ShipIdentityProps = {
   // from the same breadcrumb above. Null when the location chain is unreadable
   // (an RLS gap on a container we can't see).
   location: string | null
+  // When the extract last saw the ship, on the share page: a link outlives
+  // the hull, so the page says how old what it shows is, and raises an alert
+  // once that passes a day (lastSeen.ts). The owner's own page has no need —
+  // it only opens a hull that is in a hangar now.
+  sighting?: Sighting
   actions?: ReactNode
 }
 
-export const ShipIdentity = ({ name, typeName, groupName, itemId, owner, location, actions }: ShipIdentityProps) => (
+// The sighting line: a dot and "last seen 3 hours ago", with the exact
+// moment. Past a day the whole line turns to the alert colour, and a ship no
+// longer in the hangar says so, whatever its age.
+const SightingLine = ({ sighting }: { sighting: Sighting }) => {
+  const overdue = isOverdue(sighting)
+  return (
+    <p className={`${styles.sighting} ${overdue ? styles.overdue : ''}`} role={overdue ? 'alert' : undefined}>
+      <span className={styles.dot} aria-hidden="true" />
+      {sightingText(sighting)} · <DateTime value={sighting.lastSeen} />
+      {sighting.inHangar ? null : <> · not in this hangar now, shown as last seen</>}
+    </p>
+  )
+}
+
+export const ShipIdentity = ({
+  name,
+  typeName,
+  groupName,
+  itemId,
+  owner,
+  location,
+  sighting,
+  actions,
+}: ShipIdentityProps) => (
   <section className={styles.identity}>
     <div className={styles.main}>
       <div className={styles.titleRow}>
@@ -53,6 +83,7 @@ export const ShipIdentity = ({ name, typeName, groupName, itemId, owner, locatio
           docked · {location}
         </p>
       ) : null}
+      {sighting ? <SightingLine sighting={sighting} /> : null}
     </div>
     {actions ? <div className={styles.actions}>{actions}</div> : null}
   </section>
