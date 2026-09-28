@@ -17,9 +17,10 @@
 // run plus its refresh_task row, tracked running → done/error inside the step
 // — which skips enumeration. The job module is CLI-runnable too.
 
-import { map, reduce, splitEvery, transpose } from 'ramda'
+import { map, reduce, sortBy, splitEvery, transpose } from 'ramda'
 
 import { enumerateCharacters, type OnDemandTarget } from './lib'
+import { startTimes, waitUntil } from './stagger'
 
 // This job's ESI scope, and the lane count. Four lanes matches the sibling
 // per-character workflows; a fitting pull is one conditional GET per character,
@@ -55,7 +56,11 @@ export async function characterFittingsWorkflow(target?: OnDemandTarget) {
   // empty trailing lanes when there are fewer ids than lanes. The mapping is
   // identical on every replay. Within a lane characters run sequentially; lanes
   // run concurrently.
-  const lanes = transpose(splitEvery(LANES, ids))
+  // A scheduled run staggers each character to its own second of the hour
+  // (./stagger). The lanes take the characters in start order, and each step
+  // waits for its start time; an on-demand run starts at once.
+  const startOf = startTimes(target, Date.now())
+  const lanes = transpose(splitEvery(LANES, sortBy(startOf, ids)))
 
   // Drain each lane sequentially (the forEachSequential promise-chain, inlined
   // because src/jobs/lib.js can't be imported into workflow context). A step that
@@ -67,12 +72,14 @@ export async function characterFittingsWorkflow(target?: OnDemandTarget) {
   const drainLane = (lane: string[]): Promise<void> =>
     reduce(
       (p, id) =>
-        p.then(() =>
-          syncCharacter(id, target?.taskId).catch((err) => {
-            console.error(`[character-fittings] character ${id} failed:`, err)
-            failures.push(id)
-          })
-        ),
+        p
+          .then(() => waitUntil(startOf(id)))
+          .then(() =>
+            syncCharacter(id, target?.taskId).catch((err) => {
+              console.error(`[character-fittings] character ${id} failed:`, err)
+              failures.push(id)
+            })
+          ),
       Promise.resolve(),
       lane
     )
