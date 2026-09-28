@@ -324,6 +324,12 @@ any sharing behavior: scope opt-in on `/account/settings`, freshness row on
 
 ### Stage D — Structures
 
+**Superseded by [12-structure-share.md](12-structure-share.md)**, which puts
+this on the Revision 3 shape, adds the tenants audience, and replaces the
+`is_director()` prerequisite (Stage C, never built) with the observed
+`corp_job_access` capability the fuel policy already uses. Kept for the
+record:
+
 `corp_structure_share`: grantor `corporation_id` (+ `created_by`), subject
 `structure_id` (null = all corp structures), same audience columns.
 
