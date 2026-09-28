@@ -7,7 +7,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { STAGGER_WINDOW_SECONDS, staggerDelaySeconds, staggeredStartMs } from '../src/workflows/staggerDelay.ts'
+import { STAGGER_WINDOW_SECONDS, staggerDelaySeconds } from '../src/workflows/staggerDelay.ts'
 
 const ALICE = '00000000-0000-0000-0000-000000000e10' // 0xe10 = 3600 → second 0
 const BOB = '00000000-0000-0000-0000-00000000012c' // 0x12c = 300 → second 300
@@ -41,15 +41,10 @@ test('one character’s jobs start at the same second of the hour, whatever minu
 })
 
 test('different characters start at different seconds of the hour', () => {
-  const nowMs = Date.UTC(2026, 8, 28, 12, 24)
-  const startOf = staggeredStartMs(nowMs)
-  assert.equal(startOf(BOB) - nowMs, ((300 - 24 * 60 + 3600) % 3600) * 1000)
-  assert.notEqual(startOf(ALICE), startOf(BOB))
-})
-
-test('the start never comes before the fire time and never an hour after it', () => {
-  const nowMs = Date.UTC(2026, 8, 28, 12, 24, 17, 500)
-  const startOf = staggeredStartMs(nowMs)
-  const offsets = [ALICE, BOB, REAL].map((id) => startOf(id) - nowMs)
-  assert.ok(offsets.every((o) => o >= 0 && o < STAGGER_WINDOW_SECONDS * 1000))
+  const now = Date.UTC(2026, 8, 28, 12, 24) / 1000
+  assert.equal(staggerDelaySeconds(BOB, now), (300 - 24 * 60 + 3600) % 3600)
+  assert.notEqual(
+    (now + staggerDelaySeconds(ALICE, now)) % STAGGER_WINDOW_SECONDS,
+    (now + staggerDelaySeconds(BOB, now)) % STAGGER_WINDOW_SECONDS
+  )
 })

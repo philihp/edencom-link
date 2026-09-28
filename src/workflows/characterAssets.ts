@@ -24,10 +24,10 @@
 // run plus its refresh_task row, tracked running → done/error inside the step
 // — which skips enumeration. The job module is CLI-runnable too.
 
-import { map, reduce, sortBy, splitEvery, transpose } from 'ramda'
+import { map, reduce, splitEvery, transpose } from 'ramda'
 
 import { enumerateCharacters, type OnDemandTarget } from './lib'
-import { startTimes, waitUntil } from './stagger'
+import { waitForSlot } from './stagger'
 
 // This job's ESI scope, and the lane count. Four lanes keeps a big account
 // polite to ESI's error-rate limits (the queue already ran per-character pulls
@@ -50,6 +50,17 @@ async function syncCharacter(registrationId: string, taskId?: string) {
   await withRefreshTask(taskId, () => runCharacterAssets({ registrationIds: [registrationId] }))
 }
 
+// Step: start this workflow again as a staggered child run for one character
+// (see ./stagger). One step per character, so a retry can start again only
+// that one run.
+async function dispatchCharacter(registrationId: string) {
+  'use step'
+  const { start } = await import('workflow/api')
+  const { characterAssetsWorkflow } = await import('./characterAssets')
+  const run = await start(characterAssetsWorkflow, [{ registrationIds: [registrationId], staggered: true }])
+  console.log(`[character-assets] character ${registrationId}: dispatched run=${run.runId}`)
+}
+
 export async function characterAssetsWorkflow(target?: OnDemandTarget) {
   'use workflow'
   // The workflow body must stay deterministic control flow over step calls (the
@@ -57,7 +68,16 @@ export async function characterAssetsWorkflow(target?: OnDemandTarget) {
   // combinators are fine here: they're referentially transparent (identical on
   // every replay) and pull in no Node modules, unlike a workflow-level helper
   // that would run impure/Node code in workflow context.
-  const ids = target?.registrationIds ?? (await enumerateCharacters(SCOPES))
+  // A scheduled run (the cron route starts it with no target) only fans out:
+  // one child run per character. Each child sleeps in this workflow body until
+  // its character's second of the hour, and only then do its lanes start. An
+  // on-demand run is not staggered and starts at once.
+  if (target === undefined) {
+    await Promise.all(map(dispatchCharacter, await enumerateCharacters(SCOPES)))
+    return
+  }
+  const ids = target.registrationIds ?? (await enumerateCharacters(SCOPES))
+  if (target.staggered) await Promise.all(map(waitForSlot, ids))
 
   // Round-robin the characters into LANES lanes: splitEvery chunks the ids into
   // rows of LANES, then transpose flips rows→columns, so column j collects
@@ -65,11 +85,7 @@ export async function characterAssetsWorkflow(target?: OnDemandTarget) {
   // no empty trailing lanes when there are fewer ids than lanes. The mapping is
   // identical on every replay regardless of how the runtime resolves in-flight
   // steps. Within a lane characters run sequentially; lanes run concurrently.
-  // A scheduled run staggers each character to its own second of the hour
-  // (./stagger). The lanes take the characters in start order, and each step
-  // waits for its start time; an on-demand run starts at once.
-  const startOf = startTimes(target, Date.now())
-  const lanes = transpose(splitEvery(LANES, sortBy(startOf, ids)))
+  const lanes = transpose(splitEvery(LANES, ids))
 
   // Drain each lane sequentially (the forEachSequential promise-chain: reduce a
   // Promise.resolve() through the lane, each id awaiting the previous — inlined
@@ -85,14 +101,12 @@ export async function characterAssetsWorkflow(target?: OnDemandTarget) {
   const drainLane = (lane: string[]): Promise<void> =>
     reduce(
       (p, id) =>
-        p
-          .then(() => waitUntil(startOf(id)))
-          .then(() =>
-            syncCharacter(id, target?.taskId).catch((err) => {
-              console.error(`[character-assets] character ${id} failed:`, err)
-              failures.push(id)
-            })
-          ),
+        p.then(() =>
+          syncCharacter(id, target.taskId).catch((err) => {
+            console.error(`[character-assets] character ${id} failed:`, err)
+            failures.push(id)
+          })
+        ),
       Promise.resolve(),
       lane
     )

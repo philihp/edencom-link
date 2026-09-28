@@ -26,10 +26,3 @@ const modWindow = (n: bigint) => ((n % WINDOW) + WINDOW) % WINDOW
 // Seconds, in [0, 3600), from nowSeconds until the character's second of the hour.
 export const staggerDelaySeconds = (registrationId: string, nowSeconds: number): number =>
   Number(modWindow(uuidValue(registrationId) - BigInt(nowSeconds)))
-
-// The start time (epoch ms) of each character's refresh for a run that begins
-// at nowMs.
-export const staggeredStartMs =
-  (nowMs: number) =>
-  (registrationId: string): number =>
-    nowMs + staggerDelaySeconds(registrationId, Math.floor(nowMs / 1000)) * 1000
