@@ -20,6 +20,7 @@
 import { map, reduce, splitEvery, transpose } from 'ramda'
 
 import { enumerateCharacters, type OnDemandTarget } from './lib'
+import { waitForSlot } from './stagger'
 
 // This job's ESI scope, and the lane count. Four lanes keeps a big account
 // polite to ESI's error-rate limits (the queue already ran per-character pulls
@@ -42,6 +43,17 @@ async function syncCharacter(registrationId: string, taskId?: string) {
   await withRefreshTask(taskId, () => runCharacterWalletTransactions({ registrationIds: [registrationId] }))
 }
 
+// Step: start this workflow again as a staggered child run for one character
+// (see ./stagger). One step per character, so a retry can start again only
+// that one run.
+async function dispatchCharacter(registrationId: string) {
+  'use step'
+  const { start } = await import('workflow/api')
+  const { characterWalletTransactionsWorkflow } = await import('./characterWalletTransactions')
+  const run = await start(characterWalletTransactionsWorkflow, [{ registrationIds: [registrationId], staggered: true }])
+  console.log(`[character-wallet-transactions] character ${registrationId}: dispatched run=${run.runId}`)
+}
+
 export async function characterWalletTransactionsWorkflow(target?: OnDemandTarget) {
   'use workflow'
   // The workflow body must stay deterministic control flow over step calls (the
@@ -49,7 +61,16 @@ export async function characterWalletTransactionsWorkflow(target?: OnDemandTarge
   // combinators are fine here: they're referentially transparent (identical on
   // every replay) and pull in no Node modules, unlike a workflow-level helper
   // that would run impure/Node code in workflow context.
-  const ids = target?.registrationIds ?? (await enumerateCharacters(SCOPES))
+  // A scheduled run (the cron route starts it with no target) only fans out:
+  // one child run per character. Each child sleeps in this workflow body until
+  // its character's second of the hour, and only then do its lanes start. An
+  // on-demand run is not staggered and starts at once.
+  if (target === undefined) {
+    await Promise.all(map(dispatchCharacter, await enumerateCharacters(SCOPES)))
+    return
+  }
+  const ids = target.registrationIds ?? (await enumerateCharacters(SCOPES))
+  if (target.staggered) await Promise.all(map(waitForSlot, ids))
 
   // Round-robin the characters into LANES lanes: splitEvery chunks the ids into
   // rows of LANES, then transpose flips rows→columns, so column j collects
@@ -74,7 +95,7 @@ export async function characterWalletTransactionsWorkflow(target?: OnDemandTarge
     reduce(
       (p, id) =>
         p.then(() =>
-          syncCharacter(id, target?.taskId).catch((err) => {
+          syncCharacter(id, target.taskId).catch((err) => {
             console.error(`[character-wallet-transactions] character ${id} failed:`, err)
             failures.push(id)
           })

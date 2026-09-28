@@ -26,9 +26,11 @@
 // registrationIds pins the run to one character (or, for a corp-scoped job, one
 // corp's whole character group; absent for the account-wide jobs), and taskId
 // names the refresh_task row the run reports its status to via withRefreshTask.
-// Types are erased at compile time, so importing this at a workflow file's top
-// level is fine.
-export type OnDemandTarget = { registrationIds?: string[]; taskId?: string }
+// staggered marks a child run that a scheduled per-character run started for
+// one character: it sleeps until that character's second of the hour before its
+// lanes start (./stagger). Types are erased at compile time, so importing this
+// at a workflow file's top level is fine.
+export type OnDemandTarget = { registrationIds?: string[]; taskId?: string; staggered?: boolean }
 
 // Wrap a job run in refresh_task status tracking, preserving the retired queue
 // consumer's exact best-effort semantics: flip the row to running before the
