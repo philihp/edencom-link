@@ -19,8 +19,9 @@ const ImpersonateForm = () => {
   return (
     <>
       <form>
-        <label htmlFor="userId">User ID: </label>
-        <input id="userId" name="userId" type="text" required /> <button formAction={submit}>Impersonate</button>
+        <label htmlFor="target">User ID or character name: </label>
+        <input id="target" name="target" type="text" required autoComplete="off" />{' '}
+        <button formAction={submit}>Impersonate</button>
       </form>
       <p>{error && <Dot color="#FF0000" response={error} />}</p>
     </>
