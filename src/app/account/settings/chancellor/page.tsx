@@ -117,7 +117,10 @@ const ChancellorPage = async () => {
       </p>
 
       <h2>Impersonate</h2>
-      <p>Swaps this session for a real session as another account. Sign back in as yourself to return.</p>
+      <p>
+        Swaps this session for a real session as another account, named by its user ID or by any character on it. Sign
+        back in as yourself to return.
+      </p>
       <ImpersonateForm />
 
       <h2>Debug</h2>
