@@ -3,7 +3,7 @@ import { map, splitEvery } from 'ramda'
 import { corpIndustryJobs } from '../esi.js'
 import { sudoSupabase } from '../supabase.js'
 import { partitionJobs } from './industryJobReconcile.js'
-import { cli, fetchAllPages, forEachCorporation, forEachSequential } from './lib.js'
+import { cli, fetchAllPages, forEachCorporation, forEachSequential, recordStructureTenancy } from './lib.js'
 
 const TAG = 'corp-industry-jobs'
 export const SCOPE = 'esi-industry.read_corporation_jobs.v1'
@@ -103,6 +103,8 @@ export const runCorpIndustryJobs = ({ registrationIds } = {}) =>
     const t0 = Date.now()
     const jobs = await fetchAllPages((page) => corpIndustryJobs(access_token, corporation_id, page))
     const { touched, opened, closed, agedOut } = await reconcile(corporation_id, jobs)
+    // Where this corporation builds, from the listing just reconciled.
+    await recordStructureTenancy(TAG, { corporation_id }, jobs)
     console.log(
       `[${TAG}] ${ctx}: corp ${corporation_id} ${jobs.length} industry job(s); ${touched} unchanged, ${opened} opened, ${closed} closed, ${agedOut} aged out in ${Date.now() - t0}ms`
     )

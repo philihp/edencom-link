@@ -1,10 +1,11 @@
 import { randomInt } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
-import { range, reduce, splitEvery, sum } from 'ramda'
+import { map, range, reduce, splitEvery, sum } from 'ramda'
 
 import { character as fetchCharacter, isRoleDenial } from '../esi.js'
 import { recordHeartbeat, sudoSupabase } from '../supabase.js'
 import { refreshAccessToken } from '../tokenRefresh.js'
+import { tenancyFromJobs } from './structureTenancy.js'
 
 // Wraps one character/corp's worth of work with a start/end heartbeat pair so
 // its duration can be attributed to that entity (see recordHeartbeat's
@@ -271,6 +272,47 @@ const recordCorpJobAccess = async (tag, registration_id, corporation_id, allowed
     if (error) console.warn(`[${tag}] corp_job_access bookkeeping failed: ${error.message}`)
   } catch (e) {
     console.warn(`[${tag}] corp_job_access bookkeeping failed: ${e?.message ?? e}`)
+  }
+}
+
+// Who builds where: structure_tenant (docs/sharing-layer/12-structure-share.md),
+// the fact behind the "people with jobs here" share audience, recorded like
+// corp_job_access above — at the end of a run, from the listing the run just
+// fetched, best-effort. `owner` is `{ registration_id }` for a character's
+// jobs or `{ corporation_id }` for a corporation's; the table's check
+// constraint holds exactly one. Every structure the listing shows open jobs
+// at is upserted with the count (tenancyFromJobs, the pure fold in
+// structureTenancy.js), and every other row of this owner's is zeroed rather
+// than deleted, so a returning tenant is an update and last_job_seen_at keeps
+// saying when they were last here. A bookkeeping failure never fails an
+// extract that actually succeeded; the worst case is tenancy one cycle stale.
+export const recordStructureTenancy = async (tag, owner, jobs) => {
+  try {
+    const now = new Date().toISOString()
+    const open = tenancyFromJobs(jobs)
+    const rows = map(
+      ([structure_id, open_jobs]) => ({ ...owner, structure_id, open_jobs, last_job_seen_at: now }),
+      [...open.entries()]
+    )
+
+    if (rows.length > 0) {
+      const { error } = await sudoSupabase
+        .from('structure_tenant')
+        .upsert(rows, { onConflict: 'owner_key,structure_id' })
+      if (error) throw error
+    }
+
+    const column = owner.registration_id != null ? 'registration_id' : 'corporation_id'
+    let stale = sudoSupabase
+      .from('structure_tenant')
+      .update({ open_jobs: 0 })
+      .eq(column, owner[column])
+      .gt('open_jobs', 0)
+    if (rows.length > 0) stale = stale.not('structure_id', 'in', `(${[...open.keys()].join(',')})`)
+    const { error } = await stale
+    if (error) throw error
+  } catch (e) {
+    console.warn(`[${tag}] structure_tenant bookkeeping failed: ${e?.message ?? e}`)
   }
 }
 

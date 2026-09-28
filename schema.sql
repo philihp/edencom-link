@@ -32,6 +32,7 @@ drop schema if exists hangar cascade;
 drop function if exists public.asset_location_summary()        cascade;
 drop function if exists public.asset_location_contents(bigint) cascade;
 drop function if exists public.asset_inventory_at(uuid[], timestamptz) cascade;
+drop function if exists public.is_tenant_of(bigint) cascade;
 drop function if exists public.asset_snapshot_at(uuid[], timestamptz)  cascade;
 drop function if exists public.industry_jobs(uuid[])                   cascade;
 drop function if exists public.industry_jobs(uuid[], boolean)          cascade;
@@ -98,6 +99,7 @@ drop table if exists public.corp_structure_status cascade;
 drop table if exists public.corp_structure_rig   cascade;
 drop table if exists public.corp_structure       cascade;
 drop table if exists public.corp_job_access      cascade;
+drop table if exists public.structure_tenant     cascade;
 drop table if exists public.corp_wallet_journal  cascade;
 drop table if exists public.corp_wallet_transaction cascade;
 drop table if exists public.corp_contract_item      cascade;
@@ -3558,6 +3560,87 @@ create policy "Users read own corp job access"
 
 grant select on public.corp_job_access to authenticated;
 grant all    on public.corp_job_access to service_role;
+
+-- ── structure_tenant ──────────────────────────────────────────────────────
+-- Who holds an open industry job at which player structure
+-- (docs/sharing-layer/12-structure-share.md). The fact behind the "people
+-- with jobs here" share audience, recorded by the two industry-job extracts
+-- (src/jobs/structureTenancy.js) the way corp_job_access above records
+-- observed director capability, so that a share policy can ask "is the caller
+-- a tenant of this structure" without reading the job tables — a policy on a
+-- job table that reads that same table recurses, which is the trap the asset
+-- share needed its one SECURITY DEFINER to escape. Nothing reads it yet: the
+-- structure share (phase 12) and the industry-job share (phase 13) will.
+
+create table public.structure_tenant (
+  -- Exactly one owner key: a personal job's registration, or the corporation a
+  -- corp-installed job was run for (the Characters tab attributes corp jobs
+  -- the same way).
+  registration_id uuid references public.registration (id) on delete cascade,
+  corporation_id  bigint,
+  structure_id    bigint not null,
+  -- Jobs at this structure that are active, paused or ready (finished, not
+  -- delivered). Zero once none remain: the row is kept so a returning tenant
+  -- is an update, and last_job_seen_at still says when they were last here.
+  open_jobs        integer not null default 0,
+  last_job_seen_at timestamptz not null default now(),
+  -- Folds the two owner keys into one non-null discriminator (the
+  -- heartbeat.owner_key trick), so one primary key covers both owner kinds
+  -- and the extract's upsert has a conflict target.
+  owner_key text generated always as (coalesce(registration_id::text, 'corp:' || corporation_id::text)) stored,
+  check ((registration_id is null) <> (corporation_id is null)),
+  check (open_jobs >= 0),
+  primary key (owner_key, structure_id)
+);
+-- "Who is a tenant here": partial, since is_tenant_of() only ever asks about
+-- open jobs, and the zeroed rows are the long tail.
+create index structure_tenant_structure_id_idx on public.structure_tenant (structure_id) where open_jobs > 0;
+create index structure_tenant_registration_id_idx on public.structure_tenant (registration_id);
+create index structure_tenant_corporation_id_idx on public.structure_tenant (corporation_id);
+
+alter table public.structure_tenant enable row level security;
+-- Own rows only: a character's through its registration, a corporation's
+-- through membership. Nobody can list who else builds at a structure; the
+-- predicate below answers only yes or no about the caller.
+create policy "Users read own structure tenancy"
+  on public.structure_tenant
+  for select
+  to authenticated
+  using (
+    registration_id in (
+      select id from public.registration where user_id = (select auth.uid())
+    )
+    or corporation_id in (select public.my_corporation_ids())
+  );
+
+grant select on public.structure_tenant to authenticated;
+grant all    on public.structure_tenant to service_role;
+
+-- Does the caller hold an open job at this structure, personally or through
+-- a corporation of theirs? Invoker rights: it reads only the caller's own
+-- rows, which is all the policy above shows anyway. Safe to call from a
+-- policy on any table but structure_tenant itself.
+create or replace function public.is_tenant_of(structure bigint)
+returns boolean
+language sql
+stable
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.structure_tenant t
+    where t.structure_id = structure
+      and t.open_jobs > 0
+      and (
+        t.registration_id in (
+          select id from public.registration where user_id = (select auth.uid())
+        )
+        or t.corporation_id in (select public.my_corporation_ids())
+      )
+  );
+$$;
+
+grant execute on function public.is_tenant_of(bigint) to authenticated, service_role;
 
 -- ── corp_structure ────────────────────────────────────────────────────────
 -- ESI /corporations/{id}/structures/, written by the corp-structures job.
