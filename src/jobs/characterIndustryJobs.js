@@ -4,7 +4,7 @@ import { industryJobs } from '../esi.js'
 import { recordEsiConditional } from '../observability.js'
 import { getEsiEtag, putEsiEtag, sudoSupabase } from '../supabase.js'
 import { partitionJobs } from './industryJobReconcile.js'
-import { cli, forEachCharacter, forEachSequential } from './lib.js'
+import { cli, forEachCharacter, forEachSequential, recordStructureTenancy } from './lib.js'
 
 const TAG = 'character-industry-jobs'
 const SCOPE = 'esi-industry.read_character_jobs.v1'
@@ -129,6 +129,9 @@ export const runCharacterIndustryJobs = ({ registrationIds } = {}) =>
       }
 
       const { touched, opened, closed, agedOut } = await reconcile(registration_id, jobs)
+      // Where this character builds, from the listing just reconciled. A 304
+      // above skips this too, rightly: nothing about the jobs changed.
+      await recordStructureTenancy(TAG, { registration_id }, jobs)
 
       // Store the ETag only after the reconcile committed (see characterOrders.js).
       await putEsiEtag(cacheKey, etag)
