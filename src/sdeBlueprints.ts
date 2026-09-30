@@ -74,7 +74,12 @@ export const getBlueprintsForMaterial = async (materialTypeID: number): Promise<
   const { data, error } = await sdeSupabase()
     .from('sde_blueprint_product')
     .select('blueprint_type_id, activity_id, product_type_id, product_quantity, materials')
-    .contains('materials', [{ typeID: materialTypeID }])
+    // As a JSON string, deliberately: postgrest-js serializes an ARRAY argument
+    // to contains() as a Postgres array literal (`cs.{[object Object]}`),
+    // which never matches a jsonb column — the probe answered nothing for
+    // every material until 2026-09-30. A string goes through verbatim as the
+    // jsonb `@>` operand.
+    .contains('materials', JSON.stringify([{ typeID: materialTypeID }]))
   if (error) {
     console.error(`[sdeBlueprints] material lookup failed: ${error.message}`)
     return []

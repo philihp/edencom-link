@@ -11,9 +11,10 @@ this server read that database. The tools never call ESI.
 
 Extract jobs read the EVE ESI endpoints for each registered character and
 corporation: assets, blueprints, industry jobs, orders, wallets, skills,
-clones, fittings, structures. Most jobs run every 6 hours. A nightly job
-mirrors the EVE Static Data Export (SDE): item types, blueprints, solar
-systems.
+clones, fittings, structures. The per-character jobs run every 6 hours, each
+character at its own minute of the hour. The corporation jobs for assets,
+blueprints and structures run once a day. A nightly job mirrors the EVE
+Static Data Export (SDE): item types, blueprints, solar systems.
 
 Each tool result carries `data_refreshed` timestamps. If a timestamp is old,
 tell the user. Row-level security scopes every read to the caller's own
@@ -127,6 +128,95 @@ research slots (`list_job_slots`). The SDE blueprint view of this server
 covers manufacturing and reactions only, so `blueprint_for_product` does not
 return invention bills of materials.
 
+## Compressed and uncompressed inputs
+
+A bill of materials names the form a job consumes, and that form is never
+the compressed one. A manufacturing bill names minerals, not ore. A reaction
+bill names fullerites and moon materials, not their compressed forms.
+`Compressed Fullerite-C50` is the same gas packed for hauling, unit for unit
+at a tenth of the volume (0.1 m³ against 1 m³), and no blueprint consumes it.
+
+So when a user asks "do I need compressed or uncompressed X for this job",
+call `blueprint_for_product` and read the names in the bill. The name in the
+bill is the exact type the job takes. `blueprints_using_material` on the
+compressed name returns no blueprints, which is the same answer. The
+compressed form is for freight: `shipping_quote` with an `items` manifest
+takes volume from the names you give it, so name the compressed form when the
+question is about moving the material, and the uncompressed form when the
+question is about reacting or building with it.
+
+## Capital hulls have no market price
+
+Supercarriers and titans are not sold on the market. They change hands by
+contract, usually inside an alliance, at prices nobody publishes. The
+appraisal service therefore answers zero, or a number that is wrong by a
+factor of a thousand, for a Nyx or a Ragnarok.
+
+This deployment keeps a table of hull prices that a Chancellor sets by hand:
+one price per supercarrier and titan hull. As starting points, a Tech 1
+supercarrier is about 42 billion ISK and a Tech 1 titan about 128 billion.
+The prices float. `appraise_items` and `appraise_assets` substitute the set
+price for such a hull, as both sell and buy, and list the hulls they did
+this for under `hull_priced`. A hull with no set price is unpriced; say so.
+Do not quote the market number for it.
+
+## Job installation cost
+
+The game bills a job when it is installed:
+
+```
+cost = EIV × (system cost index × hull bonus + facility tax + 0.04)
+```
+
+- EIV, the estimated item value, is the job's material bill at ME 0, priced
+  at CCP's adjusted prices (ESI `/markets/prices/`, not market prices), times
+  the runs. This is the base every fee scales from.
+- The system cost index comes from `industry_cost_indices`. It is per system
+  and per activity, and it moves with the activity in the system.
+- The hull bonus is a job-cost reduction of the engineering complex the job
+  runs in: Raitaru 3%, Azbel 4%, Sotiyo 5%. Citadels and refineries give none.
+- The facility tax is the rate the structure's owner sets. ESI publishes it
+  nowhere. At a rented structure, the tool data cannot tell you the rate; the
+  user can read it in the game client when they install.
+- 0.04 is the SCC surcharge, 4% of EIV, paid to nobody.
+
+Research, copy and invention jobs bill on a different base: the product's
+value at a 2% job-cost multiplier. Reaction jobs bill like manufacturing.
+
+## Spreadsheets
+
+A Google Sheet reads this deployment's price data without any script:
+
+- `/sheets/market/<market>/price_data?type_id=1,2,3` answers `=IMPORTXML` in
+  blocks of type ids, in the same XML shape as the goonmetrics `price_data`
+  API (`//price_data/type`), from the hourly market capture.
+- `/sheets/market/<market>` is the whole market as CSV, for `=IMPORTDATA`.
+- `/sheets/adjusted-prices` is CCP's adjusted price for every type as CSV,
+  the EIV base above, captured daily.
+
+Tell a user with an Apps Script that calls ESI to read these instead. Apps
+Script fetches from a shared Google IP pool, where every other script's ESI
+traffic counts against the same limit, so its ESI calls fail with error 420
+for reasons the sheet cannot control.
+
+## What the caller can see of shared things
+
+Another user can share things with the caller, and the tools see them only
+in particular ways:
+
+- A ship or container shared with the caller does not appear in "show me all
+  my X" listings. It appears when addressed by its id (`browse_assets`,
+  `appraise_assets` with a raw id) and in what its parent lists. Its
+  location is always null to the caller: a share says what a thing is, never
+  where it is.
+- A fitting shared with the caller appears in `list_fittings`.
+- A Data Link shared with the caller runs under its creator's data. The
+  caller sees the results, never the underlying rows.
+- A ship share link (`/ship/<id>?share=…`) keeps working after the ship
+  leaves the owner's hangar. The page then shows the ship as it was last
+  seen, with the time of that sighting, and marks a sighting older than one
+  day.
+
 ## Which tool answers which question
 
 - Item by name, anywhere: `search_assets`. By type/location/owner id:
@@ -136,8 +226,9 @@ return invention bills of materials.
   consumes an input: `blueprints_using_material`.
 - What builds now, and when it ends: `list_industry_jobs` (has `as_of`).
   Who can start a job: `list_job_slots`.
-- ISK value of items or a hangar: `appraise_items`, `appraise_assets`.
-  Freight cost on the alliance lanes: `shipping_quote`.
+- ISK value of items or a hangar: `appraise_items`, `appraise_assets`
+  (set hull prices applied, see above). Freight cost on the alliance lanes:
+  `shipping_quote`.
 - Balances: `wallet_summary`. Trades: `search_transactions`. Open orders:
   `list_market_orders`.
 - Characters, ships, clones: `list_clones`. Saved fits: `list_fittings`.
