@@ -40,6 +40,10 @@ export type OnDemandTarget = { registrationIds?: string[]; taskId?: string; stag
 // scheduled path) it just runs the job, letting a throw propagate into the
 // step's bounded retries. Plain helper, NOT a step — import it dynamically
 // inside a `'use step'` body, per the rules above.
+//
+// A run that did nothing because its work had just run (the loops answer
+// `{ ran: 0, skippedRecent: n }`, src/jobs/recentRun.js) is one the user
+// should never see: its task row is removed, not marked done.
 export async function withRefreshTask(taskId: string | undefined, run: () => Promise<unknown>) {
   if (taskId == null) {
     await run()
@@ -47,11 +51,19 @@ export async function withRefreshTask(taskId: string | undefined, run: () => Pro
   }
   await markTaskRunning(taskId)
   try {
-    await run()
-    await markTaskSettled(taskId)
+    const result = await run()
+    const { ranNothingRecently } = await import('@/jobs/recentRun.js')
+    if (ranNothingRecently(result)) await forgetTask(taskId)
+    else await markTaskSettled(taskId)
   } catch (e) {
     await markTaskSettled(taskId, e)
   }
+}
+
+// Remove a task row whose run turned out to be nothing (see withRefreshTask).
+export async function forgetTask(taskId: string) {
+  const { sudoSupabase } = await import('@/supabase.js')
+  await sudoSupabase.from('refresh_task').delete().eq('id', taskId)
 }
 
 // The two halves of withRefreshTask, usable on their own by a workflow whose
@@ -91,10 +103,20 @@ export async function markTaskSettled(taskId: string, failure?: unknown) {
 // source: 'vercel-workflow'. Safe to retry: every job that uses this is
 // idempotent (upserts / keyed appends / SCD-2 reconcile that converges), so a
 // retry after a mid-step failure just re-runs and converges.
+//
+// A whole-job run that just ran (ranRecently, src/jobs/ranRecently.js: ended ok or
+// still going within five minutes) stops before the start heartbeat and
+// answers `{ ran: 0, skippedRecent: 1 }`, so withRefreshTask forgets its
+// task row rather than marking it done.
 export async function runJobWithHeartbeat(job: string, load: () => Promise<() => Promise<unknown>>) {
   const { randomInt } = await import('node:crypto')
   const { recordHeartbeat } = await import('@/supabase.js')
   const { recordPeakRss } = await import('@/observability.js')
+  const { ranRecently } = await import('@/jobs/ranRecently.js')
+  if (await ranRecently(job)) {
+    console.log(`[${job}] ran within the last five minutes, not again`)
+    return { ran: 0, skippedRecent: 1 }
+  }
   const run = await load()
   const runId = randomInt(1, 2 ** 48)
   await recordHeartbeat(job, 'start', { runId, source: 'vercel-workflow' })
@@ -102,6 +124,7 @@ export async function runJobWithHeartbeat(job: string, load: () => Promise<() =>
     await run()
     recordPeakRss({ job })
     await recordHeartbeat(job, 'end', { runId, source: 'vercel-workflow', ok: true })
+    return { ran: 1, skippedRecent: 0 }
   } catch (e) {
     // Stamp the failure on the end row (heartbeat.ok/error) and rethrow so the
     // step still fails visibly in Observability and gets its bounded retries.
