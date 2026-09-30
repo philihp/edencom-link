@@ -5,6 +5,8 @@ import { map, range, reduce, splitEvery, sum } from 'ramda'
 import { character as fetchCharacter, isRoleDenial } from '../esi.js'
 import { recordHeartbeat, sudoSupabase } from '../supabase.js'
 import { refreshAccessToken } from '../tokenRefresh.js'
+import { ranRecently } from './ranRecently.js'
+import { RECENT_RUN_MS } from './recentRun.js'
 import { tenancyFromJobs } from './structureTenancy.js'
 
 // Wraps one character/corp's worth of work with a start/end heartbeat pair so
@@ -139,13 +141,24 @@ const loadCharacterMaps = async (tag) => {
 // run per token). Each call is wrapped in a start/end heartbeat attributed to
 // that character (job/registration_id/user_id), unless `heartbeat: false`. A
 // failing token is logged and skipped so one bad token never aborts the rest.
+// Answers { ran, skippedRecent }: characters handled (whatever the outcome)
+// and characters stopped cold because this job had just run for them
+// (ranRecently) — checked before the token refresh, so a stopped character
+// costs one indexed read and nothing else, and writes no heartbeat.
 const runTokenLoop = async (tag, tokens, { characterName, characterUserId, heartbeat }, hasScope, handler) => {
+  const summary = { ran: 0, skippedRecent: 0 }
   await forEachSequential(tokens ?? [], async (tokenRow) => {
     const name = characterName.get(tokenRow.registration_id) ?? '?'
     const userId = characterUserId.get(tokenRow.registration_id) ?? null
     const ctx = `character=${name} (${tokenRow.registration_id}) token=${tokenRow.id}`
     const t0 = Date.now()
     try {
+      if (heartbeat && (await ranRecently(tag, { registrationId: tokenRow.registration_id }))) {
+        summary.skippedRecent += 1
+        console.log(`[${tag}] ${ctx}: ran within the last ${RECENT_RUN_MS / 60000} minutes, not again`)
+        return
+      }
+      summary.ran += 1
       const { access_token, characterID, scope: freshScope } = await refreshAccessToken(tokenRow)
       if (!hasScope(freshScope)) {
         console.error(`[${tag}] ${ctx}: refreshed token no longer carries the required scope, skipping`)
@@ -171,6 +184,7 @@ const runTokenLoop = async (tag, tokens, { characterName, characterUserId, heart
       console.error(`[${tag}] ${ctx}: FAILED after ${dt}ms name=${e?.name} message=${e?.message}\n${e?.stack ?? e}`)
     }
   })
+  return summary
 }
 
 // Iterate the tokens that carry `scope`, calling handler once per token with
@@ -194,7 +208,7 @@ export const forEachCharacter = async (tag, { scope, registrationIds, heartbeat 
 
   console.log(`[${tag}] found ${tokens?.length ?? 0} token(s) with ${scope}`)
 
-  await runTokenLoop(tag, tokens, { characterName, characterUserId, heartbeat }, (s) => s.includes(scope), handler)
+  return runTokenLoop(tag, tokens, { characterName, characterUserId, heartbeat }, (s) => s.includes(scope), handler)
 }
 
 // Like forEachCharacter, but for a job that fronts several ESI endpoints with
@@ -215,7 +229,7 @@ export const forEachCharacterAnyScope = async (tag, { scopes, registrationIds, h
 
   console.log(`[${tag}] found ${tokens?.length ?? 0} token(s) with any of [${scopes.join(', ')}]`)
 
-  await runTokenLoop(
+  return runTokenLoop(
     tag,
     tokens,
     { characterName, characterUserId, heartbeat },
@@ -345,6 +359,7 @@ const recentDenials = async (tag) => {
 
 export const forEachCorporation = async (tag, { scope, registrationIds }, handler) => {
   const seenCorps = new Set()
+  const summary = { ran: 0, skippedRecent: 0, seenCorps }
   const denied = await recentDenials(tag)
   await forEachCharacter(
     tag,
@@ -365,6 +380,16 @@ export const forEachCorporation = async (tag, { scope, registrationIds }, handle
       }
       if (seenCorps.has(corporation_id)) {
         console.log(`[${tag}] ${ctx}: corp ${corporation_id} already pulled this run, skipping`)
+        return
+      }
+      // The corp was pulled, by any token, within the last five minutes: stop
+      // cold, no heartbeat, and count it handled for this run.
+      if (await ranRecently(tag, { corporationId: corporation_id })) {
+        seenCorps.add(corporation_id)
+        summary.skippedRecent += 1
+        console.log(
+          `[${tag}] ${ctx}: corp ${corporation_id} ran within the last ${RECENT_RUN_MS / 60000} minutes, not again`
+        )
         return
       }
       // A denial this job recorded for this character within the memory
@@ -397,10 +422,11 @@ export const forEachCorporation = async (tag, { scope, registrationIds }, handle
       }
       // Only mark the corp as handled once the pull actually succeeds.
       seenCorps.add(corporation_id)
+      summary.ran += 1
       await recordCorpJobAccess(tag, registration_id, corporation_id, true)
     }
   )
-  return seenCorps
+  return summary
 }
 
 // Drain an x-pages-paginated ESI endpoint. `fetchPage(page)` returns the
