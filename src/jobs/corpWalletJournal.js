@@ -1,6 +1,6 @@
 import { filter, map, pipe, reduce } from 'ramda'
 
-import { corpWalletJournal } from '../esi.js'
+import { corpWalletJournal, isRoleDenial } from '../esi.js'
 import { sudoSupabase } from '../supabase.js'
 import { cli, forEachCorporation, forEachSequential } from './lib.js'
 
@@ -59,6 +59,7 @@ export const runCorpWalletJournal = ({ registrationIds } = {}) =>
   forEachCorporation(TAG, { scope: SCOPE, registrationIds }, async ({ access_token, corporation_id, ctx }) => {
     const cutoff = Date.now() - JOURNAL_LOOKBACK_MS
     let failures = 0
+    let lastDenial = null
     await forEachSequential(WALLET_DIVISIONS, async (division) => {
       try {
         const rows = await fetchDivision(access_token, corporation_id, division, cutoff)
@@ -71,6 +72,7 @@ export const runCorpWalletJournal = ({ registrationIds } = {}) =>
         console.log(`[${TAG}] ${ctx}: corp ${corporation_id} div ${division} ${rows.length} entries`)
       } catch (e) {
         failures += 1
+        if (isRoleDenial(e)) lastDenial = e
         console.error(`[${TAG}] ${ctx}: corp ${corporation_id} div ${division} FAILED message=${e?.message}`)
       }
     })
@@ -80,7 +82,14 @@ export const runCorpWalletJournal = ({ registrationIds } = {}) =>
     // division's isolated problem. Throw so forEachCorporation (src/jobs/lib.js)
     // leaves the corp open for a later, better-privileged character to try instead
     // of marking it "handled" having pulled nothing.
+    //
+    // When the refusal was the in-game role on every division, rethrow the
+    // denial itself: forEachCorporation reads it as a skip ("not an
+    // accountant"), not a failure, records the denial in corp_job_access, and
+    // remembers it for a week before asking ESI again. Any other cause —
+    // 429s, a network fault — stays a failure so it is retried next run.
     if (failures === WALLET_DIVISIONS.length) {
+      if (lastDenial !== null) throw lastDenial
       throw new Error(`corp ${corporation_id}: all ${WALLET_DIVISIONS.length} wallet divisions failed`)
     }
   })
