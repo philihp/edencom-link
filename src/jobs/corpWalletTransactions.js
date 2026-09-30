@@ -1,4 +1,4 @@
-import { corpTransactions } from '../esi.js'
+import { corpTransactions, isRoleDenial } from '../esi.js'
 import { sudoSupabase } from '../supabase.js'
 import { cli, forEachCorporation, forEachSequential } from './lib.js'
 
@@ -21,6 +21,7 @@ export const runCorpWalletTransactions = ({ registrationIds } = {}) =>
     { scope: SCOPE, registrationIds },
     async ({ access_token, corporation_id, registration_id, ctx }) => {
       let failures = 0
+      let lastDenial = null
       await forEachSequential(WALLET_DIVISIONS, async (division) => {
         try {
           const txns = await corpTransactions(access_token, corporation_id, division)
@@ -49,6 +50,7 @@ export const runCorpWalletTransactions = ({ registrationIds } = {}) =>
           console.log(`[${TAG}] ${ctx}: corp ${corporation_id} div ${division} ${rows.length} transactions`)
         } catch (e) {
           failures += 1
+          if (isRoleDenial(e)) lastDenial = e
           console.error(`[${TAG}] ${ctx}: corp ${corporation_id} div ${division} FAILED message=${e?.message}`)
         }
       })
@@ -58,7 +60,14 @@ export const runCorpWalletTransactions = ({ registrationIds } = {}) =>
       // division's isolated problem. Throw so forEachCorporation (src/jobs/lib.js)
       // leaves the corp open for a later, better-privileged character to try instead
       // of marking it "handled" having pulled nothing.
+      //
+      // When the refusal was the in-game role on every division, rethrow the
+      // denial itself: forEachCorporation reads it as a skip ("not an
+      // accountant"), not a failure, records the denial in corp_job_access, and
+      // remembers it for a week before asking ESI again. Any other cause —
+      // 429s, a network fault — stays a failure so it is retried next run.
       if (failures === WALLET_DIVISIONS.length) {
+        if (lastDenial !== null) throw lastDenial
         throw new Error(`corp ${corporation_id}: all ${WALLET_DIVISIONS.length} wallet divisions failed`)
       }
     }

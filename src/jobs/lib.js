@@ -316,8 +316,36 @@ export const recordStructureTenancy = async (tag, owner, jobs) => {
   }
 }
 
+// How long a recorded role denial keeps a character from being asked for a
+// corp endpoint again. A pilot who was not a director yesterday is not one
+// today either; ESI told us so once, and asking every run only fills the
+// heartbeat table with the same answer (176 wallet refusals a day before
+// this). A week later the character is tried again, so a role granted in
+// game is picked up without anyone re-linking a token.
+const DENIAL_MEMORY_MS = 7 * 24 * 60 * 60 * 1000
+
+// The (registration, corporation) pairs whose latest word from this job was a
+// role denial younger than the memory. Read once per run; a failed read
+// forgets nothing dangerous, it only asks ESI again.
+const recentDenials = async (tag) => {
+  try {
+    const { data, error } = await sudoSupabase
+      .from('heartbeat')
+      .select('registration_id, corporation_id')
+      .eq('job', tag)
+      .not('skipped_reason', 'is', null)
+      .gt('ended_at', new Date(Date.now() - DENIAL_MEMORY_MS).toISOString())
+    if (error) throw error
+    return new Set(map((h) => `${h.registration_id}|${h.corporation_id}`, data ?? []))
+  } catch (e) {
+    console.warn(`[${tag}] denial memory unavailable, asking ESI for every corp: ${e?.message ?? e}`)
+    return new Set()
+  }
+}
+
 export const forEachCorporation = async (tag, { scope, registrationIds }, handler) => {
   const seenCorps = new Set()
+  const denied = await recentDenials(tag)
   await forEachCharacter(
     tag,
     { scope, registrationIds, heartbeat: false },
@@ -337,6 +365,15 @@ export const forEachCorporation = async (tag, { scope, registrationIds }, handle
       }
       if (seenCorps.has(corporation_id)) {
         console.log(`[${tag}] ${ctx}: corp ${corporation_id} already pulled this run, skipping`)
+        return
+      }
+      // A denial this job recorded for this character within the memory
+      // stands; no request, no heartbeat, and the corp stays open for a
+      // corpmate who holds the role.
+      if (denied.has(`${registration_id}|${corporation_id}`)) {
+        console.log(
+          `[${tag}] ${ctx}: corp ${corporation_id} refused ${name} for lack of the role recently, not asking again yet`
+        )
         return
       }
       const skipReasonOf = (e) =>

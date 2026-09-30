@@ -1,8 +1,15 @@
 import { randomUUID } from 'node:crypto'
 
-import { forEach, reduce } from 'ramda'
-
 import type { OnDemandTarget } from '@/workflows/lib'
+
+import {
+  coalesce,
+  corpRepresentatives,
+  IN_FLIGHT_MAX_AGE_MS,
+  type RecentTask,
+  type Registration,
+  taskKey,
+} from './refreshCoalesce'
 
 // The per-character ESI extracts a refresh fans out, one workflow run per
 // character each. Most are named after the ESI endpoint they extract;
@@ -107,28 +114,49 @@ const startJobWorkflow = async (job: string, target: OnDemandTarget) => {
   return start(await loadWorkflow(), [target])
 }
 
-// Drop any character whose corporation is already represented by an earlier
-// character in the list. A character with no known corporation yet (a
-// brand-new registration whose corp hasn't been resolved) is always kept —
-// there's nothing to dedupe it against, and it's exactly the case
-// corp-assets/corp-industry-jobs need to run for right away. This only picks
-// the representative character for the refresh_task/UI row — the actual
-// workflow run started for that task carries every scoped character for the
-// corp, not just this one (see dispatchRefresh below).
-const oneCharacterPerCorporation = (characters: Character[], corporationById: Map<string, number | null>) => {
-  const seenCorps = new Set<number>()
-  return reduce(
-    (kept: Character[], c) => {
-      const corporationId = corporationById.get(c.id)
-      if (corporationId != null) {
-        if (seenCorps.has(corporationId)) return kept
-        seenCorps.add(corporationId)
-      }
-      return [...kept, c]
-    },
-    [] as Character[],
-    characters
-  )
+// What the dispatcher needs to know about the account before starting
+// anything: every registration's corporation (for keying corp-scoped work
+// and for deciding which corporations a batch introduces), and the account's
+// recent tasks keyed the same way, so a request already in flight or just
+// answered is not started again (refreshCoalesce.ts).
+type Sudo = Awaited<typeof import('@/supabase.js')>['sudoSupabase']
+
+const loadAccountRegistrations = async (sudoSupabase: Sudo, userId: string): Promise<Registration[]> => {
+  const { data, error } = await sudoSupabase.from('registration').select('id, corporation_id').eq('user_id', userId)
+  if (error) throw error
+  return (data ?? []).map((r: { id: string; corporation_id: number | string | null }) => ({
+    id: r.id,
+    corporationId: r.corporation_id == null ? null : Number(r.corporation_id),
+  }))
+}
+
+const isCorpScoped = (job: string) => (PER_CORPORATION_JOB_NAMES as readonly string[]).includes(job)
+
+const keyFor = (job: string, registrationId: string | null, corporationById: Map<string, number | null>) =>
+  taskKey({
+    job,
+    registrationId,
+    corporationId: registrationId == null ? null : corporationById.get(registrationId),
+    corpScoped: isCorpScoped(job),
+  })
+
+const loadRecentTasks = async (
+  sudoSupabase: Sudo,
+  userId: string,
+  corporationById: Map<string, number | null>,
+  now: number
+): Promise<RecentTask[]> => {
+  const { data, error } = await sudoSupabase
+    .from('refresh_task')
+    .select('job, registration_id, status, created_at')
+    .eq('user_id', userId)
+    .gt('created_at', new Date(now - IN_FLIGHT_MAX_AGE_MS).toISOString())
+  if (error) throw error
+  return (data ?? []).map((t: { job: string; registration_id: string | null; status: string; created_at: string }) => ({
+    key: keyFor(t.job, t.registration_id, corporationById),
+    status: t.status,
+    createdAt: t.created_at,
+  }))
 }
 
 // Run every on-demand ESI extract for the given characters: insert a
@@ -140,24 +168,22 @@ const oneCharacterPerCorporation = (characters: Character[], corporationById: Ma
 // a userId they've already authorized.
 export const dispatchRefresh = async (userId: string, characters: Character[]): Promise<string> => {
   const batchId = randomUUID()
+  const now = Date.now()
 
   // Imported lazily so importing this module never pulls the service client / queue
   // setup into a page bundle or `next build`.
   const { sudoSupabase } = await import('@/supabase.js')
 
-  const corporationById = new Map<string, number | null>()
-  if (characters.length > 0) {
-    const { data: registrations, error: registrationsError } = await sudoSupabase
-      .from('registration')
-      .select('id, corporation_id')
-      .in(
-        'id',
-        characters.map((c) => c.id)
-      )
-    if (registrationsError) throw registrationsError
-    forEach((r) => corporationById.set(r.id, r.corporation_id), registrations ?? [])
-  }
-  const corpScopedCharacters = oneCharacterPerCorporation(characters, corporationById)
+  const account = await loadAccountRegistrations(sudoSupabase, userId)
+  const corporationById = new Map<string, number | null>(account.map((r) => [r.id, r.corporationId]))
+  // One representative per corporation the batch introduces to the account
+  // (refreshCoalesce.ts): a character added to a corp another character of
+  // the account is already in starts no corp job — that corp's scheduled
+  // runs already cover it.
+  const corpScopedCharacters = corpRepresentatives(
+    characters.map((c) => ({ ...c, corporationId: corporationById.get(c.id) ?? null })),
+    account
+  )
 
   // For each corp-scoped job, group every account-wide character carrying its
   // scope by corporation, so the message sent for a corp's task isn't limited
@@ -172,7 +198,7 @@ export const dispatchRefresh = async (userId: string, characters: Character[]): 
     })
   )
 
-  const tasks = [
+  const wanted = [
     ...PER_CHARACTER_JOBS.flatMap((job) =>
       characters.map((c) => ({
         batch_id: batchId,
@@ -195,10 +221,20 @@ export const dispatchRefresh = async (userId: string, characters: Character[]): 
       batch_id: batchId,
       user_id: userId,
       job,
-      registration_id: null,
-      character_name: null,
+      registration_id: null as string | null,
+      character_name: null as string | null,
     })),
-  ]
+  ].map((t) => ({ ...t, key: keyFor(t.job, t.registration_id, corporationById) }))
+
+  // Work a recent task already covers is not started again: the same
+  // character's jobs from a second press, the same corporation's from a
+  // second alt, the account-wide ones from any of it.
+  const { kept, skipped } = coalesce(wanted, await loadRecentTasks(sudoSupabase, userId, corporationById, now), now)
+  if (skipped.length > 0) {
+    console.log(`[dispatchRefresh] ${skipped.length} task(s) already covered by a recent run, not started again`)
+  }
+  if (kept.length === 0) return batchId
+  const tasks = kept.map(({ key: _key, ...task }) => task)
 
   const { data: inserted, error } = await sudoSupabase
     .from('refresh_task')
@@ -242,19 +278,28 @@ export const dispatchJobForCharacters = async (
   characters: Character[]
 ): Promise<string> => {
   const batchId = randomUUID()
+  const now = Date.now()
   const { sudoSupabase } = await import('@/supabase.js')
+
+  const account = await loadAccountRegistrations(sudoSupabase, userId)
+  const corporationById = new Map<string, number | null>(account.map((r) => [r.id, r.corporationId]))
+  const wanted = characters.map((c) => ({
+    batch_id: batchId,
+    user_id: userId,
+    job,
+    registration_id: c.id,
+    character_name: c.name,
+    key: keyFor(job, c.id, corporationById),
+  }))
+  const { kept, skipped } = coalesce(wanted, await loadRecentTasks(sudoSupabase, userId, corporationById, now), now)
+  if (skipped.length > 0) {
+    console.log(`[dispatchJobForCharacters] ${skipped.length} ${job} task(s) already covered by a recent run`)
+  }
+  if (kept.length === 0) return batchId
 
   const { data: inserted, error } = await sudoSupabase
     .from('refresh_task')
-    .insert(
-      characters.map((c) => ({
-        batch_id: batchId,
-        user_id: userId,
-        job,
-        registration_id: c.id,
-        character_name: c.name,
-      }))
-    )
+    .insert(kept.map(({ key: _key, ...task }) => task))
     .select('id, registration_id')
   if (error) throw error
 
@@ -293,6 +338,18 @@ export const dispatchSingleJob = async (userId: string, job: string, character: 
     return byCorp.get(corporationId) ?? [character.id]
   }
   const registrationIds = await registrationIdsForTarget()
+
+  // The same coalescing as a full refresh: a cell pressed twice inside ten
+  // minutes, or while its run is still going, starts nothing the second time.
+  const now = Date.now()
+  const account = await loadAccountRegistrations(sudoSupabase, userId)
+  const corporationById = new Map<string, number | null>(account.map((r) => [r.id, r.corporationId]))
+  const key = keyFor(job, character?.id ?? null, corporationById)
+  const { kept } = coalesce([{ key }], await loadRecentTasks(sudoSupabase, userId, corporationById, now), now)
+  if (kept.length === 0) {
+    console.log(`[dispatchSingleJob] ${job} for ${character?.name ?? 'account'} already covered by a recent run`)
+    return
+  }
 
   const { data: inserted, error } = await sudoSupabase
     .from('refresh_task')

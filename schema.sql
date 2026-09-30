@@ -22,6 +22,15 @@
 -- (/corporations/...), universe_* (/universe/...) — and each is written by the
 -- scheduled job of the same name (src/jobs/).
 
+-- Role timeouts. PostgREST connects as `authenticator` (statement_timeout 8s,
+-- lock_timeout 8s) and applies the JWT role's own settings on switching:
+-- anon 3s and authenticated 8s are Supabase's defaults; service_role, which
+-- every extract job and server-side service client runs as, gets a batch
+-- budget (migration 20260930061216) so a reconcile under contention is not
+-- cancelled at a browser request's limit.
+alter role service_role set statement_timeout = '5min';
+alter role service_role set lock_timeout = '30s';
+
 -- ── Reset ──────────────────────────────────────────────────────────────────
 -- Nuke any leftover from the previous `hangar` schema, then drop the app's
 -- objects in `public`. CASCADE clears dependent foreign keys and the asset
