@@ -53,3 +53,55 @@ export const pricedTotals = (lines: PricedLine[]): PricedTotals =>
           },
     { sell: 0, buy: 0, unpriced: [] }
   )
+
+// The provider's per-item answer, as the MCP appraisal tools hand it on. Only
+// the fields hull pricing reads or rewrites; the tools keep the rest.
+export type AppraisedRow = {
+  name: string
+  quantity: number
+  sellPrice: number | null
+  buyPrice: number | null
+  totalSellPrice: number | null
+  totalBuyPrice: number | null
+  error: string | null
+}
+
+export type HullPricedAppraisal<T extends AppraisedRow> = {
+  items: T[]
+  totalSellValue: number
+  totalBuyValue: number
+  // (sell + buy) / 2 over the batch, the provider's own definition.
+  priceSplit: number
+  // The lines a set hull price replaced, by name. Empty when none did, in
+  // which case the provider's items and totals come back untouched.
+  hullPriced: string[]
+}
+
+// applyHullPrices for a whole provider answer: a hull with a set price takes
+// it as sell and buy (a line the provider could not price is priced now, so
+// its error clears), and the batch totals are summed again from the lines,
+// since the provider's totals were built without the hull.
+export const hullPricedAppraisal = <T extends AppraisedRow>(
+  items: T[],
+  hullPrices: Map<string, number>,
+  provided: { totalSellValue: number; totalBuyValue: number; priceSplit: number }
+): HullPricedAppraisal<T> => {
+  const hullPriced = items.filter((item) => hullPrices.has(item.name)).map((item) => item.name)
+  if (hullPriced.length === 0) return { items, ...provided, hullPriced }
+  const priced = items.map((item) => {
+    const price = hullPrices.get(item.name)
+    return price == null
+      ? item
+      : {
+          ...item,
+          sellPrice: price,
+          buyPrice: price,
+          totalSellPrice: item.quantity * price,
+          totalBuyPrice: item.quantity * price,
+          error: null,
+        }
+  })
+  const totalSellValue = priced.reduce((sum, item) => sum + (item.error == null ? (item.totalSellPrice ?? 0) : 0), 0)
+  const totalBuyValue = priced.reduce((sum, item) => sum + (item.error == null ? (item.totalBuyPrice ?? 0) : 0), 0)
+  return { items: priced, totalSellValue, totalBuyValue, priceSplit: (totalSellValue + totalBuyValue) / 2, hullPriced }
+}

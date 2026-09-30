@@ -20,6 +20,8 @@ import { z } from 'zod'
 
 import { rigAppliesToProduct } from '@/app/blueprint/rigs'
 import { ACTIVITY_NAMES } from '@/app/industry/jobFields'
+import { hullPricedAppraisal } from '@/app/api/appraisal/pricedLines'
+import { getHullPricesByName } from '@/hullPrices'
 import { appraise, MARKETS, type Market } from '@/innominate'
 import { resolveLocations, type LocationRef } from '@/app/resolveLocations'
 import { fetchSystemNames } from '@/app/systemNames'
@@ -1703,7 +1705,7 @@ export const registerTools = (server: McpServer): void => {
     {
       title: 'Appraise items',
       description:
-        'Estimate the ISK market value of a batch of items via the innomin.at appraisal service (Jita by default). Answers "what\'s 3 Rifters and 100k Tritanium worth" or follows up a search_assets result with prices. Item names are matched fuzzily against EVE types. Prices are live market data, not the user\'s own orders.',
+        'Estimate the ISK market value of a batch of items via the innomin.at appraisal service (Jita by default). Answers "what\'s 3 Rifters and 100k Tritanium worth" or follows up a search_assets result with prices. Item names are matched fuzzily against EVE types. Prices are live market data, not the user\'s own orders — except supercarrier and titan hulls, which have no order book: those take the price set on this deployment (hull_price) as sell and buy, and the result names them under hull_priced.',
       annotations: { readOnlyHint: true, openWorldHint: true },
       inputSchema: z.object({
         items: z
@@ -1735,7 +1737,10 @@ export const registerTools = (server: McpServer): void => {
       // lib.ts — shared with shipping_quote) before sending it to the API.
       const { lines, notes } = await resolveManifest(items)
 
-      const result = await appraise(lines, (market ?? 'jita') as Market)
+      const [result, hullPrices] = await Promise.all([
+        appraise(lines, (market ?? 'jita') as Market),
+        getHullPricesByName(),
+      ])
       if (!result.ok) {
         if (result.kind === 'unconfigured')
           return textResult("Appraisals aren't configured on this deployment (missing INNOMINATE_API_KEY).")
@@ -1749,14 +1754,23 @@ export const registerTools = (server: McpServer): void => {
       }
 
       const { appraisal } = result
-      const priced = appraisal.items.filter((i) => i.error == null)
-      const unpriced = appraisal.items.filter((i) => i.error != null)
+      // A supercarrier or titan hull never has an order book; the price a
+      // Chancellor set for it stands in (src/app/api/appraisal/pricedLines.ts).
+      const {
+        items: appraised,
+        totalSellValue,
+        totalBuyValue,
+        priceSplit,
+        hullPriced,
+      } = hullPricedAppraisal(appraisal.items, hullPrices, appraisal)
+      const priced = appraised.filter((i) => i.error == null)
+      const unpriced = appraised.filter((i) => i.error != null)
 
       return textResult({
         market: appraisal.market,
-        total_sell_value: appraisal.totalSellValue,
-        total_buy_value: appraisal.totalBuyValue,
-        price_split: appraisal.priceSplit,
+        total_sell_value: totalSellValue,
+        total_buy_value: totalBuyValue,
+        price_split: priceSplit,
         total_volume_m3: appraisal.totalVol,
         items: priced.map((i) => ({
           item: i.name,
@@ -1769,6 +1783,11 @@ export const registerTools = (server: McpServer): void => {
         })),
         ...(unpriced.length && {
           unpriced: unpriced.map((i) => ({ item: i.name, possible_matches: i.possibleMatches })),
+        }),
+        ...(hullPriced.length && {
+          hull_priced: hullPriced,
+          hull_price_note:
+            'Supercarrier and titan hulls have no order book. These lines carry the price set on this deployment for the hull, as both sell and buy.',
         }),
         ...(notes.length && { notes }),
         ...(appraisal.cached && { cached: true }),

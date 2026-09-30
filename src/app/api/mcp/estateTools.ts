@@ -15,10 +15,12 @@ import { ascend, descend, groupBy, sortWith } from 'ramda'
 import { z } from 'zod'
 
 import { MAX_LINES } from '@/app/api/appraisal/assetLines'
+import { hullPricedAppraisal } from '@/app/api/appraisal/pricedLines'
 import { collectAssetLines } from '@/app/api/appraisal/collectAssetLines'
 import { fittingRoute, flagSortKey, groupForFlag, type FittingItem, type FittingRow } from '@/app/fitting/fit'
 import { fetchFittingOwners } from '@/app/fitting/resolveCharacter'
 import { resolveLocations, type LocationRef } from '@/app/resolveLocations'
+import { getHullPricesByName } from '@/hullPrices'
 import { appraise, MARKETS, type Market } from '@/innominate'
 import { getSdePlanets } from '@/sdePlanets'
 import { searchSdeSystems } from '@/sdeSystems'
@@ -357,7 +359,10 @@ export const registerEstateTools = (server: McpServer): void => {
       // save is never set here: an MCP call is not a user asking the provider to
       // store a record. Only the viewer's explicit "open this appraisal" arrow
       // does that (docs/appraisals/README.md).
-      const result = await appraise(lines, (market ?? 'jita') as Market)
+      const [result, hullPrices] = await Promise.all([
+        appraise(lines, (market ?? 'jita') as Market),
+        getHullPricesByName(),
+      ])
       if (!result.ok) {
         if (result.kind === 'unconfigured')
           return textResult("Appraisals aren't configured on this deployment (missing INNOMINATE_API_KEY).")
@@ -371,23 +376,32 @@ export const registerEstateTools = (server: McpServer): void => {
       }
 
       const { appraisal } = result
+      // A supercarrier or titan hull never has an order book; the price a
+      // Chancellor set for it stands in, as on the ship page and its card.
+      const {
+        items: appraised,
+        totalSellValue,
+        totalBuyValue,
+        priceSplit,
+        hullPriced,
+      } = hullPricedAppraisal(appraisal.items, hullPrices, appraisal)
       const priced = sortWith(
-        [descend((i: (typeof appraisal.items)[number]) => i.totalSellPrice ?? 0)],
-        appraisal.items.filter((i) => i.error == null)
+        [descend((i: (typeof appraised)[number]) => i.totalSellPrice ?? 0)],
+        appraised.filter((i) => i.error == null)
       )
       // A hangar's full itemization is mostly noise next to the total, so only
       // the biggest lines come back unless asked. The totals always cover
       // everything either way — they come from the batch, not from these rows.
       const shown = priced.slice(0, include_items ? MAX_ROWS : TOP_ITEMS)
-      const unpriced = [...unnamed, ...appraisal.items.filter((i) => i.error != null).map((i) => i.name)]
+      const unpriced = [...unnamed, ...appraised.filter((i) => i.error != null).map((i) => i.name)]
 
       return textResult({
         location: match.name,
         location_id: match.id,
         market: appraisal.market,
-        total_sell_value: appraisal.totalSellValue,
-        total_buy_value: appraisal.totalBuyValue,
-        price_split: appraisal.priceSplit,
+        total_sell_value: totalSellValue,
+        total_buy_value: totalBuyValue,
+        price_split: priceSplit,
         total_volume_m3: appraisal.totalVol,
         line_count: lines.length,
         items: shown.map((i) => ({
@@ -412,6 +426,11 @@ export const registerEstateTools = (server: McpServer): void => {
         // often than right.
         ...(skippedBlueprints > 0 && { skipped_blueprints: skippedBlueprints }),
         ...(unpriced.length > 0 && { unpriced }),
+        ...(hullPriced.length > 0 && {
+          hull_priced: hullPriced,
+          hull_price_note:
+            'Supercarrier and titan hulls have no order book. These lines carry the price set on this deployment for the hull, as both sell and buy.',
+        }),
         ...(appraisal.cached && { cached: true }),
         ...(appraisal.rateLimitRemaining != null && { rate_limit_remaining: appraisal.rateLimitRemaining }),
         data_refreshed: await dataFreshness(supabase, ['character-assets', 'corp-assets']),

@@ -4,7 +4,14 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import { formatBisk, parseBisk } from '../src/app/account/settings/chancellor/hull-prices/bisk.ts'
-import { applyHullPrices, fromAppraisal, type PricedLine, pricedTotals } from '../src/app/api/appraisal/pricedLines.ts'
+import {
+  applyHullPrices,
+  type AppraisedRow,
+  fromAppraisal,
+  hullPricedAppraisal,
+  type PricedLine,
+  pricedTotals,
+} from '../src/app/api/appraisal/pricedLines.ts'
 
 test('parseBisk reads billions of ISK', () => {
   assert.equal(parseBisk('42'), 42_000_000_000)
@@ -67,4 +74,51 @@ test('a set hull price wins over a market price too', () => {
 test('without set prices the lines stand as they are', () => {
   const priced: PricedLine[] = [{ name: 'Nyx', quantity: 1, sell: null, buy: null }]
   assert.deepEqual(applyHullPrices(priced, new Map()), priced)
+})
+
+const row = (name: string, quantity: number, sell: number | null, buy: number | null): AppraisedRow => ({
+  name,
+  quantity,
+  sellPrice: sell,
+  buyPrice: buy,
+  totalSellPrice: sell == null ? null : quantity * sell,
+  totalBuyPrice: buy == null ? null : quantity * buy,
+  error: sell == null ? 'Item not found' : null,
+})
+
+test('hullPricedAppraisal prices a hull the provider could not, and sums the batch again', () => {
+  const provided = { totalSellValue: 60_000_000, totalBuyValue: 48_000_000, priceSplit: 54_000_000 }
+  const result = hullPricedAppraisal(
+    [row('Nyx', 1, null, null), row('Fighter', 12, 5_000_000, 4_000_000)],
+    new Map([['Nyx', 42_000_000_000]]),
+    provided
+  )
+  assert.deepEqual(result.hullPriced, ['Nyx'])
+  assert.equal(result.items[0].error, null)
+  assert.equal(result.items[0].sellPrice, 42_000_000_000)
+  assert.equal(result.items[0].totalBuyPrice, 42_000_000_000)
+  assert.equal(result.totalSellValue, 42_060_000_000)
+  assert.equal(result.totalBuyValue, 42_048_000_000)
+  assert.equal(result.priceSplit, (42_060_000_000 + 42_048_000_000) / 2)
+})
+
+test('hullPricedAppraisal replaces a market price the provider did give for a hull', () => {
+  const result = hullPricedAppraisal(
+    [row('Ragnarok', 1, 1_819_000, 1_819_000)],
+    new Map([['Ragnarok', 128_000_000_000]]),
+    {
+      totalSellValue: 1_819_000,
+      totalBuyValue: 1_819_000,
+      priceSplit: 1_819_000,
+    }
+  )
+  assert.equal(result.items[0].totalSellPrice, 128_000_000_000)
+  assert.equal(result.totalSellValue, 128_000_000_000)
+})
+
+test('hullPricedAppraisal leaves a batch with no hull exactly as the provider answered it', () => {
+  const items = [row('Rifter', 3, 1_000_000, 900_000), row('Mystery', 1, null, null)]
+  const provided = { totalSellValue: 3_000_000, totalBuyValue: 2_700_000, priceSplit: 2_850_000 }
+  const result = hullPricedAppraisal(items, new Map([['Nyx', 42_000_000_000]]), provided)
+  assert.deepEqual(result, { items, ...provided, hullPriced: [] })
 })
