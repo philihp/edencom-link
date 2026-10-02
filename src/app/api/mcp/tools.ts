@@ -18,7 +18,7 @@ import { prop, uniqBy } from 'ramda'
 import { match } from 'ts-pattern'
 import { z } from 'zod'
 
-import { rigAppliesToProduct } from '@/app/blueprint/rigs'
+import { isMaterialRig, rigAppliesToProduct } from '@/app/blueprint/rigs'
 import { ACTIVITY_NAMES } from '@/app/industry/jobFields'
 import { hullPricedAppraisal } from '@/app/api/appraisal/pricedLines'
 import { getHullPricesByName } from '@/hullPrices'
@@ -277,8 +277,10 @@ const loadStructure = async (supabase: SupabaseClient, structureId: string): Pro
   const { sec, band } = securityMultiplier(system?.security ?? null)
 
   const rigNames = await getSdeTypeNames(rigTypeIds)
+  // A material rig is one the modifier table lists, whatever its name says
+  // (an L-Set Reactor Efficiency rig is one, and has no "Material" in it).
   const meRigs = rigTypeIds
-    .filter((id) => typeof rigNames[id] === 'string' && /Material Efficiency/i.test(rigNames[id]))
+    .filter((id) => isMaterialRig(id) && typeof rigNames[id] === 'string')
     .map((id) => ({ typeID: id, name: rigNames[id], bonus: rigBonusFromName(rigNames[id]) }))
 
   return {
@@ -444,11 +446,16 @@ export const registerTools = (server: McpServer): void => {
       const typeIds = filter.matches.map((m) => m.typeID)
       const typeNameById = new Map(filter.matches.map((m) => [m.typeID, m.name]))
 
-      const [{ data: characterRows }, { data: corpRows }, owners] = await Promise.all([
-        supabase.rpc('character_asset_search', { type_ids: typeIds }),
-        supabase.rpc('corp_asset_search', { type_ids: typeIds }),
-        fetchOwnerContext(supabase),
-      ])
+      const [{ data: characterRows, error: characterError }, { data: corpRows, error: corpError }, owners] =
+        await Promise.all([
+          supabase.rpc('character_asset_search', { type_ids: typeIds }),
+          supabase.rpc('corp_asset_search', { type_ids: typeIds }),
+          fetchOwnerContext(supabase),
+        ])
+      // A failed search must not read as "you have none": that answer is the
+      // one a caller acts on.
+      const searchError = characterError ?? corpError
+      if (searchError) return textResult(`Asset search failed: ${searchError.message}`)
 
       type CharacterSearchRow = {
         item_id: number | string
@@ -590,22 +597,25 @@ export const registerTools = (server: McpServer): void => {
       // coalesce rather than comparing directly).
       const orNull = (ids: string[]) => (ids.length > 0 ? ids : null)
 
-      const [{ data: characterRows }, { data: corpRows }] = await Promise.all([
+      const [{ data: characterRows, error: characterError }, { data: corpRows, error: corpError }] = await Promise.all([
         scopes.character
           ? supabase.rpc('character_asset_filter', {
               type_ids: orNull(types.ids),
               location_ids: orNull(locations.ids),
               registration_ids: orNull(ownerSplit.registrationIds),
             })
-          : Promise.resolve({ data: [] }),
+          : Promise.resolve({ data: [], error: null }),
         scopes.corp
           ? supabase.rpc('corp_asset_filter', {
               type_ids: orNull(types.ids),
               location_ids: orNull(locations.ids),
               corporation_ids: orNull(ownerSplit.corporationIds),
             })
-          : Promise.resolve({ data: [] }),
+          : Promise.resolve({ data: [], error: null }),
       ])
+      // As in search_assets: a failed lookup must not read as "none".
+      const filterError = characterError ?? corpError
+      if (filterError) return textResult(`Asset lookup failed: ${filterError.message}`)
 
       type CharacterFilterRow = {
         item_id: number | string

@@ -6,7 +6,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { rigAppliesToProduct, rigsForProduct } from '../src/app/blueprint/rigs.ts'
+import { isMaterialRig, rigAppliesToProduct, rigsForProduct } from '../src/app/blueprint/rigs.ts'
 
 // Stable SDE ids, taken from src/app/blueprint/[typeID]/filters.ts.
 const SHIP_CATEGORY = 6
@@ -63,4 +63,28 @@ test('a rig for one product family does not apply to another', () => {
 
 test('drones resolve through their category, not a group listing', () => {
   assert.ok(rigsForProduct(0, DRONE_CATEGORY).length > 0)
+})
+
+// Biochemical reactions (Mykoserocin → … gas boosters' inputs) are product
+// group 712; the L-Set Reactor Efficiency rigs cover every reaction filter.
+const BIOCHEMICAL_GROUP = 712
+const MATERIAL_CATEGORY = 4
+const L_SET_REACTOR_EFFICIENCY_I = 46496
+const L_SET_REACTOR_EFFICIENCY_II = 46497
+const M_SET_BIOCHEMICAL_REACTOR_ME_II = 46495
+
+test('a reactor efficiency rig is a material rig, though its name never says "Material Efficiency"', () => {
+  // structure_id costing used to keep a fitted rig only when its name matched
+  // /Material Efficiency/, so this rig was dropped and the bill showed rig: null.
+  assert.equal(isMaterialRig(L_SET_REACTOR_EFFICIENCY_I), true)
+  assert.equal(isMaterialRig(L_SET_REACTOR_EFFICIENCY_II), true)
+  assert.equal(isMaterialRig(M_SET_BIOCHEMICAL_REACTOR_ME_II), true)
+})
+
+test('the L-Set reactor rig applies to a biochemical reaction product', () => {
+  assert.equal(rigAppliesToProduct(L_SET_REACTOR_EFFICIENCY_II, BIOCHEMICAL_GROUP, MATERIAL_CATEGORY), true)
+})
+
+test('a type that is no rig is not a material rig', () => {
+  assert.equal(isMaterialRig(34), false) // Tritanium
 })

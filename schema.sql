@@ -1175,31 +1175,39 @@ returns table (
 language sql
 stable
 as $$
-  with recursive parent_of as (
-    select distinct on (item_id) item_id, location_id, location_type
-    from public.character_asset_over_time
-    order by item_id, is_current desc, valid_until desc
-  ),
-  matched as (
+  with recursive matched as (
     select a.item_id, a.registration_id, a.type_id, a.quantity, a.is_singleton, a.name,
            a.location_flag, a.location_id, a.location_type
     from public.character_asset a
     where a.type_id = any(type_ids)
   ),
+  -- Walk up from each matched item to the top of its tree, one indexed
+  -- lookup per step on the version table: a parent link names another
+  -- asset, so the step reads that asset's newest version row (its open one,
+  -- else the last closed one). The walk stops at a row with no parent link,
+  -- a root item, and roots reads that row's place from the location table.
   climb as (
-    select m.item_id as start_item, m.location_id, m.location_type, 1 as depth
+    select m.item_id as start_item, v.id as version_id, v.location_id, 1 as depth
     from matched m
+    join public.character_asset_version v on v.item_id = m.item_id and v.is_current
     union all
-    select c.start_item, p.location_id, p.location_type, c.depth + 1
+    select c.start_item, p.id, p.location_id, c.depth + 1
     from climb c
-    join parent_of p on p.item_id = c.location_id
-    where c.depth < 64
+    cross join lateral (
+      select pv.id, pv.location_id
+      from public.character_asset_version pv
+      where pv.item_id = c.location_id
+      order by pv.is_current desc, pv.valid_until desc
+      limit 1
+    ) p
+    where c.location_id is not null
+      and c.depth < 64
   ),
   roots as (
-    select w.start_item, w.location_id as root_location_id, w.location_type as root_location_type
-    from climb w
-    where w.location_id is not null
-      and not exists (select 1 from parent_of o where o.item_id = w.location_id)
+    select c.start_item, l.location_id as root_location_id, l.location_type as root_location_type
+    from climb c
+    join public.character_asset_location l on l.asset_id = c.version_id
+    where c.location_id is null
   ),
   descend as (
     select m.item_id as ancestor, m.item_id as node, 1 as depth
@@ -1302,11 +1310,6 @@ as $$
     join public.character_asset_version c on c.location_id = i.item_id and c.is_current
     where i.depth < 64
   ),
-  parent_of as (
-    select distinct on (item_id) item_id, location_id, location_type
-    from public.character_asset_over_time
-    order by item_id, is_current desc, valid_until desc
-  ),
   matched as (
     select a.item_id, a.registration_id, a.type_id, a.quantity, a.is_singleton, a.name,
            a.location_flag, a.location_id, a.location_type
@@ -1315,20 +1318,33 @@ as $$
       and (coalesce(cardinality(registration_ids), 0) = 0 or a.registration_id = any(registration_ids))
       and (coalesce(cardinality(location_ids), 0) = 0 or a.item_id in (select i.item_id from inside i))
   ),
+  -- Walk up from each matched item to the top of its tree, one indexed
+  -- lookup per step on the version table: a parent link names another
+  -- asset, so the step reads that asset's newest version row (its open one,
+  -- else the last closed one). The walk stops at a row with no parent link,
+  -- a root item, and roots reads that row's place from the location table.
   climb as (
-    select m.item_id as start_item, m.location_id, m.location_type, 1 as depth
+    select m.item_id as start_item, v.id as version_id, v.location_id, 1 as depth
     from matched m
+    join public.character_asset_version v on v.item_id = m.item_id and v.is_current
     union all
-    select c.start_item, p.location_id, p.location_type, c.depth + 1
+    select c.start_item, p.id, p.location_id, c.depth + 1
     from climb c
-    join parent_of p on p.item_id = c.location_id
-    where c.depth < 64
+    cross join lateral (
+      select pv.id, pv.location_id
+      from public.character_asset_version pv
+      where pv.item_id = c.location_id
+      order by pv.is_current desc, pv.valid_until desc
+      limit 1
+    ) p
+    where c.location_id is not null
+      and c.depth < 64
   ),
   roots as (
-    select w.start_item, w.location_id as root_location_id, w.location_type as root_location_type
-    from climb w
-    where w.location_id is not null
-      and not exists (select 1 from parent_of o where o.item_id = w.location_id)
+    select c.start_item, l.location_id as root_location_id, l.location_type as root_location_type
+    from climb c
+    join public.character_asset_location l on l.asset_id = c.version_id
+    where c.location_id is null
   ),
   descend as (
     select m.item_id as ancestor, m.item_id as node, 1 as depth
