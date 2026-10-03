@@ -9,3 +9,9 @@
   font-size: 12px;
   margin-top: -8px;
 }
+
+/* Numbered table of contents on /terms; the list's own numbering matches
+ * the section headings. */
+.contents {
+  padding-left: 1.5rem;
+}
