@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { notFound, redirect } from 'next/navigation'
+import { map } from 'ramda'
 import { Suspense } from 'react'
 
 import { getSdeSystem } from '@/sdeSystems'
@@ -16,6 +17,8 @@ import type { Owners } from '../../ownerFilter'
 import { SkeletonTable } from '../../skeleton'
 import { fetchStationNames, fetchStationSystems } from '../../stationNames'
 import { fetchSystemNames } from '../../systemNames'
+import { mainOwnerOf } from '../../ship/[itemId]/mainOwner'
+import { hideHolder, PRESENTED_OWNER_ID, UNNAMED_OWNER } from '../../ship/[itemId]/presentedOwner'
 import { TypeIcon } from '../../typeIcon'
 import { resolveShareParams } from '../access'
 import { saveAssetShare, revokeAssetShare } from '../shareActions'
@@ -157,6 +160,23 @@ const fetchScopeOwners = async (
   return { characters, corporations }
 }
 
+// The share asks to show the account's main: what replaces the holder in the
+// owner column, and the row mask (presentedOwner.ts). Null when the main is
+// the holder itself, since then there is nothing to hide. No main set still
+// hides the holder: the share asked for that.
+const presentedAsMain = async (
+  scope: NonNullable<Awaited<ReturnType<typeof resolveShareParams>>>
+): Promise<{ owners: Owners; hide: ReturnType<typeof hideHolder> } | null> => {
+  const holderId = scope.registrationIds[0]
+  if (holderId == null) return null
+  const main = await mainOwnerOf(holderId)
+  if (main?.isHolder) return null
+  return {
+    owners: { characters: [{ id: PRESENTED_OWNER_ID, name: (main?.owner ?? UNNAMED_OWNER).name }], corporations: [] },
+    hide: hideHolder(scope.characterNames.get(holderId) ?? null),
+  }
+}
+
 // Directory browsing for a location's contents. Ships are their own thing —
 // navigating to a ship's id redirects to /ship/[itemId]. Reachable
 // authenticated (RLS scopes everything), or anonymously with a hangar share
@@ -209,6 +229,15 @@ const AssetLocationPage = async ({
     scope ? fetchScopeOwners(supabase, scope) : fetchOwners(),
   ])
 
+  // A share that shows the account's main (character_asset_share.show_as_main):
+  // the owner column, the rows' owner ids and any name carrying the holder's
+  // name must not lead back to the character holding the items. A signed share
+  // has exactly one grantor registration.
+  const presented = scope?.showAsMain ? await presentedAsMain(scope) : null
+  const shownRootItems = presented ? map(presented.hide, rootItems) : rootItems
+  const shownSelf = self && presented ? presented.hide(self) : self
+  const shownOwners = presented ? presented.owners : owners
+
   // The self type answers two questions at once — what to call this container,
   // and whether it's a ship — off one process-cached SDE read.
   const selfType = self ? await getSdeType(Number(self.type_id)) : null
@@ -248,7 +277,8 @@ const AssetLocationPage = async ({
     // name is already in hand from the redirect check above, so naming it costs
     // no round trip of its own.
     const typeName = selfType?.name ?? `#${self.type_id}`
-    heading = self.name && self.name !== typeName ? `${self.name} (${typeName})` : typeName
+    const selfName = shownSelf?.name ?? null
+    heading = selfName && selfName !== typeName ? `${selfName} (${typeName})` : typeName
     if (!scope) crumbs = await fetchAssetPath(locationId, supabase)
   } else {
     const place = await fetchPlace(supabase, locationId, corpScope, rootItems[0]?.location_type ?? null)
@@ -277,9 +307,9 @@ const AssetLocationPage = async ({
       <LocationItems
         supabase={supabase}
         locationId={locationId}
-        rootItems={rootItems}
+        rootItems={shownRootItems}
         currentShipItemIds={currentShipItemIds}
-        owners={owners}
+        owners={shownOwners}
         linkable={!scope}
       />
     </Suspense>

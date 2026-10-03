@@ -3186,10 +3186,13 @@ create table public.character_asset_share (
   secret text,
   created_at timestamptz not null default now(),
   -- Show the grantor account's main character as the owner, not the
-  -- character holding the item (an alt that sits in the ship). Presentation
-  -- only: the pages, the share card and the owner line read it. The asset
-  -- rows still carry the holder's registration_id, which character_directory
-  -- resolves, so a recipient reading the data API can still find the holder.
+  -- character holding the item (an alt that sits in the ship). The pages and
+  -- the share card then send nothing that leads to the holder: not their
+  -- name or portrait, not their registration uuid (character_directory maps
+  -- it to the character), not an item name carrying theirs
+  -- (src/app/ship/[itemId]/presentedOwner.ts). The asset rows themselves still
+  -- carry the holder's registration_id, so a signed-in recipient reading the
+  -- data API directly can still find the holder.
   show_as_main boolean not null default false,
   unique (registration_id, item_id)
 );

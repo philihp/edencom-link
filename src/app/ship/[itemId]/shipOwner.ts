@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 import { mainOwnerOf } from './mainOwner'
+import { UNNAMED_OWNER } from './presentedOwner'
 import { characterPortrait, corporationLogo, type ShipOwner } from './shipHeading'
 
 // Who a hull belongs to, resolved the same way for every page that draws one:
@@ -34,12 +35,17 @@ const sharedAsMain = async (supabase: SupabaseClient, registrationId: string, it
   return (shares ?? []).length > 0
 }
 
+// hiddenHolder is the holding character's name when the page must not give
+// that character away (a share showing the main): the caller strips it, and
+// the holder's registration uuid, from everything it renders. Null otherwise.
+export type ShipOwnerView = { owner: ShipOwner; hiddenHolder: string | null }
+
 export const fetchShipOwner = async (
   supabase: SupabaseClient,
   characterSelf: OwnedRow | null,
   corpSelf: OwnedRow | null,
   itemId?: string
-): Promise<ShipOwner> => {
+): Promise<ShipOwnerView> => {
   if (!characterSelf?.registration_id) {
     const corporationId = Number(corpSelf?.corporation_id)
     const { data: corpName } = await supabase
@@ -47,7 +53,10 @@ export const fetchShipOwner = async (
       .select('name')
       .eq('id', corporationId)
       .maybeSingle<{ name: string }>()
-    return { name: corpName?.name ?? `Corporation #${corporationId}`, portrait: corporationLogo(corporationId) }
+    return {
+      owner: { name: corpName?.name ?? `Corporation #${corporationId}`, portrait: corporationLogo(corporationId) },
+      hiddenHolder: null,
+    }
   }
 
   // A shared ship's owner is outside the caller's registration view (RLS);
@@ -66,12 +75,16 @@ export const fetchShipOwner = async (
       .maybeSingle<{ name: string | null; character_id: number | string | null }>(),
   ])
   if (!registration && itemId && (await sharedAsMain(supabase, characterSelf.registration_id, itemId))) {
+    // No main set still hides the holder: the share asked for that.
     const main = await mainOwnerOf(characterSelf.registration_id)
-    if (main) return main
+    if (!main?.isHolder) return { owner: main?.owner ?? UNNAMED_OWNER, hiddenHolder: directory?.name ?? '' }
   }
   const eveCharacterId = registration?.character_id ?? directory?.character_id ?? null
   return {
-    name: registration?.name ?? directory?.name ?? 'Unknown character',
-    portrait: eveCharacterId == null ? null : characterPortrait(eveCharacterId),
+    owner: {
+      name: registration?.name ?? directory?.name ?? 'Unknown character',
+      portrait: eveCharacterId == null ? null : characterPortrait(eveCharacterId),
+    },
+    hiddenHolder: null,
   }
 }
