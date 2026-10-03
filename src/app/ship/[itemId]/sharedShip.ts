@@ -1,3 +1,4 @@
+import { map } from 'ramda'
 import { cache } from 'react'
 
 import { getSdeType, type SdeType } from '@/sdeTypes'
@@ -6,6 +7,7 @@ import { createServiceClient } from '@/utils/supabase/service'
 import { resolveShareParams } from '../../asset/access'
 import { latestPerItem, sightingOf, type Sighting } from './lastSeen'
 import { mainOwnerOf } from './mainOwner'
+import { hideHolder, PRESENTED_OWNER_ID, UNNAMED_OWNER } from './presentedOwner'
 import { characterPortrait, corporationLogo, type ShipOwner } from './shipHeading'
 import { SHIP_CATEGORY_ID, type ChildRow } from './shipRows'
 
@@ -126,24 +128,38 @@ const loadSharedShip = async (itemId: string, share?: string, token?: string): P
   // Everything inside a ship belongs to whoever owns the ship, so the whole
   // cargo view carries a single owner.
   if (characterSelf?.registration_id) {
+    const holderName = scope.characterNames.get(characterSelf.registration_id) ?? null
+    // The share may ask to show the account's main rather than the holder.
+    // Then nothing below may lead back to the holder: not their uuid, not
+    // their portrait, not a ship or item name that carries their name. The
+    // card and the link preview read this same answer.
+    const main = scope.showAsMain ? await mainOwnerOf(characterSelf.registration_id) : null
+    if (scope.showAsMain && !main?.isHolder) {
+      const hide = hideHolder(holderName)
+      return {
+        self: hide(self),
+        selfType,
+        children: map(hide, children),
+        owner: main?.owner ?? UNNAMED_OWNER,
+        ownerId: PRESENTED_OWNER_ID,
+        ownerKind: 'character',
+        sighting,
+      }
+    }
     // The share scope carries the sharer's name but not their EVE id, which is
     // what the portrait is keyed on — one lookup on the registration the scope
     // already vouched for.
-    const [{ data: registration }, main] = await Promise.all([
-      supabase
-        .from('registration')
-        .select('character_id')
-        .eq('id', characterSelf.registration_id)
-        .maybeSingle<{ character_id: number | string | null }>(),
-      // The share may ask to show the account's main rather than the holder.
-      scope.showAsMain ? mainOwnerOf(characterSelf.registration_id) : Promise.resolve(null),
-    ])
+    const { data: registration } = await supabase
+      .from('registration')
+      .select('character_id')
+      .eq('id', characterSelf.registration_id)
+      .maybeSingle<{ character_id: number | string | null }>()
     return {
       self,
       selfType,
       children,
-      owner: main ?? {
-        name: scope.characterNames.get(characterSelf.registration_id) ?? 'Unknown character',
+      owner: {
+        name: holderName ?? 'Unknown character',
         portrait: registration?.character_id == null ? null : characterPortrait(registration.character_id),
       },
       ownerId: characterSelf.registration_id,

@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next'
 import { headers } from 'next/headers'
 import { notFound, redirect } from 'next/navigation'
+import { identity, map } from 'ramda'
 import { Suspense } from 'react'
 
 import { getSdeType, getSdeTypes } from '@/sdeTypes'
@@ -21,6 +22,7 @@ import { toEsiFit } from './esfFit'
 import { FitExport } from './fitExport'
 import { ShipIdentity } from './identity'
 import { fetchPilotSkills, pilotSkills } from './pilotSkills'
+import { hideHolder, labelWithoutHolder } from './presentedOwner'
 import { ShipContents, SharedShipContents } from './shipContents'
 import { fetchShipOwner } from './shipOwner'
 import { sharedShip, type ShipRow } from './sharedShip'
@@ -149,7 +151,7 @@ const ShipPage = async ({ params, searchParams }: ShipPageProps) => {
   // Non-ships (containers, loose stacks) live on the asset browser instead.
   if (selfType?.categoryID !== SHIP_CATEGORY_ID) redirect(`/asset/${itemId}`)
 
-  const [{ data: characterChildren }, { data: corpChildren }, crumbs, owner, shareData, skillLevels] =
+  const [{ data: characterChildren }, { data: corpChildren }, crumbs, ownerView, shareData, skillLevels] =
     await Promise.all([
       supabase
         .from('character_asset')
@@ -173,32 +175,41 @@ const ShipPage = async ({ params, searchParams }: ShipPageProps) => {
       // returns nothing, so both fall back to the all-V baseline.
       fetchPilotSkills(supabase, characterSelf?.registration_id),
     ])
-  const children = [...((characterChildren ?? []) as ChildRow[]), ...((corpChildren ?? []) as ChildRow[])]
+  const { owner, hiddenHolder } = ownerView
+  // A share that shows the account's main: the holder's registration uuid and
+  // any name carrying theirs stay out of everything below (presentedOwner.ts).
+  const shown = hiddenHolder == null ? identity : hideHolder(hiddenHolder)
+  const hull = shown(self)
+  const shownCrumbs =
+    hiddenHolder == null
+      ? crumbs
+      : map((crumb) => ({ ...crumb, label: labelWithoutHolder(hiddenHolder)(crumb.label) }), crumbs)
+  const children = map(shown, [...((characterChildren ?? []) as ChildRow[]), ...((corpChildren ?? []) as ChildRow[])])
   const rows = fitRows(children)
 
   // Names and categories for the EFT export: the hull (already cached by the
   // lookup above) plus everything fitted or aboard.
-  const types = eftTypes(await getSdeTypes([Number(self.type_id), ...rows.map((row) => row.typeId)]))
+  const types = eftTypes(await getSdeTypes([Number(hull.type_id), ...rows.map((row) => row.typeId)]))
 
-  const typeName = selfType?.name ?? `#${self.type_id}`
+  const typeName = selfType?.name ?? `#${hull.type_id}`
 
   return (
     <>
-      <AssetPath crumbs={crumbs} current={self.name ?? typeName} />
+      <AssetPath crumbs={shownCrumbs} current={hull.name ?? typeName} />
       <ShipIdentity
-        name={self.name && self.name !== typeName ? self.name : typeName}
+        name={hull.name && hull.name !== typeName ? hull.name : typeName}
         typeName={typeName}
         groupName={selfType?.groupName ?? null}
         itemId={itemId}
         owner={owner}
-        location={locationLabel(crumbs)}
+        location={locationLabel(shownCrumbs)}
         actions={
           <>
             {/* The hull plus everything nested inside it — the same set the
                 bays and the table below list, priced in one request. */}
             <AppraisalPanel targets={[itemId]} label="Appraise" ship />
             {/* The same rows, as the text the game imports. */}
-            <FitExport eft={shipEft(Number(self.type_id), self.name ?? null, rows, types)} />
+            <FitExport eft={shipEft(Number(hull.type_id), hull.name ?? null, rows, types)} />
             {shareData ? (
               <ShareDialog
                 subjectLabel="ship"
@@ -212,15 +223,15 @@ const ShipPage = async ({ params, searchParams }: ShipPageProps) => {
         }
       />
       <ShipViewDynamic
-        esiFit={toEsiFit(Number(self.type_id), self.name ?? null, rows)}
+        esiFit={toEsiFit(Number(hull.type_id), hull.name ?? null, rows)}
         pilot={pilotSkills(owner.name, skillLevels)}
       />
       <Suspense fallback={<ContentsFallback />}>
         <ShipContents
           supabase={supabase}
           itemId={itemId}
-          self={self}
-          ownerId={characterSelf?.registration_id ?? String(corpSelf?.corporation_id)}
+          self={hull}
+          ownerId={hull.registration_id ?? String(corpSelf?.corporation_id)}
           childRows={children}
         />
       </Suspense>
