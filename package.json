@@ -24,7 +24,7 @@
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "ts-pattern": "^5.9.0",
-    "workflow": "^4.6.0",
+    "workflow": "^5.0.0",
     "zod": "^4.4.3"
   },
   "scripts": {
