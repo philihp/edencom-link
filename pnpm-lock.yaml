@@ -27,8 +27,8 @@ importers:
         specifier: 2.0.1
         version: 2.0.1(next@16.3.8(@types/node@26.6.3)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0)
       '@vercel/queue':
-        specifier: ^0.6.0
-        version: 0.6.0
+        specifier: ^0.7.0
+        version: 0.7.0
       '@vercel/speed-insights':
         specifier: 2.0.0
         version: 2.0.0(next@16.3.8(@types/node@26.6.3)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0)
@@ -1376,8 +1376,8 @@ packages:
     resolution: {integrity: sha512-6pjdXyNfdCQnj1nyeB1rPtll/XUhmciyeZJD0rpIUUwmcIfR+utDl6+iFvlHvsBdqAVT8UC6ydObT0v+xldfUQ==}
     engines: {node: '>=20.0.0'}
 
-  '@vercel/queue@0.6.0':
-    resolution: {integrity: sha512-Le0A3ldZhnItV5f6zO101aBCL/Zty0RURD7b+RDA8+p6fuBhsiA2vSimbA2OysEIXYTEhANokGaSJrV6m7qpxw==}
+  '@vercel/queue@0.7.0':
+    resolution: {integrity: sha512-Mytb/u9LVywI3DG7DC8ndx61JZ2hGktyxQkePwb3MDGj6AHFq6xTdwmfi4T8HGEP1rQ1MlnVJbuCQ3TzmMwiFw==}
     engines: {node: '>=20.0.0'}
     peerDependencies:
       '@opentelemetry/api': ^1.0.0
@@ -4111,7 +4111,7 @@ snapshots:
       mixpart: 0.0.6
       picocolors: 1.1.1
 
-  '@vercel/queue@0.6.0':
+  '@vercel/queue@0.7.0':
     dependencies:
       '@vercel/oidc': 3.8.5
       minimatch: 10.2.6
