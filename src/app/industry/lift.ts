@@ -149,6 +149,32 @@ export const rateSegments = (jobs: readonly LiftJob[], t0: number, t1: number, s
   return segments
 }
 
+export type RateSummary = { median: number; average: number; total: number }
+
+// The window's summary, read off the step function itself so it agrees with
+// what is drawn: `total` is the ISK lifted across the window (the area under
+// the steps), `average` that total over the window's hours, and `median` the
+// rate the line sat at or below for half the window's time — time-weighted,
+// so an idle stretch counts as zero for as long as it lasted. Null for an
+// empty window.
+export const summarizeRate = (segments: readonly RateSegment[]): RateSummary | null => {
+  const span = segments.reduce((sum, s) => sum + (s.b - s.a), 0)
+  if (!(span > 0)) return null
+  const total = segments.reduce((sum, s) => sum + (s.v * (s.b - s.a)) / HOUR, 0)
+  const byRate = sortBy((s) => s.v, segments)
+  const half = span / 2
+  let seen = 0
+  let median = byRate[byRate.length - 1].v
+  for (const s of byRate) {
+    seen += s.b - s.a
+    if (seen >= half) {
+      median = s.v
+      break
+    }
+  }
+  return { median, average: (total * HOUR) / span, total }
+}
+
 // The jobs that overlap a window at all, for the "n jobs in view" readout.
 export const jobsInView = (jobs: readonly LiftJob[], t0: number, t1: number, scope: LiftScope): LiftJob[] =>
   jobs.filter((j) => inScope(j, scope) && j.end > t0 && j.start < t1)

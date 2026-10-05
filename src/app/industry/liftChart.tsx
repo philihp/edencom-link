@@ -45,6 +45,9 @@ type LiftChartProps = {
   // fortnight past now.
   minT: number
   maxT: number
+  // The present: a vertical rule, so the projected stretch past it reads as
+  // the future it is.
+  now: number
   hoverT: number | null
   scopeT: number | null
   typeNames: Readonly<Record<number, string>>
@@ -60,6 +63,7 @@ export const LiftChart = ({
   t1,
   minT,
   maxT,
+  now,
   hoverT,
   scopeT,
   typeNames,
@@ -156,6 +160,7 @@ export const LiftChart = ({
   const hoverX = hasHover ? tx(hoverT) : 0
   const hoverFrac = (hoverX - PLOT_LEFT) / PLOT_WIDTH
   const hasScope = scopeT != null && scopeT >= t0 && scopeT <= t1
+  const hasNow = now >= t0 && now <= t1
 
   const productName = (j: LiftJob) => {
     const id = j.productTypeId ?? j.blueprintTypeId
@@ -201,9 +206,18 @@ export const LiftChart = ({
         <line x1={PLOT_LEFT} x2={PLOT_RIGHT} y1={BASELINE} y2={BASELINE} className={styles.axisTick} />
         <path d={area} className={styles.area} />
         <path d={line} className={styles.line} />
+        {hasNow && (
+          <g>
+            <line x1={tx(now)} x2={tx(now)} y1={PLOT_TOP} y2={BASELINE} className={styles.nowLine} />
+            <text x={tx(now) + 4} y={PLOT_TOP + 9} className={styles.nowLabel}>
+              now
+            </text>
+          </g>
+        )}
         {hasScope && (
           <g>
             <line x1={tx(scopeT)} x2={tx(scopeT)} y1={PLOT_TOP} y2={BASELINE} className={styles.scopeLine} />
+            <rect x={tx(scopeT) - 20} y={-4} width={40} height={13} rx={2} className={styles.scopeBadge} />
             <text x={tx(scopeT)} y={6} textAnchor="middle" className={styles.scopeLabel}>
               scoped
             </text>
