@@ -37,6 +37,8 @@ type IndustryViewProps = {
   initialNow: number
   // Manufacturing/reaction jobs whose bill could not be priced.
   unpriced: number
+  // The price lookup itself failed, so every job is unpriced for that reason.
+  pricingFailed: boolean
 }
 
 const OWNER_STORAGE_KEY = 'industry.activeJobs.ownerId'
@@ -57,7 +59,15 @@ const SCOPES: Array<{ key: LiftScope; label: string }> = [
   { key: 'reaction', label: 'reaction' },
 ]
 
-export const IndustryView = ({ jobs, owners, typeNames, stationNames, initialNow, unpriced }: IndustryViewProps) => {
+export const IndustryView = ({
+  jobs,
+  owners,
+  typeNames,
+  stationNames,
+  initialNow,
+  unpriced,
+  pricingFailed,
+}: IndustryViewProps) => {
   const ownerName = ownerNames(owners)
 
   const [ownerId, setOwnerId] = useOwnerFilter(OWNER_STORAGE_KEY, owners)
@@ -123,11 +133,15 @@ export const IndustryView = ({ jobs, owners, typeNames, stationNames, initialNow
         </div>
         <div className={styles.caption}>
           prices: Jita split at install · fees included · shipping ignored
-          {unpriced > 0 && (
-            <>
-              {' '}
-              · <span className={styles.mono}>{unpriced}</span> {unpriced === 1 ? 'job' : 'jobs'} unpriced
-            </>
+          {pricingFailed ? (
+            <> · price lookup failed; nothing priced</>
+          ) : (
+            unpriced > 0 && (
+              <>
+                {' '}
+                · <span className={styles.mono}>{unpriced}</span> {unpriced === 1 ? 'job' : 'jobs'} unpriced
+              </>
+            )
           )}
         </div>
       </div>

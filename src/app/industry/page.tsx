@@ -168,17 +168,21 @@ const IndustryPage = async () => {
       probes.set(probeKey(typeId, asOf), { type_id: typeId, as_of: asOf })
     }
   }
+  const priced =
+    probes.size > 0
+      ? await supabase.rpc('market_price_at', { market_id: MARKET, probes: [...probes.values()] })
+      : { data: [] as PriceAt[], error: null }
+  // A failed lookup is told apart from a bill the market cannot price: the
+  // first is reported as such, the second as the unpriced count.
+  const pricingFailed = priced.error != null
+  if (priced.error) console.error(`[industry] market_price_at failed: ${priced.error.message}`)
   const priceAt = new Map<string, number | null>()
-  if (probes.size > 0) {
-    const { data, error } = await supabase.rpc('market_price_at', { market_id: MARKET, probes: [...probes.values()] })
-    if (error) console.error(`[industry] market_price_at failed: ${error.message}`)
-    for (const p of (data ?? []) as PriceAt[]) {
-      const key = probeKey(Number(p.type_id), new Date(p.as_of).toISOString())
-      priceAt.set(
-        key,
-        splitPrice(p.buy_max == null ? null : Number(p.buy_max), p.sell_min == null ? null : Number(p.sell_min))
-      )
-    }
+  for (const p of (priced.data ?? []) as PriceAt[]) {
+    const key = probeKey(Number(p.type_id), new Date(p.as_of).toISOString())
+    priceAt.set(
+      key,
+      splitPrice(p.buy_max == null ? null : Number(p.buy_max), p.sell_min == null ? null : Number(p.sell_min))
+    )
   }
 
   const jobs: LiftJob[] = map((j: OwnedJob): LiftJob => {
@@ -266,6 +270,7 @@ const IndustryPage = async () => {
       stationNames={stationNames}
       initialNow={Date.now()}
       unpriced={unpriced}
+      pricingFailed={pricingFailed}
     />
   )
 }

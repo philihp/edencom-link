@@ -231,6 +231,36 @@ than resolving it to `now()`.
 The row projection is duplicated across the function's two branches on purpose:
 sharing it means one predicate, and one predicate means the slow plan for both.
 
+### Pricing history by type needed the btree after all
+
+`market_price_at(market, probes)` — `/industry`'s "these types at these
+moments" lookup, pricing each job's bill at its install hour — first shipped
+as the cheap-to-store shape above: no index, one sequential pass over the
+market's rows hash-joined against the probes and sorted per probe. On its
+first day in production that pass ran past the `authenticated` role's 8s
+`statement_timeout` (seven weeks of captures by then), and every job read as
+unpriced.
+
+So the `(market, type_id, valid_from)` btree this section measured out of the
+table is in after all, as `market_price_over_time_type_history_idx`, and the
+function is a lateral lookup per probe — the latest version at or before the
+moment with one descending index probe, and the fallback (earliest version
+after it, flagged inexact) behind a `LIMIT` over `UNION ALL`, so it is read only
+when nothing came before. Measured on a synthetic 4.8M-row history (1,200
+hourly runs, 20k types × 2 markets, 10% churn), 600 probes:
+
+| Shape                               | Time   | Index   |
+| ----------------------------------- | ------ | ------- |
+| Sequential pass + hash join + sort  | 650 ms | —       |
+| Lateral lookup over the btree       | 7 ms   | 187 MB  |
+
+against a 410 MB heap — the index is ~45% of the table again, which is the
+storage this section was built to avoid, and the price of pricing history by
+type at all. The sequential pass was already past the timeout on real data
+with far less headroom than the bench machine; the lateral form stays flat as
+history grows. `market_price_snapshot()`'s time-travel branch cannot use the
+index (no `type_id` in its predicate) and is unchanged.
+
 ### Update bloat, not row width, may end up dominating
 
 Measured over 60 simulated hourly cycles at 20% churn (the job's real
@@ -283,7 +313,7 @@ current snapshot, and the tail of history is the cheap part to lose.
 | `src/workflows/marketPrices.ts`                                       | one step per market, heartbeat opened and closed by their own steps                                                                                                                           |
 | `src/app/api/cron/market-prices/route.ts`                             | hourly Vercel Cron trigger (`3 * * * *`)                                                                                                                                                      |
 | `src/app/sheets/market/[market]/route.ts`                             | the public CSV                                                                                                                                                                                |
-| `market_price_over_time` + `market_price` + `market_price_snapshot()` | `supabase/migrations/20260816040000_market_price.sql`, mirrored into `schema.sql`. No surrogate key; one partial unique index doing identity, paging and the live query; BRIN for time travel |
+| `market_price_over_time` + `market_price` + `market_price_snapshot()` | `supabase/migrations/20260816040000_market_price.sql`, mirrored into `schema.sql`. No surrogate key; one partial unique index doing identity, paging and the live query; BRIN for time travel; `(market, type_id, valid_from)` btree for `market_price_at()` |
 
 ## Decisions taken (revisit if wrong)
 

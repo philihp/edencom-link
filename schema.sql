@@ -4071,6 +4071,15 @@ create unique index market_price_over_time_current_idx
 create index market_price_over_time_asof_idx
   on public.market_price_over_time using brin (valid_from) with (pages_per_range = 32);
 
+-- Per-type history: every version of one type in one market, in order. The
+-- lever market_price_at() pulls so /industry prices a job's bill at its
+-- install hour with one index probe per line rather than a sequential pass
+-- (which timed out at seven weeks of captures). The one btree over the whole
+-- table, measured at 187 MB against a 410 MB heap of 4.8M rows (docs/
+-- market-prices/README.md "Storage") — the price of pricing history by type.
+create index market_price_over_time_type_history_idx
+  on public.market_price_over_time (market, type_id, valid_from);
+
 -- Current-snapshot view, matching the *_over_time / like-named-view pairing
 -- every other SCD-2 table here uses.
 create view public.market_price as
@@ -4177,14 +4186,16 @@ grant execute on function public.market_price_snapshot(text, timestamptz) to ano
 -- version instead, reported with exact = false so the caller can say so
 -- rather than present a guess as a reading.
 --
--- Deliberately no new index. The join needs every version of the probed types,
--- which only a btree on (market, type_id, valid_from) would serve, and
--- docs/market-prices/README.md "Storage" measured that shape out of the table
--- on purpose (a surrogate-free, BRIN-only layout is 43% smaller). So this is a
--- hash join against one sequential pass over the market's rows — the same
--- cost the time-travel branch of market_price_snapshot() already pays per
--- sheet refresh, paid once per page view here, with every probe answered from
--- that single pass. If /industry ever outgrows it, the index is the lever.
+-- Answered as one index lookup per probe over
+-- market_price_over_time_type_history_idx — (market, type_id, valid_from) —
+-- the btree docs/market-prices/README.md "Storage" had measured out of the
+-- table and named as the lever if /industry outgrew a sequential pass. It did
+-- on its first day: the pass over seven weeks of hourly captures ran past the
+-- authenticated role's 8s statement_timeout, and every job read as unpriced.
+-- The lateral form below reads the latest version at or before the moment
+-- with one descending probe; the LIMIT over the UNION ALL stops after that
+-- branch answers, so the fallback (earliest version after the moment) is read
+-- only when nothing came before. Cost is now per probe, flat as history grows.
 --
 -- Returns json rather than setof so PostgREST's max_rows cap (1000) never
 -- truncates an answer — the same reason the snapshot functions do.
@@ -4198,37 +4209,39 @@ as $$
   select coalesce(
     json_agg(
       json_build_object(
-        'type_id',  r.type_id,
-        'as_of',    r.as_of,
-        'buy_max',  r.buy_max,
-        'sell_min', r.sell_min,
-        'since',    r.valid_from,
-        'exact',    r.exact
+        'type_id',  q.type_id,
+        'as_of',    q.as_of,
+        'buy_max',  p.buy_max,
+        'sell_min', p.sell_min,
+        'since',    p.valid_from,
+        'exact',    (p.valid_from <= q.as_of)
       )
-      order by r.type_id, r.as_of
+      order by q.type_id, q.as_of
     ),
     '[]'::json
   )
   from (
-    select distinct on (q.type_id, q.as_of)
-      q.type_id,
-      q.as_of,
-      p.buy_max,
-      p.sell_min,
-      p.valid_from,
-      (p.valid_from <= q.as_of) as exact
-    from jsonb_to_recordset(probes) as q(type_id bigint, as_of timestamptz)
-    join public.market_price_over_time p
-      on p.market = market_id
-     and p.type_id = q.type_id
-    -- Versions at or before the moment first, nearest first; a moment the
-    -- capture never saw takes the nearest version after it instead.
-    order by
-      q.type_id,
-      q.as_of,
-      (p.valid_from <= q.as_of) desc,
-      abs(extract(epoch from (p.valid_from - q.as_of)))
-  ) r;
+    select distinct type_id, as_of
+    from jsonb_to_recordset(probes) as x(type_id bigint, as_of timestamptz)
+  ) q
+  cross join lateral (
+    (
+      select v.buy_max, v.sell_min, v.valid_from
+      from public.market_price_over_time v
+      where v.market = market_id and v.type_id = q.type_id and v.valid_from <= q.as_of
+      order by v.valid_from desc
+      limit 1
+    )
+    union all
+    (
+      select v.buy_max, v.sell_min, v.valid_from
+      from public.market_price_over_time v
+      where v.market = market_id and v.type_id = q.type_id and v.valid_from > q.as_of
+      order by v.valid_from asc
+      limit 1
+    )
+    limit 1
+  ) p;
 $$;
 
 grant execute on function public.market_price_at(text, jsonb) to anon, authenticated, service_role;

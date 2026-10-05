@@ -33,7 +33,7 @@ insert into public.market_price_over_time (type_id, market, valid_from, valid_un
   -- A one-sided book: nothing bid.
   (35, 'jita', '2026-09-05T00:00:00Z', '2026-10-01T00:00:00Z', null, 12.5, true);
 
-\i supabase/migrations/20261005000605_market_price_at.sql
+\i supabase/migrations/20261005084011_market_price_at_type_history_idx.sql
 
 do $$
 declare
