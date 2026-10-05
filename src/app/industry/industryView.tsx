@@ -184,6 +184,7 @@ export const IndustryView = ({
             t1={range.t1}
             minT={minT}
             maxT={maxT}
+            now={now}
             hoverT={hoverT}
             scopeT={scopeT}
             typeNames={typeNames}

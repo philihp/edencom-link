@@ -249,6 +249,17 @@
   stroke-dasharray: 3 3;
 }
 
+.nowLine {
+  stroke: var(--ink-soft);
+  stroke-width: 1;
+}
+
+.nowLabel {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  fill: var(--ink-soft);
+}
+
 /* "scoped" wears the yellow alert colour: the list below is no longer the
    live view, and the badge is what says so on the chart. */
 .scopeBadge {
