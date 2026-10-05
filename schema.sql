@@ -737,9 +737,13 @@ grant all on public.token to service_role;
 -- a slowly changing dimension (SCD type 2): each row is a versioned snapshot of
 -- one item's state. When the extract sees an item whose tracked attributes
 -- (location, quantity, ...) differ from its current row, that row is closed
--- (is_current = false) and a new row inserted, so full history is retained.
--- valid_until on the open row is extended every run the item is seen
--- unchanged. The table was character_asset_over_time until the location split
+-- (is_current = false, valid_until = the run's clock) and a new row inserted,
+-- so full history is retained. An item seen unchanged is not written at all:
+-- an open row's valid_until is its debut, and "when was this last seen" is the
+-- character's latest character-assets heartbeat. (Until 2026-10 every unchanged
+-- row's valid_until was moved forward each run — ~200 updates per real change,
+-- none of them HOT since valid_until is indexed — and that touch was the
+-- table's write load.) The table was character_asset_over_time until the location split
 -- (docs/sharing-layer/11-location-split.md): its location columns now hold
 -- only a parent that is another asset of the same owner, and a root item's
 -- place lives in character_asset_location below. The character_asset_over_time
@@ -896,20 +900,27 @@ as $$
 declare
   v_items    bigint[];
   v_ids      bigint[];
+  v_now      timestamptz;
   v_inserted integer;
 begin
   if p_rows is null or jsonb_array_length(p_rows) = 0 then
     return 0;
   end if;
 
-  select array_agg(distinct (r->>'item_id')::bigint)
-    into v_items
+  select array_agg(distinct (r->>'item_id')::bigint),
+         coalesce(min((r->>'valid_until')::timestamptz), now())
+    into v_items, v_now
     from jsonb_array_elements(p_rows) r;
 
   perform pg_advisory_xact_lock(hashtext('public.character_asset_over_time')::bigint);
 
+  -- The run's clock, carried on every row as valid_until: the close below
+  -- stamps the previous owner's row with it, so a ship and what was aboard
+  -- it, claimed in different chunks, still close on one instant — which is
+  -- what the share page's last-known-contents query compares. Only when a
+  -- caller sends no stamp does the database clock stand in.
   update public.character_asset_version
-     set is_current = false
+     set is_current = false, valid_until = v_now
    where is_current
      and item_id = any (v_items);
 
@@ -4486,9 +4497,11 @@ grant all    on public.corp_contract_item to service_role;
 -- ESI /corporations/{id}/assets/ (esi-assets.read_corporation_assets.v1),
 -- written by the corp-assets job. SCD Type 2 history of a corporation's assets,
 -- mirroring character_asset_over_time for per-character assets: is_current=true
--- rows form the current snapshot, valid_until is bumped each run for unchanged
--- items, and a new row is inserted when anything changes (old row's is_current
--- set false). Sourced from the same ESI pull that feeds corp_structure_rig.
+-- rows form the current snapshot, an unchanged item is not written, and a new
+-- row is inserted when anything changes (old row closed: is_current false,
+-- valid_until = the run's clock). "Last seen" for an open row is the corp's
+-- corp-assets heartbeat. Sourced from the same ESI pull that feeds
+-- corp_structure_rig.
 create table public.corp_asset_over_time (
   id bigint generated always as identity primary key,
   item_id bigint not null,
@@ -4556,20 +4569,27 @@ set search_path to 'public'
 as $$
 declare
   v_items    bigint[];
+  v_now      timestamptz;
   v_inserted integer;
 begin
   if p_rows is null or jsonb_array_length(p_rows) = 0 then
     return 0;
   end if;
 
-  select array_agg(distinct (r->>'item_id')::bigint)
-    into v_items
+  select array_agg(distinct (r->>'item_id')::bigint),
+         coalesce(min((r->>'valid_until')::timestamptz), now())
+    into v_items, v_now
     from jsonb_array_elements(p_rows) r;
 
   perform pg_advisory_xact_lock(hashtext('public.corp_asset_over_time')::bigint);
 
+  -- The run's clock, carried on every row as valid_until: the close below
+  -- stamps the previous owner's row with it, so a ship and what was aboard
+  -- it, claimed in different chunks, still close on one instant — which is
+  -- what the character twin's share page compares. Only when a
+  -- caller sends no stamp does the database clock stand in.
   update public.corp_asset_over_time
-     set is_current = false
+     set is_current = false, valid_until = v_now
    where is_current
      and item_id = any (v_items);
 

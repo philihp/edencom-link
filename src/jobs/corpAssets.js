@@ -61,8 +61,11 @@ const fetchCurrentByItem = async (corporation_id) => {
 
 // Reconcile freshly fetched corp assets against the corp's current (open) rows
 // in corp_asset_over_time, the same SCD-2 approach the character-assets job uses
-// for per-character assets: unchanged items get valid_until extended, changed
-// items close their old row and open a new one, and vanished items are closed.
+// for per-character assets: unchanged items are left alone, changed items
+// close their old row and open a new one, and vanished items are closed. A
+// close stamps valid_until with this run's clock; an open row's valid_until
+// is its debut, and "last seen" is the corp's corp-assets heartbeat (see the
+// character twin for why the per-row touch went).
 const reconcile = async (corporation_id, fetched) => {
   const currentByItem = await fetchCurrentByItem(corporation_id)
   // ESI can return the same item twice across pages if assets shift mid-fetch;
@@ -71,16 +74,16 @@ const reconcile = async (corporation_id, fetched) => {
 
   const now = new Date().toISOString()
 
-  // Classify each fetched item against its current row: unchanged (touch),
+  // Classify each fetched item against its current row: unchanged (no write),
   // changed (close + insert), or new (insert only). Built with a plain local
   // accumulator mutated via push — a corp can hold tens of thousands of items,
   // and rebuilding immutable arrays on every iteration here would turn an
   // O(n) pass into O(n²).
-  const { touchIds, closeIds, inserts } = reduce(
+  const { unchanged, closeIds, inserts } = reduce(
     (acc, a) => {
       const cur = currentByItem.get(Number(a.item_id))
       if (cur && cur.sig === signature(a)) {
-        acc.touchIds.push(cur.id)
+        acc.unchanged += 1
       } else {
         if (cur) acc.closeIds.push(cur.id)
         acc.inserts.push({
@@ -98,7 +101,7 @@ const reconcile = async (corporation_id, fetched) => {
       }
       return acc
     },
-    { touchIds: [], closeIds: [], inserts: [] },
+    { unchanged: 0, closeIds: [], inserts: [] },
     [...fetchedByItem.values()]
   )
 
@@ -109,14 +112,14 @@ const reconcile = async (corporation_id, fetched) => {
   })
   const allCloseIds = [...closeIds, ...vanishedIds]
 
-  await forEachSequential(splitEvery(200, touchIds), async (ids) => {
-    const { error } = await sudoSupabase.from('corp_asset_over_time').update({ valid_until: now }).in('id', ids)
-    if (error) throw error
-  })
-  // Close this owner's superseded and vanished rows. The claim below handles
-  // the open row of any *other* owner whose item we are taking over.
+  // Close this owner's superseded and vanished rows, stamped with this run's
+  // clock. The claim below handles the open row of any *other* owner whose
+  // item we are taking over, stamping it with the same clock.
   await forEachSequential(splitEvery(200, allCloseIds), async (ids) => {
-    const { error } = await sudoSupabase.from('corp_asset_over_time').update({ is_current: false }).in('id', ids)
+    const { error } = await sudoSupabase
+      .from('corp_asset_over_time')
+      .update({ is_current: false, valid_until: now })
+      .in('id', ids)
     if (error) throw error
   })
   // Open the new versions through the claim function: it also closes any open
@@ -124,7 +127,7 @@ const reconcile = async (corporation_id, fetched) => {
   // changing hands looks like and what a plain insert collided with.
   const opened = await claimRows('corp_asset_claim', inserts)
 
-  return { touched: touchIds.length, opened, closed: allCloseIds.length }
+  return { unchanged, opened, closed: allCloseIds.length }
 }
 
 export const runCorpAssets = ({ registrationIds } = {}) =>
@@ -140,9 +143,9 @@ export const runCorpAssets = ({ registrationIds } = {}) =>
     const structureIds = new Set((ownStructures ?? []).map((s) => Number(s.structure_id)))
 
     const assets = await fetchAllPages((page) => corpAssets(access_token, corporation_id, page))
-    const { touched, opened, closed } = await reconcile(corporation_id, assets)
+    const { unchanged, opened, closed } = await reconcile(corporation_id, assets)
     console.log(
-      `[${TAG}] ${ctx}: corp ${corporation_id} ${assets.length} asset(s); ${touched} unchanged, ${opened} opened, ${closed} closed`
+      `[${TAG}] ${ctx}: corp ${corporation_id} ${assets.length} asset(s); ${unchanged} unchanged, ${opened} opened, ${closed} closed`
     )
 
     // Corp assets sit in the same /asset rollup as the character ones, and a
