@@ -15,9 +15,11 @@ import { relativeTime } from '../../freshness.ts'
 export const OVERDUE_AFTER_MS = 24 * 60 * 60 * 1000
 
 export type Sighting = {
-  // The last extract that listed the ship: the newest version's valid_until.
-  // The reconcile stamps that on every row it sees, seen-again or new, and
-  // never on a row it closes, so a closed row's value is the last look.
+  // The last extract that listed the ship. For a ship still in the hangar
+  // that is the owner's last successful assets refresh (the reconcile writes
+  // nothing to an unchanged row, so its own valid_until is only its debut);
+  // for a vanished ship it is the row's valid_until, stamped by the run that
+  // saw it gone.
   lastSeen: string
   // False once the newest version is closed: the ship is not in the hangar
   // now, and what the page shows is its last state.
@@ -36,9 +38,16 @@ export const isOverdue = (sighting: Sighting, now: number = Date.now()): boolean
 export const sightingText = (sighting: Sighting, now: number = Date.now()): string =>
   `last seen ${relativeTime(sighting.lastSeen, now)}`
 
-// The sighting a version row stands for.
-export const sightingOf = (row: Pick<VersionRow, 'is_current' | 'valid_until'>): Sighting => ({
-  lastSeen: row.valid_until,
+// The sighting a version row stands for. `refreshedAt` is when the owner's
+// assets were last pulled successfully; it is the sighting of an open row, and
+// is ignored for a closed one, whose close is the last look. An open row with
+// no refresh on record (a heartbeat the retention or a reset took) falls back
+// to its own stamp rather than to nothing.
+export const sightingOf = (
+  row: Pick<VersionRow, 'is_current' | 'valid_until'>,
+  refreshedAt: string | null = null
+): Sighting => ({
+  lastSeen: row.is_current && refreshedAt != null ? refreshedAt : row.valid_until,
   inHangar: row.is_current,
 })
 
@@ -50,7 +59,9 @@ const newer = (a: VersionRow, b: VersionRow): boolean =>
 // One version per item, the newest, out of rows that may hold several
 // versions of the same item. The snapshot query for a vanished ship's
 // contents reads the version table, where an item that changed twice inside
-// the ship has two rows; the last one is what was aboard.
+// the ship has two rows; the last closed is what was aboard. (An open row's
+// valid_until is its debut, so this never compares an open row's stamp
+// against a closed one's — is_current decides first.)
 export const latestPerItem = <T extends VersionRow>(rows: T[]): T[] =>
   Object.values(
     rows.reduce<Record<string, T>>((held, row) => {

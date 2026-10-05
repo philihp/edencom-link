@@ -52,11 +52,12 @@ const CHILD_COLUMNS = 'item_id, type_id, location_flag, quantity, is_singleton, 
 
 type Service = ReturnType<typeof createServiceClient>
 
-// What was aboard at the last extract that saw the ship. Every row that
-// extract listed — the ship's and its contents' alike — carries its clock in
-// valid_until, so the contents are the rows linked to the ship with that
-// stamp or a later one; rows the extract closed before it hold an earlier
-// one and drop out. Read from the version table, not the view: the view
+// What was aboard at the last extract that saw the ship. The run that saw the
+// ship gone closed it and everything aboard it with one clock in valid_until
+// (the reconcile's own closes and the claim function's cross-owner close both
+// stamp the run's `now`), so the contents are the rows linked to the ship with
+// that stamp or a later one; rows closed by an earlier run hold an earlier one
+// and drop out. Read from the version table, not the view: the view
 // blanks a link to a parent with no open row, which a vanished ship is. The
 // service role reads the table without RLS, and the scope filter stands in.
 // Open rows are asked for separately, so each arm lands on its own partial
@@ -74,6 +75,28 @@ const childrenAsOf = async (supabase: Service, itemId: string, registrationIds: 
   ])
   type Row = ChildRow & { is_current: boolean; valid_until: string }
   return latestPerItem([...((open ?? []) as Row[]), ...((closed ?? []) as Row[])]) as ChildRow[]
+}
+
+// When the owner's assets were last pulled successfully: the newest
+// character-assets (or corp-assets) heartbeat that ended ok for that owner.
+// An open row's valid_until is its debut (the reconcile writes nothing to an
+// unchanged row), so this is what "last seen" means for a ship still held.
+// Null when no such run is on record; the caller then falls back to the row.
+const lastAssetsRefresh = async (
+  supabase: Service,
+  owner: { job: string; column: 'registration_id' | 'corporation_id'; id: string | number }
+): Promise<string | null> => {
+  const { data } = await supabase
+    .from('heartbeat')
+    .select('ended_at')
+    .eq('job', owner.job)
+    .eq(owner.column, owner.id)
+    .eq('ok', true)
+    .not('ended_at', 'is', null)
+    .order('ended_at', { ascending: false })
+    .limit(1)
+    .maybeSingle<{ ended_at: string }>()
+  return data?.ended_at ?? null
 }
 
 const loadSharedShip = async (itemId: string, share?: string, token?: string): Promise<SharedShip | null> => {
@@ -106,7 +129,17 @@ const loadSharedShip = async (itemId: string, share?: string, token?: string): P
   const selfType = await getSdeType(Number(self.type_id))
   // Not a ship: the share covers a container, and this page is for hulls.
   if (selfType?.categoryID !== SHIP_CATEGORY_ID) return null
-  const sighting = sightingOf(self)
+  const sighting = sightingOf(
+    self,
+    self.is_current
+      ? await lastAssetsRefresh(
+          supabase,
+          characterSelf
+            ? { job: 'character-assets', column: 'registration_id', id: characterSelf.registration_id as string }
+            : { job: 'corp-assets', column: 'corporation_id', id: Number(corpSelf!.corporation_id) }
+        )
+      : null
+  )
 
   const [characterChildren, { data: corpChildren }] = await Promise.all([
     characterSelf && !characterSelf.is_current

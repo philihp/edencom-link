@@ -78,8 +78,15 @@ const fetchCurrentByItem = async (registration_id) => {
 }
 
 // Reconcile the freshly fetched assets against the character's current (open)
-// rows: unchanged items get their valid_until extended, changed items have
-// their old row closed and a new one inserted, and vanished items are closed.
+// rows: unchanged items are left alone, changed items have their old row
+// closed and a new one inserted, and vanished items are closed. A close
+// stamps valid_until with this run's clock, so a closed row says when the
+// extract saw the item gone or changed; an open row's valid_until is its
+// debut and carries no meaning, and "when was this last seen" is answered by
+// the character's character-assets heartbeat instead. Until 2026-10 every
+// unchanged row had its valid_until moved forward each run — ~200 index-
+// writing updates per real change on a table where almost nothing changes —
+// and that touch was the table's whole write load.
 // `names` is the player-assigned-name Map from fetchNames, applied here per
 // item instead of pre-merged onto a full copy of the fetched array.
 const reconcile = async (registration_id, fetched, names) => {
@@ -91,18 +98,18 @@ const reconcile = async (registration_id, fetched, names) => {
 
   const now = new Date().toISOString()
 
-  // Classify each fetched item against its current row: unchanged (touch),
+  // Classify each fetched item against its current row: unchanged (no write),
   // changed (close + insert), or new (insert only). Built with a plain local
   // accumulator mutated via push — a character can hold tens of thousands of
   // items, and rebuilding immutable arrays on every iteration here would turn
   // an O(n) pass into O(n²).
-  const { touchIds, closeIds, inserts } = reduce(
+  const { unchanged, closeIds, inserts } = reduce(
     (acc, a) => {
       const itemId = Number(a.item_id)
       const name = names.get(itemId) ?? null
       const cur = currentByItem.get(itemId)
       if (cur && cur.sig === signature(a, name)) {
-        acc.touchIds.push(cur.id)
+        acc.unchanged += 1
       } else {
         if (cur) acc.closeIds.push(cur.id)
         // valid_from is left to its `default now()` so it marks this version's debut.
@@ -122,7 +129,7 @@ const reconcile = async (registration_id, fetched, names) => {
       }
       return acc
     },
-    { touchIds: [], closeIds: [], inserts: [] },
+    { unchanged: 0, closeIds: [], inserts: [] },
     [...fetchedByItem.values()]
   )
 
@@ -133,19 +140,14 @@ const reconcile = async (registration_id, fetched, names) => {
   })
   const allCloseIds = [...closeIds, ...vanishedIds]
 
-  await forEachSequential(splitEvery(200, touchIds), async (ids) => {
-    const { error: touchErr } = await sudoSupabase
-      .from('character_asset_version')
-      .update({ valid_until: now })
-      .in('id', ids)
-    if (touchErr) throw touchErr
-  })
-  // Close this owner's superseded and vanished rows. The claim below handles
-  // the open row of any *other* owner whose item we are taking over.
+  // Close this owner's superseded and vanished rows, stamped with this run's
+  // clock. The claim below handles the open row of any *other* owner whose
+  // item we are taking over, stamping it with the same clock (the rows carry
+  // it as valid_until), so a ship and what was aboard it close on one instant.
   await forEachSequential(splitEvery(200, allCloseIds), async (ids) => {
     const { error: closeErr } = await sudoSupabase
       .from('character_asset_version')
-      .update({ is_current: false })
+      .update({ is_current: false, valid_until: now })
       .in('id', ids)
     if (closeErr) throw closeErr
   })
@@ -154,7 +156,7 @@ const reconcile = async (registration_id, fetched, names) => {
   // changing hands looks like and what a plain insert collided with.
   const opened = await claimRows('character_asset_claim', inserts)
 
-  return { touched: touchIds.length, opened, closed: allCloseIds.length }
+  return { unchanged, opened, closed: allCloseIds.length }
 }
 
 export const runCharacterAssets = ({ registrationIds } = {}) =>
@@ -165,7 +167,7 @@ export const runCharacterAssets = ({ registrationIds } = {}) =>
       const t0 = Date.now()
       const fetched = await fetchAllPages((page) => assets(access_token, characterID, page))
       const names = await fetchNames(access_token, characterID, fetched)
-      const { touched, opened, closed } = await reconcile(registration_id, fetched, names)
+      const { unchanged, opened, closed } = await reconcile(registration_id, fetched, names)
 
       // /asset reads a rollup of the container walk rather than recomputing it,
       // so the reconcile is only half done until that rollup agrees with it.
@@ -173,7 +175,7 @@ export const runCharacterAssets = ({ registrationIds } = {}) =>
 
       const dt = Date.now() - t0
       console.log(
-        `[${TAG}] ${ctx}: ${fetched.length} asset(s); ${touched} unchanged, ${opened} opened, ${closed} closed in ${dt}ms`
+        `[${TAG}] ${ctx}: ${fetched.length} asset(s); ${unchanged} unchanged, ${opened} opened, ${closed} closed in ${dt}ms`
       )
     }
   )

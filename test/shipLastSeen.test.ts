@@ -34,10 +34,32 @@ test('sightingText reads like the freshness dot', () => {
   assert.equal(sightingText({ lastSeen: at(2 * 24 * HOUR), inHangar: false }, NOW), 'last seen 2 days ago')
 })
 
-test('sightingOf takes the last look from the row and whether it is open', () => {
+test('sightingOf: a closed row is last seen at its close, whatever the owner refreshed since', () => {
   assert.deepEqual(sightingOf({ is_current: false, valid_until: '2026-09-24T06:00:00+00:00' }), {
     lastSeen: '2026-09-24T06:00:00+00:00',
     inHangar: false,
+  })
+  assert.deepEqual(
+    sightingOf({ is_current: false, valid_until: '2026-09-24T06:00:00+00:00' }, '2026-09-27T11:00:00+00:00'),
+    { lastSeen: '2026-09-24T06:00:00+00:00', inHangar: false }
+  )
+})
+
+test("sightingOf: an open row is last seen at the owner's last assets refresh, not its own stamp", () => {
+  assert.deepEqual(
+    sightingOf({ is_current: true, valid_until: '2026-08-01T00:00:00+00:00' }, '2026-09-27T11:00:00+00:00'),
+    { lastSeen: '2026-09-27T11:00:00+00:00', inHangar: true }
+  )
+})
+
+test('sightingOf: an open row with no refresh on record falls back to its own stamp', () => {
+  assert.deepEqual(sightingOf({ is_current: true, valid_until: '2026-08-01T00:00:00+00:00' }), {
+    lastSeen: '2026-08-01T00:00:00+00:00',
+    inHangar: true,
+  })
+  assert.deepEqual(sightingOf({ is_current: true, valid_until: '2026-08-01T00:00:00+00:00' }, null), {
+    lastSeen: '2026-08-01T00:00:00+00:00',
+    inHangar: true,
   })
 })
 

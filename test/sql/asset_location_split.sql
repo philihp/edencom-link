@@ -330,5 +330,40 @@ begin
   assert not public.asset_share_covers(2001, '00000000-0000-0000-0000-0000000000aa'), 'the other ship is not';
 end $$;
 
+-- ── a close carries the run's clock ───────────────────────────────────────
+-- The reconcile stopped touching unchanged rows (migration
+-- 20261005220113_asset_close_stamp.sql), so a closed row's valid_until must be
+-- written by the close itself. Through the claim: bob takes over alice's
+-- module 1002 with the run's clock on the payload, and alice's closed row
+-- carries that clock — not now(), not her row's old stamp.
+\i supabase/migrations/20261005220113_asset_close_stamp.sql
+do $$
+declare
+  v_clock timestamptz := '2026-10-05T12:34:56Z';
+begin
+  perform public.character_asset_claim(jsonb_build_array(jsonb_build_object(
+    'item_id', 1002, 'registration_id', '00000000-0000-0000-0000-0000000000bb', 'type_id', 2929,
+    'location_id', 60003760, 'location_flag', 'Hangar', 'location_type', 'station',
+    'quantity', 1, 'is_singleton', true, 'is_blueprint_copy', false,
+    'valid_until', v_clock, 'name', null
+  )));
+  assert (select valid_until from public.character_asset_version
+           where item_id = 1002 and not is_current
+             and registration_id = '00000000-0000-0000-0000-0000000000aa') = v_clock,
+    'the previous owner''s closed row is stamped with the claiming run''s clock';
+  assert (select valid_until from public.character_asset_version
+           where item_id = 1002 and is_current) = v_clock,
+    'and the new version debuts on the same clock';
+  -- Without a stamp on the payload the database clock stands in, never null.
+  perform public.character_asset_claim(jsonb_build_array(jsonb_build_object(
+    'item_id', 1002, 'registration_id', '00000000-0000-0000-0000-0000000000aa', 'type_id', 2929,
+    'location_id', 1001, 'location_flag', 'HiSlot0', 'location_type', 'item', 'quantity', 1, 'is_singleton', true
+  )));
+  assert (select valid_until from public.character_asset_version
+           where item_id = 1002 and not is_current
+             and registration_id = '00000000-0000-0000-0000-0000000000bb') >= now() - interval '1 minute',
+    'a payload without a stamp closes on the database clock';
+end $$;
+
 \echo 'asset_location_split: ALL ASSERTIONS PASSED'
 rollback;
