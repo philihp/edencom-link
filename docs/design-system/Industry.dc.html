@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html>
+<head>
+
+
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics>
+<meta name="design_doc_mode" content="canvas">
+<link rel="stylesheet" href="_ds/edencom-link-design-80a92c6f-29aa-4e04-8f29-c0c9bc110814/fonts/fonts.css">
+<link rel="stylesheet" href="_ds/edencom-link-design-80a92c6f-29aa-4e04-8f29-c0c9bc110814/tokens/colors.css">
+<link rel="stylesheet" href="_ds/edencom-link-design-80a92c6f-29aa-4e04-8f29-c0c9bc110814/tokens/interactions.css">
+<link rel="stylesheet" href="_ds/edencom-link-design-80a92c6f-29aa-4e04-8f29-c0c9bc110814/styles.css">
+<script src="_ds/edencom-link-design-80a92c6f-29aa-4e04-8f29-c0c9bc110814/_ds_bundle.js"></script>
+<style>
+html,body{background:#101113}
+body{margin:0;font-family:'Eve Sans Neue',ui-sans-serif,sans-serif}
+a{color:var(--link)}a:hover{color:var(--link-hover)}
+.lt{
+  --bg-canvas:#f4f4f5;--bg-surface:#ffffff;--bg-elevated:#ececee;--bg-overlay:#e2e2e5;
+  --border-subtle:#d9d9dd;--border-strong:#c2c2c9;
+  --text-primary:#17181a;--text-secondary:#54585f;--text-tertiary:#6b6e75;
+  --accent-primary:#7a7aef;--accent-primary-hover:#6a6ae8;--accent-text:#5451c9;
+  --link:#5b4fc4;--link-hover:#463aa8;
+  --status-good:#177a44;--status-warn:#8a6114;--status-bad:#b32c33;--status-info:#2b49b0;
+}
+.dv-turn{--accent-text:var(--accent-primary);padding:40px 44px 32px;border-bottom:1px solid #26272c}
+.dv-thd{display:flex;align-items:baseline;gap:10px;margin:0 0 20px}
+.dv-tid{font:600 10px ui-monospace,Menlo,monospace;padding:3px 7px;background:#f4f4f5;color:#17181a;border-radius:4px;text-decoration:none}
+.dv-tname{font:600 13px/1.2 'Eve Sans Neue',sans-serif;color:#f4f4f5}
+.dv-opts{display:flex;flex-direction:column;gap:34px;align-items:flex-start}
+.dv-opt{display:flex;flex-direction:column;gap:9px;scroll-margin-top:16px}
+.dv-oid{font:600 10.5px ui-monospace,Menlo,monospace;padding:3px 7px;background:#26272c;color:#f4f4f5;border-radius:5px;text-decoration:none}
+.dv-olabel{display:flex;align-items:baseline;gap:8px;font:400 11px/1.35 'Eve Sans Neue',sans-serif;color:#9a9da5;max-width:920px}
+.dv-opt:target .dv-oid{background:#8f8ff5;color:#17181a}
+.dv-pair{display:flex;gap:18px;padding:16px;border:1px solid #26272c;border-radius:10px}
+.dv-app{width:1180px;background:var(--bg-canvas);border:1px solid var(--border-subtle);border-radius:8px;overflow:hidden;color:var(--text-primary);box-sizing:border-box;padding:22px 24px 26px}
+.m{font-family:ui-monospace,Menlo,monospace}
+.pnl{background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:6px;overflow:hidden}
+.tg{background:none;border:0;padding:0;font:inherit;font-size:11.5px;font-weight:600;color:var(--link);cursor:pointer}
+.tg:hover{color:var(--link-hover)}
+.tg-on{color:var(--text-primary);text-decoration:underline;text-underline-offset:3px}
+.tg-off{color:var(--text-tertiary);cursor:default;font-weight:400}
+.alk{font-weight:600;text-decoration:none;cursor:pointer}
+.th{font-size:10.5px;letter-spacing:.06em;color:var(--text-tertiary);font-weight:400;text-align:left;padding:8px 12px;border-bottom:1px solid var(--border-subtle);background:var(--bg-elevated);white-space:nowrap}
+.td{font-size:12px;padding:8px 12px;border-bottom:1px solid var(--border-subtle);white-space:nowrap;vertical-align:baseline}
+.num{text-align:right;font-family:ui-monospace,Menlo,monospace;font-size:11.5px}
+tr.rw:hover .td{background:var(--bg-elevated)}
+</style>
+</helmet>
+
+<section class="dv-turn" id="t1">
+<div class="dv-thd"><a class="dv-tid" href="#t1">1</a><span class="dv-tname">Industry — lift rate graph above the job list · dark and light</span></div>
+<div style="max-width:1000px;margin:0 0 26px;font-size:12px;line-height:1.7;color:var(--text-secondary);background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:8px;padding:15px 18px">
+<b style="color:var(--text-primary)">The measure.</b> Each job carries a lift — Jita-split value of outputs minus Jita-split of inputs minus job fees, priced at install — spread evenly across its duration into an ISK/hr rate. The graph sums the rates of every job running at each instant, so it is a <span style="color:var(--text-primary)">step function</span>: it jumps when a job installs, drops when one delivers. Drawn as steps, not a smoothed curve, because that is what the data actually is.<br>
+<b style="color:var(--text-primary)">Breakdown.</b> A bracket toggle scopes the line to manufacturing or reactions; research is listed but inert until it can be measured. Idle slots are not counted — this is lift from jobs, not utilisation.<br>
+<b style="color:var(--text-primary)">Digging back.</b> Scroll over the chart to zoom about the cursor, shift-scroll or trackpad-swipe to pan; the floor is the oldest job on record. Hover shows the moment's rate and which jobs were running; <span style="color:var(--text-primary)">scoping</span> pins that moment and filters the list below to those jobs — the list header says so and offers a way back to active jobs.
+</div>
+<div class="dv-opts">
+
+<div class="dv-opt" id="1a">
+<div class="dv-olabel"><a class="dv-oid" href="#1a">1a</a>Desktop content pane — chart zoomed to the last ~8 weeks, a moment hovered and scoped, list filtered to the jobs running then. Live: hover, scroll-zoom, toggles, scope.</div>
+<div class="dv-pair">
+<!--APP-->
+<div class="dv-app">
+  <div style="display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:16px">
+    <div>
+      <div style="font-family:'Eve Sans Neue Expanded',sans-serif;font-size:20px;font-weight:700">industry</div>
+      <div style="font-size:12px;color:var(--text-secondary);margin-top:3px"><span class="m">{{ activeCount }}</span> active jobs · <span class="m">{{ totalCount }}</span> on record since <span class="m">{{ oldestLabel }}</span></div>
+    </div>
+    <div style="font-size:11.5px;color:var(--text-tertiary)">prices: Jita split at install · fees included · shipping ignored</div>
+  </div>
+
+  <div class="pnl">
+    <div style="display:flex;align-items:center;gap:14px;padding:10px 14px;background:var(--bg-elevated);border-bottom:1px solid var(--border-subtle)">
+      <span style="font-size:12.5px;font-weight:600">lift rate</span>
+      <span style="display:flex;align-items:center;gap:9px;font-size:11.5px;color:var(--text-tertiary)">[
+        <button class="tg {{ cAll }}" onClick="{{ setAll }}">all</button>
+        <button class="tg {{ cMan }}" onClick="{{ setMan }}">manufacturing</button>
+        <button class="tg {{ cRea }}" onClick="{{ setRea }}">reaction</button>
+        <span class="tg tg-off" title="lift for research is not measured yet">research · soon</span>
+      ]</span>
+      <span style="flex:1"></span>
+      <span style="font-size:11.5px;color:var(--text-tertiary)">now</span>
+      <span class="m" style="font-size:14px;font-weight:700">{{ nowRate }}</span>
+      <span style="font-size:11.5px;color:var(--text-tertiary)">ISK/hr · <span class="m">{{ nowJobs }}</span> jobs</span>
+    </div>
+
+    <div style="position:relative;padding:14px 14px 6px">
+      <svg viewBox="0 0 1100 230" width="100%" height="230" style="display:block;cursor:crosshair;overflow:visible" onMouseMove="{{ onMove }}" onMouseLeave="{{ onLeave }}" onWheel="{{ onWheel }}" onClick="{{ scopeHere }}">
+        <sc-for list="{{ yTicks }}" as="t" hint-placeholder-count="4">
+          <line x1="52" x2="1100" y1="{{ t.y }}" y2="{{ t.y }}" stroke="var(--border-subtle)" stroke-width="1"></line>
+          <text x="46" y="{{ t.ty }}" text-anchor="end" font-size="10" font-family="ui-monospace,Menlo,monospace" fill="var(--text-tertiary)">{{ t.label }}</text>
+        </sc-for>
+        <sc-for list="{{ xTicks }}" as="t" hint-placeholder-count="6">
+          <line x1="{{ t.x }}" x2="{{ t.x }}" y1="196" y2="202" stroke="var(--border-strong)" stroke-width="1"></line>
+          <text x="{{ t.x }}" y="218" text-anchor="middle" font-size="10" font-family="ui-monospace,Menlo,monospace" fill="var(--text-tertiary)">{{ t.label }}</text>
+        </sc-for>
+        <line x1="52" x2="1100" y1="196" y2="196" stroke="var(--border-strong)" stroke-width="1"></line>
+        <path d="{{ areaPath }}" fill="var(--accent-primary)" fill-opacity="0.08"></path>
+        <path d="{{ linePath }}" fill="none" stroke="var(--accent-primary)" stroke-width="1.5" stroke-linejoin="miter"></path>
+        <sc-if value="{{ hasScope }}" hint-placeholder-val="{{ false }}">
+          <line x1="{{ scopeX }}" x2="{{ scopeX }}" y1="8" y2="196" stroke="var(--text-secondary)" stroke-width="1" stroke-dasharray="3 3"></line>
+          <text x="{{ scopeX }}" y="6" text-anchor="middle" font-size="9.5" font-family="ui-monospace,Menlo,monospace" fill="var(--text-secondary)">scoped</text>
+        </sc-if>
+        <sc-if value="{{ hasHover }}" hint-placeholder-val="{{ true }}">
+          <line x1="{{ hoverX }}" x2="{{ hoverX }}" y1="8" y2="196" stroke="var(--status-info)" stroke-width="1"></line>
+          <circle cx="{{ hoverX }}" cy="{{ hoverY }}" r="3.5" fill="var(--bg-surface)" stroke="var(--status-info)" stroke-width="1.5"></circle>
+        </sc-if>
+        <rect x="52" y="0" width="1048" height="196" fill="transparent"></rect>
+      </svg>
+      <sc-if value="{{ hasHover }}" hint-placeholder-val="{{ true }}">
+        <div style="position:absolute;top:10px;left:{{ tipLeft }};transform:{{ tipShift }};width:300px;background:var(--bg-overlay);border:1px solid var(--border-strong);border-radius:6px;box-shadow:var(--shadow-overlay);padding:10px 12px;pointer-events:none;font-size:11.5px">
+          <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px"><span class="m" style="color:var(--text-secondary);font-size:10.5px">{{ hoverLabel }}</span><span><span class="m" style="font-weight:700;font-size:13px">{{ hoverRate }}</span> <span style="color:var(--text-tertiary);font-size:10.5px">ISK/hr</span></span></div>
+          <div style="margin-top:8px;display:flex;flex-direction:column;gap:4px">
+            <sc-for list="{{ hoverJobs }}" as="j" hint-placeholder-count="4">
+              <div style="display:flex;justify-content:space-between;gap:10px"><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><span style="color:var(--text-tertiary)">{{ j.actShort }}</span> {{ j.product }}</span><span class="m" style="color:var(--text-secondary);font-size:10.5px;flex:none">{{ j.rateLabel }}</span></div>
+            </sc-for>
+            <sc-if value="{{ hoverMore }}" hint-placeholder-val="{{ false }}"><div style="color:var(--text-tertiary);font-size:10.5px">+ {{ hoverMore }} more</div></sc-if>
+          </div>
+          <div style="margin-top:9px;padding-top:8px;border-top:1px solid var(--border-subtle);color:var(--text-tertiary);font-size:10.5px"><span class="m">{{ hoverJobCount }}</span> jobs running · click to scope the list to this moment</div>
+        </div>
+      </sc-if>
+    </div>
+    <div style="display:flex;align-items:center;gap:16px;padding:6px 14px 10px;font-size:10.5px;color:var(--text-tertiary)">
+      <span>showing <span class="m">{{ rangeLabel }}</span></span>
+      <span class="m">{{ rangeJobs }} jobs in view</span>
+      <span style="flex:1"></span>
+      <span>scroll to zoom · shift-scroll to pan</span>
+      <button class="tg" style="font-size:10.5px" onClick="{{ resetRange }}">reset range</button>
+    </div>
+  </div>
+
+  <div class="pnl" style="margin-top:16px">
+    <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--bg-elevated);border-bottom:1px solid var(--border-subtle)">
+      <span style="font-size:12.5px;font-weight:600">{{ listTitle }}</span>
+      <sc-if value="{{ hasScope }}" hint-placeholder-val="{{ true }}">
+        <span style="font-size:11.5px;color:var(--text-secondary)">— jobs running at <span class="m">{{ scopeLabel }}</span></span>
+        <button class="tg" onClick="{{ clearScope }}">back to active jobs</button>
+      </sc-if>
+      <span style="flex:1"></span>
+      <span style="font-size:11.5px;color:var(--text-tertiary)">owner: <a class="alk">all owners ⌄</a></span>
+    </div>
+    <table style="width:100%;border-collapse:collapse">
+      <thead><tr>
+        <th class="th">owner</th><th class="th">activity</th><th class="th">product</th><th class="th num">runs</th><th class="th">station</th><th class="th num">lift</th><th class="th num">ISK/hr</th><th class="th">start</th><th class="th">end</th><th class="th">{{ lastCol }}</th>
+      </tr></thead>
+      <tbody>
+        <sc-for list="{{ listJobs }}" as="j" hint-placeholder-count="8">
+          <tr class="rw">
+            <td class="td">{{ j.owner }}</td>
+            <td class="td" style="color:var(--text-secondary)">{{ j.activity }}</td>
+            <td class="td">{{ j.product }}</td>
+            <td class="td num">{{ j.runs }}</td>
+            <td class="td"><a class="alk">{{ j.station }}</a></td>
+            <td class="td num">{{ j.liftLabel }}</td>
+            <td class="td num" style="font-weight:700">{{ j.rateLabel }}</td>
+            <td class="td m" style="font-size:11px;color:var(--text-secondary)">{{ j.startLabel }}</td>
+            <td class="td m" style="font-size:11px;color:var(--text-secondary)">{{ j.endLabel }}</td>
+            <td class="td" style="color:{{ j.stateColor }}">{{ j.state }}</td>
+          </tr>
+        </sc-for>
+      </tbody>
+    </table>
+  </div>
+</div>
+<!--/APP-->
+<div class="lt">
+<div class="dv-app">
+  <div style="display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:16px">
+    <div>
+      <div style="font-family:'Eve Sans Neue Expanded',sans-serif;font-size:20px;font-weight:700">industry</div>
+      <div style="font-size:12px;color:var(--text-secondary);margin-top:3px"><span class="m">{{ activeCount }}</span> active jobs · <span class="m">{{ totalCount }}</span> on record since <span class="m">{{ oldestLabel }}</span></div>
+    </div>
+    <div style="font-size:11.5px;color:var(--text-tertiary)">prices: Jita split at install · fees included · shipping ignored</div>
+  </div>
+
+  <div class="pnl">
+    <div style="display:flex;align-items:center;gap:14px;padding:10px 14px;background:var(--bg-elevated);border-bottom:1px solid var(--border-subtle)">
+      <span style="font-size:12.5px;font-weight:600">lift rate</span>
+      <span style="display:flex;align-items:center;gap:9px;font-size:11.5px;color:var(--text-tertiary)">[
+        <button class="tg {{ cAll }}" onClick="{{ setAll }}">all</button>
+        <button class="tg {{ cMan }}" onClick="{{ setMan }}">manufacturing</button>
+        <button class="tg {{ cRea }}" onClick="{{ setRea }}">reaction</button>
+        <span class="tg tg-off" title="lift for research is not measured yet">research · soon</span>
+      ]</span>
+      <span style="flex:1"></span>
+      <span style="font-size:11.5px;color:var(--text-tertiary)">now</span>
+      <span class="m" style="font-size:14px;font-weight:700">{{ nowRate }}</span>
+      <span style="font-size:11.5px;color:var(--text-tertiary)">ISK/hr · <span class="m">{{ nowJobs }}</span> jobs</span>
+    </div>
+
+    <div style="position:relative;padding:14px 14px 6px">
+      <svg viewBox="0 0 1100 230" width="100%" height="230" style="display:block;cursor:crosshair;overflow:visible" onMouseMove="{{ onMove }}" onMouseLeave="{{ onLeave }}" onWheel="{{ onWheel }}" onClick="{{ scopeHere }}">
+        <sc-for list="{{ yTicks }}" as="t" hint-placeholder-count="4">
+          <line x1="52" x2="1100" y1="{{ t.y }}" y2="{{ t.y }}" stroke="var(--border-subtle)" stroke-width="1"></line>
+          <text x="46" y="{{ t.ty }}" text-anchor="end" font-size="10" font-family="ui-monospace,Menlo,monospace" fill="var(--text-tertiary)">{{ t.label }}</text>
+        </sc-for>
+        <sc-for list="{{ xTicks }}" as="t" hint-placeholder-count="6">
+          <line x1="{{ t.x }}" x2="{{ t.x }}" y1="196" y2="202" stroke="var(--border-strong)" stroke-width="1"></line>
+          <text x="{{ t.x }}" y="218" text-anchor="middle" font-size="10" font-family="ui-monospace,Menlo,monospace" fill="var(--text-tertiary)">{{ t.label }}</text>
+        </sc-for>
+        <line x1="52" x2="1100" y1="196" y2="196" stroke="var(--border-strong)" stroke-width="1"></line>
+        <path d="{{ areaPath }}" fill="var(--accent-primary)" fill-opacity="0.08"></path>
+        <path d="{{ linePath }}" fill="none" stroke="var(--accent-primary)" stroke-width="1.5" stroke-linejoin="miter"></path>
+        <sc-if value="{{ hasScope }}" hint-placeholder-val="{{ false }}">
+          <line x1="{{ scopeX }}" x2="{{ scopeX }}" y1="8" y2="196" stroke="var(--text-secondary)" stroke-width="1" stroke-dasharray="3 3"></line>
+          <text x="{{ scopeX }}" y="6" text-anchor="middle" font-size="9.5" font-family="ui-monospace,Menlo,monospace" fill="var(--text-secondary)">scoped</text>
+        </sc-if>
+        <sc-if value="{{ hasHover }}" hint-placeholder-val="{{ true }}">
+          <line x1="{{ hoverX }}" x2="{{ hoverX }}" y1="8" y2="196" stroke="var(--status-info)" stroke-width="1"></line>
+          <circle cx="{{ hoverX }}" cy="{{ hoverY }}" r="3.5" fill="var(--bg-surface)" stroke="var(--status-info)" stroke-width="1.5"></circle>
+        </sc-if>
+        <rect x="52" y="0" width="1048" height="196" fill="transparent"></rect>
+      </svg>
+      <sc-if value="{{ hasHover }}" hint-placeholder-val="{{ true }}">
+        <div style="position:absolute;top:10px;left:{{ tipLeft }};transform:{{ tipShift }};width:300px;background:var(--bg-overlay);border:1px solid var(--border-strong);border-radius:6px;box-shadow:var(--shadow-overlay);padding:10px 12px;pointer-events:none;font-size:11.5px">
+          <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px"><span class="m" style="color:var(--text-secondary);font-size:10.5px">{{ hoverLabel }}</span><span><span class="m" style="font-weight:700;font-size:13px">{{ hoverRate }}</span> <span style="color:var(--text-tertiary);font-size:10.5px">ISK/hr</span></span></div>
+          <div style="margin-top:8px;display:flex;flex-direction:column;gap:4px">
+            <sc-for list="{{ hoverJobs }}" as="j" hint-placeholder-count="4">
+              <div style="display:flex;justify-content:space-between;gap:10px"><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><span style="color:var(--text-tertiary)">{{ j.actShort }}</span> {{ j.product }}</span><span class="m" style="color:var(--text-secondary);font-size:10.5px;flex:none">{{ j.rateLabel }}</span></div>
+            </sc-for>
+            <sc-if value="{{ hoverMore }}" hint-placeholder-val="{{ false }}"><div style="color:var(--text-tertiary);font-size:10.5px">+ {{ hoverMore }} more</div></sc-if>
+          </div>
+          <div style="margin-top:9px;padding-top:8px;border-top:1px solid var(--border-subtle);color:var(--text-tertiary);font-size:10.5px"><span class="m">{{ hoverJobCount }}</span> jobs running · click to scope the list to this moment</div>
+        </div>
+      </sc-if>
+    </div>
+    <div style="display:flex;align-items:center;gap:16px;padding:6px 14px 10px;font-size:10.5px;color:var(--text-tertiary)">
+      <span>showing <span class="m">{{ rangeLabel }}</span></span>
+      <span class="m">{{ rangeJobs }} jobs in view</span>
+      <span style="flex:1"></span>
+      <span>scroll to zoom · shift-scroll to pan</span>
+      <button class="tg" style="font-size:10.5px" onClick="{{ resetRange }}">reset range</button>
+    </div>
+  </div>
+
+  <div class="pnl" style="margin-top:16px">
+    <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--bg-elevated);border-bottom:1px solid var(--border-subtle)">
+      <span style="font-size:12.5px;font-weight:600">{{ listTitle }}</span>
+      <sc-if value="{{ hasScope }}" hint-placeholder-val="{{ true }}">
+        <span style="font-size:11.5px;color:var(--text-secondary)">— jobs running at <span class="m">{{ scopeLabel }}</span></span>
+        <button class="tg" onClick="{{ clearScope }}">back to active jobs</button>
+      </sc-if>
+      <span style="flex:1"></span>
+      <span style="font-size:11.5px;color:var(--text-tertiary)">owner: <a class="alk">all owners ⌄</a></span>
+    </div>
+    <table style="width:100%;border-collapse:collapse">
+      <thead><tr>
+        <th class="th">owner</th><th class="th">activity</th><th class="th">product</th><th class="th num">runs</th><th class="th">station</th><th class="th num">lift</th><th class="th num">ISK/hr</th><th class="th">start</th><th class="th">end</th><th class="th">{{ lastCol }}</th>
+      </tr></thead>
+      <tbody>
+        <sc-for list="{{ listJobs }}" as="j" hint-placeholder-count="8">
+          <tr class="rw">
+            <td class="td">{{ j.owner }}</td>
+            <td class="td" style="color:var(--text-secondary)">{{ j.activity }}</td>
+            <td class="td">{{ j.product }}</td>
+            <td class="td num">{{ j.runs }}</td>
+            <td class="td"><a class="alk">{{ j.station }}</a></td>
+            <td class="td num">{{ j.liftLabel }}</td>
+            <td class="td num" style="font-weight:700">{{ j.rateLabel }}</td>
+            <td class="td m" style="font-size:11px;color:var(--text-secondary)">{{ j.startLabel }}</td>
+            <td class="td m" style="font-size:11px;color:var(--text-secondary)">{{ j.endLabel }}</td>
+            <td class="td" style="color:{{ j.stateColor }}">{{ j.state }}</td>
+          </tr>
+        </sc-for>
+      </tbody>
+    </table>
+  </div>
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  constructor(p){
+    super(p);
+    this.NOW = Date.UTC(2026,9,4,12,0);
+    this.jobs = this.genJobs();
+    this.oldest = Math.min(...this.jobs.map(j=>j.start));
+    const d=86400000;
+    const t0=this.NOW-56*d, t1=this.NOW+2*d;
+    this.state={ act:'all', t0, t1, hoverT:Date.UTC(2026,8,24,14,0), scopeT:Date.UTC(2026,8,24,14,0) };
+  }
+  genJobs(){
+    let s=7; const rnd=()=>{s=(s*16807)%2147483647;return s/2147483647};
+    const H=3600000, d=24*H;
+    const man=['Hobgoblin II','Caldari Navy Antimatter L','Capital Armor Plates','Large Shield Extender II','Nanite Repair Paste','Warden II','Drake','Rifter','Hammerhead II','Stasis Webifier II'];
+    const rea=['Fullerides','Crystallite Alloy','Fernite Carbide','Sylramic Fibers','Titanium Chromide','Promethium Mercurite','Caesarium Cadmide','Thulium Hafnite'];
+    const res=['Drake Blueprint · ME','Hobgoblin II BPC · copy','Rifter Blueprint · TE'];
+    const owners=['Aria Valis','Kessandra Vor','Dead Space Wolves','Tolen Marr','Yvette Sato'];
+    const stations=['Sakenta - DSWB Refinery','Otela - Wolfden','Perimeter - TTT','Jita IV - Moon 4'];
+    const out=[]; const start=Date.UTC(2024,2,3);
+    let t=start;
+    while(t<this.NOW+1.5*d){
+      const age=(this.NOW-t)/d; const density= age>400?1.6:age>120?1.1:0.7;
+      t+=rnd()*density*d;
+      const r=rnd(); const act=r<0.52?'manufacturing':r<0.86?'reaction':'research';
+      const dur=act==='reaction'?(0.5+rnd()*3)*d:act==='research'?(2+rnd()*12)*d:(0.25+rnd()*6)*d;
+      const rate=act==='manufacturing'?(6+rnd()*48)*1e6:act==='reaction'?(14+rnd()*30)*1e6:0;
+      const product=act==='manufacturing'?man[Math.floor(rnd()*man.length)]:act==='reaction'?rea[Math.floor(rnd()*rea.length)]:res[Math.floor(rnd()*res.length)];
+      out.push({id:out.length,act,product,start:t,end:t+dur,rate,lift:rate*dur/H,runs:act==='reaction'?Math.ceil(dur/H/1.5):Math.max(1,Math.round(rnd()*40)),owner:owners[Math.floor(rnd()*owners.length)],station:stations[Math.floor(rnd()*stations.length)]});
+    }
+    return out;
+  }
+  isk(v){ if(v>=1e9) return (v/1e9).toFixed(2)+'B'; if(v>=1e6) return (v/1e6).toFixed(1)+'M'; return (v/1e3).toFixed(0)+'k'; }
+  dt(t){ const x=new Date(t); const M=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']; return `${x.getUTCDate()} ${M[x.getUTCMonth()]} ${x.getUTCFullYear()} ${String(x.getUTCHours()).padStart(2,'0')}:${String(x.getUTCMinutes()).padStart(2,'0')}`; }
+  dshort(t,long){ const x=new Date(t); const M=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']; return long?`${M[x.getUTCMonth()]} ${x.getUTCFullYear()}`:`${x.getUTCDate()} ${M[x.getUTCMonth()]}`; }
+  match(j){ const a=this.state.act; return a==='all'?j.act!=='research':j.act===a; }
+  runningAt(t){ return this.jobs.filter(j=>this.match(j)&&j.start<=t&&j.end>t).sort((a,b)=>b.rate-a.rate); }
+  rateAt(t){ return this.runningAt(t).reduce((s,j)=>s+j.rate,0); }
+  tx(t){ const {t0,t1}=this.state; return 52+1048*(t-t0)/(t1-t0); }
+  xt(x){ const {t0,t1}=this.state; return t0+(x-52)/1048*(t1-t0); }
+  svgX(e){ const r=e.currentTarget.getBoundingClientRect(); return (e.clientX-r.left)/r.width*1100; }
+  renderVals(){
+    const {t0,t1,act,hoverT,scopeT}=this.state; const d=86400000;
+    const inView=this.jobs.filter(j=>this.match(j)&&j.end>t0&&j.start<t1);
+    const bounds=[t0,...inView.flatMap(j=>[j.start,j.end]).filter(t=>t>t0&&t<t1).sort((a,b)=>a-b),t1];
+    const segs=[]; for(let i=0;i<bounds.length-1;i++){ const a=bounds[i],b=bounds[i+1]; if(b-a<=0) continue; segs.push({a,b,v:this.rateAt((a+b)/2)}); }
+    const maxV=Math.max(1e6,...segs.map(s=>s.v)); const yMax=Math.ceil(maxV/50e6)*50e6||50e6;
+    const ty=v=>196-188*v/yMax;
+    let line='',area=`M52 196`;
+    segs.forEach((s,i)=>{ const xa=this.tx(s.a).toFixed(1),xb=this.tx(s.b).toFixed(1),y=ty(s.v).toFixed(1); line+=(i===0?`M${xa} ${y}`:` V${y}`)+` H${xb}`; area+=` L${xa} ${y} L${xb} ${y}`; });
+    area+=` L1100 196 Z`;
+    const yTicks=[]; for(let i=1;i<=4;i++){ const v=yMax*i/4; yTicks.push({y:ty(v).toFixed(1),ty:(ty(v)+3.5).toFixed(1),label:this.isk(v)}); }
+    const span=t1-t0; const n=7; const xTicks=[]; for(let i=0;i<=n;i++){ const t=t0+span*i/n; xTicks.push({x:this.tx(t).toFixed(1),label:this.dshort(t,span>150*d)}); }
+    const hasHover=hoverT!=null&&hoverT>=t0&&hoverT<=t1;
+    const hJobs=hasHover?this.runningAt(hoverT):[]; const hRate=hJobs.reduce((s,j)=>s+j.rate,0);
+    const hx=hasHover?this.tx(hoverT):0; const tipPct=(hx-52)/1048;
+    const scoped=scopeT!=null; const sJobs=scoped?this.runningAt(scopeT):this.jobs.filter(j=>j.start<=this.NOW&&j.end>this.NOW);
+    const listJobs=sJobs.sort((a,b)=>a.end-b.end).map(j=>{
+      const ref=scoped?scopeT:this.NOW; const rem=j.end-this.NOW;
+      let state,stateColor;
+      if(scoped){ const pct=Math.round(100*Math.min(1,Math.max(0,(ref-j.start)/(j.end-j.start)))); state=`${pct}% through`; stateColor='var(--text-secondary)'; }
+      else if(rem<=0){ state='ready'; stateColor='var(--status-good)'; }
+      else { const h=Math.floor(rem/3600000); state=h>=24?`${Math.floor(h/24)}d ${h%24}h`:`${h}h ${Math.floor(rem%3600000/60000)}m`; stateColor='var(--text-primary)'; }
+      return {owner:j.owner,activity:j.act,product:j.product,runs:j.runs,station:j.station,liftLabel:j.act==='research'?'—':this.isk(j.lift),rateLabel:j.act==='research'?'—':this.isk(j.rate),startLabel:this.dt(j.start),endLabel:this.dt(j.end),state,stateColor};
+    });
+    const nowJobs=this.runningAt(this.NOW);
+    const cls=k=>'tg'+(act===k?' tg-on':'');
+    return {
+      activeCount:this.jobs.filter(j=>j.start<=this.NOW&&j.end>this.NOW).length, totalCount:this.jobs.length.toLocaleString(), oldestLabel:this.dshort(this.oldest,true),
+      cAll:act==='all'?'tg-on':'', cMan:act==='manufacturing'?'tg-on':'', cRea:act==='reaction'?'tg-on':'',
+      setAll:()=>this.setState({act:'all'}), setMan:()=>this.setState({act:'manufacturing'}), setRea:()=>this.setState({act:'reaction'}),
+      nowRate:this.isk(nowJobs.reduce((s,j)=>s+j.rate,0)), nowJobs:nowJobs.length,
+      yTicks,xTicks,linePath:line,areaPath:area,
+      hasHover, hoverX:hx.toFixed(1), hoverY:ty(hRate).toFixed(1), hoverLabel:hasHover?this.dt(hoverT):'', hoverRate:this.isk(hRate),
+      hoverJobs:hJobs.slice(0,5).map(j=>({actShort:j.act==='manufacturing'?'mfg':'rxn',product:j.product,rateLabel:this.isk(j.rate)+'/hr'})), hoverMore:Math.max(0,hJobs.length-5), hoverJobCount:hJobs.length,
+      tipLeft:`calc(14px + ${(tipPct*100).toFixed(2)}% * 0.953 + 4.7%)`, tipShift:tipPct>0.68?'translateX(calc(-100% - 14px))':'translateX(14px)',
+      hasScope:scoped, scopeX:scoped?this.tx(scopeT).toFixed(1):0, scopeLabel:scoped?this.dt(scopeT):'',
+      rangeLabel:`${this.dshort(t0)} – ${this.dshort(t1)} ${new Date(t1).getUTCFullYear()}`, rangeJobs:inView.length,
+      listTitle:scoped?'jobs at scoped moment':'active jobs', lastCol:scoped?'progress then':'remaining', listJobs,
+      onMove:e=>{ const x=this.svgX(e); if(x<52||x>1100) return; this.setState({hoverT:this.xt(x)}); },
+      onLeave:()=>this.setState({hoverT:null}),
+      scopeHere:e=>{ const x=this.svgX(e); if(x<52) return; this.setState({scopeT:this.xt(x)}); },
+      clearScope:()=>this.setState({scopeT:null}),
+      resetRange:()=>this.setState({t0:this.NOW-56*d,t1:this.NOW+2*d}),
+      onWheel:e=>{ e.preventDefault(); const {t0,t1}=this.state; const span=t1-t0; const minT=this.oldest-3*d, maxT=this.NOW+14*d;
+        if(e.shiftKey||Math.abs(e.deltaX)>Math.abs(e.deltaY)){ const dx=(e.deltaX||e.deltaY)*span/1048*1.2; let a=t0+dx,b=t1+dx; if(a<minT){b+=minT-a;a=minT} if(b>maxT){a-=b-maxT;b=maxT} this.setState({t0:a,t1:b}); return; }
+        const f=Math.exp(e.deltaY*0.0015); const c=this.xt(Math.min(1100,Math.max(52,this.svgX(e))));
+        let a=c-(c-t0)*f, b=c+(t1-c)*f; if(b-a<6*3600000) return; a=Math.max(minT,a); b=Math.min(maxT,b); this.setState({t0:a,t1:b}); }
+    };
+  }
+}
+</script>
+</body>
+</html>

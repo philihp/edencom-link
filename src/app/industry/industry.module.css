@@ -1,75 +1,395 @@
-.jobsHeader {
+/* /industry — the lift-rate chart above the job list
+   (docs/design-system/Industry.dc.html). Two panels in the control-panel
+   idiom of /account/settings: a head strip on the page's base surface, the
+   body one step raised, hairline borders throughout. */
+
+/* ── Page header ─────────────────────────────────────────────────────── */
+
+.header {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: space-between;
-  gap: 12pt;
-  margin-top: 16pt;
+  gap: 16px;
+  margin: 16px 0;
+  flex-wrap: wrap;
 }
 
-.jobsHeader h2 {
+.title {
   margin: 0;
 }
 
-.jobsFilters {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6pt 16pt;
-  margin: 8pt 0;
+.subtitle {
+  font-size: 12px;
+  color: var(--ink-soft);
+  margin-top: 3px;
 }
 
-.jobsFilter {
-  font-size: 10pt;
+.caption {
+  font-size: 11.5px;
+  color: var(--ink-faint);
+}
+
+/* ── Panels ──────────────────────────────────────────────────────────── */
+
+.panel {
+  background: var(--paper-raised);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.listPanel {
+  margin-top: 16px;
+}
+
+.panelHead {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 14px;
+  background: var(--paper);
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 11.5px;
+  color: var(--ink-faint);
+  flex-wrap: wrap;
+}
+
+.panelTitle {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.panelFoot {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 6px 14px 10px;
+  font-size: 10.5px;
+  color: var(--ink-faint);
+  flex-wrap: wrap;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.mono {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.faint {
+  color: var(--ink-faint);
+}
+
+.soft {
   color: var(--ink-soft);
+}
+
+.strong {
+  font-weight: 700;
+}
+
+.nowRate {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+/* ── Bracket toggles ─────────────────────────────────────────────────── */
+/* The site's bracket motif: literal [ ] around a row of bare links, the
+   chosen one underlined in the ink colour rather than the link colour. */
+
+.bracket {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.toggle {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--link);
+  cursor: pointer;
+}
+
+.toggle:hover {
+  color: var(--link-hover);
+}
+
+.toggleOn {
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.toggleOff {
+  font-size: 11.5px;
+  color: var(--ink-faint);
+  cursor: default;
+}
+
+.small {
+  font-size: 10.5px;
+}
+
+/* ── Chart ───────────────────────────────────────────────────────────── */
+
+.plot {
+  position: relative;
+  padding: 14px 14px 6px;
+}
+
+.chart {
+  display: block;
+  width: 100%;
+  height: auto;
+  cursor: crosshair;
+  overflow: visible;
+}
+
+.gridLine {
+  stroke: var(--line-soft);
+  stroke-width: 1;
+}
+
+.axisTick {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+
+.axisLabel {
+  font-family: var(--mono);
+  font-size: 10px;
+  fill: var(--ink-faint);
+}
+
+.area {
+  fill: var(--accent);
+  fill-opacity: 0.08;
+}
+
+.line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  stroke-linejoin: miter;
+}
+
+.scopeLine {
+  stroke: var(--ink-soft);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+
+.scopeLabel {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  fill: var(--ink-soft);
+}
+
+.hoverLine {
+  stroke: var(--info);
+  stroke-width: 1;
+}
+
+.hoverDot {
+  fill: var(--paper-raised);
+  stroke: var(--info);
+  stroke-width: 1.5;
+}
+
+/* The hover card: the one place a shadow is allowed (overlays only). */
+.card {
+  position: absolute;
+  top: 10px;
+  width: 300px;
+  max-width: calc(100% - 28px);
+  background: var(--paper-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  padding: 10px 12px;
+  pointer-events: none;
+  font-size: 11.5px;
+  color: var(--ink);
+  z-index: 1;
+}
+
+.cardHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.cardMoment {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--ink-soft);
+}
+
+.cardRate {
+  font-family: var(--mono);
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.cardUnit {
+  font-size: 10.5px;
+  color: var(--ink-faint);
+}
+
+.cardJobs {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cardJob {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.cardProduct {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cardFamily {
+  color: var(--ink-faint);
+}
+
+.cardJobRate {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--ink-soft);
+  flex: none;
+}
+
+.cardMore {
+  font-size: 10.5px;
+  color: var(--ink-faint);
+}
+
+.cardFoot {
+  margin-top: 9px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line-soft);
+  font-size: 10.5px;
+  color: var(--ink-faint);
+}
+
+/* ── Job list ────────────────────────────────────────────────────────── */
+
+.ownerFilter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--ink-faint);
+}
+
+.ownerFilter select {
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--link);
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
 }
 
 .corpToggles {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 2pt 10pt;
-  font-size: 10pt;
-  color: var(--ink-soft);
+  gap: 4px 12px;
+  padding: 6px 14px;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 11px;
+  color: var(--ink-faint);
 }
 
 .corpToggle {
   display: inline-flex;
   align-items: center;
-  gap: 4pt;
-  font-weight: normal;
+  gap: 4px;
+  color: var(--ink-soft);
   white-space: nowrap;
 }
 
-.jobs {
+.tableScroll {
+  overflow-x: auto;
+}
+
+.table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 10pt;
-  margin: 12pt 0;
 }
 
-.jobs th,
-.jobs td {
-  border-bottom: 1px solid var(--line-soft);
-  padding: 6pt 8pt;
+.table th {
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  color: var(--ink-faint);
+  font-weight: 400;
   text-align: left;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line-soft);
+  background: var(--paper);
+  white-space: nowrap;
 }
 
-.jobs th {
-  color: var(--ink-soft);
-  font-weight: 600;
+.table td {
+  font-size: 12px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line-soft);
+  white-space: nowrap;
+  vertical-align: baseline;
 }
 
-.jobs td:nth-child(5),
-.jobs th:nth-child(5) {
+.table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.row:hover td {
+  background: var(--paper);
+}
+
+.table th.num,
+.table td.num {
   text-align: right;
+  font-family: var(--mono);
   font-variant-numeric: tabular-nums;
+  font-size: 11.5px;
 }
 
-.jobs td:nth-child(6),
-.jobs td:nth-child(7),
-.jobs td:nth-child(8),
-.jobs th:nth-child(6),
-.jobs th:nth-child(7),
-.jobs th:nth-child(8) {
-  font-variant-numeric: tabular-nums;
+.when {
+  font-size: 11px;
+  color: var(--ink-soft);
+}
+
+.stationLink {
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.ready {
+  color: var(--ok);
+}
+
+.empty {
+  color: var(--ink-soft);
 }
