@@ -204,6 +204,7 @@ export const LiftChart = ({
         {hasScope && (
           <g>
             <line x1={tx(scopeT)} x2={tx(scopeT)} y1={PLOT_TOP} y2={BASELINE} className={styles.scopeLine} />
+            <rect x={tx(scopeT) - 20} y={-4} width={40} height={13} rx={2} className={styles.scopeBadge} />
             <text x={tx(scopeT)} y={6} textAnchor="middle" className={styles.scopeLabel}>
               scoped
             </text>

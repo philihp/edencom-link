@@ -142,6 +142,66 @@
 
 /* ── Chart ───────────────────────────────────────────────────────────── */
 
+/* The chart and its window summary side by side; the summary drops under
+   the chart on a narrow screen. */
+.chartRow {
+  display: flex;
+  align-items: stretch;
+}
+
+.chartRow > .plot {
+  flex: 1;
+  min-width: 0;
+}
+
+.summary {
+  flex: none;
+  width: 150px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 14px;
+  padding: 14px 16px;
+  border-left: 1px solid var(--line-soft);
+  margin: 0;
+}
+
+.summary dt {
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  color: var(--ink-faint);
+}
+
+.summary dd {
+  margin: 2px 0 0;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.summaryUnit {
+  font-family: var(--sans);
+  font-size: 10.5px;
+  font-weight: 400;
+  color: var(--ink-faint);
+}
+
+@media (max-width: 640px) {
+  .chartRow {
+    flex-direction: column;
+  }
+
+  .summary {
+    width: auto;
+    flex-direction: row;
+    justify-content: space-between;
+    border-left: 0;
+    border-top: 1px solid var(--line-soft);
+  }
+}
+
 .plot {
   position: relative;
   padding: 14px 14px 6px;
@@ -189,10 +249,17 @@
   stroke-dasharray: 3 3;
 }
 
+/* "scoped" wears the yellow alert colour: the list below is no longer the
+   live view, and the badge is what says so on the chart. */
+.scopeBadge {
+  fill: var(--warn);
+}
+
 .scopeLabel {
   font-family: var(--mono);
   font-size: 9.5px;
-  fill: var(--ink-soft);
+  font-weight: 700;
+  fill: var(--paper);
 }
 
 .hoverLine {

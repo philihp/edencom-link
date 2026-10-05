@@ -16,7 +16,9 @@ import {
   jobsInView,
   OPEN_STATUSES,
   progressAt,
+  rateSegments,
   runningAt,
+  summarizeRate,
   type LiftJob,
   type LiftScope,
 } from './lift'
@@ -104,6 +106,7 @@ export const IndustryView = ({
   const nowJobs = runningAt(visible, now, scope)
   const nowRate = nowJobs.reduce((sum, j) => sum + (j.rate ?? 0), 0)
   const inView = jobsInView(visible, range.t0, range.t1, scope)
+  const summary = summarizeRate(rateSegments(visible, range.t0, range.t1, scope))
 
   // The list: jobs running at the scoped moment under the chart's scope, or
   // every open job regardless of family — research is listed, just unmeasured.
@@ -173,20 +176,42 @@ export const IndustryView = ({
             ISK/hr · <span className={styles.mono}>{nowJobs.length}</span> jobs
           </span>
         </div>
-        <LiftChart
-          jobs={visible}
-          scope={scope}
-          t0={range.t0}
-          t1={range.t1}
-          minT={minT}
-          maxT={maxT}
-          hoverT={hoverT}
-          scopeT={scopeT}
-          typeNames={typeNames}
-          onRange={(t0, t1) => setRange({ t0, t1 })}
-          onHover={setHoverT}
-          onScope={setScopeT}
-        />
+        <div className={styles.chartRow}>
+          <LiftChart
+            jobs={visible}
+            scope={scope}
+            t0={range.t0}
+            t1={range.t1}
+            minT={minT}
+            maxT={maxT}
+            hoverT={hoverT}
+            scopeT={scopeT}
+            typeNames={typeNames}
+            onRange={(t0, t1) => setRange({ t0, t1 })}
+            onHover={setHoverT}
+            onScope={setScopeT}
+          />
+          <dl className={styles.summary} aria-label="Lift over the window shown">
+            <div>
+              <dt>median</dt>
+              <dd>
+                {formatCompactIsk(summary?.median)} <span className={styles.summaryUnit}>ISK/hr</span>
+              </dd>
+            </div>
+            <div>
+              <dt>average</dt>
+              <dd>
+                {formatCompactIsk(summary?.average)} <span className={styles.summaryUnit}>ISK/hr</span>
+              </dd>
+            </div>
+            <div>
+              <dt>total</dt>
+              <dd>
+                {formatCompactIsk(summary?.total)} <span className={styles.summaryUnit}>ISK</span>
+              </dd>
+            </div>
+          </dl>
+        </div>
         <div className={styles.panelFoot}>
           <span>
             showing <span className={styles.mono}>{formatRange(range.t0, range.t1)}</span>
@@ -224,7 +249,7 @@ export const IndustryView = ({
         </div>
         {ownerId === ALL_OWNERS && owners.corporations.length > 0 && (
           <div className={styles.corpToggles}>
-            corporations:
+            Include Corporate Jobs:
             {owners.corporations.map((c) => (
               <label key={c.id} className={styles.corpToggle}>
                 <input type="checkbox" checked={!excludedCorpIds.includes(c.id)} onChange={() => toggleCorp(c.id)} />

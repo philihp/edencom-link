@@ -16,6 +16,7 @@ import {
   rateSegments,
   runningAt,
   splitPrice,
+  summarizeRate,
   type LiftJob,
 } from '../src/app/industry/lift.ts'
 
@@ -102,6 +103,22 @@ test('the step function jumps at installs and drops at ends', () => {
     { a: 4 * HOUR, b: 6 * HOUR, v: 5 },
     { a: 6 * HOUR, b: 8 * HOUR, v: 0 },
   ])
+})
+
+test('the window summary is read off the steps, time-weighted', () => {
+  // 10/hr for 2h, 15 for 2h, 5 for 2h, idle for 2h: 60 ISK over 8 hours, and
+  // the line sat at 5 or below for exactly half of them.
+  assert.deepEqual(summarizeRate(rateSegments([A, B], 0, 8 * HOUR, 'all')), { median: 5, average: 7.5, total: 60 })
+  // A long stretch at one rate outweighs several short spikes.
+  assert.deepEqual(
+    summarizeRate([
+      { a: 0, b: HOUR, v: 100 },
+      { a: HOUR, b: 9 * HOUR, v: 2 },
+      { a: 9 * HOUR, b: 10 * HOUR, v: 50 },
+    ]),
+    { median: 2, average: 16.6, total: 166 }
+  )
+  assert.equal(summarizeRate([]), null)
 })
 
 test('a window opening mid-job counts it from the first instant', () => {
