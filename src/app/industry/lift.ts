@@ -179,6 +179,24 @@ export const summarizeRate = (segments: readonly RateSegment[]): RateSummary | n
 export const jobsInView = (jobs: readonly LiftJob[], t0: number, t1: number, scope: LiftScope): LiftJob[] =>
   jobs.filter((j) => inScope(j, scope) && j.end > t0 && j.start < t1)
 
+// The job list under the chart when a window is shown: every job that ran at
+// any point in it, whatever its family or whether its bill priced — research
+// is listed, just unmeasured, the same rule the active list always had. Open
+// jobs first, soonest to finish at the top; then the finished ones, most
+// recently ended first.
+export const jobsListedInWindow = (jobs: readonly LiftJob[], t0: number, t1: number): LiftJob[] => {
+  const overlapping = jobs.filter((j) => j.end > t0 && j.start < t1)
+  const open = sortBy(
+    (j) => j.end,
+    overlapping.filter((j) => OPEN_STATUSES.has(j.status))
+  )
+  const done = sortBy(
+    (j) => -j.end,
+    overlapping.filter((j) => !OPEN_STATUSES.has(j.status))
+  )
+  return [...open, ...done]
+}
+
 // A y-axis ceiling that reads as a round number: the smallest 1/2/5 × 10^k at
 // or above the peak, never below one million so an idle week still has a
 // scale. Zero or a negative peak (a window of losses) sits on the floor.
