@@ -14,6 +14,7 @@ import {
   formatRemaining,
   inScope,
   jobsInView,
+  jobsListedInWindow,
   OPEN_STATUSES,
   progressAt,
   rateSegments,
@@ -23,11 +24,21 @@ import {
   type LiftScope,
 } from './lift'
 import { LiftChart } from './liftChart'
+import {
+  DEFAULT_INDUSTRY_WINDOW_DAYS,
+  INDUSTRY_WINDOW_OPTIONS,
+  INDUSTRY_WINDOW_STORAGE_KEY,
+  parseIndustryWindowDays,
+  windowRange,
+} from './windows'
 
 // The /industry page below its data: the lift-rate chart over the whole job
-// history, and the job list under it — active jobs by default, or the jobs
-// that were running at a moment the chart has been scoped to. One owner
-// filter scopes both (docs/design-system/Industry.dc.html).
+// history, and the job list under it — the jobs that ran in the window the
+// chart shows, or the jobs that were running at a moment the chart has been
+// scoped to. One owner filter scopes both, and the window dropdown top-right
+// (the Market/Structures control) takes chart and list straight to a trailing
+// span; scrolling the chart makes the window "custom", and the list follows
+// the chart either way (docs/design-system/Industry.dc.html).
 
 type IndustryViewProps = {
   jobs: readonly LiftJob[]
@@ -47,10 +58,6 @@ const OWNER_STORAGE_KEY = 'industry.activeJobs.ownerId'
 const EXCLUDED_CORPS_STORAGE_KEY = 'industry.activeJobs.excludedCorpIds'
 
 const DAY = 86_400_000
-// The window on first paint: the last eight weeks and a little of what is
-// still to come.
-const DEFAULT_BACK = 56 * DAY
-const DEFAULT_AHEAD = 2 * DAY
 // How far the floor sits before the oldest job, and the ceiling past now.
 const FLOOR_MARGIN = 3 * DAY
 const CEILING_AHEAD = 14 * DAY
@@ -86,10 +93,32 @@ export const IndustryView = ({
   }, [])
 
   const [scope, setScope] = useState<LiftScope>('all')
-  const [range, setRange] = useState<{ t0: number; t1: number }>({
-    t0: initialNow - DEFAULT_BACK,
-    t1: initialNow + DEFAULT_AHEAD,
-  })
+  // The window: one of the dropdown's spans, or null once the chart has been
+  // zoomed or panned off it. The first paint takes the default on both sides
+  // of hydration; the saved choice is applied after mount, like the owner
+  // filter, so the server and client never disagree about the first frame.
+  const [windowDays, setWindowDays] = useState<number | null>(DEFAULT_INDUSTRY_WINDOW_DAYS)
+  const [range, setRange] = useState<{ t0: number; t1: number }>(() =>
+    windowRange(DEFAULT_INDUSTRY_WINDOW_DAYS, initialNow)
+  )
+  const selectWindow = (days: number) => {
+    setWindowDays(days)
+    setRange(windowRange(days, Date.now()))
+    try {
+      window.localStorage.setItem(INDUSTRY_WINDOW_STORAGE_KEY, String(days))
+    } catch {
+      // Storage can be absent or refuse; the choice still applies this visit.
+    }
+  }
+  useEffect(() => {
+    try {
+      const saved = parseIndustryWindowDays(window.localStorage.getItem(INDUSTRY_WINDOW_STORAGE_KEY))
+      if (saved !== undefined && saved !== DEFAULT_INDUSTRY_WINDOW_DAYS) selectWindow(saved)
+    } catch {
+      // No storage, no saved choice.
+    }
+    // Once, on mount: reading back the last visit's choice.
+  }, [])
   const [hoverT, setHoverT] = useState<number | null>(null)
   const [scopeT, setScopeT] = useState<number | null>(null)
 
@@ -109,9 +138,14 @@ export const IndustryView = ({
   const summary = summarizeRate(rateSegments(visible, range.t0, range.t1, scope))
 
   // The list: jobs running at the scoped moment under the chart's scope, or
-  // every open job regardless of family — research is listed, just unmeasured.
+  // every job that ran in the window the chart shows, regardless of family —
+  // research is listed, just unmeasured.
   const scoped = scopeT != null
-  const listed = (scoped ? runningAt(visible, scopeT, scope) : openJobs).slice().sort((a, b) => a.end - b.end)
+  const listed = scoped
+    ? runningAt(visible, scopeT, scope)
+        .slice()
+        .sort((a, b) => a.end - b.end)
+    : jobsListedInWindow(visible, range.t0, range.t1)
 
   const productName = (j: LiftJob) => {
     const id = j.productTypeId ?? j.blueprintTypeId
@@ -134,18 +168,39 @@ export const IndustryView = ({
             )}
           </div>
         </div>
-        <div className={styles.caption}>
-          prices: Jita split at install · fees included · shipping ignored
-          {pricingFailed ? (
-            <> · price lookup failed; nothing priced</>
-          ) : (
-            unpriced > 0 && (
-              <>
-                {' '}
-                · <span className={styles.mono}>{unpriced}</span> {unpriced === 1 ? 'job' : 'jobs'} unpriced
-              </>
-            )
-          )}
+        <div className={styles.headerRight}>
+          <label className={styles.headerControl}>
+            <span className={styles.headerControlLabel}>Window</span>
+            <select
+              className={styles.windowSelect}
+              value={windowDays ?? 'custom'}
+              onChange={(e) => selectWindow(Number(e.target.value))}
+            >
+              {INDUSTRY_WINDOW_OPTIONS.map((o) => (
+                <option key={o.days} value={o.days}>
+                  {o.label}
+                </option>
+              ))}
+              {windowDays == null && (
+                <option value="custom" disabled>
+                  custom
+                </option>
+              )}
+            </select>
+          </label>
+          <div className={styles.caption}>
+            prices: Jita split at install · fees included · shipping ignored
+            {pricingFailed ? (
+              <> · price lookup failed; nothing priced</>
+            ) : (
+              unpriced > 0 && (
+                <>
+                  {' '}
+                  · <span className={styles.mono}>{unpriced}</span> {unpriced === 1 ? 'job' : 'jobs'} unpriced
+                </>
+              )
+            )}
+          </div>
         </div>
       </div>
 
@@ -188,7 +243,10 @@ export const IndustryView = ({
             hoverT={hoverT}
             scopeT={scopeT}
             typeNames={typeNames}
-            onRange={(t0, t1) => setRange({ t0, t1 })}
+            onRange={(t0, t1) => {
+              setRange({ t0, t1 })
+              setWindowDays(null)
+            }}
             onHover={setHoverT}
             onScope={setScopeT}
           />
@@ -223,7 +281,7 @@ export const IndustryView = ({
           <button
             type="button"
             className={`${styles.toggle} ${styles.small}`}
-            onClick={() => setRange({ t0: now - DEFAULT_BACK, t1: now + DEFAULT_AHEAD })}
+            onClick={() => selectWindow(DEFAULT_INDUSTRY_WINDOW_DAYS)}
           >
             reset range
           </button>
@@ -232,16 +290,21 @@ export const IndustryView = ({
 
       <section className={`${styles.panel} ${styles.listPanel}`} aria-label="Jobs">
         <div className={styles.panelHead}>
-          <span className={styles.panelTitle}>{scoped ? 'jobs at scoped moment' : 'active jobs'}</span>
-          {scoped && (
+          <span className={styles.panelTitle}>{scoped ? 'jobs at scoped moment' : 'jobs in window'}</span>
+          {scoped ? (
             <>
               <span className={styles.soft}>
                 — jobs running at <span className={styles.mono}>{formatMoment(scopeT)}</span>
               </span>
               <button type="button" className={styles.toggle} onClick={() => setScopeT(null)}>
-                back to active jobs
+                back to the window
               </button>
             </>
+          ) : (
+            <span className={styles.soft}>
+              — <span className={styles.mono}>{listed.length}</span> {listed.length === 1 ? 'job' : 'jobs'} in{' '}
+              <span className={styles.mono}>{formatRange(range.t0, range.t1)}</span>
+            </span>
           )}
           <span className={styles.spacer} />
           <label className={styles.ownerFilter}>
@@ -307,8 +370,10 @@ export const IndustryView = ({
                     </td>
                     {scoped ? (
                       <td className={styles.soft}>{progressAt(j, scopeT)}% through</td>
-                    ) : (
+                    ) : OPEN_STATUSES.has(j.status) ? (
                       <td className={remaining === 'ready' ? styles.ready : undefined}>{remaining}</td>
+                    ) : (
+                      <td className={styles.soft}>{j.status}</td>
                     )}
                   </tr>
                 )
@@ -320,7 +385,7 @@ export const IndustryView = ({
                       ? 'No jobs were running at that moment.'
                       : visible.length === 0
                         ? 'No industry jobs on record for this owner.'
-                        : 'No active industry jobs.'}
+                        : 'No industry jobs ran in this window.'}
                   </td>
                 </tr>
               )}

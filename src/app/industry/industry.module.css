@@ -29,6 +29,31 @@
   color: var(--ink-faint);
 }
 
+/* Top-right of the header: the time-window dropdown (the Market/Structures
+   control) above the pricing caption. */
+.headerRight {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.headerControl {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.headerControlLabel {
+  color: var(--ink-faint);
+}
+
+.windowSelect {
+  font-size: 10pt;
+  color: var(--ink-soft);
+}
+
 /* ── Panels ──────────────────────────────────────────────────────────── */
 
 .panel {
