@@ -427,17 +427,22 @@ export const registerTools = (server: McpServer): void => {
     {
       title: 'Search assets',
       description:
-        'Find items across all of the user\'s character and corporation hangars by item name. Answers questions like "where is my Avatar" or "how many fuel blocks do I have in EKPB-3". The item name is a case-insensitive substring match against EVE item types; optionally narrow to one solar system. Blueprints are excluded unless include_blueprints is set (use list_blueprints for those).',
+        'Find items across all of the user\'s character and corporation hangars by item name. Answers questions like "where is my Avatar" or "how many fuel blocks do I have in EKPB-3". The item name is a case-insensitive substring match against EVE item types; optionally narrow to one solar system. Blueprints are excluded unless include_blueprints is set (use list_blueprints for those). Pass as_of to search the hangars as they stood at a past moment (e.g. "where was my Avatar last Tuesday") — reconstructed from asset history, so a since-sold ship reappears.',
       annotations: { readOnlyHint: true, openWorldHint: false },
       inputSchema: z.object({
         item: z.string().min(1).describe('Item name or substring, e.g. "nitrogen fuel block", "avatar", "tritanium"'),
         system: z.string().optional().describe('Only include items in this solar system, e.g. "EKPB-3"'),
         include_blueprints: z.boolean().optional().describe('Also match blueprints/reaction formulas (default false)'),
+        as_of: AS_OF_SHAPE,
       }),
     },
-    async ({ item, system, include_blueprints }, ctx) => {
+    async ({ item, system, include_blueprints, as_of }, ctx) => {
       const supabase = clientFor(ctx)
       if (!supabase) return textResult('Missing bearer token.')
+
+      const at = parseAtParam(as_of)
+      if (!at.ok) return textResult(AT_PARAM_ERROR)
+      const timeTravel = (as_of ?? '').trim() !== ''
 
       const filter = await resolveTypeFilter(item, { includeBlueprints: include_blueprints ?? false })
       if (!filter.ok) return textResult(filter.message)
@@ -446,12 +451,31 @@ export const registerTools = (server: McpServer): void => {
       const typeIds = filter.matches.map((m) => m.typeID)
       const typeNameById = new Map(filter.matches.map((m) => [m.typeID, m.name]))
 
-      const [{ data: characterRows, error: characterError }, { data: corpRows, error: corpError }, owners] =
-        await Promise.all([
-          supabase.rpc('character_asset_search', { type_ids: typeIds }),
-          supabase.rpc('corp_asset_search', { type_ids: typeIds }),
-          fetchOwnerContext(supabase),
-        ])
+      // The history functions take the owner scope as an argument (see
+      // migration 20261006003247_asset_filter_at.sql), so on that path the
+      // search waits for the owners; the live search leaves scoping to RLS.
+      const ownersPromise = fetchOwnerContext(supabase)
+      const searches = timeTravel
+        ? ownersPromise.then((o) =>
+            Promise.all([
+              supabase.rpc('character_asset_filter_at', {
+                registration_ids: o.registrationIds,
+                as_of: at.iso,
+                type_ids: typeIds,
+              }),
+              supabase.rpc('corp_asset_filter_at', {
+                corporation_ids: o.corporationIds,
+                as_of: at.iso,
+                type_ids: typeIds,
+              }),
+            ])
+          )
+        : Promise.all([
+            supabase.rpc('character_asset_search', { type_ids: typeIds }),
+            supabase.rpc('corp_asset_search', { type_ids: typeIds }),
+          ])
+      const [[{ data: characterRows, error: characterError }, { data: corpRows, error: corpError }], owners] =
+        await Promise.all([searches, ownersPromise])
       // A failed search must not read as "you have none": that answer is the
       // one a caller acts on.
       const searchError = characterError ?? corpError
@@ -523,6 +547,7 @@ export const registerTools = (server: McpServer): void => {
       const shown = located.slice(0, MAX_ROWS)
       return textResult({
         query: item,
+        ...(timeTravel && { as_of: at.iso }),
         matched_types: typeIds.length,
         ...(systemFilter != null && { system_filter: shown[0]?.systemName ?? system }),
         total_stacks: located.length,
@@ -550,7 +575,7 @@ export const registerTools = (server: McpServer): void => {
     {
       title: 'List assets by id',
       description:
-        'Exact, id-driven asset lookup across the user\'s character and corporation hangars. Takes any combination of EVE type ids, location ids and owner ids and returns the items matching ALL of the lists given (an omitted list means "any"); at least one list is required. A location id matches items sitting directly in that station, structure, solar system or container AND anything nested deeper inside it, so a station id returns what is stowed in the cans and ships parked there too. Owner ids may be EVE character ids, registration uuids or corporation ids. Use search_assets instead when you have names rather than ids; unlike that tool this one does not exclude blueprints.',
+        'Exact, id-driven asset lookup across the user\'s character and corporation hangars. Takes any combination of EVE type ids, location ids and owner ids and returns the items matching ALL of the lists given (an omitted list means "any"); at least one list is required. A location id matches items sitting directly in that station, structure, solar system or container AND anything nested deeper inside it, so a station id returns what is stowed in the cans and ships parked there too. Owner ids may be EVE character ids, registration uuids or corporation ids. Use search_assets instead when you have names rather than ids; unlike that tool this one does not exclude blueprints. Pass as_of to look the ids up in the hangars as they stood at a past moment (e.g. what a since-lost ship was carrying) — reconstructed from asset history.',
       annotations: { readOnlyHint: true, openWorldHint: false },
       inputSchema: z.object({
         type_ids: z
@@ -567,11 +592,16 @@ export const registerTools = (server: McpServer): void => {
           .array(z.union([z.number(), z.string()]))
           .optional()
           .describe('EVE character ids, registration uuids or corporation ids of the owners to include'),
+        as_of: AS_OF_SHAPE,
       }),
     },
-    async ({ type_ids, location_ids, owner_ids }, ctx) => {
+    async ({ type_ids, location_ids, owner_ids, as_of }, ctx) => {
       const supabase = clientFor(ctx)
       if (!supabase) return textResult('Missing bearer token.')
+
+      const at = parseAtParam(as_of)
+      if (!at.ok) return textResult(AT_PARAM_ERROR)
+      const timeTravel = (as_of ?? '').trim() !== ''
 
       const types = parseIdList(type_ids, 'type_ids')
       if (!types.ok) return textResult(types.message)
@@ -597,21 +627,38 @@ export const registerTools = (server: McpServer): void => {
       // coalesce rather than comparing directly).
       const orNull = (ids: string[]) => (ids.length > 0 ? ids : null)
 
-      const [{ data: characterRows, error: characterError }, { data: corpRows, error: corpError }] = await Promise.all([
-        scopes.character
-          ? supabase.rpc('character_asset_filter', {
+      // The history functions need the owner scope spelled out rather than
+      // left to RLS, so "any owner" becomes every owner the caller has.
+      const orAll = (ids: string[], all: string[]) => (ids.length > 0 ? ids : all)
+      const characterQuery = () =>
+        timeTravel
+          ? supabase.rpc('character_asset_filter_at', {
+              registration_ids: orAll(ownerSplit.registrationIds, owners.registrationIds),
+              as_of: at.iso,
+              type_ids: orNull(types.ids),
+              location_ids: orNull(locations.ids),
+            })
+          : supabase.rpc('character_asset_filter', {
               type_ids: orNull(types.ids),
               location_ids: orNull(locations.ids),
               registration_ids: orNull(ownerSplit.registrationIds),
             })
-          : Promise.resolve({ data: [], error: null }),
-        scopes.corp
-          ? supabase.rpc('corp_asset_filter', {
+      const corpQuery = () =>
+        timeTravel
+          ? supabase.rpc('corp_asset_filter_at', {
+              corporation_ids: orAll(ownerSplit.corporationIds, owners.corporationIds),
+              as_of: at.iso,
+              type_ids: orNull(types.ids),
+              location_ids: orNull(locations.ids),
+            })
+          : supabase.rpc('corp_asset_filter', {
               type_ids: orNull(types.ids),
               location_ids: orNull(locations.ids),
               corporation_ids: orNull(ownerSplit.corporationIds),
             })
-          : Promise.resolve({ data: [], error: null }),
+      const [{ data: characterRows, error: characterError }, { data: corpRows, error: corpError }] = await Promise.all([
+        scopes.character ? characterQuery() : Promise.resolve({ data: [], error: null }),
+        scopes.corp ? corpQuery() : Promise.resolve({ data: [], error: null }),
       ])
       // As in search_assets: a failed lookup must not read as "none".
       const filterError = characterError ?? corpError
@@ -682,6 +729,7 @@ export const registerTools = (server: McpServer): void => {
 
       const shown = located.slice(0, MAX_ROWS)
       return textResult({
+        ...(timeTravel && { as_of: at.iso }),
         filters: {
           ...(types.ids.length > 0 && { type_ids: types.ids }),
           ...(locations.ids.length > 0 && { location_ids: locations.ids }),

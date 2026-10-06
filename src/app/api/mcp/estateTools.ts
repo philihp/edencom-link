@@ -25,6 +25,7 @@ import { appraise, MARKETS, type Market } from '@/innominate'
 import { getSdePlanets } from '@/sdePlanets'
 import { searchSdeSystems } from '@/sdeSystems'
 import { getSdeTypeNames } from '@/sdeTypes'
+import { AT_PARAM_ERROR, parseAtParam } from '@/utils/atParam'
 import { createBearerClient } from '@/utils/supabase/bearer'
 
 import {
@@ -62,12 +63,27 @@ const capNote = (total: number, shown: number, what: string): string | undefined
 // into Node).
 type LocationBucket = { root: LocationRef; counts: Map<string, number> }
 
-const fetchLocationBuckets = async (supabase: SupabaseClient): Promise<LocationBucket[]> => {
+// A moment to reconstruct the hangars at, with the owners to read them for:
+// the *_at functions take the owner scope as an argument rather than leaving
+// it to RLS (migration 20261006003247_asset_filter_at.sql). Null is live.
+type AsOf = { iso: string; owners: OwnerContext } | null
+
+const fetchLocationBuckets = async (supabase: SupabaseClient, asOf: AsOf = null): Promise<LocationBucket[]> => {
   type SummaryRow = { location_id: number | string; location_type: string | null; stacks: number | string }
-  const [{ data: characterSummary }, { data: corpSummary }] = await Promise.all([
-    supabase.rpc('character_asset_location_summary'),
-    supabase.rpc('corp_asset_location_summary'),
-  ])
+  const [{ data: characterSummary }, { data: corpSummary }] = await Promise.all(
+    asOf
+      ? [
+          supabase.rpc('character_asset_location_summary_at', {
+            registration_ids: asOf.owners.registrationIds,
+            as_of: asOf.iso,
+          }),
+          supabase.rpc('corp_asset_location_summary_at', {
+            corporation_ids: asOf.owners.corporationIds,
+            as_of: asOf.iso,
+          }),
+        ]
+      : [supabase.rpc('character_asset_location_summary'), supabase.rpc('corp_asset_location_summary')]
+  )
   const rows = [
     ...((characterSummary ?? []) as Array<SummaryRow & { registration_id: string }>).map((r) => ({
       ...r,
@@ -89,16 +105,34 @@ const fetchLocationBuckets = async (supabase: SupabaseClient): Promise<LocationB
   return [...byLocation.values()]
 }
 
+type AssetRow = {
+  item_id: number | string
+  type_id: number | string
+  location_flag: string | null
+  quantity: number | string | null
+  is_singleton: boolean | null
+}
+
+// One stack of a location listing, from either hangar, live or historical.
+const toContentItem = (
+  r: AssetRow & { ownerId: string; name: string | null },
+  owners: OwnerContext,
+  contents: number
+) => ({
+  itemId: String(r.item_id),
+  typeId: Number(r.type_id),
+  customName: r.name,
+  // Singletons (assembled ships, containers, …) report a null/1 quantity.
+  quantity: r.is_singleton ? 1 : Number(r.quantity ?? 1),
+  flag: r.location_flag,
+  ownerId: r.ownerId,
+  owner: owners.nameById.get(r.ownerId) ?? r.ownerId,
+  contents,
+})
+
 // The items sitting directly in one location (not nested deeper), from both the
 // character and corp hangars, each with the size of its own subtree.
 const fetchLocationContents = async (supabase: SupabaseClient, locationId: string, owners: OwnerContext) => {
-  type AssetRow = {
-    item_id: number | string
-    type_id: number | string
-    location_flag: string | null
-    quantity: number | string | null
-    is_singleton: boolean | null
-  }
   const COLUMNS = 'item_id, type_id, location_flag, quantity, is_singleton'
   const [{ data: characterRows }, { data: corpRows }, { data: characterContents }, { data: corpContents }] =
     await Promise.all([
@@ -126,25 +160,63 @@ const fetchLocationContents = async (supabase: SupabaseClient, locationId: strin
       name: null as string | null,
       ownerId: String(r.corporation_id),
     })),
-  ].map((r) => ({
-    itemId: String(r.item_id),
-    typeId: Number(r.type_id),
-    customName: r.name,
-    // Singletons (assembled ships, containers, …) report a null/1 quantity.
-    quantity: r.is_singleton ? 1 : Number(r.quantity ?? 1),
-    flag: r.location_flag,
-    ownerId: r.ownerId,
-    owner: owners.nameById.get(r.ownerId) ?? r.ownerId,
-    contents: contentsByItem.get(String(r.item_id)) ?? 0,
-  }))
+  ].map((r) => toContentItem(r, owners, contentsByItem.get(String(r.item_id)) ?? 0))
+}
+
+// The same listing as fetchLocationContents, as the hangars stood at a past
+// moment: the containment lookup list_assets uses, narrowed to the rows
+// sitting directly in the location. Its rows carry their own subtree counts.
+const fetchLocationContentsAt = async (
+  supabase: SupabaseClient,
+  locationId: string,
+  asOf: NonNullable<AsOf>
+): Promise<{ ok: true; items: ReturnType<typeof toContentItem>[] } | { ok: false; message: string }> => {
+  type FilterRow = {
+    item_id: number | string
+    type_id: number | string
+    location_flag: string | null
+    quantity: number | string | null
+    is_singleton: boolean | null
+    parent_id: number | string | null
+    contents: number | string
+  }
+  const [{ data: characterRows, error: characterError }, { data: corpRows, error: corpError }] = await Promise.all([
+    supabase.rpc('character_asset_filter_at', {
+      registration_ids: asOf.owners.registrationIds,
+      as_of: asOf.iso,
+      location_ids: [locationId],
+    }),
+    supabase.rpc('corp_asset_filter_at', {
+      corporation_ids: asOf.owners.corporationIds,
+      as_of: asOf.iso,
+      location_ids: [locationId],
+    }),
+  ])
+  const failure = characterError ?? corpError
+  if (failure) return { ok: false, message: `Couldn't read the asset history: ${failure.message}` }
+
+  const directly = (r: FilterRow) => r.parent_id != null && String(r.parent_id) === locationId
+  return {
+    ok: true,
+    items: [
+      ...((characterRows ?? []) as Array<FilterRow & { registration_id: string; name: string | null }>)
+        .filter(directly)
+        .map((r) => toContentItem({ ...r, ownerId: r.registration_id }, asOf.owners, Number(r.contents))),
+      ...((corpRows ?? []) as Array<FilterRow & { corporation_id: number | string }>)
+        .filter(directly)
+        .map((r) =>
+          toContentItem({ ...r, name: null, ownerId: String(r.corporation_id) }, asOf.owners, Number(r.contents))
+        ),
+    ],
+  }
 }
 
 // Every root place the caller holds assets in, named and placed. Shared by
 // browse_assets and appraise_assets, which both take a location the same way.
 type DescribedLocation = { id: string; name: string | null; system: string | null; counts: Map<string, number> }
 
-const describeLocations = async (supabase: SupabaseClient): Promise<DescribedLocation[]> => {
-  const buckets = await fetchLocationBuckets(supabase)
+const describeLocations = async (supabase: SupabaseClient, asOf: AsOf = null): Promise<DescribedLocation[]> => {
+  const buckets = await fetchLocationBuckets(supabase, asOf)
   const { nameFor, systemFor } = await resolveLocations(
     buckets.map((b) => b.root),
     supabase
@@ -188,7 +260,7 @@ export const registerEstateTools = (server: McpServer): void => {
     {
       title: 'Browse assets by location',
       description:
-        'Walk the user\'s hangars by place instead of by item name: with no arguments, every station, structure, and system where they hold assets, with stack counts; with a location, the items sitting directly in it. Answers "what do I have in Jita" or "what\'s in that container". Use search_assets when you know the item name and want to find where it is.',
+        'Walk the user\'s hangars by place instead of by item name: with no arguments, every station, structure, and system where they hold assets, with stack counts; with a location, the items sitting directly in it. Answers "what do I have in Jita" or "what\'s in that container". Use search_assets when you know the item name and want to find where it is. Pass as_of to browse the hangars as they stood at a past moment, reconstructed from asset history.',
       annotations: { readOnlyHint: true, openWorldHint: false },
       inputSchema: z.object({
         location: z
@@ -202,17 +274,28 @@ export const registerEstateTools = (server: McpServer): void => {
           .optional()
           .describe('When listing locations, only those in this solar system, e.g. "EKPB-3"'),
         owner: z.string().optional().describe('Only stacks owned by this character or corporation (name substring)'),
+        as_of: z
+          .string()
+          .optional()
+          .describe(
+            'Browse the hangars as they stood at this UTC moment instead of now. ISO 8601, partial dates allowed ("2026-06", "2026-06-01", "2026-06-01T12:00:00Z").'
+          ),
       }),
     },
-    async ({ location, system, owner }, ctx) => {
+    async ({ location, system, owner, as_of }, ctx) => {
       const supabase = clientFor(ctx)
       if (!supabase) return textResult('Missing bearer token.')
+
+      const at = parseAtParam(as_of)
+      if (!at.ok) return textResult(AT_PARAM_ERROR)
+      const timeTravel = (as_of ?? '').trim() !== ''
 
       const owners = await fetchOwnerContext(supabase)
       const ownerFilter = resolveOwnerFilter(owner, owners)
       if (!ownerFilter.ok) return textResult(ownerFilter.message)
 
-      const described = await describeLocations(supabase)
+      const asOf: AsOf = timeTravel ? { iso: at.iso, owners } : null
+      const described = await describeLocations(supabase, asOf)
 
       // Drill into one location.
       const query = location?.trim()
@@ -232,15 +315,18 @@ export const registerEstateTools = (server: McpServer): void => {
         }
         const { id: targetId, name: targetName } = match
 
-        const items = (await fetchLocationContents(supabase, targetId, owners)).filter(
-          (i) => ownerFilter.ownerIds == null || ownerFilter.ownerIds.has(i.ownerId)
-        )
+        const listing = asOf
+          ? await fetchLocationContentsAt(supabase, targetId, asOf)
+          : { ok: true as const, items: await fetchLocationContents(supabase, targetId, owners) }
+        if (!listing.ok) return textResult(listing.message)
+        const items = listing.items.filter((i) => ownerFilter.ownerIds == null || ownerFilter.ownerIds.has(i.ownerId))
         const typeNames = await getSdeTypeNames(items.map((i) => i.typeId))
         const sorted = items.sort(
           (a, b) => b.contents - a.contents || (typeNames[a.typeId] ?? '').localeCompare(typeNames[b.typeId] ?? '')
         )
         const shown = sorted.slice(0, MAX_ROWS)
         return textResult({
+          ...(timeTravel && { as_of: at.iso }),
           location: targetName,
           location_id: targetId,
           total_stacks: sorted.length,
@@ -281,6 +367,7 @@ export const registerEstateTools = (server: McpServer): void => {
 
       const shown = locations.slice(0, MAX_ROWS)
       return textResult({
+        ...(timeTravel && { as_of: at.iso }),
         ...(systemFilter != null && { system_filter: systemMatch }),
         total_locations: locations.length,
         total_stacks: locations.reduce((sum, l) => sum + l.stacks, 0),
