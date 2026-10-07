@@ -1,9 +1,11 @@
 'use client'
 
+import { isTimeWindowDays } from '../timeWindow'
+import { usePersist } from '../usePersist'
+import { WindowSelect } from '../windowSelect'
 import { MarketOverview } from './marketOverview'
 import { RecentSales, type Sale } from './recentSales'
-import { usePersist } from './usePersist'
-import { DEFAULT_WINDOW_DAYS, WINDOW_OPTIONS, WINDOW_STORAGE_KEY } from './windows'
+import { DEFAULT_WINDOW_DAYS, WINDOW_STORAGE_KEY } from './windows'
 import styles from './market.module.css'
 
 type Character = {
@@ -30,23 +32,14 @@ export const MarketView = ({ now, sales, characters, corpNames, typeNamesPromise
 
   const [windowDays, setWindowDays] = usePersist<number>(WINDOW_STORAGE_KEY, DEFAULT_WINDOW_DAYS, (raw) => {
     const parsed = Number(raw)
-    return WINDOW_OPTIONS.some((o) => o.days === parsed) ? parsed : undefined
+    return isTimeWindowDays(parsed) ? parsed : undefined
   })
 
   return (
     <>
       <div className={styles.pageHeader}>
         <h1>Market</h1>
-        <label className={styles.windowSelect}>
-          <span className={styles.srOnly}>Window</span>
-          <select value={windowDays} onChange={(e) => setWindowDays(Number(e.target.value))}>
-            {WINDOW_OPTIONS.map((o) => (
-              <option key={o.days} value={o.days}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-        </label>
+        <WindowSelect days={windowDays} onChange={setWindowDays} />
       </div>
       <MarketOverview now={nowMs} sales={sales} windowDays={windowDays} typeNamesPromise={typeNamesPromise} />
       <RecentSales

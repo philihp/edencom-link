@@ -16,7 +16,6 @@ import { createFitting, deleteFitting, fittings as fetchFittings } from '@/esi'
 import { type ArchiveFitting, contentHash, FITTING_SLOTS, type FittingBody, normalizeItems } from '@/fittingArchive'
 import { createServiceClient } from '@/utils/supabase/service'
 
-export const READ_SCOPE = 'esi-fittings.read_fittings.v1'
 export const WRITE_SCOPE = 'esi-fittings.write_fittings.v1'
 
 type ServiceClient = ReturnType<typeof createServiceClient>

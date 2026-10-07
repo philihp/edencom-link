@@ -4,21 +4,28 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import { jobsListedInWindow, type LiftJob } from '../src/app/industry/lift.ts'
-import {
-  DEFAULT_INDUSTRY_WINDOW_DAYS,
-  INDUSTRY_WINDOW_OPTIONS,
-  isIndustryWindowDays,
-  parseIndustryWindowDays,
-  windowRange,
-} from '../src/app/industry/windows.ts'
+import { DEFAULT_INDUSTRY_WINDOW_DAYS, parseIndustryWindowDays, windowRange } from '../src/app/industry/windows.ts'
+import { isTimeWindowDays, TIME_WINDOW_OPTIONS, timeWindowDays } from '../src/app/timeWindow.ts'
 
 const DAY = 86_400_000
 const HOUR = 3_600_000
 const NOW = Date.parse('2026-10-06T12:00:00Z')
 
-test('the default window is one of the offered options', () => {
-  assert.ok(isIndustryWindowDays(DEFAULT_INDUSTRY_WINDOW_DAYS))
-  assert.ok(INDUSTRY_WINDOW_OPTIONS.every((o) => isIndustryWindowDays(o.days)))
+test('the default window is one of the shared options', () => {
+  assert.ok(isTimeWindowDays(DEFAULT_INDUSTRY_WINDOW_DAYS))
+  assert.ok(TIME_WINDOW_OPTIONS.every((o) => isTimeWindowDays(o.days)))
+  assert.deepEqual(
+    TIME_WINDOW_OPTIONS.map((o) => o.label),
+    ['1 day', '3 days', '7 days', '14 days', '30 days', '90 days']
+  )
+})
+
+test('timeWindowDays clamps a raw value to an offered span, else the fallback', () => {
+  assert.equal(timeWindowDays('14', 30), 14)
+  assert.equal(timeWindowDays(90, 30), 90)
+  assert.equal(timeWindowDays('56', 30), 30)
+  assert.equal(timeWindowDays(undefined, 7), 7)
+  assert.equal(timeWindowDays('abc', 7), 7)
 })
 
 test('a window runs the trailing days up to now, with a short projection ahead', () => {

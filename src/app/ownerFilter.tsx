@@ -1,6 +1,6 @@
 'use client'
 
-import { usePersist } from './market/usePersist'
+import { usePersist } from './usePersist'
 
 // An "owner" is anything assets/jobs can belong to: one of the user's linked
 // characters (keyed by registration uuid) or a corporation those characters

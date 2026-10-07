@@ -6,6 +6,8 @@ import { useEffect, useState } from 'react'
 import { DateTime } from '../DateTime'
 import { LinkSpinner } from '../linkSpinner'
 import { ALL_OWNERS, OwnerSelect, ownerNames, useExcludedCorps, useOwnerFilter, type Owners } from '../ownerFilter'
+import { usePersist } from '../usePersist'
+import { WindowSelect } from '../windowSelect'
 import { formatMoment, formatMonth, formatRange } from './chartTime'
 import styles from './industry.module.css'
 import { ACTIVITY_NAMES } from './jobFields'
@@ -26,7 +28,6 @@ import {
 import { LiftChart } from './liftChart'
 import {
   DEFAULT_INDUSTRY_WINDOW_DAYS,
-  INDUSTRY_WINDOW_OPTIONS,
   INDUSTRY_WINDOW_STORAGE_KEY,
   parseIndustryWindowDays,
   windowRange,
@@ -93,32 +94,27 @@ export const IndustryView = ({
   }, [])
 
   const [scope, setScope] = useState<LiftScope>('all')
-  // The window: one of the dropdown's spans, or null once the chart has been
-  // zoomed or panned off it. The first paint takes the default on both sides
-  // of hydration; the saved choice is applied after mount, like the owner
-  // filter, so the server and client never disagree about the first frame.
-  const [windowDays, setWindowDays] = useState<number | null>(DEFAULT_INDUSTRY_WINDOW_DAYS)
+  // The window: the remembered span (usePersist applies the saved one after
+  // mount, so the first frame agrees on both sides of hydration), and whether
+  // the chart has since been zoomed or panned off it — then the dropdown reads
+  // "custom" until the next pick. The range follows the span whenever the span
+  // is in charge; the chart's own gestures set the range directly.
+  const [windowDays, setWindowDays] = usePersist(
+    INDUSTRY_WINDOW_STORAGE_KEY,
+    DEFAULT_INDUSTRY_WINDOW_DAYS,
+    parseIndustryWindowDays
+  )
+  const [custom, setCustom] = useState(false)
   const [range, setRange] = useState<{ t0: number; t1: number }>(() =>
     windowRange(DEFAULT_INDUSTRY_WINDOW_DAYS, initialNow)
   )
-  const selectWindow = (days: number) => {
-    setWindowDays(days)
-    setRange(windowRange(days, Date.now()))
-    try {
-      window.localStorage.setItem(INDUSTRY_WINDOW_STORAGE_KEY, String(days))
-    } catch {
-      // Storage can be absent or refuse; the choice still applies this visit.
-    }
-  }
   useEffect(() => {
-    try {
-      const saved = parseIndustryWindowDays(window.localStorage.getItem(INDUSTRY_WINDOW_STORAGE_KEY))
-      if (saved !== undefined && saved !== DEFAULT_INDUSTRY_WINDOW_DAYS) selectWindow(saved)
-    } catch {
-      // No storage, no saved choice.
-    }
-    // Once, on mount: reading back the last visit's choice.
-  }, [])
+    if (!custom) setRange(windowRange(windowDays, Date.now()))
+  }, [windowDays, custom])
+  const selectWindow = (days: number) => {
+    setCustom(false)
+    setWindowDays(days)
+  }
   const [hoverT, setHoverT] = useState<number | null>(null)
   const [scopeT, setScopeT] = useState<number | null>(null)
 
@@ -169,25 +165,10 @@ export const IndustryView = ({
           </div>
         </div>
         <div className={styles.headerRight}>
-          <label className={styles.headerControl}>
+          <span className={styles.headerControl}>
             <span className={styles.headerControlLabel}>Window</span>
-            <select
-              className={styles.windowSelect}
-              value={windowDays ?? 'custom'}
-              onChange={(e) => selectWindow(Number(e.target.value))}
-            >
-              {INDUSTRY_WINDOW_OPTIONS.map((o) => (
-                <option key={o.days} value={o.days}>
-                  {o.label}
-                </option>
-              ))}
-              {windowDays == null && (
-                <option value="custom" disabled>
-                  custom
-                </option>
-              )}
-            </select>
-          </label>
+            <WindowSelect days={windowDays} custom={custom} onChange={selectWindow} />
+          </span>
           <div className={styles.caption}>
             prices: Jita split at install · fees included · shipping ignored
             {pricingFailed ? (
@@ -245,7 +226,7 @@ export const IndustryView = ({
             typeNames={typeNames}
             onRange={(t0, t1) => {
               setRange({ t0, t1 })
-              setWindowDays(null)
+              setCustom(true)
             }}
             onHover={setHoverT}
             onScope={setScopeT}

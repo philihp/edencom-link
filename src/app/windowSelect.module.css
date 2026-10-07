@@ -1,0 +1,22 @@
+/* The time-window dropdown shared by the Market, Indexes, Structures and
+   Industry page headers (timeWindow.ts). Pages wrap it in their own label. */
+.windowSelect {
+  font-size: 10pt;
+  color: var(--ink-soft);
+}
+
+.windowSelect[data-pending] {
+  opacity: 0.6;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}

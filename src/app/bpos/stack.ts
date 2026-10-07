@@ -68,8 +68,6 @@ export type BpoEntry = BpoStack & { name: string | null; category: string | null
 
 export type SortKey = 'name' | 'category'
 
-export const SORT_KEYS: SortKey[] = ['name', 'category']
-
 export const isSortKey = (value: string | null | undefined): value is SortKey =>
   value === 'name' || value === 'category'
 

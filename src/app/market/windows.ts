@@ -1,9 +1,13 @@
-// The Market page's time window. A single page-level control (see MarketView)
-// drives every tile and the Recent Sales table off this. The chosen window also
-// dictates the bar-chart bucket granularity:
-//   1 day        → hourly bars (24)
-//   3 days       → 6-hour bars (12)
-//   7/30/90 days → daily bars (7/30/90)
+// The Market page's time window: the shared trailing-days options
+// (src/app/timeWindow.ts) plus what is Market's own — the bar-chart bucket
+// each span implies, so the chart keeps to a readable number of bars:
+//   1 day         → hourly bars (24)
+//   3 days        → 6-hour bars (12)
+//   7 days and up → daily bars (7 … 90)
+// and the window's storage key. A single page-level control (see MarketView)
+// drives every tile and the Recent Sales table off this.
+import { TIME_WINDOW_OPTIONS } from '../timeWindow.ts'
+
 export type WindowOption = {
   label: string
   days: number
@@ -11,13 +15,12 @@ export type WindowOption = {
   bucketHours: number
 }
 
-export const WINDOW_OPTIONS: WindowOption[] = [
-  { label: '1 day', days: 1, bucketHours: 1 },
-  { label: '3 days', days: 3, bucketHours: 6 },
-  { label: '7 days', days: 7, bucketHours: 24 },
-  { label: '30 days', days: 30, bucketHours: 24 },
-  { label: '90 days', days: 90, bucketHours: 24 },
-]
+export const marketBucketHours = (days: number): number => (days <= 1 ? 1 : days <= 3 ? 6 : 24)
+
+export const WINDOW_OPTIONS: WindowOption[] = TIME_WINDOW_OPTIONS.map((o) => ({
+  ...o,
+  bucketHours: marketBucketHours(o.days),
+}))
 
 export const DEFAULT_WINDOW_DAYS = 7
 export const WINDOW_STORAGE_KEY = 'market.window.days'

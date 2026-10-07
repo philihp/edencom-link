@@ -15,7 +15,7 @@
 // utilisation.
 //
 // Pure: no I/O, no Date.now(). The page feeds it rows, prices and `now`.
-import { sortBy } from 'ramda'
+import { find, reduce, sortBy } from 'ramda'
 
 export type LiftFamily = 'manufacturing' | 'reaction' | 'research'
 
@@ -62,12 +62,13 @@ export type LiftInput = {
 export const jobLift = ({ runs, cost, product, materials, me }: LiftInput): number | null => {
   if (!Number.isFinite(runs) || runs <= 0) return null
   if (product.price == null) return null
-  let inputs = 0
-  for (const { quantity, price } of materials) {
-    if (price == null) return null
-    inputs += materialQuantity(quantity, runs, me) * price
-  }
-  return runs * product.quantity * product.price - inputs - (cost ?? 0)
+  const inputs = reduce(
+    (sum: number | null, { quantity, price }: PricedLine) =>
+      sum == null || price == null ? null : sum + materialQuantity(quantity, runs, me) * price,
+    0 as number | null,
+    materials
+  )
+  return inputs == null ? null : runs * product.quantity * product.price - inputs - (cost ?? 0)
 }
 
 const HOUR = 3_600_000
@@ -127,26 +128,32 @@ export type RateSegment = { a: number; b: number; v: number }
 // opening sum, and a job ending exactly at t0 is not.
 export const rateSegments = (jobs: readonly LiftJob[], t0: number, t1: number, scope: LiftScope): RateSegment[] => {
   if (!(t1 > t0)) return []
-  const events: Array<{ t: number; delta: number }> = []
-  let opening = 0
-  for (const job of jobs) {
-    if (!inScope(job, scope) || job.rate == null) continue
-    if (job.end <= t0 || job.start >= t1) continue
-    if (job.start <= t0) opening += job.rate
-    else events.push({ t: job.start, delta: job.rate })
-    if (job.end < t1) events.push({ t: job.end, delta: -job.rate })
-  }
-  const ordered = sortBy((e) => e.t, events)
-  const segments: RateSegment[] = []
-  let at = t0
-  let value = opening
-  for (const { t, delta } of ordered) {
-    if (t > at) segments.push({ a: at, b: t, v: value })
-    at = t
-    value += delta
-  }
-  if (t1 > at) segments.push({ a: at, b: t1, v: value })
-  return segments
+  // The opening sum and the install/end events inside the window. Push-
+  // mutated accumulators, by the house rule for large folds.
+  const { opening, events } = reduce(
+    (acc: { opening: number; events: Array<{ t: number; delta: number }> }, job: LiftJob) => {
+      if (!inScope(job, scope) || job.rate == null) return acc
+      if (job.end <= t0 || job.start >= t1) return acc
+      if (job.start <= t0) acc.opening += job.rate
+      else acc.events.push({ t: job.start, delta: job.rate })
+      if (job.end < t1) acc.events.push({ t: job.end, delta: -job.rate })
+      return acc
+    },
+    { opening: 0, events: [] },
+    jobs
+  )
+  // The sweep: each event closes the segment running up to it and changes the
+  // sum; the last segment runs to the window's end.
+  const swept = reduce(
+    (acc: { at: number; value: number; segments: RateSegment[] }, { t, delta }: { t: number; delta: number }) => {
+      if (t > acc.at) acc.segments.push({ a: acc.at, b: t, v: acc.value })
+      return { at: t, value: acc.value + delta, segments: acc.segments }
+    },
+    { at: t0, value: opening, segments: [] },
+    sortBy((e) => e.t, events)
+  )
+  if (t1 > swept.at) swept.segments.push({ a: swept.at, b: t1, v: swept.value })
+  return swept.segments
 }
 
 export type RateSummary = { median: number; average: number; total: number }
@@ -161,18 +168,21 @@ export const summarizeRate = (segments: readonly RateSegment[]): RateSummary | n
   const span = segments.reduce((sum, s) => sum + (s.b - s.a), 0)
   if (!(span > 0)) return null
   const total = segments.reduce((sum, s) => sum + (s.v * (s.b - s.a)) / HOUR, 0)
+  // The rate at which half the window's time has been reached, walking the
+  // segments from the lowest rate up.
   const byRate = sortBy((s) => s.v, segments)
   const half = span / 2
-  let seen = 0
-  let median = byRate[byRate.length - 1].v
-  for (const s of byRate) {
-    seen += s.b - s.a
-    if (seen >= half) {
-      median = s.v
-      break
-    }
-  }
-  return { median, average: (total * HOUR) / span, total }
+  const { median } = reduce(
+    (acc: { seen: number; median: number | null }, s: RateSegment) =>
+      acc.median != null
+        ? acc
+        : acc.seen + (s.b - s.a) >= half
+          ? { seen: acc.seen, median: s.v }
+          : { seen: acc.seen + (s.b - s.a), median: null },
+    { seen: 0, median: null },
+    byRate
+  )
+  return { median: median ?? byRate[byRate.length - 1].v, average: (total * HOUR) / span, total }
 }
 
 // The jobs that overlap a window at all, for the "n jobs in view" readout.
@@ -204,10 +214,7 @@ export const niceCeiling = (peak: number): number => {
   const floor = 1_000_000
   if (!(peak > floor)) return floor
   const magnitude = 10 ** Math.floor(Math.log10(peak))
-  for (const step of [1, 2, 5, 10]) {
-    if (step * magnitude >= peak) return step * magnitude
-  }
-  return 10 * magnitude
+  return (find((step) => step * magnitude >= peak, [1, 2, 5, 10]) ?? 10) * magnitude
 }
 
 // ISK the way the design's readouts spell it: 1.23B, 45.6M, 789k — a sign
