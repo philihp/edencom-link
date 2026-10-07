@@ -20,7 +20,7 @@ import {
   INDEX_ACTIVITY_LABELS,
   structureIndexActivities,
 } from '../industryIndex'
-import { WindowSelect } from '../windowSelect'
+import { UrlWindowSelect } from '../../windowSelect'
 import { structureWindowDays } from '../windows'
 import retro from '../../retro.module.css'
 import structureStyles from '../structures.module.css'
@@ -453,7 +453,7 @@ const StructurePage = async ({ params, searchParams }: StructureParams) => {
         <h2>Tax Revenue</h2>
         <span className={structureStyles.headerControl}>
           <span className={structureStyles.headerControlLabel}>Window</span>
-          <WindowSelect days={windowDays} path={`/structure/${s.structure_id}`} />
+          <UrlWindowSelect days={windowDays} path={`/structure/${s.structure_id}`} />
         </span>
       </div>
       {leaderboard.length > 0 && (

@@ -20,5 +20,3 @@ export const Name = ({ name, id }: NameProps) => <span className="serif">{name ?
 export const CharacterName = ({ name }: { name?: string | null }) => <Name name={name} />
 
 export const SystemName = (props: NameProps) => <Name {...props} />
-
-export const StationName = (props: NameProps) => <Name {...props} />

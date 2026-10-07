@@ -9,9 +9,17 @@ hot spots and asked for a plan before anything is deleted or dropped:
 | `corp_asset_over_time`    | 66 MB                       | 2.06M updates against 60K inserts        |
 | `heartbeat`               | 286 MB (106 data, 179 index) | 405K rows since June, ~200K a month, never deleted |
 
-Status: **plan, not yet applied.** Nothing here deletes data or drops an
-index until the owner approves. Part A is a code change plus one migration;
-Part B is two migrations plus small code changes.
+Status: **Part A shipped, Part B declined.** A1 landed as #1095: the asset
+reconciles no longer touch an unchanged row, a close stamps `valid_until` with
+the run's clock (in the job and in the claim functions), and a held ship's
+"last seen" is the owner's latest successful assets refresh. The owner declined
+every Part B change: the heartbeats, their start rows and their indexes are
+needed as they are, and a retention delete or an index swap there would have
+broken readers downstream — so **B2 and B3 are not to be applied**. They stay
+below only as the record of what was weighed and why it was wrong. B4 (the
+hourly dens cadence) and the two index questions under Part A remain open for
+the owner to decide; nothing in this document is to be run without that
+explicit approval.
 
 ## A. Asset history: the touch is the write load
 

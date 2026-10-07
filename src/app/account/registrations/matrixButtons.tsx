@@ -3,9 +3,8 @@
 // The matrix's interactive pieces: the ↻ buttons at the design's four
 // granularities (cell / column / row / everything), the failed cell's retry
 // link, and the template row's checkboxes. Each wraps a server action in a
-// transition and then router.refresh()es, the same shape as /jobs's
-// refreshButton.tsx — the re-rendered page has a pending refresh_task for the
-// cell and the poller takes over until it settles.
+// transition and then router.refresh()es — the re-rendered page has a pending
+// refresh_task for the cell and the poller takes over until it settles.
 import { useRouter } from 'next/navigation'
 import { useTransition } from 'react'
 

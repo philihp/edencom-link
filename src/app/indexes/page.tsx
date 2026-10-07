@@ -8,7 +8,7 @@ import { establishedUser } from '../account/lib/establishedUser'
 import { fetchLatestSystemIndexes, fetchSystemIndexHistory, type Activity } from '../structure/industryIndex'
 import { SystemSearch } from './systemSearch'
 import { WatchedSystemsTable, type WatchedRow } from './watchedSystemsTable'
-import { WindowSelect } from './windowSelect'
+import { UrlWindowSelect } from '../windowSelect'
 import { indexWindowOption } from './windows'
 import styles from './indexes.module.css'
 
@@ -28,7 +28,7 @@ export const dynamic = 'force-dynamic'
 
 const IndexesPage = async ({ searchParams }: { searchParams: Promise<{ days?: string }> }) => {
   const { days: daysParam } = await searchParams
-  const window = indexWindowOption(Number(daysParam))
+  const window = indexWindowOption(daysParam)
 
   const supabase = await createClient()
 
@@ -73,7 +73,7 @@ const IndexesPage = async ({ searchParams }: { searchParams: Promise<{ days?: st
     <>
       <div className={styles.pageHeader}>
         <h1>Indexes</h1>
-        <WindowSelect days={window.days} />
+        <UrlWindowSelect days={window.days} path="/indexes" />
       </div>
 
       {rows.length > 0 ? (

@@ -5,7 +5,7 @@ import { formatIskValue } from '../isk'
 import { Name } from '../names'
 import { TypeName } from '../typeName'
 import styles from './market.module.css'
-import { usePersist } from './usePersist'
+import { usePersist } from '../usePersist'
 
 export type Sale = {
   transaction_id: string | number

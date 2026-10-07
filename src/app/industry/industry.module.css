@@ -49,11 +49,6 @@
   color: var(--ink-faint);
 }
 
-.windowSelect {
-  font-size: 10pt;
-  color: var(--ink-soft);
-}
-
 /* ── Panels ──────────────────────────────────────────────────────────── */
 
 .panel {

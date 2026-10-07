@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation'
-import { chain, concat, filter, map, splitEvery, uniq } from 'ramda'
+import { chain, concat, filter, forEach, map, splitEvery, uniq } from 'ramda'
 
 import { getBlueprintsByTypeIDs, type Blueprint } from '@/sdeBlueprints'
 import { createClient } from '@/utils/supabase/server'
@@ -150,24 +150,31 @@ const IndustryPage = async () => {
         )
       )
     : []
-  // Latest version per item wins; a blueprint we never held reads as ME 0.
+  // Latest version per item wins (each batch arrived newest first); a
+  // blueprint we never held reads as ME 0.
   const meOf = new Map<string, number>()
-  for (const { data } of versionBatches) {
-    for (const v of (data ?? []) as BlueprintVersion[]) {
+  forEach(
+    (v: BlueprintVersion) => {
       const key = String(v.item_id)
       if (!meOf.has(key) && v.material_efficiency != null) meOf.set(key, Number(v.material_efficiency))
-    }
-  }
+    },
+    chain(({ data }) => (data ?? []) as BlueprintVersion[], versionBatches)
+  )
 
+  // One probe per (type, install hour) across every measurable job's product
+  // and bill; the Map de-duplicates jobs installed in the same hour.
   const probes = new Map<string, { type_id: number; as_of: string }>()
-  for (const j of measurable) {
+  forEach((j: OwnedJob) => {
     const bp: Blueprint | undefined = blueprints[Number(j.blueprint_type_id)]
-    if (!bp) continue
+    if (!bp) return
     const asOf = probeMoment(j.start_date)
-    for (const typeId of [bp.productTypeID, ...map((m) => m.typeID, bp.materials)]) {
-      probes.set(probeKey(typeId, asOf), { type_id: typeId, as_of: asOf })
-    }
-  }
+    forEach(
+      (typeId: number) => {
+        probes.set(probeKey(typeId, asOf), { type_id: typeId, as_of: asOf })
+      },
+      [bp.productTypeID, ...map((m) => m.typeID, bp.materials)]
+    )
+  }, measurable)
   const priced =
     probes.size > 0
       ? await supabase.rpc('market_price_at', { market_id: MARKET, probes: [...probes.values()] })
@@ -177,13 +184,15 @@ const IndustryPage = async () => {
   const pricingFailed = priced.error != null
   if (priced.error) console.error(`[industry] market_price_at failed: ${priced.error.message}`)
   const priceAt = new Map<string, number | null>()
-  for (const p of (priced.data ?? []) as PriceAt[]) {
-    const key = probeKey(Number(p.type_id), new Date(p.as_of).toISOString())
-    priceAt.set(
-      key,
-      splitPrice(p.buy_max == null ? null : Number(p.buy_max), p.sell_min == null ? null : Number(p.sell_min))
-    )
-  }
+  forEach(
+    (p: PriceAt) => {
+      priceAt.set(
+        probeKey(Number(p.type_id), new Date(p.as_of).toISOString()),
+        splitPrice(p.buy_max == null ? null : Number(p.buy_max), p.sell_min == null ? null : Number(p.sell_min))
+      )
+    },
+    (priced.data ?? []) as PriceAt[]
+  )
 
   const jobs: LiftJob[] = map((j: OwnedJob): LiftJob => {
     const start = Date.parse(j.start_date)

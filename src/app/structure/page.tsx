@@ -50,7 +50,7 @@ import { StructureTabs } from './structureTabs'
 import { StructureSilhouette } from './silhouette'
 import { TypeIcon } from '../typeIcon'
 import { Sparkline } from './sparkline'
-import { WindowSelect } from './windowSelect'
+import { UrlWindowSelect } from '../windowSelect'
 import { indexBucketHours, structureWindowDays } from './windows'
 import styles from './structures.module.css'
 
@@ -944,7 +944,7 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
         <h1>Structures</h1>
         <span className={styles.headerControl}>
           <span className={styles.headerControlLabel}>Window</span>
-          <WindowSelect days={windowDays} />
+          <UrlWindowSelect days={windowDays} path="/structure" />
         </span>
       </div>
       <p className={styles.pageLinks}>
