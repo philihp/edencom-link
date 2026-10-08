@@ -21,9 +21,11 @@ import {
   structureIndexActivities,
 } from '../industryIndex'
 import { UrlWindowSelect } from '../../windowSelect'
+import { colourOf, initialsOf } from '../avatar'
+import { FavoriteStar } from '../favoriteStar'
+import { SourceTag, type Source } from '../sourceTag'
 import { structureWindowDays } from '../windows'
-import retro from '../../retro.module.css'
-import structureStyles from '../structures.module.css'
+import styles from '../structures.module.css'
 
 // Nullable where a director is what supplies the value: a structure reached
 // through the public directory rather than corp_structure knows its name,
@@ -359,344 +361,396 @@ const StructurePage = async ({ params, searchParams }: StructureParams) => {
   const indexesBySystem = await fetchLatestSystemIndexes(supabase, s.system_id != null ? [Number(s.system_id)] : [])
   const systemIndexes = s.system_id != null ? indexesBySystem.get(Number(s.system_id)) : undefined
 
+  // Whether this structure is pinned, for the star beside the title. RLS pins
+  // structure_favorite to the caller.
+  const { data: favoriteRow } = await supabase
+    .from('structure_favorite')
+    .select('structure_id')
+    .eq('structure_id', structureId)
+    .maybeSingle()
+  const favorite = favoriteRow != null
+
+  // A corp_structure row is a director's scan; a directory row is what ESI
+  // tells a visitor.
+  const source: Source = scanned ? 'live' : 'directory'
+
+  const now = new Date()
+  const fuelRelative = s.fuel_expires ? formatRelativeFuture(s.fuel_expires, now) : null
+  const fuelSoon = s.fuel_expires != null && new Date(s.fuel_expires).getTime() - now.getTime() < 7 * 86_400_000
+
+  const dash = <span className={styles.empty}>—</span>
+
   return (
     <>
-      <h1 className="serif">{s.name ?? `Structure #${s.structure_id}`}</h1>
-      <p>
-        <Link href="/structure">&laquo; Back to Structures</Link>
-      </p>
-
-      <table className={retro.retro}>
-        <tbody>
-          <tr>
-            <th>Structure ID</th>
-            <td>{s.structure_id}</td>
-          </tr>
-          <tr>
-            <th>Type</th>
-            <td>
-              <Name name={typeName} id={s.type_id} />
-            </td>
-          </tr>
-          <tr>
-            <th>System</th>
-            <td>
-              <SystemName name={systemName} id={s.system_id} />
-            </td>
-          </tr>
-          <tr>
-            <th>Profile ID</th>
-            <td>{show(s.profile_id)}</td>
-          </tr>
-          <tr>
-            <th>State</th>
-            <td>{show(s.state)}</td>
-          </tr>
-          <tr>
-            <th>Fuel Expires</th>
-            <td>
-              <DateTime value={s.fuel_expires} />
-              {s.fuel_expires &&
-                (() => {
-                  const relative = formatRelativeFuture(s.fuel_expires, new Date())
-                  return relative ? <span className={structureStyles.subLine}>{relative}</span> : null
-                })()}
-            </td>
-          </tr>
-          <tr>
-            <th>Unanchors At</th>
-            <td>
-              <DateTime value={s.unanchors_at} />
-            </td>
-          </tr>
-          <tr>
-            <th>Reinforce Hour</th>
-            <td>{show(s.reinforce_hour)}</td>
-          </tr>
-          <tr>
-            <th>Next Reinforce Hour</th>
-            <td>{show(s.next_reinforce_hour)}</td>
-          </tr>
-          <tr>
-            <th>Next Reinforce Weekday</th>
-            <td>{show(s.next_reinforce_weekday)}</td>
-          </tr>
-          <tr>
-            <th>Next Reinforce Apply</th>
-            <td>
-              <DateTime value={s.next_reinforce_apply} />
-            </td>
-          </tr>
-          <tr>
-            <th>Services</th>
-            <td>{s.services?.map((svc) => `${svc.name} (${svc.state})`).join(', ') ?? '—'}</td>
-          </tr>
-          <tr>
-            <th>Rigs</th>
-            <td>
-              {rigs.length > 0 ? rigs.map((r) => typeNames[Number(r.type_id)] ?? `#${r.type_id}`).join(', ') : '—'}
-            </td>
-          </tr>
-          <tr>
-            <th>Industry Indexes</th>
-            <td>
-              {indexActivities.length > 0
-                ? indexActivities
-                    .map((activity) => {
-                      const cost = systemIndexes?.get(activity)
-                      return `${INDEX_ACTIVITY_LABELS[activity]} ${cost != null ? formatIndex(cost) : '—'}`
-                    })
-                    .join(', ')
-                : '—'}
-            </td>
-          </tr>
-          <tr>
-            <th>Last Seen</th>
-            <td>
-              <DateTime value={s.last_seen_at} />
-            </td>
-          </tr>
-          <tr>
-            <th>Updated At</th>
-            <td>
-              <DateTime value={s.updated_at} />
-            </td>
-          </tr>
-        </tbody>
-      </table>
-
-      <div className={structureStyles.header}>
-        <h2>Tax Revenue</h2>
-        <span className={structureStyles.headerControl}>
-          <span className={structureStyles.headerControlLabel}>Window</span>
-          <UrlWindowSelect days={windowDays} path={`/structure/${s.structure_id}`} />
-        </span>
+      <div className={styles.detailHeader}>
+        <div>
+          <p className={styles.backLink}>
+            <Link href="/structure">&laquo; structures</Link>
+          </p>
+          <h1 className={styles.title}>{s.name ?? `Structure #${s.structure_id}`}</h1>
+          <div className={styles.subtitle}>
+            <span className={styles.num}>#{s.structure_id}</span> · <Name name={typeName} id={s.type_id} /> ·{' '}
+            <SystemName name={systemName} id={s.system_id} /> · <SourceTag source={source} />
+          </div>
+        </div>
+        <FavoriteStar structureId={String(s.structure_id)} favorite={favorite} large />
       </div>
-      {leaderboard.length > 0 && (
-        <ol className={structureStyles.payerGrid}>
-          {leaderboard.map((p, i) => {
-            const known = p.payerId !== 'unknown'
-            return (
-              <li key={`payer-${p.payerId}`} className={structureStyles.payerCard}>
-                <span className={structureStyles.payerRank}>#{i + 1}</span>
-                {/* Plain <img>, like the app's other CCP image-server uses, which
-                    keeps images.evetech.net out of next.config.mjs's remote patterns. */}
-                {known ? (
-                  <img
-                    className={structureStyles.payerAvatar}
-                    src={`https://images.evetech.net/characters/${p.payerId}/portrait?size=64`}
-                    alt=""
-                    width={48}
-                    height={48}
-                    loading="lazy"
-                  />
-                ) : (
-                  <span className={structureStyles.payerAvatar} />
-                )}
-                <span className={structureStyles.payerCardName}>
-                  <Name name={known ? payerNames.get(p.payerId) : undefined} id={known ? p.payerId : undefined} />
-                </span>
-                <span className={`${structureStyles.payerTotal} ${retro.num}`}>{formatIskValue(p.isk)}</span>
-              </li>
-            )
-          })}
-        </ol>
-      )}
 
-      {taxRows.length > 0 ? (
-        <table className={retro.retro}>
-          <thead>
-            <tr>
-              <th>Payer</th>
-              <th>Day</th>
-              <th className={retro.num}>Jobs</th>
-              <th className={retro.num}>ISK</th>
-              {showPaid && (
-                <>
-                  <th className={retro.num}>Paid Jobs</th>
-                  <th className={retro.num}>Paid ISK</th>
-                </>
+      <div className={styles.detailGrid}>
+        <section className={styles.panel} aria-label="Structure">
+          <div className={styles.panelHead}>
+            <h2>structure</h2>
+            <span className={styles.spacer} />
+            <SourceTag source={source} />
+          </div>
+          <div className={styles.panelRow}>
+            <span className={styles.panelLabel}>structure id</span>
+            <span className={styles.num}>{s.structure_id}</span>
+          </div>
+          <div className={styles.panelRow}>
+            <span className={styles.panelLabel}>type</span>
+            <span>
+              <Name name={typeName} id={s.type_id} />
+            </span>
+          </div>
+          <div className={styles.panelRow}>
+            <span className={styles.panelLabel}>system</span>
+            <span>
+              <SystemName name={systemName} id={s.system_id} />
+            </span>
+          </div>
+          <div className={styles.panelRow}>
+            <span className={styles.panelLabel}>profile id</span>
+            <span className={styles.num}>{show(s.profile_id)}</span>
+          </div>
+          <div className={styles.panelRow}>
+            <span className={styles.panelLabel}>state</span>
+            <span>{show(s.state)}</span>
+          </div>
+          <div className={styles.panelRow}>
+            <span className={styles.panelLabel}>fuel expires</span>
+            <span>
+              <span className={styles.num}>
+                <DateTime value={s.fuel_expires} />
+              </span>
+              {fuelRelative && (
+                <span className={styles.subLine} data-soon={fuelSoon || undefined}>
+                  {fuelRelative}
+                </span>
               )}
-            </tr>
-          </thead>
-          <tbody>
-            {taxRows.map((r) => {
-              const payer = r.payer_id != null ? String(r.payer_id) : undefined
-              return (
-                <tr key={`tax-${payer ?? 'unknown'}-${r.day}`}>
-                  <td>
-                    <span className={structureStyles.payer}>
-                      <Name name={payer ? payerNames.get(payer) : undefined} id={r.payer_id} />
-                      {payer && payerCorps.get(payer) && (
-                        <span className={structureStyles.payerCorp}>{payerCorps.get(payer)}</span>
+            </span>
+          </div>
+          <div className={styles.panelRow}>
+            <span className={styles.panelLabel}>unanchors at</span>
+            <span className={styles.num}>
+              <DateTime value={s.unanchors_at} />
+            </span>
+          </div>
+          <div className={styles.panelRow}>
+            <span className={styles.panelLabel}>reinforce hour</span>
+            <span className={styles.num}>{show(s.reinforce_hour)}</span>
+          </div>
+          <div className={styles.panelRow}>
+            <span className={styles.panelLabel}>next reinforce hour</span>
+            <span className={styles.num}>{show(s.next_reinforce_hour)}</span>
+          </div>
+          <div className={styles.panelRow}>
+            <span className={styles.panelLabel}>next reinforce weekday</span>
+            <span className={styles.num}>{show(s.next_reinforce_weekday)}</span>
+          </div>
+          <div className={styles.panelRow}>
+            <span className={styles.panelLabel}>next reinforce apply</span>
+            <span className={styles.num}>
+              <DateTime value={s.next_reinforce_apply} />
+            </span>
+          </div>
+          <div className={styles.panelRow}>
+            <span className={styles.panelLabel}>services</span>
+            <span className={styles.wrap}>
+              {s.services ? s.services.map((svc) => `${svc.name} (${svc.state})`).join(', ') : dash}
+            </span>
+          </div>
+          <div className={styles.panelRow}>
+            <span className={styles.panelLabel}>rigs</span>
+            <span className={styles.wrap}>
+              {rigs.length > 0 ? rigs.map((r) => typeNames[Number(r.type_id)] ?? `#${r.type_id}`).join(', ') : dash}
+            </span>
+          </div>
+          <div className={styles.panelRow}>
+            <span className={styles.panelLabel}>industry indexes</span>
+            <span className={styles.wrap}>
+              {indexActivities.length > 0
+                ? indexActivities.map((activity, i) => {
+                    const cost = systemIndexes?.get(activity)
+                    return (
+                      <span key={activity}>
+                        {i > 0 && ', '}
+                        {INDEX_ACTIVITY_LABELS[activity]}{' '}
+                        <span className={styles.num}>{cost != null ? formatIndex(cost) : '—'}</span>
+                      </span>
+                    )
+                  })
+                : dash}
+            </span>
+          </div>
+          <div className={styles.panelRow}>
+            <span className={styles.panelLabel}>last seen</span>
+            <span className={styles.num}>
+              <DateTime value={s.last_seen_at} />
+            </span>
+          </div>
+          <div className={styles.panelRow}>
+            <span className={styles.panelLabel}>updated at</span>
+            <span className={styles.num}>
+              <DateTime value={s.updated_at} />
+            </span>
+          </div>
+        </section>
+
+        <div className={styles.detailColumn}>
+          <section className={styles.panel} aria-label="Tax revenue">
+            <div className={styles.panelHead}>
+              <h2>tax revenue</h2>
+              <span className={styles.spacer} />
+              <SourceTag source="ledger" />
+              <span className={styles.headerControl}>
+                <span className={styles.headerControlLabel}>window</span>
+                <UrlWindowSelect days={windowDays} path={`/structure/${s.structure_id}`} />
+              </span>
+            </div>
+            {leaderboard.length > 0 && (
+              <ol className={styles.payerGrid}>
+                {leaderboard.map((p, i) => {
+                  const known = p.payerId !== 'unknown'
+                  const name = known ? payerNames.get(p.payerId) : undefined
+                  return (
+                    <li key={`payer-${p.payerId}`} className={styles.payerCard}>
+                      <span className={styles.payerRank}>#{i + 1}</span>
+                      <span
+                        className={styles.payerAvatar}
+                        style={name ? { background: colourOf(name) } : undefined}
+                        aria-hidden
+                      >
+                        {name ? initialsOf(name) : ''}
+                      </span>
+                      <span className={styles.payerCardName}>
+                        <Name name={name} id={known ? p.payerId : undefined} />
+                      </span>
+                      <span className={`${styles.payerTotal} ${styles.num}`}>{formatIskValue(p.isk)}</span>
+                    </li>
+                  )
+                })}
+              </ol>
+            )}
+
+            {taxRows.length > 0 ? (
+              <div className={styles.tableScroll}>
+                <table className={styles.table}>
+                  <thead>
+                    <tr>
+                      <th>payer</th>
+                      <th>day</th>
+                      <th className={styles.num}>jobs</th>
+                      <th className={styles.num}>ISK</th>
+                      {showPaid && (
+                        <>
+                          <th className={styles.num}>paid jobs</th>
+                          <th className={styles.num}>paid ISK</th>
+                        </>
                       )}
-                    </span>
-                  </td>
-                  <td className="serif">{r.day}</td>
-                  <td className={retro.num}>{Number(r.jobs)}</td>
-                  <td className={retro.num}>{formatIskValue(r.isk)}</td>
-                  {showPaid && (
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {taxRows.map((r) => {
+                      const payer = r.payer_id != null ? String(r.payer_id) : undefined
+                      return (
+                        <tr key={`tax-${payer ?? 'unknown'}-${r.day}`}>
+                          <td>
+                            <div>
+                              <Name name={payer ? payerNames.get(payer) : undefined} id={r.payer_id} />
+                            </div>
+                            {payer && payerCorps.get(payer) && (
+                              <div className={styles.cellSub}>{payerCorps.get(payer)}</div>
+                            )}
+                          </td>
+                          <td className={styles.cellDate}>{r.day}</td>
+                          <td className={styles.num}>{Number(r.jobs)}</td>
+                          <td className={styles.num}>{formatIskValue(r.isk)}</td>
+                          {showPaid && (
+                            <>
+                              <td className={styles.num}>{Number(r.paid_jobs)}</td>
+                              <td className={styles.num}>{formatIskValue(r.isk_paid)}</td>
+                            </>
+                          )}
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                  <tfoot>
+                    <tr>
+                      <td>total</td>
+                      <td />
+                      <td className={styles.num}>{taxTotalJobs}</td>
+                      <td className={styles.num}>{formatIskValue(taxTotalIsk)}</td>
+                      {showPaid && (
+                        <>
+                          <td className={styles.num}>{paidJobs}</td>
+                          <td className={styles.num}>{formatIskValue(paidIsk)}</td>
+                        </>
+                      )}
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            ) : (
+              <div className={styles.panelNote}>
+                <p>No industry tax from this structure in the last {windowDays} days.</p>
+              </div>
+            )}
+            {showPaid && (
+              <div className={styles.panelNote}>
+                <p>
+                  ISK is tax that arrived here; paid ISK is what we were charged to run our own jobs here, whoever owns
+                  the structure. One charge can be both — a member billing their own corporation pays it and we receive
+                  it — so the two columns describe the same events from different sides rather than summing to a
+                  balance.
+                </p>
+              </div>
+            )}
+          </section>
+
+          {selfPaidIsk > 0 && (
+            <section className={styles.panel} aria-label="Cost avoidance">
+              <div className={styles.panelHead}>
+                <h2>cost avoidance</h2>
+                <span className={styles.spacer} />
+                <SourceTag source="ledger" />
+              </div>
+              <div className={`${styles.panelRow} ${styles.explainedRow}`}>
+                <span>
+                  <div className={styles.explainedLabel}>
+                    billed at our own rate <span className={styles.empty}>({formatRate(taxRates.own)})</span>
+                  </div>
+                  <div className={styles.explainedSub}>
+                    {selfPaidJobs.toLocaleString()} charge{selfPaidJobs === 1 ? '' : 's'} on jobs of ours run in a
+                    structure we own
+                  </div>
+                </span>
+                <span className={styles.panelValue}>{formatIskValue(selfPaidIsk)}</span>
+              </div>
+              <div className={`${styles.panelRow} ${styles.explainedRow}`}>
+                <span>
+                  <div className={styles.explainedLabel}>
+                    the same jobs in a public structure{' '}
+                    <span className={styles.empty}>({formatRate(taxRates.public)})</span>
+                  </div>
+                  <div className={styles.explainedSub}>what they would have been billed, and kept none of</div>
+                </span>
+                <span className={styles.panelValue}>
+                  {avoidance.counterfactual == null ? '—' : formatIskValue(avoidance.counterfactual)}
+                </span>
+              </div>
+              <div className={`${styles.panelRow} ${styles.explainedRow} ${styles.panelTotal}`}>
+                <span className={styles.panelLabel}>avoided</span>
+                <span className={styles.panelValue}>
+                  {avoidance.total == null ? '—' : formatIskValue(avoidance.total)}
+                </span>
+              </div>
+              <div className={styles.panelNote}>
+                <p>
+                  {avoidance.total == null ? (
                     <>
-                      <td className={retro.num}>{Number(r.paid_jobs)}</td>
-                      <td className={retro.num}>{formatIskValue(r.isk_paid)}</td>
+                      Cost avoidance needs a non-zero rate for your own characters — nothing was billed, so there is no
+                      receipt to price a public structure against.{' '}
+                    </>
+                  ) : (
+                    <>
+                      The tax receipt is {formatRate(taxRates.own)} of the job&rsquo;s Estimated Item Value, so the same
+                      jobs at {formatRate(taxRates.public)} come to {formatRate(taxRates.public)} ÷{' '}
+                      {formatRate(taxRates.own)} times as much, and the difference is the expense never incurred. No ISK
+                      changed hands, so it is not revenue.{' '}
                     </>
                   )}
-                </tr>
-              )
-            })}
-          </tbody>
-          <tfoot>
-            <tr>
-              <th>Total</th>
-              <th />
-              <th className={retro.num}>{taxTotalJobs}</th>
-              <th className={retro.num}>{formatIskValue(taxTotalIsk)}</th>
-              {showPaid && (
-                <>
-                  <th className={retro.num}>{paidJobs}</th>
-                  <th className={retro.num}>{formatIskValue(paidIsk)}</th>
-                </>
-              )}
-            </tr>
-          </tfoot>
-        </table>
-      ) : (
-        <p>No industry tax from this structure in the last {windowDays} days.</p>
-      )}
-      {showPaid && (
-        <p className={structureStyles.unaccountedNote}>
-          <em>
-            ISK is tax that arrived here; Paid ISK is what we were charged to run our own jobs here, whoever owns the
-            structure. One charge can be both — a member billing their own corporation pays it and we receive it — so
-            the two columns describe the same events from different sides rather than summing to a balance.
-          </em>
-        </p>
-      )}
-
-      {selfPaidIsk > 0 && (
-        <>
-          <h2>Cost Avoidance</h2>
-          <table className={retro.retro}>
-            <tbody>
-              <tr>
-                <td>
-                  <span className={structureStyles.payer}>
-                    <span>
-                      Billed at our own rate <span className={retro.muted}>({formatRate(taxRates.own)})</span>
-                    </span>
-                    <span className={structureStyles.payerCorp}>
-                      {selfPaidJobs.toLocaleString()} charge{selfPaidJobs === 1 ? '' : 's'} on jobs of ours run in a
-                      structure we own
-                    </span>
-                  </span>
-                </td>
-                <td className={retro.num}>{formatIskValue(selfPaidIsk)}</td>
-              </tr>
-              <tr>
-                <td>
-                  <span className={structureStyles.payer}>
-                    <span>
-                      The same jobs in a public structure{' '}
-                      <span className={retro.muted}>({formatRate(taxRates.public)})</span>
-                    </span>
-                    <span className={structureStyles.payerCorp}>
-                      what they would have been billed, and kept none of
-                    </span>
-                  </span>
-                </td>
-                <td className={retro.num}>
-                  {avoidance.counterfactual == null ? '—' : formatIskValue(avoidance.counterfactual)}
-                </td>
-              </tr>
-              <tr>
-                <th>Avoided</th>
-                <th className={retro.num}>{avoidance.total == null ? '—' : formatIskValue(avoidance.total)}</th>
-              </tr>
-            </tbody>
-          </table>
-          <p className={structureStyles.unaccountedNote}>
-            <em>
-              {avoidance.total == null ? (
-                <>
-                  Cost avoidance needs a non-zero rate for your own characters — nothing was billed, so there is no
-                  receipt to price a public structure against.{' '}
-                </>
-              ) : (
-                <>
-                  The tax receipt is {formatRate(taxRates.own)} of the job&rsquo;s Estimated Item Value, so the same
-                  jobs at {formatRate(taxRates.public)} come to {formatRate(taxRates.public)} ÷{' '}
-                  {formatRate(taxRates.own)} times as much, and the difference is the expense never incurred. No ISK
-                  changed hands, so it is not revenue.{' '}
-                </>
-              )}
-              {paidAtOtherRate > 0 && (
-                <>
-                  A further {formatIskValue(paidAtOtherRate)} of tax we paid here is excluded — it was not billed at our
-                  own rate, so there is no own rate to scale.{' '}
-                </>
-              )}
-              <Link href="/settings/tax">Change the rates &raquo;</Link>
-            </em>
-          </p>
-        </>
-      )}
-
-      {selfPaidIsk === 0 && paidIsk > 0 && (
-        <p className={structureStyles.unaccountedNote}>
-          <em>
-            No cost avoidance here: none of the {formatIskValue(paidIsk)} we paid was billed at our own rate, because
-            this structure isn&rsquo;t ours. A landlord bills us whatever rate it likes, so there is no saving to price.
-          </em>
-        </p>
-      )}
-
-      <h2>Industry Jobs</h2>
-      {jobs.length > 0 ? (
-        <table className={retro.retro}>
-          <thead>
-            <tr>
-              <th>Character</th>
-              <th>Activity</th>
-              <th>Blueprint</th>
-              <th>Product</th>
-              <th className={retro.num}>Runs</th>
-              <th>Status</th>
-              <th>Start</th>
-              <th>End</th>
-            </tr>
-          </thead>
-          <tbody>
-            {jobs.map((j) => (
-              <tr key={`job-${j.job_id}`}>
-                <td>
-                  <CharacterName name={characterName[j.registration_id]} />
-                </td>
-                <td className="serif">{ACTIVITY_NAMES[j.activity_id] ?? `#${j.activity_id}`}</td>
-                <td>
-                  <Name name={typeNames[Number(j.blueprint_type_id)]} id={j.blueprint_type_id} />
-                </td>
-                <td>
-                  {j.product_type_id != null ? (
-                    <Name name={typeNames[Number(j.product_type_id)]} id={j.product_type_id} />
-                  ) : (
-                    '—'
+                  {paidAtOtherRate > 0 && (
+                    <>
+                      A further {formatIskValue(paidAtOtherRate)} of tax we paid here is excluded — it was not billed at
+                      our own rate, so there is no own rate to scale.{' '}
+                    </>
                   )}
-                </td>
-                <td className={retro.num}>{j.runs}</td>
-                <td>{j.status}</td>
-                <td>
-                  <DateTime value={j.start_date} />
-                </td>
-                <td>
-                  <DateTime value={j.end_date} />
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      ) : (
-        <p>No industry jobs known at this structure.</p>
-      )}
+                  <Link href="/settings/tax">change the rates &raquo;</Link>
+                </p>
+              </div>
+            </section>
+          )}
+
+          {selfPaidIsk === 0 && paidIsk > 0 && (
+            <p className={styles.plainNote}>
+              No cost avoidance here: none of the {formatIskValue(paidIsk)} we paid was billed at our own rate, because
+              this structure isn&rsquo;t ours. A landlord bills us whatever rate it likes, so there is no saving to
+              price.
+            </p>
+          )}
+        </div>
+      </div>
+
+      <section className={`${styles.panel} ${styles.jobsPanel}`} aria-label="Industry jobs">
+        <div className={styles.panelHead}>
+          <h2>industry jobs</h2>
+          <span className={styles.panelCaption}>active, at this structure</span>
+          <span className={styles.spacer} />
+          <SourceTag source="live" />
+        </div>
+        {jobs.length > 0 ? (
+          <div className={styles.tableScroll}>
+            <table className={styles.table}>
+              <thead>
+                <tr>
+                  <th>character</th>
+                  <th>activity</th>
+                  <th>blueprint</th>
+                  <th>product</th>
+                  <th className={styles.num}>runs</th>
+                  <th>status</th>
+                  <th>start</th>
+                  <th>end</th>
+                </tr>
+              </thead>
+              <tbody>
+                {jobs.map((j) => (
+                  <tr key={`job-${j.job_id}`}>
+                    <td>
+                      <CharacterName name={characterName[j.registration_id]} />
+                    </td>
+                    <td className={styles.cellSoft}>{ACTIVITY_NAMES[j.activity_id] ?? `#${j.activity_id}`}</td>
+                    <td>
+                      <Name name={typeNames[Number(j.blueprint_type_id)]} id={j.blueprint_type_id} />
+                    </td>
+                    <td>
+                      {j.product_type_id != null ? (
+                        <Name name={typeNames[Number(j.product_type_id)]} id={j.product_type_id} />
+                      ) : (
+                        '—'
+                      )}
+                    </td>
+                    <td className={styles.num}>{j.runs}</td>
+                    <td>{j.status}</td>
+                    <td className={styles.cellDate}>
+                      <DateTime value={j.start_date} />
+                    </td>
+                    <td className={styles.cellDate}>
+                      <DateTime value={j.end_date} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className={styles.panelNote}>
+            <p>No industry jobs known at this structure.</p>
+          </div>
+        )}
+      </section>
     </>
   )
 }

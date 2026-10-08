@@ -13,7 +13,8 @@ import { useState } from 'react'
 import { TypeIcon } from '../typeIcon'
 import styles from './structures.module.css'
 
-export type ServiceChip = { name: string; typeID: number | null }
+// `online` is ESI's service state: anything else draws the chip dimmed.
+export type ServiceChip = { name: string; typeID: number | null; state: string }
 export type RigChip = { name: string; typeID: number }
 export type CharacterRow = {
   key: string
@@ -52,9 +53,9 @@ export const StructureTabs = ({
   characters: CharacterRow[]
 }) => {
   const tabs: TabDef[] = [
-    { id: 'services' as const, label: 'Services', count: services.length },
-    { id: 'rigs' as const, label: 'Rigs', count: rigs.length },
-    { id: 'characters' as const, label: 'Characters', count: characters.length },
+    { id: 'services' as const, label: 'services', count: services.length },
+    { id: 'rigs' as const, label: 'rigs', count: rigs.length },
+    { id: 'characters' as const, label: 'characters', count: characters.length },
   ].filter((t) => t.count > 0)
   const [active, setActive] = useState(tabs[0]?.id)
 
@@ -82,7 +83,7 @@ export const StructureTabs = ({
       {current === 'services' && (
         <ul role="tabpanel" className={styles.chips}>
           {services.map((svc, i) => (
-            <li key={`svc-${i}`} className={styles.chip}>
+            <li key={`svc-${i}`} className={svc.state === 'online' ? styles.chip : `${styles.chip} ${styles.chipOff}`}>
               {svc.typeID != null && <TypeIcon id={svc.typeID} size={32} className={styles.chipIcon} />}
               {svc.name}
             </li>

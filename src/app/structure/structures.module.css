@@ -1,17 +1,114 @@
-/*
- * Structures as a responsive tile grid — one full-width tile per row on phones,
- * packing in more columns as the viewport grows (SwiftUI LazyVGrid feel). A
- * tile carries a name, several labelled figures and a services list, none of
- * which survive being squeezed into half a phone's width.
- */
+/* /structure and /structure/[structureId]
+   (docs/design-system/Structures.dc.html). Tiles are panels in the
+   control-panel idiom of /account/settings and /industry: an elevated head
+   strip, hairline borders, the three roster tiers as group labels with rules,
+   and the window-scoped footer promoted into panels of its own. Every number is
+   the one the page always showed, right-aligned in the mono face. */
+
+/* ── Page header ─────────────────────────────────────────────────────── */
+
+.header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 16px 0 4px;
+  flex-wrap: wrap;
+}
+
+.title {
+  margin: 0;
+}
+
+.subtitle {
+  font-size: 12px;
+  color: var(--ink-soft);
+  margin-top: 3px;
+}
+
+.headerRight {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.headerLinks {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+/* The window control as a readout-bodied select: a gray-bordered field (the
+   inert/readout border, per globals.css) holding a quiet label and the
+   dropdown. */
+.headerControl {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+.headerControlLabel {
+  color: var(--ink-faint);
+}
+
+.headerControl select {
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+}
+
+/* ── Group labels ────────────────────────────────────────────────────── */
+/* The roster's tiers, and the window summary below them: an uppercase label,
+   a lowercase gloss, and a rule running out to the right edge. */
+
+.groupLabel {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 24px 0 10px;
+  font-family: var(--sans);
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.groupNote {
+  font-size: 10.5px;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--ink-faint);
+  min-width: 0;
+}
+
+.groupRule {
+  flex: 1;
+  min-width: 24px;
+  height: 1px;
+  background: var(--line-soft);
+  align-self: center;
+}
+
+/* ── Tiles ───────────────────────────────────────────────────────────── */
 
 .grid {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 12px;
+  gap: 14px;
   list-style: none;
   padding: 0;
-  margin: 16px 0;
+  margin: 0;
 }
 
 @media (min-width: 640px) {
@@ -23,36 +120,59 @@
 .tile {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 14px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--paper-raised);
-  transition: border-color 0.12s ease;
   min-width: 0;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  background: var(--paper-raised);
+  overflow: hidden;
+  transition: border-color 0.12s ease;
 }
 
 .tile:hover {
-  border-color: var(--accent);
-}
-
-/* Line-art structure silhouette above the title. */
-.silhouette {
-  display: block;
-  width: 100%;
-  height: 72px;
-  margin-bottom: 4px;
-  color: var(--ink-soft);
+  border-color: var(--line);
 }
 
 .head {
   display: flex;
-  align-items: baseline;
+  align-items: flex-start;
   gap: 8px;
+  padding: 11px 14px;
+  background: var(--paper);
+  border-bottom: 1px solid var(--line-soft);
 }
 
-/* The pin control, pushed to the tile's trailing edge by the auto margin so it
-   sits clear of a long structure name rather than wrapping under it. */
+.headText {
+  min-width: 0;
+}
+
+.name {
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--ink) !important;
+  overflow-wrap: anywhere;
+}
+
+.name:hover {
+  color: var(--link) !important;
+  text-decoration: none;
+}
+
+.subId {
+  display: block;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 10.5px;
+  color: var(--ink-faint);
+  margin-top: 2px;
+}
+
+.headTag {
+  margin-top: 3px;
+}
+
+/* The pin control, pushed to the trailing edge by the auto margin so it sits
+   clear of a long structure name rather than wrapping under it. */
 .favorite {
   margin-left: auto;
   flex: none;
@@ -60,7 +180,7 @@
   border: 0;
   background: none;
   cursor: pointer;
-  font-size: 16px;
+  font-size: 15px;
   line-height: 1;
   color: var(--ink-faint);
 }
@@ -73,40 +193,58 @@
   opacity: 0.5;
 }
 
-.name {
-  font-family: var(--serif);
-  font-size: 16px;
-  font-weight: 600;
-  line-height: 1.25;
-  color: var(--ink) !important;
-  overflow-wrap: anywhere;
+.favoriteLarge {
+  font-size: 18px;
+  margin-left: 0;
 }
 
-.name:hover {
-  color: var(--accent) !important;
-  text-decoration: none;
-}
+/* ── Source tags ─────────────────────────────────────────────────────── */
+/* Where a figure comes from: [ live ] / [ ledger ] / [ estimate ] /
+   [ directory ]. Small, mono, bracketed — the site's bracket motif. */
 
-.subId {
-  display: block;
+.tag {
   font-family: var(--mono);
-  font-variant-numeric: tabular-nums;
-  font-size: 11px;
-  color: var(--ink-faint);
-  margin-top: 2px;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
 }
 
-/* Label / value pairs. */
+.tagLive {
+  color: var(--ok);
+}
+
+.tagLedger {
+  color: var(--accent);
+}
+
+.tagEstimate {
+  color: var(--warn);
+}
+
+.tagDirectory {
+  color: var(--ink-soft);
+}
+
+/* ── Label / value pairs ─────────────────────────────────────────────── */
+
 .fields {
   display: grid;
   grid-template-columns: auto 1fr;
-  gap: 5px 12px;
+  gap: 6px 12px;
+  padding: 11px 14px;
   margin: 0;
   font-size: 12px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.tile > :last-child {
+  border-bottom: 0;
 }
 
 .label {
   color: var(--ink-faint);
+  font-size: 11px;
   white-space: nowrap;
 }
 
@@ -124,31 +262,186 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* A titled section (services, rigs). */
+.empty {
+  color: var(--ink-faint);
+}
+
+/* The fuel countdown, dropped below the timestamp rather than trailing it. The
+   two are one fact read two ways, and inline they ran together into a single
+   long string that wrapped mid-phrase at tile width. Within a week it takes the
+   alert colour. */
+.subLine {
+  display: block;
+  color: var(--ink-faint);
+  font-size: 10.5px;
+}
+
+.subLine[data-soon] {
+  color: var(--warn);
+}
+
+/* Muted qualifier after a value, inline: the recovered tax rate. */
+.subValue {
+  color: var(--ink-faint);
+  font-size: 10.5px;
+}
+
+/* The "% of EIV" qualifier on the tax rows: revealed on mouse-over (or
+   keyboard focus of the row's cell) rather than printed inline — trailing it
+   after the amount broke the money column's right alignment. Absolutely
+   positioned below the value so the amount never moves when it appears. */
+.hoverPct {
+  display: none;
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 5;
+  white-space: nowrap;
+  padding: 2px 7px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  background: var(--paper-raised);
+  color: var(--ink-faint);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.value:hover .hoverPct,
+.value:focus-within .hoverPct {
+  display: block;
+}
+
+/* A note at the foot of a tile or panel. */
+.tileNote {
+  padding: 9px 14px;
+  font-size: 10.5px;
+  line-height: 1.55;
+  color: var(--ink-faint);
+  border-bottom: 1px solid var(--line-soft);
+}
+
+/* ── The ?-in-a-circle explaining the tile's measures ────────────────── */
+/* The bubble opens on hover and on focus, sits above the fields grid, and
+   keeps the explainer's line breaks. Spans both grid columns so it doesn't
+   occupy a label cell. */
+.helpTip {
+  position: relative;
+  grid-column: 1 / -1;
+  justify-self: end;
+  width: 15px;
+  height: 15px;
+  border: 1px solid var(--line-soft);
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  line-height: 1;
+  color: var(--ink-faint);
+  cursor: help;
+}
+
+.helpTip:hover,
+.helpTip:focus-visible {
+  color: var(--ink);
+  border-color: var(--accent);
+}
+
+.helpTipBody {
+  display: none;
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 10;
+  width: 280px;
+  max-width: 74vw;
+  padding: 10px 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  background: var(--paper-raised);
+  color: var(--ink-soft);
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre-line;
+  box-shadow: 0 4px 16px rgb(0 0 0 / 25%);
+}
+
+.helpTip:hover .helpTipBody,
+.helpTip:focus-visible .helpTipBody,
+.helpTip:focus .helpTipBody {
+  display: block;
+}
+
+/* ── Sections within a tile (services / rigs / characters / indexes) ─── */
+
 .section {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 7px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line-soft);
 }
 
 .sectionLabel {
-  font-size: 11px;
-  color: var(--ink-faint);
+  font-size: 10px;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  color: var(--ink-faint);
 }
 
-.empty {
-  font-size: 12px;
+/* The tile's lower pane: Services / Rigs / Characters behind tabs, the tab
+   strip taking the section-label treatment. */
+.tabbed {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.tabList {
+  display: flex;
+  gap: 14px;
+}
+
+/* Quiet uppercase tabs; the active one takes the ink colour and an underline.
+   Deliberately not the default button chrome — these switch a pane, they
+   don't act. */
+.tab {
+  border: 0;
+  background: none;
+  cursor: pointer;
+  padding: 0;
+  font-family: var(--sans);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.tab:hover {
+  color: var(--ink);
+}
+
+.tabActive {
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.tabCount {
+  margin-left: 5px;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
   color: var(--ink-faint);
 }
 
 /* Rigs/services rendered as tiles-within-the-tile. An equal-column grid keeps
- * every chip the same width as they wrap, instead of flex's ragged widths. The
- * columns are wide enough for the 64px icon each chip stacks above its name. */
+   every chip the same width as they wrap, instead of flex's ragged widths. */
 .chips {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
   gap: 6px;
   list-style: none;
   padding: 0;
@@ -161,470 +454,26 @@
   align-items: center;
   justify-content: flex-start;
   gap: 5px;
-  font-family: var(--serif);
-  font-size: 12px;
+  font-size: 11px;
+  line-height: 1.3;
   text-align: center;
   padding: 8px 6px;
-  border: 1px solid var(--line);
-  background: var(--paper);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
   color: var(--ink-soft);
   overflow-wrap: anywhere;
 }
 
-/* Industry cost indices: label / sparkline / percentage. The sparkline column
- * is sized to the SVG (100px) so the percentages still align across rows. */
-.indexes {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  gap: 4px 8px;
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  font-size: 12px;
+/* A service ESI reports as anything but online. */
+.chipOff {
+  opacity: 0.55;
 }
 
-/* Each row spreads its three cells across the parent grid's columns. */
-.indexRow {
-  display: contents;
-}
-
-.indexLabel {
-  color: var(--ink-faint);
-  white-space: nowrap;
-}
-
-.indexValue {
-  text-align: right;
-  font-family: var(--mono);
-  font-variant-numeric: tabular-nums;
-}
-
-/* Sparkline cell: tiny min/max range column to the left, line chart on the
- * right. The whole cell aligns to the right edge of the column so the chart
- * stays flush against the current % to its right. */
-.sparklineCell {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  justify-self: end;
-}
-
-.sparklineRange {
-  display: inline-flex;
-  flex-direction: column;
-  align-items: flex-end;
-  justify-content: center;
-  font-family: var(--mono);
-  font-variant-numeric: tabular-nums;
-  font-size: 8px;
-  line-height: 1;
-  color: var(--ink-faint);
-  height: 1lh;
-}
-
-.sparklineMax,
-.sparklineMin {
-  font-size: inherit;
-  line-height: 1;
-  vertical-align: baseline;
-  top: 0;
-  bottom: 0;
-}
-
-/* Sparkline sits between the label and percentage; sized to one line-height
- * tall so it slots into the existing row rhythm without changing it. */
-.sparkline {
-  width: 100px;
-  height: 1lh;
-  color: var(--ink-soft);
-  overflow: visible;
-}
-
-/* Phones get one tile per row, but the 3-column label / sparkline / value
- * layout still leaves the sparkline a sliver between two text columns at that
- * width. Stack label+value on the first row instead and give the sparkline the
- * full width on the second, where the trend is actually readable. */
-@media (max-width: 639px) {
-  .indexes {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-  }
-
-  .indexRow {
-    display: grid;
-    grid-template-columns: 1fr auto;
-    gap: 0 8px;
-  }
-
-  /* Value jumps to row 1 col 2 (next to the label). */
-  .indexValue {
-    grid-row: 1;
-    grid-column: 2;
-  }
-
-  /* Sparkline wraps to row 2 and stretches to fill both columns. */
-  .sparklineCell {
-    grid-column: 1 / -1;
-    grid-row: 2;
-    justify-self: stretch;
-    display: flex;
-  }
-
-  /* SVG grows to fill the flex container instead of the fixed 100px. */
-  .sparkline {
-    flex: 1;
-    width: auto;
-  }
-}
-
-/* Page header: title on the left, the time-window dropdown pinned top-right. The
- * window drives both the revenue footer and the industry-index sparklines. */
-.header {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.headerControl {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 8px;
-  font-size: 13px;
-}
-
-.headerControlLabel {
-  color: var(--ink-faint);
-}
-
-.footer {
-  display: grid;
-  grid-template-columns: auto auto;
-  gap: 4px 12px;
-  justify-content: start;
-  align-items: baseline;
-  margin: 16px 0;
-  font-size: 13px;
-}
-
-.footerValue {
-  font-family: var(--mono);
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-}
-
-.unaccountedNote {
-  margin: -8px 0 12px;
-  max-width: 60ch;
-  color: var(--ink-faint);
-  font-size: 12px;
-}
-
-.pageLinks {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 16px;
-  margin: 8px 0 16px;
-  font-size: 13px;
-}
-
-.lastRun {
-  margin: 24px 0 0;
-  color: var(--ink-faint);
-  font-size: 12px;
-}
-
-.breakdown {
-  margin: 0 0 16px;
-  font-size: 13px;
-}
-
-.breakdown summary {
-  cursor: pointer;
-  color: var(--ink-faint);
-}
-
-.breakdownGrid {
-  display: grid;
-  gap: 4px 12px;
-  margin: 8px 0 0 16px;
-}
-
-.breakdownRow {
-  display: grid;
-  grid-template-columns: auto auto;
-  gap: 12px;
-  justify-content: start;
-  align-items: baseline;
-}
-
-.payer {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-
-.payerCorp {
-  color: var(--ink-faint);
-  font-size: 11px;
-}
-
-/* Payer leaderboard on the structure detail page: the same raised-tile idea as
-   the Structures grid above, shrunk to portrait size and stacked centre-aligned
-   so a row of them reads as a ranking rather than a table. An <ol>, so the
-   ranking survives with styles off and for screen readers; the #n badge is
-   drawn rather than relying on the list marker, which auto-hides with the
-   list-style reset. */
-.payerGrid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
-  gap: 10px;
-  list-style: none;
-  padding: 0;
-  margin: 12px 0 16px;
-}
-
-.payerCard {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 5px;
-  padding: 10px 8px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--paper-raised);
-  text-align: center;
-  min-width: 0;
-}
-
-.payerRank {
-  font-size: 11px;
-  color: var(--ink-faint);
-}
-
-.payerAvatar {
-  width: 48px;
-  height: 48px;
-  flex: none;
-  /* Round, matching the pilot portrait on the ship page. */
-  border-radius: 50%;
-  background: var(--line-soft);
-}
-
-.payerCardName {
-  font-size: 13px;
-  min-width: 0;
-  /* Pilot names are one long token often enough to overflow a 130px card. */
-  overflow-wrap: anywhere;
-}
-
-.payerTotal {
-  font-size: 13px;
-  color: var(--ink-soft);
-}
-
-/* The three blocks the roster splits into: Favorites, Our structures, Everyone
- * else's. A heading is UI chrome naming a group, not a thing's name, so it takes
- * the sans face (the typography note in globals.css) — and it sits above a grid
- * whose own top margin already spaces it, hence the asymmetric margins. */
-.blockHeading {
-  font-family: var(--sans);
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--ink-faint);
-  margin: 24px 0 0;
-}
-
-.blockNote {
-  margin: 4px 0 -8px;
-  max-width: 60ch;
-  color: var(--ink-faint);
-  font-size: 12px;
-}
-
-/* The structure's in-game render, now the backdrop for its name rather than a
- * band above it. CCP serves these at 512px around a small subject, so scaled to
- * tile width they read as pixelated; blurring hard turns that liability into a
- * soft field of the structure's own colours, which is all a backdrop needs to
- * be. Only used where the type is known — otherwise the line-art silhouette
- * above still stands in. */
-.hero {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
-  min-height: 96px;
-  padding: 14px;
-  overflow: hidden;
-  border-radius: calc(var(--radius) - 4px);
-  /* Keeps the negative z-indexes below from escaping behind the tile itself. */
-  isolation: isolate;
-}
-
-.heroArt {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  object-position: center 38%;
-  filter: blur(10px);
-  /* A blur samples past the element's edges, so without an overscan the corners
-   * fade to transparent and the tile shows through them. */
-  transform: scale(1.25);
-  z-index: -2;
-}
-
-/* A scrim between render and letters. The text-shadow below is what makes the
- * title stand off the image, but the renders run from near-black to bright hull
- * plating and a shadow alone can't carry light letters over the bright ones. */
-.hero::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(to right, rgb(8 10 14 / 70%), rgb(8 10 14 / 44%));
-  z-index: -1;
-}
-
-/* Light letters over the render — the backdrop is dark in both themes, so these
- * are literal colours rather than theme tokens, which would flip to dark-on-dark
- * in one of them. */
-.heroHead .name {
-  color: #f2f5f9 !important;
-  text-shadow: 0 1px 3px rgb(0 0 0 / 70%);
-}
-
-.heroHead .name:hover {
-  color: #ffffff !important;
-}
-
-.heroHead .subId {
-  color: rgb(236 241 247 / 90%);
-  text-shadow: 0 1px 3px rgb(0 0 0 / 75%);
-}
-
-/* An unpinned star only; a pinned one keeps its accent colour, which reads fine
- * over the scrim. */
-.heroHead .favorite:not([aria-pressed='true']) {
-  color: rgb(233 238 245 / 82%);
-  text-shadow: 0 1px 3px rgb(0 0 0 / 70%);
-}
-
-/* ── The hero in light mode: inverted backdrop, black letters ──────────────
- * The render is mostly dark space, which reads as a dark band on a light
- * page; inverting the blurred image flips it into a pale field of the same
- * colours, the scrim goes white, and the letters go black with a soft light
- * halo. Theme state per globals.css: an explicit data-theme wins in both
- * directions, and the bare-system case is the media query guarded against an
- * explicit dark choice — so every rule here appears twice, once per path. */
-@media (prefers-color-scheme: light) {
-  :global(:root:not([data-theme='dark'])) .heroArt {
-    filter: blur(10px) invert(1);
-  }
-
-  :global(:root:not([data-theme='dark'])) .hero::after {
-    background: linear-gradient(to right, rgb(248 249 251 / 72%), rgb(248 249 251 / 46%));
-  }
-
-  :global(:root:not([data-theme='dark'])) .heroHead .name {
-    color: #0b0d10 !important;
-    text-shadow: 0 1px 3px rgb(255 255 255 / 75%);
-  }
-
-  :global(:root:not([data-theme='dark'])) .heroHead .name:hover {
-    color: #000000 !important;
-  }
-
-  :global(:root:not([data-theme='dark'])) .heroHead .subId {
-    color: rgb(20 24 30 / 85%);
-    text-shadow: 0 1px 3px rgb(255 255 255 / 80%);
-  }
-
-  :global(:root:not([data-theme='dark'])) .heroHead .favorite:not([aria-pressed='true']) {
-    color: rgb(20 24 30 / 75%);
-    text-shadow: 0 1px 3px rgb(255 255 255 / 75%);
-  }
-}
-
-:global(:root[data-theme='light']) .heroArt {
-  filter: blur(10px) invert(1);
-}
-
-:global(:root[data-theme='light']) .hero::after {
-  background: linear-gradient(to right, rgb(248 249 251 / 72%), rgb(248 249 251 / 46%));
-}
-
-:global(:root[data-theme='light']) .heroHead .name {
-  color: #0b0d10 !important;
-  text-shadow: 0 1px 3px rgb(255 255 255 / 75%);
-}
-
-:global(:root[data-theme='light']) .heroHead .name:hover {
-  color: #000000 !important;
-}
-
-:global(:root[data-theme='light']) .heroHead .subId {
-  color: rgb(20 24 30 / 85%);
-  text-shadow: 0 1px 3px rgb(255 255 255 / 80%);
-}
-
-:global(:root[data-theme='light']) .heroHead .favorite:not([aria-pressed='true']) {
-  color: rgb(20 24 30 / 75%);
-  text-shadow: 0 1px 3px rgb(255 255 255 / 75%);
-}
-
-/* Item icon stacked above a service/rig chip's name (32px — 64 crowded the
- * chip once the pane went tabbed). */
+/* Item icon stacked above a chip's name. */
 .chipIcon {
   display: block;
   flex: none;
-}
-
-/* The tile's lower pane: Services / Rigs / Characters behind tabs. */
-.tabbed {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.tabList {
-  display: flex;
-  gap: 4px;
-  border-bottom: 1px solid var(--line);
-}
-
-/* Quiet text tabs; the active one carries the accent underline. Deliberately
- * not the default button chrome — these switch a pane, they don't act. */
-.tab {
-  border: 0;
-  background: none;
-  cursor: pointer;
-  padding: 4px 8px 6px;
-  font-size: 12px;
-  color: var(--ink-faint);
-  border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
-}
-
-.tab:hover {
-  color: var(--ink);
-}
-
-.tabActive {
-  color: var(--ink);
-  border-bottom-color: var(--accent);
-}
-
-.tabCount {
-  margin-left: 5px;
-  font-family: var(--mono);
-  font-variant-numeric: tabular-nums;
-  font-size: 10px;
-  color: var(--ink-faint);
+  border-radius: 4px;
 }
 
 /* The Characters pane: who ran industry jobs here in the window. */
@@ -652,8 +501,8 @@
   overflow-wrap: anywhere;
 }
 
-/* What the row stands for — a corporation, or an account covering several
-   characters. A gloss on the name, so it reads quieter than the name does. */
+/* What the row stands for — a corporation covering several pilots. A gloss on
+   the name, so it reads quieter than the name does. */
 .characterKind {
   margin-left: 6px;
   font-size: 10px;
@@ -669,92 +518,471 @@
   color: var(--ink-faint);
 }
 
-/* The ?-in-a-circle explaining the tile's measures. The bubble opens on hover
- * and on focus, sits above the fields grid, and keeps the explainer's line
- * breaks. Spans both grid columns so it doesn't occupy a label cell. */
-.helpTip {
-  position: relative;
-  grid-column: 1 / -1;
-  justify-self: end;
-  width: 15px;
-  height: 15px;
-  border: 1px solid var(--line);
-  border-radius: 50%;
+/* ── Industry cost indices: label / sparkline / percentage ───────────── */
+
+.indexes {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 5px 10px;
+  align-items: center;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  font-size: 12px;
+}
+
+.indexRow {
+  display: contents;
+}
+
+.indexLabel {
+  color: var(--ink-faint);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.indexValue {
+  text-align: right;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 11.5px;
+}
+
+/* Sparkline cell: tiny min/max range column to the left, line chart on the
+   right, flush against the current % on its right. */
+.sparklineCell {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  font-size: 10px;
+  gap: 4px;
+  justify-self: end;
+}
+
+.sparklineRange {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: space-between;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 8px;
   line-height: 1;
   color: var(--ink-faint);
-  cursor: help;
+  height: 18px;
 }
 
-.helpTip:hover,
-.helpTip:focus-visible {
+.sparklineMax,
+.sparklineMin {
+  font-size: inherit;
+  line-height: 1;
+  vertical-align: baseline;
+  top: 0;
+  bottom: 0;
+}
+
+.sparkline {
+  width: 100px;
+  height: 18px;
+  color: var(--ink-soft);
+  overflow: visible;
+}
+
+/* Phones get one tile per row, but the 3-column layout still leaves the
+   sparkline a sliver between two text columns. Stack label+value on the first
+   row and give the sparkline the full width on the second. */
+@media (max-width: 639px) {
+  .indexes {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .indexRow {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 0 8px;
+  }
+
+  .indexValue {
+    grid-row: 1;
+    grid-column: 2;
+  }
+
+  .sparklineCell {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    justify-self: stretch;
+    display: flex;
+  }
+
+  .sparkline {
+    flex: 1;
+    width: auto;
+  }
+}
+
+/* ── Panels (the window summary, and the detail page) ────────────────── */
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--paper-raised);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.panelHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 14px;
+  background: var(--paper);
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 12.5px;
+  font-weight: 600;
+  flex-wrap: wrap;
+}
+
+.panelHead h2 {
+  margin: 0;
+  font-family: var(--sans);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.panelCaption {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--ink-faint);
+}
+
+.spacer {
+  flex: 1;
+}
+
+/* A label / value row. */
+.panelRow {
+  display: grid;
+  grid-template-columns: 130px 1fr;
+  gap: 12px;
+  align-items: baseline;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 12px;
+}
+
+.panel > :last-child {
+  border-bottom: 0;
+}
+
+.panelLabel {
+  color: var(--ink-faint);
+  font-size: 11px;
+}
+
+/* Values in the summary panel line up on the right. */
+.panelValue {
+  text-align: right;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The row the panel adds up to. */
+.panelTotal {
+  background: var(--paper);
+}
+
+.panelTotal .panelLabel {
   color: var(--ink);
-  border-color: var(--accent);
+  font-weight: 600;
 }
 
-.helpTipBody {
-  display: none;
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  z-index: 10;
-  width: 280px;
-  max-width: 74vw;
-  padding: 10px 12px;
-  border: 1px solid var(--line);
+.panelTotal .panelValue {
+  font-weight: 700;
+}
+
+/* A wrapped value (the services list on the detail page). */
+.wrap {
+  white-space: normal;
+}
+
+/* A row whose label carries a line of explanation under it, the value flush
+   right: the cost-avoidance arithmetic. */
+.explainedRow {
+  grid-template-columns: 1fr auto;
+}
+
+.explainedLabel {
+  font-size: 12px;
+  color: var(--ink);
+}
+
+.explainedSub {
+  font-size: 10.5px;
+  color: var(--ink-faint);
+}
+
+.panelNote {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 12px 14px;
+  font-size: 10.5px;
+  line-height: 1.55;
+  color: var(--ink-faint);
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.panelNote p {
+  margin: 0;
+}
+
+/* The two-column window summary: totals on the left, the reading notes and
+   breakdowns on the right. */
+.summaryGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr);
+  gap: 14px;
+  align-items: start;
+}
+
+@media (max-width: 799px) {
+  .summaryGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.breakdowns {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.breakdown {
+  font-size: 11.5px;
+}
+
+.breakdown summary {
+  cursor: pointer;
+  color: var(--link);
+  font-weight: 600;
+  list-style: none;
+}
+
+.breakdown summary::before {
+  content: '▸ ';
+  color: var(--ink-faint);
+}
+
+.breakdown[open] summary::before {
+  content: '▾ ';
+}
+
+/* name / gloss / amount, each row spreading across the grid's columns. */
+.breakdownGrid {
+  display: grid;
+  grid-template-columns: auto auto auto;
+  gap: 4px 14px;
+  margin: 8px 0 2px 14px;
+  align-items: baseline;
+  justify-content: start;
+}
+
+.breakdownRow {
+  display: contents;
+}
+
+.payer {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.payerCorp {
+  color: var(--ink-faint);
+  font-size: 11px;
+}
+
+.lastRun {
+  margin: 14px 0 0;
+  color: var(--ink-faint);
+  font-size: 10.5px;
+}
+
+/* ── Detail page ─────────────────────────────────────────────────────── */
+
+.detailHeader {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 16px 0;
+  flex-wrap: wrap;
+}
+
+.backLink {
+  font-size: 11.5px;
+  font-weight: 600;
+  margin: 0 0 6px;
+}
+
+.detailGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.78fr) minmax(0, 1.22fr);
+  gap: 14px;
+  align-items: start;
+}
+
+@media (max-width: 899px) {
+  .detailGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.detailColumn {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+.jobsPanel {
+  margin-top: 14px;
+}
+
+/* The payer leaderboard: portrait-sized cards in a row, read as a ranking. An
+   <ol>, so the ranking survives with styles off and for screen readers. */
+.payerGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 8px;
+  list-style: none;
+  padding: 12px 14px;
+  margin: 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.payerCard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 10px 8px;
+  border: 1px solid var(--line-soft);
   border-radius: var(--radius-sm);
   background: var(--paper-raised);
+  text-align: center;
+  min-width: 0;
+}
+
+.payerRank {
+  font-size: 10px;
+  color: var(--ink-faint);
+}
+
+/* Hashed-initial circle (./avatar.ts) — the system carries no photography. */
+.payerAvatar {
+  width: 36px;
+  height: 36px;
+  flex: none;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: #f4f4f5;
+  background: var(--line-soft);
+}
+
+.payerCardName {
+  font-size: 12px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.payerTotal {
+  font-size: 11.5px;
   color: var(--ink-soft);
-  font-size: 11px;
-  line-height: 1.45;
-  white-space: pre-line;
-  box-shadow: 0 4px 16px rgb(0 0 0 / 25%);
 }
 
-.helpTip:hover .helpTipBody,
-.helpTip:focus-visible .helpTipBody,
-.helpTip:focus .helpTipBody {
-  display: block;
+/* Tables inside a panel: the elevated head strip as the header row, hairline
+   separators, a bold foot. */
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
 }
 
-/* The fuel countdown, dropped below the timestamp rather than trailing it. The
- * two are one fact read two ways, and inline they ran together into a single
- * long string that wrapped mid-phrase at tile width. */
-.subLine {
-  display: block;
+.table th {
+  font-size: 10.5px;
+  font-weight: 400;
+  letter-spacing: 0.06em;
   color: var(--ink-faint);
-  font-size: 11px;
-}
-
-/* The "% of EIV" qualifier on the tax rows: revealed on mouse-over (or
- * keyboard focus of the row's cell) rather than printed inline — trailing it
- * after the amount broke the money column's right alignment. Absolutely
- * positioned below the value so the amount never moves when it appears. */
-.hoverPct {
-  display: none;
-  position: absolute;
-  top: 100%;
-  right: 0;
-  z-index: 5;
+  text-align: left;
+  padding: 8px 12px;
+  background: var(--paper);
+  border-bottom: 1px solid var(--line-soft);
   white-space: nowrap;
-  padding: 2px 7px;
-  border: 1px solid var(--line);
-  background: var(--paper-raised);
-  color: var(--ink-faint);
+}
+
+.table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line-soft);
+  white-space: nowrap;
+  vertical-align: baseline;
+}
+
+.table tbody tr:hover td {
+  background: var(--paper);
+}
+
+.table tfoot td {
+  font-weight: 700;
+  background: var(--paper);
+  border-bottom: 0;
+}
+
+.table td.num,
+.table th.num {
+  text-align: right;
   font-family: var(--mono);
-  font-size: 11px;
+  font-variant-numeric: tabular-nums;
 }
 
-.value:hover .hoverPct,
-.value:focus-within .hoverPct {
-  display: block;
-}
-
-/* Muted qualifier after a value, inline: the recovered tax rate. */
-.subValue {
+.cellSub {
+  font-size: 10.5px;
   color: var(--ink-faint);
+}
+
+.cellDate {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
   font-size: 11px;
+  color: var(--ink-soft);
+}
+
+.cellSoft {
+  color: var(--ink-soft);
+}
+
+/* Lets a wide table scroll inside its panel on a phone instead of breaking
+   the page's width. */
+.tableScroll {
+  overflow-x: auto;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.plainNote {
+  margin: 12px 0;
+  max-width: 64ch;
+  font-size: 11.5px;
+  color: var(--ink-faint);
 }

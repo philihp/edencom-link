@@ -1,0 +1,635 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics>
+<meta name="design_doc_mode" content="canvas">
+<link rel="stylesheet" href="_ds/edencom-link-design-80a92c6f-29aa-4e04-8f29-c0c9bc110814/fonts/fonts.css">
+<link rel="stylesheet" href="_ds/edencom-link-design-80a92c6f-29aa-4e04-8f29-c0c9bc110814/tokens/colors.css">
+<link rel="stylesheet" href="_ds/edencom-link-design-80a92c6f-29aa-4e04-8f29-c0c9bc110814/tokens/interactions.css">
+<link rel="stylesheet" href="_ds/edencom-link-design-80a92c6f-29aa-4e04-8f29-c0c9bc110814/styles.css">
+<script src="_ds/edencom-link-design-80a92c6f-29aa-4e04-8f29-c0c9bc110814/_ds_bundle.js"></script>
+<style>
+html,body{background:#101113}
+body{margin:0;font-family:'Eve Sans Neue',ui-sans-serif,sans-serif}
+a{color:var(--link)}a:hover{color:var(--link-hover)}
+.lt{
+  --bg-canvas:#f4f4f5;--bg-surface:#ffffff;--bg-elevated:#ececee;--bg-overlay:#e2e2e5;
+  --border-subtle:#d9d9dd;--border-strong:#c2c2c9;
+  --text-primary:#17181a;--text-secondary:#54585f;--text-tertiary:#6b6e75;
+  --accent-primary:#7a7aef;--accent-primary-hover:#6a6ae8;--accent-text:#5451c9;
+  --link:#5b4fc4;--link-hover:#463aa8;
+  --status-good:#177a44;--status-warn:#8a6114;--status-bad:#b32c33;--status-info:#2b49b0;
+}
+.dv-turn{--accent-text:var(--accent-primary);padding:40px 44px 32px;border-bottom:1px solid #26272c}
+.dv-thd{display:flex;align-items:baseline;gap:10px;margin:0 0 20px}
+.dv-tid{font:600 10px ui-monospace,Menlo,monospace;padding:3px 7px;background:#f4f4f5;color:#17181a;border-radius:4px;text-decoration:none}
+.dv-tname{font:600 13px/1.2 'Eve Sans Neue',sans-serif;color:#f4f4f5}
+.dv-opts{display:flex;flex-direction:column;gap:34px;align-items:flex-start}
+.dv-opt{display:flex;flex-direction:column;gap:9px;scroll-margin-top:16px}
+.dv-oid{font:600 10.5px ui-monospace,Menlo,monospace;padding:3px 7px;background:#26272c;color:#f4f4f5;border-radius:5px;text-decoration:none}
+.dv-olabel{display:flex;align-items:baseline;gap:8px;font:400 11px/1.35 'Eve Sans Neue',sans-serif;color:#9a9da5;max-width:920px}
+.dv-opt:target .dv-oid{background:#8f8ff5;color:#17181a}
+.dv-pair{display:flex;gap:18px;padding:16px;border:1px solid #26272c;border-radius:10px}
+.dv-app{width:1180px;background:var(--bg-canvas);border:1px solid var(--border-subtle);border-radius:8px;overflow:hidden;color:var(--text-primary);box-sizing:border-box;padding:22px 24px 26px}
+.m{font-family:ui-monospace,Menlo,monospace;font-variant-numeric:tabular-nums}
+.h1{font-family:'Eve Sans Neue Expanded',sans-serif;font-size:20px;font-weight:700}
+.sub{font-size:12px;color:var(--text-secondary);margin-top:3px}
+.tag{font:600 9.5px ui-monospace,Menlo,monospace;letter-spacing:.04em;white-space:nowrap}
+.t-live{color:var(--status-good)}
+.t-ledg{color:var(--accent-text)}
+.t-est{color:var(--status-warn)}
+.t-dir{color:var(--text-secondary)}
+.pnl{background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:6px;overflow:hidden;display:flex;flex-direction:column;min-width:0}
+.phd{display:flex;align-items:center;gap:8px;padding:9px 14px;background:var(--bg-elevated);border-bottom:1px solid var(--border-subtle);font-size:12.5px;font-weight:600}
+.prow{display:grid;grid-template-columns:130px 1fr;gap:12px;align-items:baseline;padding:8px 14px;border-bottom:1px solid var(--border-subtle);font-size:12px}
+.plbl{color:var(--text-tertiary);font-size:11px}
+.pnote{padding:9px 14px;font-size:10.5px;line-height:1.55;color:var(--text-tertiary)}
+.glbl{display:flex;align-items:baseline;gap:10px;margin:24px 0 10px;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--text-tertiary)}
+.grule{flex:1;height:1px;background:var(--border-subtle);align-self:center}
+.gnote{font-size:10.5px;letter-spacing:0;text-transform:none;color:var(--text-tertiary)}
+.tg{background:none;border:0;padding:0;font:inherit;font-size:11.5px;font-weight:600;color:var(--link);cursor:pointer}
+.tg:hover{color:var(--link-hover)}
+.tg-on{color:var(--text-primary);text-decoration:underline;text-underline-offset:3px}
+.alk{font-weight:600;text-decoration:none;cursor:pointer}
+.th{font-size:10.5px;letter-spacing:.06em;color:var(--text-tertiary);font-weight:400;text-align:left;padding:8px 12px;border-bottom:1px solid var(--border-subtle);background:var(--bg-elevated);white-space:nowrap}
+.td{font-size:12px;padding:8px 12px;border-bottom:1px solid var(--border-subtle);white-space:nowrap;vertical-align:baseline}
+.tf{font-size:12px;padding:8px 12px;font-weight:700;background:var(--bg-elevated);white-space:nowrap}
+.num{text-align:right;font-family:ui-monospace,Menlo,monospace;font-variant-numeric:tabular-nums;font-size:11.5px}
+tr.rw:hover .td{background:var(--bg-elevated)}
+.tile{background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:6px;overflow:hidden;display:flex;flex-direction:column;min-width:0}
+.tile:hover{border-color:var(--border-strong)}
+.thead{display:flex;align-items:flex-start;gap:8px;padding:11px 14px;background:var(--bg-elevated);border-bottom:1px solid var(--border-subtle)}
+.tname{font-size:13.5px;font-weight:600;line-height:1.25;text-decoration:none;color:var(--text-primary);overflow-wrap:anywhere}
+.tname:hover{color:var(--link)}
+.tid{display:block;font:10.5px ui-monospace,Menlo,monospace;color:var(--text-tertiary);margin-top:2px}
+.star{margin-left:auto;flex:none;background:none;border:0;padding:0 2px;font-size:15px;line-height:1;cursor:pointer;color:var(--text-tertiary)}
+.star-on{color:var(--accent-primary)}
+.fields{display:grid;grid-template-columns:auto 1fr;gap:6px 12px;padding:11px 14px;font-size:12px;border-bottom:1px solid var(--border-subtle)}
+.fl{color:var(--text-tertiary);font-size:11px;white-space:nowrap}
+.fv{text-align:right;min-width:0;overflow-wrap:anywhere}
+.subl{display:block;color:var(--text-tertiary);font-size:10.5px}
+.subv{color:var(--text-tertiary);font-size:10.5px}
+.sec{display:flex;flex-direction:column;gap:7px;padding:10px 14px;border-bottom:1px solid var(--border-subtle)}
+.tile .sec:last-child{border-bottom:0}
+.sl{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--text-tertiary)}
+.chips{display:grid;grid-template-columns:repeat(auto-fill,minmax(88px,1fr));gap:6px}
+.chip{display:flex;flex-direction:column;align-items:center;gap:5px;padding:8px 6px;border:1px solid var(--border-subtle);border-radius:5px;font-size:11px;text-align:center;color:var(--text-secondary);overflow-wrap:anywhere;line-height:1.3}
+.chip-off{opacity:.55}
+.ico{width:32px;height:32px;border-radius:4px;background:var(--bg-elevated);border:1px solid var(--border-subtle);display:flex;align-items:center;justify-content:center;font:600 9px ui-monospace,Menlo,monospace;color:var(--text-tertiary)}
+.idx{display:grid;grid-template-columns:auto 1fr auto;gap:5px 10px;align-items:center;font-size:12px}
+.il{color:var(--text-tertiary);font-size:11px;white-space:nowrap}
+.sp{display:inline-flex;align-items:center;gap:4px;justify-self:end}
+.spr{display:inline-flex;flex-direction:column;align-items:flex-end;justify-content:space-between;height:18px;font:8px ui-monospace,Menlo,monospace;color:var(--text-tertiary);line-height:1}
+.spk{width:100px;height:18px;overflow:visible;color:var(--text-secondary)}
+.iv{text-align:right;font-family:ui-monospace,Menlo,monospace;font-size:11.5px}
+.ftr{display:grid;grid-template-columns:auto auto;gap:5px 14px;justify-content:start;align-items:baseline;font-size:12px}
+.fnote{font-size:10.5px;line-height:1.55;color:var(--text-tertiary);max-width:64ch}
+.det{font-size:11.5px}
+.det summary{cursor:pointer;color:var(--link);font-weight:600;list-style:none}
+.det summary::before{content:'▸ ';color:var(--text-tertiary)}
+.det[open] summary::before{content:'▾ '}
+.dg{display:grid;grid-template-columns:auto auto auto;gap:4px 14px;margin:8px 0 2px 14px;font-size:11.5px;align-items:baseline}
+.av{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#f4f4f5;flex:none}
+.pc{display:flex;flex-direction:column;align-items:center;gap:5px;padding:10px 8px;border:1px solid var(--border-subtle);border-radius:6px;background:var(--bg-surface);text-align:center;min-width:0}
+.sel{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border:1px solid var(--border-strong);border-radius:5px;font-size:11.5px;color:var(--text-primary);white-space:nowrap}
+.sel b{color:var(--link);font-weight:700}
+.flt{display:inline-flex;align-items:center;gap:9px;font-size:11.5px;color:var(--text-tertiary)}
+</style>
+</helmet>
+
+<section class="dv-turn" id="t1">
+<div class="dv-thd"><a class="dv-tid" href="#t1">1</a><span class="dv-tname">Structures — list and detail, restyled to the industry / registrations vocabulary · dark and light</span></div>
+<div style="max-width:1000px;margin:0 0 26px;font-size:12px;line-height:1.7;color:var(--text-secondary);background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:8px;padding:15px 18px">
+<b style="color:var(--text-primary)">Same numbers, same arithmetic.</b> Every field, footer figure, note and breakdown from the current pages is here, in the same order; nothing is recomputed or renamed except casing. The only additions are <span class="tag t-live">[ live ]</span> / <span class="tag t-ledg">[ ledger ]</span> / <span class="tag t-est">[ estimate ]</span> / <span class="tag t-dir">[ directory ]</span> tags naming where each figure comes from — ESI scan, corp wallet, EIV arithmetic, or the public directory.<br>
+<b style="color:var(--text-primary)">Tiles become panels.</b> The blurred render backdrop and serif heading go; a tile is now the same elevated-header panel as settings and the industry page, with the window control as a readout-bodied select, the three roster tiers as group labels with rules, and the window-scoped footer promoted into its own panel so it reads as a summary instead of loose text.<br>
+<b style="color:var(--text-primary)">Detail page.</b> The retro table splits into facts (directory + scan) on the left and the window-scoped tax figures on the right; leaderboard, day table, cost avoidance and jobs each sit in a panel with their tag. Portraits are hashed-initial circles per the system — no photography.
+</div>
+<div class="dv-opts">
+
+<div class="dv-opt" id="1a">
+<div class="dv-olabel"><a class="dv-oid" href="#1a">1a</a>/structure — roster in three tiers, 30-day window, summary footer panel with the two breakdowns open.</div>
+<div class="dv-pair">
+<!--APP-A-->
+<div class="dv-app" data-screen-label="Structures list">
+  <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:4px">
+    <div>
+      <div class="h1">structures</div>
+      <div class="sub"><span class="m">5</span> structures · <span class="m">3</span> ours · figures over the selected window</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:14px">
+      <span style="display:flex;align-items:center;gap:14px;font-size:11.5px"><a class="alk" href="#1a">tax revenue events »</a><a class="alk" href="#1a">mercenary dens »</a></span>
+      <span class="sel"><span style="color:var(--text-tertiary)">window</span><span>30 days</span><b>⌄</b></span>
+    </div>
+  </div>
+
+  <div class="glbl"><span>favorites</span><span class="gnote">pinned — sort above everything, in your order</span><span class="grule"></span></div>
+  <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px">
+    <div class="tile">
+      <div class="thead"><div><a class="tname" href="#1b">Sakenta - DSWB Refinery</a><span class="tid">#1050530810113</span></div><span class="tag t-live" style="margin-top:3px">[ live ]</span><button class="star star-on" title="Remove from favorites">★</button></div>
+      <div class="fields">
+        <span class="fl">revenue</span><span class="fv m">1,284.6 mISK</span>
+        <span class="fl">taxes paid</span><span class="fv m">312.9 mISK</span>
+        <span class="fl">total EIV</span><span class="fv m">41.2 bISK</span>
+        <span class="fl">cost avoidance</span><span class="fv m">2,190.3 mISK</span>
+        <span class="fl">type</span><span class="fv">Athanor</span>
+        <span class="fl">system</span><span class="fv"><a class="alk" href="#1a">Sakenta</a></span>
+        <span class="fl">fuel expires</span><span class="fv"><span class="m">2026-11-02 14:00</span><span class="subl">in 25 days</span></span>
+      </div>
+      <div class="sec"><span class="sl">services</span><div class="chips">
+        <div class="chip"><span class="ico">RXN</span>Composite Reactions</div>
+        <div class="chip"><span class="ico">RXN</span>Hybrid Reactions</div>
+        <div class="chip"><span class="ico">RPR</span>Reprocessing</div>
+        <div class="chip chip-off"><span class="ico">DRL</span>Moon Drilling</div>
+      </div></div>
+      <div class="sec"><span class="sl">rigs</span><div class="chips">
+        <div class="chip"><span class="ico">RIG</span>Standup M-Set Composite Reactor Material Efficiency II</div>
+        <div class="chip"><span class="ico">RIG</span>Standup M-Set Reprocessing Monitor</div>
+      </div></div>
+      <div class="sec"><span class="sl">industry indexes</span><div class="idx">
+        <span class="il">Reaction</span>
+        <span class="sp"><span class="spr"><span>3.41%</span><span>2.88%</span></span><svg class="spk" viewBox="0 0 100 20" preserveAspectRatio="none"><line x1="1" y1="10" x2="99" y2="10" stroke="var(--border-subtle)" vector-effect="non-scaling-stroke"></line><polyline fill="none" stroke="currentColor" stroke-width="1.5" vector-effect="non-scaling-stroke" points="1,16 12,15 23,13 34,14 45,10 56,8 67,9 78,5 89,4 99,3"></polyline></svg></span>
+        <span class="iv">3.41%</span>
+      </div></div>
+    </div>
+  </div>
+
+  <div class="glbl"><span>our structures</span><span class="gnote">scanned by a director — state, services, fuel and rigs are known</span><span class="grule"></span></div>
+  <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px">
+    <div class="tile">
+      <div class="thead"><div><a class="tname" href="#1b">Otela - Wolfden</a><span class="tid">#1041223874560</span></div><span class="tag t-live" style="margin-top:3px">[ live ]</span><button class="star" title="Add to favorites">☆</button></div>
+      <div class="fields">
+        <span class="fl">revenue</span><span class="fv m">402.1 mISK</span>
+        <span class="fl">taxes paid</span><span class="fv m">96.4 mISK</span>
+        <span class="fl">total EIV</span><span class="fv m">12.8 bISK</span>
+        <span class="fl">cost avoidance</span><span class="fv m">674.8 mISK</span>
+        <span class="fl">type</span><span class="fv">Raitaru</span>
+        <span class="fl">system</span><span class="fv"><a class="alk" href="#1a">Otela</a></span>
+        <span class="fl">fuel expires</span><span class="fv"><span class="m">2026-10-19 02:00</span><span class="subl">in 11 days</span></span>
+      </div>
+      <div class="sec"><span class="sl">services</span><div class="chips">
+        <div class="chip"><span class="ico">MFG</span>Manufacturing (Standard)</div>
+        <div class="chip"><span class="ico">LAB</span>Material Efficiency Research</div>
+        <div class="chip"><span class="ico">LAB</span>Time Efficiency Research</div>
+        <div class="chip"><span class="ico">LAB</span>Blueprint Copying</div>
+        <div class="chip"><span class="ico">INV</span>Invention</div>
+      </div></div>
+      <div class="sec"><span class="sl">rigs</span><div class="chips">
+        <div class="chip"><span class="ico">RIG</span>Standup M-Set Basic Medium Ship Manufacturing Material Efficiency I</div>
+        <div class="chip"><span class="ico">RIG</span>Standup M-Set Laboratory Optimization I</div>
+      </div></div>
+      <div class="sec"><span class="sl">industry indexes</span><div class="idx">
+        <span class="il">Manufacturing</span>
+        <span class="sp"><span class="spr"><span>1.92%</span><span>1.40%</span></span><svg class="spk" viewBox="0 0 100 20" preserveAspectRatio="none"><line x1="1" y1="10" x2="99" y2="10" stroke="var(--border-subtle)" vector-effect="non-scaling-stroke"></line><polyline fill="none" stroke="currentColor" stroke-width="1.5" vector-effect="non-scaling-stroke" points="1,4 12,6 23,9 34,8 45,12 56,14 67,13 78,16 89,15 99,17"></polyline></svg></span>
+        <span class="iv">1.46%</span>
+        <span class="il">Research ME</span>
+        <span class="sp"><span class="spr"><span>0.63%</span><span>0.58%</span></span><svg class="spk" viewBox="0 0 100 20" preserveAspectRatio="none"><line x1="1" y1="10" x2="99" y2="10" stroke="var(--border-subtle)" vector-effect="non-scaling-stroke"></line><polyline fill="none" stroke="currentColor" stroke-width="1.5" vector-effect="non-scaling-stroke" points="1,11 12,11 23,10 34,10 45,10 56,9 67,9 78,10 89,9 99,9"></polyline></svg></span>
+        <span class="iv">0.61%</span>
+        <span class="il">Research TE</span>
+        <span class="sp"><span class="spr"><span>0.60%</span><span>0.55%</span></span><svg class="spk" viewBox="0 0 100 20" preserveAspectRatio="none"><line x1="1" y1="10" x2="99" y2="10" stroke="var(--border-subtle)" vector-effect="non-scaling-stroke"></line><polyline fill="none" stroke="currentColor" stroke-width="1.5" vector-effect="non-scaling-stroke" points="1,9 12,10 23,10 34,11 45,10 56,10 67,9 78,10 89,10 99,10"></polyline></svg></span>
+        <span class="iv">0.58%</span>
+        <span class="il">Copying</span>
+        <span class="sp"><span class="spr"><span>0.71%</span><span>0.52%</span></span><svg class="spk" viewBox="0 0 100 20" preserveAspectRatio="none"><line x1="1" y1="10" x2="99" y2="10" stroke="var(--border-subtle)" vector-effect="non-scaling-stroke"></line><polyline fill="none" stroke="currentColor" stroke-width="1.5" vector-effect="non-scaling-stroke" points="1,14 12,12 23,8 34,6 45,7 56,5 67,8 78,11 89,12 99,13"></polyline></svg></span>
+        <span class="iv">0.57%</span>
+        <span class="il">Invention</span>
+        <span class="sp"><span class="spr"><span>1.10%</span><span>0.94%</span></span><svg class="spk" viewBox="0 0 100 20" preserveAspectRatio="none"><line x1="1" y1="10" x2="99" y2="10" stroke="var(--border-subtle)" vector-effect="non-scaling-stroke"></line><polyline fill="none" stroke="currentColor" stroke-width="1.5" vector-effect="non-scaling-stroke" points="1,12 12,10 23,11 34,9 45,8 56,9 67,7 78,6 89,7 99,5"></polyline></svg></span>
+        <span class="iv">1.08%</span>
+      </div></div>
+    </div>
+    <div class="tile">
+      <div class="thead"><div><a class="tname" href="#1b">Sakenta VII - Moon 3 - Wolf Drill</a><span class="tid">#1047781120433</span></div><span class="tag t-live" style="margin-top:3px">[ live ]</span><button class="star" title="Add to favorites">☆</button></div>
+      <div class="fields">
+        <span class="fl">type</span><span class="fv">Athanor</span>
+        <span class="fl">system</span><span class="fv"><a class="alk" href="#1a">Sakenta</a></span>
+        <span class="fl">fuel expires</span><span class="fv"><span class="m">2026-10-11 20:00</span><span class="subl" style="color:var(--status-warn)">in 3 days</span></span>
+      </div>
+      <div class="sec"><span class="sl">services</span><div class="chips">
+        <div class="chip"><span class="ico">DRL</span>Moon Drilling</div>
+        <div class="chip"><span class="ico">RPR</span>Reprocessing</div>
+      </div></div>
+      <div class="sec"><span class="sl">rigs</span><div class="chips">
+        <div class="chip"><span class="ico">RIG</span>Standup M-Set Moon Ore Grading Processor I</div>
+      </div></div>
+    </div>
+  </div>
+
+  <div class="glbl"><span>everyone else's structures</span><span class="gnote">our jobs run here, but no director of ours can scan them — only what ESI tells a visitor: no fitting, no services, no fuel timer</span><span class="grule"></span></div>
+  <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px">
+    <div class="tile">
+      <div class="thead"><div><a class="tname" href="#1b">Perimeter - Tranquility Trading Tower</a><span class="tid">#1028858195912</span></div><span class="tag t-dir" style="margin-top:3px">[ directory ]</span><button class="star" title="Add to favorites">☆</button></div>
+      <div class="fields">
+        <span class="fl">taxes paid</span><span class="fv m">188.7 mISK</span>
+        <span class="fl">taxes paid (est.)</span><span class="fv m">176.2 mISK <span class="subv">≈1.00%</span></span>
+        <span class="fl">total EIV</span><span class="fv m">17.6 bISK</span>
+        <span class="fl">type</span><span class="fv">Keepstar</span>
+        <span class="fl">system</span><span class="fv"><a class="alk" href="#1a">Perimeter</a></span>
+        <span class="fl">owner</span><span class="fv">Tranquility Trading Consortium</span>
+      </div>
+    </div>
+    <div class="tile">
+      <div class="thead"><div><a class="tname" href="#1b">Structure #1038004417702</a><span class="tid">#1038004417702</span></div><span class="tag t-dir" style="margin-top:3px">[ directory ]</span><button class="star" title="Add to favorites">☆</button></div>
+      <div class="fields">
+        <span class="fl">total EIV</span><span class="fv m">1.9 bISK</span>
+        <span class="fl">type</span><span class="fv" style="color:var(--text-tertiary)">—</span>
+        <span class="fl">system</span><span class="fv" style="color:var(--text-tertiary)">—</span>
+        <span class="fl">owner</span><span class="fv" style="color:var(--text-tertiary)">—</span>
+      </div>
+      <div class="pnote">never resolved by the directory — a job of ours ran here, and that is all that is known.</div>
+    </div>
+  </div>
+
+  <div class="glbl"><span>over the window</span><span class="gnote">30 days — the same span the tiles and sparklines use</span><span class="grule"></span></div>
+  <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.3fr);gap:14px;align-items:start">
+    <div class="pnl">
+      <div class="phd"><span>totals</span><span style="flex:1"></span><span class="tag t-ledg">[ ledger ]</span></div>
+      <div class="prow"><span class="plbl">unaccounted tax revenue</span><span class="m">214.3 mISK</span></div>
+      <div class="prow"><span class="plbl">taxes paid</span><span class="m">598.0 mISK</span></div>
+      <div class="prow"><span class="plbl">taxes paid elsewhere</span><span class="m">61.4 mISK</span></div>
+      <div class="prow"><span class="plbl">taxes paid (est.) <span class="tag t-est">[ estimate ]</span></span><span class="m">176.2 mISK</span></div>
+      <div class="prow"><span class="plbl">total EIV <span class="tag t-est">[ estimate ]</span></span><span class="m">73.5 bISK</span></div>
+      <div class="prow"><span class="plbl">clone revenue</span><span class="m">4,800 kISK</span></div>
+      <div class="prow" style="border-bottom:0;background:var(--bg-elevated)"><span class="plbl" style="color:var(--text-primary);font-weight:600">cost avoidance</span><span class="m" style="font-weight:700">2,865.1 mISK</span></div>
+    </div>
+    <div class="pnl">
+      <div class="phd"><span>how to read these</span></div>
+      <div class="pnote" style="display:flex;flex-direction:column;gap:9px;padding:12px 14px">
+        <span>Cost avoidance is facility tax never incurred: 1,412 jobs of ours ran in structures we own and were billed at our own rate (0.25%) instead of a public structure's (1.00%), and the difference is the expense never paid. No ISK changed hands, so it is not revenue. <a class="alk" href="#1a">change the rates »</a></span>
+        <span>Taxes paid is facility tax we were actually charged, for jobs run in the structures listed above — ours and others' alike.</span>
+        <span>Total EIV is the Estimated Item Value of our manufacturing and reaction jobs installed at these structures, priced from CCP's adjusted prices. At a structure we don't own, taking the system index fee and the SCC surcharge out of the billed job cost leaves the owner's cut, and dividing by EIV gives their rate. The estimate assumes Omega installers; 37 jobs could not be priced (missing bill, price, or index history) and count toward nothing.</span>
+        <span>Unaccounted revenue comes from industry jobs started by players we can't see, so we can't say which structure it came from.</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px;padding:10px 14px;border-top:1px solid var(--border-subtle)">
+        <details class="det" open>
+          <summary>taxes paid elsewhere, by corporation (2)</summary>
+          <div class="dg">
+            <span>Tranquility Trading Consortium</span><span style="color:var(--text-tertiary)">Perimeter</span><span class="m" style="text-align:right">48.9 mISK</span>
+            <span>Hyasyoda Corporation</span><span style="color:var(--text-tertiary)">Jita, Maurasi</span><span class="m" style="text-align:right">12.5 mISK</span>
+          </div>
+        </details>
+        <details class="det" open>
+          <summary>breakdown by payer (3)</summary>
+          <div class="dg">
+            <span>Marrek Oskold</span><span style="color:var(--text-tertiary)">Stellar Forge Industries</span><span class="m" style="text-align:right">141.0 mISK</span>
+            <span>Ilyana Reyes</span><span style="color:var(--text-tertiary)">Stellar Forge Industries</span><span class="m" style="text-align:right">58.2 mISK</span>
+            <span>#2114097771</span><span style="color:var(--text-tertiary)"></span><span class="m" style="text-align:right">15.1 mISK</span>
+          </div>
+        </details>
+      </div>
+    </div>
+  </div>
+  <div style="margin-top:14px;font-size:10.5px;color:var(--text-tertiary)">structures job last ran <span class="m">2026-10-07 23:12</span> · <a class="alk" href="#1a">run log »</a></div>
+</div>
+<!--/APP-A-->
+<div class="lt">
+<div class="dv-app" data-screen-label="(light) Structures list">
+  <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:4px">
+    <div>
+      <div class="h1">structures</div>
+      <div class="sub"><span class="m">5</span> structures · <span class="m">3</span> ours · figures over the selected window</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:14px">
+      <span style="display:flex;align-items:center;gap:14px;font-size:11.5px"><a class="alk" href="#1a">tax revenue events »</a><a class="alk" href="#1a">mercenary dens »</a></span>
+      <span class="sel"><span style="color:var(--text-tertiary)">window</span><span>30 days</span><b>⌄</b></span>
+    </div>
+  </div>
+
+  <div class="glbl"><span>favorites</span><span class="gnote">pinned — sort above everything, in your order</span><span class="grule"></span></div>
+  <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px">
+    <div class="tile">
+      <div class="thead"><div><a class="tname" href="#1b">Sakenta - DSWB Refinery</a><span class="tid">#1050530810113</span></div><span class="tag t-live" style="margin-top:3px">[ live ]</span><button class="star star-on" title="Remove from favorites">★</button></div>
+      <div class="fields">
+        <span class="fl">revenue</span><span class="fv m">1,284.6 mISK</span>
+        <span class="fl">taxes paid</span><span class="fv m">312.9 mISK</span>
+        <span class="fl">total EIV</span><span class="fv m">41.2 bISK</span>
+        <span class="fl">cost avoidance</span><span class="fv m">2,190.3 mISK</span>
+        <span class="fl">type</span><span class="fv">Athanor</span>
+        <span class="fl">system</span><span class="fv"><a class="alk" href="#1a">Sakenta</a></span>
+        <span class="fl">fuel expires</span><span class="fv"><span class="m">2026-11-02 14:00</span><span class="subl">in 25 days</span></span>
+      </div>
+      <div class="sec"><span class="sl">services</span><div class="chips">
+        <div class="chip"><span class="ico">RXN</span>Composite Reactions</div>
+        <div class="chip"><span class="ico">RXN</span>Hybrid Reactions</div>
+        <div class="chip"><span class="ico">RPR</span>Reprocessing</div>
+        <div class="chip chip-off"><span class="ico">DRL</span>Moon Drilling</div>
+      </div></div>
+      <div class="sec"><span class="sl">rigs</span><div class="chips">
+        <div class="chip"><span class="ico">RIG</span>Standup M-Set Composite Reactor Material Efficiency II</div>
+        <div class="chip"><span class="ico">RIG</span>Standup M-Set Reprocessing Monitor</div>
+      </div></div>
+      <div class="sec"><span class="sl">industry indexes</span><div class="idx">
+        <span class="il">Reaction</span>
+        <span class="sp"><span class="spr"><span>3.41%</span><span>2.88%</span></span><svg class="spk" viewBox="0 0 100 20" preserveAspectRatio="none"><line x1="1" y1="10" x2="99" y2="10" stroke="var(--border-subtle)" vector-effect="non-scaling-stroke"></line><polyline fill="none" stroke="currentColor" stroke-width="1.5" vector-effect="non-scaling-stroke" points="1,16 12,15 23,13 34,14 45,10 56,8 67,9 78,5 89,4 99,3"></polyline></svg></span>
+        <span class="iv">3.41%</span>
+      </div></div>
+    </div>
+  </div>
+
+  <div class="glbl"><span>our structures</span><span class="gnote">scanned by a director — state, services, fuel and rigs are known</span><span class="grule"></span></div>
+  <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px">
+    <div class="tile">
+      <div class="thead"><div><a class="tname" href="#1b">Otela - Wolfden</a><span class="tid">#1041223874560</span></div><span class="tag t-live" style="margin-top:3px">[ live ]</span><button class="star" title="Add to favorites">☆</button></div>
+      <div class="fields">
+        <span class="fl">revenue</span><span class="fv m">402.1 mISK</span>
+        <span class="fl">taxes paid</span><span class="fv m">96.4 mISK</span>
+        <span class="fl">total EIV</span><span class="fv m">12.8 bISK</span>
+        <span class="fl">cost avoidance</span><span class="fv m">674.8 mISK</span>
+        <span class="fl">type</span><span class="fv">Raitaru</span>
+        <span class="fl">system</span><span class="fv"><a class="alk" href="#1a">Otela</a></span>
+        <span class="fl">fuel expires</span><span class="fv"><span class="m">2026-10-19 02:00</span><span class="subl">in 11 days</span></span>
+      </div>
+      <div class="sec"><span class="sl">services</span><div class="chips">
+        <div class="chip"><span class="ico">MFG</span>Manufacturing (Standard)</div>
+        <div class="chip"><span class="ico">LAB</span>Material Efficiency Research</div>
+        <div class="chip"><span class="ico">LAB</span>Time Efficiency Research</div>
+        <div class="chip"><span class="ico">LAB</span>Blueprint Copying</div>
+        <div class="chip"><span class="ico">INV</span>Invention</div>
+      </div></div>
+      <div class="sec"><span class="sl">rigs</span><div class="chips">
+        <div class="chip"><span class="ico">RIG</span>Standup M-Set Basic Medium Ship Manufacturing Material Efficiency I</div>
+        <div class="chip"><span class="ico">RIG</span>Standup M-Set Laboratory Optimization I</div>
+      </div></div>
+      <div class="sec"><span class="sl">industry indexes</span><div class="idx">
+        <span class="il">Manufacturing</span>
+        <span class="sp"><span class="spr"><span>1.92%</span><span>1.40%</span></span><svg class="spk" viewBox="0 0 100 20" preserveAspectRatio="none"><line x1="1" y1="10" x2="99" y2="10" stroke="var(--border-subtle)" vector-effect="non-scaling-stroke"></line><polyline fill="none" stroke="currentColor" stroke-width="1.5" vector-effect="non-scaling-stroke" points="1,4 12,6 23,9 34,8 45,12 56,14 67,13 78,16 89,15 99,17"></polyline></svg></span>
+        <span class="iv">1.46%</span>
+        <span class="il">Research ME</span>
+        <span class="sp"><span class="spr"><span>0.63%</span><span>0.58%</span></span><svg class="spk" viewBox="0 0 100 20" preserveAspectRatio="none"><line x1="1" y1="10" x2="99" y2="10" stroke="var(--border-subtle)" vector-effect="non-scaling-stroke"></line><polyline fill="none" stroke="currentColor" stroke-width="1.5" vector-effect="non-scaling-stroke" points="1,11 12,11 23,10 34,10 45,10 56,9 67,9 78,10 89,9 99,9"></polyline></svg></span>
+        <span class="iv">0.61%</span>
+        <span class="il">Research TE</span>
+        <span class="sp"><span class="spr"><span>0.60%</span><span>0.55%</span></span><svg class="spk" viewBox="0 0 100 20" preserveAspectRatio="none"><line x1="1" y1="10" x2="99" y2="10" stroke="var(--border-subtle)" vector-effect="non-scaling-stroke"></line><polyline fill="none" stroke="currentColor" stroke-width="1.5" vector-effect="non-scaling-stroke" points="1,9 12,10 23,10 34,11 45,10 56,10 67,9 78,10 89,10 99,10"></polyline></svg></span>
+        <span class="iv">0.58%</span>
+        <span class="il">Copying</span>
+        <span class="sp"><span class="spr"><span>0.71%</span><span>0.52%</span></span><svg class="spk" viewBox="0 0 100 20" preserveAspectRatio="none"><line x1="1" y1="10" x2="99" y2="10" stroke="var(--border-subtle)" vector-effect="non-scaling-stroke"></line><polyline fill="none" stroke="currentColor" stroke-width="1.5" vector-effect="non-scaling-stroke" points="1,14 12,12 23,8 34,6 45,7 56,5 67,8 78,11 89,12 99,13"></polyline></svg></span>
+        <span class="iv">0.57%</span>
+        <span class="il">Invention</span>
+        <span class="sp"><span class="spr"><span>1.10%</span><span>0.94%</span></span><svg class="spk" viewBox="0 0 100 20" preserveAspectRatio="none"><line x1="1" y1="10" x2="99" y2="10" stroke="var(--border-subtle)" vector-effect="non-scaling-stroke"></line><polyline fill="none" stroke="currentColor" stroke-width="1.5" vector-effect="non-scaling-stroke" points="1,12 12,10 23,11 34,9 45,8 56,9 67,7 78,6 89,7 99,5"></polyline></svg></span>
+        <span class="iv">1.08%</span>
+      </div></div>
+    </div>
+    <div class="tile">
+      <div class="thead"><div><a class="tname" href="#1b">Sakenta VII - Moon 3 - Wolf Drill</a><span class="tid">#1047781120433</span></div><span class="tag t-live" style="margin-top:3px">[ live ]</span><button class="star" title="Add to favorites">☆</button></div>
+      <div class="fields">
+        <span class="fl">type</span><span class="fv">Athanor</span>
+        <span class="fl">system</span><span class="fv"><a class="alk" href="#1a">Sakenta</a></span>
+        <span class="fl">fuel expires</span><span class="fv"><span class="m">2026-10-11 20:00</span><span class="subl" style="color:var(--status-warn)">in 3 days</span></span>
+      </div>
+      <div class="sec"><span class="sl">services</span><div class="chips">
+        <div class="chip"><span class="ico">DRL</span>Moon Drilling</div>
+        <div class="chip"><span class="ico">RPR</span>Reprocessing</div>
+      </div></div>
+      <div class="sec"><span class="sl">rigs</span><div class="chips">
+        <div class="chip"><span class="ico">RIG</span>Standup M-Set Moon Ore Grading Processor I</div>
+      </div></div>
+    </div>
+  </div>
+
+  <div class="glbl"><span>everyone else's structures</span><span class="gnote">our jobs run here, but no director of ours can scan them — only what ESI tells a visitor: no fitting, no services, no fuel timer</span><span class="grule"></span></div>
+  <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px">
+    <div class="tile">
+      <div class="thead"><div><a class="tname" href="#1b">Perimeter - Tranquility Trading Tower</a><span class="tid">#1028858195912</span></div><span class="tag t-dir" style="margin-top:3px">[ directory ]</span><button class="star" title="Add to favorites">☆</button></div>
+      <div class="fields">
+        <span class="fl">taxes paid</span><span class="fv m">188.7 mISK</span>
+        <span class="fl">taxes paid (est.)</span><span class="fv m">176.2 mISK <span class="subv">≈1.00%</span></span>
+        <span class="fl">total EIV</span><span class="fv m">17.6 bISK</span>
+        <span class="fl">type</span><span class="fv">Keepstar</span>
+        <span class="fl">system</span><span class="fv"><a class="alk" href="#1a">Perimeter</a></span>
+        <span class="fl">owner</span><span class="fv">Tranquility Trading Consortium</span>
+      </div>
+    </div>
+    <div class="tile">
+      <div class="thead"><div><a class="tname" href="#1b">Structure #1038004417702</a><span class="tid">#1038004417702</span></div><span class="tag t-dir" style="margin-top:3px">[ directory ]</span><button class="star" title="Add to favorites">☆</button></div>
+      <div class="fields">
+        <span class="fl">total EIV</span><span class="fv m">1.9 bISK</span>
+        <span class="fl">type</span><span class="fv" style="color:var(--text-tertiary)">—</span>
+        <span class="fl">system</span><span class="fv" style="color:var(--text-tertiary)">—</span>
+        <span class="fl">owner</span><span class="fv" style="color:var(--text-tertiary)">—</span>
+      </div>
+      <div class="pnote">never resolved by the directory — a job of ours ran here, and that is all that is known.</div>
+    </div>
+  </div>
+
+  <div class="glbl"><span>over the window</span><span class="gnote">30 days — the same span the tiles and sparklines use</span><span class="grule"></span></div>
+  <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.3fr);gap:14px;align-items:start">
+    <div class="pnl">
+      <div class="phd"><span>totals</span><span style="flex:1"></span><span class="tag t-ledg">[ ledger ]</span></div>
+      <div class="prow"><span class="plbl">unaccounted tax revenue</span><span class="m">214.3 mISK</span></div>
+      <div class="prow"><span class="plbl">taxes paid</span><span class="m">598.0 mISK</span></div>
+      <div class="prow"><span class="plbl">taxes paid elsewhere</span><span class="m">61.4 mISK</span></div>
+      <div class="prow"><span class="plbl">taxes paid (est.) <span class="tag t-est">[ estimate ]</span></span><span class="m">176.2 mISK</span></div>
+      <div class="prow"><span class="plbl">total EIV <span class="tag t-est">[ estimate ]</span></span><span class="m">73.5 bISK</span></div>
+      <div class="prow"><span class="plbl">clone revenue</span><span class="m">4,800 kISK</span></div>
+      <div class="prow" style="border-bottom:0;background:var(--bg-elevated)"><span class="plbl" style="color:var(--text-primary);font-weight:600">cost avoidance</span><span class="m" style="font-weight:700">2,865.1 mISK</span></div>
+    </div>
+    <div class="pnl">
+      <div class="phd"><span>how to read these</span></div>
+      <div class="pnote" style="display:flex;flex-direction:column;gap:9px;padding:12px 14px">
+        <span>Cost avoidance is facility tax never incurred: 1,412 jobs of ours ran in structures we own and were billed at our own rate (0.25%) instead of a public structure's (1.00%), and the difference is the expense never paid. No ISK changed hands, so it is not revenue. <a class="alk" href="#1a">change the rates »</a></span>
+        <span>Taxes paid is facility tax we were actually charged, for jobs run in the structures listed above — ours and others' alike.</span>
+        <span>Total EIV is the Estimated Item Value of our manufacturing and reaction jobs installed at these structures, priced from CCP's adjusted prices. At a structure we don't own, taking the system index fee and the SCC surcharge out of the billed job cost leaves the owner's cut, and dividing by EIV gives their rate. The estimate assumes Omega installers; 37 jobs could not be priced (missing bill, price, or index history) and count toward nothing.</span>
+        <span>Unaccounted revenue comes from industry jobs started by players we can't see, so we can't say which structure it came from.</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px;padding:10px 14px;border-top:1px solid var(--border-subtle)">
+        <details class="det" open>
+          <summary>taxes paid elsewhere, by corporation (2)</summary>
+          <div class="dg">
+            <span>Tranquility Trading Consortium</span><span style="color:var(--text-tertiary)">Perimeter</span><span class="m" style="text-align:right">48.9 mISK</span>
+            <span>Hyasyoda Corporation</span><span style="color:var(--text-tertiary)">Jita, Maurasi</span><span class="m" style="text-align:right">12.5 mISK</span>
+          </div>
+        </details>
+        <details class="det" open>
+          <summary>breakdown by payer (3)</summary>
+          <div class="dg">
+            <span>Marrek Oskold</span><span style="color:var(--text-tertiary)">Stellar Forge Industries</span><span class="m" style="text-align:right">141.0 mISK</span>
+            <span>Ilyana Reyes</span><span style="color:var(--text-tertiary)">Stellar Forge Industries</span><span class="m" style="text-align:right">58.2 mISK</span>
+            <span>#2114097771</span><span style="color:var(--text-tertiary)"></span><span class="m" style="text-align:right">15.1 mISK</span>
+          </div>
+        </details>
+      </div>
+    </div>
+  </div>
+  <div style="margin-top:14px;font-size:10.5px;color:var(--text-tertiary)">structures job last ran <span class="m">2026-10-07 23:12</span> · <a class="alk" href="#1a">run log »</a></div>
+</div>
+</div>
+</div>
+</div>
+
+<div class="dv-opt" id="1b">
+<div class="dv-olabel"><a class="dv-oid" href="#1b">1b</a>/structure/1050530810113 — facts beside the window-scoped tax figures; leaderboard, day ledger, cost avoidance and jobs as panels.</div>
+<div class="dv-pair">
+<!--APP-B-->
+<div class="dv-app" data-screen-label="Structure detail">
+  <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:16px">
+    <div>
+      <div style="font-size:11.5px;margin-bottom:6px"><a class="alk" href="#1a">« structures</a></div>
+      <div class="h1">Sakenta - DSWB Refinery</div>
+      <div class="sub"><span class="m">#1050530810113</span> · Athanor · <a class="alk" href="#1a">Sakenta</a> · <span class="tag t-live">[ live ]</span></div>
+    </div>
+    <button class="star star-on" style="font-size:18px" title="Remove from favorites">★</button>
+  </div>
+
+  <div style="display:grid;grid-template-columns:minmax(0,0.78fr) minmax(0,1.22fr);gap:14px;align-items:start">
+    <div class="pnl">
+      <div class="phd"><span>structure</span><span style="flex:1"></span><span class="tag t-live">[ live ]</span></div>
+      <div class="prow"><span class="plbl">structure id</span><span class="m">1050530810113</span></div>
+      <div class="prow"><span class="plbl">type</span><span>Athanor</span></div>
+      <div class="prow"><span class="plbl">system</span><span><a class="alk" href="#1a">Sakenta</a></span></div>
+      <div class="prow"><span class="plbl">profile id</span><span class="m">1021</span></div>
+      <div class="prow"><span class="plbl">state</span><span>shield_vulnerable</span></div>
+      <div class="prow"><span class="plbl">fuel expires</span><span><span class="m">2026-11-02 14:00</span><span class="subl">in 25 days</span></span></div>
+      <div class="prow"><span class="plbl">unanchors at</span><span style="color:var(--text-tertiary)">—</span></div>
+      <div class="prow"><span class="plbl">reinforce hour</span><span class="m">19</span></div>
+      <div class="prow"><span class="plbl">next reinforce hour</span><span style="color:var(--text-tertiary)">—</span></div>
+      <div class="prow"><span class="plbl">next reinforce weekday</span><span style="color:var(--text-tertiary)">—</span></div>
+      <div class="prow"><span class="plbl">next reinforce apply</span><span style="color:var(--text-tertiary)">—</span></div>
+      <div class="prow"><span class="plbl">services</span><span style="white-space:normal">Composite Reactions (online), Hybrid Reactions (online), Reprocessing (online), Moon Drilling (offline)</span></div>
+      <div class="prow"><span class="plbl">rigs</span><span style="white-space:normal">Standup M-Set Composite Reactor Material Efficiency II, Standup M-Set Reprocessing Monitor</span></div>
+      <div class="prow"><span class="plbl">industry indexes</span><span>Reaction <span class="m">3.41%</span></span></div>
+      <div class="prow"><span class="plbl">last seen</span><span class="m">2026-10-07 23:11</span></div>
+      <div class="prow" style="border-bottom:0"><span class="plbl">updated at</span><span class="m">2026-10-07 23:12</span></div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <div class="pnl">
+        <div class="phd"><span>tax revenue</span><span style="flex:1"></span><span class="tag t-ledg">[ ledger ]</span><span class="sel" style="padding:4px 9px;font-size:11px"><span style="color:var(--text-tertiary)">window</span><span>30 days</span><b>⌄</b></span></div>
+        <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;padding:12px 14px;border-bottom:1px solid var(--border-subtle)">
+          <div class="pc"><span style="font-size:10px;color:var(--text-tertiary)">#1</span><span class="av" style="background:#5b6e9c">AV</span><span style="font-size:12px;overflow-wrap:anywhere">Aria Valis</span><span class="m" style="font-size:11.5px;color:var(--text-secondary)">612.4 mISK</span></div>
+          <div class="pc"><span style="font-size:10px;color:var(--text-tertiary)">#2</span><span class="av" style="background:#7c5c8e">KV</span><span style="font-size:12px;overflow-wrap:anywhere">Kessandra Vor</span><span class="m" style="font-size:11.5px;color:var(--text-secondary)">401.9 mISK</span></div>
+          <div class="pc"><span style="font-size:10px;color:var(--text-tertiary)">#3</span><span class="av" style="background:#4f7d6a">TM</span><span style="font-size:12px;overflow-wrap:anywhere">Tolen Marr</span><span class="m" style="font-size:11.5px;color:var(--text-secondary)">188.2 mISK</span></div>
+          <div class="pc"><span style="font-size:10px;color:var(--text-tertiary)">#4</span><span class="av" style="background:#8a6a4a">MO</span><span style="font-size:12px;overflow-wrap:anywhere">Marrek Oskold</span><span class="m" style="font-size:11.5px;color:var(--text-secondary)">82.1 mISK</span></div>
+        </div>
+        <table style="width:100%;border-collapse:collapse">
+          <thead><tr><th class="th">payer</th><th class="th">day</th><th class="th num">jobs</th><th class="th num">ISK</th><th class="th num">paid jobs</th><th class="th num">paid ISK</th></tr></thead>
+          <tbody>
+            <tr class="rw"><td class="td"><div>Aria Valis</div><div style="font-size:10.5px;color:var(--text-tertiary)">Dead Space Wolves</div></td><td class="td m" style="font-size:11px;color:var(--text-secondary)">2026-10-07</td><td class="td num">14</td><td class="td num">61.2 mISK</td><td class="td num">14</td><td class="td num">61.2 mISK</td></tr>
+            <tr class="rw"><td class="td"><div>Kessandra Vor</div><div style="font-size:10.5px;color:var(--text-tertiary)">Dead Space Wolves</div></td><td class="td m" style="font-size:11px;color:var(--text-secondary)">2026-10-07</td><td class="td num">9</td><td class="td num">38.0 mISK</td><td class="td num">9</td><td class="td num">38.0 mISK</td></tr>
+            <tr class="rw"><td class="td"><div>Marrek Oskold</div><div style="font-size:10.5px;color:var(--text-tertiary)">Stellar Forge Industries</div></td><td class="td m" style="font-size:11px;color:var(--text-secondary)">2026-10-06</td><td class="td num">3</td><td class="td num">12.7 mISK</td><td class="td num">0</td><td class="td num">—</td></tr>
+            <tr class="rw"><td class="td"><div>Aria Valis</div><div style="font-size:10.5px;color:var(--text-tertiary)">Dead Space Wolves</div></td><td class="td m" style="font-size:11px;color:var(--text-secondary)">2026-10-06</td><td class="td num">11</td><td class="td num">49.8 mISK</td><td class="td num">11</td><td class="td num">49.8 mISK</td></tr>
+            <tr class="rw"><td class="td"><div>Tolen Marr</div><div style="font-size:10.5px;color:var(--text-tertiary)">Dead Space Wolves</div></td><td class="td m" style="font-size:11px;color:var(--text-secondary)">2026-10-05</td><td class="td num">6</td><td class="td num">22.4 mISK</td><td class="td num">6</td><td class="td num">22.4 mISK</td></tr>
+            <tr class="rw"><td class="td"><div>Kessandra Vor</div><div style="font-size:10.5px;color:var(--text-tertiary)">Dead Space Wolves</div></td><td class="td m" style="font-size:11px;color:var(--text-secondary)">2026-10-05</td><td class="td num">8</td><td class="td num">31.6 mISK</td><td class="td num">8</td><td class="td num">31.6 mISK</td></tr>
+            <tr class="rw"><td class="td" style="color:var(--text-tertiary)">… 41 more days</td><td class="td"></td><td class="td"></td><td class="td"></td><td class="td"></td><td class="td"></td></tr>
+          </tbody>
+          <tfoot><tr><td class="tf">total</td><td class="tf"></td><td class="tf num">318</td><td class="tf num">1,284.6 mISK</td><td class="tf num">291</td><td class="tf num">1,202.5 mISK</td></tr></tfoot>
+        </table>
+        <div class="pnote" style="border-top:1px solid var(--border-subtle)">ISK is tax that arrived here; paid ISK is what we were charged to run our own jobs here, whoever owns the structure. One charge can be both — a member billing their own corporation pays it and we receive it — so the two columns describe the same events from different sides rather than summing to a balance.</div>
+      </div>
+
+      <div class="pnl">
+        <div class="phd"><span>cost avoidance</span><span style="flex:1"></span><span class="tag t-ledg">[ ledger ]</span></div>
+        <div class="prow" style="grid-template-columns:1fr auto"><span><div style="font-size:12px;color:var(--text-primary)">billed at our own rate <span style="color:var(--text-tertiary)">(0.25%)</span></div><div style="font-size:10.5px;color:var(--text-tertiary)">291 charges on jobs of ours run in a structure we own</div></span><span class="m">1,202.5 mISK</span></div>
+        <div class="prow" style="grid-template-columns:1fr auto"><span><div style="font-size:12px;color:var(--text-primary)">the same jobs in a public structure <span style="color:var(--text-tertiary)">(1.00%)</span></div><div style="font-size:10.5px;color:var(--text-tertiary)">what they would have been billed, and kept none of</div></span><span class="m">4,810.0 mISK</span></div>
+        <div class="prow" style="grid-template-columns:1fr auto;border-bottom:0;background:var(--bg-elevated)"><span style="font-weight:600">avoided</span><span class="m" style="font-weight:700">3,607.5 mISK</span></div>
+        <div class="pnote" style="border-top:1px solid var(--border-subtle)">The tax receipt is 0.25% of the job's Estimated Item Value, so the same jobs at 1.00% come to 1.00% ÷ 0.25% times as much, and the difference is the expense never incurred. No ISK changed hands, so it is not revenue. <a class="alk" href="#1a">change the rates »</a></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="pnl" style="margin-top:14px">
+    <div class="phd"><span>industry jobs</span><span style="font-size:11px;color:var(--text-tertiary);font-weight:400">active, at this structure</span><span style="flex:1"></span><span class="tag t-live">[ live ]</span></div>
+    <table style="width:100%;border-collapse:collapse">
+      <thead><tr><th class="th">character</th><th class="th">activity</th><th class="th">blueprint</th><th class="th">product</th><th class="th num">runs</th><th class="th">status</th><th class="th">start</th><th class="th">end</th></tr></thead>
+      <tbody>
+        <tr class="rw"><td class="td">Aria Valis</td><td class="td" style="color:var(--text-secondary)">reaction</td><td class="td">Fullerides Reaction Formula</td><td class="td">Fullerides</td><td class="td num">48</td><td class="td">active</td><td class="td m" style="font-size:11px;color:var(--text-secondary)">2026-10-06 18:40</td><td class="td m" style="font-size:11px;color:var(--text-secondary)">2026-10-09 18:40</td></tr>
+        <tr class="rw"><td class="td">Aria Valis</td><td class="td" style="color:var(--text-secondary)">reaction</td><td class="td">Crystallite Alloy Reaction Formula</td><td class="td">Crystallite Alloy</td><td class="td num">48</td><td class="td">active</td><td class="td m" style="font-size:11px;color:var(--text-secondary)">2026-10-06 18:42</td><td class="td m" style="font-size:11px;color:var(--text-secondary)">2026-10-09 18:42</td></tr>
+        <tr class="rw"><td class="td">Kessandra Vor</td><td class="td" style="color:var(--text-secondary)">reaction</td><td class="td">Sylramic Fibers Reaction Formula</td><td class="td">Sylramic Fibers</td><td class="td num">36</td><td class="td">active</td><td class="td m" style="font-size:11px;color:var(--text-secondary)">2026-10-07 09:15</td><td class="td m" style="font-size:11px;color:var(--text-secondary)">2026-10-09 15:15</td></tr>
+        <tr class="rw"><td class="td">Kessandra Vor</td><td class="td" style="color:var(--text-secondary)">reaction</td><td class="td">Fernite Carbide Reaction Formula</td><td class="td">Fernite Carbide</td><td class="td num">36</td><td class="td">active</td><td class="td m" style="font-size:11px;color:var(--text-secondary)">2026-10-07 09:18</td><td class="td m" style="font-size:11px;color:var(--text-secondary)">2026-10-09 15:18</td></tr>
+        <tr class="rw"><td class="td">Tolen Marr</td><td class="td" style="color:var(--text-secondary)">reaction</td><td class="td">Titanium Chromide Reaction Formula</td><td class="td">Titanium Chromide</td><td class="td num">24</td><td class="td">active</td><td class="td m" style="font-size:11px;color:var(--text-secondary)">2026-10-08 00:05</td><td class="td m" style="font-size:11px;color:var(--text-secondary)">2026-10-09 12:05</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+<!--/APP-B-->
+<div class="lt">
+<div class="dv-app" data-screen-label="(light) Structure detail">
+  <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:16px">
+    <div>
+      <div style="font-size:11.5px;margin-bottom:6px"><a class="alk" href="#1a">« structures</a></div>
+      <div class="h1">Sakenta - DSWB Refinery</div>
+      <div class="sub"><span class="m">#1050530810113</span> · Athanor · <a class="alk" href="#1a">Sakenta</a> · <span class="tag t-live">[ live ]</span></div>
+    </div>
+    <button class="star star-on" style="font-size:18px" title="Remove from favorites">★</button>
+  </div>
+
+  <div style="display:grid;grid-template-columns:minmax(0,0.78fr) minmax(0,1.22fr);gap:14px;align-items:start">
+    <div class="pnl">
+      <div class="phd"><span>structure</span><span style="flex:1"></span><span class="tag t-live">[ live ]</span></div>
+      <div class="prow"><span class="plbl">structure id</span><span class="m">1050530810113</span></div>
+      <div class="prow"><span class="plbl">type</span><span>Athanor</span></div>
+      <div class="prow"><span class="plbl">system</span><span><a class="alk" href="#1a">Sakenta</a></span></div>
+      <div class="prow"><span class="plbl">profile id</span><span class="m">1021</span></div>
+      <div class="prow"><span class="plbl">state</span><span>shield_vulnerable</span></div>
+      <div class="prow"><span class="plbl">fuel expires</span><span><span class="m">2026-11-02 14:00</span><span class="subl">in 25 days</span></span></div>
+      <div class="prow"><span class="plbl">unanchors at</span><span style="color:var(--text-tertiary)">—</span></div>
+      <div class="prow"><span class="plbl">reinforce hour</span><span class="m">19</span></div>
+      <div class="prow"><span class="plbl">next reinforce hour</span><span style="color:var(--text-tertiary)">—</span></div>
+      <div class="prow"><span class="plbl">next reinforce weekday</span><span style="color:var(--text-tertiary)">—</span></div>
+      <div class="prow"><span class="plbl">next reinforce apply</span><span style="color:var(--text-tertiary)">—</span></div>
+      <div class="prow"><span class="plbl">services</span><span style="white-space:normal">Composite Reactions (online), Hybrid Reactions (online), Reprocessing (online), Moon Drilling (offline)</span></div>
+      <div class="prow"><span class="plbl">rigs</span><span style="white-space:normal">Standup M-Set Composite Reactor Material Efficiency II, Standup M-Set Reprocessing Monitor</span></div>
+      <div class="prow"><span class="plbl">industry indexes</span><span>Reaction <span class="m">3.41%</span></span></div>
+      <div class="prow"><span class="plbl">last seen</span><span class="m">2026-10-07 23:11</span></div>
+      <div class="prow" style="border-bottom:0"><span class="plbl">updated at</span><span class="m">2026-10-07 23:12</span></div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <div class="pnl">
+        <div class="phd"><span>tax revenue</span><span style="flex:1"></span><span class="tag t-ledg">[ ledger ]</span><span class="sel" style="padding:4px 9px;font-size:11px"><span style="color:var(--text-tertiary)">window</span><span>30 days</span><b>⌄</b></span></div>
+        <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;padding:12px 14px;border-bottom:1px solid var(--border-subtle)">
+          <div class="pc"><span style="font-size:10px;color:var(--text-tertiary)">#1</span><span class="av" style="background:#5b6e9c">AV</span><span style="font-size:12px;overflow-wrap:anywhere">Aria Valis</span><span class="m" style="font-size:11.5px;color:var(--text-secondary)">612.4 mISK</span></div>
+          <div class="pc"><span style="font-size:10px;color:var(--text-tertiary)">#2</span><span class="av" style="background:#7c5c8e">KV</span><span style="font-size:12px;overflow-wrap:anywhere">Kessandra Vor</span><span class="m" style="font-size:11.5px;color:var(--text-secondary)">401.9 mISK</span></div>
+          <div class="pc"><span style="font-size:10px;color:var(--text-tertiary)">#3</span><span class="av" style="background:#4f7d6a">TM</span><span style="font-size:12px;overflow-wrap:anywhere">Tolen Marr</span><span class="m" style="font-size:11.5px;color:var(--text-secondary)">188.2 mISK</span></div>
+          <div class="pc"><span style="font-size:10px;color:var(--text-tertiary)">#4</span><span class="av" style="background:#8a6a4a">MO</span><span style="font-size:12px;overflow-wrap:anywhere">Marrek Oskold</span><span class="m" style="font-size:11.5px;color:var(--text-secondary)">82.1 mISK</span></div>
+        </div>
+        <table style="width:100%;border-collapse:collapse">
+          <thead><tr><th class="th">payer</th><th class="th">day</th><th class="th num">jobs</th><th class="th num">ISK</th><th class="th num">paid jobs</th><th class="th num">paid ISK</th></tr></thead>
+          <tbody>
+            <tr class="rw"><td class="td"><div>Aria Valis</div><div style="font-size:10.5px;color:var(--text-tertiary)">Dead Space Wolves</div></td><td class="td m" style="font-size:11px;color:var(--text-secondary)">2026-10-07</td><td class="td num">14</td><td class="td num">61.2 mISK</td><td class="td num">14</td><td class="td num">61.2 mISK</td></tr>
+            <tr class="rw"><td class="td"><div>Kessandra Vor</div><div style="font-size:10.5px;color:var(--text-tertiary)">Dead Space Wolves</div></td><td class="td m" style="font-size:11px;color:var(--text-secondary)">2026-10-07</td><td class="td num">9</td><td class="td num">38.0 mISK</td><td class="td num">9</td><td class="td num">38.0 mISK</td></tr>
+            <tr class="rw"><td class="td"><div>Marrek Oskold</div><div style="font-size:10.5px;color:var(--text-tertiary)">Stellar Forge Industries</div></td><td class="td m" style="font-size:11px;color:var(--text-secondary)">2026-10-06</td><td class="td num">3</td><td class="td num">12.7 mISK</td><td class="td num">0</td><td class="td num">—</td></tr>
+            <tr class="rw"><td class="td"><div>Aria Valis</div><div style="font-size:10.5px;color:var(--text-tertiary)">Dead Space Wolves</div></td><td class="td m" style="font-size:11px;color:var(--text-secondary)">2026-10-06</td><td class="td num">11</td><td class="td num">49.8 mISK</td><td class="td num">11</td><td class="td num">49.8 mISK</td></tr>
+            <tr class="rw"><td class="td"><div>Tolen Marr</div><div style="font-size:10.5px;color:var(--text-tertiary)">Dead Space Wolves</div></td><td class="td m" style="font-size:11px;color:var(--text-secondary)">2026-10-05</td><td class="td num">6</td><td class="td num">22.4 mISK</td><td class="td num">6</td><td class="td num">22.4 mISK</td></tr>
+            <tr class="rw"><td class="td"><div>Kessandra Vor</div><div style="font-size:10.5px;color:var(--text-tertiary)">Dead Space Wolves</div></td><td class="td m" style="font-size:11px;color:var(--text-secondary)">2026-10-05</td><td class="td num">8</td><td class="td num">31.6 mISK</td><td class="td num">8</td><td class="td num">31.6 mISK</td></tr>
+            <tr class="rw"><td class="td" style="color:var(--text-tertiary)">… 41 more days</td><td class="td"></td><td class="td"></td><td class="td"></td><td class="td"></td><td class="td"></td></tr>
+          </tbody>
+          <tfoot><tr><td class="tf">total</td><td class="tf"></td><td class="tf num">318</td><td class="tf num">1,284.6 mISK</td><td class="tf num">291</td><td class="tf num">1,202.5 mISK</td></tr></tfoot>
+        </table>
+        <div class="pnote" style="border-top:1px solid var(--border-subtle)">ISK is tax that arrived here; paid ISK is what we were charged to run our own jobs here, whoever owns the structure. One charge can be both — a member billing their own corporation pays it and we receive it — so the two columns describe the same events from different sides rather than summing to a balance.</div>
+      </div>
+
+      <div class="pnl">
+        <div class="phd"><span>cost avoidance</span><span style="flex:1"></span><span class="tag t-ledg">[ ledger ]</span></div>
+        <div class="prow" style="grid-template-columns:1fr auto"><span><div style="font-size:12px;color:var(--text-primary)">billed at our own rate <span style="color:var(--text-tertiary)">(0.25%)</span></div><div style="font-size:10.5px;color:var(--text-tertiary)">291 charges on jobs of ours run in a structure we own</div></span><span class="m">1,202.5 mISK</span></div>
+        <div class="prow" style="grid-template-columns:1fr auto"><span><div style="font-size:12px;color:var(--text-primary)">the same jobs in a public structure <span style="color:var(--text-tertiary)">(1.00%)</span></div><div style="font-size:10.5px;color:var(--text-tertiary)">what they would have been billed, and kept none of</div></span><span class="m">4,810.0 mISK</span></div>
+        <div class="prow" style="grid-template-columns:1fr auto;border-bottom:0;background:var(--bg-elevated)"><span style="font-weight:600">avoided</span><span class="m" style="font-weight:700">3,607.5 mISK</span></div>
+        <div class="pnote" style="border-top:1px solid var(--border-subtle)">The tax receipt is 0.25% of the job's Estimated Item Value, so the same jobs at 1.00% come to 1.00% ÷ 0.25% times as much, and the difference is the expense never incurred. No ISK changed hands, so it is not revenue. <a class="alk" href="#1a">change the rates »</a></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="pnl" style="margin-top:14px">
+    <div class="phd"><span>industry jobs</span><span style="font-size:11px;color:var(--text-tertiary);font-weight:400">active, at this structure</span><span style="flex:1"></span><span class="tag t-live">[ live ]</span></div>
+    <table style="width:100%;border-collapse:collapse">
+      <thead><tr><th class="th">character</th><th class="th">activity</th><th class="th">blueprint</th><th class="th">product</th><th class="th num">runs</th><th class="th">status</th><th class="th">start</th><th class="th">end</th></tr></thead>
+      <tbody>
+        <tr class="rw"><td class="td">Aria Valis</td><td class="td" style="color:var(--text-secondary)">reaction</td><td class="td">Fullerides Reaction Formula</td><td class="td">Fullerides</td><td class="td num">48</td><td class="td">active</td><td class="td m" style="font-size:11px;color:var(--text-secondary)">2026-10-06 18:40</td><td class="td m" style="font-size:11px;color:var(--text-secondary)">2026-10-09 18:40</td></tr>
+        <tr class="rw"><td class="td">Aria Valis</td><td class="td" style="color:var(--text-secondary)">reaction</td><td class="td">Crystallite Alloy Reaction Formula</td><td class="td">Crystallite Alloy</td><td class="td num">48</td><td class="td">active</td><td class="td m" style="font-size:11px;color:var(--text-secondary)">2026-10-06 18:42</td><td class="td m" style="font-size:11px;color:var(--text-secondary)">2026-10-09 18:42</td></tr>
+        <tr class="rw"><td class="td">Kessandra Vor</td><td class="td" style="color:var(--text-secondary)">reaction</td><td class="td">Sylramic Fibers Reaction Formula</td><td class="td">Sylramic Fibers</td><td class="td num">36</td><td class="td">active</td><td class="td m" style="font-size:11px;color:var(--text-secondary)">2026-10-07 09:15</td><td class="td m" style="font-size:11px;color:var(--text-secondary)">2026-10-09 15:15</td></tr>
+        <tr class="rw"><td class="td">Kessandra Vor</td><td class="td" style="color:var(--text-secondary)">reaction</td><td class="td">Fernite Carbide Reaction Formula</td><td class="td">Fernite Carbide</td><td class="td num">36</td><td class="td">active</td><td class="td m" style="font-size:11px;color:var(--text-secondary)">2026-10-07 09:18</td><td class="td m" style="font-size:11px;color:var(--text-secondary)">2026-10-09 15:18</td></tr>
+        <tr class="rw"><td class="td">Tolen Marr</td><td class="td" style="color:var(--text-secondary)">reaction</td><td class="td">Titanium Chromide Reaction Formula</td><td class="td">Titanium Chromide</td><td class="td num">24</td><td class="td">active</td><td class="td m" style="font-size:11px;color:var(--text-secondary)">2026-10-08 00:05</td><td class="td m" style="font-size:11px;color:var(--text-secondary)">2026-10-09 12:05</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</section>
+</x-dc>
+</body>
+</html>
