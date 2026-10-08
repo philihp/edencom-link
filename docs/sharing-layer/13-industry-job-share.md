@@ -1,7 +1,30 @@
 # Phase 13: pooled throughput — sharing industry jobs with a structure's tenants
 
-**Status: 📝 planned.** Depends on phase 12's `structure_tenant` and
-`is_tenant_of()` (PR A there); nothing else from phase 12 is required.
+**Status: ✅ shipped — without the opt-in.** Migration
+`20261008005932_tenant_industry_jobs.sql`, `test/sql/tenant_industry_jobs.sql`.
+
+> **Decision, 2026-10-08.** Everyone with an open job at a player structure
+> reads the *current* job rows of everyone else building there. No share row,
+> no dialog, no pool: the structure is the grant. The reasoning: people who
+> share a structure are allies by construction (the owner let both of them
+> build there), the job count in a system is public in the client anyway, and
+> an opsec-sensitive build — a supercapital — is seen only by others the owner
+> already trusts with the same kind of thing. What shipped is the `jobs` level
+> below, for every tenant, with `cost` masked in the two views
+> (`character_industry_job`, `corp_industry_job`) unless the row is the
+> caller's own; history never crosses. Both industry-job tables carry a
+> tenant policy over `my_tenant_structure_ids()` (the set form of
+> `is_tenant_of()`, so a drain of every visible job hashes tenancy once
+> instead of probing per row). Consumers that mean "my jobs" (`/industry`,
+> `structure_tax_revenue()`, the `/structure` tax ledger) now test ownership
+> on the row rather than inferring it from visibility; the `/structure`
+> Characters tab and `/structure/[structureId]` name a co-tenant through the
+> world-readable `character_directory`. The residual: the `_over_time`
+> tables stay readable by `authenticated` for the time-travel RPCs, so a
+> direct PostgREST read of the table still carries `cost`.
+>
+> The rest of this document is the design as planned — the opt-in grant and
+> the `totals` pool — kept for the reasoning. Neither table was created.
 
 ## Problem
 
