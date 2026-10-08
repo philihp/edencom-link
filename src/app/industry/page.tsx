@@ -105,15 +105,24 @@ const IndustryPage = async () => {
     fetchOwners(),
   ])
 
+  // This page is OUR jobs. The views also show the current jobs of everyone
+  // building at a structure we hold an open job in (the tenant policies —
+  // docs/sharing-layer/13-industry-job-share.md), so keep only the rows whose
+  // owner is one of ours; the /structure tiles are where the others belong.
+  const ownRegistrationIds = new Set(map((o) => o.id, owners.characters))
+  const ownCorporationIds = new Set(map((o) => o.id, owners.corporations))
+  const ownCharacterJobs = filter((j: JobRow) => ownRegistrationIds.has(String(j.registration_id)), characterJobs)
+  const ownCorpJobs = filter((j: JobRow) => ownCorporationIds.has(String(j.corporation_id)), corpJobs)
+
   // Union both sources under a single owner id per job. A corp job installed
   // by one of our own characters shows up in both extracts under the same
   // job_id; the corp row wins so the owner names who the job belongs to.
   type OwnedJob = JobRow & { owner_id: string }
-  const corpRows: OwnedJob[] = map((j: JobRow) => ({ ...j, owner_id: String(j.corporation_id) }), corpJobs)
+  const corpRows: OwnedJob[] = map((j: JobRow) => ({ ...j, owner_id: String(j.corporation_id) }), ownCorpJobs)
   const corpJobIds = new Set(map((j) => String(j.job_id), corpRows))
   const characterRows: OwnedJob[] = map(
     (j: JobRow) => ({ ...j, owner_id: String(j.registration_id) }),
-    filter((j: JobRow) => !corpJobIds.has(String(j.job_id)), characterJobs)
+    filter((j: JobRow) => !corpJobIds.has(String(j.job_id)), ownCharacterJobs)
   )
   const rows = concat(characterRows, corpRows)
 

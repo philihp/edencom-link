@@ -193,7 +193,8 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
   // caller). A structure any of them owns is a structure we own — including one
   // owned by a corp none of the installing characters are in, and including one
   // we can't scan because no linked character is a director there.
-  const { data: ownRegistrations } = await supabase.from('registration').select('corporation_id')
+  const { data: ownRegistrations } = await supabase.from('registration').select('id, corporation_id')
+  const ownRegistrationIds = new Set(map((r: { id: string }) => r.id, ownRegistrations ?? []))
   const ownCorporationIds = new Set(
     map(
       String,
@@ -204,11 +205,20 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
     )
   )
 
-  // Every industry job of ours, both tables, drained. Two jobs at once:
+  // Every industry job we can see, both tables, drained: ours, plus the
+  // current jobs of everyone else building at a structure we hold an open job
+  // in (the tenant policies — docs/sharing-layer/13-industry-job-share.md).
+  // Three jobs at once:
   //
-  //   - the job -> structure map the tax attribution below is built on, and
+  //   - the job -> structure map the tax attribution below is built on,
   //   - discovery, since a job's facility id is the only trace a structure we
-  //     don't scan leaves in our data.
+  //     don't scan leaves in our data (a co-tenant's job can only ever name a
+  //     structure one of ours already does), and
+  //   - the Characters tab, which is the whole point of seeing the others.
+  //
+  // Seeing a job is no longer owning it: anything that means "ours" below
+  // tests the row's registration or corporation against our own, never its
+  // presence in this list.
   //
   // Unfiltered, where this used to ask only about structures already on the
   // page — that filter was what made the page unable to see anything but its
@@ -377,12 +387,18 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
   // The jobs that are OURS — our characters' and our corporations' alike. A job
   // of ours run in a structure of ours is billed our own rate whichever way it
   // was installed, so cost avoidance turns on this set and on who owns the
-  // structure, never on which corporation the installer belonged to.
-  const ownJobIds = new Set(map((j: JobRow) => String(j.job_id), allJobs))
+  // structure, never on which corporation the installer belonged to. Tested on
+  // the row: a co-tenant's job is in allJobs too, and read as ours it would
+  // file its tax receipt as an own-rate charge instead of revenue.
+  const isOwnJob = (j: JobRow) =>
+    (j.registration_id != null && ownRegistrationIds.has(String(j.registration_id))) ||
+    (j.corporation_id != null && ownCorporationIds.has(String(j.corporation_id)))
+  const ownCharacterJobs = filter(isOwnJob, characterJobs)
+  const ownJobIds = new Set(map((j: JobRow) => String(j.job_id), filter(isOwnJob, allJobs)))
   // The character-installed subset. This decides nothing about avoidance; it is
   // only how one charge gets billed once — a corp job's payment is the outgoing
   // entry in that corp's own wallet, while a character's has no entry to read.
-  const personalJobIds = new Set(map((j: JobRow) => String(j.job_id), characterJobs))
+  const personalJobIds = new Set(map((j: JobRow) => String(j.job_id), ownCharacterJobs))
 
   // The two rates behind the cost-avoidance figures live on /settings/tax.
   const taxRates = await fetchTaxRates(supabase, user.id)
@@ -732,10 +748,13 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
   const eivSkipped = eiv.skipped.noBill + eiv.skipped.noPrice + eiv.skipped.noIndex
 
   // ── Who ran jobs at each structure (the tile's Characters tab) ────────────
-  // Personal jobs name one of our own registrations, and each is its own row:
-  // an account can hold several people's characters, and nothing in the
-  // registration tells them apart. Corp jobs name the corporation they were run
-  // for, which is the only honest unit for them. See ./installers.ts.
+  // Personal jobs name a registration, and each is its own row: an account can
+  // hold several people's characters, and nothing in the registration tells
+  // them apart. Our own registrations come from `registration`; a co-tenant's
+  // (RLS hides theirs) resolves through the world-readable character directory,
+  // which maps a registration uuid to its character and name and nothing more.
+  // Corp jobs name the corporation they were run for, which is the only honest
+  // unit for them. See ./installers.ts.
   type RegistrationRow = { id: string; name: string; character_id: number | string | null }
   const { data: registrationRows } = await supabase
     .from('registration')
@@ -750,6 +769,38 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
         ],
       registrationRows ?? []
     )
+  )
+  type DirectoryEntry = { registration_id: string; name: string; character_id: number | string }
+  const foreignRegistrationIds = uniq(
+    reject(
+      isNil,
+      map(
+        (j: JobRow) =>
+          j.registration_id != null && !registrationsById.has(String(j.registration_id))
+            ? String(j.registration_id)
+            : null,
+        characterJobs
+      )
+    )
+  ) as string[]
+  const directoryEntryBatches = foreignRegistrationIds.length
+    ? await Promise.all(
+        map(
+          (batch: string[]) =>
+            supabase
+              .from('character_directory')
+              .select('registration_id, name, character_id')
+              .in('registration_id', batch)
+              .returns<DirectoryEntry[]>(),
+          splitEvery(RPC_BATCH, foreignRegistrationIds)
+        )
+      )
+    : []
+  forEach(
+    (entry: DirectoryEntry) => {
+      registrationsById.set(entry.registration_id, { name: entry.name, characterId: String(entry.character_id) })
+    },
+    chain(({ data }) => data ?? [], directoryEntryBatches)
   )
   // Corp-job rows group by their corporation, so they need its name. The
   // `corporation` directory is what the external-owner lookup above already

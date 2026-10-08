@@ -42,6 +42,7 @@ drop function if exists public.asset_location_summary()        cascade;
 drop function if exists public.asset_location_contents(bigint) cascade;
 drop function if exists public.asset_inventory_at(uuid[], timestamptz) cascade;
 drop function if exists public.is_tenant_of(bigint) cascade;
+drop function if exists public.my_tenant_structure_ids() cascade;
 drop function if exists public.asset_snapshot_at(uuid[], timestamptz)  cascade;
 drop function if exists public.industry_jobs(uuid[])                   cascade;
 drop function if exists public.industry_jobs(uuid[], boolean)          cascade;
@@ -2341,8 +2342,24 @@ create policy "Users read own industry jobs"
 
 -- Live snapshot of industry jobs. security_invoker keeps the underlying RLS in
 -- force for the querying (authenticated) role rather than running as the view owner.
+-- `cost` is blanked on rows that are not the caller's own: the tenant policy
+-- (after structure_tenant, below) shows a co-tenant's rows, and `cost` inverts
+-- to the job's EIV and the owner's tax rate (src/app/structure/eiv.ts does
+-- exactly that for one's OWN jobs). The column list is explicit so the typmod
+-- survives the case expression.
 create view public.character_industry_job with (security_invoker = on) as
-  select * from public.character_industry_job_over_time where is_current;
+  select
+    id, job_id, registration_id, installer_id, facility_id, station_id, activity_id,
+    blueprint_id, blueprint_type_id, blueprint_location_id, output_location_id,
+    product_type_id, runs,
+    (case
+      when registration_id in (select r.id from public.registration r where r.user_id = (select auth.uid()))
+      then cost
+    end)::numeric(20, 2) as cost,
+    licensed_runs, probability, status, duration, start_date, end_date, pause_date,
+    completed_date, completed_character_id, successful_runs, is_current, valid_from, valid_until
+  from public.character_industry_job_over_time
+  where is_current;
 
 grant select on public.character_industry_job_over_time to authenticated;
 grant select on public.character_industry_job           to authenticated;
@@ -3784,8 +3801,10 @@ grant all    on public.corp_job_access to service_role;
 -- observed director capability, so that a share policy can ask "is the caller
 -- a tenant of this structure" without reading the job tables — a policy on a
 -- job table that reads that same table recurses, which is the trap the asset
--- share needed its one SECURITY DEFINER to escape. Nothing reads it yet: the
--- structure share (phase 12) and the industry-job share (phase 13) will.
+-- share needed its one SECURITY DEFINER to escape. Read by
+-- my_tenant_structure_ids() below, behind the tenant policies on both
+-- industry-job tables (phase 13, shipped without an opt-in: sharing a
+-- structure is the grant); the structure share (phase 12) will read it too.
 
 create table public.structure_tenant (
   -- Exactly one owner key: a personal job's registration, or the corporation a
@@ -3856,6 +3875,50 @@ as $$
 $$;
 
 grant execute on function public.is_tenant_of(bigint) to authenticated, service_role;
+
+-- Every player structure at which the caller holds an open job, personally or
+-- through a corporation of theirs — is_tenant_of() as a set, for the two
+-- policies below: the /structure page drains every current job the caller may
+-- see, and an uncorrelated subquery hashes once where a per-row EXISTS would
+-- probe structure_tenant for each of thousands of rows. Invoker rights, over
+-- rows the caller's own structure_tenant policy already shows.
+create or replace function public.my_tenant_structure_ids()
+returns setof bigint
+language sql
+stable
+set search_path = public
+as $$
+  select t.structure_id
+  from public.structure_tenant t
+  where t.open_jobs > 0
+    and (
+      t.registration_id in (
+        select id from public.registration where user_id = (select auth.uid())
+      )
+      or t.corporation_id in (select public.my_corporation_ids())
+    );
+$$;
+
+grant execute on function public.my_tenant_structure_ids() to authenticated, service_role;
+
+-- Co-tenants read each other's industry jobs (docs/sharing-layer/13-industry-job-share.md).
+-- Everyone with an open job at a player structure reads the CURRENT job rows of
+-- everyone else building there — no opt-in: people sharing a structure are
+-- allies by construction, the job count in a system is public in the client,
+-- and whoever builds something sensitive there is seen only by others the owner
+-- already let build there. History never crosses (is_current); `cost` is
+-- blanked by the views. Upwell structures carry the same id in station_id and
+-- facility_id; NPC stations carry only station_id and never appear in
+-- structure_tenant, so a job in Jita 4-4 is widened to nobody. Neither policy
+-- reads a job table, so neither recurses.
+create policy "Tenants read industry jobs at shared structures"
+  on public.character_industry_job_over_time
+  for select
+  to authenticated
+  using (
+    is_current
+    and coalesce(station_id, facility_id) in (select public.my_tenant_structure_ids())
+  );
 
 -- ── corp_structure ────────────────────────────────────────────────────────
 -- ESI /corporations/{id}/structures/, written by the corp-structures job.
@@ -6095,11 +6158,34 @@ create policy "Users read industry jobs for own corps"
       where user_id = (select auth.uid()) and corporation_id is not null
     )
   );
+-- Co-tenants read each other's corp-installed jobs too — same rule and the same
+-- helper as the character table's tenant policy (see structure_tenant).
+create policy "Tenants read corp industry jobs at shared structures"
+  on public.corp_industry_job_over_time
+  for select
+  to authenticated
+  using (
+    is_current
+    and coalesce(station_id, facility_id) in (select public.my_tenant_structure_ids())
+  );
 
 -- Live snapshot of corp industry jobs. security_invoker keeps the underlying RLS
 -- in force for the querying (authenticated) role rather than running as the view owner.
+-- `cost` is blanked unless the corporation is one of the caller's — see the
+-- character view for why.
 create view public.corp_industry_job with (security_invoker = on) as
-  select * from public.corp_industry_job_over_time where is_current;
+  select
+    id, job_id, corporation_id, installer_id, facility_id, station_id, activity_id,
+    blueprint_id, blueprint_type_id, blueprint_location_id, output_location_id,
+    product_type_id, runs,
+    (case
+      when corporation_id in (select public.my_corporation_ids())
+      then cost
+    end)::numeric(20, 2) as cost,
+    licensed_runs, probability, status, duration, start_date, end_date, pause_date,
+    completed_date, completed_character_id, successful_runs, is_current, valid_from, valid_until
+  from public.corp_industry_job_over_time
+  where is_current;
 
 grant select on public.corp_industry_job_over_time to authenticated;
 grant select on public.corp_industry_job           to authenticated;
@@ -6290,8 +6376,9 @@ grant  execute on function public.industry_job_tax_facility(bigint[]) to authent
 --               added for that purpose.
 --
 -- SECURITY INVOKER throughout: corp_structure, character_industry_job and
--- registration are all RLS-scoped to the caller, so a job is only ever "ours"
--- when we can actually see it.
+-- registration are all RLS-scoped to the caller. Seeing a job is no longer the
+-- same as owning it (co-tenants see each other's rows), so "ours" is tested
+-- against the caller's registrations and corporations explicitly.
 create or replace function public.structure_tax_revenue(structure_id bigint, since timestamptz)
 returns table (
   payer_id bigint,
@@ -6334,17 +6421,26 @@ as $$
     select f.job_id, f.station_id, f.facility_id
     from public.industry_job_tax_facility(array(select j.job_id from taxed_jobs j)) f
   ),
-  -- Jobs of ours, either way they were installed. Both views are RLS-scoped to
-  -- the caller, so somebody else's job renting our slots is absent.
+  -- Jobs of ours, either way they were installed. The views also show a
+  -- co-tenant's job at a structure we build in (the tenant policies), so
+  -- ownership is tested on the row rather than assumed from its visibility —
+  -- read as ours, a tenant's job would file its receipt as an own-rate charge
+  -- instead of revenue.
   ours as (
-    select cij.job_id from public.character_industry_job cij where cij.job_id in (select job_id from taxed_jobs)
+    select cij.job_id from public.character_industry_job cij
+    where cij.job_id in (select job_id from taxed_jobs)
+      and cij.registration_id in (select r.id from public.registration r where r.user_id = (select auth.uid()))
     union
-    select coj.job_id from public.corp_industry_job coj where coj.job_id in (select job_id from taxed_jobs)
+    select coj.job_id from public.corp_industry_job coj
+    where coj.job_id in (select job_id from taxed_jobs)
+      and coj.corporation_id in (select public.my_corporation_ids())
   ),
   -- The character-installed subset, which decides only that a charge is billed
   -- once — never whether it was billed at our own rate.
   personal as (
-    select cij.job_id from public.character_industry_job cij where cij.job_id in (select job_id from taxed_jobs)
+    select cij.job_id from public.character_industry_job cij
+    where cij.job_id in (select job_id from taxed_jobs)
+      and cij.registration_id in (select r.id from public.registration r where r.user_id = (select auth.uid()))
   ),
   scoped as (
     select

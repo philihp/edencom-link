@@ -6,8 +6,12 @@
 // The two extracts group differently, because that is how much each one
 // actually tells us about who is behind a job:
 //
-//   * A personal job names one of our own registrations, and the registration
-//     names a character. That character IS the row — see below.
+//   * A personal job names a registration — one of our own, or a co-tenant's,
+//     since everyone with an open job at a structure reads everyone else's
+//     current jobs there (docs/sharing-layer/13-industry-job-share.md) — and
+//     the registration names a character. That character IS the row — see
+//     below. The page resolves a foreign registration through the public
+//     character directory before handing the map in.
 //   * A corp job names the corporation it was installed for, and an installer
 //     whose account we know nothing about. The corporation is the honest unit
 //     there, and it is also the one that owns the output, so a corp job counts

@@ -210,8 +210,24 @@ const StructurePage = async ({ params, searchParams }: StructureParams) => {
 
   const jobs = (jobsData ?? []) as Job[]
 
+  // The list includes co-tenants' active jobs (the tenant policy on the job
+  // table). Our own registrations name themselves; anyone else's resolves
+  // through the world-readable character directory, which maps a registration
+  // uuid to a character name and nothing more.
   const { data: characters } = await supabase.from('registration').select('id, name')
   const characterName: Record<string, string> = Object.fromEntries((characters ?? []).map((c) => [c.id, c.name]))
+  const foreignRegistrationIds = [
+    ...new Set(jobs.map((j) => j.registration_id).filter((id) => id != null && !(id in characterName))),
+  ]
+  if (foreignRegistrationIds.length > 0) {
+    const { data: directoryEntries } = await supabase
+      .from('character_directory')
+      .select('registration_id, name')
+      .in('registration_id', foreignRegistrationIds)
+    ;((directoryEntries ?? []) as Array<{ registration_id: string; name: string }>).forEach((entry) => {
+      characterName[entry.registration_id] = entry.name
+    })
+  }
 
   // Rigs fitted to this structure (pulled from corp assets by the corp-assets job).
   const { data: rigData } = await supabase
