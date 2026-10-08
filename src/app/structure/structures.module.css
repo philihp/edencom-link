@@ -588,11 +588,14 @@
 
 /* Phones get one tile per row, but the 3-column layout still leaves the
    sparkline a sliver between two text columns. Stack label+value on the first
-   row and give the sparkline the full width on the second. */
+   row and give the sparkline the full width on the second. The list becomes a
+   flex column here, so the grid's `align-items: center` would shrink each row
+   to its content and center it: stretch the rows back to the tile's width. */
 @media (max-width: 639px) {
   .indexes {
     display: flex;
     flex-direction: column;
+    align-items: stretch;
     gap: 4px;
   }
 
