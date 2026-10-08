@@ -3,8 +3,13 @@
 **Status: ✅ shipped — without the opt-in.** Migration
 `20261008005932_tenant_industry_jobs.sql`, `test/sql/tenant_industry_jobs.sql`.
 
-> **Decision, 2026-10-08.** Everyone with an open job at a player structure
-> reads the *current* job rows of everyone else building there. No share row,
+> **Decision, 2026-10-08.** Everyone who has had a job at a player structure
+> within the last 30 days reads the *current* job rows of everyone else
+> building there, and nothing once those 30 days are up (migration
+> `20261008050729_tenant_window.sql`: `is_tenant_of()` and
+> `my_tenant_structure_ids()` test `structure_tenant.last_job_seen_at`, the
+> extract's clock on every run that saw an open job there, rather than
+> `open_jobs`). No share row,
 > no dialog, no pool: the structure is the grant. The reasoning: people who
 > share a structure are allies by construction (the owner let both of them
 > build there), the job count in a system is public in the client anyway, and

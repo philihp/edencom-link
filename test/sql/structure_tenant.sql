@@ -76,6 +76,7 @@ insert into public.corp_industry_job_over_time (corporation_id, station_id, faci
   (98001, 1030000000001, 1030000000001, 'cancelled', true, '2026-09-28 06:00+00');
 
 \i supabase/migrations/20260928023522_structure_tenant.sql
+\i supabase/migrations/20261008050729_tenant_window.sql
 
 do $$
 declare
@@ -152,13 +153,23 @@ begin
   perform set_config('test.uid', '', true);
   if public.is_tenant_of(1030000000001) then raise exception 'a signed-out caller is nobody''s tenant'; end if;
 
-  -- A zeroed row (the extract saw no open job any more) ends tenancy at once.
+  -- Tenancy is the last sighting within 30 days, not an open job: a zeroed
+  -- row (the extract saw no open job any more) keeps alice a tenant while the
+  -- stamp is fresh, and ends it once the stamp is older than 30 days — even
+  -- with open_jobs still positive, since a row whose extract stopped
+  -- reporting must age out too.
   reset role;
-  update public.structure_tenant set open_jobs = 0
+  update public.structure_tenant set open_jobs = 0, last_job_seen_at = now() - interval '29 days'
     where registration_id = '00000000-0000-0000-0000-0000000000aa' and structure_id = 1030000000001;
   set local role authenticated;
   perform set_config('test.uid', 'a0000000-0000-0000-0000-000000000000', true);
-  if public.is_tenant_of(1030000000001) then raise exception 'alice still reads as a tenant of S1 with no open job'; end if;
+  if not public.is_tenant_of(1030000000001) then raise exception 'alice delivered her last S1 job 29 days ago and should still be a tenant'; end if;
+  reset role;
+  update public.structure_tenant set open_jobs = 3, last_job_seen_at = now() - interval '31 days'
+    where registration_id = '00000000-0000-0000-0000-0000000000aa' and structure_id = 1030000000001;
+  set local role authenticated;
+  perform set_config('test.uid', 'a0000000-0000-0000-0000-000000000000', true);
+  if public.is_tenant_of(1030000000001) then raise exception 'alice''s S1 row is 31 days stale and should no longer make her a tenant'; end if;
   reset role;
 
   raise notice 'structure_tenant: all assertions passed';
