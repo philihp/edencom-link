@@ -47,8 +47,7 @@ import { foldInstallers } from './installers'
 import { formatRelativeFuture } from '../relativeTime'
 import { resolveServiceIcons } from './serviceIcons'
 import { StructureTabs } from './structureTabs'
-import { StructureSilhouette } from './silhouette'
-import { TypeIcon } from '../typeIcon'
+import { SourceTag } from './sourceTag'
 import { Sparkline } from './sparkline'
 import { UrlWindowSelect } from '../windowSelect'
 import { indexBucketHours, structureWindowDays } from './windows'
@@ -350,11 +349,11 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
     { favoritePosition, ownCorporationIds }
   )
   const blocks = [
-    { key: 'favorites' as const, heading: 'Favorites', structures: map((t) => t.structure, tiers.favorites) },
-    { key: 'ours' as const, heading: 'Our structures', structures: map((t) => t.structure, tiers.ours) },
+    { key: 'favorites' as const, heading: 'favorites', structures: map((t) => t.structure, tiers.favorites) },
+    { key: 'ours' as const, heading: 'our structures', structures: map((t) => t.structure, tiers.ours) },
     {
       key: 'others' as const,
-      heading: "Everyone else's structures",
+      heading: "everyone else's structures",
       structures: map((t) => t.structure, tiers.others),
     },
   ]
@@ -989,69 +988,78 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
     .limit(1)
     .maybeSingle()
 
+  // The subtitle's two counts: every tile, and the ones a corporation of ours
+  // owns (favorites included — pinning moves a tile, it doesn't change whose
+  // it is).
+  const oursCount = filter(
+    (s: Structure) => s.corporation_id != null && ownCorporationIds.has(String(s.corporation_id)),
+    list
+  ).length
+
+  // The fuel countdown turns to the alert colour inside a week.
+  const fuelSoon = (iso: string) => new Date(iso).getTime() - now.getTime() < 7 * 86_400_000
+
+  const groupNotes: Record<(typeof blocks)[number]['key'], string> = {
+    favorites: 'pinned — sort above everything, in your order',
+    ours: 'a corporation of ours owns these — state, services, fuel and rigs where a director scans them',
+    others:
+      'our jobs run here, but no director of ours can scan them — only what ESI tells a visitor: no fitting, no services, no fuel timer',
+  }
+
   return (
     <>
       <div className={styles.header}>
-        <h1>Structures</h1>
-        <span className={styles.headerControl}>
-          <span className={styles.headerControlLabel}>Window</span>
-          <UrlWindowSelect days={windowDays} path="/structure" />
-        </span>
+        <div>
+          <h1 className={styles.title}>structures</h1>
+          <div className={styles.subtitle}>
+            <span className={styles.num}>{list.length}</span> structure{list.length === 1 ? '' : 's'} ·{' '}
+            <span className={styles.num}>{oursCount}</span> ours · figures over the selected window
+          </div>
+        </div>
+        <div className={styles.headerRight}>
+          <span className={styles.headerLinks}>
+            <Link href="/structure/revenue">tax revenue events &raquo;</Link>
+            <Link href="/mercenary-dens">mercenary dens &raquo;</Link>
+          </span>
+          <span className={styles.headerControl}>
+            <span className={styles.headerControlLabel}>window</span>
+            <UrlWindowSelect days={windowDays} path="/structure" />
+          </span>
+        </div>
       </div>
-      <p className={styles.pageLinks}>
-        <Link href="/structure/revenue">Tax revenue events &raquo;</Link>
-        <Link href="/mercenary-dens">Mercenary dens &raquo;</Link>
-      </p>
       {list.length > 0 ? (
         <>
           {blocks.map((block) =>
             block.structures.length === 0 ? null : (
               <section key={block.key}>
-                <h2 className={styles.blockHeading}>{block.heading}</h2>
-                {block.key === 'others' && (
-                  <p className={styles.blockNote}>
-                    <em>
-                      Structures our jobs run in that no director of ours can scan, so only what ESI tells a visitor is
-                      known: no fitting, no services, no fuel timer.
-                    </em>
-                  </p>
-                )}
+                <h2 className={styles.groupLabel}>
+                  <span>{block.heading}</span>
+                  <span className={styles.groupNote}>{groupNotes[block.key]}</span>
+                  <span className={styles.groupRule} />
+                </h2>
                 <ul className={styles.grid}>
                   {block.structures.map((s) => {
                     const rigs = rigsByStructure.get(String(s.structure_id)) ?? []
-                    const services = s.services?.map((svc) => svc.name) ?? []
+                    const services = s.services ?? []
                     const indexActivities = structureIndexActivities(s.services)
                     const systemIndexes = indexesBySystem.get(Number(s.system_id))
                     const systemHistory = indexHistoryBySystem.get(Number(s.system_id))
-                    // The render backs the title rather than sitting above it, so the
-                    // head carries the over-image treatment only when there is an image
-                    // to sit on — the silhouette fallback keeps the plain tile colours.
-                    const head = (
-                      <div className={s.type_id != null ? `${styles.head} ${styles.heroHead}` : styles.head}>
-                        <div>
-                          <Link href={`/structure/${s.structure_id}`} className={styles.name}>
-                            {s.name ?? `Structure #${s.structure_id}`}
-                            <LinkSpinner />
-                          </Link>
-                          {/* Upwell structures share their structure_id with the station/facility id industry jobs run at. */}
-                          <span className={styles.subId}>#{s.structure_id}</span>
-                        </div>
-                        <FavoriteStar structureId={String(s.structure_id)} favorite={isFavorite(s)} />
-                      </div>
-                    )
                     return (
                       <li key={`structure-${s.structure_id}`} className={styles.tile}>
-                        {s.type_id != null ? (
-                          <div className={styles.hero}>
-                            <TypeIcon id={s.type_id} size={256} prefer="render" className={styles.heroArt} />
-                            {head}
+                        <div className={styles.head}>
+                          <div className={styles.headText}>
+                            <Link href={`/structure/${s.structure_id}`} className={styles.name}>
+                              {s.name ?? `Structure #${s.structure_id}`}
+                              <LinkSpinner />
+                            </Link>
+                            {/* Upwell structures share their structure_id with the station/facility id industry jobs run at. */}
+                            <span className={styles.subId}>#{s.structure_id}</span>
                           </div>
-                        ) : (
-                          <>
-                            <StructureSilhouette typeId={0} className={styles.silhouette} />
-                            {head}
-                          </>
-                        )}
+                          <span className={styles.headTag}>
+                            <SourceTag source={s.scanned ? 'live' : 'directory'} />
+                          </span>
+                          <FavoriteStar structureId={String(s.structure_id)} favorite={isFavorite(s)} />
+                        </div>
 
                         <div className={styles.fields}>
                           {(() => {
@@ -1086,13 +1094,13 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
                                 )}
                                 {row != null && row.eiv > 0 && (
                                   <>
-                                    <span className={styles.label}>Industry EIV</span>
+                                    <span className={styles.label}>industry EIV</span>
                                     <span className={`${styles.value} ${styles.num}`}>{formatIsk(row.eiv)}</span>
                                   </>
                                 )}
                                 {journalPaid != null && (
                                   <>
-                                    <span className={styles.label}>Taxes Paid</span>
+                                    <span className={styles.label}>taxes paid</span>
                                     <span className={`${styles.value} ${styles.num}`}>
                                       {formatIsk(journalPaid)}
                                       {row != null && row.eiv > 0 && (
@@ -1110,7 +1118,7 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
                                     A mixed structure legitimately shows both. */}
                                 {row != null && row.recoveredJobs > 0 && (
                                   <>
-                                    <span className={styles.label}>Taxes Paid (est.)</span>
+                                    <span className={styles.label}>taxes paid (est.)</span>
                                     <span className={`${styles.value} ${styles.num}`}>
                                       {formatIsk(row.recoveredTax)}
                                       {rate != null && (
@@ -1121,13 +1129,13 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
                                 )}
                                 {revenue != null && (
                                   <>
-                                    <span className={styles.label}>Revenue</span>
+                                    <span className={styles.label}>revenue</span>
                                     <span className={`${styles.value} ${styles.num}`}>{formatIsk(revenue)}</span>
                                   </>
                                 )}
                                 {avoidedByStructure.has(key) && (
                                   <>
-                                    <span className={styles.label}>Cost Avoidance</span>
+                                    <span className={styles.label}>cost avoidance</span>
                                     <span className={`${styles.value} ${styles.num}`}>
                                       {formatIsk(avoidedByStructure.get(key) ?? 0)}
                                     </span>
@@ -1136,14 +1144,14 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
                               </>
                             )
                           })()}
-                          <span className={styles.label}>Type</span>
+                          <span className={styles.label}>type</span>
                           <span className={styles.value}>
                             <Name
                               name={s.type_id != null ? structureTypeNames[Number(s.type_id)] : undefined}
                               id={s.type_id}
                             />
                           </span>
-                          <span className={styles.label}>System</span>
+                          <span className={styles.label}>system</span>
                           <span className={styles.value}>
                             <SystemName
                               name={s.system_id != null ? systemNames[Number(s.system_id)] : undefined}
@@ -1152,7 +1160,7 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
                           </span>
                           {!s.scanned && (
                             <>
-                              <span className={styles.label}>Owner</span>
+                              <span className={styles.label}>owner</span>
                               <span className={styles.value}>
                                 <Name
                                   name={s.corporation_id != null ? ownerNames.get(String(s.corporation_id)) : undefined}
@@ -1163,27 +1171,43 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
                           )}
                           {s.fuel_expires && (
                             <>
-                              <span className={styles.label}>Fuel Expires</span>
+                              <span className={styles.label}>fuel expires</span>
                               <span className={styles.value}>
-                                <DateTime value={s.fuel_expires} />
+                                <span className={styles.num}>
+                                  <DateTime value={s.fuel_expires} />
+                                </span>
                                 {(() => {
                                   const relative = formatRelativeFuture(s.fuel_expires, now)
-                                  return relative ? <span className={styles.subLine}>{relative}</span> : null
+                                  return relative ? (
+                                    <span className={styles.subLine} data-soon={fuelSoon(s.fuel_expires) || undefined}>
+                                      {relative}
+                                    </span>
+                                  ) : null
                                 })()}
                               </span>
                             </>
                           )}
                         </div>
 
+                        {!s.scanned && s.name == null && (
+                          <div className={styles.tileNote}>
+                            never resolved by the directory — a job of ours ran here, and that is all that is known.
+                          </div>
+                        )}
+
                         <StructureTabs
-                          services={services.map((svc) => ({ name: svc, typeID: serviceIcons.get(svc) ?? null }))}
+                          services={services.map((svc) => ({
+                            name: svc.name,
+                            state: svc.state,
+                            typeID: serviceIcons.get(svc.name) ?? null,
+                          }))}
                           rigs={rigs.map((rig) => ({ name: rig.name, typeID: rig.typeID }))}
                           characters={installersByStructure.get(String(s.structure_id)) ?? []}
                         />
 
                         {indexActivities.length > 0 && (
                           <div className={styles.section}>
-                            <span className={styles.sectionLabel}>Industry Indexes</span>
+                            <span className={styles.sectionLabel}>industry indexes</span>
                             <ul className={styles.indexes}>
                               {indexActivities.map((activity) => {
                                 const cost = systemIndexes?.get(activity)
@@ -1213,148 +1237,171 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
             )
           )}
 
-          <div className={styles.footer}>
-            {unaccountedParties.length > 0 && (
-              <>
-                <span>Unaccounted tax revenue:</span>
-                <span className={styles.footerValue}>{formatIsk(unaccounted)}</span>
-              </>
-            )}
-            {taxesPaidTotal > 0 && (
-              <>
-                <span>Taxes paid:</span>
-                <span className={styles.footerValue}>{formatIsk(taxesPaidTotal)}</span>
-              </>
-            )}
-            {unlistedTotal > 0 && (
-              <>
-                <span>Taxes paid elsewhere:</span>
-                <span className={styles.footerValue}>{formatIsk(unlistedTotal)}</span>
-              </>
-            )}
-            {eiv.totalRecoveredTax > 0 && (
-              <>
-                <span>Taxes paid (est.):</span>
-                <span className={styles.footerValue}>{formatIsk(eiv.totalRecoveredTax)}</span>
-              </>
-            )}
-            {eiv.totalEiv > 0 && (
-              <>
-                <span>Total EIV:</span>
-                <span className={styles.footerValue}>{formatIsk(eiv.totalEiv)}</span>
-              </>
-            )}
-            <span>Clone revenue:</span>
-            <span className={styles.footerValue}>{formatKisk(cloneRevenue)}</span>
-            <span>Cost avoidance:</span>
-            <span className={styles.footerValue}>{avoidance.total == null ? '—' : formatIsk(avoidance.total)}</span>
-          </div>
-          <p className={styles.unaccountedNote}>
-            <em>
-              {avoidance.total == null ? (
-                <>
-                  Cost avoidance needs a non-zero rate for your own characters — nothing was billed, so there is no
-                  receipt to price a public structure against.{' '}
-                </>
-              ) : (
-                <>
-                  Cost avoidance is facility tax never incurred: {avoidance.jobs.toLocaleString()} job
-                  {avoidance.jobs === 1 ? '' : 's'} of ours ran in our own structures and paid us{' '}
-                  {formatIsk(avoidance.billed)} at {formatRate(taxRates.own)}, where a public{' '}
-                  {formatRate(taxRates.public)} would have cost {formatIsk(avoidance.counterfactual ?? 0)} and kept it.
-                  No ISK changed hands, so it is not revenue.{' '}
-                </>
+          <h2 className={styles.groupLabel}>
+            <span>over the window</span>
+            <span className={styles.groupNote}>
+              {windowDays} day{windowDays === 1 ? '' : 's'} — the same span the tiles and sparklines use
+            </span>
+            <span className={styles.groupRule} />
+          </h2>
+          <div className={styles.summaryGrid}>
+            <section className={styles.panel} aria-label="Totals">
+              <div className={styles.panelHead}>
+                <h2>totals</h2>
+                <span className={styles.spacer} />
+                <SourceTag source="ledger" />
+              </div>
+              {unaccountedParties.length > 0 && (
+                <div className={styles.panelRow}>
+                  <span className={styles.panelLabel}>unaccounted tax revenue</span>
+                  <span className={styles.panelValue}>{formatIsk(unaccounted)}</span>
+                </div>
               )}
-              <Link href="/settings/tax">Change the rates &raquo;</Link>
-            </em>
-          </p>
-          {taxesPaidTotal > 0 && (
-            <p className={styles.unaccountedNote}>
-              <em>
-                Taxes paid is facility tax we were actually charged, for jobs run in the structures listed above —
-                including the {formatRate(taxRates.own)} our own structures bill us. Tax paid to a corporation with no
-                structure here is counted separately, since it has no tile to belong to. Neither figure can see what a
-                character paid to a corporation that isn&rsquo;t ours: that leaves a wallet we have no journal for.
-              </em>
-            </p>
-          )}
-          {eiv.totalEiv > 0 && (
-            <p className={styles.unaccountedNote}>
-              <em>
-                Total EIV is the Estimated Item Value of our manufacturing and reaction jobs installed at these
-                structures over the window &mdash; each job&rsquo;s ME0 material bill priced at CCP&rsquo;s adjusted
-                prices, the base the game levies every install fee against. Estimated taxes recover the facility tax at
-                structures we don&rsquo;t own, where the charge leaves a wallet no journal of ours covers: a job&rsquo;s
-                billed cost minus its system-index fee (at the index when it was installed) and the 4% SCC surcharge
-                leaves the owner&rsquo;s cut, and dividing by EIV gives their rate. The estimate assumes Omega
-                installers and current adjusted prices
-                {eivSkipped > 0 && (
-                  <>
-                    ; {eivSkipped.toLocaleString()} job{eivSkipped === 1 ? '' : 's'} could not be priced (missing bill,
-                    price, or index history) and count{eivSkipped === 1 ? 's' : ''} toward nothing
-                  </>
+              {taxesPaidTotal > 0 && (
+                <div className={styles.panelRow}>
+                  <span className={styles.panelLabel}>taxes paid</span>
+                  <span className={styles.panelValue}>{formatIsk(taxesPaidTotal)}</span>
+                </div>
+              )}
+              {unlistedTotal > 0 && (
+                <div className={styles.panelRow}>
+                  <span className={styles.panelLabel}>taxes paid elsewhere</span>
+                  <span className={styles.panelValue}>{formatIsk(unlistedTotal)}</span>
+                </div>
+              )}
+              {eiv.totalRecoveredTax > 0 && (
+                <div className={styles.panelRow}>
+                  <span className={styles.panelLabel}>
+                    taxes paid (est.) <SourceTag source="estimate" />
+                  </span>
+                  <span className={styles.panelValue}>{formatIsk(eiv.totalRecoveredTax)}</span>
+                </div>
+              )}
+              {eiv.totalEiv > 0 && (
+                <div className={styles.panelRow}>
+                  <span className={styles.panelLabel}>
+                    total EIV <SourceTag source="estimate" />
+                  </span>
+                  <span className={styles.panelValue}>{formatIsk(eiv.totalEiv)}</span>
+                </div>
+              )}
+              <div className={styles.panelRow}>
+                <span className={styles.panelLabel}>clone revenue</span>
+                <span className={styles.panelValue}>{formatKisk(cloneRevenue)}</span>
+              </div>
+              <div className={`${styles.panelRow} ${styles.panelTotal}`}>
+                <span className={styles.panelLabel}>cost avoidance</span>
+                <span className={styles.panelValue}>{avoidance.total == null ? '—' : formatIsk(avoidance.total)}</span>
+              </div>
+            </section>
+
+            <section className={styles.panel} aria-label="How to read these">
+              <div className={styles.panelHead}>
+                <h2>how to read these</h2>
+              </div>
+              <div className={styles.panelNote}>
+                <p>
+                  {avoidance.total == null ? (
+                    <>
+                      Cost avoidance needs a non-zero rate for your own characters — nothing was billed, so there is no
+                      receipt to price a public structure against.{' '}
+                    </>
+                  ) : (
+                    <>
+                      Cost avoidance is facility tax never incurred: {avoidance.jobs.toLocaleString()} job
+                      {avoidance.jobs === 1 ? '' : 's'} of ours ran in our own structures and paid us{' '}
+                      {formatIsk(avoidance.billed)} at {formatRate(taxRates.own)}, where a public{' '}
+                      {formatRate(taxRates.public)} would have cost {formatIsk(avoidance.counterfactual ?? 0)} and kept
+                      it. No ISK changed hands, so it is not revenue.{' '}
+                    </>
+                  )}
+                  <Link href="/settings/tax">change the rates &raquo;</Link>
+                </p>
+                {taxesPaidTotal > 0 && (
+                  <p>
+                    Taxes paid is facility tax we were actually charged, for jobs run in the structures listed above —
+                    including the {formatRate(taxRates.own)} our own structures bill us. Tax paid to a corporation with
+                    no structure here is counted separately, since it has no tile to belong to. Neither figure can see
+                    what a character paid to a corporation that isn&rsquo;t ours: that leaves a wallet we have no
+                    journal for.
+                  </p>
                 )}
-                .
-              </em>
-            </p>
-          )}
-          {unaccountedParties.length > 0 && (
-            <p className={styles.unaccountedNote}>
-              <em>
-                Unaccounted revenue comes from industry jobs started by players we can&rsquo;t see, so we can&rsquo;t
-                tie the tax back to one of our structures.
-              </em>
-            </p>
-          )}
-          {unlistedLandlords.length > 0 && (
-            <details className={styles.breakdown}>
-              <summary>Taxes paid elsewhere, by corporation ({unlistedLandlords.length})</summary>
-              <div className={styles.breakdownGrid}>
-                {unlistedLandlords.map(([corporationId, row]) => {
-                  const name =
-                    corporationId === 'unknown'
-                      ? 'Unknown corporation'
-                      : (landlordNames.get(corporationId) ?? `#${corporationId}`)
-                  // Systems we could place the jobs in. A structure the cache
-                  // has never resolved contributes none, so the ISK still shows
-                  // with no system rather than being hidden.
-                  const systems = sort(
-                    (a: string, b: string) => a.localeCompare(b),
-                    map((id: string) => unlistedSystemNames[Number(id)] ?? `#${id}`, [...row.systemIds])
-                  )
-                  return (
-                    <span key={`landlord-${corporationId}`} className={styles.breakdownRow}>
-                      <span className={styles.payer}>
-                        <span>{name}</span>
-                        {systems.length > 0 && <span className={styles.payerCorp}>{systems.join(', ')}</span>}
-                      </span>
-                      <span className={styles.footerValue}>{formatIsk(row.amount)}</span>
-                    </span>
-                  )
-                })}
+                {eiv.totalEiv > 0 && (
+                  <p>
+                    Total EIV is the Estimated Item Value of our manufacturing and reaction jobs installed at these
+                    structures over the window &mdash; each job&rsquo;s ME0 material bill priced at CCP&rsquo;s adjusted
+                    prices, the base the game levies every install fee against. Estimated taxes recover the facility tax
+                    at structures we don&rsquo;t own, where the charge leaves a wallet no journal of ours covers: a
+                    job&rsquo;s billed cost minus its system-index fee (at the index when it was installed) and the 4%
+                    SCC surcharge leaves the owner&rsquo;s cut, and dividing by EIV gives their rate. The estimate
+                    assumes Omega installers and current adjusted prices
+                    {eivSkipped > 0 && (
+                      <>
+                        ; {eivSkipped.toLocaleString()} job{eivSkipped === 1 ? '' : 's'} could not be priced (missing
+                        bill, price, or index history) and count{eivSkipped === 1 ? 's' : ''} toward nothing
+                      </>
+                    )}
+                    .
+                  </p>
+                )}
+                {unaccountedParties.length > 0 && (
+                  <p>
+                    Unaccounted revenue comes from industry jobs started by players we can&rsquo;t see, so we
+                    can&rsquo;t tie the tax back to one of our structures.
+                  </p>
+                )}
               </div>
-            </details>
-          )}
-          {unaccountedParties.length > 0 && (
-            <details className={styles.breakdown}>
-              <summary>Breakdown by payer ({unaccountedParties.length})</summary>
-              <div className={styles.breakdownGrid}>
-                {unaccountedParties.map(([party, amount]) => {
-                  const name = party === 'unknown' ? 'Unknown' : (payerNames.get(party) ?? party)
-                  const corp = party === 'unknown' ? undefined : payerCorps.get(party)
-                  return (
-                    <span key={`party-${party}`} className={styles.breakdownRow}>
-                      <span className={styles.payer}>
-                        <span>{name}</span>
-                        {corp && <span className={styles.payerCorp}>{corp}</span>}
-                      </span>
-                      <span className={styles.footerValue}>{formatIsk(amount)}</span>
-                    </span>
-                  )
-                })}
-              </div>
-            </details>
-          )}
+              {(unlistedLandlords.length > 0 || unaccountedParties.length > 0) && (
+                <div className={styles.breakdowns}>
+                  {unlistedLandlords.length > 0 && (
+                    <details className={styles.breakdown}>
+                      <summary>taxes paid elsewhere, by corporation ({unlistedLandlords.length})</summary>
+                      <div className={styles.breakdownGrid}>
+                        {unlistedLandlords.map(([corporationId, row]) => {
+                          const name =
+                            corporationId === 'unknown'
+                              ? 'Unknown corporation'
+                              : (landlordNames.get(corporationId) ?? `#${corporationId}`)
+                          // Systems we could place the jobs in. A structure the cache
+                          // has never resolved contributes none, so the ISK still shows
+                          // with no system rather than being hidden.
+                          const systems = sort(
+                            (a: string, b: string) => a.localeCompare(b),
+                            map((id: string) => unlistedSystemNames[Number(id)] ?? `#${id}`, [...row.systemIds])
+                          )
+                          return (
+                            <span key={`landlord-${corporationId}`} className={styles.breakdownRow}>
+                              <span>{name}</span>
+                              <span className={styles.payerCorp}>{systems.join(', ')}</span>
+                              <span className={styles.panelValue}>{formatIsk(row.amount)}</span>
+                            </span>
+                          )
+                        })}
+                      </div>
+                    </details>
+                  )}
+                  {unaccountedParties.length > 0 && (
+                    <details className={styles.breakdown}>
+                      <summary>breakdown by payer ({unaccountedParties.length})</summary>
+                      <div className={styles.breakdownGrid}>
+                        {unaccountedParties.map(([party, amount]) => {
+                          const name = party === 'unknown' ? 'Unknown' : (payerNames.get(party) ?? party)
+                          const corp = party === 'unknown' ? undefined : payerCorps.get(party)
+                          return (
+                            <span key={`party-${party}`} className={styles.breakdownRow}>
+                              <span>{name}</span>
+                              <span className={styles.payerCorp}>{corp ?? ''}</span>
+                              <span className={styles.panelValue}>{formatIsk(amount)}</span>
+                            </span>
+                          )
+                        })}
+                      </div>
+                    </details>
+                  )}
+                </div>
+              )}
+            </section>
+          </div>
         </>
       ) : (
         <p>
@@ -1363,13 +1410,15 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
         </p>
       )}
       <p className={styles.lastRun}>
-        Structures last refreshed:{' '}
-        {lastRun?.run_url ? (
-          <a href={lastRun.run_url}>
-            <DateTime value={lastRun.ended_at} fallback="never" />
-          </a>
-        ) : (
+        structures job last ran{' '}
+        <span className={styles.num}>
           <DateTime value={lastRun?.ended_at} fallback="never" />
+        </span>
+        {lastRun?.run_url && (
+          <>
+            {' '}
+            · <a href={lastRun.run_url}>run log &raquo;</a>
+          </>
         )}
       </p>
     </>

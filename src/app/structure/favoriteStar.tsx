@@ -10,14 +10,23 @@ import styles from './structures.module.css'
 // makes the round trip very visible. useOptimistic flips the star immediately
 // and React reverts it if the action throws, so the star never sits in the
 // old state while the re-sorted page is on its way.
-export const FavoriteStar = ({ structureId, favorite }: { structureId: string; favorite: boolean }) => {
+// `large` is the detail page's star beside the title, a size up from a tile's.
+export const FavoriteStar = ({
+  structureId,
+  favorite,
+  large = false,
+}: {
+  structureId: string
+  favorite: boolean
+  large?: boolean
+}) => {
   const [pending, startTransition] = useTransition()
   const [optimistic, setOptimistic] = useOptimistic(favorite)
 
   return (
     <button
       type="button"
-      className={styles.favorite}
+      className={large ? `${styles.favorite} ${styles.favoriteLarge}` : styles.favorite}
       aria-pressed={optimistic}
       aria-label={optimistic ? 'Remove from favorites' : 'Add to favorites'}
       title={optimistic ? 'Remove from favorites' : 'Add to favorites'}

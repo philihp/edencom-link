@@ -58,7 +58,7 @@ export const SCC_SURCHARGE = 0.04
 
 // Job-cost reduction from the structure hull itself: engineering complexes
 // discount the index term by 3/4/5% (Raitaru/Azbel/Sotiyo). Citadels and
-// refineries have no job-cost bonus. Same type ids as silhouette.tsx.
+// refineries have no job-cost bonus.
 const HULL_COST_MULTIPLIER: Record<number, number> = {
   35825: 0.97, // Raitaru
   35826: 0.96, // Azbel

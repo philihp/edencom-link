@@ -54,7 +54,9 @@ This system currently has no attached codebase/Figma component library — the i
 
 Imported from the Claude Design handoff bundle (`Account Settings.dc.html` is
 the settings control panel + button/link vocabulary; `Industry.dc.html` is the
-/industry lift-rate chart over the job list, implemented; `Site Shell.dc.html`
+/industry lift-rate chart over the job list, implemented; `Structures.dc.html`
+is /structure and /structure/[structureId] as panels with source tags,
+implemented; `Site Shell.dc.html`
 is a further-out shell exploration, not implemented). The tokens map onto
 `src/app/globals.css`'s existing custom-property names — see the comment at
 the top of that file. Fonts are self-hosted at `public/fonts/`. The full
