@@ -3826,9 +3826,9 @@ create table public.structure_tenant (
   check (open_jobs >= 0),
   primary key (owner_key, structure_id)
 );
--- "Who is a tenant here": partial, since is_tenant_of() only ever asks about
--- open jobs, and the zeroed rows are the long tail.
-create index structure_tenant_structure_id_idx on public.structure_tenant (structure_id) where open_jobs > 0;
+-- "Who is a tenant here": by structure, newest sighting first, since
+-- is_tenant_of() asks about the last 30 days.
+create index structure_tenant_structure_id_idx on public.structure_tenant (structure_id, last_job_seen_at desc);
 create index structure_tenant_registration_id_idx on public.structure_tenant (registration_id);
 create index structure_tenant_corporation_id_idx on public.structure_tenant (corporation_id);
 
@@ -3850,10 +3850,15 @@ create policy "Users read own structure tenancy"
 grant select on public.structure_tenant to authenticated;
 grant all    on public.structure_tenant to service_role;
 
--- Does the caller hold an open job at this structure, personally or through
--- a corporation of theirs? Invoker rights: it reads only the caller's own
--- rows, which is all the policy above shows anyway. Safe to call from a
--- policy on any table but structure_tenant itself.
+-- Has the caller had a job at this structure in the last 30 days, personally
+-- or through a corporation of theirs? last_job_seen_at is stamped with the run
+-- clock on every extract run that saw an open job there, so it is "the last
+-- time this owner had something running or undelivered here"; the window,
+-- rather than open_jobs, is the test so that tenancy outlives the last
+-- delivery by a month and a row whose extract stopped reporting ages out.
+-- Invoker rights: it reads only the caller's own rows, which is all the
+-- policy above shows anyway. Safe to call from a policy on any table but
+-- structure_tenant itself.
 create or replace function public.is_tenant_of(structure bigint)
 returns boolean
 language sql
@@ -3864,7 +3869,7 @@ as $$
     select 1
     from public.structure_tenant t
     where t.structure_id = structure
-      and t.open_jobs > 0
+      and t.last_job_seen_at >= now() - interval '30 days'
       and (
         t.registration_id in (
           select id from public.registration where user_id = (select auth.uid())
@@ -3876,8 +3881,8 @@ $$;
 
 grant execute on function public.is_tenant_of(bigint) to authenticated, service_role;
 
--- Every player structure at which the caller holds an open job, personally or
--- through a corporation of theirs — is_tenant_of() as a set, for the two
+-- Every player structure at which the caller has had a job in the last 30
+-- days, personally or through a corporation — is_tenant_of() as a set, for the two
 -- policies below: the /structure page drains every current job the caller may
 -- see, and an uncorrelated subquery hashes once where a per-row EXISTS would
 -- probe structure_tenant for each of thousands of rows. Invoker rights, over
@@ -3890,7 +3895,7 @@ set search_path = public
 as $$
   select t.structure_id
   from public.structure_tenant t
-  where t.open_jobs > 0
+  where t.last_job_seen_at >= now() - interval '30 days'
     and (
       t.registration_id in (
         select id from public.registration where user_id = (select auth.uid())
@@ -3902,8 +3907,8 @@ $$;
 grant execute on function public.my_tenant_structure_ids() to authenticated, service_role;
 
 -- Co-tenants read each other's industry jobs (docs/sharing-layer/13-industry-job-share.md).
--- Everyone with an open job at a player structure reads the CURRENT job rows of
--- everyone else building there — no opt-in: people sharing a structure are
+-- Everyone who has had a job at a player structure in the last 30 days reads the
+-- CURRENT job rows of everyone else building there — no opt-in: people sharing a structure are
 -- allies by construction, the job count in a system is public in the client,
 -- and whoever builds something sensitive there is seen only by others the owner
 -- already let build there. History never crosses (is_current); `cost` is

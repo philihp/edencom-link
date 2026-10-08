@@ -181,6 +181,7 @@ insert into public.corp_wallet_journal values
 
 \i supabase/migrations/20260928023522_structure_tenant.sql
 \i supabase/migrations/20261008005932_tenant_industry_jobs.sql
+\i supabase/migrations/20261008050729_tenant_window.sql
 
 do $$
 declare
@@ -247,6 +248,25 @@ begin
     from public.structure_tax_revenue(1030000000001, '2026-09-01 00:00+00');
   if own_rate <> 100 then raise exception 'own-rate charges at S1 should be alice''s 100, got %', own_rate; end if;
   if revenue <> 1200 then raise exception 'incoming tax at S1 should total 1200, got %', revenue; end if;
+
+  -- 30 days after alice's last job at S1 (the stamp the extract leaves), she
+  -- sees nothing of anyone else's there — only her own rows — whatever
+  -- open_jobs still says.
+  reset role;
+  update public.structure_tenant set last_job_seen_at = now() - interval '31 days'
+    where registration_id = '00000000-0000-0000-0000-0000000000aa' and structure_id = 1030000000001;
+  set local role authenticated;
+  perform set_config('test.uid', 'a0000000-0000-0000-0000-000000000000', true);
+  select count(*) into n from public.character_industry_job where registration_id <> '00000000-0000-0000-0000-0000000000aa';
+  if n <> 0 then raise exception 'alice''s S1 tenancy is 31 days stale yet she still sees % foreign jobs', n; end if;
+  select count(*) into n from public.corp_industry_job;
+  if n <> 0 then raise exception 'alice''s S1 tenancy is 31 days stale yet she still sees % corp jobs', n; end if;
+  select count(*) into n from public.character_industry_job;
+  if n <> 2 then raise exception 'alice should still see her own 2 current jobs, saw %', n; end if;
+  -- Carol, still fresh at S1, still reads alice's rows: the window is per tenant.
+  perform set_config('test.uid', 'c0000000-0000-0000-0000-000000000000', true);
+  select count(*) into n from public.character_industry_job where registration_id = '00000000-0000-0000-0000-0000000000aa';
+  if n <> 2 then raise exception 'carol is still a tenant of S1 and should still see alice''s jobs, saw %', n; end if;
 
   reset role;
   raise notice 'tenant_industry_jobs: all assertions passed';
