@@ -103,6 +103,7 @@ const JOB_WORKFLOWS: Record<string, () => Promise<(target?: OnDemandTarget) => P
   'market-adjusted-prices': async () => (await import('@/workflows/marketAdjustedPrices')).marketAdjustedPricesWorkflow,
   'corp-structures': async () => (await import('@/workflows/corpStructures')).corpStructuresWorkflow,
   'structure-directory': async () => (await import('@/workflows/structureDirectory')).structureDirectoryWorkflow,
+  'public-contracts': async () => (await import('@/workflows/publicContracts')).publicContractsWorkflow,
 }
 
 // Start one on-demand workflow run: the job's workflow, given the target that
