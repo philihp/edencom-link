@@ -16,11 +16,14 @@ export const ITEMISED_TYPES = ['item_exchange', 'auction', 'courier']
 const numberOrNull = (value) => (value == null ? null : Number(value))
 
 // One contract's shared columns. `seenAt` is stamped by the caller so every row
-// in a run carries the same observation time.
+// in a run carries the same observation time. The status is not among them: it
+// is history, kept per owner in *_contract_status_over_time (contractStatus
+// below). acceptor_id and the accepted/completed dates ARE here, updated in
+// place: before acceptance they were simply empty, so there is no earlier value
+// worth keeping.
 export const contractFields = (c, seenAt) => ({
   contract_id: c.contract_id,
   type: c.type ?? 'unknown',
-  status: c.status,
   availability: c.availability,
   for_corporation: c.for_corporation ?? false,
   issuer_id: c.issuer_id,
@@ -57,4 +60,23 @@ export const contractItemFields = (item, seenAt) => ({
   is_singleton: item.is_singleton ?? false,
   raw_quantity: item.raw_quantity ?? null,
   seen_at: seenAt,
+})
+
+// The ESI states that carry their own start date, and the column it lives in.
+// The rest (cancelled, deleted, rejected, failed, reversed) carry none.
+const STATUS_DATE = {
+  outstanding: 'date_issued',
+  in_progress: 'date_accepted',
+  finished_issuer: 'date_completed',
+  finished_contractor: 'date_completed',
+  finished: 'date_completed',
+}
+
+// One contract's status, and when it began: ESI's own date for that state
+// where it has one, else `seenAt`, the scan that saw it. This is what the
+// *_contract_status_sync() functions record a change at.
+export const contractStatus = (c, seenAt) => ({
+  contract_id: c.contract_id,
+  status: c.status,
+  since: c[STATUS_DATE[c.status]] ?? seenAt,
 })

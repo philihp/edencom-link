@@ -3,7 +3,7 @@ import { map, splitEvery } from 'ramda'
 import { contractItems, contracts } from '../esi.js'
 import { sudoSupabase } from '../supabase.js'
 import { cli, fetchAllPages, forEachCharacter, forEachSequential } from './lib.js'
-import { contractFields, contractItemFields, ITEMISED_TYPES } from './contractFields.js'
+import { contractFields, contractItemFields, contractStatus, ITEMISED_TYPES } from './contractFields.js'
 
 const TAG = 'character-contracts'
 export const SCOPE = 'esi-contracts.read_character_contracts.v1'
@@ -34,6 +34,18 @@ const upsertContracts = async (registration_id, fetched, seenAt) => {
       .upsert(chunk, { onConflict: 'registration_id,contract_id' })
     if (error) throw error
   })
+}
+
+// Record each listed contract's status in character_contract_status_over_time:
+// a new row only where the status moved (or the contract has none yet). After
+// upsertContracts, since a status row needs its contract to exist.
+const syncStatuses = async (registration_id, fetched, seenAt) => {
+  const { data, error } = await sudoSupabase.rpc('character_contract_status_sync', {
+    p_registration_id: registration_id,
+    p_statuses: map((c) => contractStatus(c, seenAt), fetched),
+  })
+  if (error) throw error
+  return data ?? { changed: 0, opened: 0 }
 }
 
 // Pull the item list of every contract that doesn't have one yet, up to
@@ -93,7 +105,8 @@ const syncContractItems = async ({ access_token, characterID, registration_id, c
   return { itemised, unreadable, failures, pending: pending?.length ?? 0 }
 }
 
-// GET /characters/{id}/contracts/ → character_contract, plus
+// GET /characters/{id}/contracts/ → character_contract (+ status history in
+// character_contract_status_over_time), plus
 // /characters/{id}/contracts/{id}/items/ → character_contract_item for
 // contracts we haven't itemised yet. ESI returns contracts from the last 30
 // days plus everything still outstanding or in progress, so the upsert both
@@ -106,7 +119,9 @@ export const runCharacterContracts = ({ registrationIds } = {}) =>
     { scope: SCOPE, registrationIds },
     async ({ access_token, characterID, registration_id, name, ctx }) => {
       const fetched = await fetchAllPages((page) => contracts(access_token, characterID, page))
-      await upsertContracts(registration_id, fetched, new Date().toISOString())
+      const seenAt = new Date().toISOString()
+      await upsertContracts(registration_id, fetched, seenAt)
+      const statuses = await syncStatuses(registration_id, fetched, seenAt)
       const { itemised, unreadable, failures, pending } = await syncContractItems({
         access_token,
         characterID,
@@ -114,7 +129,8 @@ export const runCharacterContracts = ({ registrationIds } = {}) =>
         ctx,
       })
       console.log(
-        `[${TAG}] ${name} ${registration_id} (${characterID}): ${fetched.length} contracts; ` +
+        `[${TAG}] ${name} ${registration_id} (${characterID}): ${fetched.length} contracts, ` +
+          `${statuses.changed} status changes, ${statuses.opened} new; ` +
           `${pending} awaiting items, ${itemised} itemised, ${unreadable} unreadable, ${failures} failed`
       )
     }

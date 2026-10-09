@@ -116,6 +116,14 @@ drop table if exists public.corp_job_access      cascade;
 drop table if exists public.structure_tenant     cascade;
 drop table if exists public.corp_wallet_journal  cascade;
 drop table if exists public.corp_wallet_transaction cascade;
+drop view  if exists public.character_contract_with_status cascade;
+drop view  if exists public.corp_contract_with_status      cascade;
+drop view  if exists public.character_contract_status      cascade;
+drop view  if exists public.corp_contract_status           cascade;
+drop table if exists public.character_contract_status_over_time cascade;
+drop table if exists public.corp_contract_status_over_time      cascade;
+drop function if exists public.character_contract_status_sync(uuid, jsonb) cascade;
+drop function if exists public.corp_contract_status_sync(bigint, jsonb)    cascade;
 drop table if exists public.corp_contract_item      cascade;
 drop table if exists public.corp_contract           cascade;
 drop view  if exists public.public_contract_status  cascade;
@@ -2074,12 +2082,13 @@ grant all    on public.character_wallet_transaction to service_role;
 -- every contract the character issued or was assigned, covering ESI's window of
 -- the last 30 days plus anything still outstanding or in progress.
 --
--- Unlike a wallet transaction, a contract is *mutable* — it moves outstanding →
--- in_progress → finished/failed/deleted and gains an acceptor and completion
--- date along the way — so this is a plain upsert-in-place table, not an
--- append-only one. The history that matters (issue/accept/complete timestamps)
--- is carried by the row's own columns, so an SCD-2 pair would only re-record
--- the state machine ESI already dates for us.
+-- A contract's facts are frozen once it is issued. What moves is its status,
+-- kept as history in character_contract_status_over_time, and a few fields
+-- that fill in as it moves: who accepted it, and when it was accepted and
+-- completed. Those stay here and are updated in place, because before
+-- acceptance they were simply empty; there is no earlier value worth keeping.
+-- character_contract_with_status puts the current status back beside the
+-- facts.
 --
 -- contract_id is globally unique in EVE but a contract is visible to *both*
 -- parties, so the key is (registration_id, contract_id) rather than contract_id
@@ -2089,12 +2098,10 @@ grant all    on public.character_wallet_transaction to service_role;
 create table public.character_contract (
   registration_id uuid not null references public.registration(id) on delete cascade,
   contract_id bigint not null,
-  -- ESI enums, kept as text: unknown/item_exchange/auction/courier/loan and
-  -- outstanding/in_progress/finished_issuer/finished_contractor/finished/
-  -- cancelled/rejected/failed/deleted/reversed. Stored raw so a new member CCP
-  -- adds lands in the table instead of failing the extract.
+  -- ESI's enum, kept as text: unknown/item_exchange/auction/courier/loan.
+  -- Stored raw so a new member CCP adds lands in the table instead of failing
+  -- the extract.
   type text not null,
-  status text not null,
   availability text not null,
   for_corporation boolean not null default false,
   issuer_id bigint not null,
@@ -4660,14 +4667,14 @@ grant all    on public.corp_wallet_transaction to service_role;
 -- records which registration's token last scanned the row (last scanner wins),
 -- matching corp_wallet_transaction's attribution column; RLS scopes reads by
 -- corporation like corp_wallet_journal, so every member of the corp who has
--- linked a character sees it. Contracts are mutable, so this upserts in place
--- for the same reason character_contract does.
+-- linked a character sees it. Like character_contract, the facts are frozen,
+-- the acceptor and dates are updated in place, and the status is history in
+-- corp_contract_status_over_time.
 create table public.corp_contract (
   corporation_id bigint not null,
   contract_id bigint not null,
   registration_id uuid not null references public.registration(id) on delete cascade,
   type text not null,
-  status text not null,
   availability text not null,
   for_corporation boolean not null default false,
   issuer_id bigint not null,
@@ -4744,6 +4751,233 @@ create policy "Users read own corp contract items"
 
 grant select on public.corp_contract_item to authenticated;
 grant all    on public.corp_contract_item to service_role;
+
+-- ── contract status history ───────────────────────────────────────────────
+-- The status of each private contract, as SCD-2 per owner, split out of
+-- character_contract and corp_contract by migration
+-- 20261009051339_contract_status_history.sql. docs/contract-status.md.
+-- ── character_contract_status_over_time ────────────────────────────────────
+-- One row per status a character's contract has held. valid_from is when the
+-- status began: ESI's own date where it gives one (date_issued for
+-- outstanding, date_accepted for in_progress, date_completed for the finished
+-- states), else the scan that first saw it (cancelled, deleted, rejected,
+-- failed and reversed carry no date in ESI). A change ends the current row at
+-- the new row's valid_from, so the rows are contiguous. On the current row,
+-- valid_until is its debut and means nothing; a status is never rewritten
+-- while it holds.
+create table public.character_contract_status_over_time (
+  id bigint generated always as identity primary key,
+  registration_id uuid not null,
+  contract_id bigint not null,
+  -- ESI's enum, kept as text so a new member lands rather than failing the
+  -- extract: outstanding/in_progress/finished_issuer/finished_contractor/
+  -- finished/cancelled/rejected/failed/deleted/reversed.
+  status text not null,
+  valid_from timestamptz not null,
+  valid_until timestamptz not null,
+  is_current boolean not null default true,
+  foreign key (registration_id, contract_id)
+    references public.character_contract (registration_id, contract_id) on delete cascade
+);
+create unique index character_contract_status_current_idx
+  on public.character_contract_status_over_time (registration_id, contract_id) where is_current;
+create index character_contract_status_history_idx
+  on public.character_contract_status_over_time (registration_id, contract_id, valid_from);
+
+-- ── corp_contract_status_over_time ─────────────────────────────────────────
+-- The corporation mirror, keyed like corp_contract.
+create table public.corp_contract_status_over_time (
+  id bigint generated always as identity primary key,
+  corporation_id bigint not null,
+  contract_id bigint not null,
+  status text not null,
+  valid_from timestamptz not null,
+  valid_until timestamptz not null,
+  is_current boolean not null default true,
+  foreign key (corporation_id, contract_id)
+    references public.corp_contract (corporation_id, contract_id) on delete cascade
+);
+create unique index corp_contract_status_current_idx
+  on public.corp_contract_status_over_time (corporation_id, contract_id) where is_current;
+create index corp_contract_status_history_idx
+  on public.corp_contract_status_over_time (corporation_id, contract_id, valid_from);
+
+-- ── Views ──────────────────────────────────────────────────────────────────
+create view public.character_contract_status with (security_invoker = on) as
+  select id, registration_id, contract_id, status, valid_from, valid_until, is_current
+  from public.character_contract_status_over_time
+  where is_current;
+
+create view public.corp_contract_status with (security_invoker = on) as
+  select id, corporation_id, contract_id, status, valid_from, valid_until, is_current
+  from public.corp_contract_status_over_time
+  where is_current;
+
+-- The facts with the current status beside them, column for column what the
+-- tables carried before the status moved out. A contract stored without a
+-- status yet (a run that died between the two writes) reads as null status.
+create view public.character_contract_with_status with (security_invoker = on) as
+  select c.*, s.status, s.valid_from as status_since
+  from public.character_contract c
+  left join public.character_contract_status_over_time s
+    on s.registration_id = c.registration_id and s.contract_id = c.contract_id and s.is_current;
+
+create view public.corp_contract_with_status with (security_invoker = on) as
+  select c.*, s.status, s.valid_from as status_since
+  from public.corp_contract c
+  left join public.corp_contract_status_over_time s
+    on s.corporation_id = c.corporation_id and s.contract_id = c.contract_id and s.is_current;
+
+-- ── Access: the same owners who read the contracts ─────────────────────────
+alter table public.character_contract_status_over_time enable row level security;
+create policy "Users read own contract statuses"
+  on public.character_contract_status_over_time
+  for select
+  to authenticated
+  using (
+    registration_id in (
+      select id from public.registration where user_id = (select auth.uid())
+    )
+  );
+
+alter table public.corp_contract_status_over_time enable row level security;
+create policy "Users read own corp contract statuses"
+  on public.corp_contract_status_over_time
+  for select
+  to authenticated
+  using (
+    corporation_id in (
+      select corporation_id from public.registration
+      where user_id = (select auth.uid()) and corporation_id is not null
+    )
+  );
+
+grant select on public.character_contract_status_over_time, public.corp_contract_status_over_time,
+  public.character_contract_status, public.corp_contract_status,
+  public.character_contract_with_status, public.corp_contract_with_status to authenticated;
+grant all on public.character_contract_status_over_time, public.corp_contract_status_over_time to service_role;
+grant select on public.character_contract_status, public.corp_contract_status,
+  public.character_contract_with_status, public.corp_contract_with_status to service_role;
+
+-- ── The extract's writers ──────────────────────────────────────────────────
+-- Reconcile one owner's statuses against the contracts ESI just listed, in one
+-- round trip. p_statuses is [{ contract_id, status, since }], `since` being
+-- when the status began (contractStatus in src/jobs/contractFields.js). For
+-- each listed contract:
+--
+--   - same status as its current row: nothing is written;
+--   - a different status: the current row ends and a new one starts, both at
+--     `since`, never earlier than the row being ended began;
+--   - no status yet: its first row starts at `since`.
+--
+-- A contract ESI no longer lists (it aged out of the 30-day window) keeps its
+-- last status: leaving the listing is not a change of state. Only contracts
+-- whose facts are stored get a row, so the caller writes the facts first.
+create or replace function public.character_contract_status_sync(p_registration_id uuid, p_statuses jsonb)
+returns jsonb
+language plpgsql
+volatile
+set search_path = public
+as $$
+declare
+  changed integer;
+  opened integer;
+begin
+  with incoming as (
+    select distinct on ((e ->> 'contract_id')::bigint)
+           (e ->> 'contract_id')::bigint as contract_id, e ->> 'status' as status, (e ->> 'since')::timestamptz as since
+      from jsonb_array_elements(p_statuses) as e
+  )
+  update public.character_contract_status_over_time s
+     set is_current = false,
+         valid_until = greatest(i.since, s.valid_from)
+    from incoming i
+   where s.registration_id = p_registration_id
+     and s.contract_id = i.contract_id
+     and s.is_current
+     and s.status <> i.status;
+  get diagnostics changed = row_count;
+
+  with incoming as (
+    select distinct on ((e ->> 'contract_id')::bigint)
+           (e ->> 'contract_id')::bigint as contract_id, e ->> 'status' as status, (e ->> 'since')::timestamptz as since
+      from jsonb_array_elements(p_statuses) as e
+  )
+  insert into public.character_contract_status_over_time (registration_id, contract_id, status, valid_from, valid_until)
+  select p_registration_id, i.contract_id, i.status, starts.at, starts.at
+    from incoming i
+    join public.character_contract c on c.registration_id = p_registration_id and c.contract_id = i.contract_id
+    cross join lateral (
+      select greatest(i.since, coalesce(max(p.valid_until), i.since)) as at
+        from public.character_contract_status_over_time p
+       where p.registration_id = p_registration_id and p.contract_id = i.contract_id and not p.is_current
+    ) starts
+   where not exists (
+     select 1 from public.character_contract_status_over_time s
+      where s.registration_id = p_registration_id and s.contract_id = i.contract_id and s.is_current
+   );
+  get diagnostics opened = row_count;
+
+  return jsonb_build_object('changed', changed, 'opened', opened);
+end;
+$$;
+
+create or replace function public.corp_contract_status_sync(p_corporation_id bigint, p_statuses jsonb)
+returns jsonb
+language plpgsql
+volatile
+set search_path = public
+as $$
+declare
+  changed integer;
+  opened integer;
+begin
+  with incoming as (
+    select distinct on ((e ->> 'contract_id')::bigint)
+           (e ->> 'contract_id')::bigint as contract_id, e ->> 'status' as status, (e ->> 'since')::timestamptz as since
+      from jsonb_array_elements(p_statuses) as e
+  )
+  update public.corp_contract_status_over_time s
+     set is_current = false,
+         valid_until = greatest(i.since, s.valid_from)
+    from incoming i
+   where s.corporation_id = p_corporation_id
+     and s.contract_id = i.contract_id
+     and s.is_current
+     and s.status <> i.status;
+  get diagnostics changed = row_count;
+
+  with incoming as (
+    select distinct on ((e ->> 'contract_id')::bigint)
+           (e ->> 'contract_id')::bigint as contract_id, e ->> 'status' as status, (e ->> 'since')::timestamptz as since
+      from jsonb_array_elements(p_statuses) as e
+  )
+  insert into public.corp_contract_status_over_time (corporation_id, contract_id, status, valid_from, valid_until)
+  select p_corporation_id, i.contract_id, i.status, starts.at, starts.at
+    from incoming i
+    join public.corp_contract c on c.corporation_id = p_corporation_id and c.contract_id = i.contract_id
+    cross join lateral (
+      select greatest(i.since, coalesce(max(p.valid_until), i.since)) as at
+        from public.corp_contract_status_over_time p
+       where p.corporation_id = p_corporation_id and p.contract_id = i.contract_id and not p.is_current
+    ) starts
+   where not exists (
+     select 1 from public.corp_contract_status_over_time s
+      where s.corporation_id = p_corporation_id and s.contract_id = i.contract_id and s.is_current
+   );
+  get diagnostics opened = row_count;
+
+  return jsonb_build_object('changed', changed, 'opened', opened);
+end;
+$$;
+
+-- Service role only: every public function is executable by anon and
+-- authenticated by default, and these write.
+revoke execute on function public.character_contract_status_sync(uuid, jsonb) from public, anon, authenticated;
+revoke execute on function public.corp_contract_status_sync(bigint, jsonb) from public, anon, authenticated;
+grant execute on function public.character_contract_status_sync(uuid, jsonb) to service_role;
+grant execute on function public.corp_contract_status_sync(bigint, jsonb) to service_role;
+
 
 -- ── public contracts ──────────────────────────────────────────────────────
 -- ESI /contracts/public/{region_id}/ and /contracts/public/items/{contract_id}/
