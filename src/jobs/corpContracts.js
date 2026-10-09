@@ -3,7 +3,7 @@ import { map, splitEvery } from 'ramda'
 import { corpContractItems, corpContracts } from '../esi.js'
 import { sudoSupabase } from '../supabase.js'
 import { cli, fetchAllPages, forEachCorporation, forEachSequential } from './lib.js'
-import { contractFields, contractItemFields, ITEMISED_TYPES } from './contractFields.js'
+import { contractFields, contractItemFields, contractStatus, ITEMISED_TYPES } from './contractFields.js'
 
 const TAG = 'corp-contracts'
 export const SCOPE = 'esi-contracts.read_corporation_contracts.v1'
@@ -25,6 +25,17 @@ const upsertContracts = async (corporation_id, registration_id, fetched, seenAt)
       .upsert(chunk, { onConflict: 'corporation_id,contract_id' })
     if (error) throw error
   })
+}
+
+// Record each listed contract's status in corp_contract_status_over_time, the
+// same way the per-character twin does (src/jobs/characterContracts.js).
+const syncStatuses = async (corporation_id, fetched, seenAt) => {
+  const { data, error } = await sudoSupabase.rpc('corp_contract_status_sync', {
+    p_corporation_id: corporation_id,
+    p_statuses: map((c) => contractStatus(c, seenAt), fetched),
+  })
+  if (error) throw error
+  return data ?? { changed: 0, opened: 0 }
 }
 
 // Pull the item list of every corp contract that doesn't have one yet, up to
@@ -78,7 +89,8 @@ const syncContractItems = async ({ access_token, corporation_id, ctx }) => {
   return { itemised, unreadable, failures, pending: pending?.length ?? 0 }
 }
 
-// GET /corporations/{id}/contracts/ → corp_contract, plus
+// GET /corporations/{id}/contracts/ → corp_contract (+ status history in
+// corp_contract_status_over_time), plus
 // /corporations/{id}/contracts/{id}/items/ → corp_contract_item for contracts
 // not yet itemised. One call per corporation, not per character: a corp's
 // contract set is the same whichever member's token reads it, so
@@ -90,14 +102,17 @@ export const runCorpContracts = ({ registrationIds } = {}) =>
     { scope: SCOPE, registrationIds },
     async ({ access_token, corporation_id, registration_id, ctx }) => {
       const fetched = await fetchAllPages((page) => corpContracts(access_token, corporation_id, page))
-      await upsertContracts(corporation_id, registration_id, fetched, new Date().toISOString())
+      const seenAt = new Date().toISOString()
+      await upsertContracts(corporation_id, registration_id, fetched, seenAt)
+      const statuses = await syncStatuses(corporation_id, fetched, seenAt)
       const { itemised, unreadable, failures, pending } = await syncContractItems({
         access_token,
         corporation_id,
         ctx,
       })
       console.log(
-        `[${TAG}] ${ctx}: corp ${corporation_id} ${fetched.length} contracts; ` +
+        `[${TAG}] ${ctx}: corp ${corporation_id} ${fetched.length} contracts, ` +
+          `${statuses.changed} status changes, ${statuses.opened} new; ` +
           `${pending} awaiting items, ${itemised} itemised, ${unreadable} unreadable, ${failures} failed`
       )
     }

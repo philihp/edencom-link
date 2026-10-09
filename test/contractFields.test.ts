@@ -10,7 +10,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { contractFields, contractItemFields, ITEMISED_TYPES } from '../src/jobs/contractFields.js'
+import { contractFields, contractItemFields, contractStatus, ITEMISED_TYPES } from '../src/jobs/contractFields.js'
 
 const SEEN_AT = '2026-08-09T12:00:00.000Z'
 
@@ -51,7 +51,6 @@ test('carries the identifying and state columns through', () => {
   const row = contractFields(COURIER, SEEN_AT)
   assert.equal(row.contract_id, 42)
   assert.equal(row.type, 'courier')
-  assert.equal(row.status, 'in_progress')
   assert.equal(row.availability, 'corporation')
   assert.equal(row.for_corporation, true)
   assert.equal(row.acceptor_id, 90000002)
@@ -124,4 +123,35 @@ test('keeps the blueprint marker on an item, and defaults the flags', () => {
   assert.equal(ore.is_included, false)
   assert.equal(ore.quantity, 1000)
   assert.equal(ore.seen_at, SEEN_AT)
+})
+
+test('keeps the status off the contract row: it is history, kept per owner', () => {
+  assert.ok(!('status' in contractFields(COURIER, SEEN_AT)))
+})
+
+test('keeps who accepted it, and when, on the contract row', () => {
+  const row = contractFields(COURIER, SEEN_AT)
+  assert.equal(row.acceptor_id, 90000002)
+  assert.equal(row.date_accepted, '2026-08-02T00:00:00Z')
+})
+
+test('a status begins at the date ESI gives for that state', () => {
+  assert.deepEqual(contractStatus(COURIER, SEEN_AT), {
+    contract_id: 42,
+    status: 'in_progress',
+    since: '2026-08-02T00:00:00Z',
+  })
+  const outstanding = { ...COURIER, status: 'outstanding', date_accepted: undefined }
+  assert.equal(contractStatus(outstanding, SEEN_AT).since, '2026-08-01T00:00:00Z')
+  const finished = { ...COURIER, status: 'finished', date_completed: '2026-08-03T00:00:00Z' }
+  assert.equal(contractStatus(finished, SEEN_AT).since, '2026-08-03T00:00:00Z')
+  const contractorDone = { ...COURIER, status: 'finished_contractor', date_completed: '2026-08-04T00:00:00Z' }
+  assert.equal(contractStatus(contractorDone, SEEN_AT).since, '2026-08-04T00:00:00Z')
+})
+
+test('a status ESI gives no date for begins at the scan that saw it', () => {
+  const undated = ['cancelled', 'deleted', 'rejected', 'failed', 'reversed', 'a state CCP adds later']
+  undated.forEach((status) => assert.equal(contractStatus({ ...COURIER, status }, SEEN_AT).since, SEEN_AT, status))
+  // A finished contract ESI sent without its completion date.
+  assert.equal(contractStatus({ ...COURIER, status: 'finished' }, SEEN_AT).since, SEEN_AT)
 })

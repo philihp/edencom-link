@@ -1070,7 +1070,9 @@ export const resolvers = {
         registration_id?: string
         corporation_id?: number | string
         type: string
-        status: string
+        // Null only for a contract stored without its status yet (a run that
+        // died between its two writes); the next run fills it in.
+        status: string | null
         availability: string
         for_corporation: boolean
         issuer_id: number | string
@@ -1140,8 +1142,11 @@ export const resolvers = {
       }
 
       const [characterRows, corpRows] = await Promise.all([
-        read('character_contract', 'character_contract_item', 'registration_id', scopes.registrationIds),
-        read('corp_contract', 'corp_contract_item', 'corporation_id', scopes.corporationIds),
+        // The facts with their current status beside them: the status is
+        // history in *_contract_status_over_time, and these views put the
+        // current row back on the contract, column for column.
+        read('character_contract_with_status', 'character_contract_item', 'registration_id', scopes.registrationIds),
+        read('corp_contract_with_status', 'corp_contract_item', 'corporation_id', scopes.corporationIds),
       ])
 
       // Who we are, as a contract names us: EVE character ids (never the
@@ -1218,7 +1223,7 @@ export const resolvers = {
         return {
           contractId: key,
           kind: r.type,
-          status: r.status,
+          status: r.status ?? 'unknown',
           availability: r.availability,
           forCorporation: r.for_corporation,
           direction: r.direction,

@@ -571,7 +571,7 @@ export const typeDefs = /* GraphQL */ `
     contractId: String!
     "ESI's contract type: item_exchange, courier, auction, loan (what kind/kinds filters)."
     kind: String!
-    "ESI's raw status: outstanding, in_progress, finished, cancelled, rejected, failed..."
+    "ESI's raw status: outstanding, in_progress, finished, cancelled, rejected, failed... (unknown for a contract stored moments before its status)."
     status: String!
     "public, personal, corporation or alliance — who could see it."
     availability: String!
