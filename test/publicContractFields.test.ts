@@ -13,11 +13,9 @@ import {
   intoLanes,
   listingCapped,
   listingCheck,
-  PUBLIC_ITEMISED_TYPES,
   publicContractItemRow,
   publicContractRow,
   regionDue,
-  retentionCutoff,
   shrinkVerdict,
   SUSPECT_HOLD_MS,
 } from '../src/jobs/publicContractFields.js'
@@ -119,8 +117,9 @@ test('a contract maps to its row, and absent money fields stay null', () => {
   assert.equal(row.for_corporation, false)
   assert.equal(row.title, null)
   assert.equal(row.first_seen_at, '2026-10-09T03:39:24.000Z')
-  // The run-owned columns are never in an insert payload.
-  assert.equal('closed_at' in row, false)
+  // The status lives in its own table, and the item bookkeeping is set later,
+  // so neither is ever in the facts' insert payload.
+  assert.equal('status' in row, false)
   assert.equal('items_fetched_at' in row, false)
 })
 
@@ -172,10 +171,6 @@ test('a requested item has no item id and is not included', () => {
   assert.equal(row.is_blueprint_copy, null)
 })
 
-test('couriers are never sent to the items route', () => {
-  assert.deepEqual(PUBLIC_ITEMISED_TYPES, ['item_exchange', 'auction'])
-})
-
 test('an ordinary change in a listing is accepted', () => {
   assert.equal(shrinkVerdict({ previousOpen: 35000, listed: 34100, suspectSince: null, now: 0 }), 'accept')
   assert.equal(shrinkVerdict({ previousOpen: 40, listed: 0, suspectSince: null, now: 0 }), 'accept')
@@ -209,10 +204,6 @@ test('HTTP dates become ISO, and junk becomes null', () => {
   assert.equal(httpDate(null), null)
   assert.equal(httpDate(''), null)
   assert.equal(httpDate('not a date'), null)
-})
-
-test('retention keeps the last thirty days', () => {
-  assert.equal(retentionCutoff(Date.parse('2026-10-31T00:00:00Z')), '2026-10-01T00:00:00.000Z')
 })
 
 test('lanes deal items round-robin and never exceed the lane count', () => {

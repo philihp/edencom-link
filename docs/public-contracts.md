@@ -1,9 +1,8 @@
 # Public contracts
 
-The `public-contracts` extract keeps a copy of every outstanding public
-contract in New Eden. It also keeps the contracts that closed in the last 30
-days. The data is intel: who sells what, where it moves by courier, and what
-leaves the market fast.
+The `public-contracts` extract keeps a copy of every public contract that New
+Eden lists, open or closed. It never deletes one. The data is intel: who sells
+what, where it moves by courier, and what leaves the market fast.
 
 ## What it reads
 
@@ -21,38 +20,61 @@ regions or none.
 
 ## Where it writes
 
-- **`public_contract`**: one row per contract, keyed on `contract_id`.
-- **`public_contract_item`**: the items of a contract, deleted with it.
+A contract's facts are frozen once it is issued. EVE cannot edit a contract's
+price, items or route. Only its status changes. So the facts and the status are
+in different tables:
+
+- **`public_contract`**: the facts, one row per contract, written once.
+- **`public_contract_status_over_time`**: the status, as an SCD-2 history. The
+  view **`public_contract_status`** holds the current row of each contract.
+- **`public_contract_item`**: the items of a contract, written once.
 - **`public_contract_region`**: one row per region. It holds the snapshot time
   (ESI `Last-Modified`) last reconciled, when ESI's cache of it expires, the
   open count, and two flags described below.
 
-Signed-in members can read all three tables. Anonymous visitors cannot. Only
-the service role writes.
+Signed-in members can read all of these. Anonymous visitors cannot. Only the
+service role writes, and it can only insert and update. It has no `DELETE`
+grant on any of these tables, and no foreign key cascades.
 
-## How a contract closes
+## The status of a contract
+
+A status row has one of three values:
+
+- **`outstanding`**: the contract is listed.
+- **`expired`**: the contract left the listing, and its own expiry is at or
+  before the first snapshot without it.
+- **`gone`**: the contract left the listing before its expiry. Somebody
+  accepted it, or the issuer withdrew it. ESI cannot tell those two apart.
 
 ESI lists only outstanding contracts. It does not list closed contracts, and
-it does not say how a contract ended. The job therefore infers a closure:
+it does not say how a contract ended. The job therefore infers each change:
 
 1. It reads every page of a region.
 2. It checks that the pages make one whole snapshot (see below).
-3. It calls `public_contract_sweep()`. That function closes each open contract
-   of the region that the listing does not hold. It reopens a closed contract
-   that the listing holds again. It returns the listed ids that are not stored
-   yet.
-4. The job inserts the new contracts.
+3. It calls `public_contract_sweep()`. That function gives a closed status to
+   each outstanding contract of the region that the listing does not hold. It
+   gives `outstanding` again to a closed contract that the listing holds. It
+   returns the listed ids that have no status yet.
+4. The job inserts the facts of those contracts, then calls
+   `public_contract_open()` to give each its first status, `outstanding`.
 
-A closed contract carries three columns:
+A change never edits a status in place. It ends the current row and starts a
+new one:
 
-- **`last_seen_at`**: the snapshot time of the last listing that held it.
-- **`closed_at`**: the snapshot time of the first listing without it.
-- **`closure`**: `expired` if the contract's own expiry is at or before
-  `closed_at`. Otherwise `gone`, which means somebody accepted it or the issuer
-  withdrew it. ESI cannot tell those two apart.
+- **`valid_from`** is the snapshot time of the first listing that showed the
+  new status.
+- **`valid_until`** on the ended row is the snapshot time of the last listing
+  that confirmed the old status.
 
-An open contract is never written while it stays listed. Its last sighting is
-the region's `observed_at`.
+So the gap between the two is the window in which the change happened. For a
+`gone` contract, that window is when it was accepted or withdrawn.
+
+A status is never written while it holds. On the current row, `valid_until`
+means nothing, and the region's `observed_at` is the last sighting.
+
+If the job stops after it stores a contract's facts but before it opens its
+status, the next sweep returns that contract as new again. Both writes skip
+what already exists, so the next run finishes the work.
 
 ## When the job trusts a listing
 
@@ -94,8 +116,9 @@ on 2026-10-09: the next largest had three pages.
 
 ## Items
 
-Each run reads the items of up to 1000 open item exchanges and auctions,
-newest first, in eight lanes, for at most two minutes. A contract's items never
+Each run reads the items of up to 1000 outstanding item exchanges and
+auctions, newest first (`public_contract_items_owed()`), in eight lanes, for at
+most two minutes. A contract's items never
 change, so each contract is read once. `items_status` records the answer:
 
 - `200`: the items were stored.
@@ -107,10 +130,13 @@ The job never asks for a courier's items. ESI answers that with a 400, and a
 400 spends ESI's error budget. If a failure reports the error budget nearly
 spent, the job stops asking ESI for the rest of the run.
 
-## Retention
+## Nothing is deleted
 
-Each run deletes up to 5000 contracts that closed more than 30 days ago
-(`RETENTION_DAYS`). Their items go with them.
+The tables only grow. In the Forge window measured below, 47 contracts closed
+and 46 entered in 30 minutes, which is about 2,300 a day for The Forge alone.
+Expect on the order of a million contracts a year across New Eden, about two
+status rows each, and about 4.5 item lines for each itemised contract. That is
+an estimate from one window, not a measurement over time.
 
 ## Measured on 2026-10-09
 
@@ -128,14 +154,24 @@ about half a day.
 
 ## Example queries
 
-Item exchanges that went before they expired, in the last day:
+Item exchanges that went before they expired, in the last day, with the
+window in which each went:
 
 ```sql
-select c.contract_id, c.region_id, c.title, c.price, c.issuer_corporation_id, c.last_seen_at, c.closed_at
-from public_contract c
-where c.closure = 'gone'
+select c.contract_id, c.region_id, c.title, c.price, c.issuer_corporation_id,
+       previous.valid_until as last_listed, s.valid_from as first_missing
+from public_contract_status s
+join public_contract c using (contract_id)
+cross join lateral (
+  select p.valid_until
+  from public_contract_status_over_time p
+  where p.contract_id = s.contract_id and not p.is_current
+  order by p.valid_from desc
+  limit 1
+) previous
+where s.status = 'gone'
   and c.type = 'item_exchange'
-  and c.closed_at > now() - interval '1 day'
+  and s.valid_from > now() - interval '1 day'
 order by c.price desc nulls last;
 ```
 
@@ -144,8 +180,9 @@ Everything a corporation has on public contract now:
 ```sql
 select c.*
 from public_contract c
+join public_contract_status s using (contract_id)
 where c.issuer_corporation_id = 98000001
-  and c.closed_at is null;
+  and s.status = 'outstanding';
 ```
 
 Who sells a type, and where:
@@ -154,9 +191,19 @@ Who sells a type, and where:
 select c.contract_id, c.region_id, c.start_location_id, c.price, i.quantity
 from public_contract_item i
 join public_contract c using (contract_id)
+join public_contract_status s using (contract_id)
 where i.type_id = 23919 -- Aeon
   and i.is_included
-  and c.closed_at is null;
+  and s.status = 'outstanding';
+```
+
+Every status a contract has held:
+
+```sql
+select status, valid_from, valid_until, is_current
+from public_contract_status_over_time
+where contract_id = 236840715
+order by valid_from;
 ```
 
 ## Not done yet
@@ -169,7 +216,9 @@ where i.type_id = 23919 -- Aeon
 - `src/jobs/publicContracts.js`: the job.
 - `src/jobs/publicContractFields.js`: the pure rules, tested in
   `test/publicContractFields.test.ts`.
-- `public_contract_sweep()`: migration `20261009035853_public_contracts.sql`,
-  tested in `test/sql/public_contract_sweep.sql`.
+- `public_contract_sweep()`, `public_contract_open()` and
+  `public_contract_items_owed()`: migration
+  `20261009035853_public_contracts.sql`, tested in
+  `test/sql/public_contract_sweep.sql`.
 - `src/workflows/publicContracts.ts` and
   `src/app/api/cron/public-contracts/route.ts`: the schedule.

@@ -22,11 +22,9 @@ import {
   intoLanes,
   listingCapped,
   listingCheck,
-  PUBLIC_ITEMISED_TYPES,
   publicContractItemRow,
   publicContractRow,
   regionDue,
-  retentionCutoff,
   shrinkVerdict,
 } from './publicContractFields.js'
 import { shouldStandDown } from './structureResolution.js'
@@ -48,8 +46,6 @@ const ITEM_BUDGET_MS = 120_000
 
 // Bounded statements rather than one giant array.
 const CHUNK = 500
-const RETENTION_PAGE = 1000
-const RETENTION_PAGES_PER_RUN = 5
 
 // ESI's error budget is shared by every job on this deployment's address. Once
 // a failure reports it nearly spent, stop asking for the rest of the run.
@@ -151,12 +147,23 @@ const sweepRegion = async (regionId, state, now) => {
   })
   if (error) throw new Error(`public_contract_sweep ${regionId} failed: ${error.message}`)
 
-  const newIds = new Set(map(Number, swept?.new_ids ?? []))
+  // Facts first, then each new contract's first status: the status row needs
+  // the contract to exist. A run that dies between the two leaves contracts
+  // with no status, which the next sweep answers as new again, and both
+  // writes skip what is already there.
+  const newIdList = map(Number, swept?.new_ids ?? [])
+  const newIds = new Set(newIdList)
   const fresh = map(
     (c) => publicContractRow(c, regionId, observedAt),
     filter((c) => newIds.has(Number(c.contract_id)), listed)
   )
   await insertNewContracts(fresh)
+  const { error: openError } = await sudoSupabase.rpc('public_contract_open', {
+    p_region_id: regionId,
+    p_contract_ids: newIdList,
+    p_observed_at: observedAt,
+  })
+  if (openError) throw new Error(`public_contract_open ${regionId} failed: ${openError.message}`)
 
   // Recorded last: if anything above failed, the snapshot is not marked
   // reconciled, and the next run sweeps it again (the sweep is idempotent).
@@ -225,14 +232,9 @@ const readItems = async (contractId) => {
 }
 
 const syncItems = async (standDown, deadline) => {
-  const { data: pending, error } = await sudoSupabase
-    .from('public_contract')
-    .select('contract_id')
-    .is('closed_at', null)
-    .is('items_fetched_at', null)
-    .in('type', PUBLIC_ITEMISED_TYPES)
-    .order('date_issued', { ascending: false })
-    .limit(MAX_ITEM_FETCHES)
+  // Outstanding item exchanges and auctions, newest first; never a courier,
+  // whose items ESI answers with a 400 (public_contract_items_owed()).
+  const { data: pending, error } = await sudoSupabase.rpc('public_contract_items_owed', { p_limit: MAX_ITEM_FETCHES })
   if (error) throw new Error(`reading the item backlog failed: ${error.message}`)
 
   const fetched = []
@@ -240,15 +242,15 @@ const syncItems = async (standDown, deadline) => {
   await Promise.all(
     map(
       (lane) =>
-        forEachSequential(lane, async ({ contract_id }) => {
+        forEachSequential(lane, async (contractId) => {
           if (standDown.isDown() || Date.now() > deadline) return
           try {
-            fetched.push(await readItems(Number(contract_id)))
+            fetched.push(await readItems(Number(contractId)))
           } catch (e) {
             // Left pending for the next run.
             standDown.note(e)
             failures.count += 1
-            console.error(`[${TAG}] contract ${contract_id} items FAILED message=${e?.message}`)
+            console.error(`[${TAG}] contract ${contractId} items FAILED message=${e?.message}`)
           }
         }),
       intoLanes(ITEM_LANES, pending ?? [])
@@ -291,32 +293,16 @@ const syncItems = async (standDown, deadline) => {
   }
 }
 
-// Closed contracts past retention, a page at a time, items going with them by
-// cascade. Bounded per run so a long-idle table catches up gradually.
-const pruneClosed = async (cutoff, pagesLeft = RETENTION_PAGES_PER_RUN, total = 0) => {
-  if (pagesLeft === 0) return total
-  const { data, error } = await sudoSupabase
-    .from('public_contract')
-    .select('contract_id')
-    .lt('closed_at', cutoff)
-    .limit(RETENTION_PAGE)
-  if (error) throw new Error(`reading closed public contracts failed: ${error.message}`)
-  const ids = map((row) => row.contract_id, data ?? [])
-  await forEachSequential(splitEvery(CHUNK, ids), async (chunk) => {
-    const { error: deleteError } = await sudoSupabase.from('public_contract').delete().in('contract_id', chunk)
-    if (deleteError) throw new Error(`pruning public contracts failed: ${deleteError.message}`)
-  })
-  return ids.length < RETENTION_PAGE ? total + ids.length : pruneClosed(cutoff, pagesLeft - 1, total + ids.length)
-}
-
 const tally = (outcomes, outcome) => filter((o) => o.outcome === outcome, outcomes)
 const sumOf = (key, rows) => sum(map((row) => row[key] ?? 0, rows))
 
-// GET /contracts/public/{region_id}/ for every region → public_contract, and
-// GET /contracts/public/items/{contract_id}/ → public_contract_item for the
-// newest contracts not yet itemised. A contract missing from a complete
-// listing of its region is closed (docs/public-contracts.md). No tokens:
-// whole-universe public data, so the single-step workflow shape.
+// GET /contracts/public/{region_id}/ for every region → public_contract (the
+// facts, written once) and public_contract_status_over_time (the status, SCD-2),
+// and GET /contracts/public/items/{contract_id}/ → public_contract_item for the
+// newest contracts not yet itemised. A contract missing from a complete listing
+// of its region gets a closed status (docs/public-contracts.md). Nothing is
+// ever deleted. No tokens: whole-universe public data, so the single-step
+// workflow shape.
 export const runPublicContracts = async () => {
   const now = Date.now()
   const standDown = makeStandDown()
@@ -343,9 +329,6 @@ export const runPublicContracts = async () => {
     `[${TAG}] items: ${items.pending} owed, ${items.itemised} itemised (${items.items} lines), ` +
       `${items.gone} already gone, ${items.failures} failed`
   )
-
-  const pruned = await pruneClosed(retentionCutoff(now))
-  if (pruned > 0) console.log(`[${TAG}] pruned ${pruned} contract(s) closed before ${retentionCutoff(now)}`)
 
   // A failed region or a stand-down fails the run, so the heartbeat shows it
   // and the step retries. Regions already swept are not due again on retry.

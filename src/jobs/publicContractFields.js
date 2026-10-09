@@ -3,20 +3,12 @@ import { all, chain, map, splitEvery, transpose, uniq } from 'ramda'
 // The pure rules of the public-contracts extract (src/jobs/publicContracts.js).
 // No I/O; tested in test/publicContractFields.test.ts. What is worth pinning is
 // what would be quietly wrong rather than loudly broken: a listing missing a
-// page read as a wave of closures, a money field that is absent becoming 0,
-// and a courier sent to the items route.
+// page read as a wave of closures, and a money field that is absent becoming
+// 0.
 
 // ESI's page size for /contracts/public/{region_id}/. Every page but the last
 // is full, which is what makes a short middle page detectable.
 export const CONTRACTS_PAGE_SIZE = 1000
-
-// The only types the public items route answers. A courier gets a 400 ("not an
-// item exchange or auction"), and a 400 spends ESI's error budget, so it is
-// never asked. Loans and unknowns have nothing to list.
-export const PUBLIC_ITEMISED_TYPES = ['item_exchange', 'auction']
-
-// How long a closed contract stays in the table.
-export const RETENTION_DAYS = 30
 
 // A listing at or above this size that shrinks to under SHRINK_FLOOR of itself
 // in one snapshot is held for a while instead of closing most of the region.
@@ -131,9 +123,6 @@ export const regionDue = (state, now) => {
   if (state?.expires_at == null) return true
   return Date.parse(state.expires_at) <= now
 }
-
-// The oldest closed_at to keep.
-export const retentionCutoff = (now, days = RETENTION_DAYS) => new Date(now - days * 24 * 60 * 60 * 1000).toISOString()
 
 // Deal items round-robin into at most `lanes` lanes, each drained in order by
 // the caller. The same shape the per-character workflows use, so concurrency
