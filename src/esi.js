@@ -76,6 +76,20 @@ const esiPaged = async (path, opts) => {
   return [await response.json(), response.headers.get('x-pages')]
 }
 
+// A paged GET that also hands back the snapshot headers. ESI regenerates a
+// cached listing all at once, so pages carrying different Last-Modified values
+// were read across two snapshots, and Expires says when asking again can
+// return anything new.
+const esiPagedWithMeta = async (path, opts) => {
+  const response = await esiFetch(path, opts)
+  return {
+    json: await response.json(),
+    pages: response.headers.get('x-pages'),
+    lastModified: response.headers.get('last-modified'),
+    expires: response.headers.get('expires'),
+  }
+}
+
 // Conditional GET for the single-request snapshot endpoints (orders, wallet
 // transactions, industry jobs): send the caller's stored ETag as If-None-Match
 // and return { status, json, etag }. On 304 (Not Modified) ESI sends no body, so
@@ -108,11 +122,20 @@ const esiJsonTolerant = async (path, { access_token, params = {}, tolerate = [],
     method: 'GET',
     headers: { 'User-Agent': userAgent },
   })
-  if (tolerate.includes(response.status)) return { status: response.status, json: null }
+  if (tolerate.includes(response.status)) return { status: response.status, json: null, pages: null }
   if (!response.ok) {
     throw await esiError(response, path, label)
   }
-  return { status: response.status, json: await response.json() }
+  // ESI sometimes answers 200 with an empty body where its spec promises a
+  // 204 (seen on public contract items, 2026-10-09). That is "nothing to
+  // read", not a failure, so it comes back as json: null like a tolerated
+  // status rather than throwing on the JSON parse.
+  const text = await response.text()
+  return {
+    status: response.status,
+    json: text === '' ? null : JSON.parse(text),
+    pages: response.headers.get('x-pages'),
+  }
 }
 
 // The newer, kebab-case ESI endpoints (Equinox onward — e.g. mercenary dens)
@@ -331,6 +354,33 @@ export const assetNames = (access_token, characterID, ids) =>
     method: 'POST',
     body: ids,
     label: `assetNames ${characterID}`,
+  })
+
+// Public (no token): every region id in New Eden, k-space and otherwise.
+export const universeRegions = () =>
+  esiJson(`/universe/regions/`, {
+    label: 'universeRegions',
+  })
+
+// Public (no token): one page of a region's OUTSTANDING public contracts.
+// Nothing closed is ever listed, and nothing says how a contract ended. ESI
+// caches the listing for 30 minutes and serves 1000 contracts a page. Returns
+// { json, pages, lastModified, expires }; see the public-contracts extract.
+export const publicContracts = (regionID, page = 1) =>
+  esiPagedWithMeta(`/contracts/public/${regionID}/`, {
+    params: { page },
+    label: `publicContracts ${regionID} page=${page}`,
+  })
+
+// Public (no token): one page of a public contract's items. Answers only item
+// exchanges and auctions; a courier gets a 400, so never ask for one. 204
+// ("expired or recently accepted") and 404 are tolerated as "gone", which the
+// caller records so the contract is not asked about again.
+export const publicContractItems = (contractID, page = 1) =>
+  esiJsonTolerant(`/contracts/public/items/${contractID}/`, {
+    params: { page },
+    tolerate: [204, 404],
+    label: `publicContractItems ${contractID} page=${page}`,
   })
 
 // Public (no token): per-solar-system industry cost indices for every system
