@@ -65,10 +65,19 @@ create policy "Tenants read corp industry jobs at shared structures"
     and coalesce(station_id, facility_id) in (select public.my_tenant_structure_ids())
   );
 
--- The views, with `cost` masked on rows that are not the caller's own. The
--- column list is spelled out (and the typmod kept) because `create or replace
--- view` must leave every column's name, position and type as it was.
-create or replace view public.character_industry_job with (security_invoker = on) as
+-- The views, with `cost` masked on rows that are not the caller's own.
+-- Dropped and recreated rather than replaced: the production views were made
+-- by `select *` over tables that gained `id` through `alter table add column`
+-- (migration 20260713140000), so there `id` is the LAST column, while a
+-- database built from schema.sql has it first. `create or replace view` must
+-- keep every column's name and position, so spelling schema.sql's order
+-- against the production view failed with "cannot change name of view column
+-- job_id to id" (2026-10-08) and held every later migration back until this
+-- was rewritten. Nothing depends on the views (the functions below name them
+-- inside SQL bodies, which Postgres does not track), so the drop is free and
+-- the recreate puts every environment on schema.sql's column order.
+drop view if exists public.character_industry_job;
+create view public.character_industry_job with (security_invoker = on) as
   select
     id, job_id, registration_id, installer_id, facility_id, station_id, activity_id,
     blueprint_id, blueprint_type_id, blueprint_location_id, output_location_id,
@@ -81,8 +90,10 @@ create or replace view public.character_industry_job with (security_invoker = on
     completed_date, completed_character_id, successful_runs, is_current, valid_from, valid_until
   from public.character_industry_job_over_time
   where is_current;
+grant select on public.character_industry_job to anon, authenticated, service_role;
 
-create or replace view public.corp_industry_job with (security_invoker = on) as
+drop view if exists public.corp_industry_job;
+create view public.corp_industry_job with (security_invoker = on) as
   select
     id, job_id, corporation_id, installer_id, facility_id, station_id, activity_id,
     blueprint_id, blueprint_type_id, blueprint_location_id, output_location_id,
@@ -95,6 +106,7 @@ create or replace view public.corp_industry_job with (security_invoker = on) as
     completed_date, completed_character_id, successful_runs, is_current, valid_from, valid_until
   from public.corp_industry_job_over_time
   where is_current;
+grant select on public.corp_industry_job to anon, authenticated, service_role;
 
 -- structure_tax_revenue() decided "is this job ours" by whether the views
 -- showed it at all, which the policies above make false: a tenant's job at
