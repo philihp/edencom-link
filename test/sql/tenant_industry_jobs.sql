@@ -34,8 +34,11 @@ create policy "own registrations" on public.registration for select to authentic
   using (user_id = (select auth.uid()));
 grant select on public.registration to anon, authenticated;
 
+-- `id` is added AFTER creation, as production got it (migration
+-- 20260713140000 `alter table … add column id`), so it is the last column and
+-- the `select *` views below carry it last — the shape that made a
+-- `create or replace view` spelling schema.sql's order fail on 2026-10-08.
 create table public.character_industry_job_over_time (
-  id bigint generated always as identity primary key,
   job_id bigint not null,
   registration_id uuid not null,
   installer_id bigint not null default 0,
@@ -63,6 +66,7 @@ create table public.character_industry_job_over_time (
   valid_from timestamptz not null default now(),
   valid_until timestamptz not null default now()
 );
+alter table public.character_industry_job_over_time add column id bigint generated always as identity primary key;
 alter table public.character_industry_job_over_time enable row level security;
 create policy "Users read own industry jobs" on public.character_industry_job_over_time
   for select to authenticated
@@ -73,7 +77,6 @@ grant select on public.character_industry_job_over_time to authenticated;
 grant select on public.character_industry_job to authenticated;
 
 create table public.corp_industry_job_over_time (
-  id bigint generated always as identity primary key,
   job_id bigint not null,
   corporation_id bigint not null,
   installer_id bigint not null default 0,
@@ -101,6 +104,7 @@ create table public.corp_industry_job_over_time (
   valid_from timestamptz not null default now(),
   valid_until timestamptz not null default now()
 );
+alter table public.corp_industry_job_over_time add column id bigint generated always as identity primary key;
 alter table public.corp_industry_job_over_time enable row level security;
 create policy "Users read industry jobs for own corps" on public.corp_industry_job_over_time
   for select to authenticated
