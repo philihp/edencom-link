@@ -38,6 +38,10 @@
       "schedule": "46 */6 * * *"
     },
     {
+      "path": "/api/cron/character-wallet-journal",
+      "schedule": "40 */6 * * *"
+    },
+    {
       "path": "/api/cron/character-contracts",
       "schedule": "44 */6 * * *"
     },

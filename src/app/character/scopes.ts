@@ -36,8 +36,8 @@ export const esiScopes: EsiScope[] = [
   {
     scope: 'esi-wallet.read_character_wallet.v1',
     name: 'Character wallet',
-    why: 'Records this character’s ISK balance over time and their market transaction history.',
-    without: 'we cannot show a wallet balance or transaction history for this character.',
+    why: 'Records this character’s ISK balance over time, their market transaction history and their wallet journal (including the facility tax each industry job paid).',
+    without: 'we cannot show a wallet balance, transaction history or wallet journal for this character.',
   },
   {
     scope: 'esi-assets.read_assets.v1',

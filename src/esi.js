@@ -331,6 +331,15 @@ export const corpIndustryJobs = (access_token, corporationID, page = 1) =>
     label: `corpIndustryJobs ${corporationID} page=${page}`,
   })
 
+// A character's wallet journal: ESI keeps 30 days, paged. Same row shape as the
+// corp journal minus the division (a character has one wallet).
+export const characterWalletJournal = (access_token, characterID, page = 1) =>
+  esiPaged(`/characters/${characterID}/wallet/journal/`, {
+    access_token,
+    params: { page },
+    label: `characterWalletJournal ${characterID} page=${page}`,
+  })
+
 export const corpWalletJournal = (access_token, corporationID, division, page = 1) =>
   esiPaged(`/corporations/${corporationID}/wallets/${division}/journal/`, {
     access_token,
