@@ -20,6 +20,7 @@ export const PER_CHARACTER_JOBS = [
   'character-blueprints',
   'character-orders',
   'character-wallet-transactions',
+  'character-wallet-journal',
   'character-contracts',
   'character-industry-jobs',
   'character-mercenary-dens',
@@ -84,6 +85,8 @@ const JOB_WORKFLOWS: Record<string, () => Promise<(target?: OnDemandTarget) => P
   'character-orders': async () => (await import('@/workflows/characterOrders')).characterOrdersWorkflow,
   'character-wallet-transactions': async () =>
     (await import('@/workflows/characterWalletTransactions')).characterWalletTransactionsWorkflow,
+  'character-wallet-journal': async () =>
+    (await import('@/workflows/characterWalletJournal')).characterWalletJournalWorkflow,
   'character-contracts': async () => (await import('@/workflows/characterContracts')).characterContractsWorkflow,
   'character-industry-jobs': async () =>
     (await import('@/workflows/characterIndustryJobs')).characterIndustryJobsWorkflow,

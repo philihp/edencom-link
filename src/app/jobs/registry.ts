@@ -72,6 +72,13 @@ export const JOBS: readonly JobEntry[] = [
     scopes: ['esi-wallet.read_character_wallet.v1'],
   },
   {
+    job: 'character-wallet-journal',
+    label: 'journal',
+    section: 'character',
+    kickable: 'always',
+    scopes: ['esi-wallet.read_character_wallet.v1'],
+  },
+  {
     job: 'character-contracts',
     label: 'contracts',
     section: 'character',
