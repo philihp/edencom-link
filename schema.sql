@@ -128,6 +128,10 @@ drop function if exists public.corp_contract_status_sync(bigint, jsonb)    casca
 drop table if exists public.corp_contract_item      cascade;
 drop table if exists public.corp_contract           cascade;
 drop view  if exists public.public_contract_status  cascade;
+drop table if exists public.public_contract_dynamic_item_attribute cascade;
+drop table if exists public.public_contract_dynamic_item_effect    cascade;
+drop table if exists public.public_contract_dynamic_item cascade;
+drop table if exists public.public_contract_bid     cascade;
 drop table if exists public.public_contract_item    cascade;
 drop table if exists public.public_contract_status_over_time cascade;
 drop table if exists public.public_contract         cascade;
@@ -5061,7 +5065,13 @@ create table public.public_contract (
   days_to_complete integer,
   date_issued timestamptz not null,
   date_expired timestamptz not null,
-  -- The snapshot time (ESI Last-Modified) of the first listing that held it.
+  -- Resolved by the EVE Ref archive (public-contracts-archive) only where
+  -- start_location_id is an NPC station; null in a player structure.
+  system_id bigint,
+  constellation_id bigint,
+  station_id bigint,
+  -- The snapshot time (ESI Last-Modified, or the archive's scrape_end) of the
+  -- first listing that held it.
   first_seen_at timestamptz not null,
   -- The extract's own bookkeeping, set once: when the item list was pulled,
   -- and how ESI answered (200 with items, or 204/404 once the contract had
@@ -5078,6 +5088,7 @@ create index public_contract_items_pending_idx
 -- Intel lookups: what a corporation or a pilot has put up.
 create index public_contract_issuer_corporation_id_idx on public.public_contract (issuer_corporation_id);
 create index public_contract_issuer_id_idx on public.public_contract (issuer_id);
+create index public_contract_system_id_idx on public.public_contract (system_id);
 
 -- ── public_contract_status_over_time: the status, as SCD-2 ─────────────────
 -- One row per status a contract has held: 'outstanding' while listed, then
@@ -5140,6 +5151,51 @@ create table public.public_contract_item (
 );
 create index public_contract_item_type_id_idx on public.public_contract_item (type_id);
 
+-- ── From the EVE Ref archive only (docs/public-contracts-archive.md) ───────
+-- One row per bid on an auction. A bid is frozen once placed; a contract's
+-- bids only grow.
+create table public.public_contract_bid (
+  bid_id bigint primary key,
+  contract_id bigint not null references public.public_contract (contract_id),
+  amount numeric(20, 2) not null,
+  date_bid timestamptz not null
+);
+create index public_contract_bid_contract_id_idx on public.public_contract_bid (contract_id);
+
+-- A mutated (Abyssal) module on a contract. Keyed on (contract_id, item_id),
+-- not item_id alone: a mutated module keeps its item id when it is resold, so
+-- the same item turns up on contract after contract.
+create table public.public_contract_dynamic_item (
+  contract_id bigint not null references public.public_contract (contract_id),
+  item_id bigint not null,
+  -- The module it was before mutation.
+  source_type_id bigint not null,
+  -- The mutaplasmid applied.
+  mutator_type_id bigint not null,
+  -- The character who rolled it.
+  created_by bigint not null,
+  primary key (contract_id, item_id)
+);
+create index public_contract_dynamic_item_item_id_idx on public.public_contract_dynamic_item (item_id);
+create index public_contract_dynamic_item_source_type_id_idx on public.public_contract_dynamic_item (source_type_id);
+
+-- The roll. A mutation is permanent, so these are keyed on the item alone and
+-- written once however many contracts the item appears on. No foreign key:
+-- item_id is not unique in public_contract_dynamic_item.
+create table public.public_contract_dynamic_item_attribute (
+  item_id bigint not null,
+  attribute_id integer not null,
+  value double precision not null,
+  primary key (item_id, attribute_id)
+);
+
+create table public.public_contract_dynamic_item_effect (
+  item_id bigint not null,
+  effect_id integer not null,
+  is_default boolean not null,
+  primary key (item_id, effect_id)
+);
+
 -- ── public_contract_region: the extract's state per region ─────────────────
 -- The snapshot last reconciled, and when ESI's cache of it expires, so a run
 -- asks ESI only about regions with a newer snapshot due.
@@ -5163,7 +5219,8 @@ create table public.public_contract_region (
 -- ── Access ─────────────────────────────────────────────────────────────────
 -- Public data that anyone can read in the game client, but gathered here as
 -- intel, so it is for signed-in members only: no anon policy. The extract
--- writes with the service role, which may insert and update but never delete.
+-- writes with the service role, which may insert and update but never delete:
+-- the default privileges hand it ALL, so DELETE and TRUNCATE are revoked below.
 alter table public.public_contract enable row level security;
 alter table public.public_contract_status_over_time enable row level security;
 alter table public.public_contract_item enable row level security;
@@ -5177,12 +5234,33 @@ create policy "Members read public contract items" on public.public_contract_ite
   for select to authenticated using (true);
 create policy "Members read public contract regions" on public.public_contract_region
   for select to authenticated using (true);
+alter table public.public_contract_bid enable row level security;
+alter table public.public_contract_dynamic_item enable row level security;
+alter table public.public_contract_dynamic_item_attribute enable row level security;
+alter table public.public_contract_dynamic_item_effect enable row level security;
+create policy "Members read public contract bids" on public.public_contract_bid
+  for select to authenticated using (true);
+create policy "Members read public contract dynamic items" on public.public_contract_dynamic_item
+  for select to authenticated using (true);
+create policy "Members read public contract dynamic item attributes" on public.public_contract_dynamic_item_attribute
+  for select to authenticated using (true);
+create policy "Members read public contract dynamic item effects" on public.public_contract_dynamic_item_effect
+  for select to authenticated using (true);
 
 grant select on public.public_contract, public.public_contract_status_over_time, public.public_contract_status,
   public.public_contract_item, public.public_contract_region to authenticated;
 grant select, insert, update on public.public_contract, public.public_contract_status_over_time,
   public.public_contract_item, public.public_contract_region to service_role;
 grant select on public.public_contract_status to service_role;
+grant select on public.public_contract_bid, public.public_contract_dynamic_item,
+  public.public_contract_dynamic_item_attribute, public.public_contract_dynamic_item_effect to authenticated;
+grant select, insert, update on public.public_contract_bid, public.public_contract_dynamic_item,
+  public.public_contract_dynamic_item_attribute, public.public_contract_dynamic_item_effect to service_role;
+revoke delete, truncate on public.public_contract, public.public_contract_status_over_time,
+  public.public_contract_status, public.public_contract_item, public.public_contract_region,
+  public.public_contract_bid, public.public_contract_dynamic_item,
+  public.public_contract_dynamic_item_attribute, public.public_contract_dynamic_item_effect
+  from service_role;
 
 -- ── public_contract_sweep() ────────────────────────────────────────────────
 -- Reconcile one region's statuses against a complete listing, in one round

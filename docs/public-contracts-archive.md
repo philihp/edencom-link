@@ -3,7 +3,8 @@
 A daily job, `public-contracts-archive`, that loads
 `https://data.everef.net/public-contracts/public-contracts-latest.v2.tar.bz2`
 into the `public_contract*` tables, plus an MCP tool, `search_public_contracts`,
-that answers questions over them. Status: 📋 planned. Nothing is built yet.
+that answers questions over them. Status: 🚧 schema built (migration `20261011194400_public_contract_archive.sql`);
+the job, schedule and MCP tool are still planned.
 
 This doc is the plan. It records what is in the archive (measured on
 2026-10-11), how it relates to the `public-contracts` extract that already
@@ -99,8 +100,10 @@ items, resolved places) lands in new tables and new columns keyed to
   nothing`). The archive never overwrites a row the extract wrote. For a row
   the archive writes first, `first_seen_at` is the snapshot's `scrape_end`.
   Three new nullable columns, written by both sources: `system_id`,
-  `constellation_id`, `station_id` (null for a structure). The archive has them
-  on every row. The extract can fill `system_id` from `sde_station` for a
+  `constellation_id`, `station_id`. **The archive fills them only where
+  `start_location_id` is an NPC station** (44,337 of 50,743 rows on
+  2026-10-11, exactly the station-located ones); a contract in a player
+  structure has all three empty. Indexed on `system_id`. The extract can fill `system_id` from `sde_station` for a
   station id and from `universe_structure` for a structure it knows; that is a
   small follow-up in `publicContractFields.js`, not part of this plan's first
   PR.
@@ -130,6 +133,12 @@ All four follow the `public_contract*` conventions: members read
 (`authenticated`, `using (true)`), service role inserts and updates, no
 `DELETE` grant, no cascades, RLS on.
 
+"No `DELETE` grant" was not true of the first four tables when this plan was
+written: `schema.sql`'s default privileges hand `service_role` `ALL` on every
+new table, and `20261009035853_public_contracts.sql` only granted on top of
+that. The schema migration revokes `DELETE` and `TRUNCATE` from `service_role`
+on all eight tables and the `public_contract_status` view.
+
 ```sql
 -- One row per bid. Bids are frozen once placed; a contract's bids grow.
 create table public.public_contract_bid (
@@ -140,27 +149,31 @@ create table public.public_contract_bid (
 );
 create index public_contract_bid_contract_id_idx on public.public_contract_bid (contract_id);
 
--- One row per mutated item on a contract. An item id is unique in EVE and a
--- mutation is permanent, so the row is written once and never changes.
+-- One row per mutated item on a contract. Keyed on (contract_id, item_id):
+-- a mutated module keeps its item id when resold, so one item turns up on
+-- contract after contract.
 create table public.public_contract_dynamic_item (
-  item_id bigint primary key,
   contract_id bigint not null references public.public_contract (contract_id),
+  item_id bigint not null,
   source_type_id bigint not null,   -- the module it was before mutation
   mutator_type_id bigint not null,  -- the mutaplasmid applied
-  created_by bigint                 -- the character who rolled it
+  created_by bigint not null,       -- the character who rolled it
+  primary key (contract_id, item_id)
 );
-create index public_contract_dynamic_item_contract_id_idx on public.public_contract_dynamic_item (contract_id);
+create index public_contract_dynamic_item_item_id_idx on public.public_contract_dynamic_item (item_id);
 create index public_contract_dynamic_item_source_type_id_idx on public.public_contract_dynamic_item (source_type_id);
 
+-- The roll is permanent, so attributes and effects are keyed on the item
+-- alone. No foreign key: item_id is not unique in the parent.
 create table public.public_contract_dynamic_item_attribute (
-  item_id bigint not null references public.public_contract_dynamic_item (item_id),
+  item_id bigint not null,
   attribute_id integer not null,
   value double precision not null,
   primary key (item_id, attribute_id)
 );
 
 create table public.public_contract_dynamic_item_effect (
-  item_id bigint not null references public.public_contract_dynamic_item (item_id),
+  item_id bigint not null,
   effect_id integer not null,
   is_default boolean not null,
   primary key (item_id, effect_id)
@@ -168,9 +181,11 @@ create table public.public_contract_dynamic_item_effect (
 ```
 
 The attribute table is the big one: 324,307 rows in one snapshot, about 25 per
-mutated item. Because `item_id` is the primary key of the parent, the job
-reads the set of `item_id`s it already holds and inserts attributes and effects
-only for new items. The first run writes everything. A later run writes the
+mutated item. The roll is stored once per item, so the job reads the set of
+`item_id`s whose attributes it already holds and inserts attributes and effects
+only for new items. (The plan first keyed `public_contract_dynamic_item` on
+`item_id` alone, which would have dropped every resale of a module after its
+first contract.) The first run writes everything. A later run writes the
 day's new mutated items, which is a few hundred, not 324,000.
 
 ### Import state
@@ -207,9 +222,11 @@ Order of work inside one run:
    items_status = 200 where contract_id in (…) and items_fetched_at is null`,
    chunked at 500 ids.
 5. Bids: insert, ignoring duplicates (`bid_id` is global).
-6. Dynamic items: read existing `item_id`s (paged past 1000, the
-   `fetchExisting` shape in `structureDirectory.js`); insert the new items,
-   then only their attributes and effects.
+6. Dynamic items: insert every `(contract_id, item_id)` link, ignoring
+   duplicates. Then read the `item_id`s already in
+   `public_contract_dynamic_item_attribute` (paged past 1000, the
+   `fetchExisting` shape in `structureDirectory.js`) and insert attributes and
+   effects only for the others.
 7. Store the `ETag`. Log one line of counts per table: rows in the archive,
    rows inserted, rows already held.
 
@@ -326,7 +343,7 @@ is for, since `get_skill` is how an agent learns the tools exist.
 
 Four PRs, each shippable alone:
 
-1. **Schema**: the three columns on `public_contract`, the four new tables,
+1. ✅ **Schema**: the three columns on `public_contract`, the four new tables,
    their policies and grants. Migration via `pnpm run db:new` plus
    `schema.sql`. No code reads them yet.
 2. **The job**: `publicContractsArchive.js` + fields module + tests, the
