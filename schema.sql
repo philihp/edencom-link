@@ -3627,6 +3627,93 @@ create policy "Audience reads shared assets"
 -- rows a public share covers (the owner policy never matches a null uid).
 grant select on public.character_asset_version   to anon;
 
+-- ── corp_asset_share ───────────────────────────────────────────────────────
+-- Sharing layer phase 14, PR 2 (docs/sharing-layer/14-corp-asset-share.md). The
+-- twin of character_asset_share for a CORPORATION's hangar: one row per shared
+-- item, the same Revision 3 audience columns (corporation_ids / alliance_ids /
+-- secret, fully public = the row naming no one), covering the item and
+-- recursively everything inside it (the widening policy is PR 3).
+--
+-- The one difference the subject forces is the grantor: the corporation, not a
+-- registration. The share is the corp's, so it outlives its author's membership
+-- and any member may change or stop it — design.md settled this ("for
+-- corp-owned data it's the corporation, with a created_by user for audit").
+-- There is no show_as_main: the owner shown IS the corporation, which has
+-- nothing to hide behind.
+create table public.corp_asset_share (
+  id uuid primary key default gen_random_uuid(),
+  -- Grantor: the corporation holding the shared item.
+  corporation_id bigint not null,
+  -- Audit: the registration that created the row. Nullable and `on delete set
+  -- null` rather than cascade — a member's account closing must not silently
+  -- end the corporation's share. The insert policy forces a real one of the
+  -- caller's own registrations at creation; nothing ever displays it, and it is
+  -- deliberately a registration and never a user_id, so it stays unreadable
+  -- outside the owning account.
+  created_by uuid references public.registration(id) on delete set null,
+  -- Subject: the shared item (an office, container, ship, any corp asset).
+  item_id bigint not null,
+  corporation_ids bigint[] not null default '{}',
+  alliance_ids bigint[] not null default '{}',
+  secret text,
+  created_at timestamptz not null default now(),
+  unique (corporation_id, item_id)
+);
+create index corp_asset_share_item_id_idx on public.corp_asset_share (item_id);
+
+alter table public.corp_asset_share enable row level security;
+
+-- Owner-side policies. The grant predicate is the read predicate the corp
+-- hangar already carries (`corporation_id in my_corporation_ids()`): whoever
+-- can see the item can share it, edit the share, or stop it. If that ever
+-- needs tightening to Directors, corp_job_access (job = 'corp-assets') is the
+-- ready-made proof to swap in and nothing else changes. with check repeats the
+-- predicate so a row can't be re-pointed at another corporation.
+create policy "Members read own corp asset shares"
+  on public.corp_asset_share
+  for select
+  to authenticated
+  using (corporation_id in (select public.my_corporation_ids()));
+
+-- Creation additionally pins the audit column to one of the caller's own
+-- characters, so created_by can only ever name a registration of the account
+-- that minted the row.
+create policy "Members create own corp asset shares"
+  on public.corp_asset_share
+  for insert
+  to authenticated
+  with check (
+    corporation_id in (select public.my_corporation_ids())
+    and created_by in (select id from public.registration where user_id = (select auth.uid()))
+  );
+
+create policy "Members update own corp asset shares"
+  on public.corp_asset_share
+  for update
+  to authenticated
+  using (corporation_id in (select public.my_corporation_ids()))
+  with check (corporation_id in (select public.my_corporation_ids()));
+
+create policy "Members remove own corp asset shares"
+  on public.corp_asset_share
+  for delete
+  to authenticated
+  using (corporation_id in (select public.my_corporation_ids()));
+
+-- The audience-read policy is LOAD-BEARING, exactly as on
+-- character_asset_share: PR 3's visibility check runs as the querying user, so
+-- it can only match share rows this policy exposes to them. `to anon` because a
+-- fully-public share is visible signed-out.
+create policy "Audience reads corp asset shares aimed at them"
+  on public.corp_asset_share
+  for select
+  to anon, authenticated
+  using (public.share_audience_matches(corporation_ids, alliance_ids, secret));
+
+grant select                         on public.corp_asset_share to anon;
+grant select, insert, update, delete on public.corp_asset_share to authenticated;
+grant all                            on public.corp_asset_share to service_role;
+
 -- ── link ───────────────────────────────────────────────────────────────────
 -- Sharing layer Revision 3, phase 7 (docs/sharing-layer/07-link.md). A Link is
 -- a saved GraphQL query that runs under the CREATOR's security context when a
