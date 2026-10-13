@@ -7,7 +7,7 @@ import { claimRows, cli, fetchAllPages, forEachCorporation, forEachSequential, r
 const TAG = 'corp-assets'
 export const SCOPE = 'esi-assets.read_corporation_assets.v1'
 
-// GET /corporations/{id}/assets/ → corp_asset_over_time (SCD type 2) and
+// GET /corporations/{id}/assets/ → corp_asset_version (SCD type 2) and
 // corp_structure_rig. ESI has no dedicated structure-fitting endpoint; rigs come
 // from this same assets pull as items whose location_id is one of our structures
 // and whose location_flag is a RigSlot.
@@ -60,7 +60,7 @@ const fetchCurrentByItem = async (corporation_id) => {
 }
 
 // Reconcile freshly fetched corp assets against the corp's current (open) rows
-// in corp_asset_over_time, the same SCD-2 approach the character-assets job uses
+// in corp_asset_version, the same SCD-2 approach the character-assets job uses
 // for per-character assets: unchanged items are left alone, changed items
 // close their old row and open a new one, and vanished items are closed. A
 // close stamps valid_until with this run's clock; an open row's valid_until
@@ -117,7 +117,7 @@ const reconcile = async (corporation_id, fetched) => {
   // item we are taking over, stamping it with the same clock.
   await forEachSequential(splitEvery(200, allCloseIds), async (ids) => {
     const { error } = await sudoSupabase
-      .from('corp_asset_over_time')
+      .from('corp_asset_version')
       .update({ is_current: false, valid_until: now })
       .in('id', ids)
     if (error) throw error

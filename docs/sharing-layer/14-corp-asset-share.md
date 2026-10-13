@@ -1,7 +1,7 @@
 # Phase 14: corp asset shares
 
-**Status: 📝 planned.** Nothing here is built. Five PRs; each one leaves
-production working.
+**Status: 🚧 in progress.** PR 1 (the location split) is built; PRs 2–5 are
+planned. Five PRs; each one leaves production working.
 
 Today a corporation's hangar cannot be shared at all. `/asset/1052154845801`
 (a Station Warehouse Container held by corporation 98127666) renders for any
@@ -122,6 +122,56 @@ Measure before and after, the phase 11 table: children of a container, items
 at a structure, `corp_asset_location_contents`, `asset_ancestors` on a corp
 item, `corp_asset_search`. The corp table is far smaller than the character
 one, so this should be the cheap half of the plan.
+
+### As built
+
+Migration `20261013042029_corp_asset_location_split.sql`, tested by
+`test/sql/corp_asset_location_split.sql` (backfill, a member reads exactly the
+rows they read before the split, every rewritten walk, a non-member, the claim
+and its relink, the close stamp).
+
+Production, checked before writing (2026-10-13): 226k rows (85k current,
+70 MB), 15 corporations; no item id in the station/system range (the smallest
+is 101,430,574); no current row whose parent is only history. **Hangar items
+name the Office**: CorpSAG1–7 rows link to the corporation's Office item
+(type 27), and the Office (`OfficeFolder`) is the root that names the station
+or structure — so the split files offices as roots and everything in a hangar
+as parent links, and the breadcrumb still reads item → container → Office →
+station. Nine rows link to an item another corporation held; by the
+same-owner rule those are roots whose place is that item's id, which is how
+the summary walk already read them.
+
+What changed beyond the plan's list: `corp_asset_location_summary()`,
+`corp_assets()` and the two summary-cache refreshers are untouched — they read
+the `corp_asset_over_time`/`corp_asset` views and get the same rows, as their
+character twins did after phase 11. The extract keeps reading its current
+rows through the view and writes its closes to `corp_asset_version`.
+
+Measured on a synthetic hangar shaped like production (200k rows, 76k current,
+15 corps × 12 offices × 25 containers × 17 items, ~1.6 closed versions per
+item), as a member under RLS, local Postgres 15, median of three:
+
+| Query | Before | After |
+| --- | --- | --- |
+| The migration itself (backfill included) | — | ~0.2 s |
+| Children of a container | 0.2 ms | 0.7 ms |
+| Items at a station | 0.15 ms | 0.35 ms |
+| `corp_asset_location_contents(station)` | 0.9 ms | 1.1 ms |
+| `asset_ancestors` (corp breadcrumb) | 0.6 ms | 0.55 ms |
+| `corp_asset_search` | 28 ms | 35 ms |
+| `corp_asset_location_summary()` (live) | 29 ms | 105 ms |
+
+The live summary pays for reading the view twice; `/asset` reads the summary
+cache, and only MCP `browse_assets` calls the live function.
+
+No rollback script was written (phase 11 has
+`docs/sharing-layer/rollback-location-split.sql`); the in-migration
+fingerprint check is the guarantee, and the corp tables are small enough to
+`pg_dump` before merging:
+
+```
+pg_dump "$DATABASE_URL" --data-only -t public.corp_asset_over_time | gzip > corp-assets-before-split.sql.gz
+```
 
 **This PR changes no visible behaviour.** It is the whole reason the later
 widening policy can be the three-line twin of phase 02 rather than a special
