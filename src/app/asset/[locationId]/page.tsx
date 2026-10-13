@@ -21,9 +21,8 @@ import { mainOwnerOf } from '../../ship/[itemId]/mainOwner'
 import { hideHolder, PRESENTED_OWNER_ID, UNNAMED_OWNER } from '../../ship/[itemId]/presentedOwner'
 import { TypeIcon } from '../../typeIcon'
 import { resolveShareParams } from '../access'
-import { saveAssetShare, revokeAssetShare } from '../shareActions'
-import { fetchShareDialogData } from '../shareData'
-import { ShareDialog } from '../shareDialog'
+import { AssetShareDialog } from '../assetShareDialog'
+import { fetchCorpShareDialogData, fetchShareDialogData } from '../shareData'
 import styles from '../assets.module.css'
 import { AppraisalPanel } from './appraisalPanel'
 import { SHIP_CATEGORY_ID, fetchRootItems, type CharacterAsset, type CorpAsset } from './locationData'
@@ -251,12 +250,19 @@ const AssetLocationPage = async ({
     redirect(`/ship/${locationId}${shipShare ? `?share=${shipShare}` : token ? `?token=${token}` : ''}`)
   }
 
-  // Share dialog data for an owned character item; fetchShareDialogData returns
-  // null unless the caller actually owns it (visibility alone can now mean
-  // "shared with me"). Started rather than awaited: whether the item is ours was
-  // settled above, so this overlaps the heading work below instead of queueing
-  // behind it.
-  const shareDataPromise = !scope && isOwnCharacterItem ? fetchShareDialogData(supabase, locationId) : null
+  // Share dialog data for an item the caller may share: one of their own
+  // characters' items, or — the corp arm, phase 14 PR 4 — one their
+  // corporation holds, where every member gets the button and the dialog opens
+  // on the corp's one row. Either fetch returns null unless the caller really
+  // owns or belongs to it (visibility alone can now mean "shared with me").
+  // Exactly one is asked, since an item lives in exactly one hangar. Started
+  // rather than awaited: whether the item is ours was settled above, so this
+  // overlaps the heading work below instead of queueing behind it.
+  const shareDataPromise = scope
+    ? null
+    : isOwnCharacterItem
+      ? fetchShareDialogData(supabase, locationId)
+      : fetchCorpShareDialogData(supabase, locationId)
 
   // Where this location lives: the full container chain up to its root place,
   // rendered as the breadcrumb above the heading. A bare place (station /
@@ -330,16 +336,16 @@ const AssetLocationPage = async ({
           {/* Prices this whole place in one request — the same endpoint each row
               uses, just aimed at the location instead of an item. */}
           {!scope ? <AppraisalPanel targets={[locationId]} label="Appraise everything here" /> : null}
-          {/* Sharing is per-item: only an owned character item (a container
-              drilled into) gets the dialog — never a station/structure/system,
-              and never something merely shared with the viewer. */}
+          {/* Sharing is per-item: only an item the caller owns as a character,
+              or one their corporation holds, gets the dialog — never a
+              station/structure/system, and never something merely shared with
+              the viewer. */}
           {shareData ? (
-            <ShareDialog
+            <AssetShareDialog
+              itemId={locationId}
               subjectLabel="item"
               urlPath={`/asset/${locationId}`}
               data={shareData}
-              save={saveAssetShare.bind(null, locationId)}
-              revoke={revokeAssetShare.bind(null, locationId)}
             />
           ) : null}
         </div>

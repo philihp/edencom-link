@@ -20,11 +20,13 @@ import { SHIP_CATEGORY_ID, type ChildRow } from './shipRows'
 // the sharer's characters/corps from the resolved share scope. Location is
 // never read: a share link says what the ship is, never where it is.
 //
-// A link outlives the ship: once the hull leaves the sharer's hangar (sold,
-// moved, or the extract stopped seeing it), the newest version row is closed,
-// and the page shows that version and what was aboard at the last extract
-// that saw it (lastSeen.ts). Only a character's ship has that history here;
-// a corp ship on a legacy token link still goes dead with its row.
+// A link outlives the ship: once the hull leaves the hangar (sold, moved, or
+// the extract stopped seeing it), the newest version row is closed, and the
+// page shows that version and what was aboard at the last extract that saw it
+// (lastSeen.ts). Both hangars read that way since phase 14 PR 4 — a corp hull
+// on a corp share behaves like a character's. A legacy ?token= link resolves to
+// an account's characters and corps, and a corp hull on one still goes dead
+// with its row: nothing mints those any more.
 
 export type ShipRow = {
   item_id: number | string
@@ -49,8 +51,16 @@ export type SharedShip = {
 export type ShareParams = { token?: string; share?: string }
 
 const CHILD_COLUMNS = 'item_id, type_id, location_flag, quantity, is_singleton, is_blueprint_copy, name'
+// A corp asset row carries no custom name (ESI names only a character's items).
+const CORP_CHILD_COLUMNS = 'item_id, type_id, location_flag, quantity, is_singleton, is_blueprint_copy'
 
 type Service = ReturnType<typeof createServiceClient>
+
+// Which hangar a shared hull is in, and the ids the share's scope allows. The
+// two arms differ in table, owner column and whether rows carry a name (ESI
+// names only a character's items), so each query branches on `kind` — the
+// select strings have to stay literal for supabase-js to type them.
+type Hangar = { kind: 'character'; ids: string[] } | { kind: 'corporation'; ids: number[] }
 
 // What was aboard at the last extract that saw the ship. The run that saw the
 // ship gone closed it and everything aboard it with one clock in valid_until
@@ -62,13 +72,19 @@ type Service = ReturnType<typeof createServiceClient>
 // service role reads the table without RLS, and the scope filter stands in.
 // Open rows are asked for separately, so each arm lands on its own partial
 // index (current_location / history_location).
-const childrenAsOf = async (supabase: Service, itemId: string, registrationIds: string[], lastSeen: string) => {
+const childrenAsOf = async (supabase: Service, itemId: string, hangar: Hangar, lastSeen: string) => {
   const linked = () =>
-    supabase
-      .from('character_asset_version')
-      .select(`${CHILD_COLUMNS}, is_current, valid_until`)
-      .eq('location_id', itemId)
-      .in('registration_id', registrationIds)
+    hangar.kind === 'character'
+      ? supabase
+          .from('character_asset_version')
+          .select(`${CHILD_COLUMNS}, is_current, valid_until`)
+          .eq('location_id', itemId)
+          .in('registration_id', hangar.ids)
+      : supabase
+          .from('corp_asset_version')
+          .select(`${CORP_CHILD_COLUMNS}, is_current, valid_until`)
+          .eq('location_id', itemId)
+          .in('corporation_id', hangar.ids)
   const [{ data: open }, { data: closed }] = await Promise.all([
     linked().eq('is_current', true),
     linked().eq('is_current', false).gte('valid_until', lastSeen),
@@ -119,10 +135,13 @@ const loadSharedShip = async (itemId: string, share?: string, token?: string): P
   const { data: corpSelf } = characterSelf
     ? { data: null }
     : await supabase
-        .from('corp_asset')
+        .from('corp_asset_version')
         .select('item_id, corporation_id, type_id, is_current, valid_until')
         .eq('item_id', itemId)
         .in('corporation_id', corporationIds)
+        .order('is_current', { ascending: false })
+        .order('valid_until', { ascending: false })
+        .limit(1)
         .maybeSingle<ShipVersionRow>()
   const self = characterSelf ?? corpSelf
   if (!self) return null
@@ -141,25 +160,29 @@ const loadSharedShip = async (itemId: string, share?: string, token?: string): P
       : null
   )
 
-  const [characterChildren, { data: corpChildren }] = await Promise.all([
-    characterSelf && !characterSelf.is_current
-      ? childrenAsOf(supabase, itemId, scope.registrationIds, characterSelf.valid_until)
-      : supabase
+  // Everything inside a ship belongs to whoever owns the ship, so the contents
+  // come from the hull's own hangar — one query, not a union of both. Still
+  // held: the current rows; vanished: what was aboard at the last extract that
+  // saw it.
+  const hangar: Hangar = characterSelf
+    ? { kind: 'character', ids: scope.registrationIds }
+    : { kind: 'corporation', ids: corporationIds }
+  const children = !self.is_current
+    ? await childrenAsOf(supabase, itemId, hangar, self.valid_until)
+    : hangar.kind === 'character'
+      ? await supabase
           .from('character_asset')
           .select(CHILD_COLUMNS)
           .eq('location_id', itemId)
-          .in('registration_id', scope.registrationIds)
-          .then(({ data }) => (data ?? []) as ChildRow[]),
-    supabase
-      .from('corp_asset')
-      .select('item_id, type_id, location_flag, quantity, is_singleton, is_blueprint_copy')
-      .eq('location_id', itemId)
-      .in('corporation_id', corporationIds),
-  ])
-  const children = [...characterChildren, ...((corpChildren ?? []) as ChildRow[])]
+          .in('registration_id', hangar.ids)
+          .then(({ data }) => (data ?? []) as ChildRow[])
+      : await supabase
+          .from('corp_asset')
+          .select(CORP_CHILD_COLUMNS)
+          .eq('location_id', itemId)
+          .in('corporation_id', hangar.ids)
+          .then(({ data }) => (data ?? []) as ChildRow[])
 
-  // Everything inside a ship belongs to whoever owns the ship, so the whole
-  // cargo view carries a single owner.
   if (characterSelf?.registration_id) {
     const holderName = scope.characterNames.get(characterSelf.registration_id) ?? null
     // The share may ask to show the account's main rather than the holder.
