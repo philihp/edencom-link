@@ -160,3 +160,60 @@ export const fetchShareDialogData = async (
 
   return { share: shareRowToState(shareRow), corporations, alliances, hasLegacyToken: legacy != null, mainName }
 }
+
+// The corp twin (docs/sharing-layer/14-corp-asset-share.md, PR 4). Returns
+// null unless the item is a CORP asset of a corporation the caller has a
+// character in — the same predicate the share table's owner policies carry, so
+// whoever can read the hangar gets the dialog. RLS visibility alone is not
+// enough here either: PR 3 made a shared corp item readable by its audience
+// too, and the membership test is what keeps a recipient from being offered the
+// dialog for someone else's corporation.
+//
+// No `mainName`: the owner shown is the corporation, which has nothing to hide
+// behind, so the dialog never offers the show-as-main checkbox. The corp name
+// rides along for the hint line, which is where the dialog tells the user this
+// share belongs to the corporation rather than to them.
+export type CorpShareDialogData = ShareDialogData & { corporationName: string }
+
+export const fetchCorpShareDialogData = async (
+  supabase: SupabaseClient,
+  itemId: string
+): Promise<CorpShareDialogData | null> => {
+  const [{ data: item }, { data: regs }] = await Promise.all([
+    supabase
+      .from('corp_asset')
+      .select('item_id, corporation_id')
+      .eq('item_id', itemId)
+      .maybeSingle<{ item_id: number | string; corporation_id: number | string }>(),
+    supabase.from('registration').select('id, corporation_id'),
+  ])
+  const own = (regs ?? []) as OwnRegistration[]
+  if (!item) return null
+  const corporationId = Number(item.corporation_id)
+  if (!own.some((r) => r.corporation_id != null && Number(r.corporation_id) === corporationId)) return null
+
+  const [{ corporations, alliances }, { data: shareRow }, { data: corp }] = await Promise.all([
+    fetchShareAudiences(supabase, own),
+    supabase
+      .from('corp_asset_share')
+      .select('id, corporation_ids, alliance_ids, secret')
+      .eq('corporation_id', corporationId)
+      .eq('item_id', itemId)
+      .maybeSingle<ShareRowLike>(),
+    supabase
+      .from('corporation')
+      .select('name')
+      .eq('corporation_id', corporationId)
+      .maybeSingle<{ name: string | null }>(),
+  ])
+
+  return {
+    share: shareRowToState(shareRow),
+    corporations,
+    alliances,
+    // A corp item never had a legacy shared_asset_token link: nothing ever
+    // minted one for an item the dialog could not reach.
+    hasLegacyToken: false,
+    corporationName: corp?.name ?? `Corporation #${corporationId}`,
+  }
+}

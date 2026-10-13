@@ -9,9 +9,8 @@ import { createClient } from '@/utils/supabase/server'
 
 import { establishedUser } from '../../account/lib/establishedUser'
 import { AppraisalPanel } from '../../asset/[locationId]/appraisalPanel'
-import { revokeAssetShare, saveAssetShare } from '../../asset/shareActions'
-import { fetchShareDialogData } from '../../asset/shareData'
-import { ShareDialog } from '../../asset/shareDialog'
+import { AssetShareDialog } from '../../asset/assetShareDialog'
+import { fetchCorpShareDialogData, fetchShareDialogData } from '../../asset/shareData'
 import { AssetPath, fetchAssetPath, type Crumb } from '../../assetPath'
 import { ShareUrlCleanup } from '../../shareUrlCleanup'
 import { SkeletonTable } from '../../skeleton'
@@ -165,10 +164,13 @@ const ShipPage = async ({ params, searchParams }: ShipPageProps) => {
       // rendered as the breadcrumb above the heading.
       fetchAssetPath(itemId, supabase),
       fetchShipOwner(supabase, characterSelf, corpSelf, itemId),
-      // The share dialog appears only for a character item the caller actually
-      // owns — RLS visibility alone can also mean "shared with me", which must
-      // not offer the dialog.
-      fetchShareDialogData(supabase, itemId),
+      // The share dialog appears for a hull the caller owns as a character, or
+      // — phase 14 PR 4 — one their corporation holds, where every member gets
+      // the button and the dialog opens on the corp's one row. RLS visibility
+      // alone can also mean "shared with me", which must not offer the dialog,
+      // so each fetch proves ownership or membership itself. Exactly one is
+      // asked: a hull lives in exactly one hangar.
+      characterSelf ? fetchShareDialogData(supabase, itemId) : fetchCorpShareDialogData(supabase, itemId),
       // The holding character's own skills, so the readout answers "what does
       // this hull do for me" rather than "for a pilot with everything at V". RLS
       // decides: a corp hull has no character, and a ship shared with the caller
@@ -211,13 +213,7 @@ const ShipPage = async ({ params, searchParams }: ShipPageProps) => {
             {/* The same rows, as the text the game imports. */}
             <FitExport eft={shipEft(Number(hull.type_id), hull.name ?? null, rows, types)} />
             {shareData ? (
-              <ShareDialog
-                subjectLabel="ship"
-                urlPath={`/ship/${itemId}`}
-                data={shareData}
-                save={saveAssetShare.bind(null, itemId)}
-                revoke={revokeAssetShare.bind(null, itemId)}
-              />
+              <AssetShareDialog itemId={itemId} subjectLabel="ship" urlPath={`/ship/${itemId}`} data={shareData} />
             ) : null}
           </>
         }

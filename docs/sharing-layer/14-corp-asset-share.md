@@ -1,8 +1,8 @@
 # Phase 14: corp asset shares
 
-**Status: 🚧 in progress.** PR 1 (the location split), PR 2 (the share table)
-and PR 3 (the widening policy) are built; PRs 4–5 are planned. Five PRs; each
-one leaves production working.
+**Status: 🚧 in progress.** PRs 1–4 are built (the location split, the share
+table, the widening policy, and the dialog/links/card); PR 5 (GraphQL and MCP)
+is planned. Five PRs; each one leaves production working.
 
 Today a corporation's hangar cannot be shared at all. `/asset/1052154845801`
 (a Station Warehouse Container held by corporation 98127666) renders for any
@@ -491,6 +491,65 @@ the newest open-or-closed row and `childrenAsOf` from `corp_asset_version`
 exactly as the character arm does, and the sighting line comes from the
 `corp-assets` heartbeat it already asks for. Do that here so the two kinds of
 link behave the same.
+
+### As built
+
+As planned, with no new component: `ShareDialog` took the corp writers unchanged.
+
+- **`fetchCorpShareDialogData`** sits beside `fetchShareDialogData` in
+  `src/app/asset/shareData.ts` and returns the same shape minus `mainName`,
+  plus the grantor's `corporationName` for the hint. Membership is proven from
+  the RLS-scoped `registration` read, not from being able to see the item — PR
+  3 made a shared corp item readable by its audience, so visibility would now
+  offer a recipient the dialog for someone else's corporation.
+- **`AssetShareDialog`** (`assetShareDialog.tsx`) is the one place a Share
+  button picks its writer, so both pages stay a single line. The choice and the
+  hint are the pure `corpShareSubject.ts` next door — `isCorpShare` keys on
+  `corporationName`, the field only the corp payload carries — and
+  `test/corpShareSubject.test.ts` pins both (bind a corp item to the character
+  writer and the save is simply refused, which is worth a test rather than a
+  reading).
+- **Both pages** fetch exactly one of the two, since an item is in exactly one
+  hangar: `/asset/[locationId]` on `isOwnCharacterItem`, `/ship/[itemId]` on
+  whether the hull came back from `character_asset`. So the Station Warehouse
+  Container from this document's opening paragraph now has a Share button, and
+  so does a corp hull.
+- **`corpShareActions.ts`** mirrors `shareActions.ts`: cookie-session client,
+  `ownCorpItem` guard, requested audiences filtered to the caller's own, secret
+  minted/rotated the same way, `revalidatePath` on both pages. Insert and
+  update are **separate rather than one upsert** — `created_by` names whoever
+  first shared the item, and a corpmate editing their share must not rewrite
+  it (PR 2's SQL test asserts the row keeps its author through a corpmate's
+  edit). Revoke is a plain delete scoped by RLS, so any member can stop it.
+- **Signed links**: `resolveSignedShare` tries the character tables first and
+  falls through to `corp_asset_version` / `corp_asset_share` for an item they do
+  not hold, verifying the signature identically. The scope it returns names the
+  grantor corporation and **no** registration, so every downstream query stays
+  inside that corporation's rows; `showAsMain` is false, since a corporation is
+  the owner it would otherwise hide behind. `userId` is the author's account
+  when `created_by` still names one, and empty when that account has closed —
+  nothing in the corp path keys off it.
+- **The card and the outlived hull**: `sharedShip.ts` now reads the corp hull as
+  the newest open-or-closed row of `corp_asset_version`, with `childrenAsOf`
+  generalised over both hangars, so a corp link behaves exactly like a
+  character's and the sighting line comes from the `corp-assets` heartbeat it
+  already asked for. Only a legacy `?token=` link, which scopes to a whole
+  account, still lets a corp hull go dead with its row.
+
+One behaviour change beyond the plan, deliberate: a shared hull's contents now
+come from **its own hangar** rather than a union of both. The file already
+stated the invariant ("everything inside a ship belongs to whoever owns the
+ship"), the union existed only because the loader did not branch, and it costs
+a query. The visible difference is confined to legacy `?token=` links, the one
+scope that spans an account's characters *and* corps.
+
+Verified: `pnpm run lint`, `pnpm test` (878, four new), `pnpm exec tsc --noEmit`
+clean of everything but the two pre-existing macOS-only errors. **The
+two-account leak test is still owed** — it needs two real accounts against a
+deployment, which this working copy cannot do: B opening the container A's corp
+shared (and nothing else of that corp), anon on a public share signed out, and
+B's breadcrumb ending at the shared root. The SQL test covers the same ground at
+the RLS layer, where the leak would have to originate.
 
 ## PR 5 — GraphQL and MCP
 
