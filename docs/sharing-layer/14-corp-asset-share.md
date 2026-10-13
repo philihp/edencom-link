@@ -1,7 +1,8 @@
 # Phase 14: corp asset shares
 
-**Status: 🚧 in progress.** PR 1 (the location split) is built; PRs 2–5 are
-planned. Five PRs; each one leaves production working.
+**Status: 🚧 in progress.** PR 1 (the location split) and PR 2 (the share
+table) are built; PRs 3–5 are planned. Five PRs; each one leaves production
+working.
 
 Today a corporation's hangar cannot be shared at all. `/asset/1052154845801`
 (a Station Warehouse Container held by corporation 98127666) renders for any
@@ -225,6 +226,27 @@ of corp A reads, inserts, edits and deletes A's rows; cannot insert for corp
 B; cannot set `created_by` to another account's registration; a
 non-member reads nothing; audience matching is the shared helper's, so one
 public/corp/alliance/link-only assertion each is enough.
+
+### As built
+
+Migration `20261013062951_corp_asset_share.sql`, tested by
+`test/sql/corp_asset_share.sql` (the grant; the audit guard both ways — another
+account's registration and none at all; another corporation's hangar refused; a
+corp-mate on a second account reading, editing and able to stop a share they did
+not create, with `created_by` left alone; the row refused a new
+`corporation_id`; an outsider's delete seeing nothing; one assertion each for
+the corp, alliance, link-only and fully-public audiences; and the author's
+registration deleted, leaving the share standing with `created_by` null).
+
+`created_by` is **nullable**, which is how the plan's two halves are reconciled:
+`on delete set null` needs it, and the insert policy supplies the guarantee
+instead — `created_by in (select id from registration where user_id =
+auth.uid())` is null-false, so a row cannot be created without naming one of the
+caller's own characters. Only time can null it, by the author's account closing.
+
+Nothing reads the table yet, so there is no behaviour to measure; the audience
+policy's cost lands on `corp_asset_version` in PR 3, where the plan already says
+to `explain analyze` a member's read.
 
 ## PR 3 — the widening policy
 
