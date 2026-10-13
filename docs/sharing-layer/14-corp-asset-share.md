@@ -1,8 +1,8 @@
 # Phase 14: corp asset shares
 
-**Status: 🚧 in progress.** PR 1 (the location split) and PR 2 (the share
-table) are built; PRs 3–5 are planned. Five PRs; each one leaves production
-working.
+**Status: 🚧 in progress.** PR 1 (the location split), PR 2 (the share table)
+and PR 3 (the widening policy) are built; PRs 4–5 are planned. Five PRs; each
+one leaves production working.
 
 Today a corporation's hangar cannot be shared at all. `/asset/1052154845801`
 (a Station Warehouse Container held by corporation 98127666) renders for any
@@ -328,6 +328,107 @@ depth cap; a policy-level smoke as `authenticated` proving no recursion; and
 Two-account test: B sees the container A's corp shared, and its contents,
 on `/asset/[id]` opened as B; nothing else from that corp; anon sees a public
 share signed-out; the breadcrumb for B ends at the shared root.
+
+### As built
+
+Migration `20261013064401_corp_asset_share_recursive_rls.sql`, tested in
+`test/sql/corp_asset_share.sql`.
+
+**The per-row shape above is not what shipped.** `asset_share_covers(item,
+registration)`'s twin climbs from the candidate row, so the policy runs a
+recursive walk for every row the member policy does not already grant. Phase 11
+measured that on the character table (~2.3 s per scan) and accepted it; on the
+corp table it is worse than "slow", because `authenticated` carries an 8 s
+`statement_timeout` and the live `corp_asset_location_summary()` — which MCP
+`browse_assets` calls — crossed it.
+
+So the walk runs **once per query and descends**:
+
+```sql
+create or replace function public.corp_shared_item_ids()
+returns setof bigint language sql stable security definer set search_path = public
+-- every item id the caller's visible shares cover: the shares matching the
+-- caller, then their children, 16 levels down, never leaving the grantor corp
+as $$ … $$;
+
+create policy "Audience reads shared corp assets"
+  on public.corp_asset_version for select to anon, authenticated
+  using (is_current and item_id in (select public.corp_shared_item_ids()));
+```
+
+Being argument-free and `stable`, the planner evaluates it once into a hashed
+subplan instead of per row — the same shape as `my_tenant_structure_ids()` in
+the co-tenant job policies, so it is house style rather than a new idea. Three
+things make it equivalent rather than merely cheaper:
+
+- **Testing `item_id` alone is sound.**
+  `corp_asset_version_current_item_idx` is unique on `(item_id) where
+  is_current` across every corporation, and the policy grants current rows only
+  — so an id in the covered set identifies exactly one row, and a share cannot
+  reach another corporation's hangar. The descent also carries the grantor
+  corporation (`c.corporation_id = w.corporation_id`), which is what the test's
+  item 500 pins: a row of corp B naming corp A's shared container as its parent
+  stays invisible.
+- **It is still the sanctioned SECURITY DEFINER**, for phase 02's reason (a
+  policy's helper reading the table it guards recurses). The safety argument
+  shifts by one word: it no longer returns a boolean but a set of item ids —
+  and every id in it is an id the policy is about to grant, so it is the grant
+  itself rather than a window past it. It still reads only parentage columns
+  plus the share table, resolves audiences through `share_audience_matches()`
+  (whose `my_*_ids()` see the CALLER inside the definer), pins `search_path`
+  and is revoked from `public`. It never reads `corp_asset_location`.
+- **One semantic difference, deliberate.** The descent follows **current**
+  children, where the upward walk took each item's best-known parent and so
+  bridged a container that momentarily left the snapshot. Either way the policy
+  grants current rows; the difference is that an item whose container has no
+  current row is uncovered until the next extract restores it. Bridging gaps
+  downward needs the `distinct on (item_id)` parent map, which is a full-table
+  read — the thing that makes the live summary cost 120 ms, and far too much for
+  a policy.
+
+Measured on a synthetic hangar shaped like production (211k rows, 81k current,
+15 corps × 12 offices × 25 containers × 17 items, ~1.6 closed versions per item;
+production is 226k/85k/15), as a member under RLS, local Postgres 15, median of
+six. **Every corporation holds a share** — the worst case for the per-row shape,
+since a corp that shares nothing short-circuits on one probe:
+
+| Query | No policy | Per-row (planned) | Set-based (shipped) |
+| --- | --- | --- | --- |
+| Member's hangar, explicit corp filter | 21 ms | 12 ms | 35 ms |
+| Member's read, RLS-only scoping | 29 ms | **5,565 ms** | 50 ms |
+| Children of a container | 0.5 ms | 0.4 ms | 0.6 ms |
+| Items at a station | 15 ms | 5 ms | 16 ms |
+| `corp_asset_location_contents(office)` | 1.0 ms | 0.9 ms | 1.2 ms |
+| Live `corp_asset_location_summary()` | 120 ms | **19,900 ms** | 177 ms |
+| Recipient: items in a shared container | — | 1.1 ms | 1.4 ms |
+| Recipient: `_location_contents(shared container)` | — | 1.1 ms | 1.5 ms |
+
+The shipped policy costs 1.2–1.7× baseline everywhere; the planned one is 190×
+on an unfiltered member read and 165× on the live summary, both past the 8 s
+timeout. (The per-row column is *faster* than baseline on two rows: the OR'd
+filter turns the member predicate from a semi-join into a hashed subplan, which
+happens to let branch 3 of the view use `current_location_idx` instead of a
+211k-row index scan. That is a pre-existing inefficiency in the view, not a gain
+from sharing. The last two rows have no baseline — with no policy a recipient
+reads nothing.)
+
+The phase-11 worry — the OR'd audience policy making
+`corp_asset_version_corporation_id_idx` unusable — did not materialise: the
+index is still chosen for a member's filtered read. What the policy does cost is
+the unfiltered shape, and that lands on the live summary only;
+`refresh_asset_location_summary_cache` is a SECURITY DEFINER the policy never
+enters, and `/asset` reads the cache it fills.
+
+The walk RPCs needed no change: they are SECURITY INVOKER, so a recipient's
+`corp_asset_location_contents` and `asset_ancestors` work through the shared
+subtree, which the test asserts alongside the location assertion (a recipient
+reads the shared root with `location_id` null, and the parent it cannot see as
+null, while a link inside the subtree still reads through).
+
+Still owed before this is proven in production: the two-account check on a real
+deployment (B sees the container A's corp shared and nothing else; anon sees a
+public share signed out; B's breadcrumb ends at the shared root), which needs
+PR 4's dialog to mint a share through the UI.
 
 ## PR 4 — the dialog, the links, the card
 

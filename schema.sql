@@ -5612,8 +5612,91 @@ create view public.corp_asset_over_time with (security_invoker = on) as
 create view public.corp_asset with (security_invoker = on) as
   select * from public.corp_asset_over_time where is_current;
 
-grant select on public.corp_asset_over_time to authenticated, service_role;
-grant select on public.corp_asset           to authenticated, service_role;
+grant select on public.corp_asset_over_time to anon, authenticated, service_role;
+grant select on public.corp_asset           to anon, authenticated, service_role;
+
+-- The widening policy of phase 14, PR 3 (docs/sharing-layer/14-corp-asset-share.md),
+-- and the sanctioned SECURITY DEFINER behind it: a corp share on an office,
+-- container or ship opens the item and everything inside it, to any depth,
+-- purely through RLS. Defined here rather than beside corp_asset_share because
+-- a SQL function body is parsed at creation and this one reads
+-- corp_asset_version, declared above.
+--
+-- NOT the per-row twin of asset_share_covers(item, registration): that shape
+-- climbs from the candidate row, so the policy walks for every row the member
+-- policy does not already grant — measured at 5.1 s for a member's unfiltered
+-- corp_asset read and 12.5 s for the live corp_asset_location_summary(), past
+-- the 8 s statement_timeout `authenticated` carries. Instead the walk runs ONCE
+-- per query and DESCENDS: argument-free and stable, so the planner evaluates it
+-- into a hashed subplan (the my_tenant_structure_ids() shape), which holds the
+-- same summary at 159 ms against a 121 ms baseline.
+--
+-- Testing item_id alone is sound because corp_asset_version_current_item_idx is
+-- unique on (item_id) where is_current across every corporation, and the policy
+-- grants current rows only — so an id in the covered set identifies exactly one
+-- row and a share can never reach another corporation's hangar.
+--
+-- The definer exception is safe because the function returns only item ids the
+-- policy is about to grant (it is the grant, not a window past it), reads only
+-- parentage columns plus the share table, resolves audiences through
+-- share_audience_matches() — whose my_*_ids() still see the CALLER inside a
+-- definer — and pins search_path while revoked from public. It never reads
+-- corp_asset_location, so a shared root's place stays members-only and a
+-- recipient reads location_id null through the views above.
+--
+-- The descent stays inside the grantor corporation, and follows CURRENT
+-- children only: where the upward walk took each item's best-known parent and
+-- bridged a container that momentarily left the snapshot, here an item whose
+-- container has no current row is uncovered until the next extract restores it.
+create or replace function public.corp_shared_item_ids()
+returns setof bigint
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  with recursive
+    matching_shares as (
+      select s.corporation_id, s.item_id
+      from corp_asset_share s
+      where share_audience_matches(s.corporation_ids, s.alliance_ids, s.secret)
+    ),
+    walk (corporation_id, node, depth) as (
+      select m.corporation_id, m.item_id, 0
+      from matching_shares m
+      union all
+      select w.corporation_id, c.item_id, w.depth + 1
+      from walk w
+      join corp_asset_version c
+        on c.location_id = w.node
+       and c.corporation_id = w.corporation_id
+       and c.is_current
+      -- Depth 16 of descent, matching the 16 climbs asset_ancestors() and
+      -- asset_share_covers() cap at.
+      where w.depth < 16
+    )
+  select distinct node from walk;
+$$;
+
+revoke execute on function public.corp_shared_item_ids() from public;
+grant execute on function public.corp_shared_item_ids() to anon, authenticated;
+
+-- The widening policy. is_current keeps SCD-2 history closed: a share opens the
+-- CURRENT view only — the same rows corp_asset shows a member. Permissive, so
+-- it ORs with "Users read assets for own corps". `to anon` so a fully-public
+-- share is readable signed-out.
+create policy "Audience reads shared corp assets"
+  on public.corp_asset_version
+  for select
+  to anon, authenticated
+  using (is_current and item_id in (select public.corp_shared_item_ids()));
+
+-- anon had no select on the corp asset table or its views before; RLS still
+-- scopes anon to rows a public share covers (the member policy never matches a
+-- null uid). corp_asset_location holds the grant with no policy, which is what
+-- keeps a view anon may read from failing on it.
+grant select on public.corp_asset_version to anon;
+
 
 -- ── corp asset claim ───────────────────────────────────────────────────
 -- One open row per item_id across the whole table (the partial unique index
