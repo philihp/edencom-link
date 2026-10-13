@@ -117,7 +117,7 @@ export const typeDefs = /* GraphQL */ `
       onlyBelowTarget: Boolean = true
     ): [RestockLine!]!
 
-    "Asset shares other users have aimed at you (corporation/alliance/public). Session auth only."
+    "Asset shares other users or their corporations have aimed at you (corporation/alliance/public). Session auth only."
     sharedWithMe: [ShareGrant!]!
 
     "Current blueprint rows (BPOs and BPCs) across your characters and their corporations, filtered by item type, hangar and owner. includeHangar/includeHangars keep only the named hangars; excludeHangar/excludeHangars drop them instead. hangar/hangars is the older spelling of the include pair."
@@ -313,18 +313,24 @@ export const typeDefs = /* GraphQL */ `
     itemId: String!
     itemTypeName: String
     sharedAt: String!
-    "Always character here — a share always comes from a character."
+    "character for a character's own item, corporation for an item in a corporation's hangar."
     ownerType: String!
-    "Same as characterId. The coalesced owner id every row type carries."
+    "The sharing character's or corporation's EVE id. The coalesced owner id every row type carries."
     ownerId: String!
-    "Same as characterName. The coalesced owner name every row type carries."
+    "The sharing character's or corporation's name. The coalesced owner name every row type carries."
     ownerName: String!
-    "The sharing character's EVE id."
+    "The sharing character's EVE id; null for a corporation's share."
     characterId: String
-    "The sharing character's name."
+    "The sharing character's name; null for a corporation's share."
     characterName: String
-    "The sharing character, for its registration id and corp/alliance."
+    "The sharing character, for its registration id and corp/alliance; null for a corporation's share."
     character: Character
+    "The sharing corporation's EVE id; null for a character's share."
+    corporationId: String
+    "The sharing corporation's name; null for a character's share."
+    corporationName: String
+    "The sharing corporation, for its alliance; null for a character's share."
+    corporation: Corporation
     "The shared root's item type."
     itemType: ItemType
   }

@@ -246,8 +246,11 @@ type CorporationRef = { corporationId: string }
 
 // corporation id → name, off the context's per-request memo. Used both to
 // match the owner filter and to fill the corporation columns on corp rows.
-const corporationNamesFor = async (ctx: GraphqlContext): Promise<Map<string, string>> => {
-  const identities = await ctx.corporationIdentities()
+const corporationNamesFor = async (
+  ctx: GraphqlContext,
+  extra: readonly string[] = []
+): Promise<Map<string, string>> => {
+  const identities = await ctx.corporationIdentities(extra)
   return new Map(
     [...identities].flatMap(([id, identity]): Array<[string, string]> =>
       identity.name == null ? [] : [[id, identity.name]]
@@ -376,6 +379,19 @@ const grantorRegistrationIds = async (ctx: GraphqlContext): Promise<string[]> =>
   )
 }
 
+// The corp side's twin: the grantor corporations behind corp_asset_share rows
+// the caller's audience matches. A member also reads every share row of their
+// own corporations (the manage policy), so those are dropped — their rows are
+// already the caller's own.
+const grantorCorporationIds = async (ctx: GraphqlContext): Promise<string[]> => {
+  const { data, error } = await ctx.supabase.from('corp_asset_share').select('corporation_id')
+  if (error) return queryFailed()
+  const own = new Set(ctx.corporationIds)
+  return uniq(((data ?? []) as Array<{ corporation_id: number | string }>).map((r) => String(r.corporation_id))).filter(
+    (id) => !own.has(id)
+  )
+}
+
 // Name and EVE character id for a mixed set of registration ids: the caller's
 // own from the context, foreign grantors through the world-readable
 // character_directory (never registration, which RLS hides to non-owners).
@@ -473,10 +489,18 @@ export const resolvers = {
       // shared rows ride along unfiltered.
       if (args.includeShared) requireSession(ctx)
       const scopes = await ownerScopesFor(ctx, args)
-      // Shared rows ride the character side, so a corporation-only filter (which
-      // empties that side) excludes them along with your own character rows.
-      const sharedIds = args.includeShared && scopes.registrationIds.length > 0 ? await grantorRegistrationIds(ctx) : []
+      // Shared rows ride the side their grantor owns from: a character's share
+      // the character side, a corporation's the corp side. An owner filter that
+      // empties a side excludes its shared rows along with your own.
+      const ownerFiltered = args.owner != null || args.owners != null
+      const [sharedIds, sharedCorporationIds] = args.includeShared
+        ? await Promise.all([
+            scopes.registrationIds.length > 0 ? grantorRegistrationIds(ctx) : [],
+            !ownerFiltered || scopes.corporationIds.length > 0 ? grantorCorporationIds(ctx) : [],
+          ])
+        : [[], []]
       const scopedIds = [...scopes.registrationIds, ...sharedIds]
+      const scopedCorporationIds = [...scopes.corporationIds, ...sharedCorporationIds]
       const typeIds = await typeIdsFor(args)
       const locationIds = await locationIdsFor(ctx, args)
       const hangar = hangarClauseFor(args)
@@ -518,7 +542,7 @@ export const resolvers = {
 
       const [own, corp] = await Promise.all([
         read('character_asset', 'registration_id', scopedIds),
-        read('corp_asset', 'corporation_id', scopes.corporationIds),
+        read('corp_asset', 'corporation_id', scopedCorporationIds),
       ])
       const totalCount = own.count + corp.count
       // The cap bounds the MERGED set, so a caller asking for 50 rows across
@@ -541,7 +565,9 @@ export const resolvers = {
           ctx,
           own.rows.map((r) => r.registration_id)
         ),
-        corp.rows.length > 0 ? corporationNamesFor(ctx) : Promise.resolve(new Map<string, string>()),
+        corp.rows.length > 0
+          ? corporationNamesFor(ctx, sharedCorporationIds)
+          : Promise.resolve(new Map<string, string>()),
       ])
       const ownerScope = uniq(own.rows.map((r) => r.registration_id))
 
@@ -663,42 +689,79 @@ export const resolvers = {
     sharedWithMe: async (_parent: unknown, _args: unknown, ctx: GraphqlContext) => {
       requireSession(ctx)
 
-      // Everything RLS exposes on the share table minus the caller's own rows:
-      // exactly the shares whose audience they match (link-only shares match
-      // no one under RLS, so they never appear here).
-      const { data, error } = await ctx.supabase
-        .from('character_asset_share')
-        .select('id, registration_id, item_id, created_at')
-      if (error) return queryFailed()
-      const own = new Set(ctx.registrationIds)
-      const grants = (
-        (data ?? []) as Array<{ id: string; registration_id: string; item_id: number | string; created_at: string }>
-      ).filter((g) => !own.has(g.registration_id))
+      // Everything RLS exposes on the two share tables minus the caller's own
+      // rows: exactly the shares whose audience they match (link-only shares
+      // match no one under RLS, so they never appear here). On the corp side
+      // "own" is the caller's corporations, whose share rows every member reads.
+      const [characterShares, corporationShares] = await Promise.all([
+        ctx.supabase.from('character_asset_share').select('id, registration_id, item_id, created_at'),
+        ctx.supabase.from('corp_asset_share').select('id, corporation_id, item_id, created_at'),
+      ])
+      if (characterShares.error || corporationShares.error) return queryFailed()
+      const ownRegistrations = new Set(ctx.registrationIds)
+      const ownCorporations = new Set(ctx.corporationIds)
+      const grants = [
+        ...(
+          (characterShares.data ?? []) as Array<{
+            id: string
+            registration_id: string
+            item_id: number | string
+            created_at: string
+          }>
+        )
+          .filter((g) => !ownRegistrations.has(g.registration_id))
+          .map((g) => ({
+            ...g,
+            owned: { kind: 'character' as const, registrationId: g.registration_id },
+          })),
+        ...(
+          (corporationShares.data ?? []) as Array<{
+            id: string
+            corporation_id: number | string
+            item_id: number | string
+            created_at: string
+          }>
+        )
+          .filter((g) => !ownCorporations.has(String(g.corporation_id)))
+          .map((g) => ({
+            ...g,
+            owned: { kind: 'corporation' as const, corporationId: String(g.corporation_id) },
+          })),
+      ]
       if (grants.length === 0) return []
 
-      // The shared roots are RLS-visible to the audience (phase 2), so their
-      // types resolve through a plain read.
-      const { data: items } = await ctx.supabase
-        .from('character_asset')
-        .select('item_id, type_id')
-        .in(
-          'item_id',
-          grants.map((g) => g.item_id)
-        )
-      const typeByItem = new Map(
-        ((items ?? []) as Array<{ item_id: number | string; type_id: number | string }>).map((i) => [
-          String(i.item_id),
-          Number(i.type_id),
-        ])
-      )
-      const [types, characters] = await Promise.all([
-        typesFor([...typeByItem.values()]),
-        characterIdentitiesFor(
-          ctx,
-          grants.map((g) => g.registration_id)
-        ),
+      // The shared roots are RLS-visible to the audience (phases 2 and 14), so
+      // their types resolve through a plain read of whichever hangar holds them.
+      const itemsOf = (table: string, kind: OwnedBy['kind']) => {
+        const ids = grants.filter((g) => g.owned.kind === kind).map((g) => g.item_id)
+        return ids.length === 0
+          ? Promise.resolve({ data: [] })
+          : ctx.supabase.from(table).select('item_id, type_id').in('item_id', ids)
+      }
+      const [characterItems, corporationItems] = await Promise.all([
+        itemsOf('character_asset', 'character'),
+        itemsOf('corp_asset', 'corporation'),
       ])
-      const ownerScope = uniq(grants.map((g) => g.registration_id))
+      const typeByItem = new Map(
+        (
+          [...(characterItems.data ?? []), ...(corporationItems.data ?? [])] as Array<{
+            item_id: number | string
+            type_id: number | string
+          }>
+        ).map((i) => [String(i.item_id), Number(i.type_id)])
+      )
+      const characterGrantors = grants.flatMap((g) => (g.owned.kind === 'character' ? [g.owned.registrationId] : []))
+      const corporationGrantors = uniq(
+        grants.flatMap((g) => (g.owned.kind === 'corporation' ? [g.owned.corporationId] : []))
+      )
+      const [types, characters, corporationNames] = await Promise.all([
+        typesFor([...typeByItem.values()]),
+        characterIdentitiesFor(ctx, characterGrantors),
+        corporationGrantors.length > 0
+          ? corporationNamesFor(ctx, corporationGrantors)
+          : Promise.resolve(new Map<string, string>()),
+      ])
+      const ownerScope = uniq(characterGrantors)
 
       return grants.map((g) => {
         const typeId = typeByItem.get(String(g.item_id))
@@ -707,7 +770,7 @@ export const resolvers = {
           itemId: String(g.item_id),
           itemTypeName: typeNameOf(types, typeId),
           sharedAt: g.created_at,
-          ...ownerFieldsOf({ kind: 'character', registrationId: g.registration_id }, characters, new Map(), ownerScope),
+          ...ownerFieldsOf(g.owned, characters, corporationNames, ownerScope),
           itemType: itemTypeOf(types, typeId),
         }
       })
@@ -1336,12 +1399,15 @@ export const resolvers = {
   // hands over only the id, and the identities load once per request off the
   // context memo — the caller has a handful of corporations at most.
   Corporation: {
+    // Asks for its own id, so a grantor corporation (a corp asset share's
+    // owner, outside the caller's own corps) resolves too; the per-id memo makes
+    // that free when the root resolver already loaded it.
     name: (parent: CorporationRef, _args: unknown, ctx: GraphqlContext) =>
-      ctx.corporationIdentities().then((m) => m.get(parent.corporationId)?.name ?? null),
+      ctx.corporationIdentities([parent.corporationId]).then((m) => m.get(parent.corporationId)?.name ?? null),
     allianceId: (parent: CorporationRef, _args: unknown, ctx: GraphqlContext) =>
-      ctx.corporationIdentities().then((m) => m.get(parent.corporationId)?.allianceId ?? null),
+      ctx.corporationIdentities([parent.corporationId]).then((m) => m.get(parent.corporationId)?.allianceId ?? null),
     allianceName: (parent: CorporationRef, _args: unknown, ctx: GraphqlContext) =>
-      ctx.corporationIdentities().then((m) => m.get(parent.corporationId)?.allianceName ?? null),
+      ctx.corporationIdentities([parent.corporationId]).then((m) => m.get(parent.corporationId)?.allianceName ?? null),
   },
 
   // The only type-level resolvers in the schema. id/name came with the parent;
