@@ -1,8 +1,7 @@
 # Phase 14: corp asset shares
 
-**Status: 🚧 in progress.** PRs 1–4 are built (the location split, the share
-table, the widening policy, and the dialog/links/card); PR 5 (GraphQL and MCP)
-is planned. Five PRs; each one leaves production working.
+**Status: ✅ built.** All five PRs: the location split, the share table, the
+widening policy, the dialog/links/card, and GraphQL/MCP.
 
 Today a corporation's hangar cannot be shared at all. `/asset/1052154845801`
 (a Station Warehouse Container held by corporation 98127666) renders for any
@@ -567,6 +566,27 @@ What phase 04 gave the character share, for corp rows.
   variants and `assetFilterQuery.ts`'s explicit owner lists exclude shared
   rows by design, as they do for character shares. `appraise_assets` stays
   live-only. Nothing to add beyond a test.
+
+### As built
+
+- `assets(includeShared:)` reads the grantor corporations off
+  `corp_asset_share` (`grantorCorporationIds`, the caller's own corporations
+  dropped, since a member reads every share row of their corp) and widens the
+  corp side's `.in('corporation_id', …)` with them. An owner filter that
+  shuts the corp side out keeps the shared corp rows out too, as one that
+  shuts the character side out does for character shares.
+- `sharedWithMe` reads both share tables. `ShareGrant` gained the corporation
+  trio every corp-ownable row carries (`corporationId`, `corporationName`,
+  `corporation`), and `ownerType` is `corporation` for a corp grant.
+- The context's corporation memo is per id and takes extra ids, so a grantor
+  corporation — outside the caller's own — gets its name and alliance on the
+  row and on the `Corporation` edge.
+- MCP: unchanged, as planned. One consequence worth knowing: the live
+  `*_asset_search`/`*_asset_filter` RPCs inner-join each item to its root
+  place, which a recipient cannot read, so a shared item does not appear in
+  `search_assets`/`list_assets` — the same deliberate behaviour phase 11
+  recorded for character shares. `browse_assets` drilling into a shared
+  container's id does list its contents.
 
 ## Non-goals
 

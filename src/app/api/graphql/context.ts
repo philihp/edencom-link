@@ -61,10 +61,11 @@ export type GraphqlContext = {
   // EXPORT_CAP, since a Sheets tab can't page and a silently shortened CSV is
   // worse than a refusal (docs/sharing-layer/09-sheets-parity.md).
   caps: { asset: number; list: number }
-  // Lazily load the caller's corporation identities (name, alliance) — only the
-  // Corporation edge reads them, and there are a handful at most, so one memo
-  // per request covers every result set.
-  corporationIdentities: () => Promise<Map<string, CorporationIdentity>>
+  // Lazily load corporation identities (name, alliance): the caller's own
+  // corporations, plus any `extra` ids — the grantor corporations of corp
+  // asset shares a result set carries. Memoized per id for the request, so the
+  // Corporation edge finds a grantor its root resolver already loaded.
+  corporationIdentities: (extra?: readonly string[]) => Promise<Map<string, CorporationIdentity>>
   // Lazily load the identities for one result set's owners. The Owner type's
   // corp/alliance fields are the only callers, so an unselected edge costs
   // nothing; when they are selected, every row of a result set passes the SAME
@@ -219,7 +220,26 @@ const contextFor = async (
   // root resolver hands every Owner in its result set the same array, so the
   // first field resolver to look starts the load and the rest await it.
   const identitiesByScope = new WeakMap<readonly string[], Promise<Map<string, OwnerIdentity>>>()
-  let corporationIdentities: Promise<Map<string, CorporationIdentity>> | null = null
+  // One promise per corporation id, filled a batch at a time: each call loads
+  // only the ids no earlier call asked for.
+  const corporationById = new Map<string, Promise<CorporationIdentity | undefined>>()
+  const corporationIdentities = async (extra: readonly string[] = []) => {
+    const ids = [...new Set([...corporationIds, ...extra])]
+    const missing = ids.filter((id) => !corporationById.has(id))
+    if (missing.length > 0) {
+      const batch = loadCorporationIdentities(supabase, missing)
+      missing.forEach((id) =>
+        corporationById.set(
+          id,
+          batch.then((m) => m.get(id))
+        )
+      )
+    }
+    const entries = await Promise.all(ids.map(async (id) => [id, await corporationById.get(id)] as const))
+    return new Map(
+      entries.flatMap(([id, identity]): Array<[string, CorporationIdentity]> => (identity ? [[id, identity]] : []))
+    )
+  }
 
   return {
     supabase,
@@ -232,10 +252,7 @@ const contextFor = async (
     ),
     corporationIds,
     caps,
-    corporationIdentities: () => {
-      corporationIdentities ??= loadCorporationIdentities(supabase, corporationIds)
-      return corporationIdentities
-    },
+    corporationIdentities,
     ownerIdentities: (scope) => {
       const inFlight = identitiesByScope.get(scope)
       if (inFlight) return inFlight

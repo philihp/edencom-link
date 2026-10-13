@@ -22,8 +22,9 @@ import { typeDefs } from '../src/app/api/graphql/schema.graphql.ts'
 const ENTITY_TYPES = ['Character', 'Corporation', 'ItemType', 'Location']
 
 // Rows a corporation can own: their owner edge is nullable and paired with a
-// corporation edge, with ownerType saying which side a row came from.
-const CORP_OWNABLE = ['Asset', 'Blueprint', 'Contract', 'IndustryJob']
+// corporation edge, with ownerType saying which side a row came from. A
+// ShareGrant is one since corp hangars can be shared (sharing layer phase 14).
+const CORP_OWNABLE = ['Asset', 'Blueprint', 'Contract', 'IndustryJob', 'ShareGrant']
 
 // Every type whose values are rows of a result set — except RestockLine, which
 // is deliberately absent: it's the schema's one AGGREGATE row, summing stacks
