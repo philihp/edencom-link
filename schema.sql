@@ -143,7 +143,9 @@ drop function if exists public.public_contract_items_owed(integer) cascade;
 -- never had drop statements, so re-running this file against an
 -- already-reset database failed on them.
 drop view  if exists public.corp_asset                cascade;
-drop table if exists public.corp_asset_over_time      cascade;
+drop view  if exists public.corp_asset_over_time      cascade;
+drop table if exists public.corp_asset_location       cascade;
+drop table if exists public.corp_asset_version        cascade;
 drop view  if exists public.corp_industry_job              cascade;
 drop table if exists public.corp_industry_job_over_time    cascade;
 drop view  if exists public.corp_blueprint            cascade;
@@ -5401,7 +5403,7 @@ grant execute on function public.public_contract_open(bigint, bigint[], timestam
 grant execute on function public.public_contract_items_owed(integer) to service_role;
 
 
--- ── corp_asset_over_time ──────────────────────────────────────────────────
+-- ── corp_asset_version ───────────────────────────────────────────────────
 -- ESI /corporations/{id}/assets/ (esi-assets.read_corporation_assets.v1),
 -- written by the corp-assets job. SCD Type 2 history of a corporation's assets,
 -- mirroring character_asset_over_time for per-character assets: is_current=true
@@ -5410,7 +5412,13 @@ grant execute on function public.public_contract_items_owed(integer) to service_
 -- valid_until = the run's clock). "Last seen" for an open row is the corp's
 -- corp-assets heartbeat. Sourced from the same ESI pull that feeds
 -- corp_structure_rig.
-create table public.corp_asset_over_time (
+-- The table was corp_asset_over_time until the location split
+-- (docs/sharing-layer/14-corp-asset-share.md, PR 1; the corp twin of
+-- 11-location-split.md): its location columns now hold only a parent that is
+-- another asset of the same corporation, and a root item's place lives in
+-- corp_asset_location below. The corp_asset_over_time and corp_asset views put
+-- the two back together.
+create table public.corp_asset_version (
   id bigint generated always as identity primary key,
   item_id bigint not null,
   corporation_id bigint not null,
@@ -5425,20 +5433,20 @@ create table public.corp_asset_over_time (
   valid_from timestamptz not null default now(),
   valid_until timestamptz not null default now()
 );
-create index corp_asset_over_time_corporation_id_idx on public.corp_asset_over_time (corporation_id);
+create index corp_asset_version_corporation_id_idx on public.corp_asset_version (corporation_id);
 -- At most one live row per item; also the conflict target the reconcile relies on.
-create unique index corp_asset_over_time_current_item_idx on public.corp_asset_over_time (item_id) where is_current;
+create unique index corp_asset_version_current_item_idx on public.corp_asset_version (item_id) where is_current;
 -- Time-travel lookups walking an item's version history.
-create index corp_asset_over_time_item_id_idx on public.corp_asset_over_time (item_id, valid_until desc);
+create index corp_asset_version_item_id_idx on public.corp_asset_version (item_id, valid_until desc);
 -- Location lookups, as for character_asset_over_time above.
-create index corp_asset_over_time_current_location_idx on public.corp_asset_over_time (location_id) where is_current;
+create index corp_asset_version_current_location_idx on public.corp_asset_version (location_id) where is_current;
 -- Children of an item among closed rows: the time-travel descent in
 -- corp_asset_filter_at(), twin of character_asset_version_history_location_idx.
-create index corp_asset_over_time_history_location_idx on public.corp_asset_over_time (location_id, valid_until desc) where not is_current;
+create index corp_asset_version_history_location_idx on public.corp_asset_version (location_id, valid_until desc) where not is_current;
 
-alter table public.corp_asset_over_time enable row level security;
+alter table public.corp_asset_version enable row level security;
 create policy "Users read assets for own corps"
-  on public.corp_asset_over_time
+  on public.corp_asset_version
   for select
   to authenticated
   using (
@@ -5448,14 +5456,77 @@ create policy "Users read assets for own corps"
     )
   );
 
--- Live snapshot of corp assets. security_invoker keeps the underlying RLS in
--- force for the querying (authenticated) role rather than running as the view owner.
+grant select on public.corp_asset_version to authenticated;
+grant all    on public.corp_asset_version to service_role;
+
+-- ── the corp place ────────────────────────────────────────────────────────
+create table public.corp_asset_location (
+  asset_id bigint primary key references public.corp_asset_version (id) on delete cascade,
+  -- Denormalized from the version row, so the member policy is one indexed
+  -- probe rather than a join back to the asset table.
+  corporation_id bigint not null,
+  location_id bigint not null,
+  location_flag text,
+  location_type text
+);
+create index corp_asset_location_location_id_idx on public.corp_asset_location (location_id);
+create index corp_asset_location_corporation_id_idx on public.corp_asset_location (corporation_id);
+
+alter table public.corp_asset_location enable row level security;
+create policy "Users read asset locations for own corps"
+  on public.corp_asset_location
+  for select
+  to authenticated
+  using (
+    corporation_id in (
+      select corporation_id from public.registration
+      where user_id = (select auth.uid()) and corporation_id is not null
+    )
+  );
+
+-- anon holds the grant but no policy, so it reads no rows: once a corp share
+-- can be public, the views join this table under anon, and a view anon may
+-- read must not fail on it.
+revoke all on public.corp_asset_location from anon, authenticated;
+grant select on public.corp_asset_location to anon, authenticated;
+grant all on public.corp_asset_location to service_role;
+
+-- ── the corp views ────────────────────────────────────────────────────────
+-- The character view's three branches, for the same reasons: a filter on
+-- location_id reaches an index in each; a parent link shows only when the
+-- caller can see the parent row; a root's place comes from the members-only
+-- table.
+create view public.corp_asset_over_time with (security_invoker = on) as
+  -- 1. A parent link the caller can see.
+  select v.id, v.item_id, v.corporation_id, v.type_id,
+         v.location_id, v.location_flag, v.location_type,
+         v.quantity, v.is_singleton, v.is_blueprint_copy, v.is_current, v.valid_from, v.valid_until
+  from public.corp_asset_version v
+  where v.location_id is not null
+    and exists (select 1 from public.corp_asset_version p where p.item_id = v.location_id and p.is_current)
+  union all
+  -- 2. A parent link the caller cannot see: reads null, flag and type
+  --    included, so the row says nothing about what holds it.
+  select v.id, v.item_id, v.corporation_id, v.type_id,
+         null::bigint, null::text, null::text,
+         v.quantity, v.is_singleton, v.is_blueprint_copy, v.is_current, v.valid_from, v.valid_until
+  from public.corp_asset_version v
+  where v.location_id is not null
+    and not exists (select 1 from public.corp_asset_version p where p.item_id = v.location_id and p.is_current)
+  union all
+  -- 3. A root item and its place, from the members-only table.
+  select v.id, v.item_id, v.corporation_id, v.type_id,
+         l.location_id, l.location_flag, l.location_type,
+         v.quantity, v.is_singleton, v.is_blueprint_copy, v.is_current, v.valid_from, v.valid_until
+  from public.corp_asset_version v
+  left join public.corp_asset_location l on l.asset_id = v.id
+  where v.location_id is null;
+
 create view public.corp_asset with (security_invoker = on) as
   select * from public.corp_asset_over_time where is_current;
 
-grant select on public.corp_asset_over_time to authenticated;
-grant select on public.corp_asset           to authenticated;
-grant all    on public.corp_asset_over_time to service_role;
+grant select on public.corp_asset_over_time to authenticated, service_role;
+grant select on public.corp_asset           to authenticated, service_role;
 
 -- ── corp asset claim ───────────────────────────────────────────────────
 -- One open row per item_id across the whole table (the partial unique index
@@ -5480,6 +5551,7 @@ set search_path to 'public'
 as $$
 declare
   v_items    bigint[];
+  v_ids      bigint[];
   v_now      timestamptz;
   v_inserted integer;
 begin
@@ -5494,32 +5566,66 @@ begin
 
   perform pg_advisory_xact_lock(hashtext('public.corp_asset_over_time')::bigint);
 
-  -- The run's clock, carried on every row as valid_until: the close below
-  -- stamps the previous owner's row with it, so a ship and what was aboard
-  -- it, claimed in different chunks, still close on one instant — which is
-  -- what the character twin's share page compares. Only when a
-  -- caller sends no stamp does the database clock stand in.
-  update public.corp_asset_over_time
+  update public.corp_asset_version
      set is_current = false, valid_until = v_now
    where is_current
      and item_id = any (v_items);
 
-  insert into public.corp_asset_over_time
-    (item_id, corporation_id, type_id, location_id, location_flag, location_type,
-     quantity, is_singleton, is_blueprint_copy, valid_until)
-  select (r->>'item_id')::bigint,
-         (r->>'corporation_id')::bigint,
-         (r->>'type_id')::bigint,
-         (r->>'location_id')::bigint,
-         r->>'location_flag',
-         r->>'location_type',
-         (r->>'quantity')::bigint,
-         (r->>'is_singleton')::boolean,
-         coalesce((r->>'is_blueprint_copy')::boolean, false),
-         coalesce((r->>'valid_until')::timestamptz, now())
-    from jsonb_array_elements(p_rows) r;
+  with inserted as (
+    insert into public.corp_asset_version
+      (item_id, corporation_id, type_id, location_id, location_flag, location_type,
+       quantity, is_singleton, is_blueprint_copy, valid_until)
+    select (r->>'item_id')::bigint,
+           (r->>'corporation_id')::bigint,
+           (r->>'type_id')::bigint,
+           (r->>'location_id')::bigint,
+           r->>'location_flag',
+           r->>'location_type',
+           (r->>'quantity')::bigint,
+           (r->>'is_singleton')::boolean,
+           coalesce((r->>'is_blueprint_copy')::boolean, false),
+           coalesce((r->>'valid_until')::timestamptz, now())
+      from jsonb_array_elements(p_rows) r
+    returning id
+  )
+  select array_agg(id) into v_ids from inserted;
+  v_inserted := coalesce(array_length(v_ids, 1), 0);
 
-  get diagnostics v_inserted = row_count;
+  insert into public.corp_asset_location (asset_id, corporation_id, location_id, location_flag, location_type)
+  select v.id, v.corporation_id, v.location_id, v.location_flag, v.location_type
+    from public.corp_asset_version v
+   where v.id = any (v_ids)
+     and v.location_id is not null
+     and not exists (
+       select 1
+         from public.corp_asset_version p
+        where p.is_current
+          and p.item_id = v.location_id
+          and p.corporation_id = v.corporation_id
+     );
+
+  update public.corp_asset_version v
+     set location_id = null, location_flag = null, location_type = null
+    from public.corp_asset_location l
+   where l.asset_id = v.id
+     and v.id = any (v_ids);
+
+  with relinked as (
+    delete from public.corp_asset_location l
+     using public.corp_asset_version c, public.corp_asset_version p
+     where c.id = l.asset_id
+       and c.is_current
+       and p.is_current
+       and p.item_id = l.location_id
+       and p.corporation_id = l.corporation_id
+       and p.item_id = any (v_items)
+    returning l.asset_id, l.location_id, l.location_flag, l.location_type
+  )
+  update public.corp_asset_version v
+     set location_id = r.location_id, location_flag = r.location_flag, location_type = r.location_type
+    from relinked r
+   where v.id = r.asset_id;
+
   return v_inserted;
 end
 $$;
@@ -5637,7 +5743,7 @@ begin
     group by w.registration_id, w.location_id
   ),
   -- Same shape over corp assets, scoped to the corporations this account has a
-  -- character in — exactly what corp_asset_over_time's RLS keys off, so the row
+  -- character in — exactly what corp_asset_version's RLS keys off, so the row
   -- set matches what the caller could read live.
   corp_visible as (
     select a.item_id, a.location_id, a.location_type, a.corporation_id, a.is_current, a.valid_until
@@ -5793,7 +5899,7 @@ as $$
     union all
     select d.root_child, c.item_id, d.depth + 1
     from descend d
-    join public.corp_asset c on c.location_id = d.node
+    join public.corp_asset_version c on c.location_id = d.node and c.is_current
     where d.depth < 64
   )
   select root_child as item_id, count(*) - 1 as contents
@@ -5816,7 +5922,7 @@ as $$
     union all
     select c.item_id, c.type_id, c.quantity, c.is_singleton, d.depth + 1
     from descend d
-    join public.corp_asset c on c.location_id = d.item_id
+    join public.corp_asset_version c on c.location_id = d.item_id and c.is_current
     where d.depth < 64
   )
   select
@@ -5841,7 +5947,7 @@ as $$
     union all
     select c.item_id, c.type_id, c.quantity, c.is_singleton, d.depth + 1
     from descend d
-    join public.corp_asset c on c.location_id = d.item_id
+    join public.corp_asset_version c on c.location_id = d.item_id and c.is_current
     where d.depth < 64
   ),
   once as (
@@ -5879,31 +5985,36 @@ returns table (
 language sql
 stable
 as $$
-  with recursive parent_of as (
-    select distinct on (item_id) item_id, location_id, location_type
-    from public.corp_asset_over_time
-    order by item_id, is_current desc, valid_until desc
-  ),
-  matched as (
+  with recursive matched as (
     select a.item_id, a.corporation_id, a.type_id, a.quantity, a.is_singleton,
            a.location_flag, a.location_id, a.location_type
     from public.corp_asset a
     where a.type_id = any(type_ids)
   ),
+  -- One indexed lookup per step on the version table, stopping at a row with
+  -- no parent link; roots reads that row's place from the location table.
   climb as (
-    select m.item_id as start_item, m.location_id, m.location_type, 1 as depth
+    select m.item_id as start_item, v.id as version_id, v.location_id, 1 as depth
     from matched m
+    join public.corp_asset_version v on v.item_id = m.item_id and v.is_current
     union all
-    select c.start_item, p.location_id, p.location_type, c.depth + 1
+    select c.start_item, p.id, p.location_id, c.depth + 1
     from climb c
-    join parent_of p on p.item_id = c.location_id
-    where c.depth < 64
+    cross join lateral (
+      select pv.id, pv.location_id
+      from public.corp_asset_version pv
+      where pv.item_id = c.location_id
+      order by pv.is_current desc, pv.valid_until desc
+      limit 1
+    ) p
+    where c.location_id is not null
+      and c.depth < 64
   ),
   roots as (
-    select w.start_item, w.location_id as root_location_id, w.location_type as root_location_type
-    from climb w
-    where w.location_id is not null
-      and not exists (select 1 from parent_of o where o.item_id = w.location_id)
+    select c.start_item, l.location_id as root_location_id, l.location_type as root_location_type
+    from climb c
+    join public.corp_asset_location l on l.asset_id = c.version_id
+    where c.location_id is null
   ),
   descend as (
     select m.item_id as ancestor, m.item_id as node, 1 as depth
@@ -5911,7 +6022,7 @@ as $$
     union all
     select d.ancestor, c.item_id, d.depth + 1
     from descend d
-    join public.corp_asset c on c.location_id = d.node
+    join public.corp_asset_version c on c.location_id = d.node and c.is_current
     where d.depth < 64
   ),
   contents as (
@@ -5939,7 +6050,7 @@ as $$
   left join contents ct on ct.ancestor = m.item_id
   left join public.sde_published_type t on t.type_id = m.type_id
   left join public.sde_station st on st.station_id = r.root_location_id
-  left join public.corp_asset p on p.item_id = m.location_id;
+  left join public.corp_asset_version p on p.item_id = m.location_id and p.is_current;
 $$;
 
 grant execute on function public.corp_asset_location_summary()        to authenticated;
@@ -5983,13 +6094,8 @@ as $$
     union all
     select c.item_id, i.depth + 1
     from inside i
-    join public.corp_asset c on c.location_id = i.item_id
+    join public.corp_asset_version c on c.location_id = i.item_id and c.is_current
     where i.depth < 64
-  ),
-  parent_of as (
-    select distinct on (item_id) item_id, location_id, location_type
-    from public.corp_asset_over_time
-    order by item_id, is_current desc, valid_until desc
   ),
   matched as (
     select a.item_id, a.corporation_id, a.type_id, a.quantity, a.is_singleton,
@@ -6000,19 +6106,27 @@ as $$
       and (coalesce(cardinality(location_ids), 0) = 0 or a.item_id in (select i.item_id from inside i))
   ),
   climb as (
-    select m.item_id as start_item, m.location_id, m.location_type, 1 as depth
+    select m.item_id as start_item, v.id as version_id, v.location_id, 1 as depth
     from matched m
+    join public.corp_asset_version v on v.item_id = m.item_id and v.is_current
     union all
-    select c.start_item, p.location_id, p.location_type, c.depth + 1
+    select c.start_item, p.id, p.location_id, c.depth + 1
     from climb c
-    join parent_of p on p.item_id = c.location_id
-    where c.depth < 64
+    cross join lateral (
+      select pv.id, pv.location_id
+      from public.corp_asset_version pv
+      where pv.item_id = c.location_id
+      order by pv.is_current desc, pv.valid_until desc
+      limit 1
+    ) p
+    where c.location_id is not null
+      and c.depth < 64
   ),
   roots as (
-    select w.start_item, w.location_id as root_location_id, w.location_type as root_location_type
-    from climb w
-    where w.location_id is not null
-      and not exists (select 1 from parent_of o where o.item_id = w.location_id)
+    select c.start_item, l.location_id as root_location_id, l.location_type as root_location_type
+    from climb c
+    join public.corp_asset_location l on l.asset_id = c.version_id
+    where c.location_id is null
   ),
   descend as (
     select m.item_id as ancestor, m.item_id as node, 1 as depth
@@ -6020,7 +6134,7 @@ as $$
     union all
     select d.ancestor, c.item_id, d.depth + 1
     from descend d
-    join public.corp_asset c on c.location_id = d.node
+    join public.corp_asset_version c on c.location_id = d.node and c.is_current
     where d.depth < 64
   ),
   contents as (
@@ -6048,7 +6162,7 @@ as $$
   left join contents ct on ct.ancestor = m.item_id
   left join public.sde_published_type t on t.type_id = m.type_id
   left join public.sde_station st on st.station_id = r.root_location_id
-  left join public.corp_asset p on p.item_id = m.location_id;
+  left join public.corp_asset_version p on p.item_id = m.location_id and p.is_current;
 $$;
 
 grant execute on function public.corp_asset_filter(bigint[], bigint[], bigint[])      to authenticated;
@@ -6080,57 +6194,74 @@ language sql
 stable
 as $$
   with recursive inside as (
-    select a.item_id, 1 as depth
-    from public.corp_asset_over_time a
+    -- Items directly at a named location: a parent link to it (an office,
+    -- container or ship of the corp) or a place there.
+    select v.item_id, 1 as depth
+    from public.corp_asset_version v
     where coalesce(cardinality(location_ids), 0) > 0
-      and a.location_id = any(location_ids)
-      and a.valid_from <= as_of
-      and (a.is_current or (not a.is_current and a.valid_until >= as_of))
+      and v.location_id = any(location_ids)
+      and v.valid_from <= as_of
+      and (v.is_current or (not v.is_current and v.valid_until >= as_of))
+    union all
+    select v.item_id, 1 as depth
+    from public.corp_asset_location l
+    join public.corp_asset_version v on v.id = l.asset_id
+    where coalesce(cardinality(location_ids), 0) > 0
+      and l.location_id = any(location_ids)
+      and v.valid_from <= as_of
+      and (v.is_current or (not v.is_current and v.valid_until >= as_of))
     union all
     select c.item_id, i.depth + 1
     from inside i
-    join public.corp_asset_over_time c
+    join public.corp_asset_version c
       on c.location_id = i.item_id
      and c.valid_from <= as_of
      and (c.is_current or (not c.is_current and c.valid_until >= as_of))
     where i.depth < 64
   ),
   matched as (
-    select distinct on (a.item_id)
-           a.item_id, a.corporation_id, a.type_id, a.quantity, a.is_singleton,
-           a.location_flag, a.location_id, a.location_type
-    from public.corp_asset_over_time a
-    where a.corporation_id = any(corporation_ids)
-      and a.valid_from <= as_of
-      and (a.is_current or (not a.is_current and a.valid_until >= as_of))
-      and (coalesce(cardinality(type_ids), 0) = 0 or a.type_id = any(type_ids))
-      and (coalesce(cardinality(location_ids), 0) = 0 or a.item_id in (select i.item_id from inside i))
-    order by a.item_id, a.valid_from desc
+    select distinct on (v.item_id)
+           v.id, v.item_id, v.corporation_id, v.type_id, v.quantity, v.is_singleton,
+           v.location_id as link_id,
+           coalesce(v.location_id, l.location_id) as location_id,
+           coalesce(v.location_flag, l.location_flag) as location_flag
+    from public.corp_asset_version v
+    left join public.corp_asset_location l on l.asset_id = v.id
+    where v.corporation_id = any(corporation_ids)
+      and v.valid_from <= as_of
+      and (v.is_current or (not v.is_current and v.valid_until >= as_of))
+      and (coalesce(cardinality(type_ids), 0) = 0 or v.type_id = any(type_ids))
+      and (coalesce(cardinality(location_ids), 0) = 0 or v.item_id in (select i.item_id from inside i))
+    order by v.item_id, v.valid_from desc
   ),
+  -- A row whose link is null ends its climb: a root item (version_id set;
+  -- its place is in the location table) or a parent no version of which is
+  -- visible (version_id null; stuck_at holds the parent's id).
   climb as (
-    select m.item_id as start_item, m.location_id, m.location_type, 1 as depth
+    select m.item_id as start_item, m.id as version_id, m.link_id, null::bigint as stuck_at, 1 as depth
     from matched m
     union all
-    select c.start_item, p.location_id, p.location_type, c.depth + 1
+    select c.start_item, p.id, p.location_id, case when p.id is null then c.link_id end, c.depth + 1
     from climb c
-    cross join lateral (
-      select pv.location_id, pv.location_type
-      from public.corp_asset_over_time pv
-      where pv.item_id = c.location_id
+    left join lateral (
+      select pv.id, pv.location_id
+      from public.corp_asset_version pv
+      where pv.item_id = c.link_id
       order by (pv.valid_from <= as_of and (pv.is_current or pv.valid_until >= as_of)) desc,
                (pv.valid_from <= as_of) desc,
                pv.valid_from desc
       limit 1
-    ) p
-    where c.location_id is not null
+    ) p on true
+    where c.link_id is not null
       and c.depth < 64
   ),
-  -- The top of a climb is the one location that is no corp item at all.
   roots as (
-    select c.start_item, c.location_id as root_location_id, c.location_type as root_location_type
+    select c.start_item,
+           coalesce(l.location_id, c.stuck_at) as root_location_id,
+           case when c.version_id is null then 'item' else l.location_type end as root_location_type
     from climb c
-    where c.location_id is not null
-      and not exists (select 1 from public.corp_asset_over_time o where o.item_id = c.location_id)
+    left join public.corp_asset_location l on l.asset_id = c.version_id
+    where c.link_id is null
   ),
   descend as (
     select m.item_id as ancestor, m.item_id as node, 1 as depth
@@ -6138,7 +6269,7 @@ as $$
     union all
     select d.ancestor, c.item_id, d.depth + 1
     from descend d
-    join public.corp_asset_over_time c
+    join public.corp_asset_version c
       on c.location_id = d.node
      and c.valid_from <= as_of
      and (c.is_current or (not c.is_current and c.valid_until >= as_of))
@@ -6171,8 +6302,8 @@ as $$
   left join public.sde_station st on st.station_id = r.root_location_id
   left join lateral (
     select pv.type_id
-    from public.corp_asset_over_time pv
-    where pv.item_id = m.location_id
+    from public.corp_asset_version pv
+    where pv.item_id = m.link_id
     order by (pv.valid_from <= as_of and (pv.is_current or pv.valid_until >= as_of)) desc,
              (pv.valid_from <= as_of) desc,
              pv.valid_from desc
@@ -6208,23 +6339,6 @@ returns table (item_id bigint, type_id bigint, name text, location_id bigint, lo
 language sql
 stable
 as $$
-  -- Each hop is a `lateral … limit 1` probe on ONE table at a time, the
-  -- shape asset_share_covers() uses: the character hangar first, the corp
-  -- hangar only when that found nothing. Walking a UNION ALL of both — as a
-  -- CTE, or inside one lateral — gave the recursive step no index path, so
-  -- every hop scanned the whole version table under RLS: ~600 ms per
-  -- breadcrumb at 180k assets, against ~5 ms here.
-  --
-  -- A row carries its parent link (another asset of the owner) and its
-  -- place (character_asset_location, owner-only; a corp row's location is
-  -- read as its place) apart. The next hop is the link, or else the place:
-  -- for the owner that continues into a corp-owned container the item sits
-  -- in, as before the split; for a share recipient the place reads null and
-  -- the walk ends at the shared item.
-  --
-  -- The output names a parent only when the walk reached it. A link whose
-  -- target the caller cannot see (the shared item's own parent) comes out
-  -- null, so the breadcrumb says nothing about what holds the shared item.
   with recursive walk as (
     select h.version_id, h.item_id, h.type_id, h.name, h.parent_id, h.parent_type, h.place_id, h.place_type,
            coalesce(h.parent_id, h.place_id) as next_id, 1 as depth
@@ -6236,16 +6350,19 @@ as $$
       from public.character_asset_version v
       where v.is_current and v.item_id = start_id
       union all
-      select null::bigint, c.item_id, c.type_id, null::text, null::bigint, null::text, c.location_id, c.location_type
-      from public.corp_asset c
-      where c.item_id = start_id
+      select null::bigint, c.item_id, c.type_id, null::text,
+             c.location_id, c.location_type,
+             (select l.location_id   from public.corp_asset_location l where l.asset_id = c.id),
+             (select l.location_type from public.corp_asset_location l where l.asset_id = c.id)
+      from public.corp_asset_version c
+      where c.is_current and c.item_id = start_id
     ) h
     union all
     select cv.version_id,
            coalesce(cv.item_id, cc.item_id), coalesce(cv.type_id, cc.type_id), cv.name,
-           cv.parent_id, cv.parent_type,
-           coalesce(cv.place_id, cc.location_id), coalesce(cv.place_type, cc.location_type),
-           coalesce(cv.parent_id, cv.place_id, cc.location_id), w.depth + 1
+           coalesce(cv.parent_id, cc.parent_id), coalesce(cv.parent_type, cc.parent_type),
+           coalesce(cv.place_id, cc.place_id), coalesce(cv.place_type, cc.place_type),
+           coalesce(cv.parent_id, cv.place_id, cc.parent_id, cc.place_id), w.depth + 1
     from walk w
     left join lateral (
       select v.id as version_id, v.item_id, v.type_id, v.name,
@@ -6257,20 +6374,18 @@ as $$
       limit 1
     ) cv on true
     left join lateral (
-      select c.item_id, c.type_id, c.location_id, c.location_type
-      from public.corp_asset c
-      where c.item_id = w.next_id and cv.item_id is null
+      select c.item_id, c.type_id,
+             c.location_id as parent_id, c.location_type as parent_type,
+             (select l.location_id   from public.corp_asset_location l where l.asset_id = c.id) as place_id,
+             (select l.location_type from public.corp_asset_location l where l.asset_id = c.id) as place_type
+      from public.corp_asset_version c
+      where c.is_current and c.item_id = w.next_id and cv.item_id is null
       limit 1
     ) cc on true
     where w.depth < 16
       and w.next_id is not null
       and (cv.item_id is not null or cc.item_id is not null)
   )
-  -- The type name is a scalar subquery, not a join: a recursive CTE's row
-  -- estimate is wild (41,202 against an actual 1 on a real container), and
-  -- against `left join sde_published_type` that made the planner hash the whole
-  -- view — a seq scan parsing 52,848 jsonb documents, ~3s, to label one row.
-  -- Keyed on _key, so at most one row matches and this is equivalent.
   select
     w.item_id,
     w.type_id,

@@ -5,7 +5,7 @@
 //
 // This is the original race victim, and the last job in the whole migration:
 // biggest volume, paginated corp hangars, an SCD-2 reconcile
-// (corp_asset_over_time) plus corp_structure_rig, the most user-visible corp
+// (corp_asset_version) plus corp_structure_rig, the most user-visible corp
 // data. It goes last, deliberately, after the fan-out pattern has run in
 // production. The migration makes the safety structural: a corp's characters
 // ride together in one step (never split — see enumerateCorporations in lib.ts
