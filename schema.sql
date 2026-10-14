@@ -3625,8 +3625,15 @@ as $$
       select parent.location_id, w.depth + 1
       from walk w
       cross join lateral (
-        select o.location_id
+        -- A root has no parent link, so its step is to its place: a place
+        -- share (docs/sharing-layer/15-place-share.md) names that, and the
+        -- walk ends on it. Pinned to the grantor so the place reached is
+        -- always the grantor's own.
+        select coalesce(o.location_id, l.location_id) as location_id
         from character_asset_version o
+        left join character_asset_location l
+          on l.asset_id = o.id
+         and l.registration_id = asset_share_covers.registration
         where o.item_id = w.node
         order by o.is_current desc, o.valid_until desc
         limit 1
@@ -3654,6 +3661,29 @@ create policy "Audience reads shared assets"
   for select
   to anon, authenticated
   using (is_current and public.asset_share_covers(item_id, registration_id));
+
+-- A place share (docs/sharing-layer/15-place-share.md) names a station,
+-- structure or system rather than an item, and covers the grantor's roots
+-- there; this lets a recipient read the place of exactly those roots, the
+-- one the grantor chose to name, so "the items at this station" is a plain
+-- location_id filter for them too. Uncorrelated on purpose: the planner makes
+-- `(owner, place) in (…)` one hashed subplan per query, so an owner reading
+-- their own hangar pays for one small scan of the share table rather than a
+-- probe per row. The share table's policies never read this table, so
+-- nothing recurses. It opens the place row of a covered root's closed
+-- versions too; the views join it only to version rows the recipient can
+-- read, which are current-only.
+create policy "Audience reads places a share names"
+  on public.character_asset_location
+  for select
+  to anon, authenticated
+  using (
+    (registration_id, location_id) in (
+      select s.registration_id, s.item_id
+      from public.character_asset_share s
+      where public.share_audience_matches(s.corporation_ids, s.alliance_ids, s.secret)
+    )
+  );
 
 -- anon had no select on the asset table/view before; RLS still scopes anon to
 -- rows a public share covers (the owner policy never matches a null uid).
@@ -5672,9 +5702,10 @@ grant select on public.corp_asset           to anon, authenticated, service_role
 -- policy is about to grant (it is the grant, not a window past it), reads only
 -- parentage columns plus the share table, resolves audiences through
 -- share_audience_matches() — whose my_*_ids() still see the CALLER inside a
--- definer — and pins search_path while revoked from public. It never reads
--- corp_asset_location, so a shared root's place stays members-only and a
--- recipient reads location_id null through the views above.
+-- definer — and pins search_path while revoked from public. It reads
+-- corp_asset_location only to find a shared place's roots and returns item ids,
+-- never places: a shared root's place stays members-only unless a share names
+-- that very place ("Audience reads places a corp share names" below).
 --
 -- The descent stays inside the grantor corporation, and follows CURRENT
 -- children only: where the upward walk took each item's best-known parent and
@@ -5696,6 +5727,18 @@ as $$
     walk (corporation_id, node, depth) as (
       select m.corporation_id, m.item_id, 0
       from matching_shares m
+      union all
+      -- A place share (docs/sharing-layer/15-place-share.md): the grantor
+      -- corporation's current roots at the place, entering at depth 1 so the
+      -- descent reaches the same 16 levels under the subject a climb does.
+      select m.corporation_id, v.item_id, 1
+      from matching_shares m
+      join corp_asset_location l
+        on l.location_id = m.item_id
+       and l.corporation_id = m.corporation_id
+      join corp_asset_version v
+        on v.id = l.asset_id
+       and v.is_current
       union all
       select w.corporation_id, c.item_id, w.depth + 1
       from walk w
@@ -5722,6 +5765,21 @@ create policy "Audience reads shared corp assets"
   for select
   to anon, authenticated
   using (is_current and item_id in (select public.corp_shared_item_ids()));
+
+-- The corp twin of "Audience reads places a share names" (character side,
+-- beside character_asset_share): a recipient of a corp place share reads the
+-- place of the roots it covers, and of no other root.
+create policy "Audience reads places a corp share names"
+  on public.corp_asset_location
+  for select
+  to anon, authenticated
+  using (
+    (corporation_id, location_id) in (
+      select s.corporation_id, s.item_id
+      from public.corp_asset_share s
+      where public.share_audience_matches(s.corporation_ids, s.alliance_ids, s.secret)
+    )
+  );
 
 -- anon had no select on the corp asset table or its views before; RLS still
 -- scopes anon to rows a public share covers (the member policy never matches a

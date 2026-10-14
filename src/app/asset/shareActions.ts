@@ -25,22 +25,20 @@ export type SaveShareInput = {
 
 export type SaveShareResult = { error?: string; share?: ShareState }
 
-// Ownership + audience guard shared by save/revoke: the item must belong to
-// one of the CALLER's registrations (visibility isn't ownership — shared
-// items are RLS-visible to their audience too), and requested audience ids
-// are filtered to ones the caller actually has, so a hand-rolled request
-// can't aim a share at a third party (the setSharedAlliances defense).
-const ownItem = async (supabase: Awaited<ReturnType<typeof createClient>>, itemId: string) => {
-  const [{ data: item }, { data: regs }] = await Promise.all([
-    supabase
-      .from('character_asset')
-      .select('item_id, registration_id')
-      .eq('item_id', itemId)
-      .maybeSingle<{ item_id: number | string; registration_id: string }>(),
-    supabase.from('registration').select('id, corporation_id'),
-  ])
-  const own = (regs ?? []) as Array<{ id: string; corporation_id: number | string | null }>
-  if (!item || !own.some((r) => r.id === item.registration_id)) return null
+type Supabase = Awaited<ReturnType<typeof createClient>>
+type OwnRegistration = { id: string; corporation_id: number | string | null }
+type Grant = { registrationId: string; ownCorpIds: Set<number>; ownAllianceIds: Set<number> }
+
+const ownRegistrations = async (supabase: Supabase): Promise<OwnRegistration[]> => {
+  const { data } = await supabase.from('registration').select('id, corporation_id')
+  return (data ?? []) as OwnRegistration[]
+}
+
+// The audiences a share may be aimed at: the corporations the caller's
+// characters are in and those corporations' alliances. Requested ids are
+// filtered to these, so a hand-rolled request can't aim a share at a third
+// party (the setSharedAlliances defense).
+const ownAudiences = async (supabase: Supabase, own: OwnRegistration[]) => {
   const corpIds = [
     ...new Set(
       own
@@ -60,24 +58,49 @@ const ownItem = async (supabase: Awaited<ReturnType<typeof createClient>>, itemI
         .map(Number)
     ),
   ]
-  return { registrationId: item.registration_id, ownCorpIds: new Set(corpIds), ownAllianceIds: new Set(allianceIds) }
+  return { ownCorpIds: new Set(corpIds), ownAllianceIds: new Set(allianceIds) }
 }
 
-export const saveAssetShare = async (itemId: string, input: SaveShareInput): Promise<SaveShareResult> => {
-  const supabase = await createClient()
+// Ownership guard for an ITEM share: the item must belong to one of the
+// CALLER's registrations (visibility isn't ownership — shared items are
+// RLS-visible to their audience too), and that registration is the grantor.
+const ownItem = async (supabase: Supabase, itemId: string): Promise<Grant | null> => {
+  const [{ data: item }, own] = await Promise.all([
+    supabase
+      .from('character_asset')
+      .select('item_id, registration_id')
+      .eq('item_id', itemId)
+      .maybeSingle<{ item_id: number | string; registration_id: string }>(),
+    ownRegistrations(supabase),
+  ])
+  if (!item || !own.some((r) => r.id === item.registration_id)) return null
+  return { registrationId: item.registration_id, ...(await ownAudiences(supabase, own)) }
+}
 
-  const { data: auth, error: userError } = await supabase.auth.getUser()
-  if (userError || !auth?.user) return { error: 'Not signed in' }
+// Grantor guard for a PLACE share (docs/sharing-layer/15-place-share.md): the
+// named registration must be one of the caller's. Nothing about the place is
+// checked, nor need be — the share covers only that character's own items
+// there, so a place they hold nothing at simply shows nothing.
+const ownGrantor = async (supabase: Supabase, registrationId: string): Promise<Grant | null> => {
+  const own = await ownRegistrations(supabase)
+  if (!own.some((r) => r.id === registrationId)) return null
+  return { registrationId, ...(await ownAudiences(supabase, own)) }
+}
 
-  const owned = await ownItem(supabase, itemId)
-  if (!owned) return { error: 'Not your item' }
-
+// The one write, for an item or a place: upsert the grantor's row for the
+// subject id with the audiences the caller may name.
+const writeAssetShare = async (
+  supabase: Supabase,
+  grant: Grant,
+  subjectId: string,
+  input: SaveShareInput
+): Promise<SaveShareResult> => {
   const corporationIds = input.isPublic
     ? []
-    : [...new Set(input.corporationIds.map(Number))].filter((id) => owned.ownCorpIds.has(id))
+    : [...new Set(input.corporationIds.map(Number))].filter((id) => grant.ownCorpIds.has(id))
   const allianceIds = input.isPublic
     ? []
-    : [...new Set(input.allianceIds.map(Number))].filter((id) => owned.ownAllianceIds.has(id))
+    : [...new Set(input.allianceIds.map(Number))].filter((id) => grant.ownAllianceIds.has(id))
   const link = input.isPublic ? false : input.link
 
   // Signing requires the deployment's salt; fail before writing anything.
@@ -93,8 +116,8 @@ export const saveAssetShare = async (itemId: string, input: SaveShareInput): Pro
   const { data: existing } = await supabase
     .from('character_asset_share')
     .select('id, secret')
-    .eq('registration_id', owned.registrationId)
-    .eq('item_id', itemId)
+    .eq('registration_id', grant.registrationId)
+    .eq('item_id', subjectId)
     .maybeSingle<{ id: string; secret: string | null }>()
 
   const secret = link ? (input.rotateLink || !existing?.secret ? mintShareSecret() : existing.secret) : null
@@ -103,8 +126,8 @@ export const saveAssetShare = async (itemId: string, input: SaveShareInput): Pro
     .from('character_asset_share')
     .upsert(
       {
-        registration_id: owned.registrationId,
-        item_id: Number(itemId),
+        registration_id: grant.registrationId,
+        item_id: Number(subjectId),
         corporation_ids: corporationIds,
         alliance_ids: allianceIds,
         secret,
@@ -116,12 +139,8 @@ export const saveAssetShare = async (itemId: string, input: SaveShareInput): Pro
     .maybeSingle<{ id: string }>()
   if (error || !saved) return { error: error?.message ?? 'Save failed' }
 
-  // The dialog supersedes old-style links: saving retires any legacy
-  // shared_asset_token row the caller still has for this item (RLS-scoped).
-  await supabase.from('shared_asset_token').delete().eq('item_id', itemId)
-
-  revalidatePath(`/ship/${itemId}`)
-  revalidatePath(`/asset/${itemId}`)
+  revalidatePath(`/ship/${subjectId}`)
+  revalidatePath(`/asset/${subjectId}`)
 
   return {
     share: {
@@ -133,6 +152,59 @@ export const saveAssetShare = async (itemId: string, input: SaveShareInput): Pro
       showAsMain: input.showAsMain === true,
     },
   }
+}
+
+export const saveAssetShare = async (itemId: string, input: SaveShareInput): Promise<SaveShareResult> => {
+  const supabase = await createClient()
+
+  const { data: auth, error: userError } = await supabase.auth.getUser()
+  if (userError || !auth?.user) return { error: 'Not signed in' }
+
+  const owned = await ownItem(supabase, itemId)
+  if (!owned) return { error: 'Not your item' }
+
+  const result = await writeAssetShare(supabase, owned, itemId, input)
+  // The dialog supersedes old-style links: saving retires any legacy
+  // shared_asset_token row the caller still has for this item (RLS-scoped).
+  if (result.share) await supabase.from('shared_asset_token').delete().eq('item_id', itemId)
+  return result
+}
+
+// A character's items at a place, shared as one live list.
+export const savePlaceShare = async (
+  registrationId: string,
+  placeId: string,
+  input: SaveShareInput
+): Promise<SaveShareResult> => {
+  const supabase = await createClient()
+
+  const { data: auth, error: userError } = await supabase.auth.getUser()
+  if (userError || !auth?.user) return { error: 'Not signed in' }
+
+  const grant = await ownGrantor(supabase, registrationId)
+  if (!grant) return { error: 'Not your character' }
+
+  return writeAssetShare(supabase, grant, placeId, input)
+}
+
+// Stops one character's place share. Scoped to the grantor, since several of
+// the account's characters may each share their own items at the same place.
+export const revokePlaceShare = async (registrationId: string, placeId: string): Promise<{ error?: string }> => {
+  const supabase = await createClient()
+
+  const { data: auth, error: userError } = await supabase.auth.getUser()
+  if (userError || !auth?.user) return { error: 'Not signed in' }
+
+  // RLS scopes the delete to the caller's own rows.
+  const { error } = await supabase
+    .from('character_asset_share')
+    .delete()
+    .eq('registration_id', registrationId)
+    .eq('item_id', placeId)
+  if (error) return { error: error.message }
+
+  revalidatePath(`/asset/${placeId}`)
+  return {}
 }
 
 export const revokeAssetShare = async (itemId: string): Promise<{ error?: string }> => {

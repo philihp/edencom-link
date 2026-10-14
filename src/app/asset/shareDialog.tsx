@@ -21,6 +21,10 @@ type ShareDialogProps = {
   // Overrides the what-sharing-means line for subjects that aren't a
   // container of items (a link shares query results, not an item tree).
   hint?: string
+  // Names whose share the button opens, where one page offers several — a
+  // place, where each of the caller's owners shares only their own items
+  // (docs/sharing-layer/15-place-share.md). The heading names it too.
+  buttonLabel?: string
 }
 
 // The Share button + native <dialog> editor over a subject's single share row
@@ -34,6 +38,7 @@ export const ShareDialog = ({
   save: saveAction,
   revoke: revokeAction,
   hint,
+  buttonLabel,
 }: ShareDialogProps) => {
   const ref = useRef<HTMLDialogElement>(null)
   const [share, setShare] = useState<ShareState | null>(data.share)
@@ -102,9 +107,10 @@ export const ShareDialog = ({
     <>
       <button type="button" onClick={() => ref.current?.showModal()}>
         Share{share ? 'd' : ''}
+        {buttonLabel ? `: ${buttonLabel}` : ''}
       </button>
       <dialog ref={ref} className={styles.dialog}>
-        <h2>Share this {subjectLabel}</h2>
+        <h2>{buttonLabel ? `Share ${buttonLabel}` : `Share this ${subjectLabel}`}</h2>
         <p className={styles.hint}>
           {hint ?? 'Whoever you share with can see this item and everything inside it, live, until you stop sharing.'}
         </p>

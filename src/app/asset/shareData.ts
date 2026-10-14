@@ -130,35 +130,65 @@ export const fetchShareDialogData = async (
   supabase: SupabaseClient,
   itemId: string
 ): Promise<ShareDialogData | null> => {
-  const [{ data: item }, { data: regs }] = await Promise.all([
+  const [{ data: item }, own] = await Promise.all([
     supabase
       .from('character_asset')
       .select('item_id, registration_id')
       .eq('item_id', itemId)
       .maybeSingle<{ item_id: number | string; registration_id: string }>(),
-    supabase.from('registration').select('id, corporation_id, name, is_main'),
+    ownRegistrations(supabase),
   ])
-  const own = (regs ?? []) as Array<OwnRegistration & { name: string; is_main: boolean }>
   if (!item || !own.some((r) => r.id === item.registration_id)) return null
+
+  const [data, { data: legacy }] = await Promise.all([
+    characterShareData(supabase, own, item.registration_id, itemId),
+    supabase.from('shared_asset_token').select('token').eq('item_id', itemId).maybeSingle<{ token: string }>(),
+  ])
+  return { ...data, hasLegacyToken: legacy != null }
+}
+
+// A character's share of its items at a PLACE (docs/sharing-layer/15-place-share.md):
+// the grantor is named rather than read off an item, and must be one of the
+// caller's own registrations. Never a legacy token — nothing ever minted one
+// for a place.
+export const fetchPlaceShareDialogData = async (
+  supabase: SupabaseClient,
+  placeId: string,
+  registrationId: string
+): Promise<ShareDialogData | null> => {
+  const own = await ownRegistrations(supabase)
+  if (!own.some((r) => r.id === registrationId)) return null
+  return characterShareData(supabase, own, registrationId, placeId)
+}
+
+type OwnCharacter = OwnRegistration & { name: string; is_main: boolean }
+
+const ownRegistrations = async (supabase: SupabaseClient): Promise<OwnCharacter[]> => {
+  const { data } = await supabase.from('registration').select('id, corporation_id, name, is_main')
+  return (data ?? []) as OwnCharacter[]
+}
+
+// The dialog's payload for one grantor's row on one subject id.
+const characterShareData = async (
+  supabase: SupabaseClient,
+  own: OwnCharacter[],
+  registrationId: string,
+  subjectId: string
+): Promise<ShareDialogData> => {
   const main = own.find((r) => r.is_main)
-  const mainName = main && main.id !== item.registration_id ? main.name : null
+  const mainName = main && main.id !== registrationId ? main.name : null
 
-  const { corporations, alliances } = await fetchShareAudiences(supabase, own)
+  const [{ corporations, alliances }, { data: shareRow }] = await Promise.all([
+    fetchShareAudiences(supabase, own),
+    supabase
+      .from('character_asset_share')
+      .select('id, corporation_ids, alliance_ids, secret, show_as_main')
+      .eq('registration_id', registrationId)
+      .eq('item_id', subjectId)
+      .maybeSingle<ShareRowLike>(),
+  ])
 
-  const { data: shareRow } = await supabase
-    .from('character_asset_share')
-    .select('id, corporation_ids, alliance_ids, secret, show_as_main')
-    .eq('registration_id', item.registration_id)
-    .eq('item_id', itemId)
-    .maybeSingle<ShareRowLike>()
-
-  const { data: legacy } = await supabase
-    .from('shared_asset_token')
-    .select('token')
-    .eq('item_id', itemId)
-    .maybeSingle<{ token: string }>()
-
-  return { share: shareRowToState(shareRow), corporations, alliances, hasLegacyToken: legacy != null, mainName }
+  return { share: shareRowToState(shareRow), corporations, alliances, hasLegacyToken: false, mainName }
 }
 
 // The corp twin (docs/sharing-layer/14-corp-asset-share.md, PR 4). Returns
@@ -179,17 +209,30 @@ export const fetchCorpShareDialogData = async (
   supabase: SupabaseClient,
   itemId: string
 ): Promise<CorpShareDialogData | null> => {
-  const [{ data: item }, { data: regs }] = await Promise.all([
-    supabase
-      .from('corp_asset')
-      .select('item_id, corporation_id')
-      .eq('item_id', itemId)
-      .maybeSingle<{ item_id: number | string; corporation_id: number | string }>(),
-    supabase.from('registration').select('id, corporation_id'),
-  ])
+  const { data: item } = await supabase
+    .from('corp_asset')
+    .select('item_id, corporation_id')
+    .eq('item_id', itemId)
+    .maybeSingle<{ item_id: number | string; corporation_id: number | string }>()
+  return item ? corpShareData(supabase, Number(item.corporation_id), itemId) : null
+}
+
+// A corporation's share of its items at a PLACE — its structures in a system,
+// its office at a station (docs/sharing-layer/15-place-share.md). The same
+// membership test as an item: any member gets the dialog.
+export const fetchCorpPlaceShareDialogData = async (
+  supabase: SupabaseClient,
+  placeId: string,
+  corporationId: number
+): Promise<CorpShareDialogData | null> => corpShareData(supabase, corporationId, placeId)
+
+const corpShareData = async (
+  supabase: SupabaseClient,
+  corporationId: number,
+  subjectId: string
+): Promise<CorpShareDialogData | null> => {
+  const { data: regs } = await supabase.from('registration').select('id, corporation_id')
   const own = (regs ?? []) as OwnRegistration[]
-  if (!item) return null
-  const corporationId = Number(item.corporation_id)
   if (!own.some((r) => r.corporation_id != null && Number(r.corporation_id) === corporationId)) return null
 
   const [{ corporations, alliances }, { data: shareRow }, { data: corp }] = await Promise.all([
@@ -198,7 +241,7 @@ export const fetchCorpShareDialogData = async (
       .from('corp_asset_share')
       .select('id, corporation_ids, alliance_ids, secret')
       .eq('corporation_id', corporationId)
-      .eq('item_id', itemId)
+      .eq('item_id', subjectId)
       .maybeSingle<ShareRowLike>(),
     supabase
       .from('corporation')

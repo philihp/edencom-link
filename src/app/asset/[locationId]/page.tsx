@@ -22,7 +22,14 @@ import { hideHolder, PRESENTED_OWNER_ID, UNNAMED_OWNER } from '../../ship/[itemI
 import { TypeIcon } from '../../typeIcon'
 import { resolveShareParams } from '../access'
 import { AssetShareDialog } from '../assetShareDialog'
-import { fetchCorpShareDialogData, fetchShareDialogData } from '../shareData'
+import { placeGrantors } from '../placeShare'
+import { type PlaceShare, PlaceShareDialog } from '../placeShareDialog'
+import {
+  fetchCorpPlaceShareDialogData,
+  fetchCorpShareDialogData,
+  fetchPlaceShareDialogData,
+  fetchShareDialogData,
+} from '../shareData'
 import styles from '../assets.module.css'
 import { AppraisalPanel } from './appraisalPanel'
 import { SHIP_CATEGORY_ID, fetchRootItems, type CharacterAsset, type CorpAsset } from './locationData'
@@ -258,11 +265,34 @@ const AssetLocationPage = async ({
   // Exactly one is asked, since an item lives in exactly one hangar. Started
   // rather than awaited: whether the item is ours was settled above, so this
   // overlaps the heading work below instead of queueing behind it.
-  const shareDataPromise = scope
-    ? null
-    : isOwnCharacterItem
-      ? fetchShareDialogData(supabase, locationId)
-      : fetchCorpShareDialogData(supabase, locationId)
+  const shareDataPromise =
+    scope || !self
+      ? null
+      : isOwnCharacterItem
+        ? fetchShareDialogData(supabase, locationId)
+        : fetchCorpShareDialogData(supabase, locationId)
+
+  // A place — station, structure, system — is shared per owner instead
+  // (docs/sharing-layer/15-place-share.md): each of the caller's characters and
+  // corporations holding something here can share its own items as one live
+  // list, and none of them can share anybody else's. Owners come from the
+  // unmasked root items and the caller's own owner list, so items someone else
+  // shared with the caller never offer a share.
+  const placeSharesPromise: Promise<PlaceShare[]> =
+    scope || self
+      ? Promise.resolve([])
+      : Promise.all(
+          placeGrantors(
+            rootItems.map((i) => i.owner_id),
+            owners
+          ).map(async (grantor) => ({
+            grantor,
+            data:
+              grantor.kind === 'character'
+                ? await fetchPlaceShareDialogData(supabase, locationId, grantor.registrationId)
+                : await fetchCorpPlaceShareDialogData(supabase, locationId, grantor.corporationId),
+          }))
+        ).then((shares) => shares.filter((s): s is PlaceShare => s.data != null))
 
   // Where this location lives: the full container chain up to its root place,
   // rendered as the breadcrumb above the heading. A bare place (station /
@@ -306,7 +336,7 @@ const AssetLocationPage = async ({
     }
   }
 
-  const shareData = shareDataPromise ? await shareDataPromise : null
+  const [shareData, placeShares] = await Promise.all([shareDataPromise, placeSharesPromise])
 
   const items = (
     <Suspense fallback={<ItemsFallback />}>
@@ -336,10 +366,10 @@ const AssetLocationPage = async ({
           {/* Prices this whole place in one request — the same endpoint each row
               uses, just aimed at the location instead of an item. */}
           {!scope ? <AppraisalPanel targets={[locationId]} label="Appraise everything here" /> : null}
-          {/* Sharing is per-item: only an item the caller owns as a character,
-              or one their corporation holds, gets the dialog — never a
-              station/structure/system, and never something merely shared with
-              the viewer. */}
+          {/* An item the caller owns as a character, or one their corporation
+              holds, gets the dialog — never something merely shared with the
+              viewer. A place gets one per owner of the caller's holding
+              something here, each sharing only that owner's items. */}
           {shareData ? (
             <AssetShareDialog
               itemId={locationId}
@@ -348,6 +378,18 @@ const AssetLocationPage = async ({
               data={shareData}
             />
           ) : null}
+          {placeShares.map((placeShare) => (
+            <PlaceShareDialog
+              key={
+                placeShare.grantor.kind === 'character'
+                  ? placeShare.grantor.registrationId
+                  : placeShare.grantor.corporationId
+              }
+              placeId={locationId}
+              placeName={heading}
+              share={placeShare}
+            />
+          ))}
         </div>
       </div>
       {systemName && systemName !== heading ? (
