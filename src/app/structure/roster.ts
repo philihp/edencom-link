@@ -2,8 +2,8 @@
 // lands in.
 //
 // The page used to list exactly `corp_structure` — the structures a director
-// token can scan. That is the set we OWN (widened to alliance-mates by a second
-// RLS policy), not the set we USE: a job installed in somebody else's Sotiyo
+// token can scan. That is the set we OWN (widened to a share's audience by a
+// second RLS policy — docs/sharing-layer/12-structure-share.md), not the set we USE: a job installed in somebody else's Sotiyo
 // leaves a facility id in our own industry-job rows and nothing else, so a
 // structure our slots actually run in never appeared here at all. It showed up
 // only as ISK under "taxes paid elsewhere", with no tile to belong to.
