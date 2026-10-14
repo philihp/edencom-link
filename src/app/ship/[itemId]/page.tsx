@@ -1,5 +1,4 @@
 import type { Metadata, Viewport } from 'next'
-import { headers } from 'next/headers'
 import { notFound, redirect } from 'next/navigation'
 import { identity, map } from 'ramda'
 import { Suspense } from 'react'
@@ -15,8 +14,7 @@ import { AssetPath, fetchAssetPath, type Crumb } from '../../assetPath'
 import { ShareUrlCleanup } from '../../shareUrlCleanup'
 import { SkeletonTable } from '../../skeleton'
 import { eftTypes, shipEft } from './eft'
-import { CARD_HEIGHT, CARD_WIDTH } from './card/cardModel'
-import { loadShipCard } from './card/loadCard'
+import { shipShareMetadata, shipShareViewport } from './card/metadata'
 import { toEsiFit } from './esfFit'
 import { FitExport } from './fitExport'
 import { ShipIdentity } from './identity'
@@ -71,52 +69,17 @@ type ShipPageProps = {
   searchParams: Promise<{ token?: string; share?: string }>
 }
 
-// The origin a chat client reached this page on, so the preview image is an
-// absolute URL on the same host (production or a preview deployment).
-const requestOrigin = async (): Promise<string> => {
-  const headerList = await headers()
-  const host = headerList.get('x-forwarded-host') ?? headerList.get('host')
-  const proto = headerList.get('x-forwarded-proto') ?? (host?.startsWith('localhost') ? 'http' : 'https')
-  return host ? `${proto}://${host}` : ''
-}
-
-// The link preview a share link unfurls into in Discord, Slack or X: the
-// ship's name, a line about it, and the card image drawn by ./card. Only a
-// share link gets one — the signed-in page is private, and a chat client
-// fetching it is not signed in anyway. The card image takes the same share
-// parameter, so it opens exactly what the link opens.
+// The link preview a share link unfurls into (./card/metadata.ts).
 export const generateMetadata = async ({ params, searchParams }: ShipPageProps): Promise<Metadata> => {
   const { itemId } = await params
   const { token, share } = await searchParams
-  if (!share && !token) return {}
-  const card = await loadShipCard(itemId, share, token)
-  if (!card) return {}
-
-  const query = new URLSearchParams(share ? { share } : { token: token ?? '' })
-  const image = {
-    url: `${await requestOrigin()}/ship/${itemId}/card?${query}`,
-    width: CARD_WIDTH,
-    height: CARD_HEIGHT,
-    alt: `${card.title}, ${card.typeName}`,
-  }
-  const title = card.title === card.typeName ? card.title : `${card.title} (${card.typeName})`
-  return {
-    title: `${title} · Edencom Link`,
-    description: card.description,
-    openGraph: { type: 'website', siteName: 'Edencom Link', title, description: card.description, images: [image] },
-    // Discord and X draw the image full width only for a large-image card.
-    twitter: { card: 'summary_large_image', title, description: card.description, images: [image] },
-  }
+  return shipShareMetadata(itemId, share, token)
 }
 
-// Discord colours the embed's side stripe from theme-color: the hull's
-// quality tier, as the card's border.
 export const generateViewport = async ({ params, searchParams }: ShipPageProps): Promise<Viewport> => {
   const { itemId } = await params
   const { token, share } = await searchParams
-  if (!share && !token) return {}
-  const card = await loadShipCard(itemId, share, token)
-  return card ? { themeColor: card.color } : {}
+  return shipShareViewport(itemId, share, token)
 }
 
 const ShipPage = async ({ params, searchParams }: ShipPageProps) => {
