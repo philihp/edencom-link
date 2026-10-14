@@ -161,6 +161,33 @@ export const fetchOwnerDirectory = async (
   }
 }
 
+// Names for owners that aren't the caller's — the grantors behind items shared
+// with them. Read from the world-readable directories, never registration
+// (RLS hides other accounts' rows there). An id with no directory row is left
+// out, so the caller falls back to printing the id.
+export const fetchForeignOwnerNames = async (
+  supabase: SupabaseClient,
+  registrationIds: string[],
+  corporationIds: string[]
+): Promise<Map<string, string>> => {
+  const [{ data: characters }, { data: corporations }] = await Promise.all([
+    registrationIds.length > 0
+      ? supabase.from('character_directory').select('registration_id, name').in('registration_id', registrationIds)
+      : Promise.resolve({ data: [] }),
+    corporationIds.length > 0
+      ? supabase.from('corporation').select('corporation_id, name').in('corporation_id', corporationIds)
+      : Promise.resolve({ data: [] }),
+  ])
+  return new Map([
+    ...((characters ?? []) as Array<{ registration_id: string; name: string | null }>).flatMap(
+      (r): Array<[string, string]> => (r.name != null ? [[r.registration_id, r.name]] : [])
+    ),
+    ...((corporations ?? []) as Array<{ corporation_id: number | string; name: string | null }>).flatMap(
+      (c): Array<[string, string]> => (c.name != null ? [[String(c.corporation_id), c.name]] : [])
+    ),
+  ])
+}
+
 // Case-insensitive substring match of an owner-name filter against the
 // caller's characters and corporations. Returns the matching owner ids, or an
 // error message listing what's available when nothing matches.
