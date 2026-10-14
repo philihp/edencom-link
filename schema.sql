@@ -56,6 +56,10 @@ drop function if exists public.character_asset_search(bigint[])          cascade
 drop function if exists public.corp_asset_search(bigint[])               cascade;
 drop function if exists public.character_asset_filter(bigint[], bigint[], uuid[])   cascade;
 drop function if exists public.corp_asset_filter(bigint[], bigint[], bigint[])       cascade;
+drop function if exists public.character_asset_search(bigint[], boolean)                 cascade;
+drop function if exists public.corp_asset_search(bigint[], boolean)                      cascade;
+drop function if exists public.character_asset_filter(bigint[], bigint[], uuid[], boolean)   cascade;
+drop function if exists public.corp_asset_filter(bigint[], bigint[], bigint[], boolean)       cascade;
 drop function if exists public.character_asset_filter_at(uuid[], timestamptz, bigint[], bigint[]) cascade;
 drop function if exists public.corp_asset_filter_at(bigint[], timestamptz, bigint[], bigint[])     cascade;
 drop function if exists public.character_asset_location_summary_at(uuid[], timestamptz)           cascade;
@@ -1192,7 +1196,13 @@ $$;
 -- `type_ids`, with its root location and nested-item count. Seeded from just
 -- the matched items (rather than every asset, like the two functions above),
 -- so this stays cheap even though the caller can pass up to 100 type ids.
-create or replace function public.character_asset_search(type_ids bigint[])
+--
+-- Only the caller's own items by default, even though RLS also lets shared
+-- ones through. include_shared keeps those too (`shared` = true), with a null
+-- root place: the location table never shows a recipient where they are. The
+-- *_filter functions below take the same flag; an owner filter there narrows
+-- only the caller's own rows.
+create or replace function public.character_asset_search(type_ids bigint[], include_shared boolean default false)
 returns table (
   item_id bigint,
   registration_id uuid,
@@ -1209,22 +1219,29 @@ returns table (
   system_id bigint,
   parent_id bigint,
   parent_type_id bigint,
-  parent_name text
+  parent_name text,
+  shared boolean
 )
 language sql
 stable
 as $$
-  with recursive matched as (
+  with recursive mine as (
+    select r.id from public.registration r where r.user_id = (select auth.uid())
+  ),
+  matched as (
     select a.item_id, a.registration_id, a.type_id, a.quantity, a.is_singleton, a.name,
-           a.location_flag, a.location_id, a.location_type
+           a.location_flag, a.location_id, a.location_type,
+           a.registration_id not in (select id from mine) as shared
     from public.character_asset a
     where a.type_id = any(type_ids)
+      and (include_shared or a.registration_id in (select id from mine))
   ),
   -- Walk up from each matched item to the top of its tree, one indexed
   -- lookup per step on the version table: a parent link names another
   -- asset, so the step reads that asset's newest version row (its open one,
   -- else the last closed one). The walk stops at a row with no parent link,
   -- a root item, and roots reads that row's place from the location table.
+  -- A shared item's place is never readable here, so it has no roots row.
   climb as (
     select m.item_id as start_item, v.id as version_id, v.location_id, 1 as depth
     from matched m
@@ -1278,18 +1295,20 @@ as $$
     st.system_id,
     m.location_id as parent_id,
     p.type_id as parent_type_id,
-    p.name as parent_name
+    p.name as parent_name,
+    m.shared
   from matched m
-  join roots r on r.start_item = m.item_id
+  left join roots r on r.start_item = m.item_id
   left join contents ct on ct.ancestor = m.item_id
   left join public.sde_published_type t on t.type_id = m.type_id
   left join public.sde_station st on st.station_id = r.root_location_id
-  left join public.character_asset_version p on p.item_id = m.location_id and p.is_current;
+  left join public.character_asset_version p on p.item_id = m.location_id and p.is_current
+  where r.start_item is not null or m.shared;
 $$;
 
 grant execute on function public.character_asset_location_summary()        to authenticated;
 grant execute on function public.character_asset_location_contents(bigint) to authenticated;
-grant execute on function public.character_asset_search(bigint[])          to authenticated;
+grant execute on function public.character_asset_search(bigint[], boolean) to authenticated;
 grant execute on function public.character_asset_subtree_items(bigint)     to authenticated;
 grant execute on function public.character_asset_subtree_items(bigint[])   to authenticated;
 
@@ -1315,7 +1334,8 @@ grant execute on function public.character_asset_subtree_items(bigint[])   to au
 create or replace function public.character_asset_filter(
   type_ids bigint[] default null,
   location_ids bigint[] default null,
-  registration_ids uuid[] default null
+  registration_ids uuid[] default null,
+  include_shared boolean default false
 )
 returns table (
   item_id bigint,
@@ -1333,12 +1353,16 @@ returns table (
   system_id bigint,
   parent_id bigint,
   parent_type_id bigint,
-  parent_name text
+  parent_name text,
+  shared boolean
 )
 language sql
 stable
 as $$
-  with recursive inside as (
+  with recursive mine as (
+    select r.id from public.registration r where r.user_id = (select auth.uid())
+  ),
+  inside as (
     select a.item_id, 1 as depth
     from public.character_asset a
     where coalesce(cardinality(location_ids), 0) > 0
@@ -1351,17 +1375,23 @@ as $$
   ),
   matched as (
     select a.item_id, a.registration_id, a.type_id, a.quantity, a.is_singleton, a.name,
-           a.location_flag, a.location_id, a.location_type
+           a.location_flag, a.location_id, a.location_type,
+           a.registration_id not in (select id from mine) as shared
     from public.character_asset a
     where (coalesce(cardinality(type_ids), 0) = 0 or a.type_id = any(type_ids))
-      and (coalesce(cardinality(registration_ids), 0) = 0 or a.registration_id = any(registration_ids))
       and (coalesce(cardinality(location_ids), 0) = 0 or a.item_id in (select i.item_id from inside i))
+      and (
+        (a.registration_id in (select id from mine)
+          and (coalesce(cardinality(registration_ids), 0) = 0 or a.registration_id = any(registration_ids)))
+        or (include_shared and a.registration_id not in (select id from mine))
+      )
   ),
   -- Walk up from each matched item to the top of its tree, one indexed
   -- lookup per step on the version table: a parent link names another
   -- asset, so the step reads that asset's newest version row (its open one,
   -- else the last closed one). The walk stops at a row with no parent link,
   -- a root item, and roots reads that row's place from the location table.
+  -- A shared item's place is never readable here, so it has no roots row.
   climb as (
     select m.item_id as start_item, v.id as version_id, v.location_id, 1 as depth
     from matched m
@@ -1415,16 +1445,18 @@ as $$
     st.system_id,
     m.location_id as parent_id,
     p.type_id as parent_type_id,
-    p.name as parent_name
+    p.name as parent_name,
+    m.shared
   from matched m
-  join roots r on r.start_item = m.item_id
+  left join roots r on r.start_item = m.item_id
   left join contents ct on ct.ancestor = m.item_id
   left join public.sde_published_type t on t.type_id = m.type_id
   left join public.sde_station st on st.station_id = r.root_location_id
-  left join public.character_asset_version p on p.item_id = m.location_id and p.is_current;
+  left join public.character_asset_version p on p.item_id = m.location_id and p.is_current
+  where r.start_item is not null or m.shared;
 $$;
 
-grant execute on function public.character_asset_filter(bigint[], bigint[], uuid[])   to authenticated;
+grant execute on function public.character_asset_filter(bigint[], bigint[], uuid[], boolean) to authenticated;
 
 -- MCP time travel (search_assets, list_assets, browse_assets with as_of): the
 -- character_asset_filter() answer as the hangars stood at `as_of`, from the
@@ -6135,7 +6167,7 @@ $$;
 
 -- item search (/asset/search): mirrors character_asset_search() over corp
 -- assets, seeded from just the matched items.
-create or replace function public.corp_asset_search(type_ids bigint[])
+create or replace function public.corp_asset_search(type_ids bigint[], include_shared boolean default false)
 returns table (
   item_id bigint,
   corporation_id bigint,
@@ -6150,16 +6182,22 @@ returns table (
   root_location_name text,
   system_id bigint,
   parent_id bigint,
-  parent_type_id bigint
+  parent_type_id bigint,
+  shared boolean
 )
 language sql
 stable
 as $$
-  with recursive matched as (
+  with recursive mine as (
+    select public.my_corporation_ids() as corporation_id
+  ),
+  matched as (
     select a.item_id, a.corporation_id, a.type_id, a.quantity, a.is_singleton,
-           a.location_flag, a.location_id, a.location_type
+           a.location_flag, a.location_id, a.location_type,
+           a.corporation_id not in (select corporation_id from mine) as shared
     from public.corp_asset a
     where a.type_id = any(type_ids)
+      and (include_shared or a.corporation_id in (select corporation_id from mine))
   ),
   -- One indexed lookup per step on the version table, stopping at a row with
   -- no parent link; roots reads that row's place from the location table.
@@ -6214,18 +6252,20 @@ as $$
     st.name as root_location_name,
     st.system_id,
     m.location_id as parent_id,
-    p.type_id as parent_type_id
+    p.type_id as parent_type_id,
+    m.shared
   from matched m
-  join roots r on r.start_item = m.item_id
+  left join roots r on r.start_item = m.item_id
   left join contents ct on ct.ancestor = m.item_id
   left join public.sde_published_type t on t.type_id = m.type_id
   left join public.sde_station st on st.station_id = r.root_location_id
-  left join public.corp_asset_version p on p.item_id = m.location_id and p.is_current;
+  left join public.corp_asset_version p on p.item_id = m.location_id and p.is_current
+  where r.start_item is not null or m.shared;
 $$;
 
 grant execute on function public.corp_asset_location_summary()        to authenticated;
 grant execute on function public.corp_asset_location_contents(bigint) to authenticated;
-grant execute on function public.corp_asset_search(bigint[])          to authenticated;
+grant execute on function public.corp_asset_search(bigint[], boolean) to authenticated;
 grant execute on function public.corp_asset_subtree_items(bigint)     to authenticated;
 grant execute on function public.corp_asset_subtree_items(bigint[])   to authenticated;
 
@@ -6235,7 +6275,8 @@ grant execute on function public.corp_asset_subtree_items(bigint[])   to authent
 create or replace function public.corp_asset_filter(
   type_ids bigint[] default null,
   location_ids bigint[] default null,
-  corporation_ids bigint[] default null
+  corporation_ids bigint[] default null,
+  include_shared boolean default false
 )
 returns table (
   item_id bigint,
@@ -6251,12 +6292,16 @@ returns table (
   root_location_name text,
   system_id bigint,
   parent_id bigint,
-  parent_type_id bigint
+  parent_type_id bigint,
+  shared boolean
 )
 language sql
 stable
 as $$
-  with recursive inside as (
+  with recursive mine as (
+    select public.my_corporation_ids() as corporation_id
+  ),
+  inside as (
     select a.item_id, 1 as depth
     from public.corp_asset a
     where coalesce(cardinality(location_ids), 0) > 0
@@ -6269,11 +6314,16 @@ as $$
   ),
   matched as (
     select a.item_id, a.corporation_id, a.type_id, a.quantity, a.is_singleton,
-           a.location_flag, a.location_id, a.location_type
+           a.location_flag, a.location_id, a.location_type,
+           a.corporation_id not in (select corporation_id from mine) as shared
     from public.corp_asset a
     where (coalesce(cardinality(type_ids), 0) = 0 or a.type_id = any(type_ids))
-      and (coalesce(cardinality(corporation_ids), 0) = 0 or a.corporation_id = any(corporation_ids))
       and (coalesce(cardinality(location_ids), 0) = 0 or a.item_id in (select i.item_id from inside i))
+      and (
+        (a.corporation_id in (select corporation_id from mine)
+          and (coalesce(cardinality(corporation_ids), 0) = 0 or a.corporation_id = any(corporation_ids)))
+        or (include_shared and a.corporation_id not in (select corporation_id from mine))
+      )
   ),
   climb as (
     select m.item_id as start_item, v.id as version_id, v.location_id, 1 as depth
@@ -6326,16 +6376,18 @@ as $$
     st.name as root_location_name,
     st.system_id,
     m.location_id as parent_id,
-    p.type_id as parent_type_id
+    p.type_id as parent_type_id,
+    m.shared
   from matched m
-  join roots r on r.start_item = m.item_id
+  left join roots r on r.start_item = m.item_id
   left join contents ct on ct.ancestor = m.item_id
   left join public.sde_published_type t on t.type_id = m.type_id
   left join public.sde_station st on st.station_id = r.root_location_id
-  left join public.corp_asset_version p on p.item_id = m.location_id and p.is_current;
+  left join public.corp_asset_version p on p.item_id = m.location_id and p.is_current
+  where r.start_item is not null or m.shared;
 $$;
 
-grant execute on function public.corp_asset_filter(bigint[], bigint[], bigint[])      to authenticated;
+grant execute on function public.corp_asset_filter(bigint[], bigint[], bigint[], boolean) to authenticated;
 
 -- The corp mirror of character_asset_filter_at(), over corporation ids.
 create or replace function public.corp_asset_filter_at(

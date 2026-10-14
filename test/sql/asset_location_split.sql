@@ -192,9 +192,8 @@ begin
     'the ship''s own subtree still works for bob';
   assert (select location_id from public.asset_ancestors(1004) order by depth desc limit 1) is null,
     'bob''s breadcrumb ends at the ship with no place';
-  -- Deliberate for now: search joins each item to its root, and a shared
-  -- item has no root for bob, so it is absent rather than shown with a null
-  -- place. Restoring it is a left join plus null handling in the pages.
+  -- Search returns only the caller's own items unless include_shared is set
+  -- (asset_search_include_shared.sql), so a shared item is absent here.
   assert (select count(*) from public.character_asset_search(array[34::bigint])) = 0,
     'search lists nothing for bob';
 end $$;

@@ -14,7 +14,7 @@ import {
   type SecBonus,
   type StructureBonus,
 } from 'eve-industry'
-import { prop, uniqBy } from 'ramda'
+import { prop, uniq, uniqBy } from 'ramda'
 import { match } from 'ts-pattern'
 import { z } from 'zod'
 
@@ -62,6 +62,7 @@ import {
   capNote,
   dataFreshness,
   fetchAllRows,
+  fetchForeignOwnerNames,
   fetchOwnerContext,
   fetchOwnerDirectory,
   guessLocationRef,
@@ -82,7 +83,31 @@ const AS_OF_SHAPE = z
     'Reconstruct the snapshot as it stood at this UTC moment instead of now. ISO 8601, partial dates allowed ("2026-06", "2026-06-01", "2026-06-01T12:00:00Z").'
   )
 
+// The opt-in on the two asset lookups for items other players have shared with
+// the caller (character_asset_share / corp_asset_share). Off by default: an
+// answer about "my" assets shouldn't quietly count someone else's. Live only —
+// a share covers current rows, not the history as_of reads.
+const INCLUDE_SHARED_SHAPE = z
+  .boolean()
+  .optional()
+  .describe(
+    'Also return items other players have shared with this user (default false). Shared items come back marked shared: true, with the owner who shared them but never their location — system and station are null. Cannot be combined with as_of.'
+  )
+
+const SHARED_WITH_AS_OF = 'include_shared reads the hangars as they stand now, so it cannot be combined with as_of.'
+
 type SupabaseClient = ReturnType<typeof createBearerClient>
+
+// Names for the grantors behind the shared rows of an asset lookup; the
+// caller's own owners are already named by fetchOwnerContext.
+const sharedOwnerNames = (
+  supabase: SupabaseClient,
+  rows: Array<{ shared: boolean; ownerKind: 'character' | 'corporation'; ownerId: string }>
+): Promise<Map<string, string>> => {
+  const sharedIds = (kind: 'character' | 'corporation') =>
+    uniq(rows.filter((r) => r.shared && r.ownerKind === kind).map((r) => r.ownerId))
+  return fetchForeignOwnerNames(supabase, sharedIds('character'), sharedIds('corporation'))
+}
 
 // mcp-handler 2.x hands tool callbacks the SDK's ServerContext, where a
 // verified token rides under 'http.authInfo' rather than 1.x's flat 'extra'.
@@ -433,16 +458,19 @@ export const registerTools = (server: McpServer): void => {
         item: z.string().min(1).describe('Item name or substring, e.g. "nitrogen fuel block", "avatar", "tritanium"'),
         system: z.string().optional().describe('Only include items in this solar system, e.g. "EKPB-3"'),
         include_blueprints: z.boolean().optional().describe('Also match blueprints/reaction formulas (default false)'),
+        include_shared: INCLUDE_SHARED_SHAPE,
         as_of: AS_OF_SHAPE,
       }),
     },
-    async ({ item, system, include_blueprints, as_of }, ctx) => {
+    async ({ item, system, include_blueprints, include_shared, as_of }, ctx) => {
       const supabase = clientFor(ctx)
       if (!supabase) return textResult('Missing bearer token.')
 
       const at = parseAtParam(as_of)
       if (!at.ok) return textResult(AT_PARAM_ERROR)
       const timeTravel = (as_of ?? '').trim() !== ''
+      const withShared = include_shared ?? false
+      if (withShared && timeTravel) return textResult(SHARED_WITH_AS_OF)
 
       const filter = await resolveTypeFilter(item, { includeBlueprints: include_blueprints ?? false })
       if (!filter.ok) return textResult(filter.message)
@@ -471,8 +499,8 @@ export const registerTools = (server: McpServer): void => {
             ])
           )
         : Promise.all([
-            supabase.rpc('character_asset_search', { type_ids: typeIds }),
-            supabase.rpc('corp_asset_search', { type_ids: typeIds }),
+            supabase.rpc('character_asset_search', { type_ids: typeIds, include_shared: withShared }),
+            supabase.rpc('corp_asset_search', { type_ids: typeIds, include_shared: withShared }),
           ])
       const [[{ data: characterRows, error: characterError }, { data: corpRows, error: corpError }], owners] =
         await Promise.all([searches, ownersPromise])
@@ -492,14 +520,27 @@ export const registerTools = (server: McpServer): void => {
         root_location_id: number | string | null
         root_location_type: string | null
         contents: number | string
+        // Absent on the as_of path, whose functions never return shared rows.
+        shared?: boolean | null
       }
       type CorpSearchRow = Omit<CharacterSearchRow, 'registration_id' | 'name'> & { corporation_id: number | string }
 
       const rows = [
-        ...((characterRows ?? []) as CharacterSearchRow[]).map((r) => ({ ...r, ownerId: r.registration_id })),
-        ...((corpRows ?? []) as CorpSearchRow[]).map((r) => ({ ...r, name: null, ownerId: String(r.corporation_id) })),
+        ...((characterRows ?? []) as CharacterSearchRow[]).map((r) => ({
+          ...r,
+          ownerKind: 'character' as const,
+          ownerId: r.registration_id,
+        })),
+        ...((corpRows ?? []) as CorpSearchRow[]).map((r) => ({
+          ...r,
+          name: null,
+          ownerKind: 'corporation' as const,
+          ownerId: String(r.corporation_id),
+        })),
       ].map((r) => ({
+        ownerKind: r.ownerKind,
         ownerId: r.ownerId,
+        shared: r.shared === true,
         typeId: Number(r.type_id),
         customName: r.name,
         // Singletons (assembled ships, containers, …) report a null/1 quantity.
@@ -516,7 +557,10 @@ export const registerTools = (server: McpServer): void => {
         prop('id'),
         rows.map((r) => r.root).filter((r): r is LocationRef => r != null)
       )
-      const { nameFor, systemFor } = await resolveLocations(rootRefs, supabase)
+      const [{ nameFor, systemFor }, foreignNames] = await Promise.all([
+        resolveLocations(rootRefs, supabase),
+        sharedOwnerNames(supabase, rows),
+      ])
 
       // Canonicalize a partial system filter through the SDE search so
       // "ekpb" still matches items sitting in EKPB-3.
@@ -551,16 +595,18 @@ export const registerTools = (server: McpServer): void => {
         matched_types: typeIds.length,
         ...(systemFilter != null && { system_filter: shown[0]?.systemName ?? system }),
         total_stacks: located.length,
+        ...(withShared && { shared_stacks: located.filter(({ row }) => row.shared).length }),
         totals_by_item: totalsByItem,
         items: shown.map(({ row, stationName, systemName }) => ({
           item: typeNameById.get(row.typeId) ?? `Type #${row.typeId}`,
           quantity: row.quantity,
-          owner: owners.nameById.get(row.ownerId) ?? row.ownerId,
+          owner: owners.nameById.get(row.ownerId) ?? foreignNames.get(row.ownerId) ?? row.ownerId,
           system: systemName,
           station: stationName,
           hangar: row.flag,
           ...(row.customName != null && { custom_name: row.customName }),
           ...(row.contents > 0 && { contains_items: row.contents }),
+          ...(row.shared && { shared: true }),
         })),
         ...(capNote(located.length, shown.length, 'stacks') && {
           note: capNote(located.length, shown.length, 'stacks'),
@@ -591,17 +637,22 @@ export const registerTools = (server: McpServer): void => {
         owner_ids: z
           .array(z.union([z.number(), z.string()]))
           .optional()
-          .describe('EVE character ids, registration uuids or corporation ids of the owners to include'),
+          .describe(
+            'EVE character ids, registration uuids or corporation ids of the owners to include. Narrows only your own items; with include_shared, shared items still come back for whichever of characters/corporations the list names.'
+          ),
+        include_shared: INCLUDE_SHARED_SHAPE,
         as_of: AS_OF_SHAPE,
       }),
     },
-    async ({ type_ids, location_ids, owner_ids, as_of }, ctx) => {
+    async ({ type_ids, location_ids, owner_ids, include_shared, as_of }, ctx) => {
       const supabase = clientFor(ctx)
       if (!supabase) return textResult('Missing bearer token.')
 
       const at = parseAtParam(as_of)
       if (!at.ok) return textResult(AT_PARAM_ERROR)
       const timeTravel = (as_of ?? '').trim() !== ''
+      const withShared = include_shared ?? false
+      if (withShared && timeTravel) return textResult(SHARED_WITH_AS_OF)
 
       const types = parseIdList(type_ids, 'type_ids')
       if (!types.ok) return textResult(types.message)
@@ -642,6 +693,7 @@ export const registerTools = (server: McpServer): void => {
               type_ids: orNull(types.ids),
               location_ids: orNull(locations.ids),
               registration_ids: orNull(ownerSplit.registrationIds),
+              include_shared: withShared,
             })
       const corpQuery = () =>
         timeTravel
@@ -655,6 +707,7 @@ export const registerTools = (server: McpServer): void => {
               type_ids: orNull(types.ids),
               location_ids: orNull(locations.ids),
               corporation_ids: orNull(ownerSplit.corporationIds),
+              include_shared: withShared,
             })
       const [{ data: characterRows, error: characterError }, { data: corpRows, error: corpError }] = await Promise.all([
         scopes.character ? characterQuery() : Promise.resolve({ data: [], error: null }),
@@ -676,15 +729,28 @@ export const registerTools = (server: McpServer): void => {
         root_location_type: string | null
         contents: number | string
         parent_id: number | string | null
+        // Absent on the as_of path, whose functions never return shared rows.
+        shared?: boolean | null
       }
       type CorpFilterRow = Omit<CharacterFilterRow, 'registration_id' | 'name'> & { corporation_id: number | string }
 
       const rows = [
-        ...((characterRows ?? []) as CharacterFilterRow[]).map((r) => ({ ...r, ownerId: r.registration_id })),
-        ...((corpRows ?? []) as CorpFilterRow[]).map((r) => ({ ...r, name: null, ownerId: String(r.corporation_id) })),
+        ...((characterRows ?? []) as CharacterFilterRow[]).map((r) => ({
+          ...r,
+          ownerKind: 'character' as const,
+          ownerId: r.registration_id,
+        })),
+        ...((corpRows ?? []) as CorpFilterRow[]).map((r) => ({
+          ...r,
+          name: null,
+          ownerKind: 'corporation' as const,
+          ownerId: String(r.corporation_id),
+        })),
       ].map((r) => ({
         itemId: String(r.item_id),
+        ownerKind: r.ownerKind,
         ownerId: r.ownerId,
+        shared: r.shared === true,
         typeId: Number(r.type_id),
         customName: r.name,
         // Singletons (assembled ships, containers, …) report a null/1 quantity.
@@ -702,9 +768,10 @@ export const registerTools = (server: McpServer): void => {
         prop('id'),
         rows.map((r) => r.root).filter((r): r is LocationRef => r != null)
       )
-      const [{ nameFor, systemFor }, typeNames] = await Promise.all([
+      const [{ nameFor, systemFor }, typeNames, foreignNames] = await Promise.all([
         resolveLocations(rootRefs, supabase),
         getSdeTypeNames(rows.map((r) => r.typeId)),
+        sharedOwnerNames(supabase, rows),
       ])
 
       const located = rows
@@ -736,19 +803,21 @@ export const registerTools = (server: McpServer): void => {
           ...(ownerSplit.names.length > 0 && { owners: ownerSplit.names }),
         },
         total_stacks: located.length,
+        ...(withShared && { shared_stacks: located.filter(({ row }) => row.shared).length }),
         totals_by_item: totalsByItem,
         items: shown.map(({ row, stationName, systemName }) => ({
           item_id: row.itemId,
           type_id: row.typeId,
           item: typeName(typeNames, row.typeId),
           quantity: row.quantity,
-          owner: owners.nameById.get(row.ownerId) ?? row.ownerId,
+          owner: owners.nameById.get(row.ownerId) ?? foreignNames.get(row.ownerId) ?? row.ownerId,
           system: systemName,
           station: stationName,
           hangar: row.flag,
           ...(row.parentId != null && { location_id: row.parentId }),
           ...(row.customName != null && { custom_name: row.customName }),
           ...(row.contents > 0 && { contains_items: row.contents }),
+          ...(row.shared && { shared: true }),
         })),
         ...(capNote(located.length, shown.length, 'stacks') && {
           note: capNote(located.length, shown.length, 'stacks'),
