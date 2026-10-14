@@ -67,6 +67,22 @@ const ancestryChain = async (
   return parent == null ? { chain, holder: heldBy } : ancestryChain(supabase, table, String(parent), chain, heldBy)
 }
 
+// Every registration on the account that owns `registrationId`, with names.
+const accountRegistrations = async (
+  supabase: ReturnType<typeof createServiceClient>,
+  registrationId: string
+): Promise<{ userId: string; ids: string[]; names: Map<string, string> } | null> => {
+  const { data: anchor } = await supabase
+    .from('registration')
+    .select('user_id')
+    .eq('id', registrationId)
+    .maybeSingle<{ user_id: string }>()
+  if (!anchor) return null
+  const { data } = await supabase.from('registration').select('id, name').eq('user_id', anchor.user_id)
+  const rows = (data ?? []) as Array<{ id: string; name: string }>
+  return { userId: anchor.user_id, ids: rows.map((r) => r.id), names: new Map(rows.map((r) => [r.id, r.name])) }
+}
+
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 export const resolveSignedShare = async (param: string, itemId: string): Promise<ShareScope | null> => {
@@ -86,35 +102,61 @@ export const resolveSignedShare = async (param: string, itemId: string): Promise
   // Every share that covers the requested item, then the signature says which
   // one (if any) minted this link. A legacy link's id narrows it to one row.
   const supabase = createServiceClient()
-  // A share covers only its grantor's own items, so when the item is a
-  // character's, only that character's shares are candidates — a place share
-  // by another owner at the same place never opens it.
+  // A share covers its grantor's account's character-owned items, so when the
+  // item is a character's, only shares by that holder's account are candidates
+  // — a place share by another account at the same place never opens it. A
+  // share row is anchored on one registration, but a place share reaches every
+  // registration of its account (docs/sharing-layer/15-place-share.md).
   const { chain, holder } = await ancestryChain(supabase, 'character_asset_over_time', itemId)
   const candidates = supabase
     .from('character_asset_share')
-    .select('id, registration_id, secret, show_as_main')
+    .select('id, registration_id, item_id, secret, show_as_main')
     .in('item_id', chain)
-  const byHolder = holder === null ? candidates : candidates.eq('registration_id', holder)
+  const holderAccount = holder === null ? null : await accountRegistrations(supabase, holder)
+  const byHolder = holderAccount === null ? candidates : candidates.in('registration_id', holderAccount.ids)
   const { data: covering } = await (shareId === null ? byHolder : byHolder.eq('id', shareId))
   const share = (
-    (covering ?? []) as Array<{ id: string; registration_id: string; secret: string | null; show_as_main: boolean }>
+    (covering ?? []) as Array<{
+      id: string
+      registration_id: string
+      item_id: number | string
+      secret: string | null
+      show_as_main: boolean
+    }>
   ).find((row) => row.secret != null && verifyShareToken(row.id, row.secret, salt, signature))
   // Not a character item (or no character share minted this link): the item may
   // be a corporation's. An item is in exactly one hangar, so this is the other
   // half of the same question, not a second guess at the first.
   if (!share) return resolveSignedCorpShare(supabase, shareId, signature, salt, itemId)
 
-  const { data: registration } = await supabase
-    .from('registration')
-    .select('id, name, user_id')
-    .eq('id', share.registration_id)
-    .maybeSingle<{ id: string; name: string; user_id: string }>()
-  if (!registration) return null
+  const account = await accountRegistrations(supabase, share.registration_id)
+  if (!account) return null
 
+  // A place share reaches every character the account owns there, so its scope
+  // names them all and never shows-as-main (one presented owner cannot stand in
+  // for several holders). An item share stays on its one holder.
+  const { data: itemRow } = await supabase
+    .from('character_asset_version')
+    .select('id')
+    .eq('item_id', share.item_id)
+    .limit(1)
+    .maybeSingle<{ id: number | string }>()
+  if (itemRow == null) {
+    return {
+      userId: account.userId,
+      registrationIds: account.ids,
+      characterNames: account.names,
+      corporationIds: [],
+      showAsMain: false,
+    }
+  }
+
+  const holderName = account.names.get(share.registration_id)
+  if (holderName === undefined) return null
   return {
-    userId: registration.user_id,
-    registrationIds: [registration.id],
-    characterNames: new Map([[registration.id, registration.name]]),
+    userId: account.userId,
+    registrationIds: [share.registration_id],
+    characterNames: new Map([[share.registration_id, holderName]]),
     // A character asset share is character-scoped
     // (docs/sharing-layer/02-recursive-rls.md); the corp arm below is the one
     // that opens corp rows.

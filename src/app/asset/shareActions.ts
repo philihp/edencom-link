@@ -26,11 +26,11 @@ export type SaveShareInput = {
 export type SaveShareResult = { error?: string; share?: ShareState }
 
 type Supabase = Awaited<ReturnType<typeof createClient>>
-type OwnRegistration = { id: string; corporation_id: number | string | null }
+type OwnRegistration = { id: string; corporation_id: number | string | null; is_main?: boolean }
 type Grant = { registrationId: string; ownCorpIds: Set<number>; ownAllianceIds: Set<number> }
 
 const ownRegistrations = async (supabase: Supabase): Promise<OwnRegistration[]> => {
-  const { data } = await supabase.from('registration').select('id, corporation_id')
+  const { data } = await supabase.from('registration').select('id, corporation_id, is_main')
   return (data ?? []) as OwnRegistration[]
 }
 
@@ -77,14 +77,27 @@ const ownItem = async (supabase: Supabase, itemId: string): Promise<Grant | null
   return { registrationId: item.registration_id, ...(await ownAudiences(supabase, own)) }
 }
 
-// Grantor guard for a PLACE share (docs/sharing-layer/15-place-share.md): the
-// named registration must be one of the caller's. Nothing about the place is
-// checked, nor need be — the share covers only that character's own items
-// there, so a place they hold nothing at simply shows nothing.
-const ownGrantor = async (supabase: Supabase, registrationId: string): Promise<Grant | null> => {
+// Grantor for a character PLACE share (docs/sharing-layer/15-place-share.md):
+// the share covers every character the caller's account owns there, so it is
+// one row, anchored on a registration of the caller's. The anchor is the one
+// already holding a share at this place, else the main, else any — stable, so a
+// re-save updates the same row. Nothing about the place is checked, nor need
+// be: a place they hold nothing at simply shows nothing.
+const placeGrantor = async (supabase: Supabase, placeId: string): Promise<Grant | null> => {
   const own = await ownRegistrations(supabase)
-  if (!own.some((r) => r.id === registrationId)) return null
-  return { registrationId, ...(await ownAudiences(supabase, own)) }
+  if (own.length === 0) return null
+  const { data: held } = await supabase
+    .from('character_asset_share')
+    .select('registration_id')
+    .eq('item_id', placeId)
+    .in(
+      'registration_id',
+      own.map((r) => r.id)
+    )
+    .limit(1)
+    .maybeSingle<{ registration_id: string }>()
+  const anchor = own.find((r) => r.id === held?.registration_id) ?? own.find((r) => r.is_main) ?? own[0]
+  return { registrationId: anchor.id, ...(await ownAudiences(supabase, own)) }
 }
 
 // The one write, for an item or a place: upsert the grantor's row for the
@@ -170,37 +183,28 @@ export const saveAssetShare = async (itemId: string, input: SaveShareInput): Pro
   return result
 }
 
-// A character's items at a place, shared as one live list.
-export const savePlaceShare = async (
-  registrationId: string,
-  placeId: string,
-  input: SaveShareInput
-): Promise<SaveShareResult> => {
+// The account's character-owned items at a place, shared as one live list.
+export const savePlaceShare = async (placeId: string, input: SaveShareInput): Promise<SaveShareResult> => {
   const supabase = await createClient()
 
   const { data: auth, error: userError } = await supabase.auth.getUser()
   if (userError || !auth?.user) return { error: 'Not signed in' }
 
-  const grant = await ownGrantor(supabase, registrationId)
-  if (!grant) return { error: 'Not your character' }
+  const grant = await placeGrantor(supabase, placeId)
+  if (!grant) return { error: 'No characters on this account' }
 
-  return writeAssetShare(supabase, grant, placeId, input)
+  return writeAssetShare(supabase, grant, placeId, { ...input, showAsMain: false })
 }
 
-// Stops one character's place share. Scoped to the grantor, since several of
-// the account's characters may each share their own items at the same place.
-export const revokePlaceShare = async (registrationId: string, placeId: string): Promise<{ error?: string }> => {
+// Stops the account's character place share, whichever registration anchors it.
+export const revokePlaceShare = async (placeId: string): Promise<{ error?: string }> => {
   const supabase = await createClient()
 
   const { data: auth, error: userError } = await supabase.auth.getUser()
   if (userError || !auth?.user) return { error: 'Not signed in' }
 
   // RLS scopes the delete to the caller's own rows.
-  const { error } = await supabase
-    .from('character_asset_share')
-    .delete()
-    .eq('registration_id', registrationId)
-    .eq('item_id', placeId)
+  const { error } = await supabase.from('character_asset_share').delete().eq('item_id', placeId)
   if (error) return { error: error.message }
 
   revalidatePath(`/asset/${placeId}`)

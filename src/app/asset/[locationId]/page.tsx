@@ -287,12 +287,11 @@ const AssetLocationPage = async ({ params, searchParams }: AssetLocationPageProp
         ? fetchShareDialogData(supabase, locationId)
         : fetchCorpShareDialogData(supabase, locationId)
 
-  // A place — station, structure, system — is shared per owner instead
-  // (docs/sharing-layer/15-place-share.md): each of the caller's characters and
-  // corporations holding something here can share its own items as one live
-  // list, and none of them can share anybody else's. Owners come from the
-  // unmasked root items and the caller's own owner list, so items someone else
-  // shared with the caller never offer a share.
+  // A place — station, structure, system — is shared as one live list instead
+  // (docs/sharing-layer/15-place-share.md): either everything the account's
+  // characters own there, or one corporation's. Which kinds the caller can make
+  // comes from the unmasked root items and the caller's own owner list, so
+  // items someone else shared with the caller never offer a share.
   const placeSharesPromise: Promise<PlaceShare[]> =
     scope || self
       ? Promise.resolve([])
@@ -304,7 +303,7 @@ const AssetLocationPage = async ({ params, searchParams }: AssetLocationPageProp
             grantor,
             data:
               grantor.kind === 'character'
-                ? await fetchPlaceShareDialogData(supabase, locationId, grantor.registrationId)
+                ? await fetchPlaceShareDialogData(supabase, locationId)
                 : await fetchCorpPlaceShareDialogData(supabase, locationId, grantor.corporationId),
           }))
         ).then((shares) => shares.filter((s): s is PlaceShare => s.data != null))
@@ -383,8 +382,8 @@ const AssetLocationPage = async ({ params, searchParams }: AssetLocationPageProp
           {!scope ? <AppraisalPanel targets={[locationId]} label="Appraise everything here" /> : null}
           {/* An item the caller owns as a character, or one their corporation
               holds, gets the dialog — never something merely shared with the
-              viewer. A place gets one per owner of the caller's holding
-              something here, each sharing only that owner's items. */}
+              viewer. A place gets one Share button, which
+              chooses between the account's characters and a corporation. */}
           {shareData ? (
             <AssetShareDialog
               itemId={locationId}
@@ -393,18 +392,9 @@ const AssetLocationPage = async ({ params, searchParams }: AssetLocationPageProp
               data={shareData}
             />
           ) : null}
-          {placeShares.map((placeShare) => (
-            <PlaceShareDialog
-              key={
-                placeShare.grantor.kind === 'character'
-                  ? placeShare.grantor.registrationId
-                  : placeShare.grantor.corporationId
-              }
-              placeId={locationId}
-              placeName={heading}
-              share={placeShare}
-            />
-          ))}
+          {placeShares.length > 0 ? (
+            <PlaceShareDialog placeId={locationId} placeName={heading} shares={placeShares} />
+          ) : null}
         </div>
       </div>
       {systemName && systemName !== heading ? (

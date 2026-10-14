@@ -147,18 +147,31 @@ export const fetchShareDialogData = async (
   return { ...data, hasLegacyToken: legacy != null }
 }
 
-// A character's share of its items at a PLACE (docs/sharing-layer/15-place-share.md):
-// the grantor is named rather than read off an item, and must be one of the
-// caller's own registrations. Never a legacy token — nothing ever minted one
-// for a place.
+// The account's share of its character-owned items at a PLACE
+// (docs/sharing-layer/15-place-share.md): one row for the whole account. It is
+// read off whichever of the caller's registrations holds it (RLS scopes the
+// read to their own), and is never a legacy token — nothing ever minted one
+// for a place. No show-as-main: several characters can hold items there.
 export const fetchPlaceShareDialogData = async (
   supabase: SupabaseClient,
-  placeId: string,
-  registrationId: string
+  placeId: string
 ): Promise<ShareDialogData | null> => {
   const own = await ownRegistrations(supabase)
-  if (!own.some((r) => r.id === registrationId)) return null
-  return characterShareData(supabase, own, registrationId, placeId)
+  if (own.length === 0) return null
+  const [{ corporations, alliances }, { data: shareRow }] = await Promise.all([
+    fetchShareAudiences(supabase, own),
+    supabase
+      .from('character_asset_share')
+      .select('id, corporation_ids, alliance_ids, secret, show_as_main')
+      .eq('item_id', placeId)
+      .in(
+        'registration_id',
+        own.map((r) => r.id)
+      )
+      .limit(1)
+      .maybeSingle<ShareRowLike>(),
+  ])
+  return { share: shareRowToState(shareRow), corporations, alliances, hasLegacyToken: false, mainName: null }
 }
 
 type OwnCharacter = OwnRegistration & { name: string; is_main: boolean }

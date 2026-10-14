@@ -18,11 +18,14 @@ A share's subject id may name a **place** as well as an item. A place share
 covers **the grantor's own items whose root sits at that place, and everything
 inside them**, live, as the extracts change them.
 
-- The grantor is a character (`character_asset_share.registration_id`) or a
-  corporation (`corp_asset_share.corporation_id`), exactly as before. A place
-  share never covers another owner's items at the same place. That includes the
-  grantor account's other characters, because the per-character grantor rule
-  (design.md) still holds.
+- The grantor is an account's characters or a corporation. A **character place
+  share covers every character-owned item the grantor's account holds at the
+  place** (migration `20261014174504`): one `character_asset_share` row, anchored
+  on one registration of the account (the one already holding the share, else
+  the main), reaching every registration of that account. A corporation's share
+  is `corp_asset_share.corporation_id`, as before. Neither covers another
+  account's or owner's items at the same place, and a character share never
+  covers the account's corporation-owned items.
 - The place need not be owned by anyone in particular. Sarah can share her
   items in someone else's Astrahus.
 - Nothing new is stored. Both share tables already key on a bare `item_id`, so
@@ -57,11 +60,16 @@ Three pieces, one per path a recipient reads through:
 
 ## The app
 
-- `/asset/[place]` (signed in, not on a share link) offers **one Share button
-  per owner of the caller's holding a root there**: "Share: Sarah Okaski's items
-  here", "Share: Hard Knocks Inc.'s items here". The owners are the root items'
-  owners filtered to the caller's own (`placeGrantors`), so items someone shared
-  *with* the caller never offer a share.
+- `/asset/[place]` (signed in, not on a share link) offers **one Share button**.
+  The dialog chooses between "Your characters' items here" and each corporation
+  holding a root there, but only when more than one of those has something: with
+  only characters (or only one corporation) holding items, it opens straight on
+  that share. Kinds come from the root items' owners filtered to the caller's own
+  (`placeGrantors`), so items someone shared *with* the caller never offer one.
+  A character share has no show-as-main (several characters can hold items
+  there); its signed link opens every character of the account at the place.
+  The account-wide expansion for recipients is `shared_place_pairs()`, a third
+  argument-free SECURITY DEFINER (`registration` is hidden from them).
 - Writers: `savePlaceShare`/`revokePlaceShare` (character, grantor guard =
   one of the caller's registrations) and `saveCorpPlaceShare`/
   `revokeCorpPlaceShare` (corporation, guard = a corp the caller has a

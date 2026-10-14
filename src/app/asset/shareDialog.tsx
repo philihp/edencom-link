@@ -6,9 +6,7 @@ import type { SaveShareInput, SaveShareResult } from './shareActions'
 import type { ShareDialogData, ShareState } from './shareData'
 import styles from './shareDialog.module.css'
 
-type ShareDialogProps = {
-  // What the dialog says it's sharing ("ship", "item", "fitting").
-  subjectLabel: string
+type ShareFormProps = {
   // The path a share link opens (e.g. `/ship/123`); the client appends
   // ?share=<param> to the current origin.
   urlPath: string
@@ -21,26 +19,25 @@ type ShareDialogProps = {
   // Overrides the what-sharing-means line for subjects that aren't a
   // container of items (a link shares query results, not an item tree).
   hint?: string
-  // Names whose share the button opens, where one page offers several — a
-  // place, where each of the caller's owners shares only their own items
-  // (docs/sharing-layer/15-place-share.md). The heading names it too.
-  buttonLabel?: string
+  // Called with the share's new state after a save (or null after "stop
+  // sharing"), for a parent that shows whether anything is shared.
+  onShareChange?: (share: ShareState | null) => void
+  onClose: () => void
 }
 
 // The Share button + native <dialog> editor over a subject's single share row
 // (docs/sharing-layer/03-share-dialog.md): corporation/alliance checkboxes,
 // a signed share link, or fully public — saved via cookie-session server
 // actions. Rendered only when the viewer owns the subject.
-export const ShareDialog = ({
-  subjectLabel,
+export const ShareForm = ({
   urlPath,
   data,
   save: saveAction,
   revoke: revokeAction,
   hint,
-  buttonLabel,
-}: ShareDialogProps) => {
-  const ref = useRef<HTMLDialogElement>(null)
+  onShareChange,
+  onClose,
+}: ShareFormProps) => {
   const [share, setShare] = useState<ShareState | null>(data.share)
   const [corporationIds, setCorporationIds] = useState<Set<number>>(new Set(data.share?.corporationIds ?? []))
   const [allianceIds, setAllianceIds] = useState<Set<number>>(new Set(data.share?.allianceIds ?? []))
@@ -77,6 +74,7 @@ export const ShareDialog = ({
       if (result.error) setError(result.error)
       else if (result.share) {
         setShare(result.share)
+        onShareChange?.(result.share)
         setCopied(false)
       }
     })
@@ -88,6 +86,7 @@ export const ShareDialog = ({
       if (result.error) setError(result.error)
       else {
         setShare(null)
+        onShareChange?.(null)
         setCorporationIds(new Set())
         setAllianceIds(new Set())
         setLink(false)
@@ -105,101 +104,116 @@ export const ShareDialog = ({
 
   return (
     <>
+      <p className={styles.hint}>
+        {hint ?? 'Whoever you share with can see this item and everything inside it, live, until you stop sharing.'}
+      </p>
+
+      <label className={styles.publicRow}>
+        <input type="checkbox" checked={isPublic} onChange={(e) => setIsPublic(e.target.checked)} />
+        Public — anyone can see this
+      </label>
+
+      <fieldset className={styles.audience} disabled={isPublic}>
+        <legend>Corporations</legend>
+        {data.corporations.length === 0 ? (
+          <p className={styles.hint}>None of your characters are in a corporation.</p>
+        ) : (
+          data.corporations.map((c) => (
+            <label key={c.id}>
+              <input
+                type="checkbox"
+                checked={corporationIds.has(c.id)}
+                onChange={() => setCorporationIds((s) => toggle(s, c.id))}
+              />
+              {c.name}
+            </label>
+          ))
+        )}
+      </fieldset>
+
+      <fieldset className={styles.audience} disabled={isPublic}>
+        <legend>Alliances</legend>
+        {data.alliances.length === 0 ? (
+          <p className={styles.hint}>None of your corporations are in an alliance.</p>
+        ) : (
+          data.alliances.map((a) => (
+            <label key={a.id}>
+              <input
+                type="checkbox"
+                checked={allianceIds.has(a.id)}
+                onChange={() => setAllianceIds((s) => toggle(s, a.id))}
+              />
+              {a.name}
+            </label>
+          ))
+        )}
+      </fieldset>
+
+      <fieldset className={styles.audience} disabled={isPublic}>
+        <legend>Share link</legend>
+        <label>
+          <input type="checkbox" checked={link} onChange={(e) => setLink(e.target.checked)} />
+          Anyone with the link can see this
+        </label>
+        {shareUrl && link ? (
+          <p className={styles.linkRow}>
+            <code>{shareUrl}</code>{' '}
+            <button type="button" onClick={copy} disabled={pending}>
+              {copied ? 'copied' : 'copy'}
+            </button>{' '}
+            <button type="button" onClick={() => save(true)} disabled={pending} title="Old links stop working">
+              reset link
+            </button>
+          </p>
+        ) : null}
+      </fieldset>
+
+      {data.mainName ? (
+        <label className={styles.publicRow}>
+          <input type="checkbox" checked={showAsMain} onChange={(e) => setShowAsMain(e.target.checked)} />
+          Show the owner as {data.mainName}
+        </label>
+      ) : null}
+
+      {data.hasLegacyToken ? (
+        <p className={styles.hint}>An old-style ?token= link exists for this item; saving replaces it.</p>
+      ) : null}
+      {error ? <p className={styles.error}>{error}</p> : null}
+
+      <div className={styles.footer}>
+        <button type="button" onClick={() => save()} disabled={pending}>
+          {pending ? 'Saving…' : 'Save'}
+        </button>
+        {share ? (
+          <button type="button" onClick={stopSharing} disabled={pending}>
+            Stop sharing
+          </button>
+        ) : null}
+        <button type="button" onClick={() => onClose()} disabled={pending}>
+          Close
+        </button>
+      </div>
+    </>
+  )
+}
+
+type ShareDialogProps = Omit<ShareFormProps, 'onClose' | 'onShareChange'> & {
+  // What the dialog says it's sharing ("ship", "item", "fitting").
+  subjectLabel: string
+}
+
+// The Share button + native <dialog> around one ShareForm.
+export const ShareDialog = ({ subjectLabel, ...form }: ShareDialogProps) => {
+  const ref = useRef<HTMLDialogElement>(null)
+  const [shared, setShared] = useState(form.data.share != null)
+  return (
+    <>
       <button type="button" onClick={() => ref.current?.showModal()}>
-        Share{share ? 'd' : ''}
-        {buttonLabel ? `: ${buttonLabel}` : ''}
+        Share{shared ? 'd' : ''}
       </button>
       <dialog ref={ref} className={styles.dialog}>
-        <h2>{buttonLabel ? `Share ${buttonLabel}` : `Share this ${subjectLabel}`}</h2>
-        <p className={styles.hint}>
-          {hint ?? 'Whoever you share with can see this item and everything inside it, live, until you stop sharing.'}
-        </p>
-
-        <label className={styles.publicRow}>
-          <input type="checkbox" checked={isPublic} onChange={(e) => setIsPublic(e.target.checked)} />
-          Public — anyone can see this
-        </label>
-
-        <fieldset className={styles.audience} disabled={isPublic}>
-          <legend>Corporations</legend>
-          {data.corporations.length === 0 ? (
-            <p className={styles.hint}>None of your characters are in a corporation.</p>
-          ) : (
-            data.corporations.map((c) => (
-              <label key={c.id}>
-                <input
-                  type="checkbox"
-                  checked={corporationIds.has(c.id)}
-                  onChange={() => setCorporationIds((s) => toggle(s, c.id))}
-                />
-                {c.name}
-              </label>
-            ))
-          )}
-        </fieldset>
-
-        <fieldset className={styles.audience} disabled={isPublic}>
-          <legend>Alliances</legend>
-          {data.alliances.length === 0 ? (
-            <p className={styles.hint}>None of your corporations are in an alliance.</p>
-          ) : (
-            data.alliances.map((a) => (
-              <label key={a.id}>
-                <input
-                  type="checkbox"
-                  checked={allianceIds.has(a.id)}
-                  onChange={() => setAllianceIds((s) => toggle(s, a.id))}
-                />
-                {a.name}
-              </label>
-            ))
-          )}
-        </fieldset>
-
-        <fieldset className={styles.audience} disabled={isPublic}>
-          <legend>Share link</legend>
-          <label>
-            <input type="checkbox" checked={link} onChange={(e) => setLink(e.target.checked)} />
-            Anyone with the link can see this
-          </label>
-          {shareUrl && link ? (
-            <p className={styles.linkRow}>
-              <code>{shareUrl}</code>{' '}
-              <button type="button" onClick={copy} disabled={pending}>
-                {copied ? 'copied' : 'copy'}
-              </button>{' '}
-              <button type="button" onClick={() => save(true)} disabled={pending} title="Old links stop working">
-                reset link
-              </button>
-            </p>
-          ) : null}
-        </fieldset>
-
-        {data.mainName ? (
-          <label className={styles.publicRow}>
-            <input type="checkbox" checked={showAsMain} onChange={(e) => setShowAsMain(e.target.checked)} />
-            Show the owner as {data.mainName}
-          </label>
-        ) : null}
-
-        {data.hasLegacyToken ? (
-          <p className={styles.hint}>An old-style ?token= link exists for this item; saving replaces it.</p>
-        ) : null}
-        {error ? <p className={styles.error}>{error}</p> : null}
-
-        <div className={styles.footer}>
-          <button type="button" onClick={() => save()} disabled={pending}>
-            {pending ? 'Saving…' : 'Save'}
-          </button>
-          {share ? (
-            <button type="button" onClick={stopSharing} disabled={pending}>
-              Stop sharing
-            </button>
-          ) : null}
-          <button type="button" onClick={() => ref.current?.close()} disabled={pending}>
-            Close
-          </button>
-        </div>
+        <h2>Share this {subjectLabel}</h2>
+        <ShareForm {...form} onShareChange={(s) => setShared(s != null)} onClose={() => ref.current?.close()} />
       </dialog>
     </>
   )
