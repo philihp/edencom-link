@@ -29,13 +29,15 @@ export const shareCardMetadata = async (card: {
   width: number
   height: number
 }): Promise<Metadata> => {
+  // An unnamed item's title is its type name, which needs saying only once.
+  const named = card.title !== card.typeName
   const image = {
     url: `${await requestOrigin()}${card.imagePath}`,
     width: card.width,
     height: card.height,
-    alt: `${card.title}, ${card.typeName}`,
+    alt: named ? `${card.title}, ${card.typeName}` : card.title,
   }
-  const title = card.title === card.typeName ? card.title : `${card.title} (${card.typeName})`
+  const title = named ? `${card.title} (${card.typeName})` : card.title
   return {
     title: `${title} · Edencom Link`,
     description: card.description,

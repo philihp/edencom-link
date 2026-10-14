@@ -20,6 +20,13 @@ const PICTURE_SIZE = 300
 
 export type Images = { picture: string | null; portrait: string | null; icons: Map<string, string | null> }
 
+// The line under the title: type and group, without repeating a title that
+// already is the type name.
+const subtitle = ({ title, typeName, groupName }: AssetCard): string =>
+  [title === typeName ? null : typeName, groupName === typeName ? null : groupName]
+    .filter((part) => part != null)
+    .join(' · ')
+
 export const iconKey = (stack: Pick<StackIcon, 'typeId' | 'variation'>) => `${stack.typeId}:${stack.variation}`
 
 const Icon = ({ stack, src }: { stack: StackIcon; src: string | null | undefined }) => (
@@ -127,7 +134,7 @@ export const Card = ({ card, images }: { card: AssetCard; images: Images }) => (
           {card.title}
         </div>
         <div style={{ display: 'flex', fontSize: 24, color: MUTED, marginTop: 6, marginBottom: 22 }}>
-          {card.groupName && card.groupName !== card.typeName ? `${card.typeName} · ${card.groupName}` : card.typeName}
+          {subtitle(card)}
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', alignContent: 'flex-start', flex: 1 }}>
           {card.stacks.length > 0 ? (
