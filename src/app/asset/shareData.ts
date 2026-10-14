@@ -21,6 +21,8 @@ export type ShareState = {
   isPublic: boolean
   // Asset shares only: show the account's main character as the owner.
   showAsMain?: boolean
+  // Structure shares only: the "people with jobs here" audience.
+  tenants?: boolean
 }
 
 export type ShareDialogData = {

@@ -21,8 +21,12 @@ import {
   structureIndexActivities,
 } from '../industryIndex'
 import { UrlWindowSelect } from '../../windowSelect'
+import { resolveStructureAccess, resolveStructureShare } from '../access'
 import { colourOf, initialsOf } from '../avatar'
 import { FavoriteStar } from '../favoriteStar'
+import { fetchStructureShareDialogData } from '../shareData'
+import { StructureShareDialog } from '../structureShareDialog'
+import { SharedStructurePage } from './sharedStructure'
 import { SourceTag, type Source } from '../sourceTag'
 import { structureWindowDays } from '../windows'
 import styles from '../structures.module.css'
@@ -102,24 +106,29 @@ type StructureParams = {
   params: Promise<{
     structureId: string
   }>
-  searchParams: Promise<{ days?: string }>
+  searchParams: Promise<{ days?: string; share?: string }>
 }
 
 const show = (value: string | number | null | undefined) => (value === null || value === undefined ? '—' : value)
 
 const StructurePage = async ({ params, searchParams }: StructureParams) => {
   const { structureId } = await params
-  const { days: daysParam } = await searchParams
+  const { days: daysParam, share } = await searchParams
   const windowDays = structureWindowDays(daysParam)
   const supabase = await createClient()
 
-  const user = await establishedUser(supabase)
-  if (!user) {
-    redirect('/')
-  }
-
   // structure ids are bigints; only digits are valid, and validating guards the .or() filter below.
   const validId = /^\d+$/.test(structureId)
+
+  // Signed-out: a share link, or a structure its owner shares with everyone,
+  // opens the share-scoped view (docs/sharing-layer/12-structure-share.md);
+  // anything else goes home as before.
+  const user = await establishedUser(supabase)
+  if (!user) {
+    const scope = validId ? await resolveStructureAccess(share, structureId) : null
+    if (!scope) redirect('/')
+    return <SharedStructurePage scope={scope} viaLink={share != null} />
+  }
 
   const { data: scanned } = validId
     ? await supabase
@@ -130,6 +139,13 @@ const StructurePage = async ({ params, searchParams }: StructureParams) => {
         .eq('structure_id', structureId)
         .maybeSingle()
     : { data: null }
+
+  // Signed in, but the row is not RLS-visible: a share link still opens the
+  // share-scoped view, the same one a signed-out visitor gets.
+  if (validId && !scanned && share) {
+    const scope = await resolveStructureShare(share, structureId)
+    if (scope) return <SharedStructurePage scope={scope} viaLink />
+  }
 
   // /structure now lists structures our jobs run in but no director of ours can
   // scan (src/app/structure/roster.ts), so those tiles link here too. There is
@@ -190,9 +206,35 @@ const StructurePage = async ({ params, searchParams }: StructureParams) => {
 
   const s = structure as Structure
 
+  // Whose structure this is. A scanned row the caller can see but no corporation
+  // of theirs owns reached them through a share (an alliance-mate's, a
+  // tenant's, a public one): the director-only blocks are then not theirs, and
+  // the page says so instead of drawing empty cells.
+  const { data: ownRegistrations } = await supabase.from('registration').select('corporation_id')
+  const ownCorporationIds = new Set(
+    ((ownRegistrations ?? []) as Array<{ corporation_id: number | string | null }>)
+      .map((r) => r.corporation_id)
+      .filter((c): c is number | string => c != null)
+      .map(Number)
+  )
+  const ours = s.corporation_id != null && ownCorporationIds.has(Number(s.corporation_id))
+  const sharedBy = scanned && !ours && s.corporation_id != null ? Number(s.corporation_id) : null
+  const [{ data: sharerRow }, shareDialog] = await Promise.all([
+    sharedBy != null
+      ? supabase
+          .from('corporation')
+          .select('name')
+          .eq('corporation_id', sharedBy)
+          .maybeSingle<{ name: string | null }>()
+      : Promise.resolve({ data: null }),
+    // The Share dialog, for a director of the owning corporation only.
+    scanned && ours ? fetchStructureShareDialogData(supabase, structureId) : Promise.resolve(null),
+  ])
+  const sharerName = sharedBy != null ? (sharerRow?.name ?? `Corporation #${sharedBy}`) : null
+
   // Fuel timer and reinforcement profile live in corp_structure_status now
   // (own-corp only). RLS returns a row only if the caller's corp owns this
-  // structure — an alliance-mate viewing it via corp_structure sees neither.
+  // structure — a share's audience viewing it via corp_structure sees neither.
   const { data: statusRow } = await supabase
     .from('corp_structure_status')
     .select('fuel_expires, profile_id')
@@ -393,7 +435,16 @@ const StructurePage = async ({ params, searchParams }: StructureParams) => {
             <SystemName name={systemName} id={s.system_id} /> · <SourceTag source={source} />
           </div>
         </div>
-        <FavoriteStar structureId={String(s.structure_id)} favorite={favorite} large />
+        <div className={styles.detailActions}>
+          {shareDialog ? (
+            <StructureShareDialog
+              structureId={String(s.structure_id)}
+              structureName={s.name ?? `Structure #${s.structure_id}`}
+              data={shareDialog}
+            />
+          ) : null}
+          <FavoriteStar structureId={String(s.structure_id)} favorite={favorite} large />
+        </div>
       </div>
 
       <div className={styles.detailGrid}>
@@ -403,6 +454,14 @@ const StructurePage = async ({ params, searchParams }: StructureParams) => {
             <span className={styles.spacer} />
             <SourceTag source={source} />
           </div>
+          {sharerName != null && (
+            <div className={styles.panelRow}>
+              <span className={styles.panelLabel}>shared by</span>
+              <span>
+                <Name name={sharerName} id={sharedBy} />
+              </span>
+            </div>
+          )}
           <div className={styles.panelRow}>
             <span className={styles.panelLabel}>structure id</span>
             <span className={styles.num}>{s.structure_id}</span>
@@ -419,27 +478,31 @@ const StructurePage = async ({ params, searchParams }: StructureParams) => {
               <SystemName name={systemName} id={s.system_id} />
             </span>
           </div>
-          <div className={styles.panelRow}>
-            <span className={styles.panelLabel}>profile id</span>
-            <span className={styles.num}>{show(s.profile_id)}</span>
-          </div>
+          {sharedBy == null && (
+            <div className={styles.panelRow}>
+              <span className={styles.panelLabel}>profile id</span>
+              <span className={styles.num}>{show(s.profile_id)}</span>
+            </div>
+          )}
           <div className={styles.panelRow}>
             <span className={styles.panelLabel}>state</span>
             <span>{show(s.state)}</span>
           </div>
-          <div className={styles.panelRow}>
-            <span className={styles.panelLabel}>fuel expires</span>
-            <span>
-              <span className={styles.num}>
-                <DateTime value={s.fuel_expires} />
-              </span>
-              {fuelRelative && (
-                <span className={styles.subLine} data-soon={fuelSoon || undefined}>
-                  {fuelRelative}
+          {sharedBy == null && (
+            <div className={styles.panelRow}>
+              <span className={styles.panelLabel}>fuel expires</span>
+              <span>
+                <span className={styles.num}>
+                  <DateTime value={s.fuel_expires} />
                 </span>
-              )}
-            </span>
-          </div>
+                {fuelRelative && (
+                  <span className={styles.subLine} data-soon={fuelSoon || undefined}>
+                    {fuelRelative}
+                  </span>
+                )}
+              </span>
+            </div>
+          )}
           <div className={styles.panelRow}>
             <span className={styles.panelLabel}>unanchors at</span>
             <span className={styles.num}>
@@ -508,118 +571,126 @@ const StructurePage = async ({ params, searchParams }: StructureParams) => {
         </section>
 
         <div className={styles.detailColumn}>
-          <section className={styles.panel} aria-label="Tax revenue">
-            <div className={styles.panelHead}>
-              <h2>tax revenue</h2>
-              <span className={styles.spacer} />
-              <SourceTag source="ledger" />
-              <span className={styles.headerControl}>
-                <span className={styles.headerControlLabel}>window</span>
-                <UrlWindowSelect days={windowDays} path={`/structure/${s.structure_id}`} />
-              </span>
-            </div>
-            {leaderboard.length > 0 && (
-              <ol className={styles.payerGrid}>
-                {leaderboard.map((p, i) => {
-                  const known = p.payerId !== 'unknown'
-                  const name = known ? payerNames.get(p.payerId) : undefined
-                  return (
-                    <li key={`payer-${p.payerId}`} className={styles.payerCard}>
-                      <span className={styles.payerRank}>#{i + 1}</span>
-                      <span
-                        className={styles.payerAvatar}
-                        style={name ? { background: colourOf(name) } : undefined}
-                        aria-hidden
-                      >
-                        {name ? initialsOf(name) : ''}
-                      </span>
-                      <span className={styles.payerCardName}>
-                        <Name name={name} id={known ? p.payerId : undefined} />
-                      </span>
-                      <span className={`${styles.payerTotal} ${styles.num}`}>{formatIskValue(p.isk)}</span>
-                    </li>
-                  )
-                })}
-              </ol>
-            )}
+          {sharedBy != null && (
+            <p className={styles.plainNote}>
+              Shared by {sharerName}. A structure share opens its details, services and rigs — never its fuel, its
+              revenue or the owner&rsquo;s books, which is why there is no tax revenue here.
+            </p>
+          )}
+          {sharedBy == null && (
+            <section className={styles.panel} aria-label="Tax revenue">
+              <div className={styles.panelHead}>
+                <h2>tax revenue</h2>
+                <span className={styles.spacer} />
+                <SourceTag source="ledger" />
+                <span className={styles.headerControl}>
+                  <span className={styles.headerControlLabel}>window</span>
+                  <UrlWindowSelect days={windowDays} path={`/structure/${s.structure_id}`} />
+                </span>
+              </div>
+              {leaderboard.length > 0 && (
+                <ol className={styles.payerGrid}>
+                  {leaderboard.map((p, i) => {
+                    const known = p.payerId !== 'unknown'
+                    const name = known ? payerNames.get(p.payerId) : undefined
+                    return (
+                      <li key={`payer-${p.payerId}`} className={styles.payerCard}>
+                        <span className={styles.payerRank}>#{i + 1}</span>
+                        <span
+                          className={styles.payerAvatar}
+                          style={name ? { background: colourOf(name) } : undefined}
+                          aria-hidden
+                        >
+                          {name ? initialsOf(name) : ''}
+                        </span>
+                        <span className={styles.payerCardName}>
+                          <Name name={name} id={known ? p.payerId : undefined} />
+                        </span>
+                        <span className={`${styles.payerTotal} ${styles.num}`}>{formatIskValue(p.isk)}</span>
+                      </li>
+                    )
+                  })}
+                </ol>
+              )}
 
-            {taxRows.length > 0 ? (
-              <div className={styles.tableScroll}>
-                <table className={styles.table}>
-                  <thead>
-                    <tr>
-                      <th>payer</th>
-                      <th>day</th>
-                      <th className={styles.num}>jobs</th>
-                      <th className={styles.num}>ISK</th>
-                      {showPaid && (
-                        <>
-                          <th className={styles.num}>paid jobs</th>
-                          <th className={styles.num}>paid ISK</th>
-                        </>
-                      )}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {taxRows.map((r) => {
-                      const payer = r.payer_id != null ? String(r.payer_id) : undefined
-                      return (
-                        <tr key={`tax-${payer ?? 'unknown'}-${r.day}`}>
-                          <td>
-                            <div>
-                              <Name name={payer ? payerNames.get(payer) : undefined} id={r.payer_id} />
-                            </div>
-                            {payer && payerCorps.get(payer) && (
-                              <div className={styles.cellSub}>{payerCorps.get(payer)}</div>
+              {taxRows.length > 0 ? (
+                <div className={styles.tableScroll}>
+                  <table className={styles.table}>
+                    <thead>
+                      <tr>
+                        <th>payer</th>
+                        <th>day</th>
+                        <th className={styles.num}>jobs</th>
+                        <th className={styles.num}>ISK</th>
+                        {showPaid && (
+                          <>
+                            <th className={styles.num}>paid jobs</th>
+                            <th className={styles.num}>paid ISK</th>
+                          </>
+                        )}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {taxRows.map((r) => {
+                        const payer = r.payer_id != null ? String(r.payer_id) : undefined
+                        return (
+                          <tr key={`tax-${payer ?? 'unknown'}-${r.day}`}>
+                            <td>
+                              <div>
+                                <Name name={payer ? payerNames.get(payer) : undefined} id={r.payer_id} />
+                              </div>
+                              {payer && payerCorps.get(payer) && (
+                                <div className={styles.cellSub}>{payerCorps.get(payer)}</div>
+                              )}
+                            </td>
+                            <td className={styles.cellDate}>{r.day}</td>
+                            <td className={styles.num}>{Number(r.jobs)}</td>
+                            <td className={styles.num}>{formatIskValue(r.isk)}</td>
+                            {showPaid && (
+                              <>
+                                <td className={styles.num}>{Number(r.paid_jobs)}</td>
+                                <td className={styles.num}>{formatIskValue(r.isk_paid)}</td>
+                              </>
                             )}
-                          </td>
-                          <td className={styles.cellDate}>{r.day}</td>
-                          <td className={styles.num}>{Number(r.jobs)}</td>
-                          <td className={styles.num}>{formatIskValue(r.isk)}</td>
-                          {showPaid && (
-                            <>
-                              <td className={styles.num}>{Number(r.paid_jobs)}</td>
-                              <td className={styles.num}>{formatIskValue(r.isk_paid)}</td>
-                            </>
-                          )}
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                  <tfoot>
-                    <tr>
-                      <td>total</td>
-                      <td />
-                      <td className={styles.num}>{taxTotalJobs}</td>
-                      <td className={styles.num}>{formatIskValue(taxTotalIsk)}</td>
-                      {showPaid && (
-                        <>
-                          <td className={styles.num}>{paidJobs}</td>
-                          <td className={styles.num}>{formatIskValue(paidIsk)}</td>
-                        </>
-                      )}
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            ) : (
-              <div className={styles.panelNote}>
-                <p>No industry tax from this structure in the last {windowDays} days.</p>
-              </div>
-            )}
-            {showPaid && (
-              <div className={styles.panelNote}>
-                <p>
-                  ISK is tax that arrived here; paid ISK is what we were charged to run our own jobs here, whoever owns
-                  the structure. One charge can be both — a member billing their own corporation pays it and we receive
-                  it — so the two columns describe the same events from different sides rather than summing to a
-                  balance.
-                </p>
-              </div>
-            )}
-          </section>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                    <tfoot>
+                      <tr>
+                        <td>total</td>
+                        <td />
+                        <td className={styles.num}>{taxTotalJobs}</td>
+                        <td className={styles.num}>{formatIskValue(taxTotalIsk)}</td>
+                        {showPaid && (
+                          <>
+                            <td className={styles.num}>{paidJobs}</td>
+                            <td className={styles.num}>{formatIskValue(paidIsk)}</td>
+                          </>
+                        )}
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              ) : (
+                <div className={styles.panelNote}>
+                  <p>No industry tax from this structure in the last {windowDays} days.</p>
+                </div>
+              )}
+              {showPaid && (
+                <div className={styles.panelNote}>
+                  <p>
+                    ISK is tax that arrived here; paid ISK is what we were charged to run our own jobs here, whoever
+                    owns the structure. One charge can be both — a member billing their own corporation pays it and we
+                    receive it — so the two columns describe the same events from different sides rather than summing to
+                    a balance.
+                  </p>
+                </div>
+              )}
+            </section>
+          )}
 
-          {selfPaidIsk > 0 && (
+          {sharedBy == null && selfPaidIsk > 0 && (
             <section className={styles.panel} aria-label="Cost avoidance">
               <div className={styles.panelHead}>
                 <h2>cost avoidance</h2>
@@ -683,7 +754,7 @@ const StructurePage = async ({ params, searchParams }: StructureParams) => {
             </section>
           )}
 
-          {selfPaidIsk === 0 && paidIsk > 0 && (
+          {sharedBy == null && selfPaidIsk === 0 && paidIsk > 0 && (
             <p className={styles.plainNote}>
               No cost avoidance here: none of the {formatIskValue(paidIsk)} we paid was billed at our own rate, because
               this structure isn&rsquo;t ours. A landlord bills us whatever rate it likes, so there is no saving to
