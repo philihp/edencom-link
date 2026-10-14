@@ -1,6 +1,7 @@
 import { corpStructures } from '../esi.js'
 import { sudoSupabase } from '../supabase.js'
 import { cli, fetchAllPages, forEachCorporation } from './lib.js'
+import { maintainStructureShareDefault } from './structureShareDefault.js'
 import {
   enqueueLowFuelAlerts,
   selectCorpDiscordChannels,
@@ -39,7 +40,7 @@ export const runCorpStructures = ({ registrationIds } = {}) =>
     }))
 
     // fuel_expires and profile_id live in corp_structure_status now (own-corp-only,
-    // while corp_structure opens to alliance-mates). Upsert the structures first —
+    // while corp_structure opens to a share's audience). Upsert the structures first —
     // the status table's FK points back at them.
     const statusRows = all.map((s) => ({
       structure_id: s.structure_id,
@@ -82,6 +83,12 @@ export const runCorpStructures = ({ registrationIds } = {}) =>
             now: new Date(now),
           })
         : 0
+
+    // The seeded alliance default of corp_structure_share
+    // (docs/sharing-layer/12-structure-share.md): seed once for a corporation
+    // never seeded, and keep a still-seeded row on the corp's current alliance.
+    // Best-effort; a bookkeeping failure never fails the extract.
+    await maintainStructureShareDefault(TAG, corporation_id)
 
     const alertNote = alerts > 0 ? `, ${alerts} low-fuel alert(s)` : ''
     console.log(
