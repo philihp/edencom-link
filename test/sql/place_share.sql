@@ -253,6 +253,10 @@ create policy "Audience reads shared assets"
   to anon, authenticated
   using (is_current and public.asset_share_covers(item_id, registration_id));
 
+-- The hotfix gates that policy behind asset_sharing_registration_ids() and
+-- recreates it, so it comes after the policy it replaces.
+\i supabase/migrations/20261014192421_asset_share_covers_gated.sql
+
 -- Fixtures. Alice's ACCOUNT holds two characters in corp 98001 (alliance
 -- 99001): a1 and her alt a2. Bob is in 98002 (alliance 99002); carol is
 -- unaffiliated. P is a player structure none of them own; S is a station.

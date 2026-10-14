@@ -3677,16 +3677,51 @@ $$;
 
 revoke execute on function public.asset_share_covers(bigint, uuid) from public;
 grant execute on function public.asset_share_covers(bigint, uuid) to anon, authenticated;
+-- Costed high so the policy below never evaluates it before its gate.
+alter function public.asset_share_covers(bigint, uuid) cost 10000;
+
+-- The gate in front of it. The widening policy calls asset_share_covers() for
+-- every row the owner policy rejects — every OTHER owner's row at the place
+-- being listed, or at all for the hangar-wide summary — and when that no-share
+-- short circuit became an account-wide lookup (migration 20261014174504) the
+-- sum of those calls took every asset read past authenticated's 8 s
+-- statement_timeout. So the policy rejects before calling: this answers once
+-- per query (argument-free, stable, definer — the corp_shared_item_ids()
+-- shape, one hashed subplan) with every registration, anchor or account
+-- sibling, that has any share aimed at the caller; rows of every other
+-- account never reach the function. `registration` is RLS-hidden from a
+-- recipient, hence the definer.
+create or replace function public.asset_sharing_registration_ids()
+returns setof uuid
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select distinct sibling.id
+  from character_asset_share s
+  join public.registration anchor on anchor.id = s.registration_id
+  join public.registration sibling on sibling.user_id = anchor.user_id
+  where share_audience_matches(s.corporation_ids, s.alliance_ids, s.secret);
+$$;
+
+revoke execute on function public.asset_sharing_registration_ids() from public;
+grant execute on function public.asset_sharing_registration_ids() to anon, authenticated;
 
 -- The widening policy. is_current keeps SCD-2 history closed: a share opens
 -- the CURRENT view only — the same rows character_asset shows the owner.
 -- Permissive, so it ORs with "Users read own assets". `to anon` so a
--- fully-public share is readable signed-out.
+-- fully-public share is readable signed-out. The membership test comes
+-- first on purpose: a SQL AND evaluates in written order.
 create policy "Audience reads shared assets"
   on public.character_asset_version
   for select
   to anon, authenticated
-  using (is_current and public.asset_share_covers(item_id, registration_id));
+  using (
+    is_current
+    and registration_id in (select public.asset_sharing_registration_ids())
+    and public.asset_share_covers(item_id, registration_id)
+  );
 
 -- A place share (docs/sharing-layer/15-place-share.md) names a station,
 -- structure or system rather than an item, and covers the grantor's roots
