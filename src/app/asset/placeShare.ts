@@ -38,10 +38,3 @@ export const grantorKey = (grantor: PlaceGrantor) =>
 // What the chooser calls an option.
 export const placeShareSubject = (grantor: PlaceGrantor) =>
   grantor.kind === 'character' ? 'Your characters’ items here' : `${grantor.name}’s items here`
-
-// The what-sharing-means line. A corporation's share outlives whoever started
-// it, so it says who can stop it, as the corp item dialog does.
-export const placeShareHint = (grantor: PlaceGrantor, placeName: string) =>
-  grantor.kind === 'character'
-    ? `Whoever you share with can see everything your characters own at ${placeName}, and everything inside it, live, until you stop sharing. Corporation-owned items and other players’ items here are not included.`
-    : `Whoever you share with can see ${grantor.name}’s items at ${placeName} and everything inside them, live, until a member of ${grantor.name} stops sharing. Nobody else’s items here are included.`

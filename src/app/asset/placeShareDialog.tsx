@@ -3,11 +3,12 @@
 import { useRef, useState } from 'react'
 
 import { revokeCorpPlaceShare, saveCorpPlaceShare } from './corpShareActions'
-import { grantorKey, type PlaceGrantor, placeShareHint, placeShareSubject } from './placeShare'
+import { grantorKey, type PlaceGrantor, placeShareSubject } from './placeShare'
 import { revokePlaceShare, savePlaceShare } from './shareActions'
 import type { CorpShareDialogData, ShareDialogData } from './shareData'
 import styles from './shareDialog.module.css'
 import { ShareForm } from './shareDialog'
+import { shareHint } from './shareHint'
 
 // The one Share button for a place — a station, structure or system
 // (docs/sharing-layer/15-place-share.md). A place share is either a character
@@ -67,7 +68,11 @@ export const PlaceShareDialog = ({
               ? revokeCorpPlaceShare.bind(null, grantor.corporationId, placeId)
               : revokePlaceShare.bind(null, placeId)
           }
-          hint={placeShareHint(grantor, placeName)}
+          hint={shareHint(
+            placeId,
+            [placeName],
+            grantor.kind === 'corporation' ? { kind: 'corporation', name: grantor.name } : { kind: 'you' }
+          )}
           onShareChange={(share) =>
             setShared((prev) => {
               const next = new Set(prev)
