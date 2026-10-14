@@ -78,23 +78,38 @@ const collectJobStructureSystemIds = async () => {
   return uniq(filter(Number.isFinite, systemIds))
 }
 
+// Every system that has ever had an index recorded. Once a system is tracked
+// it stays tracked: unwatching it, unanchoring the structure or the job that
+// ran there ageing out would otherwise leave a hole in a chart someone may
+// come back to. The table is append-only and grows every hour, so the distinct
+// set comes from a skip scan in the database (one index probe per system)
+// rather than paging the whole history through PostgREST.
+const collectRecordedSystemIds = async () => {
+  const { data, error } = await sudoSupabase.rpc('industry_index_tracked_systems')
+  if (error) throw error
+  return pipe(map(Number), filter(Number.isFinite), uniq)(data ?? [])
+}
+
 // GET /industry/systems/ → industry_system_index. Records a snapshot of the
 // industry cost indices for every solar system we care about: the union of the
-// systems we have a structure anchored in (corp_structure) and every system any
-// user has put on their watch list (watched_system, the /indexes page). The
-// endpoint is public (no token) and returns the indices for *all* systems in
-// one shot, so we fetch it once and keep only the tracked systems. Each run
+// systems we have a structure anchored in (corp_structure), every system any
+// user has put on their watch list (watched_system, the /indexes page), the
+// systems our industry jobs run in, and every system we have ever recorded.
+// The endpoint is public (no token) and returns the indices for *all* systems
+// in one shot, so we fetch it once and keep only the tracked systems. Each run
 // appends a fresh set of rows, building a history of how the indices drift.
 // Account-wide work, so it takes no character scope.
 export const runIndustrySystems = async () => {
   const structureSystemIds = await collectSystemIds('corp_structure')
   const watchedSystemIds = await collectSystemIds('watched_system')
   const jobSystemIds = await collectJobStructureSystemIds()
-  const systemIds = new Set([...structureSystemIds, ...watchedSystemIds, ...jobSystemIds])
+  const recordedSystemIds = await collectRecordedSystemIds()
+  const systemIds = new Set([...structureSystemIds, ...watchedSystemIds, ...jobSystemIds, ...recordedSystemIds])
 
   console.log(
     `[${TAG}] tracking ${systemIds.size} system(s) (${structureSystemIds.length} with structures, ` +
-      `${watchedSystemIds.length} watched, ${jobSystemIds.length} with jobs of ours)`
+      `${watchedSystemIds.length} watched, ${jobSystemIds.length} with jobs of ours, ` +
+      `${recordedSystemIds.length} recorded before)`
   )
   if (systemIds.size === 0) return
 
