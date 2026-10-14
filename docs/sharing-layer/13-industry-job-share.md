@@ -30,6 +30,16 @@
 >
 > The rest of this document is the design as planned — the opt-in grant and
 > the `totals` pool — kept for the reasoning. Neither table was created.
+>
+> **Superseded in part by [16-industry-job-share.md](16-industry-job-share.md)**
+> (planned 2026-10-14): the per-`(character, structure)` opt-in grant
+> `character_industry_job_share` and the `jobs` level below are replaced by a
+> quiet per-job `hidden` opt-out of the co-tenant default plus share rows over
+> a **whole scope** (every job of a corporation, or of every character on an
+> account), on the Revision 3 shape with no subject column. Phase 16 reuses
+> the table name `character_industry_job_share` for its account-anchored row,
+> so the shape sketched below must not be built. The `totals` pool
+> (`structure_eiv_daily`) is not revived there either; it stays unbuilt.
 
 ## Problem
 
