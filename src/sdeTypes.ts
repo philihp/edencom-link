@@ -1,5 +1,5 @@
-// DB-backed lookup over the nightly SDE mirror (the sde_published_type view and
-// sde_search_type RPC — see supabase/migrations/20260716010000_sde_mirror.sql).
+// DB-backed lookup over the nightly SDE mirror (the sde_named_type view — unpublished
+// types included, since assets hold them — and the published-only sde_search_type RPC — see supabase/migrations/20260716010000_sde_mirror.sql).
 // Resolves type names and searches by name without the old build-time JSON.
 // By-id lookups are cached per server process for 6h (misses never cached — see
 // src/sdeCache.ts); searches hit the RPC uncached (user-action paths, not
@@ -61,7 +61,7 @@ const TYPE_COLUMNS = 'type_id, name, group_id, category_id, group_name, category
 
 export const getSdeTypes = (typeIDs: Iterable<number>): Promise<Record<number, SdeType>> =>
   bulkLookup(cache, typeIDs, async (chunk) => {
-    const { data, error } = await sdeSupabase().from('sde_published_type').select(TYPE_COLUMNS).in('type_id', chunk)
+    const { data, error } = await sdeSupabase().from('sde_named_type').select(TYPE_COLUMNS).in('type_id', chunk)
     if (error) {
       console.error(`[sdeTypes] lookup failed: ${error.message}`)
       return []

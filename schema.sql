@@ -210,6 +210,7 @@ drop function if exists public.sde_search_type(text, int)          cascade;
 drop function if exists public.sde_search_system(text, int)        cascade;
 drop materialized view if exists public.sde_blueprint_product cascade;
 drop view if exists public.sde_published_type cascade;
+drop view if exists public.sde_named_type     cascade;
 drop view if exists public.sde_kspace_system  cascade;
 drop view if exists public.sde_system_jump    cascade;
 drop view if exists public.sde_station        cascade;
@@ -488,6 +489,25 @@ left join public.sde_categories c on c._key = (g.data ->> 'categoryID')::bigint
 where (t.data ->> 'published')::boolean
   and coalesce(trim(t.data -> 'name' ->> 'en'), '') <> '';
 
+-- Every named type, published or not — by-id name lookups (migration *_sde_named_type).
+create view public.sde_named_type
+with (security_invoker = true) as
+select
+  t._key as type_id,
+  t.data -> 'name' ->> 'en' as name,
+  (t.data ->> 'groupID')::bigint as group_id,
+  (g.data ->> 'categoryID')::bigint as category_id,
+  g.data -> 'name' ->> 'en' as group_name,
+  c.data -> 'name' ->> 'en' as category_name,
+  (t.data ->> 'raceID')::bigint as race_id,
+  (t.data ->> 'metaGroupID')::bigint as meta_group_id,
+  (t.data ->> 'volume')::double precision as volume
+from public.sde_types t
+left join public.sde_groups g on g._key = (t.data ->> 'groupID')::bigint
+left join public.sde_categories c on c._key = (g.data ->> 'categoryID')::bigint
+where coalesce(trim(t.data -> 'name' ->> 'en'), '') <> '';
+
+
 -- Known-space systems (30M id band): wormhole/abyssal systems never appear in
 -- the industry cost-index feed — mirrors buildSde.js's buildSystems() cut. The
 -- constellation/region columns come from migration 20260719120000, the
@@ -585,10 +605,10 @@ select
   (data -> 'destination' ->> 'solarSystemID')::bigint as to_system_id
 from public.sde_map_stargates;
 
-grant select on public.sde_published_type, public.sde_kspace_system, public.sde_station, public.sde_planet,
+grant select on public.sde_named_type, public.sde_published_type, public.sde_kspace_system, public.sde_station, public.sde_planet,
   public.sde_group, public.sde_category, public.sde_region, public.sde_system_jump
   to anon, authenticated, service_role;
-revoke insert, update, delete on public.sde_published_type, public.sde_kspace_system, public.sde_station,
+revoke insert, update, delete on public.sde_named_type, public.sde_published_type, public.sde_kspace_system, public.sde_station,
   public.sde_planet, public.sde_group, public.sde_category, public.sde_region, public.sde_system_jump
   from anon, authenticated;
 
