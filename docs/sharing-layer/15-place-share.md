@@ -57,6 +57,22 @@ Three pieces, one per path a recipient reads through:
    `(owner, location_id) in (uncorrelated subquery)` so the planner makes it
    one hashed subplan per query rather than a probe per row of an owner's own
    read. An item share still hides its root's place.
+4. **`asset_sharing_registration_ids()`** (the gate in front of the climb, added
+   2026-10-14 after the account-wide expansion took production down). The
+   widening policy on `character_asset_version` calls `asset_share_covers()`
+   for every row the owner policy rejects — every other owner's row at the
+   place listed, or at all for the hangar-wide summary — and that only stays
+   affordable while the function's no-share answer is one index probe. The
+   account-wide `matching_shares` made it a registration lookup, a sibling scan
+   and a semi-join per call, and `/asset/[place]`, the location summary and
+   `character_asset_filter()` all ran past `authenticated`'s 8 s
+   `statement_timeout` (so every asset page read as empty). The policy now
+   tests `registration_id in (select asset_sharing_registration_ids())` first:
+   argument-free, stable, definer, one hashed subplan per query answering
+   which registrations (anchor or account sibling) have any share aimed at the
+   caller. `asset_share_covers()` is costed at 10000 so it is never floated
+   ahead of the gate, and it runs only for rows of an account that shares
+   something with the caller. Migration `20261014192421`.
 
 ## The app
 
