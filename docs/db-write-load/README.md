@@ -16,10 +16,12 @@ the run's clock (in the job and in the claim functions), and a held ship's
 every Part B change: the heartbeats, their start rows and their indexes are
 needed as they are, and a retention delete or an index swap there would have
 broken readers downstream — so **B2 and B3 are not to be applied**. They stay
-below only as the record of what was weighed and why it was wrong. B4 (the
-hourly dens cadence) and the two index questions under Part A remain open for
-the owner to decide; nothing in this document is to be run without that
-explicit approval.
+below only as the record of what was weighed and why it was wrong. B4 is
+**decided: `character-mercenary-dens` stays hourly for every character** —
+reinforcement detection has to be prompt, and an idle tick costs little. The
+selective-tick proposal below is declined. The two index questions under
+Part A remain open for the owner to decide; nothing in this document is to be
+run without that explicit approval.
 
 ## A. Asset history: the touch is the write load
 
@@ -146,6 +148,20 @@ it. A1 is the real fix.
   `EXPLAIN` of `corp_asset_search` on production confirms the plan does not
   use it. Once A1 lands it no longer churns, so dropping is about the 18 MB,
   not writes. Needs approval.
+
+  **Re-checked 2026-10-14: keep it.** It is now
+  `corp_asset_version_item_id_idx` on `corp_asset_version` (renamed by the
+  location split, 20261013042029). It has had 6,523 scans, up from 183. The
+  `parent_of` CTEs were the wrong place to look. Its users are two lookups of
+  every version of one item, open or closed, ordered `is_current desc,
+  valid_until desc limit 1`: `ancestryChain()` in `src/app/asset/access.ts`
+  (signed-share resolution) and the `corpSelf` lookup in `sharedShip.ts` (a
+  share link that outlives the hull). EXPLAIN on production shows both as
+  Index Scans on this index. The only other `item_id` index is partial on
+  `is_current`, so it cannot find a closed version. At 18 MB for about 232K
+  entries it is roughly twice its natural size, so
+  `REINDEX INDEX CONCURRENTLY corp_asset_version_item_id_idx` should recover
+  about 9 MB without losing it.
 - `character_asset_version_history_location_idx (location_id, valid_until desc) where not is_current`,
   2.5 MB, 5 scans. Serves the closed arm of `childrenAsOf()`: the share link
   that outlives the hull. Rare by nature; without it that page would scan
@@ -165,6 +181,18 @@ modules). Two of them are larger than the asset tables in write terms:
   column reads `valid_until`. docs/market-prices/README.md already names the
   touch as the lever and sketches the fix (one "confirmed at" per market per
   run in a side table). Worth its own plan.
+
+  **Re-checked 2026-10-14: still relevant, and now the largest UPDATE load in
+  the database by about 100×.** `marketPrices.js` still touches every
+  unchanged row. Production counters: 2.10M updates (79% HOT, since
+  `valid_until` is in none of its three indexes) against 217K inserts, and
+  659K dead tuples. That is about 900K touches a day, roughly 90% of the
+  table's writes, on 511 MB of heap. The asset tables now show 8–13K updates.
+  The only readers of an open row's `valid_until` are the Sheets `Updated`
+  column (`market_price_snapshot()`, `priceData.ts`, `price_data/route.ts`).
+  The side-table fix still fits: a `market_price_confirmed(market,
+  confirmed_at)` row upserted once per run, read as `updated` for current
+  rows, and the touch loop dropped. It is the same move A1 made for assets.
 - `character_mercenary_den_over_time` + `character_mercenary_den_status`:
   hourly per den, see B4.
 
@@ -277,6 +305,11 @@ should pass `ok: true`/`false` like the workflow wrapper, so no new
 
 ### B4 — why `character-mercenary-dens` writes 3× the rows
 
+**Decided 2026-10-14: hourly stays, for every character.** The owner commits
+to the hourly cadence. A den reinforcement has to be caught soon, and most
+ticks find nothing to change. So the extra heartbeat rows are an accepted
+cost. The selective-tick proposal below is declined and kept only as a record.
+
 `vercel.json` schedules it hourly (`30 * * * *`); every other per-character
 job runs every six hours. The cadence was raised for Discord reinforcement
 detection (docs/discord-bot/04-reinforcement-detection.md "Detection
@@ -331,5 +364,31 @@ third. Nothing reads `ok` on a row older than 30 days.
    `corp_asset_over_time`; then `pg_stat_user_indexes` again to decide on
    `corp_asset_over_time_item_id_idx` and the two single-column heartbeat
    indexes.
+
+   **2026-10-14:** a plain `VACUUM (ANALYZE)` ran on `heartbeat`,
+   `character_asset_version`, `corp_asset_version` and the two location
+   tables. It reclaimed nothing on disk, but it fixed badly stale statistics:
+   the planner thought `character_asset_version` had 5,409 rows, and it has
+   477,053. `pg_repack` could not run from the agent's machine because the CLI
+   is not installed and there is no direct connection string. The heaps are
+   nearly packed. The bloat is in the indexes, at about 2–3× their packed
+   size: roughly 105 MB on `heartbeat`, 37 MB on `character_asset_version`
+   and 26 MB on `corp_asset_version`. That is about 185 MB (±25%), or 4.5% of
+   the 3.9 GB database. `reindex table concurrently` on those three tables
+   recovers most of it without blocking reads or writes. Run it away from the
+   asset crons, which are at :26 past 00/06/12/18 and 09:27 UTC.
+
+   **Done 2026-10-14, about 17:00 UTC:** `reindex table concurrently` ran on
+   all three tables. Every index came back valid. It saved 165 MB in all, and
+   the database went from 3,901 MB to 3,736 MB. Sizes in MiB:
+
+   | Table                     | Indexes before | Indexes after | Saved |
+   | ------------------------- | -------------- | ------------- | ----- |
+   | `heartbeat`               | 216.4          | 123.9         | 92.5  |
+   | `character_asset_version` | 81.3           | 35.4          | 45.9  |
+   | `corp_asset_version`      | 43.7           | 17.2          | 26.5  |
+
+   The heaps were left as they were. They hold only about 10–20 MB of slack,
+   which only a `pg_repack` would recover.
 5. Follow-up plan for `market_price_over_time`'s hourly touch (the largest
    remaining touch by far).
