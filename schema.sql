@@ -42,6 +42,7 @@ drop function if exists public.asset_location_summary()        cascade;
 drop function if exists public.asset_location_contents(bigint) cascade;
 drop function if exists public.asset_inventory_at(uuid[], timestamptz) cascade;
 drop function if exists public.is_tenant_of(bigint) cascade;
+drop function if exists public.structure_share_matches(bigint, bigint[], bigint[], text, boolean, boolean) cascade;
 drop function if exists public.my_tenant_structure_ids() cascade;
 drop function if exists public.asset_snapshot_at(uuid[], timestamptz)  cascade;
 drop function if exists public.industry_jobs(uuid[])                   cascade;
@@ -115,6 +116,7 @@ drop table if exists public.market_price_over_time     cascade;
 drop table if exists public.corporation          cascade;
 drop table if exists public.alliance             cascade;
 drop table if exists public.corp_structure_status cascade;
+drop table if exists public.corp_structure_share cascade;
 drop table if exists public.corp_structure_rig   cascade;
 drop table if exists public.corp_structure       cascade;
 drop table if exists public.corp_job_access      cascade;
@@ -3173,7 +3175,11 @@ create table public.corporation (
   corporation_id bigint primary key,
   name text,   -- nullable for the same reason as alliance.name (above)
   alliance_id bigint references public.alliance (alliance_id),
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+  -- When the structure-share default (corp_structure_share, below) was seeded
+  -- for this corporation. Seed ONCE: a director who deletes the seeded row has
+  -- opted out, and the corp-structures extract never re-seeds a stamped corp.
+  structure_share_seeded_at timestamptz
 );
 create index corporation_alliance_id_idx on public.corporation (alliance_id);
 
@@ -4289,38 +4295,14 @@ create policy "Users read structures for own corps"
     )
   );
 
--- Open corp_structure viewing to alliance-mates: a structure whose owning
--- corporation's alliance is one of the alliances the caller's own characters'
--- corporations belong to. Additive/permissive — OR'd with the own-corps policy
--- above. Fuel and the reinforcement profile stay private: they live in
--- corp_structure_status (below), which keeps the own-corps-only policy.
-create policy "Alliance members read corp structures"
-  on public.corp_structure
-  for select
-  to authenticated
-  using (
-    exists (
-      select 1
-      from public.corporation owner_corp
-      where owner_corp.corporation_id = corp_structure.corporation_id
-        and owner_corp.alliance_id is not null
-        and owner_corp.alliance_id in (
-          select member_corp.alliance_id
-          from public.registration r
-          join public.corporation member_corp on member_corp.corporation_id = r.corporation_id
-          where r.user_id = (select auth.uid())
-            and member_corp.alliance_id is not null
-        )
-    )
-  );
-
 grant select on public.corp_structure to authenticated;
 grant all    on public.corp_structure to service_role;
 
 -- ── corp_structure_status ──────────────────────────────────────────────────
 -- The private per-structure state — fuel timer and reinforcement profile — split
 -- off corp_structure so it can stay own-corp only while corp_structure opens up
--- to alliance-mates. One row per structure, pointing back to it.
+-- to a share's audience (corp_structure_share, below). One row per structure,
+-- pointing back to it.
 create table public.corp_structure_status (
   structure_id bigint primary key references public.corp_structure (structure_id) on delete cascade,
   corporation_id bigint not null,
@@ -4383,33 +4365,187 @@ create policy "Users read structure rigs for own corps"
     )
   );
 
--- Open rigs to alliance-mates on the same terms as corp_structure itself: a
--- fitted rig is inferable from the structure's own bonuses in space, so it was
--- never really corp-private, and the /structure page shows rigs beside
--- structures the alliance can already see. Additive — OR'd with the own-corps
--- policy above.
-create policy "Alliance members read corp structure rigs"
+grant select on public.corp_structure_rig to authenticated;
+grant all    on public.corp_structure_rig to service_role;
+
+-- ── corp_structure_share ──────────────────────────────────────────────────
+-- Sharing layer phase 12 (docs/sharing-layer/12-structure-share.md). A
+-- structure's owning corporation shares the structure's DETAILS — its
+-- corp_structure row (name, type, system, state, services, reinforcement
+-- hours, unanchoring) and its fitted rigs — on the Revision 3 shape
+-- (corporation_ids / alliance_ids / secret, fully public = the row naming no
+-- one) plus one audience no other subject has: `tenants`, everyone
+-- is_tenant_of() says has had a job at the structure in the last 30 days.
+--
+-- A share NEVER opens corp_structure_status (the fuel timer is a countdown to
+-- when the structure stops shooting back; directors only, above), the wallet
+-- journal or anything derived from it, or the owner's own jobs (the tenant
+-- policies on the job tables are the job OWNER's grant).
+--
+-- This table replaced the two hard-coded "Alliance members read corp
+-- structures / rigs" policies (migration 20261014220310). Parity came from one
+-- SEEDED row per corporation with a scanned structure: structure_id null
+-- (every structure it owns, now and later), alliance_ids = its current
+-- alliance, seeded_default = true. The corp-structures extract keeps that
+-- array equal to the current alliance while seeded_default holds
+-- (src/jobs/structureShareDefault.js), so the grant stays as dynamic as the
+-- policy was; a seeded row of a corp in no alliance names nobody and is
+-- deliberately NOT public (structure_share_matches below). The first director
+-- edit clears seeded_default and the arrays pin ids like every other row.
+-- Seed ONCE: corporation.structure_share_seeded_at is stamped, and a director
+-- who deletes the row has opted out.
+create table public.corp_structure_share (
+  id uuid primary key default gen_random_uuid(),
+  -- Grantor: the corporation that owns the structure (corp_structure.corporation_id).
+  corporation_id bigint not null,
+  -- Subject. Null = every structure this corporation owns, now and later. Only
+  -- the seeded default and the /structure alliance toggle use null; the
+  -- dialog edits one structure.
+  structure_id bigint,
+  corporation_ids bigint[] not null default '{}',
+  alliance_ids    bigint[] not null default '{}',
+  secret text,
+  -- Everyone with a job at the structure in the last 30 days (is_tenant_of).
+  -- Per structure only: never true on a null-subject row, since "tenant of any
+  -- structure of this corporation" would mean reading corp_structure from
+  -- inside a policy — the very access being granted.
+  tenants boolean not null default false,
+  -- True on the row the migration/extract seeded; cleared by the first
+  -- director edit. While true the row matches ONLY through alliance_ids.
+  seeded_default boolean not null default false,
+  -- Audit: which registration saved it last (a director's character).
+  updated_by uuid references public.registration (id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  check (structure_id is not null or not tenants),
+  -- A seeded row carries nothing but its alliance grant.
+  check (not seeded_default or (secret is null and corporation_ids = '{}' and not tenants)),
+  unique nulls not distinct (corporation_id, structure_id)
+);
+
+alter table public.corp_structure_share enable row level security;
+
+-- Does this share row reach the caller? Three paths, composed: the standard
+-- audience matcher; the tenants flag against is_tenant_of(); and, for a SEEDED
+-- row, its alliance list alone — a seeded row with an empty alliance_ids (the
+-- corp left its alliance) must match nobody, where share_audience_matches()
+-- would read that same state as "everyone". Invoker rights; the policies on
+-- this table and on both subject tables all go through it so they cannot
+-- drift.
+create or replace function public.structure_share_matches(
+  structure_id bigint,
+  corporation_ids bigint[],
+  alliance_ids bigint[],
+  secret text,
+  tenants boolean,
+  seeded_default boolean
+)
+returns boolean
+language sql
+stable
+set search_path = public
+as $$
+  select case
+    when seeded_default then alliance_ids && array(select public.my_alliance_ids())
+    -- A tenants row names someone, so it is never the fully-public state that
+    -- share_audience_matches() reads an empty audience as.
+    when tenants then
+      corporation_ids && array(select public.my_corporation_ids())
+      or alliance_ids && array(select public.my_alliance_ids())
+      or (structure_id is not null and public.is_tenant_of(structure_id))
+    else public.share_audience_matches(corporation_ids, alliance_ids, secret)
+  end;
+$$;
+
+grant execute on function public.structure_share_matches(bigint, bigint[], bigint[], text, boolean, boolean)
+  to authenticated, service_role;
+
+-- Directors of the owning corporation manage it — observed capability
+-- (corp_job_access, job = 'corp-structures'), the same line the fuel policy
+-- draws: a structure's state, services and reinforcement window are military
+-- intel, so this is narrower than the member-manage rule the corp hangar share
+-- chose. with check repeats the predicate so a row can't be re-pointed at
+-- another corporation, and pins updated_by to one of the caller's own
+-- characters.
+create policy "Directors manage structure shares"
+  on public.corp_structure_share
+  for all
+  to authenticated
+  using (
+    exists (
+      select 1
+      from public.corp_job_access a
+      join public.registration r on r.id = a.registration_id
+      where a.corporation_id = corp_structure_share.corporation_id
+        and a.job = 'corp-structures'
+        and r.user_id = (select auth.uid())
+    )
+  )
+  with check (
+    exists (
+      select 1
+      from public.corp_job_access a
+      join public.registration r on r.id = a.registration_id
+      where a.corporation_id = corp_structure_share.corporation_id
+        and a.job = 'corp-structures'
+        and r.user_id = (select auth.uid())
+    )
+    and (
+      updated_by is null
+      or updated_by in (select id from public.registration where user_id = (select auth.uid()))
+    )
+  );
+
+-- LOAD-BEARING, as on every Revision 3 table: the widening policies below run
+-- as the viewer and can only match share rows this policy shows them.
+-- Signed-out viewers of a public or linked structure go through the
+-- service-role path in src/app/structure/access.ts, so no anon grant here.
+create policy "Audience reads structure shares"
+  on public.corp_structure_share
+  for select
+  to authenticated
+  using (
+    public.structure_share_matches(structure_id, corporation_ids, alliance_ids, secret, tenants, seeded_default)
+  );
+
+grant select, insert, update, delete on public.corp_structure_share to authenticated;
+grant all                            on public.corp_structure_share to service_role;
+
+-- The widening policies. Additive — OR'd with the own-corps policies above,
+-- which stay. A share covers the named structure, or every structure of the
+-- corporation when its subject is null. corp_structure_status keeps its
+-- directors-only policy.
+create policy "Audience reads shared corp structures"
+  on public.corp_structure
+  for select
+  to authenticated
+  using (
+    exists (
+      select 1
+      from public.corp_structure_share s
+      where s.corporation_id = corp_structure.corporation_id
+        and (s.structure_id is null or s.structure_id = corp_structure.structure_id)
+        and public.structure_share_matches(
+          corp_structure.structure_id, s.corporation_ids, s.alliance_ids, s.secret, s.tenants, s.seeded_default
+        )
+    )
+  );
+
+create policy "Audience reads shared corp structure rigs"
   on public.corp_structure_rig
   for select
   to authenticated
   using (
     exists (
       select 1
-      from public.corporation owner_corp
-      where owner_corp.corporation_id = corp_structure_rig.corporation_id
-        and owner_corp.alliance_id is not null
-        and owner_corp.alliance_id in (
-          select member_corp.alliance_id
-          from public.registration r
-          join public.corporation member_corp on member_corp.corporation_id = r.corporation_id
-          where r.user_id = (select auth.uid())
-            and member_corp.alliance_id is not null
+      from public.corp_structure_share s
+      where s.corporation_id = corp_structure_rig.corporation_id
+        and (s.structure_id is null or s.structure_id = corp_structure_rig.structure_id)
+        and public.structure_share_matches(
+          corp_structure_rig.structure_id, s.corporation_ids, s.alliance_ids, s.secret, s.tenants, s.seeded_default
         )
     )
   );
-
-grant select on public.corp_structure_rig to authenticated;
-grant all    on public.corp_structure_rig to service_role;
 
 -- ── industry_system_index ─────────────────────────────────────────────────
 -- ESI /industry/systems/, written by the industry-systems job: history of

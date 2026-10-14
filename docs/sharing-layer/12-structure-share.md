@@ -1,15 +1,22 @@
 # Phase 12: structure shares
 
-**Status: 📝 planned.** Supersedes Stage D of `design.md`, which sketched
-`corp_structure_share` before the Revision 3 audience shape existed. Nothing
-here is built. The plan is three PRs; each one leaves production working.
+**Status: 🚧 PR A and PR B built; PR C (UI) in progress.** Supersedes Stage D
+of `design.md`, which sketched `corp_structure_share` before the Revision 3
+audience shape existed. PR A shipped as #1068 (`structure_tenant`), and #1101
+then redefined tenancy as "a job within the last 30 days" (`last_job_seen_at`)
+rather than `open_jobs > 0` — this document reads that way throughout. PR B is
+the cutover: `corp_structure_share` (migration `20261014220310`), the seeded
+alliance default, the two hard-coded alliance policies dropped, and
+`test/sql/structure_share.sql`. The plan is three PRs; each one leaves
+production working.
 
 A structure's owner can share the structure's details the standard way — with
 corporations, with alliances, with a signed link, or with everyone — **and**,
 new for this subject, with _the people who run jobs there_: every account that
-holds an active or undelivered industry job in the structure. That last
-audience is what the next phase ([13-industry-job-share.md](13-industry-job-share.md))
-also uses, so this phase builds the tenancy fact both phases read.
+has had an industry job in the structure within the last 30 days (the
+`is_tenant_of()` window). That last audience is what the next phase
+([13-industry-job-share.md](13-industry-job-share.md)) also uses, so this
+phase builds the tenancy fact both phases read.
 
 ## What a structure share opens
 
@@ -37,78 +44,59 @@ existence of the structure.
 
 ## The tenancy fact: `structure_tenant`
 
-"People with active or undelivered jobs in the structure" cannot be evaluated
-inside a policy by reading the job tables: phase 13 puts a widening policy on
+"People with jobs in the structure" cannot be evaluated inside a policy by
+reading the job tables: phase 13 puts a widening policy on
 `character_industry_job_over_time`, and a policy on that table that also
 _queries_ that table recurses (Postgres refuses it; phase 02 needed its one
 sanctioned SECURITY DEFINER to break exactly this cycle). It is also a cold
 scan of a big table on every row check.
 
 Instead the two industry-job extracts record tenancy as a fact, the way
-`corp_job_access` records observed director capability:
+`corp_job_access` records observed director capability. **As shipped** (PR A,
+#1068, then #1101): `structure_tenant` is keyed on `(owner_key, structure_id)`
+— one row per registration-or-corporation and structure — carrying
+`open_jobs` and `last_job_seen_at`, and the predicate is the **30-day
+window**, not the open-job count:
 
 ```sql
-create table public.structure_tenant (
-  -- Exactly one of the two owner keys is set: a personal job's registration,
-  -- or the corporation a corp-installed job was run for.
-  registration_id uuid references public.registration (id) on delete cascade,
-  corporation_id  bigint,
-  structure_id    bigint not null,
-  -- Jobs at this structure that are active, paused or ready (finished but
-  -- not delivered). Zero once none remain; the row is kept, so a returning
-  -- tenant is an update rather than a re-insert, and so last_job_seen_at
-  -- keeps saying when they were last here.
-  open_jobs        integer not null default 0,
-  last_job_seen_at timestamptz not null default now(),
-  -- Generated: folds the two owner keys into one non-null discriminator,
-  -- the same trick heartbeat.owner_key uses.
-  owner_key text generated always as (coalesce(registration_id::text, 'corp:' || corporation_id::text)) stored,
-  check ((registration_id is null) <> (corporation_id is null)),
-  primary key (owner_key, structure_id)
-);
-create index structure_tenant_structure_id_idx on public.structure_tenant (structure_id) where open_jobs > 0;
+create or replace function public.is_tenant_of(structure bigint)
+returns boolean language sql stable
+set search_path = public
+as $$
+  select exists (
+    select 1 from public.structure_tenant t
+    where t.structure_id = structure
+      and t.last_job_seen_at >= now() - interval '30 days'
+      and (
+        t.registration_id in (select id from public.registration where user_id = (select auth.uid()))
+        or t.corporation_id in (select public.my_corporation_ids())
+      )
+  );
+$$;
 ```
 
 - **Written by** `character-industry-jobs` (per registration) and
   `corp-industry-jobs` (per corporation), at the end of each reconcile, from
-  the listing the run just fetched: group the fetched jobs by
-  `coalesce(station_id, facility_id)` (Upwell structures carry the same id in
-  both; `isPlayerStructureId` from `roster.ts` drops NPC stations), count the
-  ones whose `status` is `active`, `paused` or `ready`, upsert one row per
-  structure, and set `open_jobs = 0` on this owner's rows for structures the
-  listing no longer names. Best-effort like `recordCorpJobAccess`: a
-  bookkeeping failure never fails an extract that succeeded.
-- **Undelivered means undelivered.** A `ready` job keeps its owner a tenant
-  for as long as it sits in the structure, which is what the owner asked for
-  ("active or undelivered"). `delivered`, `cancelled` and `reverted` do not
-  count.
+  the listing the run just fetched (`recordStructureTenancy` in
+  `src/jobs/lib.js`, pure fold `src/jobs/structureTenancy.js`): every
+  structure with an `active`, `paused` or `ready` job gets its row upserted
+  with the count and `last_job_seen_at = run clock`; this owner's other rows
+  are zeroed, never deleted. Best-effort like `recordCorpJobAccess`.
+- **Tenancy is the stamp within 30 days.** `last_job_seen_at` is "the last
+  time this owner had something running or undelivered here", so a tenant
+  keeps the audience for a month after their last delivery, and a row whose
+  extract stopped reporting (token revoked, character unlinked) ages out on
+  its own — the two ways `open_jobs > 0` was wrong (#1101).
 - **Freshness** is the extract cadence: 6 h per character, daily per corp.
-  Tenancy therefore lags a delivery by up to one cycle. Acceptable — the
-  audience is "people who build here", not a docking-rights check.
-- **RLS:** own rows only (`registration_id in my registrations or
-corporation_id in my_corporation_ids()`); service role writes. Nobody can
-  list who else builds at a structure.
-- **The predicate**, invoker rights, no definer:
+  Acceptable — the audience is "people who build here", not a docking-rights
+  check.
+- **RLS:** own rows only; service role writes. Nobody can list who else builds
+  at a structure. `my_tenant_structure_ids()` is the same predicate as a set,
+  for the job-table policies phase 13 shipped.
 
-  ```sql
-  create or replace function public.is_tenant_of(structure bigint)
-  returns boolean language sql stable
-  set search_path = public
-  as $$
-    select exists (
-      select 1 from public.structure_tenant t
-      where t.structure_id = structure
-        and t.open_jobs > 0
-        and (
-          t.registration_id in (select id from public.registration where user_id = (select auth.uid()))
-          or t.corporation_id in (select public.my_corporation_ids())
-        )
-    );
-  $$;
-  ```
-
-  Because `structure_tenant` is its own table, a policy on `corp_structure`
-  or on the job tables can call this without touching the table it protects.
+Because `structure_tenant` is its own table, a policy on `corp_structure` or
+on the job tables can call `is_tenant_of()` without touching the table it
+protects.
 
 ## The share table
 
@@ -126,7 +114,7 @@ create table public.corp_structure_share (
   corporation_ids bigint[] not null default '{}',
   alliance_ids    bigint[] not null default '{}',
   secret text,
-  -- (e) NEW: everyone who holds an active or undelivered job in the structure
+  -- (e) NEW: everyone with a job in the structure in the last 30 days
   -- (is_tenant_of). Per structure only: never true on a null-subject row.
   tenants boolean not null default false,
   -- True on the row the migration/extract seeded; cleared by the first
@@ -138,14 +126,37 @@ create table public.corp_structure_share (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   check (structure_id is not null or not tenants),
+  -- A seeded row carries nothing but its alliance grant.
+  check (not seeded_default or (secret is null and corporation_ids = '{}' and not tenants)),
   unique nulls not distinct (corporation_id, structure_id)
 );
 ```
 
 **Fully public** stays the row state that names no one: `secret is null and
-corporation_ids = '{}' and alliance_ids = '{}' and not tenants`. The
-`tenants` flag is a fourth independent grant path that composes with the
-others exactly as the arrays and the secret do.
+corporation_ids = '{}' and alliance_ids = '{}' and not tenants and not
+seeded_default`. The `tenants` flag is a fourth independent grant path that
+composes with the others exactly as the arrays and the secret do — but it
+_names someone_, so a row with only `tenants` set is never public. Nor is a
+seeded row whose corporation is in no alliance (`alliance_ids = '{}'`): it
+matches nobody until the corp joins one. Both are what `share_audience_matches()`
+would otherwise read as "everyone", which is why every policy on this subject
+goes through one predicate, `structure_share_matches(structure_id,
+corporation_ids, alliance_ids, secret, tenants, seeded_default)`:
+
+```sql
+  select case
+    when seeded_default then alliance_ids && array(select public.my_alliance_ids())
+    when tenants then
+      corporation_ids && array(select public.my_corporation_ids())
+      or alliance_ids && array(select public.my_alliance_ids())
+      or (structure_id is not null and public.is_tenant_of(structure_id))
+    else public.share_audience_matches(corporation_ids, alliance_ids, secret)
+  end
+```
+
+(`test/sql/structure_share.sql` caught the first of these on the first run:
+the draft policy OR'd `share_audience_matches()` with the tenants branch, and a
+tenants-only row opened the structure to a stranger.)
 
 ### Who manages it
 
@@ -190,8 +201,7 @@ needs no tenancy at all. So the policy has exactly two branches:
 create policy "Audience reads structure shares"
   on public.corp_structure_share for select to authenticated
   using (
-    public.share_audience_matches(corporation_ids, alliance_ids, secret)
-    or (tenants and public.is_tenant_of(structure_id))
+    public.structure_share_matches(structure_id, corporation_ids, alliance_ids, secret, tenants, seeded_default)
   );
 ```
 
@@ -207,8 +217,8 @@ create policy "Audience reads shared corp structures"
     select 1 from public.corp_structure_share s
     where s.corporation_id = corp_structure.corporation_id
       and (s.structure_id is null or s.structure_id = corp_structure.structure_id)
-      and (public.share_audience_matches(s.corporation_ids, s.alliance_ids, s.secret)
-           or (s.tenants and public.is_tenant_of(corp_structure.structure_id)))
+      and public.structure_share_matches(
+        corp_structure.structure_id, s.corporation_ids, s.alliance_ids, s.secret, s.tenants, s.seeded_default)
   ));
 ```
 
@@ -222,24 +232,31 @@ Today every corporation's structures are visible to its whole alliance,
 unconditionally and invisibly. The cutover must change nothing on the day it
 ships:
 
-1. The migration inserts, for every distinct `corporation_id` in
-   `corp_structure` whose `corporation.alliance_id` is not null, one row
-   `(corporation_id, structure_id = null, alliance_ids = {alliance_id},
-seeded_default = true)`.
-2. The `corp-structures` extract, after each corporation's run: if the corp
-   has no share row at all and `corporation.structure_share_seeded_at` is
-   null, insert the same seeded row and stamp `structure_share_seeded_at`.
-   **Seed once**: a director who deletes the row has opted out and is never
-   re-seeded.
+1. The migration inserts, for **every** distinct `corporation_id` in
+   `corp_structure`, one row `(corporation_id, structure_id = null,
+alliance_ids = {alliance_id} or {}, seeded_default = true)`, and stamps
+   `corporation.structure_share_seeded_at`. A corp in no alliance is seeded
+   too, naming nobody: the dropped policy was dynamic, so a corp that joins an
+   alliance next week must start sharing with it next week, and the extract
+   below does that only for a row that exists.
+2. The `corp-structures` extract, after each corporation's run
+   (`src/jobs/structureShareDefault.js`): if the corp has no share row at all
+   and `corporation.structure_share_seeded_at` is null, insert the same seeded
+   row and stamp `structure_share_seeded_at`. **Seed once**: a director who
+   deletes the row has opted out and is never re-seeded.
 3. While `seeded_default` is true, the same extract sets `alliance_ids` to
-   `{current alliance}` (or `{}` when the corp left its alliance). This keeps
-   the seeded grant _dynamic_, exactly like the policy it replaces. The first
+   `{current alliance}` (or `{}` when the corp left its alliance — which, per
+   the predicate above, matches nobody rather than everyone). This keeps the
+   seeded grant _dynamic_, exactly like the policy it replaces. The first
    director save clears `seeded_default`, and from then on the arrays pin
    specific ids like every other Revision 3 row.
 
 Then drop the two hard-coded policies in the same migration, after the seed.
-Verify parity in the migration with a DO block: for every corporation in
-`corp_structure`, the seeded row exists or the corp has no alliance.
+Parity is verified in the migration with a DO block: every corporation in
+`corp_structure` has its seeded row, and every seeded row of a corp in an
+alliance names exactly that alliance — the migration aborts otherwise.
+Rollback: `docs/sharing-layer/rollback-structure-share.sql` re-creates the two
+policies verbatim and drops the table.
 
 ## The signed link and the public case
 
@@ -287,20 +304,23 @@ Verify parity in the migration with a DO block: for every corporation in
 
 | PR  | Contents                                                                                                                                                                         | Blast radius                                                                          |
 | --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| A   | `structure_tenant` + `is_tenant_of()` + bookkeeping in the two industry-job extracts. Backfill in the migration from the current job views.                                        | None. Nothing reads it. Backfill is a plain aggregate insert.                         |
-| B   | `corp_structure_share`, policies, seed, `structure_share_seeded_at`, extract seed-once + dynamic default, drop the two hard-coded policies. `test/sql/structure_share.sql`.        | Cutover: parity proved in-migration; rollback script that re-creates the two policies. |
-| C   | Share dialog + tenants checkbox, `/structure` alliance toggle, `access.ts` + the `?share=` path, "shared by" line.                                                                  | UI only, on a proven substrate.                                                       |
+| A   | ✅ #1068 (+ #1101): `structure_tenant` + `is_tenant_of()` + bookkeeping in the two industry-job extracts. Backfill in the migration from the current job views.                     | None. Nothing reads it. Backfill is a plain aggregate insert.                         |
+| B   | ✅ `corp_structure_share`, policies, seed, `structure_share_seeded_at`, extract seed-once + dynamic default, drop the two hard-coded policies. `test/sql/structure_share.sql`.     | Cutover: parity proved in-migration; rollback script that re-creates the two policies. |
+| C   | 🚧 Share dialog + tenants checkbox, `/structure` alliance toggle, `access.ts` + the `?share=` path, "shared by" line.                                                               | UI only, on a proven substrate.                                                       |
 
 ## Verification
 
-- `test/sql/structure_share.sql` (throwaway DB): two corporations, one
-  alliance, three accounts (director, alliance-mate, tenant with a `ready`
-  job, stranger). Assert: seeded row → alliance-mate reads the structure and
-  its rigs, never `corp_structure_status`; delete the row → alliance-mate
-  loses it; `tenants = true` → the tenant reads exactly that structure and no
-  other of the corp's; `open_jobs = 0` → tenant loses it on the next
-  statement; stranger reads nothing throughout; a non-director cannot insert
-  or update a share row for the corp.
+- `test/sql/structure_share.sql` (throwaway DB): three corporations, one
+  alliance, five accounts (director, plain member, alliance-mate, tenant with
+  a current `structure_tenant` row, stranger). Asserts: seeded row →
+  alliance-mate reads the structure and its rigs, never
+  `corp_structure_status`; delete the row → alliance-mate loses it;
+  `tenants = true` → the tenant reads exactly that structure and no other of
+  the corp's; `last_job_seen_at` 31 days back → tenant loses it on the next
+  statement; stranger reads nothing throughout, a tenants-only row and a
+  no-alliance seeded row included; a plain member cannot insert, update or
+  delete a share row for the corp, and a director cannot stamp another
+  account's character or aim a row at another corporation.
 - The two-account leak test from the README, per PR.
 - Migration B parity check runs inside the migration and aborts on any corp
   with an alliance but no seeded row.
