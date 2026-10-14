@@ -197,17 +197,22 @@ const resolveSignedCorpShare = async (
       secret: string | null
     }>
   ).find((row) => row.secret != null && verifyShareToken(row.id, row.secret, salt, signature))
-  if (!share) return null
+  if (!share?.created_by) return null
 
-  // The author's account, when the row still names a registration (created_by
-  // is nulled if that account closes, which must not kill the share).
-  const { data: author } = share.created_by
-    ? await supabase
-        .from('registration')
-        .select('user_id')
-        .eq('id', share.created_by)
-        .maybeSingle<{ user_id: string }>()
-    : { data: null }
+  // The share is made on behalf of created_by, and works only while that
+  // character is still in the corporation — the service role reads past the
+  // RLS that enforces this for an audience, so the link checks it here, against
+  // the same character_directory (corp_share_author_active() in schema.sql).
+  const [{ data: directory }, { data: author }] = await Promise.all([
+    supabase
+      .from('character_directory')
+      .select('corporation_id')
+      .eq('registration_id', share.created_by)
+      .maybeSingle<{ corporation_id: number | string | null }>(),
+    supabase.from('registration').select('user_id').eq('id', share.created_by).maybeSingle<{ user_id: string }>(),
+  ])
+  if (directory?.corporation_id == null || Number(directory.corporation_id) !== Number(share.corporation_id))
+    return null
 
   return {
     userId: author?.user_id ?? '',

@@ -108,13 +108,16 @@ export const ShareForm = ({
         {hint ?? 'Whoever you share with can see this item and everything inside it, live, until you stop sharing.'}
       </p>
 
+      <hr className={styles.divider} />
+      <p className={styles.subhead}>Who can access this?</p>
+
       <label className={styles.publicRow}>
         <input type="checkbox" checked={isPublic} onChange={(e) => setIsPublic(e.target.checked)} />
-        Public — anyone can see this
+        Public
       </label>
 
       <fieldset className={styles.audience} disabled={isPublic}>
-        <legend>Corporations</legend>
+        <legend>People with characters in Corporations</legend>
         {data.corporations.length === 0 ? (
           <p className={styles.hint}>None of your characters are in a corporation.</p>
         ) : (
@@ -153,7 +156,7 @@ export const ShareForm = ({
         <legend>Share link</legend>
         <label>
           <input type="checkbox" checked={link} onChange={(e) => setLink(e.target.checked)} />
-          Anyone with the link can see this
+          Anyone with this private token
         </label>
         {shareUrl && link ? (
           <p className={styles.linkRow}>

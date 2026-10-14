@@ -20,6 +20,19 @@
   color: var(--ink-soft);
 }
 
+.divider {
+  border: none;
+  border-top: 1px solid var(--line-soft);
+  margin: 10pt 0 6pt;
+}
+
+.subhead {
+  margin: 0 0 6pt;
+  font-size: 9pt;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
 .publicRow {
   display: flex;
   align-items: center;

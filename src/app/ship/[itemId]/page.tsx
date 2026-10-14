@@ -10,6 +10,7 @@ import { establishedUser } from '../../account/lib/establishedUser'
 import { AppraisalPanel } from '../../asset/[locationId]/appraisalPanel'
 import { AssetShareDialog } from '../../asset/assetShareDialog'
 import { fetchCorpShareDialogData, fetchShareDialogData } from '../../asset/shareData'
+import { sharePath } from '../../asset/shareHint'
 import { AssetPath, fetchAssetPath, type Crumb } from '../../assetPath'
 import { ShareUrlCleanup } from '../../shareUrlCleanup'
 import { SkeletonTable } from '../../skeleton'
@@ -176,7 +177,13 @@ const ShipPage = async ({ params, searchParams }: ShipPageProps) => {
             {/* The same rows, as the text the game imports. */}
             <FitExport eft={shipEft(Number(hull.type_id), hull.name ?? null, rows, types)} />
             {shareData ? (
-              <AssetShareDialog itemId={itemId} subjectLabel="ship" urlPath={`/ship/${itemId}`} data={shareData} />
+              <AssetShareDialog
+                itemId={itemId}
+                subjectLabel="ship"
+                urlPath={`/ship/${itemId}`}
+                path={sharePath(shownCrumbs, hull.name ?? typeName)}
+                data={shareData}
+              />
             ) : null}
           </>
         }

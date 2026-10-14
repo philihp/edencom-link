@@ -13,7 +13,9 @@ import { resolveLocations } from './resolveLocations'
 import { fetchTypeNames } from './typeNames'
 import styles from './assetPath.module.css'
 
-export type Crumb = { href: string | null; label: string }
+// `nav` marks a crumb that is navigation rather than where the item is — the
+// Assets root and the region › system prefix — so a share's path can skip it.
+export type Crumb = { href: string | null; label: string; nav?: true }
 
 // The leading location crumbs for a solar system: its region (a plain label —
 // there's no region page) followed by the system (linked to its /asset view).
@@ -30,8 +32,9 @@ export const regionSystemCrumbs = async (
   if (systemId == null) return []
   const system = await getSdeSystem(systemId)
   const crumbs: Crumb[] = []
-  if (system?.regionName) crumbs.push({ href: null, label: system.regionName })
-  if (!isBareSystem) crumbs.push({ href: `/asset/${systemId}`, label: systemName ?? system?.name ?? `#${systemId}` })
+  if (system?.regionName) crumbs.push({ href: null, label: system.regionName, nav: true })
+  if (!isBareSystem)
+    crumbs.push({ href: `/asset/${systemId}`, label: systemName ?? system?.name ?? `#${systemId}`, nav: true })
   return crumbs
 }
 
@@ -44,7 +47,7 @@ type AncestorRow = {
   depth: number
 }
 
-const ASSETS_CRUMB: Crumb = { href: '/asset', label: 'Assets' }
+const ASSETS_CRUMB: Crumb = { href: '/asset', label: 'Assets', nav: true }
 
 export const fetchAssetPath = async (itemId: string, client?: SupabaseClient): Promise<Crumb[]> => {
   const supabase = client ?? (await createClient())

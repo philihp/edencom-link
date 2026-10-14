@@ -23,6 +23,7 @@ import { hideHolder, PRESENTED_OWNER_ID, UNNAMED_OWNER } from '../../ship/[itemI
 import { TypeIcon } from '../../typeIcon'
 import { resolveShareParams } from '../access'
 import { AssetShareDialog } from '../assetShareDialog'
+import { sharePath } from '../shareHint'
 import { placeGrantors } from '../placeShare'
 import { type PlaceShare, PlaceShareDialog } from '../placeShareDialog'
 import {
@@ -314,7 +315,7 @@ const AssetLocationPage = async ({ params, searchParams }: AssetLocationPageProp
   // The ancestry RPC is skipped in the token path: it would walk unscoped as
   // service_role, and a shared hangar shouldn't reveal where it lives anyway.
   let heading: string
-  let crumbs: Crumb[] = [{ href: '/asset', label: 'Assets' }]
+  let crumbs: Crumb[] = [{ href: '/asset', label: 'Assets', nav: true }]
   let systemName: string | undefined
   // True when the id is a solar system: its heading is the system name, and it
   // lists the stations/structures in the system where we hold assets rather
@@ -389,6 +390,7 @@ const AssetLocationPage = async ({ params, searchParams }: AssetLocationPageProp
               itemId={locationId}
               subjectLabel="item"
               urlPath={`/asset/${locationId}`}
+              path={sharePath(crumbs, heading)}
               data={shareData}
             />
           ) : null}

@@ -109,13 +109,17 @@ const writeCorpAssetShare = async (
   const secret = link ? (input.rotateLink || !existing?.secret ? mintShareSecret() : existing.secret) : null
   const audience = { corporation_ids: corporationIds, alliance_ids: allianceIds, secret }
 
-  // Insert and update are separate rather than one upsert: `created_by` names
-  // whoever first shared the subject, and editing a corpmate's share must not
-  // rewrite that.
+  // Every write stamps the writer as `created_by`: the share is made on their
+  // behalf and lasts while their character stays in the corporation
+  // (corp_share_author_active), so saving a corpmate's share takes it over — and
+  // revives one whose author has left.
   const { data: saved, error } = existing
-    ? await supabase.from('corp_asset_share').update(audience).eq('id', existing.id).select('id').maybeSingle<{
-        id: string
-      }>()
+    ? await supabase
+        .from('corp_asset_share')
+        .update({ ...audience, created_by: owned.authorRegistrationId })
+        .eq('id', existing.id)
+        .select('id')
+        .maybeSingle<{ id: string }>()
     : await supabase
         .from('corp_asset_share')
         .insert({

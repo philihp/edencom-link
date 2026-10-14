@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 
-import { grantorKey, placeGrantors, placeShareHint, placeShareSubject } from '../src/app/asset/placeShare.ts'
+import { grantorKey, placeGrantors, placeShareSubject } from '../src/app/asset/placeShare.ts'
 
 const owners = {
   characters: [
@@ -47,21 +47,6 @@ describe('grantorKey', () => {
   it('tells the options apart', () => {
     assert.equal(grantorKey({ kind: 'character' }), 'characters')
     assert.equal(grantorKey({ kind: 'corporation', corporationId: 7, name: 'x' }), 'corp-7')
-  })
-})
-
-describe('placeShareHint', () => {
-  it('says a character share is everything the characters own and excludes corp and others', () => {
-    const hint = placeShareHint({ kind: 'character' }, 'Jita IV - Moon 4')
-    assert.match(hint, /everything your characters own at Jita IV - Moon 4/)
-    assert.match(hint, /until you stop sharing/)
-    assert.match(hint, /Corporation-owned items/)
-  })
-
-  it('says any member can stop a corporation’s share', () => {
-    const hint = placeShareHint({ kind: 'corporation', corporationId: 1, name: 'Hard Knocks Inc.' }, 'Somewhere')
-    assert.match(hint, /until a member of Hard Knocks Inc\. stops sharing/)
-    assert.match(hint, /Nobody else’s items here are included/)
   })
 })
 

@@ -3766,6 +3766,25 @@ create policy "Audience reads places a share names"
 -- rows a public share covers (the owner policy never matches a null uid).
 grant select on public.character_asset_version   to anon;
 
+-- Whether a corp share's author still sits in the grantor corporation, from
+-- the world-readable character_directory (registration is RLS-hidden from an
+-- audience). A null author is never active. Invoker rights.
+create or replace function public.corp_share_author_active(corporation_id bigint, created_by uuid)
+returns boolean
+language sql
+stable
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.character_directory d
+    where d.registration_id = corp_share_author_active.created_by
+      and d.corporation_id = corp_share_author_active.corporation_id
+  );
+$$;
+
+grant execute on function public.corp_share_author_active(bigint, uuid) to anon, authenticated;
+
 -- ── corp_asset_share ───────────────────────────────────────────────────────
 -- Sharing layer phase 14, PR 2 (docs/sharing-layer/14-corp-asset-share.md). The
 -- twin of character_asset_share for a CORPORATION's hangar: one row per shared
@@ -3774,20 +3793,22 @@ grant select on public.character_asset_version   to anon;
 -- recursively everything inside it (the widening policy is PR 3).
 --
 -- The one difference the subject forces is the grantor: the corporation, not a
--- registration. The share is the corp's, so it outlives its author's membership
--- and any member may change or stop it — design.md settled this ("for
--- corp-owned data it's the corporation, with a created_by user for audit").
+-- registration. Any member may change or stop it. It is made ON BEHALF OF the
+-- member in created_by, and stops matching once that character leaves the
+-- corporation (corp_share_author_active(), migration
+-- 20261014203448_corp_share_author_gate.sql); a member still in it revives the
+-- share by saving it, which stamps them as the new created_by.
 -- There is no show_as_main: the owner shown IS the corporation, which has
 -- nothing to hide behind.
 create table public.corp_asset_share (
   id uuid primary key default gen_random_uuid(),
   -- Grantor: the corporation holding the shared item.
   corporation_id bigint not null,
-  -- Audit: the registration that created the row. Nullable and `on delete set
-  -- null` rather than cascade — a member's account closing must not silently
-  -- end the corporation's share. The insert policy forces a real one of the
-  -- caller's own registrations at creation; nothing ever displays it, and it is
-  -- deliberately a registration and never a user_id, so it stays unreadable
+  -- The member the share is made on behalf of: whoever last wrote the row (the
+  -- insert and update policies force one of the caller's own registrations in
+  -- the corporation). Nullable and `on delete set null` — an unlinked
+  -- character leaves the row in place but inactive, until a member saves it.
+  -- Deliberately a registration and never a user_id, so it stays unreadable
   -- outside the owning account.
   created_by uuid references public.registration(id) on delete set null,
   -- Subject: the shared item (an office, container, ship, any corp asset).
@@ -3814,16 +3835,19 @@ create policy "Members read own corp asset shares"
   to authenticated
   using (corporation_id in (select public.my_corporation_ids()));
 
--- Creation additionally pins the audit column to one of the caller's own
--- characters, so created_by can only ever name a registration of the account
--- that minted the row.
+-- Every write pins created_by to one of the caller's own characters in the
+-- grantor corporation, so the share is made on the writer's behalf — editing a
+-- corpmate's share takes it over.
 create policy "Members create own corp asset shares"
   on public.corp_asset_share
   for insert
   to authenticated
   with check (
     corporation_id in (select public.my_corporation_ids())
-    and created_by in (select id from public.registration where user_id = (select auth.uid()))
+    and created_by in (
+      select r.id from public.registration r
+      where r.user_id = (select auth.uid()) and r.corporation_id = corp_asset_share.corporation_id
+    )
   );
 
 create policy "Members update own corp asset shares"
@@ -3831,7 +3855,13 @@ create policy "Members update own corp asset shares"
   for update
   to authenticated
   using (corporation_id in (select public.my_corporation_ids()))
-  with check (corporation_id in (select public.my_corporation_ids()));
+  with check (
+    corporation_id in (select public.my_corporation_ids())
+    and created_by in (
+      select r.id from public.registration r
+      where r.user_id = (select auth.uid()) and r.corporation_id = corp_asset_share.corporation_id
+    )
+  );
 
 create policy "Members remove own corp asset shares"
   on public.corp_asset_share
@@ -3842,12 +3872,16 @@ create policy "Members remove own corp asset shares"
 -- The audience-read policy is LOAD-BEARING, exactly as on
 -- character_asset_share: PR 3's visibility check runs as the querying user, so
 -- it can only match share rows this policy exposes to them. `to anon` because a
--- fully-public share is visible signed-out.
+-- fully-public share is visible signed-out. A share whose author has left the
+-- corporation is visible to no audience.
 create policy "Audience reads corp asset shares aimed at them"
   on public.corp_asset_share
   for select
   to anon, authenticated
-  using (public.share_audience_matches(corporation_ids, alliance_ids, secret));
+  using (
+    public.share_audience_matches(corporation_ids, alliance_ids, secret)
+    and public.corp_share_author_active(corporation_id, created_by)
+  );
 
 grant select                         on public.corp_asset_share to anon;
 grant select, insert, update, delete on public.corp_asset_share to authenticated;
@@ -5800,6 +5834,7 @@ as $$
       select s.corporation_id, s.item_id
       from corp_asset_share s
       where share_audience_matches(s.corporation_ids, s.alliance_ids, s.secret)
+        and corp_share_author_active(s.corporation_id, s.created_by)
     ),
     walk (corporation_id, node, depth) as (
       select m.corporation_id, m.item_id, 0
