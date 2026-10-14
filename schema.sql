@@ -207,6 +207,7 @@ drop table if exists public.registration         cascade;
 -- per JSONL file in CCP's export), so sweep them by prefix instead of by name.
 drop function if exists public.ensure_sde_mirror_table(text, text) cascade;
 drop function if exists public.refresh_industry_index_buckets()    cascade;
+drop function if exists public.industry_index_tracked_systems()    cascade;
 drop function if exists public.sde_refresh_views()                 cascade;
 drop function if exists public.sde_search_type(text, int)          cascade;
 drop function if exists public.sde_search_system(text, int)        cascade;
@@ -4550,8 +4551,9 @@ create policy "Audience reads shared corp structure rigs"
 -- ── industry_system_index ─────────────────────────────────────────────────
 -- ESI /industry/systems/, written by the industry-systems job: history of
 -- EVE's per-system industry cost indices, snapshotted each run for every solar
--- system we have a structure anchored in. Public ESI data, so it's readable by
--- everyone. Each row is one system / activity (manufacturing, reaction,
+-- system we have a structure anchored in, anyone watches, one of our jobs ran
+-- in, or that ever had an index recorded (see industry_index_tracked_systems()
+-- below). Public ESI data, so it's readable by everyone. Each row is one system / activity (manufacturing, reaction,
 -- copying, invention, ...) and the recorded cost index at recorded_at; the
 -- table is append-only so the indices' drift over time can be charted.
 create table public.industry_system_index (
@@ -4573,6 +4575,43 @@ create policy "Everyone reads industry indexes"
 
 grant select on public.industry_system_index to anon, authenticated;
 grant all    on public.industry_system_index to service_role;
+
+-- industry_index_tracked_systems(): every solar system that has ever had a
+-- cost index recorded. The industry-systems job unions this into the set it
+-- records each hour, so a system keeps accruing history once anyone has
+-- tracked it — unwatching it, unanchoring the structure or the job that ran
+-- there ageing out no longer leaves a hole in its chart.
+--
+-- industry_system_index is append-only and grows ~150 rows an hour, so a plain
+-- `select distinct system_id` is a full scan that gets slower every day.
+-- Postgres has no loose index scan, so this walks (system_id, activity,
+-- recorded_at desc) by hand: each step asks the btree for the smallest
+-- system_id above the last one, one index probe per distinct system.
+create function public.industry_index_tracked_systems()
+returns setof bigint
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  with recursive skip (system_id) as (
+    (select system_id from public.industry_system_index order by system_id limit 1)
+    union all
+    select (
+      select i.system_id
+      from public.industry_system_index i
+      where i.system_id > skip.system_id
+      order by i.system_id
+      limit 1
+    )
+    from skip
+    where skip.system_id is not null
+  )
+  select system_id from skip where system_id is not null
+$$;
+
+revoke execute on function public.industry_index_tracked_systems() from public, anon, authenticated;
+grant execute on function public.industry_index_tracked_systems() to service_role;
 
 -- ── industry_system_index_bucket ──────────────────────────────────────────
 -- Pre-bucketed cost-index history for the /structure and /structure/[id]
