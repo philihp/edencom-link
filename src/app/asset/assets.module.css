@@ -190,12 +190,16 @@
 
 /* The drag rectangle. Fixed, because it's positioned from viewport coordinates
    (what getBoundingClientRect and the mouse events both speak), and inert so
-   the mouseup that ends the drag lands on the page rather than on this. */
+   the mouseup that ends the drag lands on the page rather than on this.
+   The fill is the accent tint at 85% so the rows being swept stay readable
+   through it; a browser without color-mix() drops that declaration and keeps
+   the transparent one, leaving just the dashed outline. */
 .marquee {
   position: fixed;
   z-index: 5;
   border: 1px dashed var(--accent);
-  background: var(--accent-tint);
+  background: transparent;
+  background: color-mix(in srgb, var(--accent-tint) 85%, transparent);
   pointer-events: none;
 }
 
