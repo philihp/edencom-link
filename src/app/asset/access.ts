@@ -35,29 +35,36 @@ export type ShareScope = {
   showAsMain: boolean
 }
 
-// `from` itself followed by its enclosing containers — climbing best-known
-// parents one indexed probe at a time, depth-capped to match
-// asset_ancestors()/asset_share_covers(). Every id a recursive share could
-// have been issued for and still cover `from`. Service client: the anonymous
-// caller has no RLS visibility yet, that's the point of the walk.
+// `from` itself followed by its enclosing containers and, last, the root's
+// place — climbing best-known parents one indexed probe at a time, depth-capped
+// to match asset_ancestors()/asset_share_covers(). Every id a recursive share
+// could have been issued for and still cover `from`, a place share
+// (docs/sharing-layer/15-place-share.md) included: the service client reads the
+// root's place through the view, which is what puts it at the end. Service
+// client: the anonymous caller has no RLS visibility yet, that's the point of
+// the walk. `holder` is the owner of `from` itself, or null when `from` is no
+// item of this hangar (a place, or the other hangar's item).
 const ancestryChain = async (
   supabase: ReturnType<typeof createServiceClient>,
   table: 'character_asset_over_time' | 'corp_asset_over_time',
   from: string,
-  acc: string[] = []
-): Promise<string[]> => {
+  acc: string[] = [],
+  holder: string | null = null
+): Promise<{ chain: string[]; holder: string | null }> => {
   const chain = [...acc, from]
-  if (chain.length > 16) return chain
+  if (chain.length > 16) return { chain, holder }
+  const owner = table === 'character_asset_over_time' ? 'registration_id' : 'corporation_id'
   const { data } = await supabase
     .from(table)
-    .select('location_id')
+    .select(`location_id, ${owner}`)
     .eq('item_id', from)
     .order('is_current', { ascending: false })
     .order('valid_until', { ascending: false })
     .limit(1)
-    .maybeSingle<{ location_id: number | string | null }>()
+    .maybeSingle<{ location_id: number | string | null } & Record<string, number | string | null>>()
+  const heldBy = acc.length === 0 && data?.[owner] != null ? String(data[owner]) : holder
   const parent = data?.location_id
-  return parent == null ? chain : ancestryChain(supabase, table, String(parent), chain)
+  return parent == null ? { chain, holder: heldBy } : ancestryChain(supabase, table, String(parent), chain, heldBy)
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -79,12 +86,16 @@ export const resolveSignedShare = async (param: string, itemId: string): Promise
   // Every share that covers the requested item, then the signature says which
   // one (if any) minted this link. A legacy link's id narrows it to one row.
   const supabase = createServiceClient()
-  const chain = await ancestryChain(supabase, 'character_asset_over_time', itemId)
-  const query = supabase
+  // A share covers only its grantor's own items, so when the item is a
+  // character's, only that character's shares are candidates — a place share
+  // by another owner at the same place never opens it.
+  const { chain, holder } = await ancestryChain(supabase, 'character_asset_over_time', itemId)
+  const candidates = supabase
     .from('character_asset_share')
     .select('id, registration_id, secret, show_as_main')
     .in('item_id', chain)
-  const { data: covering } = await (shareId === null ? query : query.eq('id', shareId))
+  const byHolder = holder === null ? candidates : candidates.eq('registration_id', holder)
+  const { data: covering } = await (shareId === null ? byHolder : byHolder.eq('id', shareId))
   const share = (
     (covering ?? []) as Array<{ id: string; registration_id: string; secret: string | null; show_as_main: boolean }>
   ).find((row) => row.secret != null && verifyShareToken(row.id, row.secret, salt, signature))
@@ -129,9 +140,13 @@ const resolveSignedCorpShare = async (
   salt: string,
   itemId: string
 ): Promise<ShareScope | null> => {
-  const chain = await ancestryChain(supabase, 'corp_asset_over_time', itemId)
-  const query = supabase.from('corp_asset_share').select('id, corporation_id, created_by, secret').in('item_id', chain)
-  const { data: covering } = await (shareId === null ? query : query.eq('id', shareId))
+  const { chain, holder } = await ancestryChain(supabase, 'corp_asset_over_time', itemId)
+  const candidates = supabase
+    .from('corp_asset_share')
+    .select('id, corporation_id, created_by, secret')
+    .in('item_id', chain)
+  const byHolder = holder === null ? candidates : candidates.eq('corporation_id', holder)
+  const { data: covering } = await (shareId === null ? byHolder : byHolder.eq('id', shareId))
   const share = (
     (covering ?? []) as Array<{
       id: string
