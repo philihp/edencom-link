@@ -23,7 +23,9 @@ import { createClient } from '@/utils/supabase/server'
 
 import { establishedUser } from '../account/lib/establishedUser'
 import { DateTime } from '../DateTime'
+import { AllianceShareToggles } from './allianceShareToggle'
 import { FavoriteStar } from './favoriteStar'
+import { fetchAllianceShareDefaults } from './shareData'
 import { formatIsk, formatKisk } from '../isk'
 import { LinkSpinner } from '../linkSpinner'
 import { Name, SystemName } from '../names'
@@ -402,6 +404,11 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
   // The two rates behind the cost-avoidance figures live on /settings/tax.
   const taxRates = await fetchTaxRates(supabase, user.id)
 
+  // The Directors-only "share all structures with <alliance>" toggles, one per
+  // directed corporation in an alliance (docs/sharing-layer/12-structure-share.md):
+  // the seeded default, visible and revocable.
+  const allianceShareDefaults = await fetchAllianceShareDefaults(supabase)
+
   // Fuel timers live in corp_structure_status now (own-corp only). RLS returns a
   // row only for structures the caller's corp owns, so an alliance-mate's
   // structure that's visible via corp_structure simply has no fuel here.
@@ -545,7 +552,7 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
     chain(({ data }) => (data ?? []) as JobRow[], taxedBatches)
   )
 
-  // Who owns each structure on the page. corp_structure's RLS is own-corps OR alliance-mates, so a
+  // Who owns each structure on the page. corp_structure's RLS is own-corps OR a share's audience, so a
   // tile here is not necessarily ours — and tax our corp paid into an ally's structure is a real
   // expense, not an expense avoided. Comparing this against the paying corporation is what tells
   // the two apart.
@@ -1037,6 +1044,7 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
                   <span className={styles.groupNote}>{groupNotes[block.key]}</span>
                   <span className={styles.groupRule} />
                 </h2>
+                {block.key === 'ours' && <AllianceShareToggles items={allianceShareDefaults} />}
                 <ul className={styles.grid}>
                   {block.structures.map((s) => {
                     const rigs = rigsByStructure.get(String(s.structure_id)) ?? []
