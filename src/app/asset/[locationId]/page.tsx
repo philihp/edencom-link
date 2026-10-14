@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import type { Metadata, Viewport } from 'next'
 import { notFound, redirect } from 'next/navigation'
 import { map } from 'ramda'
 import { Suspense } from 'react'
@@ -32,6 +33,7 @@ import {
 } from '../shareData'
 import styles from '../assets.module.css'
 import { AppraisalPanel } from './appraisalPanel'
+import { assetShareMetadata, assetShareViewport } from './card/metadata'
 import { SHIP_CATEGORY_ID, fetchRootItems, type CharacterAsset, type CorpAsset } from './locationData'
 import { LocationItems } from './locationItems'
 import { SystemLocationsSection } from './systemLocationsSection'
@@ -183,6 +185,25 @@ const presentedAsMain = async (
   }
 }
 
+type AssetLocationPageProps = {
+  params: Promise<{ locationId: string }>
+  searchParams: Promise<{ token?: string; share?: string }>
+}
+
+// The link preview a share link unfurls into in Discord, Slack or X
+// (./card/metadata.ts). Nothing for the signed-in page, which is private.
+export const generateMetadata = async ({ params, searchParams }: AssetLocationPageProps): Promise<Metadata> => {
+  const { locationId } = await params
+  const { token, share } = await searchParams
+  return assetShareMetadata(locationId, share, token)
+}
+
+export const generateViewport = async ({ params, searchParams }: AssetLocationPageProps): Promise<Viewport> => {
+  const { locationId } = await params
+  const { token, share } = await searchParams
+  return assetShareViewport(locationId, share, token)
+}
+
 // Directory browsing for a location's contents. Ships are their own thing —
 // navigating to a ship's id redirects to /ship/[itemId]. Reachable
 // authenticated (RLS scopes everything), or anonymously with a hangar share
@@ -197,13 +218,7 @@ const presentedAsMain = async (
 // all — whether the id names a ship. Everything expensive (the per-container
 // subtree counts, and on a system page the whole-hangar location sweep) hangs
 // off a Suspense boundary below, so the heading and breadcrumb don't wait on it.
-const AssetLocationPage = async ({
-  params,
-  searchParams,
-}: {
-  params: Promise<{ locationId: string }>
-  searchParams: Promise<{ token?: string; share?: string }>
-}) => {
+const AssetLocationPage = async ({ params, searchParams }: AssetLocationPageProps) => {
   const { locationId } = await params
   const { token, share } = await searchParams
 

@@ -4,9 +4,9 @@ import { cache } from 'react'
 import { getHullPricesByName } from '@/hullPrices'
 import { appraise } from '@/innominate'
 import { getSdeTypes, type SdeType } from '@/sdeTypes'
-import { sdeSupabase } from '@/utils/supabase/sde'
 
 import { toAppraisalLines, type AppraisalLine } from '../../../api/appraisal/assetLines'
+import { capturedLines } from '../../../api/appraisal/capturedPrices'
 import { applyHullPrices, fromAppraisal, type PricedLine } from '../../../api/appraisal/pricedLines'
 import { readShipAppraisal, writeShipAppraisal } from '../../../api/appraisal/shipAppraisal'
 import { isOverdue, type Sighting, sightingText } from '../lastSeen'
@@ -25,7 +25,7 @@ import {
 
 // The market the card prices against, the same default the Appraise button
 // uses. Jita is the one every player reads a number in.
-const PRICE_MARKET = 'jita'
+export const PRICE_MARKET = 'jita'
 
 // How long a stored appraisal (ship_appraisal) stands before the card asks
 // the provider again. The extract jobs refresh a ship's contents every 6h, so
@@ -60,36 +60,6 @@ const cardSighting = (sighting: Sighting): CardSighting | null => {
   const overdue = isOverdue(sighting)
   if (sighting.inHangar && !overdue) return null
   return { text: `${sightingText(sighting)}${sighting.inHangar ? '' : ', not in this hangar now'}`, overdue }
-}
-
-// Our own hourly Jita capture, per appraisal line. Only the last resort: the
-// card uses it when no appraisal of the ship has come in yet.
-const capturedLines = async (lines: AppraisalLine[], types: Record<number, SdeType>): Promise<PricedLine[]> => {
-  const idByName = new Map(Object.values(types).map((type) => [type.name, type.typeID]))
-  const ids = lines.flatMap((line) => {
-    const id = idByName.get(line.name)
-    return id == null ? [] : [id]
-  })
-  const { data, error } = await sdeSupabase()
-    .from('market_price')
-    .select('type_id, sell_min, buy_max')
-    .eq('market', PRICE_MARKET)
-    .in('type_id', ids)
-  if (error) console.error(`[shipCard] prices failed: ${error.message}`)
-  const byId = new Map(
-    ((data ?? []) as Array<{ type_id: number; sell_min: number | string | null; buy_max: number | string | null }>).map(
-      (row) => [Number(row.type_id), row]
-    )
-  )
-  return lines.map((line) => {
-    const row = byId.get(idByName.get(line.name) ?? -1)
-    return {
-      name: line.name,
-      quantity: line.quantity,
-      sell: row?.sell_min == null ? null : Number(row.sell_min),
-      buy: row?.buy_max == null ? null : Number(row.buy_max),
-    }
-  })
 }
 
 // A new appraisal from the provider, stored for the next card. Null when the
@@ -131,7 +101,7 @@ const pricedLines = async (
     // Not in time: let it finish after the response, so the next card has it.
     if (answer === undefined) after(() => pending)
   }
-  return stored?.lines ?? capturedLines(lines, types)
+  return stored?.lines ?? capturedLines(lines, types, PRICE_MARKET)
 }
 
 // The card for a ship a share link opens, or null when the link opens
