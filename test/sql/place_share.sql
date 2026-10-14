@@ -243,6 +243,8 @@ grant select on public.corp_asset           to anon, authenticated;
 \i supabase/migrations/20261013062951_corp_asset_share.sql
 \i supabase/migrations/20261013064401_corp_asset_share_recursive_rls.sql
 \i supabase/migrations/20261014161500_asset_place_share.sql
+-- Account-wide: a character place share covers the whole account's items there.
+\i supabase/migrations/20261014174504_account_wide_place_share.sql
 
 -- The character widening policy, created once asset_share_covers() exists.
 create policy "Audience reads shared assets"
@@ -317,9 +319,10 @@ begin
   assert public.asset_share_covers(12, '00000000-0000-0000-0000-0000000000a1'), 'what is inside it is covered';
   assert public.asset_share_covers(20, '00000000-0000-0000-0000-0000000000a1'), 'every root of the grantor there is covered';
   assert not public.asset_share_covers(30, '00000000-0000-0000-0000-0000000000a1'), 'the grantor''s items elsewhere are not';
-  -- The alt on the same account holds ship 40 at P, which its own ITEM share
-  -- covers, but its sibling 41's coverage comes from that, never from a1's
-  -- place share: the grantor is a character, not an account.
+  -- The alt on the same account holds ship 40 at P: a1's place share is the
+  -- ACCOUNT's, so it covers a2's root there and what is inside it too.
+  assert public.asset_share_covers(40, '00000000-0000-0000-0000-0000000000a2'), 'a sibling character''s root at the place is covered';
+  assert public.asset_share_covers(41, '00000000-0000-0000-0000-0000000000a2'), 'and what is inside it';
   assert not public.asset_share_covers(50, '00000000-0000-0000-0000-0000000000bb'), 'another owner''s item at the place is not covered';
 
   -- Depth: 115 is 15 below the root (the place is the 16th climb), 116 is 16.
@@ -340,35 +343,31 @@ begin
   set local role authenticated;
   perform set_config('test.uid', 'b0000000-0000-0000-0000-000000000000', true);
 
-  -- What the location page asks: the grantor's roots at the place, by place.
-  -- a2's ship 40 is shared with bob too, but as an item, so it does not list
-  -- under P for him; nor does a2's or anybody else's.
+  -- What the location page asks: the account's roots at the place, by place —
+  -- a1's and its alt a2's, and nobody else's.
   ids := array(
     select item_id from public.character_asset
     where location_id = 1051882805548 and registration_id <> '00000000-0000-0000-0000-0000000000bb'
     order by item_id
   );
-  assert ids = '{10,20}', format('the recipient lists exactly the grantor''s roots at the place, got %s', ids);
+  assert ids = '{10,20,40}', format('the recipient lists exactly the account''s roots at the place, got %s', ids);
 
   select location_id into place from public.character_asset where item_id = 10;
   assert place = 1051882805548, format('a covered root reads the place the share names, got %s', place);
   select location_id into place from public.character_asset where item_id = 11;
   assert place = 10, format('a link inside the tree still reads, got %s', place);
 
-  -- The item share keeps hiding its root's place.
-  select count(*) into n from public.character_asset where item_id = 40;
-  assert n = 1, 'the item share still opens the ship';
   select location_id into place from public.character_asset where item_id = 40;
-  assert place is null, format('an item share does not reveal where its root is, got %s', place);
+  assert place = 1051882805548, format('a sibling''s covered root reads the place too, got %s', place);
 
   -- Nothing else of a1's: the root at S is invisible altogether.
   select count(*) into n from public.character_asset where item_id = 30;
   assert n = 0, 'the grantor''s root elsewhere is not readable';
 
-  -- Place rows a recipient reads: a1's at P and bob's own, nothing of a2's.
+  -- Place rows a recipient reads: a2's only for its root at P.
   select count(*) into n from public.character_asset_location
     where registration_id = '00000000-0000-0000-0000-0000000000a2';
-  assert n = 0, format('no place row of an owner who named no place, got %s', n);
+  assert n = 1, format('the sibling''s place row at the named place, got %s', n);
 
   -- The owner still reads everything.
   perform set_config('test.uid', 'a0000000-0000-0000-0000-000000000000', true);
@@ -406,12 +405,18 @@ end $$;
 -- Stopping the share closes it on the next read.
 delete from public.character_asset_share where item_id = 1051882805548;
 do $$
-declare n int;
+declare n int; place bigint;
 begin
   set local role authenticated;
   perform set_config('test.uid', 'b0000000-0000-0000-0000-000000000000', true);
   select count(*) into n from public.character_asset where registration_id = '00000000-0000-0000-0000-0000000000a1';
   assert n = 0, format('a stopped place share opens nothing, got %s', n);
+
+  -- a2's ITEM share on ship 40 remains, and keeps hiding its root's place.
+  select count(*) into n from public.character_asset where item_id = 40;
+  assert n = 1, 'the item share still opens the ship';
+  select location_id into place from public.character_asset where item_id = 40;
+  assert place is null, format('an item share does not reveal where its root is, got %s', place);
   reset role;
 end $$;
 

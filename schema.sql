@@ -3636,7 +3636,13 @@ as $$
     matching_shares as (
       select s.item_id
       from character_asset_share s
-      where s.registration_id = asset_share_covers.registration
+      where s.registration_id in (
+              select r.id
+              from public.registration r
+              where r.user_id = (
+                select o.user_id from public.registration o where o.id = asset_share_covers.registration
+              )
+            )
         and asset_share_matches_caller(s.corporation_ids, s.alliance_ids, s.secret)
     ),
     walk (node, depth) as (
@@ -3693,16 +3699,32 @@ create policy "Audience reads shared assets"
 -- nothing recurses. It opens the place row of a covered root's closed
 -- versions too; the views join it only to version rows the recipient can
 -- read, which are current-only.
+-- Account-wide place shares (docs/sharing-layer/15-place-share.md): a share row
+-- covers every registration of its anchor's account, and `registration` is
+-- hidden from a recipient, so the expansion is a definer function.
+create or replace function public.shared_place_pairs()
+returns table (registration_id uuid, location_id bigint)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select sibling.id, s.item_id
+  from character_asset_share s
+  join public.registration anchor on anchor.id = s.registration_id
+  join public.registration sibling on sibling.user_id = anchor.user_id
+  where share_audience_matches(s.corporation_ids, s.alliance_ids, s.secret);
+$$;
+
+revoke execute on function public.shared_place_pairs() from public;
+grant execute on function public.shared_place_pairs() to anon, authenticated;
+
 create policy "Audience reads places a share names"
   on public.character_asset_location
   for select
   to anon, authenticated
   using (
-    (registration_id, location_id) in (
-      select s.registration_id, s.item_id
-      from public.character_asset_share s
-      where public.share_audience_matches(s.corporation_ids, s.alliance_ids, s.secret)
-    )
+    (registration_id, location_id) in (select p.registration_id, p.location_id from public.shared_place_pairs() p)
   );
 
 -- anon had no select on the asset table/view before; RLS still scopes anon to

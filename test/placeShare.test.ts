@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 
-import { placeGrantors, placeShareHint, placeShareSubject } from '../src/app/asset/placeShare.ts'
+import { grantorKey, placeGrantors, placeShareHint, placeShareSubject } from '../src/app/asset/placeShare.ts'
 
 const owners = {
   characters: [
@@ -15,12 +15,21 @@ const owners = {
 }
 
 describe('placeGrantors', () => {
-  it('offers one share per own owner holding something here, characters first', () => {
+  it('offers one character share however many characters hold something, then each corporation', () => {
     assert.deepEqual(placeGrantors(['667531913', 'reg-sarah', 'reg-sarah', 'reg-jenny'], owners), [
-      { kind: 'character', registrationId: 'reg-jenny', name: 'Jenny Tayliah' },
-      { kind: 'character', registrationId: 'reg-sarah', name: 'Sarah Okaski' },
+      { kind: 'character' },
       { kind: 'corporation', corporationId: 667531913, name: 'Hard Knocks Inc.' },
     ])
+  })
+
+  it('offers only the corporation share when no character holds anything', () => {
+    assert.deepEqual(placeGrantors(['98832954'], owners), [
+      { kind: 'corporation', corporationId: 98832954, name: 'Idle Corp' },
+    ])
+  })
+
+  it('offers only the character share when no corporation holds anything', () => {
+    assert.deepEqual(placeGrantors(['reg-jenny'], owners), [{ kind: 'character' }])
   })
 
   it('never offers a share for an owner who is not the caller’s', () => {
@@ -34,25 +43,34 @@ describe('placeGrantors', () => {
   })
 })
 
+describe('grantorKey', () => {
+  it('tells the options apart', () => {
+    assert.equal(grantorKey({ kind: 'character' }), 'characters')
+    assert.equal(grantorKey({ kind: 'corporation', corporationId: 7, name: 'x' }), 'corp-7')
+  })
+})
+
 describe('placeShareHint', () => {
-  it('names the owner and the place, and that nobody else’s items are included', () => {
-    const hint = placeShareHint({ kind: 'character', registrationId: 'r', name: 'Sarah Okaski' }, 'Jita IV - Moon 4')
-    assert.match(hint, /Sarah Okaski’s items at Jita IV - Moon 4/)
+  it('says a character share is everything the characters own and excludes corp and others', () => {
+    const hint = placeShareHint({ kind: 'character' }, 'Jita IV - Moon 4')
+    assert.match(hint, /everything your characters own at Jita IV - Moon 4/)
     assert.match(hint, /until you stop sharing/)
-    assert.match(hint, /Nobody else’s items here are included/)
+    assert.match(hint, /Corporation-owned items/)
   })
 
   it('says any member can stop a corporation’s share', () => {
     const hint = placeShareHint({ kind: 'corporation', corporationId: 1, name: 'Hard Knocks Inc.' }, 'Somewhere')
     assert.match(hint, /until a member of Hard Knocks Inc\. stops sharing/)
+    assert.match(hint, /Nobody else’s items here are included/)
   })
 })
 
 describe('placeShareSubject', () => {
-  it('is the owner’s items here', () => {
+  it('names the kind of share', () => {
+    assert.equal(placeShareSubject({ kind: 'character' }), 'Your characters’ items here')
     assert.equal(
-      placeShareSubject({ kind: 'character', registrationId: 'r', name: 'Sarah Okaski' }),
-      'Sarah Okaski’s items here'
+      placeShareSubject({ kind: 'corporation', corporationId: 1, name: 'Hard Knocks Inc.' }),
+      'Hard Knocks Inc.’s items here'
     )
   })
 })
