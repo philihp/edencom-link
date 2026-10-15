@@ -1,120 +1,48 @@
+import type { Metadata, Viewport } from 'next'
 import { notFound } from 'next/navigation'
 
-import { searchSdeTypesAll } from '@/sdeTypes'
-import { createServiceClient } from '@/utils/supabase/service'
-
+import { shareCardMetadata } from '../../shareCardMetadata'
+import { CARD_HEIGHT, CARD_WIDTH } from '../../ship/[itemId]/card/cardModel'
 import { TypeIcon } from '../../typeIcon'
-
+import { loadCorpseCollection } from '../collection'
 import styles from '../corpses.module.css'
-
-// Modern capsuleer corpses are the gendered "Corpse Male"/"Corpse Female"
-// types; "Corpse" is the legacy generic. They're singleton items, so the
-// extract job resolves each one's ESI asset name, which for a corpse reads
-// "<pilot>'s Frozen Corpse". Match on the SDE type name rather than a
-// hardcoded id so a game patch adding a variant is picked up automatically
-// (and NPC "…Frozen Corpse" types, which aren't named exactly this, stay out).
-const CORPSE_TYPE_NAMES = new Set(['corpse', 'corpse male', 'corpse female'])
-
-const corpseTypeIds = async (): Promise<number[]> =>
-  (await searchSdeTypesAll('corpse')).filter((t) => CORPSE_TYPE_NAMES.has(t.name.toLowerCase())).map((t) => t.typeID)
-
-// A corpse first seen within this window is flagged "New!".
-const NEW_WINDOW_MS = 48 * 60 * 60 * 1000
-
-// Strip the "'s Frozen Corpse" suffix ESI tacks onto a corpse's name, leaving
-// just the dead pilot's name. Straight or curly apostrophe, case-insensitive.
-const pilotFromName = (name: string | null): string | null => {
-  const trimmed = name?.trim()
-  if (!trimmed) return null
-  return trimmed.replace(/['’]s\s+Frozen\s+Corpse$/i, '').trim() || trimmed
-}
+import { loadCorpsesCard } from './card/loadCard'
 
 // Public share page — no login required. It reads through the service-role
 // client (bypassing RLS), so every query is explicitly scoped to the owning
-// account's characters. Owners opt in by enabling the 'corpses' flag; a page
-// for an account that hasn't is a 404, so this never leaks a random pilot's
-// collection just because their character id was guessed.
+// account's characters (../collection.ts).
 export const dynamic = 'force-dynamic'
 
-type RegistrationRow = {
-  id: string
-  user_id: string
-  character_id: number | string | null
-  name: string
-  is_main: boolean
+type PageProps = { params: Promise<{ characterID: string }> }
+
+// The page is public, so it always carries the link preview a chat client
+// unfurls (./card/loadCard.ts).
+export const generateMetadata = async ({ params }: PageProps): Promise<Metadata> => {
+  const { characterID } = await params
+  const card = await loadCorpsesCard(characterID)
+  if (!card) return {}
+  return shareCardMetadata({
+    title: card.title,
+    typeName: card.title,
+    description: card.description,
+    imagePath: `/corpses/${characterID}/card`,
+    width: CARD_WIDTH,
+    height: CARD_HEIGHT,
+  })
 }
 
-type CorpseRow = {
-  item_id: number | string
-  type_id: number | string
-  name: string | null
-  valid_from: string | null
+export const generateViewport = async ({ params }: PageProps): Promise<Viewport> => {
+  const { characterID } = await params
+  const card = await loadCorpsesCard(characterID)
+  return card ? { themeColor: card.color } : {}
 }
 
-const CorpsesPage = async ({ params }: { params: Promise<{ characterID: string }> }) => {
+const CorpsesPage = async ({ params }: PageProps) => {
   const { characterID } = await params
 
-  const service = createServiceClient()
-
-  // Which account owns the character in the URL? Its registrations give us the
-  // full set of characters whose corpses we list.
-  const { data: owner } = await service
-    .from('registration')
-    .select('user_id')
-    .eq('character_id', characterID)
-    .limit(1)
-    .maybeSingle<Pick<RegistrationRow, 'user_id'>>()
-  if (!owner) notFound()
-
-  // Every character on the account, for both the corpse scope and the label.
-  const { data: registrations } = await service
-    .from('registration')
-    .select('id, user_id, character_id, name, is_main')
-    .eq('user_id', owner.user_id)
-    .returns<RegistrationRow[]>()
-
-  // The asset tables key on the registration row's uuid
-  // (character_asset.registration_id → registration.id), not the EVE character
-  // id, so scope the corpse query by those uuids.
-  const registrationIds = (registrations ?? []).map((r) => r.id)
-
-  // Label the account by its main character, falling back to the character in
-  // the URL, then any character on the account.
-  const accountName =
-    (registrations ?? []).find((r) => r.is_main)?.name ??
-    (registrations ?? []).find((r) => String(r.character_id) === String(characterID))?.name ??
-    (registrations ?? [])[0]?.name ??
-    null
-
-  const typeIds = await corpseTypeIds()
-
-  const { data: rows } =
-    registrationIds.length && typeIds.length
-      ? await service
-          .from('character_asset')
-          .select('item_id, type_id, name, valid_from')
-          .in('registration_id', registrationIds)
-          .in('type_id', typeIds)
-          .returns<CorpseRow[]>()
-      : { data: [] as CorpseRow[] }
-
-  const cutoff = Date.now() - NEW_WINDOW_MS
-
-  // The pilot name lives in the asset name; a corpse whose name hasn't been
-  // resolved yet falls back to its item id so it still shows in the tally.
-  const corpses = (rows ?? [])
-    .map((r) => {
-      // valid_from is this asset version's debut (the SCD-2 validity window's
-      // start) — for a corpse, effectively when it was first seen in the hangar.
-      const firstSeenMs = r.valid_from ? new Date(r.valid_from).getTime() : NaN
-      return {
-        itemId: String(r.item_id),
-        typeId: Number(r.type_id),
-        pilot: pilotFromName(r.name),
-        isNew: Number.isFinite(firstSeenMs) && firstSeenMs >= cutoff,
-      }
-    })
-    .sort((a, b) => (a.pilot ?? '').localeCompare(b.pilot ?? '', undefined, { sensitivity: 'base' }))
+  const collection = await loadCorpseCollection(characterID)
+  if (!collection) notFound()
+  const { accountName, corpses } = collection
 
   return (
     <>

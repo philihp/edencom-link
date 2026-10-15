@@ -1,3 +1,4 @@
+import type { Metadata, Viewport } from 'next'
 import { notFound } from 'next/navigation'
 
 import { ShareDialog } from '@/app/asset/shareDialog'
@@ -14,6 +15,9 @@ import { LinkOwnerPanel } from '../ownerPanel'
 import { runLink } from '../run'
 import { shortLinkId } from '../shortId'
 import styles from '../link.module.css'
+import { shareCardMetadata, shareQuery } from '../../shareCardMetadata'
+import { CARD_HEIGHT, CARD_WIDTH } from '../../ship/[itemId]/card/cardModel'
+import { loadLinkCard } from './card/loadCard'
 
 // The =IMPORTDATA() formula for this Link's CSV, when one would work from
 // Google Sheets: the signed share URL when the Link has one (Sheets carries no
@@ -42,13 +46,37 @@ const importDataFormula = (
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
-const LinkViewerPage = async ({
-  params,
-  searchParams,
-}: {
+type PageProps = {
   params: Promise<{ id: string }>
   searchParams: Promise<{ share?: string }>
-}) => {
+}
+
+// The link preview a shared Link unfurls into in Discord, Slack or X
+// (./card/loadCard.ts). Only when this visitor may open the Link at all.
+export const generateMetadata = async ({ params, searchParams }: PageProps): Promise<Metadata> => {
+  const { id } = await params
+  const { share } = await searchParams
+  const card = await loadLinkCard(id, share)
+  if (!card) return {}
+  const cleanShare = share ? parseShareParam(share).signature : undefined
+  return shareCardMetadata({
+    title: card.title,
+    typeName: card.title,
+    description: card.description,
+    imagePath: `/link/${id}/card${cleanShare ? `?${shareQuery({ share: cleanShare })}` : ''}`,
+    width: CARD_WIDTH,
+    height: CARD_HEIGHT,
+  })
+}
+
+export const generateViewport = async ({ params, searchParams }: PageProps): Promise<Viewport> => {
+  const { id } = await params
+  const { share } = await searchParams
+  const card = await loadLinkCard(id, share)
+  return card ? { themeColor: card.color } : {}
+}
+
+const LinkViewerPage = async ({ params, searchParams }: PageProps) => {
   const { id } = await params
   const { share } = await searchParams
 

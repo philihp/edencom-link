@@ -1,3 +1,4 @@
+import type { Metadata, Viewport } from 'next'
 import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
 
@@ -20,6 +21,26 @@ import { resolveFittingOwner } from '../../resolveCharacter'
 import { fetchFittingShareDialogData } from '../../shareData'
 import { SlotGroups } from '../../slotGroups'
 import styles from '../../fittings.module.css'
+import { fittingShareMetadata, fittingShareViewport } from './card/metadata'
+
+type FittingPageProps = {
+  params: Promise<{ characterId: string; fittingId: string }>
+  searchParams: Promise<{ share?: string }>
+}
+
+// The link preview a signed share link unfurls into in Discord, Slack or X
+// (./card/metadata.ts). Nothing for the signed-in page.
+export const generateMetadata = async ({ params, searchParams }: FittingPageProps): Promise<Metadata> => {
+  const { characterId, fittingId } = await params
+  const { share } = await searchParams
+  return fittingShareMetadata(characterId, fittingId, share)
+}
+
+export const generateViewport = async ({ params, searchParams }: FittingPageProps): Promise<Viewport> => {
+  const { characterId, fittingId } = await params
+  const { share } = await searchParams
+  return fittingShareViewport(characterId, fittingId, share)
+}
 
 // One saved fitting, drawn by the same viewer /ship/[itemId] uses — our own
 // fitting stack over the dogma engine (docs/custom-fit-ui.md). A saved fit and
@@ -41,13 +62,7 @@ import styles from '../../fittings.module.css'
 // without any of that — including signed out: it verifies against the share
 // row's secret + TOKEN_SALT and then reads the exact subject fit through the
 // service role.
-const FittingDetailPage = async ({
-  params,
-  searchParams,
-}: {
-  params: Promise<{ characterId: string; fittingId: string }>
-  searchParams: Promise<{ share?: string }>
-}) => {
+const FittingDetailPage = async ({ params, searchParams }: FittingPageProps) => {
   const { characterId, fittingId } = await params
   const { share } = await searchParams
 
