@@ -1,5 +1,12 @@
 import { withWorkflow } from 'workflow/next'
 
+// The fonts every link-preview card route reads (src/app/shareCardRender.ts).
+const CARD_FONTS = [
+  'public/fonts/evesansneue-regular.otf',
+  'public/fonts/evesansneue-bold.otf',
+  'public/fonts/evesansneue-expandedbold.otf',
+]
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   // @eveshipfit/dogma-engine ships a Rust-compiled WASM module (a bundler-style
@@ -16,18 +23,17 @@ const nextConfig = {
   // function has no copy of the file to read.
   outputFileTracingIncludes: {
     '/api/mcp': ['docs/edencom-industry-SKILL.md'],
-    // The link-preview cards (ship and container) read their fonts from disk at
-    // request time.
-    '/ship/[itemId]/card': [
-      'public/fonts/evesansneue-regular.otf',
-      'public/fonts/evesansneue-bold.otf',
-      'public/fonts/evesansneue-expandedbold.otf',
-    ],
-    '/asset/[locationId]/card': [
-      'public/fonts/evesansneue-regular.otf',
-      'public/fonts/evesansneue-bold.otf',
-      'public/fonts/evesansneue-expandedbold.otf',
-    ],
+    // The link-preview cards read their fonts from disk at request time.
+    ...Object.fromEntries(
+      [
+        '/ship/[itemId]/card',
+        '/asset/[locationId]/card',
+        '/fitting/[characterId]/[fittingId]/card',
+        '/bpos/[name]/card',
+        '/corpses/[characterID]/card',
+        '/link/[id]/card',
+      ].map((route) => [route, CARD_FONTS])
+    ),
   },
   experimental: {
     staleTimes: {

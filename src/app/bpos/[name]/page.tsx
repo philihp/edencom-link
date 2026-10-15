@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
 import { notFound } from 'next/navigation'
 import { match } from 'ts-pattern'
 
@@ -15,6 +15,9 @@ import { fetchBposShareDialogData, fetchCorpBposShareDialogData } from '../share
 import { revokeBposShare, revokeCorpBposShare, saveBposShare, saveCorpBposShare } from '../shareActions'
 import { characterSlug } from '../slug'
 import { totalBpos } from '../stack'
+import { loadBposCard } from './card/loadCard'
+import { shareCardMetadata, shareQuery } from '../../shareCardMetadata'
+import { CARD_HEIGHT, CARD_WIDTH } from '../../ship/[itemId]/card/cardModel'
 
 // A showcase page for one collection of blueprint originals, addressed by name
 // with spaces as dashes (/bpos/sir-cuddles). The name is a CORPORATION's — the
@@ -31,12 +34,30 @@ type PageProps = {
   searchParams: Promise<{ share?: string }>
 }
 
-export const generateMetadata = async ({ params }: PageProps): Promise<Metadata> => {
-  // Deliberately not resolved against the database: a title is rendered before
-  // access is decided, so deriving it from the URL keeps the 404 case from
-  // confirming whether the subject exists.
+// The title is derived from the URL alone, so the 404 case never confirms
+// whether the subject exists. Only a library a signed-out visitor could open —
+// fully public, or opened by this signed ?share= link — gets the link preview a
+// chat client unfurls (./card/loadCard.ts); that visitor sees the page anyway.
+export const generateMetadata = async ({ params, searchParams }: PageProps): Promise<Metadata> => {
   const { name } = await params
-  return { title: `Blueprint originals — ${decodeURIComponent(name)}` }
+  const { share } = await searchParams
+  const card = await loadBposCard(name, share)
+  if (!card) return { title: `Blueprint originals — ${decodeURIComponent(name)}` }
+  return shareCardMetadata({
+    title: card.title,
+    typeName: card.title,
+    description: card.description,
+    imagePath: `/bpos/${encodeURIComponent(characterSlug(decodeURIComponent(name)))}/card${share ? `?${shareQuery({ share })}` : ''}`,
+    width: CARD_WIDTH,
+    height: CARD_HEIGHT,
+  })
+}
+
+export const generateViewport = async ({ params, searchParams }: PageProps): Promise<Viewport> => {
+  const { name } = await params
+  const { share } = await searchParams
+  const card = await loadBposCard(name, share)
+  return card ? { themeColor: card.color } : {}
 }
 
 // Everything that differs between the two subjects, decided once: what the page

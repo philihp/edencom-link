@@ -1,4 +1,7 @@
-import { compactIsk, type CardIcon, type CardRow } from './cardModel'
+import { ImageResponse } from 'next/og'
+
+import { CARD_CACHE_CONTROL, cardFonts, dataUri } from '../../../shareCardRender'
+import { CARD_HEIGHT, CARD_WIDTH, compactIsk, type CardIcon, type CardRow } from './cardModel'
 import type { ShipCard } from './loadCard'
 
 // The ship link-preview card as JSX for next/og (Satori). Satori draws only
@@ -174,3 +177,29 @@ export const Card = ({ card, images }: { card: ShipCard; images: Images }) => (
     </div>
   </div>
 )
+
+const typeIconUrl = (typeId: number) => `https://images.evetech.net/types/${typeId}/icon?size=64`
+const renderUrl = (typeId: number) => `https://images.evetech.net/types/${typeId}/render?size=512`
+
+const fetchImages = async (card: ShipCard): Promise<Images> => {
+  const iconIds = [...new Set(card.rows.flatMap((row) => row.icons.map((icon) => icon.typeId)))]
+  const [render, portrait, ...icons] = await Promise.all([
+    dataUri(renderUrl(card.hullTypeId)),
+    card.owner.portrait ? dataUri(card.owner.portrait.url.replace('size=64', 'size=128')) : Promise.resolve(null),
+    ...iconIds.map((id) => dataUri(typeIconUrl(id))),
+  ])
+  return { render, portrait, icons: new Map(iconIds.map((id, i) => [id, icons[i]])) }
+}
+
+// The card as the PNG a card route answers with: the ship's own route, and a
+// saved fitting's (fitting/[characterId]/[fittingId]/card), which draws a fit
+// the same way.
+export const shipCardResponse = async (card: ShipCard): Promise<ImageResponse> => {
+  const [images, fonts] = await Promise.all([fetchImages(card), cardFonts()])
+  return new ImageResponse(<Card card={card} images={images} />, {
+    width: CARD_WIDTH,
+    height: CARD_HEIGHT,
+    fonts,
+    headers: { 'Cache-Control': CARD_CACHE_CONTROL },
+  })
+}
