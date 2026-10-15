@@ -21,14 +21,9 @@ import { TypeIcon } from '../../typeIcon'
 import { resolveShareParams } from '../access'
 import { AssetShareDialog } from '../assetShareDialog'
 import { sharePath } from '../shareHint'
-import { placeGrantors } from '../placeShare'
+import { subjectGrantors } from '../placeShare'
 import { type PlaceShare, PlaceShareDialog } from '../placeShareDialog'
-import {
-  fetchCorpPlaceShareDialogData,
-  fetchCorpShareDialogData,
-  fetchPlaceShareDialogData,
-  fetchShareDialogData,
-} from '../shareData'
+import { fetchCorpPlaceShareDialogData, fetchPlaceShareDialogData, fetchShareDialogData } from '../shareData'
 import styles from '../assets.module.css'
 import { AppraisalPanel } from './appraisalPanel'
 import { assetShareMetadata, assetShareViewport } from './card/metadata'
@@ -50,7 +45,7 @@ const fetchSelf = async (
   locationId: string,
   characterScope: string[] | null,
   corpScope: number[] | null
-): Promise<{ self: Self | null; isOwnCharacterItem: boolean }> => {
+): Promise<{ self: Self | null; isOwnCharacterItem: boolean; selfCorporationId: number | null }> => {
   let selfQuery = supabase
     .from('character_asset')
     .select('item_id, registration_id, type_id, location_id, name')
@@ -70,6 +65,10 @@ const fetchSelf = async (
   return {
     self: characterSelf ?? (corpSelf ? { ...corpSelf, name: null } : null),
     isOwnCharacterItem: characterSelf != null,
+    // The corporation holding the item, when it is a corp asset — a structure
+    // the corp owns is both an item and the place other owners park in, so
+    // the share offer needs to know whose it is (subjectGrantors).
+    selfCorporationId: !characterSelf && corpSelf ? Number(corpSelf.corporation_id) : null,
   }
 }
 
@@ -168,14 +167,15 @@ const AssetLocationPage = async ({ params, searchParams }: AssetLocationPageProp
   // Nothing here depends on anything else here, so it all goes out at once.
   // These used to run one after another, each waiting on a round trip that had
   // no reason to wait.
-  const [{ rootItems, currentShipItemIds }, { self, isOwnCharacterItem }, owners] = await Promise.all([
-    fetchRootItems(supabase, locationId, characterScope, corpScope),
-    fetchSelf(supabase, locationId, characterScope, corpScope),
-    // Owner names for the filter dropdown: the caller's own owners, or — in the
-    // token path — the sharer's characters/corps, resolved through the service
-    // client (the anonymous viewer has no session to read them with).
-    scope ? fetchScopeOwners(supabase, scope) : fetchOwners(),
-  ])
+  const [{ rootItems, currentShipItemIds }, { self, isOwnCharacterItem, selfCorporationId }, owners] =
+    await Promise.all([
+      fetchRootItems(supabase, locationId, characterScope, corpScope),
+      fetchSelf(supabase, locationId, characterScope, corpScope),
+      // Owner names for the filter dropdown: the caller's own owners, or — in the
+      // token path — the sharer's characters/corps, resolved through the service
+      // client (the anonymous viewer has no session to read them with).
+      scope ? fetchScopeOwners(supabase, scope) : fetchOwners(),
+    ])
 
   // A share that shows the account's main (character_asset_share.show_as_main):
   // the owner column, the rows' owner ids and any name carrying the holder's
@@ -199,31 +199,30 @@ const AssetLocationPage = async ({ params, searchParams }: AssetLocationPageProp
     redirect(`/ship/${locationId}${shipShare ? `?share=${shipShare}` : token ? `?token=${token}` : ''}`)
   }
 
-  // Share dialog data for an item the caller may share: one of their own
-  // characters' items, or — the corp arm, phase 14 PR 4 — one their
-  // corporation holds, where every member gets the button and the dialog opens
-  // on the corp's one row. Either fetch returns null unless the caller really
-  // owns or belongs to it (visibility alone can now mean "shared with me").
-  // Exactly one is asked, since an item lives in exactly one hangar. Started
-  // rather than awaited: whether the item is ours was settled above, so this
-  // overlaps the heading work below instead of queueing behind it.
-  const shareDataPromise =
-    scope || !self
-      ? null
-      : isOwnCharacterItem
-        ? fetchShareDialogData(supabase, locationId)
-        : fetchCorpShareDialogData(supabase, locationId)
+  // Share dialog data for one of the caller's own characters' items: the one
+  // subject with a single grantor by construction — nothing of another owner's
+  // roots at a ship or a can — and the one whose share is per-registration
+  // (show-as-main). Returns null unless the caller really owns it (visibility
+  // alone can now mean "shared with me"). Started rather than awaited: whether
+  // the item is ours was settled above, so this overlaps the heading work below
+  // instead of queueing behind it.
+  const shareDataPromise = scope || !self || !isOwnCharacterItem ? null : fetchShareDialogData(supabase, locationId)
 
-  // A place — station, structure, system — is shared as one live list instead
-  // (docs/sharing-layer/15-place-share.md): either everything the account's
-  // characters own there, or one corporation's. Which kinds the caller can make
-  // comes from the unmasked root items and the caller's own owner list, so
-  // items someone else shared with the caller never offer a share.
+  // Everything else is shared as live lists per grantor
+  // (docs/sharing-layer/15-place-share.md, 17-share-subjects.md): the
+  // account's characters' items here, and each corporation's. The grantors
+  // are every owner of the caller's holding a root here, plus the corporation
+  // the subject belongs to when it is a corp item — a structure the corp owns
+  // is both the item and the place everyone else parks in, and the corp's
+  // item share and place share are one row. Kinds come from the unmasked root
+  // items and the caller's own owner list, so items someone else shared with
+  // the caller never offer a share.
   const placeSharesPromise: Promise<PlaceShare[]> =
-    scope || self
+    scope || (self && isOwnCharacterItem)
       ? Promise.resolve([])
       : Promise.all(
-          placeGrantors(
+          subjectGrantors(
+            selfCorporationId,
             rootItems.map((i) => i.owner_id),
             owners
           ).map(async (grantor) => ({
@@ -277,7 +276,20 @@ const AssetLocationPage = async ({ params, searchParams }: AssetLocationPageProp
     }
   }
 
-  const [shareData, placeShares] = await Promise.all([shareDataPromise, placeSharesPromise])
+  const [characterShareData, placeShares] = await Promise.all([shareDataPromise, placeSharesPromise])
+
+  // A corp item nobody else roots at — a can, an office — keeps the plain item
+  // dialog it had before phase 17: its one grantor is the corporation holding
+  // it. Only a subject with more than one grantor, or a bare place, gets the
+  // chooser.
+  const soleCorpShare =
+    self &&
+    placeShares.length === 1 &&
+    placeShares[0].grantor.kind === 'corporation' &&
+    placeShares[0].grantor.ownsPlace
+      ? placeShares[0].data
+      : null
+  const shareData = characterShareData ?? soleCorpShare
 
   const items = (
     <Suspense fallback={<ItemsFallback />}>
@@ -307,10 +319,11 @@ const AssetLocationPage = async ({ params, searchParams }: AssetLocationPageProp
           {/* Prices this whole place in one request — the same endpoint each row
               uses, just aimed at the location instead of an item. */}
           {!scope ? <AppraisalPanel targets={[locationId]} label="Appraise everything here" /> : null}
-          {/* An item the caller owns as a character, or one their corporation
-              holds, gets the dialog — never something merely shared with the
-              viewer. A place gets one Share button, which
-              chooses between the account's characters and a corporation. */}
+          {/* One Share button. An item of the caller's own — a character's, or
+              a corp's that nobody else roots at — gets the item dialog; a place,
+              or a corp structure others park in, gets the chooser over every
+              grantor of the caller's with something here. Never something
+              merely shared with the viewer. */}
           {shareData ? (
             <AssetShareDialog
               itemId={locationId}
@@ -319,8 +332,7 @@ const AssetLocationPage = async ({ params, searchParams }: AssetLocationPageProp
               path={sharePath(crumbs, heading)}
               data={shareData}
             />
-          ) : null}
-          {placeShares.length > 0 ? (
+          ) : placeShares.length > 0 ? (
             <PlaceShareDialog placeId={locationId} placeName={heading} shares={placeShares} />
           ) : null}
         </div>

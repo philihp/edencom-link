@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 
-import { grantorKey, placeGrantors, placeShareSubject } from '../src/app/asset/placeShare.ts'
+import { grantorKey, placeGrantors, placeShareSubject, subjectGrantors } from '../src/app/asset/placeShare.ts'
 
 const owners = {
   characters: [
@@ -43,6 +43,34 @@ describe('placeGrantors', () => {
   })
 })
 
+describe('subjectGrantors', () => {
+  it('offers the characters’ share beside the owning corporation’s at a structure the corp owns', () => {
+    // The Tatara case: the corp owns the structure, the account's characters
+    // park their items in it. Both must be offered.
+    assert.deepEqual(subjectGrantors(667531913, ['reg-sarah', '667531913'], owners), [
+      { kind: 'character' },
+      { kind: 'corporation', corporationId: 667531913, name: 'Hard Knocks Inc.', ownsPlace: true },
+    ])
+  })
+
+  it('offers the owning corporation even when nothing roots at its structure', () => {
+    assert.deepEqual(subjectGrantors(98832954, [], owners), [
+      { kind: 'corporation', corporationId: 98832954, name: 'Idle Corp', ownsPlace: true },
+    ])
+  })
+
+  it('does not flag a corporation that merely holds roots at someone else’s structure', () => {
+    assert.deepEqual(subjectGrantors(null, ['667531913', 'reg-jenny'], owners), [
+      { kind: 'character' },
+      { kind: 'corporation', corporationId: 667531913, name: 'Hard Knocks Inc.' },
+    ])
+  })
+
+  it('offers nothing for a structure owned by a corporation that is not the caller’s', () => {
+    assert.deepEqual(subjectGrantors(424242, [], owners), [])
+  })
+})
+
 describe('grantorKey', () => {
   it('tells the options apart', () => {
     assert.equal(grantorKey({ kind: 'character' }), 'characters')
@@ -56,6 +84,10 @@ describe('placeShareSubject', () => {
     assert.equal(
       placeShareSubject({ kind: 'corporation', corporationId: 1, name: 'Hard Knocks Inc.' }),
       'Hard Knocks Inc.’s items here'
+    )
+    assert.equal(
+      placeShareSubject({ kind: 'corporation', corporationId: 1, name: 'Hard Knocks Inc.', ownsPlace: true }),
+      'Hard Knocks Inc.’s structure and items here'
     )
   })
 })
