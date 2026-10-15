@@ -9,8 +9,8 @@ import { loadAssetCard } from './loadCard'
 // for anything that is not a ship, else the ship's own card. The page
 // redirects a ship to /ship/<id>, but only after its head is out, and a chat
 // client unfurls the head it got rather than following a redirect in the body.
-// Only a share link gets one, and only when it opens something; a bare place
-// (station, structure, system) has no card, since a share never names one.
+// A place share (station, structure, system) gets the same card, drawn for the
+// place. Only a share link gets one, and only when it opens something.
 export const assetShareMetadata = async (itemId: string, share?: string, token?: string): Promise<Metadata> => {
   if (!share && !token) return {}
   const card = await loadAssetCard(itemId, share, token)

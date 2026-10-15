@@ -10,6 +10,7 @@ import {
   containerStacks,
   itemCountText,
   MAX_STACKS,
+  placeDescription,
 } from '../src/app/asset/[locationId]/card/cardModel.ts'
 import type { SdeType } from '../src/sdeTypes.ts'
 
@@ -110,5 +111,22 @@ test('an empty container says so and claims no value', () => {
   assert.equal(
     containerDescription('Station Container', null, 'Private owner', 0, { sell: null, unpriced: 1 }),
     'Station Container, owned by Private owner. Empty.'
+  )
+})
+
+test('a place share names the place, its kind and whose assets they are', () => {
+  assert.equal(
+    placeDescription('Jita IV - Moon 4 - Caldari Navy Assembly Plant', 'station', 'Sir Cuddles', 3, {
+      sell: 2_500_000,
+      unpriced: 0,
+    }),
+    'Assets of Sir Cuddles at Jita IV - Moon 4 - Caldari Navy Assembly Plant (station). 3 items. Estimated value 2.5m ISK.'
+  )
+})
+
+test('an empty place share says so', () => {
+  assert.equal(
+    placeDescription('Jita', 'system', 'Sir Cuddles', 0, { sell: null, unpriced: 0 }),
+    'Assets of Sir Cuddles at Jita (solar system). Empty.'
   )
 })
