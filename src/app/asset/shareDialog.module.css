@@ -40,38 +40,42 @@
 }
 
 /* The place dialog's chooser between grantors (placeShareDialog.tsx): tabs
-   over a bottom rule, the active one in ink with the accent underline. They
-   switch which share row the form edits, so they read as tabs, not as a field
-   inside the form. */
+   over a bottom rule. They switch which share row the form edits, so they read
+   as tabs, not as a field inside the form. The active tab must be unmistakable,
+   since it decides which share Save writes: a tinted fill, bold ink and a heavy
+   accent bar, against dim, unfilled neighbours. */
 .tabList {
   display: flex;
   flex-wrap: wrap;
   gap: 2pt;
-  border-bottom: 1px solid var(--line-soft);
+  border-bottom: 1px solid var(--line);
   margin-bottom: 8pt;
 }
 
 .tab {
   border: 0;
-  border-bottom: 2px solid transparent;
-  border-radius: 0;
+  border-bottom: 3px solid transparent;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
   background: none;
   margin: 0 0 -1px;
-  padding: 4pt 8pt;
+  padding: 5pt 10pt;
   cursor: pointer;
   font-family: var(--sans);
-  color: var(--ink-soft);
+  font-weight: 500;
+  color: var(--ink-faint);
 }
 
 .tab:hover {
   color: var(--ink);
-  background: none;
+  background: var(--paper-raised);
   border-bottom-color: var(--line);
 }
 
 .tabActive,
 .tabActive:hover {
   color: var(--ink);
+  font-weight: 700;
+  background: var(--accent-tint);
   border-bottom-color: var(--accent);
 }
 
