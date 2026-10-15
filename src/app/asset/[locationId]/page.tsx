@@ -4,7 +4,6 @@ import { notFound, redirect } from 'next/navigation'
 import { map } from 'ramda'
 import { Suspense } from 'react'
 
-import { getSdeSystem } from '@/sdeSystems'
 import { getSdeType } from '@/sdeTypes'
 import { createClient } from '@/utils/supabase/server'
 
@@ -16,8 +15,6 @@ import { ShareUrlCleanup } from '../../shareUrlCleanup'
 import { fetchOwners } from '../../owners'
 import type { Owners } from '../../ownerFilter'
 import { SkeletonTable } from '../../skeleton'
-import { fetchStationNames, fetchStationSystems } from '../../stationNames'
-import { fetchSystemNames } from '../../systemNames'
 import { mainOwnerOf } from '../../ship/[itemId]/mainOwner'
 import { hideHolder, PRESENTED_OWNER_ID, UNNAMED_OWNER } from '../../ship/[itemId]/presentedOwner'
 import { TypeIcon } from '../../typeIcon'
@@ -37,13 +34,8 @@ import { AppraisalPanel } from './appraisalPanel'
 import { assetShareMetadata, assetShareViewport } from './card/metadata'
 import { SHIP_CATEGORY_ID, fetchRootItems, type CharacterAsset, type CorpAsset } from './locationData'
 import { LocationItems } from './locationItems'
+import { fetchPlace } from './placeHeading'
 import { SystemLocationsSection } from './systemLocationsSection'
-
-type Structure = {
-  structure_id: number | string
-  name: string | null
-  system_id: number | string | null
-}
 
 // The location itself, when the id turns out to be one of our own items rather
 // than a place — a ship or container the user drilled into.
@@ -78,72 +70,6 @@ const fetchSelf = async (
   return {
     self: characterSelf ?? (corpSelf ? { ...corpSelf, name: null } : null),
     isOwnCharacterItem: characterSelf != null,
-  }
-}
-
-// Everything the heading needs when the id is a place rather than an item:
-// which structure/station/system it is, and the system it sits in. Resolved the
-// same way the index page does — own-corp + foreign player structures, NPC
-// stations, and systems all come from the universe_name DB cache.
-//
-// The four lookups are independent of each other, so they go out together; only
-// the system *name* has to wait, since which system to name depends on them.
-const fetchPlace = async (
-  supabase: SupabaseClient,
-  locationId: string,
-  corpScope: number[] | null,
-  // The location_type the root items report, when there are any. A location
-  // holding items already says what kind of place it is.
-  locationType: string | null
-) => {
-  const numericId = Number(locationId)
-
-  let corpStructureQuery = supabase
-    .from('corp_structure')
-    .select('structure_id, name, system_id')
-    .eq('structure_id', numericId)
-  if (corpScope) corpStructureQuery = corpStructureQuery.in('corporation_id', corpScope)
-
-  const [{ data: corpStructures }, { data: playerStructures }, stationNames, stationSystems, sdeSystemProbe] =
-    await Promise.all([
-      corpStructureQuery,
-      supabase.from('universe_structure').select('structure_id, name, system_id').eq('structure_id', numericId),
-      fetchStationNames([numericId]),
-      fetchStationSystems([numericId]),
-      // A system id resolves in the SDE; a station/structure id doesn't. Only
-      // needed when the type is unknown (no root items) — the case that needs
-      // disambiguating: a system opened directly with nothing floating in its
-      // space. Fired alongside the structure lookups rather than after them (it
-      // is a process-cached SDE read, so an unused probe costs nothing) and
-      // discarded below if this turns out to be a structure.
-      locationType == null && Number.isFinite(numericId) ? getSdeSystem(numericId) : null,
-    ])
-
-  const structure = (corpStructures?.[0] ?? playerStructures?.[0] ?? null) as Structure | null
-  const sdeSystem = structure ? null : sdeSystemProbe
-  const isSolarSystem = !structure && (locationType === 'solar_system' || sdeSystem != null)
-
-  const systemId = isSolarSystem
-    ? numericId
-    : structure?.system_id != null
-      ? Number(structure.system_id)
-      : stationSystems[numericId]
-  const systemNames = await fetchSystemNames(
-    [systemId, isSolarSystem ? numericId : undefined].filter((n): n is number => n != null)
-  )
-
-  const heading =
-    (structure
-      ? (structure.name ?? `Structure #${locationId}`)
-      : isSolarSystem
-        ? (systemNames[numericId] ?? sdeSystem?.name ?? `System #${locationId}`)
-        : stationNames[numericId]) ?? `Location #${locationId}`
-
-  return {
-    heading,
-    isSolarSystem,
-    systemId,
-    systemName: systemId != null ? (systemNames[systemId] ?? `#${systemId}`) : undefined,
   }
 }
 

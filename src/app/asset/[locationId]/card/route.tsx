@@ -10,16 +10,17 @@ import { type AssetCard, loadAssetCard } from './loadCard'
 // A container's link-preview image: what Discord, Slack and X show under a
 // posted share link to /asset/<id> (the page's og:image points here). The
 // ship card's twin (ship/[itemId]/card/route.tsx), for anything that is not a
-// ship.
+// ship, or for a place a share names (a station, structure or solar system).
 //
 // Reached only with the same ?share= (or legacy ?token=) the page takes, and
 // it answers 404 for anything that link does not open, so the image can never
-// show more than the page does. Like the share page, it has no location.
+// show more than the page does. Like the share page, it has no location —
+// unless the location is what was shared.
 
 const fetchImages = async (card: AssetCard): Promise<Images> => {
   const stacks = [...new Map(card.stacks.map((stack) => [iconKey(stack), stack])).values()]
   const [picture, portrait, ...icons] = await Promise.all([
-    dataUri(iconUrl(card.typeId, card.variation, 128)),
+    card.typeId == null ? Promise.resolve(null) : dataUri(iconUrl(card.typeId, card.variation, 128)),
     card.owner.portrait ? dataUri(card.owner.portrait.url.replace('size=64', 'size=128')) : Promise.resolve(null),
     ...stacks.map((stack) => dataUri(iconUrl(stack.typeId, stack.variation, 64))),
   ])

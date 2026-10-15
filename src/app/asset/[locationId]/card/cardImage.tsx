@@ -99,7 +99,15 @@ export const Card = ({ card, images }: { card: AssetCard; images: Images }) => (
             background: PANEL,
           }}
         >
-          {images.picture ? <img src={images.picture} width={192} height={192} /> : null}
+          {/* A station or a solar system has no type art to draw, so it shows
+              what kind of place it is instead. */}
+          {images.picture ? (
+            <img src={images.picture} width={192} height={192} />
+          ) : card.typeId == null ? (
+            <div style={{ display: 'flex', fontSize: 32, color: MUTED, textTransform: 'uppercase', letterSpacing: 2 }}>
+              {card.typeName}
+            </div>
+          ) : null}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', marginTop: 22 }}>
           {images.portrait ? (

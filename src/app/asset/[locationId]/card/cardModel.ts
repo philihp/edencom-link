@@ -101,3 +101,30 @@ export const containerDescription = (
   ]
     .filter((part) => part != null)
     .join(' ')
+
+// A place share (docs/sharing-layer/15-place-share.md) names a station, a
+// structure or a solar system rather than an item.
+export type PlaceKind = 'station' | 'structure' | 'system'
+
+export const PLACE_KIND_NAME: Record<PlaceKind, string> = {
+  station: 'Station',
+  structure: 'Structure',
+  system: 'Solar system',
+}
+
+// The line under the title in a chat embed, for a place share: whose assets
+// these are and where, then the same count and value as a container.
+export const placeDescription = (
+  placeName: string,
+  kind: PlaceKind,
+  ownerName: string,
+  itemCount: number,
+  value: CardValue
+): string =>
+  [
+    `Assets of ${ownerName} at ${placeName} (${PLACE_KIND_NAME[kind].toLowerCase()}).`,
+    itemCount === 0 ? 'Empty.' : `${itemCountText(itemCount)}.`,
+    value.sell == null ? null : `Estimated value ${compactIsk(value.sell)}.`,
+  ]
+    .filter((part) => part != null)
+    .join(' ')
