@@ -63,3 +63,8 @@ export const placeShareSubject = (grantor: PlaceGrantor) =>
     : grantor.ownsPlace
       ? `${grantor.name}’s structure and items here`
       : `${grantor.name}’s items here`
+
+// What the chooser's tab calls an option: the grantor alone, since the
+// heading above already says what is shared.
+export const placeShareTab = (grantor: PlaceGrantor) =>
+  grantor.kind === 'character' ? 'Your characters' : grantor.name

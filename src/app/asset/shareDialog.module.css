@@ -39,6 +39,48 @@
   gap: 6pt;
 }
 
+/* The place dialog's chooser between grantors (placeShareDialog.tsx): tabs
+   over a bottom rule, the active one in ink with the accent underline. They
+   switch which share row the form edits, so they read as tabs, not as a field
+   inside the form. */
+.tabList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2pt;
+  border-bottom: 1px solid var(--line-soft);
+  margin-bottom: 8pt;
+}
+
+.tab {
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: none;
+  margin: 0 0 -1px;
+  padding: 4pt 8pt;
+  cursor: pointer;
+  font-family: var(--sans);
+  color: var(--ink-soft);
+}
+
+.tab:hover {
+  color: var(--ink);
+  background: none;
+  border-bottom-color: var(--line);
+}
+
+.tabActive,
+.tabActive:hover {
+  color: var(--ink);
+  border-bottom-color: var(--accent);
+}
+
+.tabShared {
+  margin-left: 5pt;
+  font-size: 8pt;
+  color: var(--ink-faint);
+}
+
 .audience {
   border: 1px solid var(--line-soft);
   border-radius: var(--radius-sm);
