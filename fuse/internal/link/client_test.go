@@ -35,7 +35,7 @@ func TestListParsesACharacterAndItsFittings(t *testing.T) {
 				"modified":"2026-08-01T00:00:00Z"}]}]}`)
 	})
 
-	characters, err := client.List(context.Background())
+	characters, _, err := client.List(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,7 +61,7 @@ func TestListToleratesAMissingRefreshTimestamp(t *testing.T) {
 	client := serve(t, func(w http.ResponseWriter, _ *http.Request) {
 		io.WriteString(w, `{"characters":[{"character_id":"1","name":"New","data_refreshed":null,"fittings":[]}]}`)
 	})
-	characters, err := client.List(context.Background())
+	characters, _, err := client.List(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -211,7 +211,7 @@ func TestANonJsonFailureFallsBackToTheStatusLine(t *testing.T) {
 		w.WriteHeader(http.StatusBadGateway)
 		io.WriteString(w, "<html>gateway</html>")
 	})
-	_, err := client.List(context.Background())
+	_, _, err := client.List(context.Background())
 	if err == nil || err.Error() != "502 Bad Gateway" {
 		t.Fatalf("err = %v", err)
 	}
@@ -222,7 +222,7 @@ func TestANonJsonFailureFallsBackToTheStatusLine(t *testing.T) {
 
 func TestStatusOfIgnoresErrorsThatAreNotRefusals(t *testing.T) {
 	client := New("http://127.0.0.1:1", "t")
-	_, err := client.List(context.Background())
+	_, _, err := client.List(context.Background())
 	if err == nil {
 		t.Fatal("expected a connection failure")
 	}

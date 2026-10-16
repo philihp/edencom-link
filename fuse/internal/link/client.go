@@ -48,6 +48,9 @@ func New(baseURL, token string) *Client {
 type Error struct {
 	Status  int
 	Message string
+	// The response body, for the one refusal that carries an answer: a PUT to
+	// the wrong content hash says which hash the body really has.
+	Payload []byte
 }
 
 func (e *Error) Error() string { return e.Message }
@@ -91,7 +94,7 @@ func (c *Client) do(ctx context.Context, method, path string, body []byte) ([]by
 		return nil, err
 	}
 	if response.StatusCode >= 400 {
-		return nil, &Error{Status: response.StatusCode, Message: messageFrom(payload, response.Status)}
+		return nil, &Error{Status: response.StatusCode, Message: messageFrom(payload, response.Status), Payload: payload}
 	}
 	return payload, nil
 }
@@ -109,21 +112,27 @@ func messageFrom(payload []byte, status string) string {
 	return strings.TrimSpace(status)
 }
 
+type listedFitting struct {
+	FittingID   int64      `json:"fitting_id"`
+	Name        string     `json:"name"`
+	Description string     `json:"description"`
+	ShipTypeID  int64      `json:"ship_type_id"`
+	ShipName    string     `json:"ship_name"`
+	Items       []vfs.Item `json:"items"`
+	Modified    string     `json:"modified"`
+	ContentHash string     `json:"content_hash"`
+}
+
 type listing struct {
+	// The account's marshalled fits (docs/fitting-marshal.md), beside the
+	// characters so one response builds the whole tree.
+	Marshalled []listedFitting `json:"marshalled"`
 	Characters []struct {
-		CharacterID string `json:"character_id"`
-		Name        string `json:"name"`
-		Writable    bool   `json:"writable"`
-		Refreshed   string `json:"data_refreshed"`
-		Fittings    []struct {
-			FittingID   int64      `json:"fitting_id"`
-			Name        string     `json:"name"`
-			Description string     `json:"description"`
-			ShipTypeID  int64      `json:"ship_type_id"`
-			ShipName    string     `json:"ship_name"`
-			Items       []vfs.Item `json:"items"`
-			Modified    string     `json:"modified"`
-		} `json:"fittings"`
+		CharacterID string          `json:"character_id"`
+		Name        string          `json:"name"`
+		Writable    bool            `json:"writable"`
+		Refreshed   string          `json:"data_refreshed"`
+		Fittings    []listedFitting `json:"fittings"`
 	} `json:"characters"`
 }
 
@@ -138,15 +147,33 @@ func timestamp(raw string) time.Time {
 	return parsed
 }
 
-// List fetches every character and every fitting in one request.
-func (c *Client) List(ctx context.Context) ([]vfs.Character, error) {
+func toFitting(fit listedFitting) vfs.Fitting {
+	return vfs.Fitting{
+		FittingID:   fit.FittingID,
+		Name:        fit.Name,
+		Description: fit.Description,
+		ShipTypeID:  fit.ShipTypeID,
+		ShipName:    fit.ShipName,
+		Items:       fit.Items,
+		Modified:    timestamp(fit.Modified),
+		ContentHash: fit.ContentHash,
+	}
+}
+
+// List fetches every character and every fitting, and the account's
+// marshalled fits, in one request.
+func (c *Client) List(ctx context.Context) ([]vfs.Character, []vfs.Fitting, error) {
 	payload, err := c.do(ctx, http.MethodGet, "/api/fittings", nil)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	var parsed listing
 	if err := json.Unmarshal(payload, &parsed); err != nil {
-		return nil, fmt.Errorf("unreadable listing: %w", err)
+		return nil, nil, fmt.Errorf("unreadable listing: %w", err)
+	}
+	marshalled := make([]vfs.Fitting, 0, len(parsed.Marshalled))
+	for _, fit := range parsed.Marshalled {
+		marshalled = append(marshalled, toFitting(fit))
 	}
 
 	characters := make([]vfs.Character, 0, len(parsed.Characters))
@@ -158,19 +185,11 @@ func (c *Client) List(ctx context.Context) ([]vfs.Character, error) {
 			Refreshed:   timestamp(raw.Refreshed),
 		}
 		for _, fit := range raw.Fittings {
-			character.Fittings = append(character.Fittings, vfs.Fitting{
-				FittingID:   fit.FittingID,
-				Name:        fit.Name,
-				Description: fit.Description,
-				ShipTypeID:  fit.ShipTypeID,
-				ShipName:    fit.ShipName,
-				Items:       fit.Items,
-				Modified:    timestamp(fit.Modified),
-			})
+			character.Fittings = append(character.Fittings, toFitting(fit))
 		}
 		characters = append(characters, character)
 	}
-	return characters, nil
+	return characters, marshalled, nil
 }
 
 // Archive deletes one fitting from the game, after the server has stored it.
@@ -227,4 +246,77 @@ func (c *Client) Restore(ctx context.Context, characterID string, file []byte) (
 		return Restored{}, fmt.Errorf("unreadable response: %w", err)
 	}
 	return restored, nil
+}
+
+// ── the marshalled archive (docs/fitting-marshal.md) ─────────────────────
+
+// Marshal deletes one fitting from the game AND keeps it in the account's
+// archive, in one server-side step so the copy stored is the one ESI handed
+// back at the moment of the delete. Answers the archive handle.
+func (c *Client) Marshal(ctx context.Context, characterID string, fittingID int64) (string, error) {
+	path := fmt.Sprintf("/api/fittings/%s/%d?marshal=1", url.PathEscape(characterID), fittingID)
+	payload, err := c.do(ctx, http.MethodDelete, path, nil)
+	if err != nil {
+		return "", err
+	}
+	var answer struct {
+		ContentHash string `json:"content_hash"`
+	}
+	if err := json.Unmarshal(payload, &answer); err != nil || answer.ContentHash == "" {
+		return "", fmt.Errorf("unreadable response: marshal answered no content hash")
+	}
+	return answer.ContentHash, nil
+}
+
+// Stored reports what a PUT into the archive did.
+type Stored struct {
+	ContentHash string `json:"content_hash"`
+	Created     bool   `json:"created"`
+}
+
+// PutMarshalled stores an archive file in the account's archive without
+// touching the game, at the file's own content hash.
+//
+// The hash is computed here (vfs.ContentHash) so the PUT is one round trip;
+// but the server is the authority on it, and refuses a PUT whose path is not
+// the body's hash with the hash it computed. That refusal is followed once —
+// it covers the one encoding the two sides spell differently — so a file
+// always lands at the address the server will later answer to.
+func (c *Client) PutMarshalled(ctx context.Context, file []byte) (Stored, error) {
+	fit, err := vfs.ParseFile(file)
+	if err != nil {
+		return Stored{}, &Error{Status: 400, Message: err.Error()}
+	}
+	stored, err := c.putMarshalledAt(ctx, vfs.ContentHash(fit), file)
+	if err == nil {
+		return stored, nil
+	}
+	var refusal *Error
+	if errors.As(err, &refusal) && refusal.Status == 400 {
+		var answer struct {
+			ContentHash string `json:"content_hash"`
+		}
+		if json.Unmarshal(refusal.Payload, &answer) == nil && answer.ContentHash != "" {
+			return c.putMarshalledAt(ctx, answer.ContentHash, file)
+		}
+	}
+	return Stored{}, err
+}
+
+func (c *Client) putMarshalledAt(ctx context.Context, hash string, file []byte) (Stored, error) {
+	payload, err := c.do(ctx, http.MethodPut, "/api/fittings/marshalled/"+url.PathEscape(hash), file)
+	if err != nil {
+		return Stored{}, err
+	}
+	var stored Stored
+	if err := json.Unmarshal(payload, &stored); err != nil {
+		return Stored{}, fmt.Errorf("unreadable response: %w", err)
+	}
+	return stored, nil
+}
+
+// DeleteMarshalled removes one fit from the archive. Permanent; no ESI call.
+func (c *Client) DeleteMarshalled(ctx context.Context, hash string) error {
+	_, err := c.do(ctx, http.MethodDelete, "/api/fittings/marshalled/"+url.PathEscape(hash), nil)
+	return err
 }

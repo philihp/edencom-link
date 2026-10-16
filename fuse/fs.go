@@ -22,6 +22,9 @@ import (
 //	cp mnt/Pilot/Rifter\ -\ Tackle.json ~/eve-fits/    archive a copy
 //	rm mnt/Pilot/Rifter\ -\ Tackle.json               free the in-game slot
 //	cp ~/eve-fits/Rifter\ -\ Tackle.json mnt/Pilot/   put it back, later
+//	mv mnt/Pilot/Rifter\ -\ Tackle.json mnt/Marshalled/  marshal: out of the game, kept on the server
+//	mv mnt/Marshalled/Rifter\ -\ Tackle.json mnt/Pilot/  unmarshal: back into the game
+//	mv mnt/Pilot/Rifter\ -\ Tackle.json mnt/Alt/         transfer: saved there, then deleted here
 //
 // That is the entire point of mounting this rather than shipping a GUI: the
 // tools for keeping 500 of something, backing them up, and putting one back
@@ -69,6 +72,7 @@ type handle struct {
 // stats what it just wrote would get ENOENT. So the written name is kept alive
 // briefly, pointing at the fit that now exists.
 type pending struct {
+	// The folder's key: the character id, or MarshalledDirName for the archive.
 	characterID string
 	name        string
 	content     []byte
@@ -108,7 +112,7 @@ func (fs *edencomFS) snapshot() (*vfs.Tree, error) {
 	}
 	fs.mu.Unlock()
 
-	characters, err := fs.client.List(fs.requests)
+	characters, marshalled, err := fs.client.List(fs.requests)
 	if err != nil {
 		fs.mu.Lock()
 		stale := fs.tree
@@ -123,7 +127,7 @@ func (fs *edencomFS) snapshot() (*vfs.Tree, error) {
 		return nil, err
 	}
 
-	tree := vfs.BuildTree(characters)
+	tree := vfs.BuildTree(characters, marshalled)
 	fs.mu.Lock()
 	fs.tree = tree
 	fs.fetched = time.Now()
@@ -200,7 +204,7 @@ func (fs *edencomFS) resolve(path string) (resolved, int) {
 		if file, ok := dir.LookupFile(parts[1]); ok {
 			return resolved{dir: dir, file: file}, 0
 		}
-		if content, ok := fs.lookupPending(dir.CharacterID, parts[1]); ok {
+		if content, ok := fs.lookupPending(folderKey(dir), parts[1]); ok {
 			return resolved{dir: dir, pendingContent: content}, 0
 		}
 		return resolved{}, -fuse.ENOENT
@@ -208,6 +212,14 @@ func (fs *edencomFS) resolve(path string) (resolved, int) {
 		// The mount is exactly two levels deep; nothing nests inside a fitting.
 		return resolved{}, -fuse.ENOENT
 	}
+}
+
+// The key a pending alias is filed under: a character's id, or the archive.
+func folderKey(dir *vfs.Dir) string {
+	if dir.Marshalled {
+		return vfs.MarshalledDirName
+	}
+	return dir.CharacterID
 }
 
 // ── attributes ───────────────────────────────────────────────────────────
@@ -321,11 +333,17 @@ func (fs *edencomFS) Statfs(_ string, stat *fuse.Statfs_t) int {
 		return -fuse.EIO
 	}
 	const slots = 500
-	used := uint64(0)
+	// The Marshalled folder is the point of having no cap, so it counts for
+	// neither side of the budget.
+	used, characters := uint64(0), 0
 	for i := range tree.Dirs {
+		if tree.Dirs[i].Marshalled {
+			continue
+		}
 		used += uint64(len(tree.Dirs[i].Files))
+		characters++
 	}
-	total := uint64(slots) * uint64(max(len(tree.Dirs), 1))
+	total := uint64(slots) * uint64(max(characters, 1))
 	// One block is one fitting slot, sized so plain `df` (which reports in
 	// 1K blocks) prints the slot count itself.
 	stat.Bsize = 1024
@@ -428,6 +446,20 @@ func (fs *edencomFS) Unlink(path string) int {
 		return errno
 	}
 
+	// `rm` in the archive is the one permanent thing here, and it is only
+	// permanent on the server: a fit that came through an EVE delete is in the
+	// write log, one copied in is on this disk.
+	if found.dir.Marshalled {
+		log.Printf("removing %q from the archive (%s)", found.file.Name, found.file.ContentHash)
+		if err := fs.client.DeleteMarshalled(fs.requests, found.file.ContentHash); err != nil {
+			log.Printf("archive delete failed: %v", err)
+			fs.invalidate()
+			return errnoFor(err)
+		}
+		fs.invalidate()
+		return 0
+	}
+
 	log.Printf("archiving %q from %s: deleting fitting %d in EVE", found.file.Name, found.dir.Pilot(), found.file.FittingID)
 	if err := fs.client.Archive(fs.requests, found.dir.CharacterID, found.file.FittingID); err != nil {
 		log.Printf("archive failed: %v", err)
@@ -525,21 +557,37 @@ func (fs *edencomFS) Flush(_ string, fh uint64) int {
 		return 0
 	}
 
-	log.Printf("restoring %q into %s (%d bytes)", h.name, h.dir.Pilot(), len(h.buf))
-	restored, err := fs.client.Restore(fs.requests, h.dir.CharacterID, h.buf)
-	if err != nil {
-		log.Printf("restore failed: %v", err)
-		return errnoFor(err)
-	}
-	if restored.Created {
-		log.Printf("restored %q into %s as fitting %d", h.name, h.dir.Pilot(), restored.FittingID)
+	if h.dir.Marshalled {
+		// A copy INTO the archive stores the file on the server and asks nothing
+		// of CCP: this is how a disk archive moves into the account.
+		log.Printf("storing %q in the archive (%d bytes)", h.name, len(h.buf))
+		stored, err := fs.client.PutMarshalled(fs.requests, h.buf)
+		if err != nil {
+			log.Printf("archive store failed: %v", err)
+			return errnoFor(err)
+		}
+		if stored.Created {
+			log.Printf("stored %q in the archive as %s", h.name, stored.ContentHash)
+		} else {
+			log.Printf("the archive already held %q (%s); nothing to do", h.name, stored.ContentHash)
+		}
 	} else {
-		log.Printf("%s already had that fitting saved (%d); nothing to do", h.dir.Pilot(), restored.FittingID)
+		log.Printf("restoring %q into %s (%d bytes)", h.name, h.dir.Pilot(), len(h.buf))
+		restored, err := fs.client.Restore(fs.requests, h.dir.CharacterID, h.buf)
+		if err != nil {
+			log.Printf("restore failed: %v", err)
+			return errnoFor(err)
+		}
+		if restored.Created {
+			log.Printf("restored %q into %s as fitting %d", h.name, h.dir.Pilot(), restored.FittingID)
+		} else {
+			log.Printf("%s already had that fitting saved (%d); nothing to do", h.dir.Pilot(), restored.FittingID)
+		}
 	}
 
 	fs.mu.Lock()
 	fs.pending = append(fs.pending, pending{
-		characterID: h.dir.CharacterID,
+		characterID: folderKey(h.dir),
 		name:        h.name,
 		content:     append([]byte(nil), h.buf...),
 		created:     time.Now(),
@@ -559,12 +607,114 @@ func (fs *edencomFS) Chmod(string, uint32) int            { return 0 }
 func (fs *edencomFS) Chown(string, uint32, uint32) int    { return 0 }
 func (fs *edencomFS) Utimens(string, []fuse.Timespec) int { return 0 }
 
-// Everything that would reshape the mount itself. The structure is EVE's:
-// characters are folders because EVE has characters, and there are no
-// subfolders because a fitting library has no folders in game.
+// ── moving: mv between folders ───────────────────────────────────────────
+//
+// A rename is the one place the three verbs of docs/fitting-marshal.md meet
+// the filesystem. Which folders a file moves between decides what it means
+// (vfs.ClassifyRename); the target name is ignored, since a fit's identity is
+// its content and the mount names files itself. Anything else is EPERM, never
+// EXDEV: EXDEV makes `mv` fall back to copy-then-unlink, and inside the
+// archive that would be a PUT of the same content followed by a DELETE of it.
+func (fs *edencomFS) Rename(oldPath, newPath string) int {
+	found, errno := fs.resolve(oldPath)
+	if errno != 0 {
+		return errno
+	}
+	if found.file == nil {
+		if found.pendingContent != nil {
+			return -fuse.EBUSY
+		}
+		return -fuse.EPERM
+	}
+	parts := vfs.Split(newPath)
+	if len(parts) != 2 || strings.HasPrefix(parts[1], ".") {
+		return -fuse.EPERM
+	}
+	tree, err := fs.snapshot()
+	if err != nil {
+		return -fuse.EIO
+	}
+	to, ok := tree.LookupDir(parts[0])
+	if !ok {
+		return -fuse.ENOENT
+	}
+	if fs.readOnly {
+		return -fuse.EROFS
+	}
+
+	switch vfs.ClassifyRename(found.dir, to) {
+	case vfs.RenameMarshal:
+		if errno := fs.writable(found.dir); errno != 0 {
+			return errno
+		}
+		log.Printf("marshalling %q from %s: deleting fitting %d in EVE, keeping it on the server",
+			found.file.Name, found.dir.Pilot(), found.file.FittingID)
+		hash, err := fs.client.Marshal(fs.requests, found.dir.CharacterID, found.file.FittingID)
+		fs.invalidate()
+		if err != nil {
+			log.Printf("marshal failed: %v", err)
+			return errnoFor(err)
+		}
+		log.Printf("marshalled %q as %s", found.file.Name, hash)
+		return 0
+
+	case vfs.RenameUnmarshal:
+		if errno := fs.writable(to); errno != 0 {
+			return errno
+		}
+		log.Printf("unmarshalling %q into %s", found.file.Name, to.Pilot())
+		restored, err := fs.client.Restore(fs.requests, to.CharacterID, found.file.Content)
+		if err != nil {
+			log.Printf("unmarshal failed, the fit stays in the archive: %v", err)
+			fs.invalidate()
+			return errnoFor(err)
+		}
+		log.Printf("unmarshalled %q into %s as fitting %d (created: %v)", found.file.Name, to.Pilot(), restored.FittingID, restored.Created)
+		if err := fs.client.DeleteMarshalled(fs.requests, found.file.ContentHash); err != nil {
+			// The fit is in the game AND still in the archive: nothing lost,
+			// and the next `rm` in the archive finishes the move.
+			log.Printf("saved in EVE but the archive would not let go of it: %v", err)
+			fs.invalidate()
+			return errnoFor(err)
+		}
+		fs.invalidate()
+		return 0
+
+	case vfs.RenameTransfer:
+		if errno := fs.writable(found.dir); errno != 0 {
+			return errno
+		}
+		if errno := fs.writable(to); errno != 0 {
+			return errno
+		}
+		log.Printf("transferring %q from %s to %s", found.file.Name, found.dir.Pilot(), to.Pilot())
+		restored, err := fs.client.Restore(fs.requests, to.CharacterID, found.file.Content)
+		if err != nil {
+			log.Printf("transfer failed before anything moved: %v", err)
+			fs.invalidate()
+			return errnoFor(err)
+		}
+		log.Printf("saved on %s as fitting %d (created: %v)", to.Pilot(), restored.FittingID, restored.Created)
+		if err := fs.client.Archive(fs.requests, found.dir.CharacterID, found.file.FittingID); err != nil {
+			// Saved on the target, still on the source: safe, retryable, and
+			// reported rather than undone. `rm` the original to finish.
+			log.Printf("saved on %s but EVE would not delete it from %s: %v", to.Pilot(), found.dir.Pilot(), err)
+			fs.invalidate()
+			return errnoFor(err)
+		}
+		fs.invalidate()
+		return 0
+
+	default:
+		return -fuse.EPERM
+	}
+}
+
+// Everything else that would reshape the mount itself. The structure is EVE's
+// plus the archive: characters are folders because EVE has characters, and
+// there are no subfolders because a fitting library has no folders in game.
 func (fs *edencomFS) Mkdir(string, uint32) int   { return -fuse.EPERM }
 func (fs *edencomFS) Rmdir(string) int           { return -fuse.EPERM }
-func (fs *edencomFS) Rename(string, string) int  { return -fuse.EPERM }
 func (fs *edencomFS) Link(string, string) int    { return -fuse.EPERM }
 func (fs *edencomFS) Symlink(string, string) int { return -fuse.EPERM }
 
@@ -574,7 +724,7 @@ func (fs *edencomFS) writable(dir *vfs.Dir) int {
 	}
 	if !dir.Writable {
 		log.Printf(
-			"%s has not granted permission to save and delete fittings — enable it under ESI Access and re-add the character",
+			"%s has not granted permission to save and delete fittings — turn it on under /settings/grants and re-auth the character on /account/registrations",
 			dir.Pilot(),
 		)
 		return -fuse.EACCES
