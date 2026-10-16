@@ -206,10 +206,39 @@ where contract_id = 236840715
 order by valid_from;
 ```
 
+## Searching
+
+The MCP tool `search_public_contracts` searches these tables. The query is one
+SQL function, `public_contract_search()`. It filters, counts and limits in
+one round trip, so the total covers every match while only the shown rows
+travel. It runs as the caller (no security definer), so members read what a
+direct select would show them.
+
+- **Item**: contracts that offer one of the matched types. An item that a
+  contract asks for does not match, but it is listed with `requested: true`.
+- **Place**: a region (`region_id`), or a solar system. A system matches the
+  start location through `sde_station` for an NPC station,
+  `universe_structure` for a player structure, and the archive's `system_id`.
+  A structure that nobody of ours has resolved has no system, so a system
+  search does not find it. A region search does.
+- **Issuer**: an EVE id, or an exact name found in `universe_name`,
+  `character_directory` or `corporation`. It matches the issuing character
+  or the issuing corporation.
+- **Status**: `outstanding` (the default), `closed` (`expired` or `gone`), or
+  `any`.
+- Contract type, a price band on `price` (a courier has no price, so a band
+  excludes couriers), and an issue date.
+
+The tool refuses a search that names no item, place or issuer. Each contract
+lists its first item lines (25 by default, at most 100), offered lines first.
+Pure shaping in `src/app/api/mcp/publicContractQuery.ts`, tested in
+`test/publicContractQuery.test.ts`; the function in
+`test/sql/public_contract_search.sql`.
+
 ## Not done yet
 
 - Auction bids (`/contracts/public/bids/{contract_id}/`).
-- A page, GraphQL fields or MCP tools over these tables.
+- A page or GraphQL fields over these tables.
 
 ## Code
 
