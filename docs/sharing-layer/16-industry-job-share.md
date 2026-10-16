@@ -1,7 +1,8 @@
 # Phase 16: industry job shares — a quiet per-job opt-out, and share rows over a whole scope
 
-**Status: 📝 planned.** Nothing here is built. Five PRs; each one leaves
-production working. Supersedes the opt-in grant and the `jobs` level of
+**Status: 🚧 PR 1 of 5 built** — the hidden flag and its `/industry` menu
+(migration `20261016004245`, `test/sql/industry_job_hidden.sql`). PRs 2–5 are
+planned. Five PRs; each one leaves production working. Supersedes the opt-in grant and the `jobs` level of
 [13-industry-job-share.md](13-industry-job-share.md) (its `totals` pool stays
 unbuilt and is not planned here).
 
@@ -142,11 +143,11 @@ create policy "Users hide own industry jobs"
   on public.industry_job_hidden for insert to authenticated
   with check (
     (registration_id in (select id from public.registration where user_id = (select auth.uid()))
+     and hidden_by is null
      and exists (
        select 1 from public.character_industry_job_over_time j
        where j.job_id = industry_job_hidden.job_id
          and j.registration_id = industry_job_hidden.registration_id
-         and j.registration_id in (select id from public.registration where user_id = (select auth.uid()))
      ))
     or
     (corporation_id in (select public.my_corporation_ids())
@@ -172,7 +173,10 @@ grant select, insert, delete on public.industry_job_hidden to authenticated;
 grant all                    on public.industry_job_hidden to service_role;
 ```
 
-No update policy: hide is an insert, unhide is a delete. A corp job may be
+No update policy: hide is an insert, unhide is a delete. As built, a
+character job's hide must leave `hidden_by` null — the column is a corp job's
+audit, and without the test a caller could stamp any registration uuid on
+their own row. A corp job may be
 hidden by any member and unhidden by any member — **Owner's call (question
 1)**; the installer-only alternative is `installer_id in (select character_id
 from registration where user_id = auth.uid())` in place of the membership
@@ -734,7 +738,7 @@ GraphQL.
 
 | PR  | Contents                                                                                                                                                                                                                                                                          | Depends on | Blast radius                                                                                                                                                                      |
 | --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | `industry_job_hidden` + policies, `hidden_industry_job_ids()`, the conjunct on both tenant policies. `/industry` ellipsis menu + `hiddenActions.ts`. `test/sql/industry_job_hidden.sql`.                                                                                           | —          | An empty table: nothing changes until someone hides a job.                                                                                                                        |
+| 1   | ✅ **Built** — migration `20261016004245`. `industry_job_hidden` + policies, `hidden_industry_job_ids()`, the conjunct on both tenant policies. `/industry` ellipsis menu (`jobMenu.tsx`) + `hiddenActions.ts`. `test/sql/industry_job_hidden.sql`.                                                  | —          | An empty table: nothing changes until someone hides a job.                                                                                                                        |
 | 2   | `corp_industry_job_share`, `character_industry_job_share`, `job_sharing_registrations()`, owner + audience policies, grants. Nothing reads them. `test/sql/industry_job_share.sql` (share-table half).                                                                             | 1          | None. Pure additive schema.                                                                                                                                                       |
 | 3   | The two widening policies, `anon` grants; `visible_job_owners()`; both views recreated with the presented owner, masked `installer_id` and `own`. `installers.ts` comment/test, Characters tab header. `explain analyze` numbers into this doc. Policy half of the SQL test + recursion smoke. | 2          | **The presentation cutover**: co-tenant rows on `/structure` switch from per-character to per-main the day this merges (owner's call, question 3). The view recreate is rehearsed per migration `20261008005932`'s note. |
 | 4   | Share button + chooser on `/industry`, `shareActions.ts`, grantor pages, `access.ts` + `?share=` + public path, "Shared with you" strip. Unit tests for `jobShareSubject.ts`.                                                                                                       | 3          | UI on a proven substrate.                                                                                                                                                         |

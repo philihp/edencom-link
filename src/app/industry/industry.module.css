@@ -491,3 +491,68 @@
 .empty {
   color: var(--ink-soft);
 }
+
+/* ── Job options (the per-row ellipsis menu) ─────────────────────────── */
+
+.optionsCell {
+  width: 1%;
+  text-align: right;
+}
+
+.jobOptions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* A readout, not a control: gray, the way a state is shown. */
+.hiddenTag {
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  color: var(--ink-faint);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  padding: 1px 6px;
+}
+
+.ellipsis {
+  margin: 0;
+  padding: 2px 8px;
+  font-size: 14px;
+  line-height: 1;
+}
+
+/* A native popover, placed under its button by jobMenu.tsx; the UA's centring
+   (inset 0, margin auto) is undone so top/right land where they are set. */
+.jobMenu {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  /* It sits inside the right-aligned options cell in the DOM. */
+  text-align: left;
+  width: min(360px, calc(100vw - 32px));
+  padding: 12px 14px;
+  color: var(--ink);
+  background: var(--paper-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 6px 24px rgb(0 0 0 / 0.18);
+}
+
+.jobMenuItem button {
+  margin: 0 0 8px;
+}
+
+.jobMenuText {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--ink-soft);
+  white-space: normal;
+}
+
+.jobMenuError {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--danger);
+}
