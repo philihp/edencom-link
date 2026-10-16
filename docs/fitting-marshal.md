@@ -1,6 +1,7 @@
 # Plan: Marshal, Unmarshal and Transfer — moving fittings out of the 500-slot cap
 
-**Revised 2026-10-16; PR 1 (table and store) shipped the same day.** The first
+**Revised 2026-10-16; PRs 1 (table and store) and 2 (write path) shipped the
+same day.** The first
 version of this plan merged on 2026-09-14 (#1038) and nothing in it was built. This revision re-reads it against the
 codebase a month later. The objective has not moved: EVE lets a character keep
 500 saved fittings, and a player should be able to **marshal** a fit out of
@@ -450,7 +451,8 @@ PRs 3 and 4 both depend on 2 and are independent of each other.
    `marshalled` array on the listing. No ESI involved, so it is testable with
    `curl` and useful on its own: a player's disk archive can move into
    Supabase from day one. This doc and the `docs/README.md` row.
-2. **Write path.** `callerForUser`, `marshalFitting`, `unmarshalFitting`,
+2. **Write path** — _shipped_ (`marshalOutcome.ts`, `marshal/slots.ts` and their
+   tests; actions in `src/app/fitting/marshalActions.ts`). `callerForUser`, `marshalFitting`, `unmarshalFitting`,
    `transferFitting`, `?marshal=1` on `DELETE`, the server actions, the pure
    seams and their tests, the `esiToken` message. Exercised from a scratch
    page or a test character; no UI.
