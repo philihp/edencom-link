@@ -38,3 +38,15 @@ export const searchSdeRegions = async (query: string, limit = 25): Promise<SdeRe
     .sort((a, b) => b.coverage - a.coverage || a.name.localeCompare(b.name) || a.regionID - b.regionID)
     .slice(0, limit)
 }
+
+// Region names by id, for labelling rows that carry a bare region_id.
+export const getSdeRegionNames = async (regionIDs: Iterable<number>): Promise<Record<number, string>> => {
+  const ids = [...new Set(regionIDs)]
+  if (ids.length === 0) return {}
+  const { data, error } = await sdeSupabase().from('sde_region').select('region_id, name').in('region_id', ids)
+  if (error) {
+    console.error(`[sdeRegions] lookup failed: ${error.message}`)
+    return {}
+  }
+  return Object.fromEntries(((data ?? []) as RegionRow[]).flatMap((r) => (r.name ? [[r.region_id, r.name]] : [])))
+}

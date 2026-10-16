@@ -12,6 +12,7 @@ import { registerEstateTools } from './estateTools'
 import { registerExploreTools } from './exploreTools'
 import { registerIndustryTools } from './industryTools'
 import { registerLinkTools } from './linkTools'
+import { registerPublicContractTools } from './publicContractTools'
 import { registerShippingTools } from './shippingTools'
 import { registerSkillTools } from './skillTools'
 import { registerTools } from './tools'
@@ -31,6 +32,7 @@ const handler = createMcpHandler(
     registerIndustryTools(server)
     registerExploreTools(server)
     registerShippingTools(server)
+    registerPublicContractTools(server)
     registerLinkTools(server)
     registerSkillTools(server)
     registerWatchedSystemTools(server)
