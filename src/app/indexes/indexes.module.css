@@ -11,6 +11,23 @@
   margin: 0;
 }
 
+/* The header's right-hand controls: the production-only toggle beside the
+ * window dropdown. */
+.headerControls {
+  display: flex;
+  align-items: baseline;
+  gap: 10pt;
+}
+
+/* A toggle reads as on by borrowing the lavender as a faint fill. */
+.productionOnly[aria-pressed='true'] {
+  background: color-mix(in srgb, var(--link) 18%, transparent);
+}
+
+.productionOnly[data-pending] {
+  opacity: 0.6;
+}
+
 .table {
   border-collapse: collapse;
   margin-top: 8pt;

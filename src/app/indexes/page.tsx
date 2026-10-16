@@ -1,3 +1,4 @@
+import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 
 import { formatSecurity, getSdeSystems } from '@/sdeSystems'
@@ -10,6 +11,8 @@ import { SystemSearch } from './systemSearch'
 import { WatchedSystemsTable, type WatchedRow } from './watchedSystemsTable'
 import { UrlWindowSelect } from '../windowSelect'
 import { indexWindowOption } from './windows'
+import { parseProductionOnly, PRODUCTION_ONLY_COOKIE, visibleColumns } from './productionOnly'
+import { ProductionOnlyToggle } from './productionOnlyToggle'
 import styles from './indexes.module.css'
 
 // One column per industry cost index, in this order.
@@ -29,6 +32,8 @@ export const dynamic = 'force-dynamic'
 const IndexesPage = async ({ searchParams }: { searchParams: Promise<{ days?: string }> }) => {
   const { days: daysParam } = await searchParams
   const window = indexWindowOption(daysParam)
+  const productionOnly = parseProductionOnly((await cookies()).get(PRODUCTION_ONLY_COOKIE)?.value)
+  const columns = visibleColumns(COLUMNS, productionOnly)
 
   const supabase = await createClient()
 
@@ -61,7 +66,7 @@ const IndexesPage = async ({ searchParams }: { searchParams: Promise<{ days?: st
       id,
       name: sde?.name ?? `#${id}`,
       security: sde ? formatSecurity(sde.security) : null,
-      cells: COLUMNS.map((activity) => ({
+      cells: columns.map((activity) => ({
         activity,
         cost: latest?.get(activity) ?? null,
         series: history?.get(activity) ?? null,
@@ -73,17 +78,20 @@ const IndexesPage = async ({ searchParams }: { searchParams: Promise<{ days?: st
     <>
       <div className={styles.pageHeader}>
         <h1>Indexes</h1>
-        <UrlWindowSelect days={window.days} path="/indexes" />
+        <div className={styles.headerControls}>
+          <ProductionOnlyToggle on={productionOnly} />
+          <UrlWindowSelect days={window.days} path="/indexes" />
+        </div>
       </div>
 
       {rows.length > 0 ? (
         // Keyed on the id set + window (not the drag order) so a reorder
-        // doesn't remount — only adding/removing a watched system, or
-        // switching the time window, does. That re-syncs the table's local
+        // doesn't remount — only adding/removing a watched system, switching
+        // the time window, or the production-only toggle does. That re-syncs the table's local
         // drag state and sparkline data to the server's canonical values.
         <WatchedSystemsTable
-          key={`${[...systemIds].sort((a, b) => a - b).join(',')}-${window.days}`}
-          columns={COLUMNS}
+          key={`${[...systemIds].sort((a, b) => a - b).join(',')}-${window.days}-${productionOnly}`}
+          columns={columns}
           rows={rows}
         />
       ) : (
