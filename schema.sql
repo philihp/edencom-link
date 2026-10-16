@@ -44,6 +44,7 @@ drop function if exists public.asset_inventory_at(uuid[], timestamptz) cascade;
 drop function if exists public.is_tenant_of(bigint) cascade;
 drop function if exists public.structure_share_matches(bigint, bigint[], bigint[], text, boolean, boolean) cascade;
 drop function if exists public.my_tenant_structure_ids() cascade;
+drop function if exists public.hidden_industry_job_ids() cascade;
 drop function if exists public.asset_snapshot_at(uuid[], timestamptz)  cascade;
 drop function if exists public.industry_jobs(uuid[])                   cascade;
 drop function if exists public.industry_jobs(uuid[], boolean)          cascade;
@@ -121,6 +122,7 @@ drop table if exists public.corp_structure_rig   cascade;
 drop table if exists public.corp_structure       cascade;
 drop table if exists public.corp_job_access      cascade;
 drop table if exists public.structure_tenant     cascade;
+drop table if exists public.industry_job_hidden  cascade;
 drop table if exists public.corp_wallet_journal  cascade;
 drop table if exists public.corp_wallet_transaction cascade;
 drop view  if exists public.character_contract_with_status cascade;
@@ -4245,6 +4247,61 @@ $$;
 
 grant execute on function public.my_tenant_structure_ids() to authenticated, service_role;
 
+-- ── industry_job_hidden ───────────────────────────────────────────────────
+-- The quiet per-job opt-out from the co-tenant default
+-- (docs/sharing-layer/16-industry-job-share.md): a row names one job, and the
+-- widened read paths stop showing it — the owner always still sees it, and
+-- nothing tells a co-tenant it was hidden rather than gone. Keyed on the job's
+-- identity, not a version row, so the extract's SCD-2 versioning never touches
+-- it: a job that goes active → ready opens a new version and is still named
+-- here. ESI job ids are global, and a corp job installed by one of our own
+-- characters appears in BOTH job tables under the same job_id — one row here
+-- hides both. Never swept. Its owner policies sit after corp_industry_job_over_time,
+-- which they read.
+create table public.industry_job_hidden (
+  job_id bigint primary key,
+  -- Exactly one owner key: the registration whose personal job it is, or the
+  -- corporation the job was run for (structure_tenant's shape).
+  registration_id uuid references public.registration (id) on delete cascade,
+  corporation_id  bigint,
+  -- For a corp job: the member who hid it, one of the caller's own characters
+  -- in that corporation (the insert policy's with check). Audit only, never
+  -- shown. A hide persists when they leave — hidden is a restriction, not a
+  -- grant, so the safe direction is to keep it.
+  hidden_by uuid references public.registration (id) on delete set null,
+  hidden_at timestamptz not null default now(),
+  owner_key text generated always as (coalesce(registration_id::text, 'corp:' || corporation_id::text)) stored,
+  check ((registration_id is null) <> (corporation_id is null))
+);
+create index industry_job_hidden_owner_key_idx on public.industry_job_hidden (owner_key);
+
+alter table public.industry_job_hidden enable row level security;
+
+grant select, insert, delete on public.industry_job_hidden to authenticated;
+grant all                    on public.industry_job_hidden to service_role;
+
+-- Every hidden job id, for the widening policies. A co-tenant's RLS cannot
+-- read the owner's rows, and a world-readable table of hidden ids would tell
+-- them exactly what "quietly" forbids, so the set is read through a definer —
+-- the corp_shared_item_ids() shape: argument-free and stable, so the planner
+-- evaluates it once per statement into a hashed subplan; it reads only
+-- industry_job_hidden, so no recursion. It returns bare job ids, nothing else.
+-- What that discloses: a direct caller reads every hidden job id in the
+-- system — a number with no meaning to anyone who never saw the job; someone
+-- who had seen it before it was hidden could confirm its id is in the set.
+-- The doc accepts that residue.
+create or replace function public.hidden_industry_job_ids()
+returns setof bigint
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select job_id from public.industry_job_hidden;
+$$;
+revoke execute on function public.hidden_industry_job_ids() from public;
+grant execute on function public.hidden_industry_job_ids() to anon, authenticated, service_role;
+
 -- Co-tenants read each other's industry jobs (docs/sharing-layer/13-industry-job-share.md).
 -- Everyone who has had a job at a player structure in the last 30 days reads the
 -- CURRENT job rows of everyone else building there — no opt-in: people sharing a structure are
@@ -4253,8 +4310,10 @@ grant execute on function public.my_tenant_structure_ids() to authenticated, ser
 -- already let build there. History never crosses (is_current); `cost` is
 -- blanked by the views. Upwell structures carry the same id in station_id and
 -- facility_id; NPC stations carry only station_id and never appear in
--- structure_tenant, so a job in Jita 4-4 is widened to nobody. Neither policy
--- reads a job table, so neither recurses.
+-- structure_tenant, so a job in Jita 4-4 is widened to nobody. A job named in
+-- industry_job_hidden is taken back (phase 16); the owner policies never test
+-- that, so the owner still sees it. Neither policy reads a job table, so
+-- neither recurses.
 create policy "Tenants read industry jobs at shared structures"
   on public.character_industry_job_over_time
   for select
@@ -4262,6 +4321,7 @@ create policy "Tenants read industry jobs at shared structures"
   using (
     is_current
     and coalesce(station_id, facility_id) in (select public.my_tenant_structure_ids())
+    and job_id not in (select public.hidden_industry_job_ids())
   );
 
 -- ── corp_structure ────────────────────────────────────────────────────────
@@ -7510,7 +7570,8 @@ create policy "Users read industry jobs for own corps"
     )
   );
 -- Co-tenants read each other's corp-installed jobs too — same rule and the same
--- helper as the character table's tenant policy (see structure_tenant).
+-- helper as the character table's tenant policy (see structure_tenant), and
+-- the same hidden-job conjunct.
 create policy "Tenants read corp industry jobs at shared structures"
   on public.corp_industry_job_over_time
   for select
@@ -7518,6 +7579,7 @@ create policy "Tenants read corp industry jobs at shared structures"
   using (
     is_current
     and coalesce(station_id, facility_id) in (select public.my_tenant_structure_ids())
+    and job_id not in (select public.hidden_industry_job_ids())
   );
 
 -- Live snapshot of corp industry jobs. security_invoker keeps the underlying RLS
@@ -7541,6 +7603,61 @@ create view public.corp_industry_job with (security_invoker = on) as
 grant select on public.corp_industry_job_over_time to authenticated;
 grant select on public.corp_industry_job           to authenticated;
 grant all    on public.corp_industry_job_over_time to service_role;
+
+-- industry_job_hidden's owner policies (the table is with structure_tenant).
+-- Owner-managed: own rows only, a character's through its registration, a
+-- corporation's through membership (any member — phase 14's rule). The insert
+-- proves the caller owns the job it names: a co-tenant's row matches neither
+-- owner test even when the tenant policy lets the caller read it. That read
+-- goes through the job tables' SELECT policies, one of which calls
+-- hidden_industry_job_ids() — which reads industry_job_hidden directly as its
+-- definer, never through these policies, so there is no cycle. Hide is an
+-- insert and unhide a delete; there is no update.
+create policy "Users read own hidden jobs"
+  on public.industry_job_hidden
+  for select
+  to authenticated
+  using (
+    registration_id in (select id from public.registration where user_id = (select auth.uid()))
+    or corporation_id in (select public.my_corporation_ids())
+  );
+
+create policy "Users hide own industry jobs"
+  on public.industry_job_hidden
+  for insert
+  to authenticated
+  with check (
+    (
+      registration_id in (select id from public.registration where user_id = (select auth.uid()))
+      and hidden_by is null
+      and exists (
+        select 1 from public.character_industry_job_over_time j
+        where j.job_id = industry_job_hidden.job_id
+          and j.registration_id = industry_job_hidden.registration_id
+      )
+    )
+    or (
+      corporation_id in (select public.my_corporation_ids())
+      and hidden_by in (
+        select r.id from public.registration r
+        where r.user_id = (select auth.uid()) and r.corporation_id = industry_job_hidden.corporation_id
+      )
+      and exists (
+        select 1 from public.corp_industry_job_over_time j
+        where j.job_id = industry_job_hidden.job_id
+          and j.corporation_id = industry_job_hidden.corporation_id
+      )
+    )
+  );
+
+create policy "Users unhide own industry jobs"
+  on public.industry_job_hidden
+  for delete
+  to authenticated
+  using (
+    registration_id in (select id from public.registration where user_id = (select auth.uid()))
+    or corporation_id in (select public.my_corporation_ids())
+  );
 
 -- /api/corp/jobs IMPORTDATA endpoint: the caller's corporation(s) industry
 -- jobs, mirroring character_industry_jobs()'s shape for the per-character
