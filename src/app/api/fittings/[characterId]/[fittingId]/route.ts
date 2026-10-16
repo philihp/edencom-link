@@ -3,7 +3,8 @@
 //   GET    — the archive file: ESI's own fitting object, nothing added.
 //   PUT    — restore an archived fitting into EVE under a key you minted.
 //   DELETE — archive it, i.e. store it here in full and remove it from EVE,
-//            freeing one of the character's 500 saved-fitting slots.
+//            freeing one of the character's 500 saved-fitting slots. With
+//            ?marshal=1 the fit is also kept as a marshalled_fitting row.
 //
 // In the FUSE client these are `cat`, `cp` and `rm` (docs/fitting-fuse.md).
 //
@@ -31,6 +32,7 @@ import {
   type Caller,
   errorResponse,
   isFailure,
+  marshalFitting,
   ownCharacter,
   type Registration,
   requestSource,
@@ -144,6 +146,17 @@ export const DELETE = withServerTiming(async (request: Request, context: Context
   if (fittingId === null) return NextResponse.json(NOT_A_HANDLE, { status: 404 })
 
   const source = requestSource(request)
+  // ?marshal=1 is the marshal verb (docs/fitting-marshal.md): the same
+  // delete, and the body ESI handed back at that moment is also stored as a
+  // marshalled_fitting row, whose handle comes back as `content_hash`. Doing
+  // it server-side rather than as a PUT-then-DELETE from the client is what
+  // makes the stored copy the live one and not the mirror's.
+  if (new URL(request.url).searchParams.get('marshal') === '1') {
+    const result = await marshalFitting(caller, registration, fittingId, source)
+    if (isFailure(result)) return errorResponse(result)
+    return NextResponse.json({ archived: result.archived, content_hash: result.content_hash })
+  }
+
   const result = await archiveFitting(caller, registration, fittingId, source)
   if (isFailure(result)) return errorResponse(result)
 
