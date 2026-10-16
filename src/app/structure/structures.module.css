@@ -995,3 +995,38 @@
   font-size: 11.5px;
   color: var(--ink-faint);
 }
+
+/* ── Sharing (docs/sharing-layer/12-structure-share.md) ───────────────── */
+
+/* The detail page's actions beside the title: the pin, and a director's
+   Share button. */
+.detailActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* The Directors-only "share all structures with <alliance>" toggles under
+   the "our structures" heading, one per directed corporation. */
+.shareToggles {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 0 10px;
+}
+
+.shareToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--ink-soft);
+}
+
+.shareToggle[data-pending] {
+  opacity: 0.6;
+}
+
+.shareToggleError {
+  color: var(--alert);
+}
