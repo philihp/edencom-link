@@ -1,14 +1,16 @@
 # Phase 12: structure shares
 
-**Status: 🚧 PR A and PR B built; PR C (UI) in progress.** Supersedes Stage D
+**Status: ✅ built — PR A, PR B and PR C.** Supersedes Stage D
 of `design.md`, which sketched `corp_structure_share` before the Revision 3
 audience shape existed. PR A shipped as #1068 (`structure_tenant`), and #1101
 then redefined tenancy as "a job within the last 30 days" (`last_job_seen_at`)
 rather than `open_jobs > 0` — this document reads that way throughout. PR B is
 the cutover: `corp_structure_share` (migration `20261014220310`), the seeded
 alliance default, the two hard-coded alliance policies dropped, and
-`test/sql/structure_share.sql`. The plan is three PRs; each one leaves
-production working.
+`test/sql/structure_share.sql`. PR C is the UI: the Share dialog with the
+tenants checkbox, the `/structure` alliance toggle, `access.ts` and the
+`?share=` path, and the "shared by" line. The plan was three PRs; each one
+left production working.
 
 A structure's owner can share the structure's details the standard way — with
 corporations, with alliances, with a signed link, or with everyone — **and**,
@@ -280,23 +282,44 @@ policies verbatim and drops the table.
   RLS answer for signed-in viewers, while signed-out viewers of a public
   structure go through the same service-role path as a link.
 
-## UI
+## UI (as built, PR C)
 
-- `/structure/[structureId]` gains the `ShareDialog` for directors of the
-  owning corp (`subjectLabel="structure"`, `urlPath=/structure/<id>`), with
-  one addition: a **"People with jobs here"** checkbox. The dialog takes an
-  optional `extraAudience` prop (`{ label, checked }`) the way it took
-  `showAsMain`, saved through `saveStructureShare(structureId, input)` /
-  `revokeStructureShare(structureId)` server actions on the cookie client
-  (RLS pins the row to a director). The hint line says what is and is not
-  opened: "details, services and rigs — never fuel, revenue or jobs".
-- `/structure` gains a Directors-only toggle per owned corporation: "Share
-  all structures with `<alliance>`" — the seeded default, visible and
-  revocable at last. Turning it off deletes the null-subject row (opt-out);
-  turning it on re-inserts it with `seeded_default = true`.
-- A shared structure a viewer can see but does not own shows a "shared by
-  `<corporation>`" line in place of the director-only blocks, so the empty
-  fuel and revenue cells read as "not yours" rather than "broken".
+- `/structure/[structureId]` gains the generic `ShareDialog`
+  (`src/app/structure/structureShareDialog.tsx`) for directors of the owning
+  corp (`subjectLabel="structure"`, `urlPath=/structure/<id>`), with one
+  addition: a **"People with jobs here"** checkbox. The dialog takes an
+  optional `extraAudience` prop (`{ label, description }`) the way it took
+  `showAsMain`; the flag rides in `ShareState.tenants` / `SaveShareInput.tenants`
+  and is disabled, like the other audiences, when the share is public. Saved
+  through `saveStructureShare(structureId, input)` /
+  `revokeStructureShare(structureId)` (`shareActions.ts`) on the cookie
+  client — RLS pins the row to a director, and every save clears
+  `seeded_default` and stamps `updated_by`. The hint line says what is and is
+  not opened: "details, services and rigs — never fuel, revenue or jobs".
+  "Director" on the page is `directors.ts`: the caller's own `corp_job_access`
+  rows for `corp-structures`, for a character still in that corporation.
+- `/structure` gains a Directors-only toggle per directed corporation in an
+  alliance (`allianceShareToggle.tsx`, under the "our structures" heading):
+  "share all of `<corp>`'s structures with `<alliance>`" — the seeded default,
+  visible and revocable at last. Turning it off deletes the null-subject row
+  (opt-out); turning it on re-inserts it with `seeded_default = true`, so the
+  extract keeps it on the corp's current alliance again.
+- A shared structure a viewer can see but does not own (a corporation of
+  theirs is not the owner) shows a "shared by `<corporation>`" row in the
+  structure panel and a note in place of the tax-revenue and cost-avoidance
+  blocks; the profile and fuel rows are not drawn, so the empty cells read as
+  "not yours" rather than "broken". The jobs panel stays — the tenant policies
+  decide what it shows.
+- The signed link: `access.ts` (`resolveStructureShare`, `resolvePublicStructure`,
+  `resolveStructureAccess`) runs on the service role over the owning
+  corporation's share rows that cover the structure (`shareRows.ts`, pure,
+  tested: the structure's own row and the corporation-wide one), and the
+  page's share-scoped branch (`[structureId]/sharedStructure.tsx`) draws
+  `corp_structure`, `corp_structure_rig` and the public cost indices for that
+  one structure — no status, jobs, tax or revenue. Signed-out is allowed, like
+  ship links; a signed-in viewer whose RLS does not show the row takes the same
+  branch when the link verifies. A fully public structure takes it signed-out
+  with no link; signed in, RLS already shows it.
 - MCP `list_structures` and GraphQL need no change: they query as the caller,
   so shared rows arrive through RLS — the layer's whole point.
 
@@ -306,7 +329,7 @@ policies verbatim and drops the table.
 | --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
 | A   | ✅ #1068 (+ #1101): `structure_tenant` + `is_tenant_of()` + bookkeeping in the two industry-job extracts. Backfill in the migration from the current job views.                     | None. Nothing reads it. Backfill is a plain aggregate insert.                         |
 | B   | ✅ `corp_structure_share`, policies, seed, `structure_share_seeded_at`, extract seed-once + dynamic default, drop the two hard-coded policies. `test/sql/structure_share.sql`.     | Cutover: parity proved in-migration; rollback script that re-creates the two policies. |
-| C   | 🚧 Share dialog + tenants checkbox, `/structure` alliance toggle, `access.ts` + the `?share=` path, "shared by" line.                                                               | UI only, on a proven substrate.                                                       |
+| C   | ✅ Share dialog + tenants checkbox, `/structure` alliance toggle, `access.ts` + the `?share=` path, "shared by" line.                                                               | UI only, on a proven substrate.                                                       |
 
 ## Verification
 
