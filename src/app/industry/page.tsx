@@ -99,10 +99,18 @@ const IndustryPage = async () => {
         .returns<JobRow[]>()
     )
 
-  const [characterJobs, corpJobs, owners] = await Promise.all([
+  // Our hidden jobs, to draw the menu's state (industry_job_hidden shows only
+  // the caller's own rows; docs/sharing-layer/16-industry-job-share.md).
+  const fetchHidden = () =>
+    fetchAllRows<{ job_id: number | string }>((from, to) =>
+      supabase.from('industry_job_hidden').select('job_id').order('job_id', { ascending: true }).range(from, to)
+    )
+
+  const [characterJobs, corpJobs, owners, hidden] = await Promise.all([
     fetchJobs('character_industry_job'),
     fetchJobs('corp_industry_job'),
     fetchOwners(),
+    fetchHidden(),
   ])
 
   // This page is OUR jobs. The views also show the current jobs of everyone
@@ -289,6 +297,7 @@ const IndustryPage = async () => {
       initialNow={Date.now()}
       unpriced={unpriced}
       pricingFailed={pricingFailed}
+      hiddenJobIds={map((h) => String(h.job_id), hidden)}
     />
   )
 }
