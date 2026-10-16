@@ -13,7 +13,14 @@
 import { NextResponse } from 'next/server'
 
 import { createFitting, deleteFitting, fittings as fetchFittings } from '@/esi'
-import { type ArchiveFitting, contentHash, FITTING_SLOTS, type FittingBody, normalizeItems } from '@/fittingArchive'
+import {
+  type ArchiveFitting,
+  contentHash,
+  FITTING_SLOTS,
+  type FittingBody,
+  type FittingItem,
+  normalizeItems,
+} from '@/fittingArchive'
 import { createServiceClient } from '@/utils/supabase/service'
 
 export const WRITE_SCOPE = 'esi-fittings.write_fittings.v1'
@@ -431,3 +438,161 @@ const openLocalFitting = async (
     valid_until: new Date().toISOString(),
   })
 }
+
+// ── The marshalled archive ──────────────────────────────────────────────────
+//
+// marshalled_fitting (docs/fitting-marshal.md): a fit that is ours but not in
+// the game, held at account level and addressed by its content hash. Nothing
+// in this section talks to ESI — these are the store half that `marshalFitting`
+// (PR 2) pairs with `archiveFitting`, and that the /api/fittings/marshalled
+// routes expose on their own so a disk archive can move into Supabase without
+// a slot ever changing hands.
+//
+// Written through the service-role `Caller` after the request proved who it
+// is, like fitting_write_log; every query scopes itself to caller.userId by
+// hand, since there is no RLS backstop on this client.
+
+export type MarshalledRow = {
+  user_id: string
+  content_hash: string
+  name: string
+  description: string
+  ship_type_id: number | string
+  items: FittingItem[]
+  source_registration_id: string | null
+  source_fitting_id: number | string | null
+  write_log_id: number | string | null
+  source: string
+  marshalled_at: string
+}
+
+/** Where a stored fit came from. Only `source` is known for a file copied in. */
+export type MarshalledProvenance = {
+  source: string
+  registration?: Registration
+  fittingId?: number
+  writeLogId?: number
+}
+
+const MARSHALLED_COLUMNS =
+  'user_id, content_hash, name, description, ship_type_id, items, source_registration_id, source_fitting_id, write_log_id, source, marshalled_at'
+
+/**
+ * What asked for a write: the FUSE client tags its requests, anything else
+ * carrying the api_token is 'api'. The web buttons (PR 2) pass 'web' directly.
+ */
+export const requestSource = (request: Request): string =>
+  request.headers.get('x-edencom-source') === 'fuse' ? 'fuse' : 'api'
+
+/** Every marshalled fit on the account, newest first. */
+export const listMarshalled = async (caller: Caller): Promise<MarshalledRow[] | Failure> => {
+  const { data, error } = await caller.supabase
+    .from('marshalled_fitting')
+    .select(MARSHALLED_COLUMNS)
+    .eq('user_id', caller.userId)
+    .order('marshalled_at', { ascending: false })
+    .returns<MarshalledRow[]>()
+  if (error) return failure(500, 'Query failed')
+  return data ?? []
+}
+
+export const readMarshalled = async (
+  caller: Caller,
+  contentHashHex: string
+): Promise<MarshalledRow | null | Failure> => {
+  const { data, error } = await caller.supabase
+    .from('marshalled_fitting')
+    .select(MARSHALLED_COLUMNS)
+    .eq('user_id', caller.userId)
+    .eq('content_hash', contentHashHex)
+    .maybeSingle<MarshalledRow>()
+  if (error) return failure(500, 'Query failed')
+  return data ?? null
+}
+
+/**
+ * Put a fit in the archive. Idempotent on (user_id, content_hash): the same
+ * fit stored again — marshalled from a second alt, or `cp`'d in twice — is one
+ * row whose provenance and `marshalled_at` move to the latest store, because
+ * the slot was still freed, which is what the player asked for. `created`
+ * says whether the row is new, for the route's 201/200.
+ */
+export const storeMarshalled = async (
+  caller: Caller,
+  fitting: FittingBody,
+  provenance: MarshalledProvenance
+): Promise<{ content_hash: string; created: boolean } | Failure> => {
+  const hash = contentHash(fitting)
+  const existing = await readMarshalled(caller, hash)
+  if (isFailure(existing)) return existing
+
+  const { error } = await caller.supabase.from('marshalled_fitting').upsert(
+    {
+      user_id: caller.userId,
+      content_hash: hash,
+      name: fitting.name,
+      description: fitting.description,
+      ship_type_id: fitting.ship_type_id,
+      items: normalizeItems(fitting.items),
+      source_registration_id: provenance.registration?.registration_id ?? null,
+      source_fitting_id: provenance.fittingId ?? null,
+      write_log_id: provenance.writeLogId ?? null,
+      source: provenance.source,
+      marshalled_at: new Date().toISOString(),
+    },
+    { onConflict: 'user_id,content_hash' }
+  )
+  if (error) return failure(500, `Storing the fitting failed: ${error.message}`)
+  return { content_hash: hash, created: existing === null }
+}
+
+/** Remove a fit from the archive. True if there was one. Permanent; no ESI. */
+export const deleteMarshalled = async (caller: Caller, contentHashHex: string): Promise<boolean | Failure> => {
+  const { data, error } = await caller.supabase
+    .from('marshalled_fitting')
+    .delete()
+    .eq('user_id', caller.userId)
+    .eq('content_hash', contentHashHex)
+    .select('content_hash')
+    .returns<Array<{ content_hash: string }>>()
+  if (error) return failure(500, 'Delete failed')
+  return (data ?? []).length > 0
+}
+
+/**
+ * The archive file for a marshalled fit: ESI's fitting object, as
+ * `toArchiveFitting` renders a live one. `fitting_id` is the id the fit had
+ * in game when it was marshalled, carried because ESI's object carries it and
+ * ignored on restore; a fit copied in from a file arrived without one, and
+ * then the key is simply absent rather than invented.
+ */
+export const toMarshalledFile = (row: MarshalledRow): FittingBody & { fitting_id?: number } => ({
+  ...(row.source_fitting_id != null ? { fitting_id: Number(row.source_fitting_id) } : {}),
+  name: row.name,
+  description: row.description,
+  ship_type_id: Number(row.ship_type_id),
+  items: normalizeItems(row.items),
+})
+
+/**
+ * The listing entry for one marshalled fit: the archive file plus the handle
+ * to address it by, the hull name for the filename, and where it came from.
+ * Shared by GET /api/fittings/marshalled and the `marshalled` array GET
+ * /api/fittings carries beside `characters`, so a mount builds its whole tree
+ * from one response.
+ */
+export const marshalledEntry = (caller: Caller, shipNames: Record<number, string>, row: MarshalledRow) => ({
+  ...toMarshalledFile(row),
+  content_hash: row.content_hash,
+  ship_name: shipNames[Number(row.ship_type_id)] ?? null,
+  marshalled_at: row.marshalled_at,
+  source: row.source,
+  // The EVE id of the character it came from, while that character is still
+  // on the account (the column nulls when it is unlinked; a file copied in
+  // never had one). Resolved from the caller's own registrations, never from
+  // anything an audience could read — the archive is the owner's alone.
+  source_character_id:
+    caller.registrations.find((r) => r.registration_id === row.source_registration_id)?.character_id ?? null,
+  // Doubles as the file's mtime in the mount, like `modified` on a live fit.
+  modified: row.marshalled_at,
+})

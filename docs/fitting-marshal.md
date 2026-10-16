@@ -1,7 +1,7 @@
 # Plan: Marshal, Unmarshal and Transfer — moving fittings out of the 500-slot cap
 
-**Revised 2026-10-16.** The first version of this plan merged on 2026-09-14
-(#1038) and nothing in it was built. This revision re-reads it against the
+**Revised 2026-10-16; PR 1 (table and store) shipped the same day.** The first
+version of this plan merged on 2026-09-14 (#1038) and nothing in it was built. This revision re-reads it against the
 codebase a month later. The objective has not moved: EVE lets a character keep
 500 saved fittings, and a player should be able to **marshal** a fit out of
 the game into our database, and **unmarshal** it back into the game later, on
@@ -442,7 +442,9 @@ Five PRs, each `pnpm run lint` + `pnpm test` + `pnpm run build`; PR 1 also
 `pnpm run test:sql` against a throwaway database; PR 4 `make test` in `fuse/`.
 PRs 3 and 4 both depend on 2 and are independent of each other.
 
-1. **Table and store.** `marshalled_fitting` in `schema.sql`, the migration,
+1. **Table and store** — _shipped_ (migration `20261016004306_marshalled_fitting.sql`,
+   `test/sql/marshalled_fitting.sql`, `test/marshalledHandle.test.ts`).
+   `marshalled_fitting` in `schema.sql`, the migration,
    RLS, the SQL test; `storeMarshalled`/`readMarshalled`/`deleteMarshalled`
    in the lib; `GET`/`PUT`/`DELETE /api/fittings/marshalled[/{hash}]` and the
    `marshalled` array on the listing. No ESI involved, so it is testable with
