@@ -76,26 +76,26 @@ const splitList = pipe(
 
 // → [{ system, hull, name, services: [sheet words], rigs: [rig names] }], the
 // System column carried down to the structures listed under it.
+/** @typedef {{ system: string, hull: string, name: string, services: string[], rigs: string[] }} SheetRow */
+
+/** @type {(text: string) => SheetRow[]} */
 export const parseRigList = (text) =>
   pipe(
     parseCsv,
     drop(1),
-    reduce(
-      (acc, cols) => {
-        const [, system, hull, name, services = '', ...rigs] = map((c) => trim(c ?? ''), cols)
-        const current = system || acc.system
-        if (!hull || !name || !current) return { ...acc, system: current }
-        acc.rows.push({
-          system: current,
-          hull,
-          name,
-          services: splitList(services),
-          rigs: filter((r) => r !== '', rigs.slice(0, 3)),
-        })
-        return { ...acc, system: current }
-      },
-      { system: null, rows: [] }
-    ),
+    reduce((acc, cols) => {
+      const [, system, hull, name, services = '', ...rigs] = map((c) => trim(c ?? ''), cols)
+      const current = system || acc.system
+      if (!hull || !name || !current) return { ...acc, system: current }
+      acc.rows.push({
+        system: current,
+        hull,
+        name,
+        services: splitList(services),
+        rigs: filter((r) => r !== '', rigs.slice(0, 3)),
+      })
+      return { ...acc, system: current }
+    }, /** @type {{ system: string | null, rows: SheetRow[] }} */ ({ system: null, rows: [] })),
     (acc) => acc.rows,
     // The sheet lists a few structures twice (DW-N2S's whole block, for one).
     uniqBy((r) => `${r.system}|${r.hull}|${r.name}`)
