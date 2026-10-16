@@ -28,6 +28,7 @@ import { type JobEntry, isOverdue, jobsInSection, nextRunFor } from '../../jobs/
 import { type EntityRun, isAbandoned, newestRun } from '../../jobs/rows'
 import { Name } from '../../names'
 import {
+  GRANT_COLUMNS,
   type GrantState,
   blockedCellCount,
   columnGrant,
@@ -64,6 +65,13 @@ const GRANT_TITLE: Record<GrantState, string> = {
   on: 'Requested and granted — this job runs',
   missing: 'Requested but not granted — this job never runs; re-auth to grant it',
   extra: 'Granted but not in the request template — still refreshes',
+  off: 'Neither requested nor granted',
+}
+
+const GRANT_TITLE_NO_JOB: Record<GrantState, string> = {
+  on: 'Requested and granted',
+  missing: 'Requested but not granted — re-auth to grant it',
+  extra: 'Granted but not in the request template — a later re-auth would drop it',
   off: 'Neither requested nor granted',
 }
 
@@ -141,6 +149,22 @@ const MatrixCell = ({
   )
 }
 
+// A grant-only column's cell (GRANT_COLUMNS): the grant icon over what it
+// means, with no job behind it to time or refresh.
+const GrantCell = ({ label, grant }: { label: string; grant: GrantState }) => (
+  <span className={styles.cell} data-grant={grant}>
+    <span className={styles.cellLabel}>{label}</span>
+    <span className={styles.grantIcon} data-grant={grant} title={GRANT_TITLE_NO_JOB[grant]}>
+      {GRANT_GLYPH[grant]}
+    </span>
+    <span className={styles.cellBody}>
+      <span className={grant === 'missing' ? styles.cellBlocked : styles.cellOff}>
+        {grant === 'missing' ? 'no grant' : grantAllowsRun(grant) ? 'granted' : '—'}
+      </span>
+    </span>
+  </span>
+)
+
 // A column's header: the job label over its sweep button and its next
 // scheduled fire (or the overdue flag when the previous one didn't happen).
 const ColumnHead = ({ entry, entities, sweep }: { entry: JobEntry; entities: EntityRun[]; sweep: boolean }) => (
@@ -201,9 +225,12 @@ const RegistrationPage = async () => {
   // jobs (each column's own sits in its header).
   const nextSweep = soonestNextRun(characterJobs.map((entry) => nextRunFor(entry.job)))
 
-  const requestedColumns = characterJobs.filter((entry) => templateCheck(entry.scopes, template) === 'all').length
+  const requestedColumns = [...characterJobs, ...GRANT_COLUMNS].filter(
+    (entry) => templateCheck(entry.scopes, template) === 'all'
+  ).length
+  const columnCount = characterJobs.length + GRANT_COLUMNS.length
 
-  const columnStyle = { '--cols': characterJobs.length } as CSSProperties
+  const columnStyle = { '--cols': columnCount } as CSSProperties
   const corpColumnStyle = { '--cols': corporationJobs.length } as CSSProperties
 
   // The caller's corporations with their registered members, in registration
@@ -243,8 +270,14 @@ const RegistrationPage = async () => {
           <TemplateToggle scopes={entry.scopes} check={templateCheck(entry.scopes, template)} label={entry.label} />
         </span>
       ))}
+      {GRANT_COLUMNS.map((column) => (
+        <span key={column.key} className={styles.cell}>
+          <span className={styles.cellLabel}>{column.label}</span>
+          <TemplateToggle scopes={column.scopes} check={templateCheck(column.scopes, template)} label={column.label} />
+        </span>
+      ))}
       <span className={styles.templateCount}>
-        {requestedColumns} of {characterJobs.length}
+        {requestedColumns} of {columnCount}
       </span>
     </div>
   )
@@ -304,6 +337,13 @@ const RegistrationPage = async () => {
                 sweep={characters.length > 1 && entry.kickable === 'always'}
               />
             ))}
+            {GRANT_COLUMNS.map((column) => (
+              <span key={column.key} className={styles.columnHead}>
+                <span className={styles.columnLabel} title={column.scopes.join(' ')}>
+                  {column.label}
+                </span>
+              </span>
+            ))}
             <span className={styles.columnLabel}>All jobs</span>
           </div>
 
@@ -319,11 +359,13 @@ const RegistrationPage = async () => {
                   <div className={styles.ghostAvatar} />
                   <div className={styles.ghostBar} />
                 </div>
-                {characterJobs.map((entry) => (
-                  <span key={entry.job} className={styles.cell}>
-                    <span className={styles.ghostCell} />
-                  </span>
-                ))}
+                {[...characterJobs.map((entry) => entry.job), ...GRANT_COLUMNS.map((column) => column.key)].map(
+                  (key) => (
+                    <span key={key} className={styles.cell}>
+                      <span className={styles.ghostCell} />
+                    </span>
+                  )
+                )}
                 <span />
               </div>
               <div className={styles.empty}>
@@ -441,6 +483,13 @@ const RegistrationPage = async () => {
                       grant={columnGrant(entry.scopes, scopes, template)}
                       kickable={entry.kickable === 'always'}
                       now={jobs.now}
+                    />
+                  ))}
+                  {GRANT_COLUMNS.map((column) => (
+                    <GrantCell
+                      key={column.key}
+                      label={column.label}
+                      grant={columnGrant(column.scopes, scopes, template)}
                     />
                   ))}
                   <span className={styles.rowTail}>
