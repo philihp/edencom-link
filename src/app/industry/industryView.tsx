@@ -9,6 +9,7 @@ import { ALL_OWNERS, OwnerSelect, ownerNames, useExcludedCorps, useOwnerFilter, 
 import { usePersist } from '../usePersist'
 import { WindowSelect } from '../windowSelect'
 import { formatMoment, formatMonth, formatRange } from './chartTime'
+import { type JobOwner } from './hiddenActions'
 import styles from './industry.module.css'
 import { ACTIVITY_NAMES } from './jobFields'
 import {
@@ -25,6 +26,7 @@ import {
   type LiftJob,
   type LiftScope,
 } from './lift'
+import { JobMenu } from './jobMenu'
 import { LiftChart } from './liftChart'
 import {
   DEFAULT_INDUSTRY_WINDOW_DAYS,
@@ -53,6 +55,8 @@ type IndustryViewProps = {
   unpriced: number
   // The price lookup itself failed, so every job is unpriced for that reason.
   pricingFailed: boolean
+  // Jobs of ours hidden from co-tenants (industry_job_hidden).
+  hiddenJobIds: readonly string[]
 }
 
 const OWNER_STORAGE_KEY = 'industry.activeJobs.ownerId'
@@ -77,8 +81,17 @@ export const IndustryView = ({
   initialNow,
   unpriced,
   pricingFailed,
+  hiddenJobIds,
 }: IndustryViewProps) => {
   const ownerName = ownerNames(owners)
+  const hiddenIds = new Set(hiddenJobIds)
+  // Every row here is ours (the page drops co-tenants' rows), so every row
+  // gets the menu; the owner key it writes is whichever of ours the row is.
+  const corpIds = new Set(owners.corporations.map((c) => c.id))
+  const jobOwner = (j: LiftJob): JobOwner =>
+    corpIds.has(j.ownerId)
+      ? { kind: 'corporation', corporationId: Number(j.ownerId) }
+      : { kind: 'character', registrationId: j.ownerId }
 
   const [ownerId, setOwnerId] = useOwnerFilter(OWNER_STORAGE_KEY, owners)
   const [excludedCorpIds, setExcludedCorpIds] = useExcludedCorps(EXCLUDED_CORPS_STORAGE_KEY, owners)
@@ -317,6 +330,7 @@ export const IndustryView = ({
                 <th>start</th>
                 <th>end</th>
                 <th>{scoped ? 'progress then' : 'remaining'}</th>
+                <th aria-label="Job options" />
               </tr>
             </thead>
             <tbody>
@@ -356,12 +370,15 @@ export const IndustryView = ({
                     ) : (
                       <td className={styles.soft}>{j.status}</td>
                     )}
+                    <td className={styles.optionsCell}>
+                      <JobMenu jobId={j.id} owner={jobOwner(j)} hidden={hiddenIds.has(j.id)} />
+                    </td>
                   </tr>
                 )
               })}
               {listed.length === 0 && (
                 <tr>
-                  <td colSpan={10} className={styles.empty}>
+                  <td colSpan={11} className={styles.empty}>
                     {scoped
                       ? 'No jobs were running at that moment.'
                       : visible.length === 0
