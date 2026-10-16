@@ -20,6 +20,9 @@ import { toEsiFit, type FittingItem, type FittingRow } from '../../fit'
 import { resolveFittingOwner } from '../../resolveCharacter'
 import { fetchFittingShareDialogData } from '../../shareData'
 import { SlotGroups } from '../../slotGroups'
+import { MarshalControls } from '../../marshal/marshalControls'
+import { unmarshalTargets } from '../../marshal/slots'
+import { fetchSlotUsage } from '../../marshal/targets'
 import styles from '../../fittings.module.css'
 import { fittingShareMetadata, fittingShareViewport } from './card/metadata'
 
@@ -123,7 +126,16 @@ const FittingDetailPage = async ({ params, searchParams }: FittingPageProps) => 
   // caller's own rows — so it's an RLS-native ownership proof, not a guess.
   const isOwner = owner.isOwn
 
-  const shareData = isOwner ? await fetchFittingShareDialogData(supabase, owner.registrationId, fittingId) : null
+  // The owner's share dialog, and the marshal/transfer controls beside it
+  // (docs/fitting-marshal.md): slot usage per own character for the transfer
+  // picker, and whether THIS character holds the opt-in write scope.
+  const [shareData, usage] = isOwner
+    ? await Promise.all([
+        fetchFittingShareDialogData(supabase, owner.registrationId, fittingId),
+        fetchSlotUsage(supabase),
+      ])
+    : [null, []]
+  const writable = usage.find((u) => u.registrationId === owner.registrationId)?.writable ?? false
 
   return (
     <div className={isOwner ? undefined : styles.sharedPage}>
@@ -156,14 +168,25 @@ const FittingDetailPage = async ({ params, searchParams }: FittingPageProps) => 
       )}
       {fit.description ? <p className={styles.description}>{fit.description}</p> : null}
 
-      {shareData ? (
+      {isOwner ? (
         <div className={styles.shareRow}>
-          <ShareDialog
-            subjectLabel="fitting"
-            urlPath={`/fitting/${characterId}/${fittingId}`}
-            data={shareData}
-            save={saveFittingShare.bind(null, owner.registrationId, fittingId)}
-            revoke={revokeFittingShare.bind(null, owner.registrationId, fittingId)}
+          {shareData ? (
+            <ShareDialog
+              subjectLabel="fitting"
+              urlPath={`/fitting/${characterId}/${fittingId}`}
+              data={shareData}
+              save={saveFittingShare.bind(null, owner.registrationId, fittingId)}
+              revoke={revokeFittingShare.bind(null, owner.registrationId, fittingId)}
+            />
+          ) : null}
+          <MarshalControls
+            registrationId={owner.registrationId}
+            fittingId={fittingId}
+            fitName={fit.name || `Fitting #${fit.fitting_id}`}
+            pilotName={owner.name ?? 'this character'}
+            writable={writable}
+            shared={shareData?.share != null}
+            targets={unmarshalTargets(usage, owner.registrationId)}
           />
         </div>
       ) : null}

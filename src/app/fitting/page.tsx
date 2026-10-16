@@ -7,6 +7,8 @@ import { establishedUser } from '../account/lib/establishedUser'
 import type { Owner } from '../ownerFilter'
 import { fittingRoute, type FittingRow } from './fit'
 import { FittingMatrix, type FittingEntry } from './fittingMatrix'
+import { marshalledEntry, type MarshalledLibraryRow } from './marshal/entry'
+import { fetchSlotUsage } from './marshal/targets'
 import { fetchFittingOwners } from './resolveCharacter'
 
 // Every saved fitting the signed-in player can see, laid out the way ship
@@ -20,16 +22,28 @@ import { fetchFittingOwners } from './resolveCharacter'
 // is visible here too, since it's the same table and the same select. Entries
 // not owned by one of the caller's own characters carry an `owner` label so
 // the matrix stays honest about whose fit it's showing.
+//
+// The account's marshalled fits (docs/fitting-marshal.md) join the matrix as
+// well, dimmed and tagged: RLS on marshalled_fitting hands the session its own
+// rows and nobody else's, so this is the one read that is never widened.
 const FittingPage = async () => {
   const supabase = await createClient()
   const user = await establishedUser(supabase)
   if (!user) redirect('/')
 
-  const { data: fittings } = await supabase
-    .from('character_fitting')
-    .select('registration_id, fitting_id, name, description, ship_type_id, items')
-    .returns<FittingRow[]>()
+  const [{ data: fittings }, { data: marshalled }] = await Promise.all([
+    supabase
+      .from('character_fitting')
+      .select('registration_id, fitting_id, name, description, ship_type_id, items')
+      .returns<FittingRow[]>(),
+    supabase
+      .from('marshalled_fitting')
+      .select('content_hash, name, ship_type_id')
+      .order('marshalled_at', { ascending: false })
+      .returns<MarshalledLibraryRow[]>(),
+  ])
   const rows = fittings ?? []
+  const archive = marshalled ?? []
 
   // Every owner behind a visible fit, resolved to the EVE character id the
   // route addresses them by (see resolveCharacter.ts). Own registrations come
@@ -38,29 +52,34 @@ const FittingPage = async () => {
   // The hull lookup that follows keys off the fits' own ship_type_id, not off
   // anything the owner resolution produces, so the two run together rather than
   // one after the other. It covers every entry the matrix can build, since an
-  // entry only ever comes from one of these rows.
-  const [owners, types] = await Promise.all([
+  // entry only ever comes from one of these rows. The slot meters are a third
+  // independent read.
+  const [owners, types, slots] = await Promise.all([
     fetchFittingOwners(supabase, [...new Set(rows.map((f) => f.registration_id))]),
     // One bulk SDE lookup carries everything the matrix buckets by: hull name,
     // group (→ class row), race and meta group (→ column).
-    getSdeTypes(rows.map((f) => Number(f.ship_type_id))),
+    getSdeTypes([...rows.map((f) => Number(f.ship_type_id)), ...archive.map((m) => Number(m.ship_type_id))]),
+    fetchSlotUsage(supabase),
   ])
 
-  const entries: FittingEntry[] = rows.flatMap((f) => {
-    const owner = owners.get(f.registration_id)
-    // An owner we can't name an EVE id for has no addressable URL; in practice
-    // unreachable, since a fit only exists once the extract has run for them.
-    if (!owner) return []
-    return [
-      {
-        href: fittingRoute(owner.characterId, f.fitting_id),
-        name: f.name || `Fitting #${f.fitting_id}`,
-        shipTypeId: Number(f.ship_type_id),
-        ownerId: owner.characterId,
-        ...(owner.isOwn ? {} : { owner: owner.name ?? 'unknown' }),
-      },
-    ]
-  })
+  const entries: FittingEntry[] = [
+    ...rows.flatMap((f) => {
+      const owner = owners.get(f.registration_id)
+      // An owner we can't name an EVE id for has no addressable URL; in practice
+      // unreachable, since a fit only exists once the extract has run for them.
+      if (!owner) return []
+      return [
+        {
+          href: fittingRoute(owner.characterId, f.fitting_id),
+          name: f.name || `Fitting #${f.fitting_id}`,
+          shipTypeId: Number(f.ship_type_id),
+          ownerId: owner.characterId,
+          ...(owner.isOwn ? {} : { owner: owner.name ?? 'unknown' }),
+        },
+      ]
+    }),
+    ...archive.map(marshalledEntry),
+  ]
 
   const toFilterOwner = (o: { characterId: string; name: string | null }): Owner => ({
     id: o.characterId,
@@ -78,7 +97,13 @@ const FittingPage = async () => {
     .sort(byName)
 
   return (
-    <FittingMatrix entries={entries} types={types} ownCharacters={ownCharacters} sharedCharacters={sharedCharacters} />
+    <FittingMatrix
+      entries={entries}
+      types={types}
+      ownCharacters={ownCharacters}
+      sharedCharacters={sharedCharacters}
+      slots={slots}
+    />
   )
 }
 

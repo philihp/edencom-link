@@ -1,7 +1,7 @@
 # Plan: Marshal, Unmarshal and Transfer — moving fittings out of the 500-slot cap
 
-**Revised 2026-10-16; PRs 1 (table and store) and 2 (write path) shipped the
-same day.** The first
+**Revised 2026-10-16; PRs 1 (table and store), 2 (write path) and 3 (web UI)
+shipped the same day.** The first
 version of this plan merged on 2026-09-14 (#1038) and nothing in it was built. This revision re-reads it against the
 codebase a month later. The objective has not moved: EVE lets a character keep
 500 saved fittings, and a player should be able to **marshal** a fit out of
@@ -456,7 +456,9 @@ PRs 3 and 4 both depend on 2 and are independent of each other.
    `transferFitting`, `?marshal=1` on `DELETE`, the server actions, the pure
    seams and their tests, the `esiToken` message. Exercised from a scratch
    page or a test character; no UI.
-3. **Web UI.** `MarshalControls` on the detail page, the marshalled page with
+3. **Web UI** — _shipped_ (`marshal/marshalControls.tsx`, `marshal/unmarshalControls.tsx`,
+   `/fitting/marshalled/[hash]`, `marshal/entry.ts` + test, `marshal/targets.ts`).
+   `MarshalControls` on the detail page, the marshalled page with
    unmarshal and delete, the library's marshalled entries and slot meter.
    Header and CLAUDE.md map entries.
 4. **FUSE.** The `Marshalled/` folder, `Rename`, the client calls and their

@@ -8,7 +8,11 @@
 // path re-checks against EVE's own count before it saves anything
 // (restoreFitting), so a stale number here only mis-sorts a picker, never
 // overfills a character.
-import { FITTING_SLOTS } from '../../../fittingArchive.ts'
+// EVE's cap, restated rather than imported: src/fittingArchive.ts holds the
+// canonical FITTING_SLOTS, but it also imports node:crypto for the content
+// hash, and this module is reached from client components (the pickers), where
+// that import cannot bundle. test/marshalSlots.test.ts pins the two equal.
+export const FITTING_SLOTS = 500
 
 export type OwnCharacter = {
   registrationId: string
@@ -71,3 +75,9 @@ export const unmarshalTargets = (usage: ReadonlyArray<SlotUsage>, excludeRegistr
 /** `Pilot · 487 / 500`, the slot meter's text. */
 export const slotMeter = (u: SlotUsage, capacity: number = FITTING_SLOTS): string =>
   `${u.name ?? `Character #${u.characterId}`} · ${u.used} / ${capacity}`
+
+/** The picker's option text: `Pilot · 412 / 500`, with why it cannot be chosen. */
+export const targetLabel = (t: UnmarshalTarget, capacity: number = FITTING_SLOTS): string => {
+  const base = `${t.name ?? `Character #${t.characterId}`} · ${t.used} / ${capacity}`
+  return t.reason === 'full' ? `${base} — full` : t.reason === 'not writable' ? `${base} — no write scope` : base
+}
