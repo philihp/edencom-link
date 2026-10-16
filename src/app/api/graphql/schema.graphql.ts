@@ -189,6 +189,47 @@ export const typeDefs = /* GraphQL */ `
       since: String
       limit: Int
     ): [Contract!]!
+
+    """
+    Ship fittings your characters have saved in the game — the
+    character-fittings extract (every 6h; ESI exposes only each pilot's
+    PERSONAL fittings, no doctrine folders). Own data only, in both auth
+    modes: a fit another player shared with you is on /fitting, not here, since
+    the api_token path is own-data only and a Link is the way to hand data on.
+
+    ship/ships is the HULL (an item type, so the same singular-search /
+    exact-list pair as type/types); type/types is a MODULE, charge or drone the
+    fit carries — "every fit using a Damage Control II". name is a substring of
+    the fit's own name or description. A fit's modules come back as one flat
+    cell, moduleSummary, so a row is still one CSV line.
+    """
+    fittings(
+      ship: String
+      ships: [String!]
+      type: String
+      types: [String!]
+      name: String
+      owner: String
+      owners: [String!]
+      limit: Int
+    ): [Fitting!]!
+
+    """
+    Fits marshalled OUT of the game into this account's archive
+    (docs/fitting-marshal.md): held here, in no character's client, to be
+    unmarshalled onto any of your characters later. Account-level, so there is
+    no owner filter — the archive is yours, not a character's. Same ship/type/
+    name filters as fittings. contentHash is the handle: the fit's page is
+    /fitting/marshalled/{contentHash}, which url carries.
+    """
+    marshalledFittings(
+      ship: String
+      ships: [String!]
+      type: String
+      types: [String!]
+      name: String
+      limit: Int
+    ): [MarshalledFitting!]!
   }
 
   """
@@ -646,5 +687,71 @@ export const typeDefs = /* GraphQL */ `
     character: Character
     type: ItemType!
     location: Location!
+  }
+
+  """
+  One fitting a character has saved in the game. fittingId is EVE's own id,
+  reassigned every time a fit is saved, so it identifies nothing across a
+  marshal and an unmarshal; the pair (characterId, fittingId) is what url
+  addresses.
+  """
+  type Fitting {
+    fittingId: String!
+    name: String!
+    description: String!
+    shipTypeId: String!
+    shipTypeName: String
+    "How many modules, charges and drones it carries, stacks counted whole."
+    itemCount: Int!
+    "The modules as one cell, slot order, stacks summed: 2 x Warp Scrambler II, 1 x Damage Control II, … Null for an empty fit."
+    moduleSummary: String
+    "This site's page for the fit: /fitting/{characterId}/{fittingId}."
+    url: String!
+    "Always character here — nothing else can own this row."
+    ownerType: String!
+    "Same as characterId. The coalesced owner id every row type carries."
+    ownerId: String!
+    "Same as characterName. The coalesced owner name every row type carries."
+    ownerName: String!
+    "The owning character's EVE id."
+    characterId: String
+    "The owning character's name."
+    characterName: String
+    "The owning character, for its registration id and corp/alliance."
+    character: Character
+    "The hull."
+    ship: ItemType!
+  }
+
+  """
+  One fit in the account's archive (docs/fitting-marshal.md). No owner block:
+  the subject is the ACCOUNT, and the character it came from is provenance
+  only — null once that character is unlinked, or for a file copied in through
+  the mount. Like RestockLine, the one other row with no owner.
+  """
+  type MarshalledFitting {
+    "The content hash — the fit's durable identity and its handle everywhere (64 hex)."
+    contentHash: String!
+    name: String!
+    description: String!
+    shipTypeId: String!
+    shipTypeName: String
+    "How many modules, charges and drones it carries, stacks counted whole."
+    itemCount: Int!
+    "The modules as one cell, slot order, stacks summed. Null for an empty fit."
+    moduleSummary: String
+    "The EVE id of the character it was marshalled from, while still linked."
+    sourceCharacterId: String
+    sourceCharacterName: String
+    "The game id it had when it was marshalled; null for a file copied in."
+    sourceFittingId: String
+    "When it entered the archive (the latest time, if marshalled again from an alt)."
+    marshalledAt: String!
+    "What stored it: web (a button), fuse (the mount) or api."
+    source: String!
+    "This site's page for it: /fitting/marshalled/{contentHash}."
+    url: String!
+    "The hull."
+    ship: ItemType!
   }
 `

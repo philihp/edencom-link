@@ -38,6 +38,9 @@ import {
   type ContractItemRow,
   type OurIds,
 } from './contracts'
+import { fittingRoute, type FittingItem } from '@/app/fitting/fit'
+import { marshalledRoute } from '@/app/api/fittings/marshalledHandle'
+import { itemCount, moduleSummary } from './fittingSummary'
 import { excludeFlagsExpression, resolveHangarFilters, type HangarArgs } from './hangarFlags'
 import { resolveLocationByTokens, searchLocationCandidates } from './locationSearch'
 import { resolveTargets, restockLines, type Stack } from './restock'
@@ -56,11 +59,16 @@ const queryFailed = (): never => {
 // the fuzzy SDE search (with the MCP layer's "too many matches" guard);
 // `types` takes exact type ids and whole type names, mixed. parseRefFilter
 // rejects passing both.
-const typeIdsFor = async (args: {
-  type?: string | null
-  types?: readonly string[] | null
-}): Promise<number[] | null> => {
-  const parsed = parseRefFilter(args.type, args.types, 'type')
+const typeIdsFor = async (
+  args: {
+    type?: string | null
+    types?: readonly string[] | null
+  },
+  // The dimension's name in a refusal: the fittings lists reuse this for their
+  // hull filter, which is an item type under another argument name.
+  label = 'type'
+): Promise<number[] | null> => {
+  const parsed = parseRefFilter(args.type, args.types, label)
   if (!parsed.ok) return badRequest(parsed.message)
   const query = parsed.query
   if (query.kind === 'none') return null
@@ -449,6 +457,41 @@ const assetLocationRef = (row: AssetRow): LocationRef | null =>
         id: String(row.location_id),
         type: row.location_type === 'station' || row.location_type === 'solar_system' ? row.location_type : null,
       }
+
+// ── fittings (docs/fitting-marshal.md PR 5) ──────────────────────────────
+
+type FittingLike = {
+  name: string | null
+  description: string | null
+  ship_type_id: number | string
+  items: FittingItem[] | null
+}
+
+// The module and name filters run in JS over the owner's whole library (a few
+// hundred rows at most): a jsonb containment probe per type id would be more
+// query than it saves.
+const fittingFilters =
+  (moduleTypeIds: number[] | null, name: string | null | undefined) =>
+  (row: FittingLike): boolean => {
+    if (moduleTypeIds && !(row.items ?? []).some((i) => moduleTypeIds.includes(Number(i.type_id)))) return false
+    const needle = (name ?? '').trim().toLowerCase()
+    if (needle && !`${row.name ?? ''} ${row.description ?? ''}`.toLowerCase().includes(needle)) return false
+    return true
+  }
+
+const fittingTypeIds = (rows: readonly FittingLike[]): number[] =>
+  rows.flatMap((r) => [Number(r.ship_type_id), ...(r.items ?? []).map((i) => Number(i.type_id))])
+
+// The columns Fitting and MarshalledFitting share.
+const fittingColumns = (r: FittingLike, types: SdeTypes) => ({
+  name: r.name ?? '',
+  description: r.description ?? '',
+  shipTypeId: String(r.ship_type_id),
+  shipTypeName: typeNameOf(types, r.ship_type_id),
+  itemCount: itemCount(r.items),
+  moduleSummary: moduleSummary(r.items, (typeId) => typeNameOf(types, typeId)),
+  ship: itemTypeOf(types, r.ship_type_id),
+})
 
 export const resolvers = {
   Query: {
@@ -1097,6 +1140,120 @@ export const resolvers = {
           ),
         }))
         .sort((a, b) => a.ownerName.localeCompare(b.ownerName))
+    },
+
+    fittings: async (
+      _parent: unknown,
+      args: {
+        ship?: string | null
+        ships?: readonly string[] | null
+        type?: string | null
+        types?: readonly string[] | null
+        name?: string | null
+        owner?: string | null
+        owners?: readonly string[] | null
+        limit?: number | null
+      },
+      ctx: GraphqlContext
+    ) => {
+      // Own registrations only — the leak guard, and also what keeps a fit
+      // shared IN (which character_fitting's RLS would otherwise surface in
+      // session mode) off this own-data list.
+      const ownerIds = await characterScopeFor(ctx, args, 'Fittings')
+      const [shipTypeIds, moduleTypeIds] = await Promise.all([
+        typeIdsFor({ type: args.ship, types: args.ships }, 'ship'),
+        typeIdsFor(args),
+      ])
+      const filters = fittingFilters(moduleTypeIds, args.name)
+
+      type Row = {
+        registration_id: string
+        fitting_id: number | string
+        name: string | null
+        description: string | null
+        ship_type_id: number | string
+        items: FittingItem[] | null
+      }
+      // A library is at most 500 fits per character, so the whole owner scope
+      // is read and the module/name filters run here; the cap trims the end.
+      const rows = await fetchCapped<Row>((from, to) => {
+        let query = ctx.supabase
+          .from('character_fitting')
+          .select('registration_id, fitting_id, name, description, ship_type_id, items')
+          .in('registration_id', ownerIds)
+        if (shipTypeIds) query = query.in('ship_type_id', shipTypeIds)
+        return query.order('ship_type_id').order('name').range(from, to)
+      }, ctx.caps.list)
+      const kept = rows.filter(filters).slice(0, clampLimit(args.limit, ctx.caps.list))
+
+      const types = await typesFor(fittingTypeIds(kept))
+      const characters = ownCharacters(ctx)
+      return kept.map((r) => ({
+        fittingId: String(r.fitting_id),
+        ...fittingColumns(r, types),
+        url: fittingRoute(ctx.ownerCharacterIdById.get(r.registration_id) ?? r.registration_id, r.fitting_id),
+        ...ownerFieldsOf({ kind: 'character', registrationId: r.registration_id }, characters, new Map(), ownerIds),
+      }))
+    },
+
+    marshalledFittings: async (
+      _parent: unknown,
+      args: {
+        ship?: string | null
+        ships?: readonly string[] | null
+        type?: string | null
+        types?: readonly string[] | null
+        name?: string | null
+        limit?: number | null
+      },
+      ctx: GraphqlContext
+    ) => {
+      const [shipTypeIds, moduleTypeIds] = await Promise.all([
+        typeIdsFor({ type: args.ship, types: args.ships }, 'ship'),
+        typeIdsFor(args),
+      ])
+      const filters = fittingFilters(moduleTypeIds, args.name)
+
+      type Row = {
+        content_hash: string
+        name: string
+        description: string
+        ship_type_id: number | string
+        items: FittingItem[] | null
+        source_registration_id: string | null
+        source_fitting_id: number | string | null
+        source: string
+        marshalled_at: string
+      }
+      // user_id is the leak guard here: the archive is account-level, and in
+      // token mode the service client reads every account's rows without it.
+      const rows = await fetchCapped<Row>((from, to) => {
+        let query = ctx.supabase
+          .from('marshalled_fitting')
+          .select(
+            'content_hash, name, description, ship_type_id, items, source_registration_id, source_fitting_id, source, marshalled_at'
+          )
+          .eq('user_id', ctx.userId)
+        if (shipTypeIds) query = query.in('ship_type_id', shipTypeIds)
+        return query.order('marshalled_at', { ascending: false }).range(from, to)
+      }, ctx.caps.list)
+      const kept = rows.filter(filters).slice(0, clampLimit(args.limit, ctx.caps.list))
+
+      const types = await typesFor(fittingTypeIds(kept))
+      return kept.map((r) => ({
+        contentHash: r.content_hash,
+        ...fittingColumns(r, types),
+        // Provenance resolves only while the character is still the caller's:
+        // the context knows nothing else, which is the point.
+        sourceCharacterId:
+          r.source_registration_id == null ? null : (ctx.ownerCharacterIdById.get(r.source_registration_id) ?? null),
+        sourceCharacterName:
+          r.source_registration_id == null ? null : (ctx.ownerNameById.get(r.source_registration_id) ?? null),
+        sourceFittingId: str(r.source_fitting_id),
+        marshalledAt: r.marshalled_at,
+        source: r.source,
+        url: marshalledRoute(r.content_hash),
+      }))
     },
 
     contracts: async (
