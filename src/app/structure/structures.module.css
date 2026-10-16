@@ -401,19 +401,22 @@
 
 .tabList {
   display: flex;
-  gap: 14px;
+  gap: 4px;
 }
 
-/* Quiet uppercase tabs; the active one takes the ink colour and an underline.
-   Deliberately not the default button chrome — these switch a pane, they
-   don't act. */
+/* Quiet uppercase tabs. Deliberately not the default button chrome — these
+   switch a pane, they don't act. The active one is a tinted pill in bold ink
+   with an accent bar under it, so which pane is showing reads at a glance;
+   the others stay dim and unfilled. */
 .tab {
   border: 0;
+  border-radius: var(--radius-sm);
   background: none;
   cursor: pointer;
-  padding: 0;
+  padding: 4px 8px;
   font-family: var(--sans);
   font-size: 10px;
+  font-weight: 500;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--ink-faint);
@@ -421,12 +424,15 @@
 
 .tab:hover {
   color: var(--ink);
+  background: var(--paper-raised);
 }
 
-.tabActive {
+.tabActive,
+.tabActive:hover {
   color: var(--ink);
-  text-decoration: underline;
-  text-underline-offset: 4px;
+  font-weight: 700;
+  background: var(--accent-tint);
+  box-shadow: inset 0 -2px 0 var(--accent);
 }
 
 .tabCount {

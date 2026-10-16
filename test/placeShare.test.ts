@@ -1,7 +1,13 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 
-import { grantorKey, placeGrantors, placeShareSubject, subjectGrantors } from '../src/app/asset/placeShare.ts'
+import {
+  grantorKey,
+  placeGrantors,
+  placeShareSubject,
+  placeShareTab,
+  subjectGrantors,
+} from '../src/app/asset/placeShare.ts'
 
 const owners = {
   characters: [
@@ -88,6 +94,16 @@ describe('placeShareSubject', () => {
     assert.equal(
       placeShareSubject({ kind: 'corporation', corporationId: 1, name: 'Hard Knocks Inc.', ownsPlace: true }),
       'Hard Knocks Inc.’s structure and items here'
+    )
+  })
+})
+
+describe('placeShareTab', () => {
+  it('names the grantor alone', () => {
+    assert.equal(placeShareTab({ kind: 'character' }), 'Your characters')
+    assert.equal(
+      placeShareTab({ kind: 'corporation', corporationId: 1, name: "Big Brother's Holdings Inc.", ownsPlace: true }),
+      "Big Brother's Holdings Inc."
     )
   })
 })
