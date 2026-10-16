@@ -2,6 +2,7 @@ import { forEach, reduce, splitEvery } from 'ramda'
 
 import { corpAssets } from '../esi.js'
 import { sudoSupabase } from '../supabase.js'
+import { STUB_STRUCTURE_ID_BASE } from './gezSheet.js'
 import { claimRows, cli, fetchAllPages, forEachCorporation, forEachSequential, refreshAssetSummary } from './lib.js'
 
 const TAG = 'corp-assets'
@@ -167,12 +168,15 @@ export const runCorpAssets = ({ registrationIds } = {}) =>
         updated_at: now,
       }))
 
-    // Replace this corp's rig rows wholesale so removed/swapped rigs don't linger.
+    // Replace this corp's rig rows wholesale so removed/swapped rigs don't linger
+    // — all but the hand-imported stubs (importGezStructures.js), which no scan
+    // will ever see.
     if (structureIds.size > 0) {
       const { error: delErr } = await sudoSupabase
         .from('corp_structure_rig')
         .delete()
         .eq('corporation_id', corporation_id)
+        .lt('structure_id', STUB_STRUCTURE_ID_BASE)
       if (delErr) throw delErr
     }
     if (rigRows.length > 0) {
