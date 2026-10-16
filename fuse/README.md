@@ -38,16 +38,24 @@ every FUSE call.
 
 ```sh
 M=~/EVE/Fittings/"Philihp Hallgren"
-A=~/EVE/Archive
+S=~/EVE/Fittings/Marshalled               # the archive the server keeps
+A=~/EVE/Archive                           # an archive on your own disk
 
 ls "$M"                                   # every fitting saved in game
-cp "$M/Rifter - Cheap Tackle.json" "$A/"  # archive a copy
+mv "$M/Rifter - Cheap Tackle.json" "$S/"  # marshal: out of EVE, kept on the server
+mv "$S/Rifter - Cheap Tackle.json" "$M/"  # unmarshal: back into EVE
+mv "$M/Rifter - Cheap Tackle.json" ~/EVE/Fittings/"Alt Pilot"/   # transfer between characters
+cp "$M/Rifter - Cheap Tackle.json" "$A/"  # archive a copy on disk
 rm "$M/Rifter - Cheap Tackle.json"        # delete it in EVE, freeing a slot
 cp "$A/Rifter - Cheap Tackle.json" "$M/"  # months later, put it back
-df -k ~/EVE/Fittings                      # slots used and free
+cp "$A"/*.json "$S/"                      # move a disk archive onto the server (no slot changes)
+rm "$S/Rifter - Cheap Tackle.json"        # drop it from the server's archive (permanent)
+df -k ~/EVE/Fittings                      # slots used and free (the Marshalled folder has no cap)
 ```
 
-The archive is an ordinary folder — back it up, put it in git, sync it, grep
+`Marshalled/` is the account's own archive on the server: a fit moved there is
+deleted from the game and kept, to be moved back onto any of your characters
+later. A disk archive is an ordinary folder — back it up, put it in git, sync it, grep
 it. Each file is exactly the JSON object ESI returns for a fitting, so anything
 that speaks ESI fittings can read one, and this program is not needed to get a
 fit back out of the archive.
@@ -60,8 +68,11 @@ no slot and changes nothing. Copying in a file that is not a fitting fails the
 
 - **Edit a fit in place.** Fits are edited in the game client. Opening a file
   for writing gets `EACCES`; copy it out, `rm` it, copy a new one in.
-- **Rename, move, or make folders.** The structure is EVE's: characters are
-  folders because EVE has characters, and a fitting library has no folders.
+- **Rename within a folder, or make folders.** The structure is EVE's plus
+  the server's archive: characters are folders because EVE has characters,
+  `Marshalled/` because the account has an archive, and a fitting library has
+  no folders. The three moves above are the only renames; a fit's name comes
+  from its content, so the name you `mv` it to is not kept.
 - **Touch a character that hasn't granted the write scope.** Their folder is
   read-only, so `rm` fails before anything is asked of CCP.
 

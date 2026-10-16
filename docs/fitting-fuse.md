@@ -203,6 +203,8 @@ Go, built against [macFUSE](https://macfuse.io) through
 
 ```
 ~/EVE/Fittings/
+  Marshalled/
+    Hurricane - Old Doctrine.json
   Philihp Hallgren/
     Hurricane - Doctrine Cane.json
     Rifter - Cheap Tackle.json
@@ -210,8 +212,22 @@ Go, built against [macFUSE](https://macfuse.io) through
     …
 ```
 
-One folder per linked character, one file per saved fitting, two levels deep and
-no further — a fitting library has no folders in game either.
+One folder per linked character plus `Marshalled/`, the account's archive on
+the server ([`fitting-marshal.md`](fitting-marshal.md)); one file per fitting,
+two levels deep and no further — a fitting library has no folders in game
+either. **`mv` between folders is the marshal feature**: character →
+`Marshalled/` deletes the fit from the game and keeps it (`DELETE …?marshal=1`);
+`Marshalled/` → character saves it back (`PUT` restore, then `DELETE` from the
+archive); character → character transfers it (restore on the target, then
+archive on the source — the copy is made first, so a failure leaves the fit on
+both, never on neither). `cp` into `Marshalled/` stores a disk file on the
+server without touching the game (`PUT …/marshalled/{hash}`, the hash computed
+client-side as `vfs.ContentHash`, pinned against the server's vectors; a
+mismatch is answered with the server's hash and retried there once). `rm` in
+`Marshalled/` is the one permanent delete, and only on the server. Any other
+rename is `EPERM`, deliberately never `EXDEV`: `EXDEV` makes `mv` fall back to
+copy-then-unlink, which inside the archive is a `PUT` of the same content
+followed by a `DELETE` of it.
 
 **Filenames lead with the hull**, because that is how a fitting library is
 actually browsed ("what do I have for a Hurricane"), and it makes an

@@ -10,7 +10,13 @@ package vfs
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
+	"sort"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -33,6 +39,9 @@ type Fitting struct {
 
 	ShipName string    `json:"ship_name"`
 	Modified time.Time `json:"modified"`
+	// The server's handle for a marshalled fit; empty on a live one, whose
+	// handle is its FittingID.
+	ContentHash string `json:"content_hash"`
 }
 
 // Character is one linked EVE character and everything they have saved.
@@ -87,4 +96,72 @@ func Render(f Fitting) []byte {
 		Items:       items,
 	})
 	return buf.Bytes()
+}
+
+// MarshalledDirName is the top-level folder holding the account's marshalled
+// fits (docs/fitting-marshal.md): fits that are ours but in no game client.
+// It takes the name before any character does, so a pilot called
+// "Marshalled" mounts as "Marshalled (2)".
+const MarshalledDirName = "Marshalled"
+
+// ContentHash is the server's identity for a fit's content — the handle a
+// marshalled fit is addressed by — computed the way src/fittingArchive.ts
+// computes it: sha256 over the JSON of [ship_type_id, name, description,
+// items] with the items normalized (sorted by "flag:type_id" as a string, the
+// same key the extract and the server sort on) and reduced to
+// [type_id, flag, quantity] rows. HTML escaping is off, as JSON.stringify's
+// is. The one known divergence is U+2028/U+2029 in a name, which Go always
+// escapes and JavaScript never does; the server answers such a PUT with the
+// hash it computed, and PutMarshalled retries there, so the mismatch costs a
+// round trip and never a wrong file. Pinned against the server's own vectors
+// in marshal_test.go.
+func ContentHash(f Fitting) string {
+	items := normalizedItems(f.Items)
+	rows := make([][]any, 0, len(items))
+	for _, item := range items {
+		rows = append(rows, []any{item.TypeID, item.Flag, item.Quantity})
+	}
+	var buf bytes.Buffer
+	encoder := json.NewEncoder(&buf)
+	encoder.SetEscapeHTML(false)
+	_ = encoder.Encode([]any{f.ShipTypeID, f.Name, f.Description, rows})
+	sum := sha256.Sum256(bytes.TrimSuffix(buf.Bytes(), []byte("\n")))
+	return hex.EncodeToString(sum[:])
+}
+
+func normalizedItems(items []Item) []Item {
+	out := append([]Item(nil), items...)
+	for i := range out {
+		if out[i].Quantity == 0 {
+			out[i].Quantity = 1
+		}
+	}
+	key := func(i Item) string { return i.Flag + ":" + strconv.FormatInt(i.TypeID, 10) }
+	sort.SliceStable(out, func(a, b int) bool { return key(out[a]) < key(out[b]) })
+	return out
+}
+
+// ParseFile reads an archive file the way the server's parseArchiveFitting
+// does, far enough to compute its hash: the four content fields, unknown keys
+// ignored, the name trimmed (the server trims it before hashing, so a file with
+// a padded name hashes to the trimmed form on both sides). Validation proper
+// stays on the server — this only has to agree with it on the handle.
+func ParseFile(file []byte) (Fitting, error) {
+	var parsed struct {
+		FittingID   int64  `json:"fitting_id"`
+		Name        string `json:"name"`
+		Description string `json:"description"`
+		ShipTypeID  int64  `json:"ship_type_id"`
+		Items       []Item `json:"items"`
+	}
+	if err := json.Unmarshal(file, &parsed); err != nil {
+		return Fitting{}, fmt.Errorf("not a fitting file: %w", err)
+	}
+	return Fitting{
+		FittingID:   parsed.FittingID,
+		Name:        strings.TrimSpace(parsed.Name),
+		Description: parsed.Description,
+		ShipTypeID:  parsed.ShipTypeID,
+		Items:       parsed.Items,
+	}, nil
 }
