@@ -34,6 +34,7 @@ const ROW_TYPES = [
   'Asset',
   'Blueprint',
   'Contract',
+  'Fitting',
   'IndustryJob',
   'MarketOrder',
   'ShareGrant',
@@ -58,6 +59,7 @@ test('the owner filter is on every list, including the character-only ones', () 
     'assets',
     'blueprints',
     'contracts',
+    'fittings',
     'industryJobs',
     'marketOrders',
     'restock',
@@ -103,13 +105,52 @@ test('the SDL parses and exposes the expected query fields', () => {
     'characters',
     'contracts',
     'corporations',
+    'fittings',
     'industryJobs',
     'marketOrders',
+    'marshalledFittings',
     'restock',
     'sharedWithMe',
     'walletBalances',
     'walletTransactions',
   ])
+})
+
+// The archive is the account's, not a character's (docs/fitting-marshal.md),
+// so marshalledFittings takes no owner filter and its row carries no owner
+// block — like RestockLine, it is deliberately outside ROW_TYPES. The fit's
+// provenance is three nullable scalars instead, and the handle is the hash.
+test('marshalledFittings is account-level: no owner filter, provenance scalars, the hash as handle', () => {
+  const schema = buildSchema(typeDefs)
+  const query = schema.getQueryType() as GraphQLObjectType
+  const args = query.getFields().marshalledFittings.args.map((a) => a.name)
+  assert.ok(!args.includes('owner') && !args.includes('owners'), 'no owner filter on the archive')
+  for (const name of ['ship', 'ships', 'type', 'types', 'name', 'limit']) {
+    assert.ok(args.includes(name), `marshalledFittings.${name}`)
+  }
+  const row = objectType(schema, 'MarshalledFitting').getFields()
+  assert.equal(String(row.contentHash.type), 'String!')
+  assert.equal(String(row.sourceCharacterId.type), 'String')
+  assert.equal(String(row.sourceCharacterName.type), 'String')
+  assert.equal(String(row.marshalledAt.type), 'String!')
+  assert.equal(row.ownerType, undefined)
+  assert.equal(row.character, undefined)
+  // Still CSV-flat: the only object it points at is an entity type.
+  for (const field of Object.values(row)) {
+    const target = getNamedType(field.type)
+    if (isObjectType(target)) assert.ok(ENTITY_TYPES.includes(target.name), `MarshalledFitting.${field.name}`)
+  }
+})
+
+test('both fitting rows flatten their modules to one cell', () => {
+  const schema = buildSchema(typeDefs)
+  for (const name of ['Fitting', 'MarshalledFitting']) {
+    const fields = objectType(schema, name).getFields()
+    assert.equal(String(fields.moduleSummary.type), 'String', `${name}.moduleSummary`)
+    assert.equal(String(fields.itemCount.type), 'Int!', `${name}.itemCount`)
+    assert.equal(String(fields.url.type), 'String!', `${name}.url`)
+    assert.equal(fields.items, undefined, `${name}.items would be a list, which no row may carry`)
+  }
 })
 
 test('assets carries the opt-in includeShared arg, default false', () => {

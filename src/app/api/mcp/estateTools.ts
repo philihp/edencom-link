@@ -17,6 +17,7 @@ import { z } from 'zod'
 import { MAX_LINES } from '@/app/api/appraisal/assetLines'
 import { hullPricedAppraisal } from '@/app/api/appraisal/pricedLines'
 import { collectAssetLines } from '@/app/api/appraisal/collectAssetLines'
+import { marshalledRoute } from '@/app/api/fittings/marshalledHandle'
 import { fittingRoute, flagSortKey, groupForFlag, type FittingItem, type FittingRow } from '@/app/fitting/fit'
 import { fetchFittingOwners } from '@/app/fitting/resolveCharacter'
 import { resolveLocations, type LocationRef } from '@/app/resolveLocations'
@@ -755,22 +756,39 @@ export const registerEstateTools = (server: McpServer): void => {
           .boolean()
           .optional()
           .describe("Include each fit's full module list, grouped by slot (default false — the listing stays compact)"),
+        include_marshalled: z
+          .boolean()
+          .optional()
+          .describe(
+            "Also list the fits marshalled OUT of the game into this account's archive (held on the site, in no character's client; see /fitting/marshalled). They come back as a separate `marshalled` array, each with the content_hash that is its handle. Default false."
+          ),
       }),
     },
-    async ({ ship, name, owner, module, include_items }, ctx) => {
+    async ({ ship, name, owner, module, include_items, include_marshalled }, ctx) => {
       const supabase = clientFor(ctx)
       if (!supabase) return textResult('Missing bearer token.')
 
-      const [{ data: fittingRows }, owners] = await Promise.all([
+      const [{ data: fittingRows }, owners, { data: marshalledRows }] = await Promise.all([
         supabase
           .from('character_fitting')
           .select('registration_id, fitting_id, name, description, ship_type_id, items'),
         fetchOwnerContext(supabase),
+        // RLS hands the caller their own archive and nobody else's; no owner
+        // filter applies, since the archive is the account's.
+        include_marshalled
+          ? supabase
+              .from('marshalled_fitting')
+              .select(
+                'content_hash, name, description, ship_type_id, items, source_registration_id, source, marshalled_at'
+              )
+              .order('marshalled_at', { ascending: false })
+          : Promise.resolve({ data: [] as MarshalledRow[] }),
       ])
 
       const fittings = (fittingRows ?? []) as FittingRow[]
+      const marshalled = (marshalledRows ?? []) as MarshalledRow[]
       const freshness = await dataFreshness(supabase, ['character-fittings'])
-      if (fittings.length === 0) {
+      if (fittings.length === 0 && marshalled.length === 0) {
         return textResult({
           total_fittings: 0,
           fittings: [],
@@ -807,8 +825,11 @@ export const registerEstateTools = (server: McpServer): void => {
       const typeNames = await getSdeTypeNames([
         ...fittings.map((f) => Number(f.ship_type_id)),
         ...fittings.flatMap((f) => (f.items ?? []).map((i) => Number(i.type_id))),
+        ...marshalled.map((m) => Number(m.ship_type_id)),
+        ...marshalled.flatMap((m) => (m.items ?? []).map((i) => Number(i.type_id))),
       ])
-      const hullOf = (f: FittingRow) => typeNames[Number(f.ship_type_id)] ?? `Type #${f.ship_type_id}`
+      const hullOf = (f: { ship_type_id: number | string }) =>
+        typeNames[Number(f.ship_type_id)] ?? `Type #${f.ship_type_id}`
 
       const shipNeedle = (ship ?? '').trim().toLowerCase()
       const nameNeedle = (name ?? '').trim().toLowerCase()
@@ -827,7 +848,7 @@ export const registerEstateTools = (server: McpServer): void => {
       // The module list, grouped by slot family the way the fitting window
       // shows it. Same helpers the /fitting detail page uses, so the two can't
       // disagree about what counts as a rig or a bay.
-      const itemsOf = (f: FittingRow) => {
+      const itemsOf = (f: { items: FittingItem[] | null }) => {
         const ordered = sortWith<FittingItem>(
           [ascend((i) => flagSortKey(i.flag)), ascend((i) => i.flag), ascend((i) => Number(i.type_id))],
           f.items ?? []
@@ -855,12 +876,58 @@ export const registerEstateTools = (server: McpServer): void => {
         ...(include_items ? { slots: itemsOf(f) } : {}),
       }))
 
+      // The archive, under the same ship/name/module filters (never the owner
+      // filter: a marshalled fit has no character). Provenance names a source
+      // character only while it is still on the account.
+      const marshalledMatched = sortWith<MarshalledRow>(
+        [ascend(hullOf), ascend((m) => (m.name ?? '').toLowerCase())],
+        marshalled.filter((m) => {
+          if (shipNeedle && !hullOf(m).toLowerCase().includes(shipNeedle)) return false
+          if (nameNeedle && !`${m.name ?? ''} ${m.description ?? ''}`.toLowerCase().includes(nameNeedle)) return false
+          if (moduleTypeIds && !(m.items ?? []).some((i) => moduleTypeIds.has(Number(i.type_id)))) return false
+          return true
+        })
+      )
+      const marshalledShown = marshalledMatched.slice(0, MAX_ROWS).map((m) => ({
+        ship: hullOf(m),
+        name: m.name || 'Unnamed fitting',
+        ...(m.description ? { description: m.description } : {}),
+        content_hash: m.content_hash,
+        marshalled_at: m.marshalled_at,
+        source: m.source,
+        ...(m.source_registration_id && nameById.get(m.source_registration_id)
+          ? { marshalled_from: nameById.get(m.source_registration_id) }
+          : {}),
+        item_count: (m.items ?? []).length,
+        url: marshalledRoute(m.content_hash),
+        ...(include_items ? { slots: itemsOf(m) } : {}),
+      }))
+
       return textResult({
         total_fittings: sorted.length,
         fittings: rows,
         note: capNote(sorted.length, rows.length, 'fittings'),
+        ...(include_marshalled
+          ? {
+              total_marshalled: marshalledMatched.length,
+              marshalled: marshalledShown,
+              marshalled_note: capNote(marshalledMatched.length, marshalledShown.length, 'marshalled fittings'),
+            }
+          : {}),
         data_refreshed: freshness,
       })
     }
   )
+}
+
+// One row of marshalled_fitting as list_fittings reads it (docs/fitting-marshal.md).
+type MarshalledRow = {
+  content_hash: string
+  name: string
+  description: string
+  ship_type_id: number | string
+  items: FittingItem[] | null
+  source_registration_id: string | null
+  source: string
+  marshalled_at: string
 }
