@@ -19,6 +19,10 @@ type ShareFormProps = {
   // Overrides the what-sharing-means line for subjects that aren't a
   // container of items (a link shares query results, not an item tree).
   hint?: string
+  // A subject-specific audience beside the standard three — today only the
+  // structure share's "people with jobs here" (ShareState.tenants). Rendered
+  // as one more checkbox, disabled like the rest when the share is public.
+  extraAudience?: { label: string; description?: string }
   // Called with the share's new state after a save (or null after "stop
   // sharing"), for a parent that shows whether anything is shared.
   onShareChange?: (share: ShareState | null) => void
@@ -35,6 +39,7 @@ export const ShareForm = ({
   save: saveAction,
   revoke: revokeAction,
   hint,
+  extraAudience,
   onShareChange,
   onClose,
 }: ShareFormProps) => {
@@ -44,6 +49,7 @@ export const ShareForm = ({
   const [link, setLink] = useState(data.share?.hasLink ?? false)
   const [isPublic, setIsPublic] = useState(data.share?.isPublic ?? false)
   const [showAsMain, setShowAsMain] = useState(data.share?.showAsMain ?? false)
+  const [tenants, setTenants] = useState(data.share?.tenants ?? false)
   const [copied, setCopied] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
@@ -70,6 +76,7 @@ export const ShareForm = ({
         rotateLink,
         isPublic,
         ...(data.mainName ? { showAsMain } : {}),
+        ...(extraAudience ? { tenants } : {}),
       })
       if (result.error) setError(result.error)
       else if (result.share) {
@@ -92,6 +99,7 @@ export const ShareForm = ({
         setLink(false)
         setIsPublic(false)
         setShowAsMain(false)
+        setTenants(false)
         setCopied(false)
       }
     })
@@ -151,6 +159,16 @@ export const ShareForm = ({
           ))
         )}
       </fieldset>
+
+      {extraAudience ? (
+        <fieldset className={styles.audience} disabled={isPublic}>
+          <legend>{extraAudience.label}</legend>
+          <label>
+            <input type="checkbox" checked={tenants} onChange={(e) => setTenants(e.target.checked)} />
+            {extraAudience.description ?? extraAudience.label}
+          </label>
+        </fieldset>
+      ) : null}
 
       <fieldset className={styles.audience} disabled={isPublic}>
         <legend>Share link</legend>

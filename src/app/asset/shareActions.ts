@@ -21,6 +21,10 @@ export type SaveShareInput = {
   isPublic: boolean
   // Show the account's main character as the owner (asset shares only).
   showAsMain?: boolean
+  // The structure share's extra audience: everyone with a job at the structure
+  // in the last 30 days (docs/sharing-layer/12-structure-share.md). Only the
+  // structure writer reads it.
+  tenants?: boolean
 }
 
 export type SaveShareResult = { error?: string; share?: ShareState }
