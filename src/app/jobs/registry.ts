@@ -241,3 +241,35 @@ export const isOverdue = (job: string, lastRunAt: string | null | undefined, fro
   if (due > from.getTime()) return false
   return lastRunAt == null || new Date(lastRunAt).getTime() < previous.getTime()
 }
+
+// ── Grant-only columns ─────────────────────────────────────────────────────
+//
+// A scope with no extract job behind it still belongs on the /account/
+// registrations matrix, because the matrix is where a player sees what each
+// character has granted and re-auths to change it. There is one today: the
+// fittings WRITE scope (docs/fitting-marshal.md), which no job pulls under — it
+// lets the fitting pages and the FUSE mount marshal, unmarshal and transfer
+// fits, and is opt-in (never requested unless the template asks). Its column
+// has a grant icon and a template checkbox like the others, but no last-run,
+// no next-run and no refresh button: nothing runs, the grant simply is or
+// isn't there.
+export type GrantColumn = {
+  key: string
+  label: string
+  section: JobSection
+  scopes: readonly string[]
+  // The header's title: what the grant is for, since no job name explains it.
+  why: string
+}
+
+export const GRANT_COLUMNS: readonly GrantColumn[] = [
+  {
+    key: 'fittings-write',
+    label: 'save & delete fits',
+    section: 'character',
+    scopes: ['esi-fittings.write_fittings.v1'],
+    why: 'esi-fittings.write_fittings.v1 — no extract job; lets a fit be marshalled out of this character’s saved fittings, unmarshalled back, or transferred to another character, from the fitting pages and the FUSE mount. Opt-in: only requested when checked here.',
+  },
+]
+
+export const grantColumnsInSection = (section: JobSection) => GRANT_COLUMNS.filter((c) => c.section === section)

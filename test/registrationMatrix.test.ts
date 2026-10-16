@@ -9,6 +9,7 @@ import {
   blockedCellCount,
   columnGrant,
   grantAllowsRun,
+  grantOnlyCellText,
   soonestNextRun,
   templateCheck,
   trailingScopes,
@@ -72,4 +73,14 @@ test('soonestNextRun picks the earliest fire and ignores manual-only jobs', () =
   assert.equal(soonestNextRun([late, null, early]), early)
   assert.equal(soonestNextRun([null, null]), null)
   assert.equal(soonestNextRun([]), null)
+})
+
+test('grantOnlyCellText: a scope with no job behind it reads as its grant state alone', () => {
+  // The fittings write scope's column (registry.ts GRANT_COLUMNS): nothing
+  // runs, so the cell says whether the grant is there and, if requested but
+  // not granted, that a re-auth is how to get it.
+  assert.equal(grantOnlyCellText('on'), 'granted')
+  assert.equal(grantOnlyCellText('extra'), 'granted')
+  assert.equal(grantOnlyCellText('missing'), 'not granted — re-auth')
+  assert.equal(grantOnlyCellText('off'), '—')
 })

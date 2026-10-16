@@ -68,3 +68,12 @@ export const soonestNextRun = (nexts: readonly (Date | null)[]): Date | null =>
     (soonest, next) => (next !== null && (soonest === null || next < soonest) ? next : soonest),
     null
   )
+
+// What a grant-only column's cell says (registry.ts GRANT_COLUMNS): there is
+// no run to date, so the grant state is the whole content. 'missing' is the
+// one that asks for something — a re-auth would grant it.
+export const grantOnlyCellText = (state: GrantState): string => {
+  if (state === 'missing') return 'not granted — re-auth'
+  if (state === 'off') return '—'
+  return 'granted'
+}

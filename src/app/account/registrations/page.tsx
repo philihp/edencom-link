@@ -24,7 +24,14 @@ import { formatBisk } from '../../isk'
 import { type Registration, fetchJobsOverview } from '../../jobs/jobsData'
 import { NextRun } from '../../jobs/nextRun'
 import { RefreshPoller } from '../../jobs/poller'
-import { type JobEntry, isOverdue, jobsInSection, nextRunFor } from '../../jobs/registry'
+import {
+  type GrantColumn,
+  type JobEntry,
+  grantColumnsInSection,
+  isOverdue,
+  jobsInSection,
+  nextRunFor,
+} from '../../jobs/registry'
 import { type EntityRun, isAbandoned, newestRun } from '../../jobs/rows'
 import { Name } from '../../names'
 import {
@@ -32,6 +39,7 @@ import {
   blockedCellCount,
   columnGrant,
   grantAllowsRun,
+  grantOnlyCellText,
   soonestNextRun,
   templateCheck,
   trailingScopes,
@@ -161,6 +169,33 @@ const ColumnHead = ({ entry, entities, sweep }: { entry: JobEntry; entities: Ent
   </span>
 )
 
+// A grant-only column's cell (registry.ts GRANT_COLUMNS): the grant icon and
+// what it means, nothing about runs — there are none.
+const GrantCell = ({ label, grant }: { label: string; grant: GrantState }) => (
+  <span className={styles.cell} data-grant={grant}>
+    <span className={styles.cellLabel}>{label}</span>
+    <span className={styles.grantIcon} data-grant={grant} title={GRANT_TITLE[grant]}>
+      {GRANT_GLYPH[grant]}
+    </span>
+    <span className={styles.cellBody}>
+      <span className={grant === 'missing' ? styles.cellBlocked : grant === 'off' ? styles.cellOff : styles.cellTime}>
+        {grantOnlyCellText(grant)}
+      </span>
+    </span>
+  </span>
+)
+
+// Its header: the label over "grant only", where a job column shows its next
+// fire. The title says what the grant unlocks, since there is no job to name.
+const GrantColumnHead = ({ column }: { column: GrantColumn }) => (
+  <span className={styles.columnHead}>
+    <span className={styles.columnLabel} title={column.why}>
+      {column.label}
+    </span>
+    <span className={styles.columnNext}>grant only</span>
+  </span>
+)
+
 const RegistrationPage = async () => {
   const supabase = await createClient()
 
@@ -181,6 +216,7 @@ const RegistrationPage = async () => {
   )
 
   const characterJobs = jobsInSection('character')
+  const characterGrants = grantColumnsInSection('character')
   const corporationJobs = jobsInSection('corporation')
   const overviewById = new Map(characters.map((c) => [c.id, c]))
   const entityById = (job: string) => new Map((jobs.characterEntities[job] ?? []).map((e) => [e.id, e]))
@@ -194,16 +230,21 @@ const RegistrationPage = async () => {
 
   // The legend's warn summary counts every requested-but-ungranted cell.
   const blocked = blockedCellCount(
-    jobs.registrations.flatMap((r) => characterJobs.map((entry) => columnGrant(entry.scopes, granted(r.id), template)))
+    jobs.registrations.flatMap((r) =>
+      [...characterJobs, ...characterGrants].map((entry) => columnGrant(entry.scopes, granted(r.id), template))
+    )
   )
 
   // One countdown for the page: the soonest next fire across the per-character
   // jobs (each column's own sits in its header).
   const nextSweep = soonestNextRun(characterJobs.map((entry) => nextRunFor(entry.job)))
 
-  const requestedColumns = characterJobs.filter((entry) => templateCheck(entry.scopes, template) === 'all').length
+  const requestedColumns = [...characterJobs, ...characterGrants].filter(
+    (entry) => templateCheck(entry.scopes, template) === 'all'
+  ).length
+  const characterColumns = characterJobs.length + characterGrants.length
 
-  const columnStyle = { '--cols': characterJobs.length } as CSSProperties
+  const columnStyle = { '--cols': characterColumns } as CSSProperties
   const corpColumnStyle = { '--cols': corporationJobs.length } as CSSProperties
 
   // The caller's corporations with their registered members, in registration
@@ -243,8 +284,14 @@ const RegistrationPage = async () => {
           <TemplateToggle scopes={entry.scopes} check={templateCheck(entry.scopes, template)} label={entry.label} />
         </span>
       ))}
+      {characterGrants.map((column) => (
+        <span key={column.key} className={styles.cell}>
+          <span className={styles.cellLabel}>{column.label}</span>
+          <TemplateToggle scopes={column.scopes} check={templateCheck(column.scopes, template)} label={column.label} />
+        </span>
+      ))}
       <span className={styles.templateCount}>
-        {requestedColumns} of {characterJobs.length}
+        {requestedColumns} of {characterColumns}
       </span>
     </div>
   )
@@ -304,6 +351,9 @@ const RegistrationPage = async () => {
                 sweep={characters.length > 1 && entry.kickable === 'always'}
               />
             ))}
+            {characterGrants.map((column) => (
+              <GrantColumnHead key={column.key} column={column} />
+            ))}
             <span className={styles.columnLabel}>All jobs</span>
           </div>
 
@@ -319,8 +369,8 @@ const RegistrationPage = async () => {
                   <div className={styles.ghostAvatar} />
                   <div className={styles.ghostBar} />
                 </div>
-                {characterJobs.map((entry) => (
-                  <span key={entry.job} className={styles.cell}>
+                {[...characterJobs.map((e) => e.job), ...characterGrants.map((c) => c.key)].map((key) => (
+                  <span key={key} className={styles.cell}>
                     <span className={styles.ghostCell} />
                   </span>
                 ))}
@@ -441,6 +491,13 @@ const RegistrationPage = async () => {
                       grant={columnGrant(entry.scopes, scopes, template)}
                       kickable={entry.kickable === 'always'}
                       now={jobs.now}
+                    />
+                  ))}
+                  {characterGrants.map((column) => (
+                    <GrantCell
+                      key={column.key}
+                      label={column.label}
+                      grant={columnGrant(column.scopes, scopes, template)}
                     />
                   ))}
                   <span className={styles.rowTail}>
