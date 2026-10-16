@@ -476,10 +476,12 @@ PRs 3 and 4 both depend on 2 and are independent of each other.
 
 ## Open questions
 
-- **Should a FUSE `rm` in a character folder also marshal?** Still
-  recommended no: `rm` means what it has always meant on the mount, and the
-  player who wants the copy kept here has `mv` to `Marshalled/`. The flag is
-  per request, so flipping the client's default later is one line.
+- **Should a FUSE `rm` in a character folder also marshal?** **Decided
+  2026-10-16: no.** `rm` deletes, full stop — the write log is the only copy
+  it leaves. Marshalling means getting a fit _out of ESI_ and onto disk or
+  into Supabase, and on the mount that is a copy: `cp` to a folder on disk,
+  or `mv` to `Marshalled/`. The two are not conflated, so a player who wants
+  a fit gone keeps `rm` meaning exactly that.
 - **Duplicate on unmarshal.** When the target already holds the same
   content, `restoreFitting` answers `created: false` with the existing id.
   The plan deletes the marshal row anyway, since the fit is in game. The
