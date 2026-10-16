@@ -104,6 +104,9 @@ export type MatrixEntry = {
   name: string
   shipTypeId: number
   owner?: string
+  // Held in the account's archive rather than in any character's game client
+  // (docs/fitting-marshal.md); the cell dims it and tags it.
+  marshalled?: boolean
 }
 
 // One fit placed in the matrix, with everything the cell renders.
@@ -112,6 +115,7 @@ export type MatrixFit = {
   name: string
   hull: string
   owner?: string
+  marshalled?: boolean
 }
 
 export type MatrixRow = { shipClass: string; cells: Record<RaceColumn, MatrixFit[]> }
@@ -131,6 +135,7 @@ export const buildMatrix = (entries: MatrixEntry[], typeById: Record<number, Sde
         name: e.name,
         hull: type?.name ?? `#${e.shipTypeId}`,
         ...(e.owner ? { owner: e.owner } : {}),
+        ...(e.marshalled ? { marshalled: true } : {}),
       },
     }
   })

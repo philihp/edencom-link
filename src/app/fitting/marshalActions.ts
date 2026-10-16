@@ -8,6 +8,7 @@ import { establishedUser } from '../account/lib/establishedUser'
 import {
   type Caller,
   callerForUser,
+  deleteMarshalled,
   isFailure,
   marshalFitting,
   type Registration,
@@ -129,4 +130,24 @@ export const transferFittingAction = async (
       : undefined
   if (href) revalidatePath(href)
   return { error: outcome.message, ...(href ? { href } : {}) }
+}
+
+/**
+ * Delete a marshalled fit from the archive. Permanent and ESI-free: a fit that
+ * arrived through an ESI delete is still in fitting_write_log, and one copied
+ * in from a file is still on that disk, so the archive can be pruned without
+ * touching the recovery story.
+ */
+export const deleteMarshalledAction = async (contentHash: string): Promise<{ error?: string; href?: string }> => {
+  const caller = await signedInCaller()
+  if (isRefusal(caller)) return caller
+  const hash = parseMarshalledHandle(contentHash)
+  if (hash === null) return { error: 'Not a marshalled fitting' }
+
+  const deleted = await deleteMarshalled(caller, hash)
+  if (isFailure(deleted)) return { error: deleted.error }
+  if (!deleted) return { error: 'That fitting is not in the archive any more.' }
+
+  revalidate(marshalledRoute(hash))
+  return { href: '/fitting' }
 }

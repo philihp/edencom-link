@@ -4,7 +4,8 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { slotMeter, slotUsage, unmarshalTargets } from '../src/app/fitting/marshal/slots.ts'
+import { FITTING_SLOTS as CANONICAL } from '../src/fittingArchive.ts'
+import { FITTING_SLOTS, slotMeter, slotUsage, targetLabel, unmarshalTargets } from '../src/app/fitting/marshal/slots.ts'
 
 const main = { registrationId: 'r-main', characterId: '1001', name: 'Philihp Hallgren' }
 const alt = { registrationId: 'r-alt', characterId: '2002', name: 'Alt Pilot' }
@@ -76,4 +77,16 @@ test('slotMeter reads Pilot · used / cap, naming an unnamed character by id', (
   assert.equal(slotMeter(u), 'Philihp Hallgren · 487 / 500')
   const [v] = slotUsage([], [{ ...fresh, name: null }], new Set())
   assert.equal(slotMeter(v), 'Character #3003 · 0 / 500')
+})
+
+test('targetLabel names the character, the count against the cap, and why it is disabled', () => {
+  const usage = slotUsage([...rows('r-main', 3), ...rows('r-alt', 5)], [main, alt, fresh], new Set(['r-main']), 5)
+  const [a, b, c] = unmarshalTargets(usage).map((t) => targetLabel(t, 5))
+  assert.equal(a, 'Brand New · 0 / 5 — no write scope')
+  assert.equal(b, 'Philihp Hallgren · 3 / 5')
+  assert.equal(c, 'Alt Pilot · 5 / 5 — full')
+})
+
+test('the restated cap is the archive module’s canonical one', () => {
+  assert.equal(FITTING_SLOTS, CANONICAL)
 })
