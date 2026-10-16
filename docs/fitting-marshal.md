@@ -1,7 +1,7 @@
 # Plan: Marshal, Unmarshal and Transfer — moving fittings out of the 500-slot cap
 
 **Revised 2026-10-16; all five PRs shipped the same day** — 1 (table and store),
-2 (write path), 3 (web UI), 4 (the mount), 5 (GraphQL and MCP).** The first
+2 (write path), 3 (web UI), 4 (the mount), 5 (GraphQL and MCP). The first
 version of this plan merged on 2026-09-14 (#1038) and nothing in it was built. This revision re-reads it against the
 codebase a month later. The objective has not moved: EVE lets a character keep
 500 saved fittings, and a player should be able to **marshal** a fit out of
