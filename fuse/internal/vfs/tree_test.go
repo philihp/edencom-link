@@ -7,6 +7,10 @@ import (
 	"time"
 )
 
+// The pre-archive shape of the tree, for the tests that predate the
+// Marshalled folder: characters only.
+func buildTree(characters []Character) *Tree { return BuildTree(characters, nil) }
+
 func fit(id int64, ship, name string) Fitting {
 	return Fitting{
 		FittingID:  id,
@@ -66,7 +70,7 @@ func TestFileNameLeadsWithTheHull(t *testing.T) {
 }
 
 func TestDuplicateFitNamesBecomeDistinctFiles(t *testing.T) {
-	tree := BuildTree([]Character{{
+	tree := buildTree([]Character{{
 		CharacterID: "1",
 		Name:        "Philihp",
 		Writable:    true,
@@ -103,8 +107,8 @@ func TestBuildTreeIsDeterministic(t *testing.T) {
 		Name:        "Philihp",
 		Fittings:    []Fitting{fit(2, "Rifter", "PVP"), fit(1, "Rifter", "PVP"), fit(3, "Hurricane", "Doctrine")},
 	}}
-	first := BuildTree(characters)
-	second := BuildTree(characters)
+	first := buildTree(characters)
+	second := buildTree(characters)
 	for i := range first.Dirs {
 		for j := range first.Dirs[i].Files {
 			if first.Dirs[i].Files[j].Name != second.Dirs[i].Files[j].Name {
@@ -132,11 +136,12 @@ func TestCharactersWithTheSameNameGetSeparateFolders(t *testing.T) {
 	// Two accounts' worth of alts can genuinely collide, and a folder that
 	// silently absorbed another character's fits would be a way to delete the
 	// wrong pilot's fitting.
-	tree := BuildTree([]Character{
+	tree := buildTree([]Character{
 		{CharacterID: "1", Name: "Philihp", Fittings: []Fitting{fit(1, "Rifter", "A")}},
 		{CharacterID: "2", Name: "Philihp", Fittings: []Fitting{fit(1, "Rifter", "B")}},
 	})
-	if len(tree.Dirs) != 2 || tree.Dirs[0].Name == tree.Dirs[1].Name {
+	// Two characters plus the Marshalled folder, which is always last.
+	if len(tree.Dirs) != 3 || tree.Dirs[0].Name == tree.Dirs[1].Name || !tree.Dirs[2].Marshalled {
 		t.Fatalf("folders collided: %v", tree.Dirs)
 	}
 	second, ok := tree.LookupDir(tree.Dirs[1].Name)
@@ -146,7 +151,7 @@ func TestCharactersWithTheSameNameGetSeparateFolders(t *testing.T) {
 }
 
 func TestLookupIsCaseInsensitive(t *testing.T) {
-	tree := BuildTree([]Character{{CharacterID: "1", Name: "Philihp", Fittings: []Fitting{fit(1, "Rifter", "PVP")}}})
+	tree := buildTree([]Character{{CharacterID: "1", Name: "Philihp", Fittings: []Fitting{fit(1, "Rifter", "PVP")}}})
 	dir, ok := tree.LookupDir("PHILIHP")
 	if !ok {
 		t.Fatal("directory lookup is case sensitive")

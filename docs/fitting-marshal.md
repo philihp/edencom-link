@@ -1,6 +1,7 @@
 # Plan: Marshal, Unmarshal and Transfer — moving fittings out of the 500-slot cap
 
-**Revised 2026-10-16; PR 1 (table and store) shipped the same day.** The first
+**Revised 2026-10-16; PRs 1 (table and store), 2 (write path), 3 (web UI)
+and 4 (the mount) shipped the same day.** The first
 version of this plan merged on 2026-09-14 (#1038) and nothing in it was built. This revision re-reads it against the
 codebase a month later. The objective has not moved: EVE lets a character keep
 500 saved fittings, and a player should be able to **marshal** a fit out of
@@ -389,9 +390,11 @@ API has:
 | `rm Marshalled/x.json`                             | `Unlink` in `Marshalled/`                    | `DELETE …/marshalled/{hash}`                                                 |
 | `cp Marshalled/x.json ~/EVE/Archive/`              | `Read`                                       | none; rendered from the listing like every file                              |
 
-- `Rename` is implemented for exactly these three shapes and returns `EXDEV`
-  for anything else (a rename within one folder, or into a folder that does
-  not exist), which `mv` reports honestly. `Mkdir` stays `EPERM`.
+- `Rename` is implemented for exactly these three shapes and returns `EPERM`
+  for anything else (a rename within one folder, or into the root). Not
+  `EXDEV`, as first planned: `EXDEV` makes `mv` fall back to copy-then-unlink,
+  and inside `Marshalled/` that is a `PUT` of the same content followed by a
+  `DELETE` of it. `Mkdir` stays `EPERM`.
 - A rename out of a character folder needs that character `writable`; one
   into a character folder needs the target `writable` and under 500, and a
   `507` still maps to `ENOSPC`.
@@ -450,14 +453,20 @@ PRs 3 and 4 both depend on 2 and are independent of each other.
    `marshalled` array on the listing. No ESI involved, so it is testable with
    `curl` and useful on its own: a player's disk archive can move into
    Supabase from day one. This doc and the `docs/README.md` row.
-2. **Write path.** `callerForUser`, `marshalFitting`, `unmarshalFitting`,
+2. **Write path** — _shipped_ (`marshalOutcome.ts`, `marshal/slots.ts` and their
+   tests; actions in `src/app/fitting/marshalActions.ts`). `callerForUser`, `marshalFitting`, `unmarshalFitting`,
    `transferFitting`, `?marshal=1` on `DELETE`, the server actions, the pure
    seams and their tests, the `esiToken` message. Exercised from a scratch
    page or a test character; no UI.
-3. **Web UI.** `MarshalControls` on the detail page, the marshalled page with
+3. **Web UI** — _shipped_ (`marshal/marshalControls.tsx`, `marshal/unmarshalControls.tsx`,
+   `/fitting/marshalled/[hash]`, `marshal/entry.ts` + test, `marshal/targets.ts`).
+   `MarshalControls` on the detail page, the marshalled page with
    unmarshal and delete, the library's marshalled entries and slot meter.
    Header and CLAUDE.md map entries.
-4. **FUSE.** The `Marshalled/` folder, `Rename`, the client calls and their
+4. **FUSE** — _shipped_ (`vfs.ContentHash`/`ParseFile`/`ClassifyRename`,
+   `link.Marshal`/`PutMarshalled`/`DeleteMarshalled`, tested; `Rename` in
+   `fs.go`; unsupported renames are `EPERM`, not `EXDEV` — see
+   [`fitting-fuse.md`](fitting-fuse.md)). The `Marshalled/` folder, `Rename`, the client calls and their
    tests, `fuse/README.md` and `fitting-fuse.md`.
 5. **Read surfaces.** `fittings` and `marshalledFittings` lists in GraphQL
    (session mode and `api_token` mode alike, own-data only), so Links, CSV,

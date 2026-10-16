@@ -10,6 +10,8 @@
 // deliberately *synchronous* rather than queued: the caller is a filesystem, so
 // `rm` has to have actually deleted the fit by the time it returns, or the next
 // `ls` shows a file that isn't there any more.
+import { randomUUID } from 'node:crypto'
+
 import { NextResponse } from 'next/server'
 
 import { createFitting, deleteFitting, fittings as fetchFittings } from '@/esi'
@@ -94,10 +96,21 @@ export const authorize = async (request: Request): Promise<Caller | Failure> => 
   if (settingsError) return failure(500, 'Lookup failed')
   if (!settings) return failure(401, 'Invalid api token')
 
+  return callerForUser(settings.user_id, supabase)
+}
+
+/**
+ * The service-role `Caller` for a user whose identity is already proved —
+ * by the api_token above, or by a cookie session in a server action
+ * (src/app/fitting/marshalActions.ts). The two halves of authorize() split
+ * here so the web buttons and the FUSE routes run the same write functions on
+ * the same object; the proof of identity is the only thing that differs.
+ */
+export const callerForUser = async (userId: string, supabase = createServiceClient()): Promise<Caller | Failure> => {
   const { data: registrations, error: registrationsError } = await supabase
     .from('registration')
     .select('id, character_id, name')
-    .eq('user_id', settings.user_id)
+    .eq('user_id', userId)
     .not('character_id', 'is', null)
     .order('name', { ascending: true })
     .returns<Array<{ id: string; character_id: number | string; name: string | null }>>()
@@ -105,7 +118,7 @@ export const authorize = async (request: Request): Promise<Caller | Failure> => 
 
   return {
     supabase,
-    userId: settings.user_id,
+    userId,
     registrations: (registrations ?? []).map((r) => ({
       registration_id: r.id,
       character_id: String(r.character_id),
@@ -153,7 +166,7 @@ export const esiToken = async (
     return failure(
       403,
       scope === WRITE_SCOPE
-        ? `${registration.name ?? registration.character_id} has not granted permission to save and delete fittings. Enable it under ESI Access in settings, then re-add the character.`
+        ? `${registration.name ?? registration.character_id} has not granted permission to save and delete fittings. Turn on "Save and delete fittings" under /settings/grants, then re-auth the character on /account/registrations.`
         : `${registration.name ?? registration.character_id} has not granted permission to read fittings.`
     )
   }
@@ -239,6 +252,7 @@ const openLog = async (caller: Caller, registration: Registration, entry: LogEnt
       .eq('id', data.id)
   }
   return {
+    id: data.id,
     succeeded: (patch?: { fitting_id?: number }) => close('ok', patch),
     failed: (message: string) => close('error', { error: message.slice(0, 1000) }),
   }
@@ -259,7 +273,7 @@ export const archiveFitting = async (
   registration: Registration,
   fittingId: number,
   source: string
-): Promise<{ archived: ArchiveFitting } | Failure> => {
+): Promise<{ archived: ArchiveFitting; writeLogId: number } | Failure> => {
   const token = await esiToken(caller, registration, WRITE_SCOPE)
   if (isFailure(token)) return token
 
@@ -292,7 +306,7 @@ export const archiveFitting = async (
   }
   await log.succeeded()
   await closeLocalFitting(caller, registration, fittingId)
-  return { archived: fit }
+  return { archived: fit, writeLogId: log.id }
 }
 
 /**
@@ -596,3 +610,146 @@ export const marshalledEntry = (caller: Caller, shipNames: Record<number, string
   // Doubles as the file's mtime in the mount, like `modified` on a live fit.
   modified: row.marshalled_at,
 })
+
+// ── Marshal, unmarshal, transfer ────────────────────────────────────────────
+//
+// The three verbs of docs/fitting-marshal.md, each a composition of the two
+// ESI writes above with the store. They live here, and only here, so "every
+// ESI write is in this one file" stays true for the web buttons and the mount
+// alike; the routes and the server actions are thin callers with different
+// proofs of identity.
+
+/** The share row a fit had, if any, cannot follow it: a marshalled fit has no
+ *  (registration, fitting_id), and a restored one gets a new id. Best effort —
+ *  a failure here leaves a share pointing at a closed row, which RLS already
+ *  shows nobody. */
+const dropFittingShare = async (caller: Caller, registration: Registration, fittingId: number) => {
+  await caller.supabase
+    .from('character_fitting_share')
+    .delete()
+    .eq('registration_id', registration.registration_id)
+    .eq('fitting_id', fittingId)
+}
+
+/**
+ * Marshal: delete the fit from the game and keep it here.
+ *
+ * Step 1 is the whole safety story (live fetch, log row first, DELETE, close
+ * the mirror row). Step 2 stores what ESI handed back at the moment of the
+ * delete — never the mirror's copy — with the log row as provenance. If step
+ * 1 fails nothing is stored; if step 2 fails after a successful delete the log
+ * row still holds the fit (`op = 'delete'`, `status = 'ok'`), which is the
+ * position every FUSE `rm` has always been in.
+ */
+export const marshalFitting = async (
+  caller: Caller,
+  registration: Registration,
+  fittingId: number,
+  source: string
+): Promise<{ archived: ArchiveFitting; content_hash: string } | Failure> => {
+  const result = await archiveFitting(caller, registration, fittingId, source)
+  if (isFailure(result)) return result
+
+  const stored = await storeMarshalled(caller, result.archived, {
+    source,
+    registration,
+    fittingId,
+    writeLogId: result.writeLogId,
+  })
+  if (isFailure(stored)) {
+    return failure(
+      500,
+      `EVE deleted the fitting but storing it here failed (${stored.error}). It is kept in fitting_write_log row ${result.writeLogId}.`,
+      { write_log_id: result.writeLogId }
+    )
+  }
+  await dropFittingShare(caller, registration, fittingId)
+  return { archived: result.archived, content_hash: stored.content_hash }
+}
+
+/**
+ * Unmarshal: save a marshalled fit back into the game on `registration`.
+ *
+ * A fresh request id per call — the key names this attempt, nothing else.
+ * `restoreFitting` already answers the existing id (`created: false`) when
+ * the character holds the same content, and 507 when all 500 slots are full.
+ * The archive row is deleted only after the restore succeeded, so a refused
+ * restore leaves the fit where it was.
+ */
+export const unmarshalFitting = async (
+  caller: Caller,
+  contentHashHex: string,
+  registration: Registration,
+  source: string
+): Promise<{ fitting_id: number; created: boolean; characterId: string } | Failure> => {
+  const row = await readMarshalled(caller, contentHashHex)
+  if (isFailure(row)) return row
+  if (!row) return failure(404, 'No such marshalled fitting on this account.')
+
+  const body: FittingBody = {
+    name: row.name,
+    description: row.description,
+    ship_type_id: Number(row.ship_type_id),
+    items: normalizeItems(row.items),
+  }
+  const restored = await restoreFitting(caller, registration, randomUUID(), body, source)
+  if (isFailure(restored)) return restored
+
+  const deleted = await deleteMarshalled(caller, contentHashHex)
+  if (isFailure(deleted)) return deleted
+  return { ...restored, characterId: registration.character_id }
+}
+
+/**
+ * Transfer: the fit saved on `to`, then deleted from `from`. The copy is made
+ * BEFORE the original is removed, so no failure can lose the fit: a refused
+ * restore changes nothing, and a refused delete after a successful restore
+ * leaves it on both characters — safe, retryable, reported rather than rolled
+ * back (`transferOutcome` in marshalOutcome.ts turns the two step results into
+ * the message and the redirect). The body is `from`'s LIVE copy, for the same
+ * reason archiveFitting verifies live.
+ */
+export const transferFitting = async (
+  caller: Caller,
+  from: Registration,
+  to: Registration,
+  fittingId: number,
+  source: string
+): Promise<TransferSteps | Failure> => {
+  if (from.registration_id === to.registration_id) {
+    return failure(400, 'Transfer needs two different characters.')
+  }
+
+  const token = await esiToken(caller, from, WRITE_SCOPE)
+  if (isFailure(token)) return token
+  let live: ArchiveFitting[]
+  try {
+    live = await liveFittings(token.access_token, from.character_id)
+  } catch (e) {
+    return failure(502, `EVE would not list this character's fittings: ${(e as Error).message}`)
+  }
+  const fit = live.find((f) => f.fitting_id === fittingId)
+  if (!fit) {
+    await closeLocalFitting(caller, from, fittingId)
+    return failure(404, `EVE has no fitting ${fittingId} saved for ${from.name ?? from.character_id}.`)
+  }
+
+  const body: FittingBody = {
+    name: fit.name,
+    description: fit.description,
+    ship_type_id: fit.ship_type_id,
+    items: fit.items,
+  }
+  const restored = await restoreFitting(caller, to, randomUUID(), body, source)
+  if (isFailure(restored)) return { restored }
+
+  const archived = await archiveFitting(caller, from, fittingId, source)
+  if (!isFailure(archived)) await dropFittingShare(caller, from, fittingId)
+  return { restored, archived }
+}
+
+/** The two step results of a transfer, for `transferOutcome` to reduce. */
+export type TransferSteps = {
+  restored: { fitting_id: number; created: boolean } | Failure
+  archived?: { archived: ArchiveFitting; writeLogId: number } | Failure
+}

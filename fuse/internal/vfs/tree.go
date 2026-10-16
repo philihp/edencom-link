@@ -25,6 +25,9 @@ type Dir struct {
 	// False when this character's EVE token does not carry the write scope:
 	// their fits can be read and copied out, but not deleted or restored.
 	Writable bool
+	// The account's archive rather than a character: files are keyed by
+	// content hash, CharacterID is empty, and it is always writable.
+	Marshalled bool
 	// When the mirror behind this character's listing was last refreshed.
 	Refreshed time.Time
 
@@ -37,8 +40,10 @@ type Dir struct {
 type File struct {
 	Name      string
 	FittingID int64
-	Content   []byte
-	Modified  time.Time
+	// Set in the Marshalled folder: the handle the API addresses it by.
+	ContentHash string
+	Content     []byte
+	Modified    time.Time
 }
 
 // Characters whose names collide, fits whose names collide, and a fit called
@@ -88,8 +93,14 @@ func Sanitize(name string) string {
 // copied to the archive and read back a year later still says what it is.
 func FileName(f Fitting) string {
 	name := Sanitize(f.Name)
-	if name == "" {
+	if name == "" && f.FittingID != 0 {
 		name = fmt.Sprintf("fitting %d", f.FittingID)
+	}
+	if name == "" && len(f.ContentHash) >= 8 {
+		name = "fitting " + f.ContentHash[:8]
+	}
+	if name == "" {
+		name = "fitting"
 	}
 	ship := Sanitize(f.ShipName)
 	if ship == "" {
@@ -122,10 +133,17 @@ func uniquify(taken map[string]bool, name string) string {
 	}
 }
 
-// BuildTree turns an API listing into the mount's directory structure.
-func BuildTree(characters []Character) *Tree {
+// BuildTree turns an API listing into the mount's directory structure: one
+// folder per character in the order the API gave them, then the Marshalled
+// folder, which owns its name ahead of any character.
+func BuildTree(characters []Character, marshalled []Fitting) *Tree {
 	tree := &Tree{byDir: map[string]*Dir{}}
 	takenDirs := map[string]bool{}
+
+	// The archive owns its name before any character does, so a pilot called
+	// "Marshalled" mounts as "Marshalled (2)". The folder itself is appended
+	// after the characters, which keep their positions in Dirs.
+	takenDirs[strings.ToLower(MarshalledDirName)] = true
 
 	// Characters in the order the API gave them (by name), so the root listing
 	// is stable across refreshes.
@@ -166,6 +184,38 @@ func BuildTree(characters []Character) *Tree {
 		tree.Dirs = append(tree.Dirs, dir)
 	}
 
+	// The archive is always present, even empty: a player's first `cp` into it
+	// needs somewhere to land, and an empty folder named for what it holds is
+	// the documentation. Last in Dirs: a file browser sorts the root anyway.
+	archive := Dir{
+		Name:       MarshalledDirName,
+		Writable:   true,
+		Marshalled: true,
+		pilot:      MarshalledDirName,
+		byFile:     map[string]*File{},
+	}
+	// Sorted by hash, the one stable key a marshalled fit has, so " (2)"
+	// suffixes land on the same fits every refresh.
+	fits := append([]Fitting(nil), marshalled...)
+	sort.Slice(fits, func(i, j int) bool { return fits[i].ContentHash < fits[j].ContentHash })
+	takenArchive := map[string]bool{}
+	for _, fit := range fits {
+		archive.Files = append(archive.Files, File{
+			Name:        uniquify(takenArchive, FileName(fit)),
+			FittingID:   fit.FittingID,
+			ContentHash: fit.ContentHash,
+			Content:     Render(fit),
+			Modified:    fit.Modified,
+		})
+		if fit.Modified.After(archive.Refreshed) {
+			archive.Refreshed = fit.Modified
+		}
+	}
+	sort.Slice(archive.Files, func(i, j int) bool {
+		return strings.ToLower(archive.Files[i].Name) < strings.ToLower(archive.Files[j].Name)
+	})
+	tree.Dirs = append(tree.Dirs, archive)
+
 	// Index after every Dir is in place: taking a pointer into a slice that is
 	// still being appended to would be a pointer into a dead backing array.
 	for i := range tree.Dirs {
@@ -204,4 +254,40 @@ func Split(path string) []string {
 		return nil
 	}
 	return strings.Split(trimmed, "/")
+}
+
+// RenameKind is which of the three moves the mount supports a rename is
+// (docs/fitting-marshal.md), or none.
+type RenameKind int
+
+const (
+	// Not one of the three: a rename within a folder, or into the root.
+	// Refused with EPERM — never EXDEV, which would make `mv` fall back to
+	// copy-then-unlink, and a copy-then-unlink inside the Marshalled folder is
+	// a PUT of the same content followed by a DELETE of it.
+	RenameUnsupported RenameKind = iota
+	// character → Marshalled: delete from the game, keep here.
+	RenameMarshal
+	// Marshalled → character: save into the game, drop from here.
+	RenameUnmarshal
+	// character → a different character: save there, then delete here.
+	RenameTransfer
+)
+
+// ClassifyRename says what moving a file from one folder to another means.
+// Pure: the folders decide, never the file names (identity is content, and the
+// target name is whatever the player typed).
+func ClassifyRename(from, to *Dir) RenameKind {
+	switch {
+	case from == nil || to == nil || from == to:
+		return RenameUnsupported
+	case !from.Marshalled && to.Marshalled:
+		return RenameMarshal
+	case from.Marshalled && !to.Marshalled:
+		return RenameUnmarshal
+	case !from.Marshalled && !to.Marshalled && from.CharacterID != to.CharacterID:
+		return RenameTransfer
+	default:
+		return RenameUnsupported
+	}
 }

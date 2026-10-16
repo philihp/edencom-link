@@ -90,7 +90,7 @@ func main() {
 	// Fetch once before mounting. A bad token or an unreachable deployment
 	// should be a message in the terminal, not a folder that appears in Finder
 	// and then errors on every click.
-	characters, err := client.List(filesystem.requests)
+	characters, _, err := client.List(filesystem.requests)
 	if err != nil {
 		log.Fatalf("could not reach %s: %v", *baseURL, err)
 	}
