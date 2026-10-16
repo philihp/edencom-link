@@ -31,6 +31,17 @@ export const columnGrant = (
   return wants ? 'missing' : 'off'
 }
 
+// Scopes the matrix draws a column for although no extract job reads them —
+// a grant that unlocks an action rather than a pull. Without a column here the
+// template row has no checkbox for them, so an opt-in scope could only be
+// requested from /settings/grants. Their cells carry the grant icon and
+// nothing to refresh.
+export type GrantColumn = { key: string; label: string; scopes: readonly string[] }
+
+export const GRANT_COLUMNS: readonly GrantColumn[] = [
+  { key: 'fittings-write', label: 'save/delete fits', scopes: ['esi-fittings.write_fittings.v1'] },
+]
+
 // A cell in one of these states has a job that can actually run; the refresh
 // triggers only render where this is true (a cell without a grant has nothing
 // to kick — the design's "no refresh trigger" rule).
