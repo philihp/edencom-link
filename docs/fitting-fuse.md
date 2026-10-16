@@ -71,6 +71,8 @@ registrations by hand — there is no RLS backstop on this path.
 | `GET /api/fittings/{characterId}/{handle}`       | one archive file                                   |
 | `PUT /api/fittings/{characterId}/{requestId}`    | restore an archive file into EVE                   |
 | `DELETE /api/fittings/{characterId}/{fittingId}` | archive it: store it, then delete it from EVE      |
+| `GET /api/fittings/marshalled`                   | every fit marshalled out of the game into the account's own archive ([`fitting-marshal.md`](fitting-marshal.md)) |
+| `GET` / `PUT` / `DELETE /api/fittings/marshalled/{hash}` | one marshalled fit by its content hash: read, store a file (no ESI), remove it |
 
 `characterId` is the EVE numeric id, matching `/fitting/[characterId]/…` rather
 than the registration uuid the tables key on.

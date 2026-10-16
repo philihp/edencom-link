@@ -33,6 +33,7 @@ import {
   isFailure,
   ownCharacter,
   type Registration,
+  requestSource,
   restoreFitting,
 } from '../../lib'
 
@@ -118,7 +119,7 @@ export const PUT = withServerTiming(async (request: Request, context: Context) =
   const parsed = parseArchiveFitting(await request.text())
   if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 400 })
 
-  const source = request.headers.get('x-edencom-source') === 'fuse' ? 'fuse' : 'api'
+  const source = requestSource(request)
   const result = await restoreFitting(caller, registration, requestId, parsed.fitting, source)
   if (isFailure(result)) return errorResponse(result)
 
@@ -142,7 +143,7 @@ export const DELETE = withServerTiming(async (request: Request, context: Context
   const fittingId = parseFittingId(handle)
   if (fittingId === null) return NextResponse.json(NOT_A_HANDLE, { status: 404 })
 
-  const source = request.headers.get('x-edencom-source') === 'fuse' ? 'fuse' : 'api'
+  const source = requestSource(request)
   const result = await archiveFitting(caller, registration, fittingId, source)
   if (isFailure(result)) return errorResponse(result)
 
