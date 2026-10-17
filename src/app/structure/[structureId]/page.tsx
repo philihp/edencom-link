@@ -24,10 +24,13 @@ import { UrlWindowSelect } from '../../windowSelect'
 import { resolveStructureAccess, resolveStructureShare } from '../access'
 import { colourOf, initialsOf } from '../avatar'
 import { FavoriteStar } from '../favoriteStar'
+import { MeasureFields } from '../measureFields'
+import { fetchIndustryJobs, loadStructureMeasures } from '../measures'
 import { fetchStructureShareDialogData } from '../shareData'
 import { StructureShareDialog } from '../structureShareDialog'
 import { SharedStructurePage } from './sharedStructure'
 import { SourceTag, type Source } from '../sourceTag'
+import { StructureTabs } from '../structureTabs'
 import { structureWindowDays } from '../windows'
 import styles from '../structures.module.css'
 
@@ -53,9 +56,13 @@ type Structure = {
   updated_at: string | null
 }
 
+// A row from either job view: character_industry_job names the registration,
+// corp_industry_job the corporation and the character who installed it.
 type Job = {
   job_id: number | string
-  registration_id: string
+  registration_id?: string | null
+  corporation_id?: number | string | null
+  installer_id?: number | string | null
   activity_id: number
   blueprint_type_id: number | string
   product_type_id: number | string | null
@@ -210,7 +217,7 @@ const StructurePage = async ({ params, searchParams }: StructureParams) => {
   // of theirs owns reached them through a share (an alliance-mate's, a
   // tenant's, a public one): the director-only blocks are then not theirs, and
   // the page says so instead of drawing empty cells.
-  const { data: ownRegistrations } = await supabase.from('registration').select('corporation_id')
+  const { data: ownRegistrations } = await supabase.from('registration').select('id, corporation_id')
   const ownCorporationIds = new Set(
     ((ownRegistrations ?? []) as Array<{ corporation_id: number | string | null }>)
       .map((r) => r.corporation_id)
@@ -243,16 +250,29 @@ const StructurePage = async ({ params, searchParams }: StructureParams) => {
   s.fuel_expires = statusRow?.fuel_expires ?? null
   s.profile_id = statusRow?.profile_id ?? null
 
-  const { data: jobsData } = await supabase
-    .from('character_industry_job')
-    .select(
-      'job_id, registration_id, activity_id, blueprint_type_id, product_type_id, runs, status, start_date, end_date, station_id, facility_id'
-    )
-    .or(`station_id.eq.${structureId},facility_id.eq.${structureId}`)
-    .eq('status', 'active')
-    .order('end_date', { ascending: true })
-
-  const jobs = (jobsData ?? []) as Job[]
+  // Active jobs from both views: a corp job is as much a job here as a
+  // character's, and the tile's Characters tab already counts both.
+  const JOB_COLUMNS =
+    'job_id, activity_id, blueprint_type_id, product_type_id, runs, status, start_date, end_date, station_id, facility_id'
+  const activeJobs = (table: 'character_industry_job' | 'corp_industry_job') =>
+    supabase
+      .from(table)
+      .select(
+        table === 'corp_industry_job'
+          ? `${JOB_COLUMNS}, corporation_id, installer_id`
+          : `${JOB_COLUMNS}, registration_id`
+      )
+      .or(`station_id.eq.${structureId},facility_id.eq.${structureId}`)
+      .eq('status', 'active')
+      .returns<Job[]>()
+  const [{ data: characterJobsData }, { data: corpJobsData }] = await Promise.all([
+    activeJobs('character_industry_job'),
+    activeJobs('corp_industry_job'),
+  ])
+  const jobs = sortWith(
+    [(a: Job, b: Job) => a.end_date.localeCompare(b.end_date)],
+    [...(characterJobsData ?? []), ...(corpJobsData ?? [])]
+  )
 
   // The list includes co-tenants' active jobs (the tenant policy on the job
   // table). Our own registrations name themselves; anyone else's resolves
@@ -261,7 +281,7 @@ const StructurePage = async ({ params, searchParams }: StructureParams) => {
   const { data: characters } = await supabase.from('registration').select('id, name')
   const characterName: Record<string, string> = Object.fromEntries((characters ?? []).map((c) => [c.id, c.name]))
   const foreignRegistrationIds = [
-    ...new Set(jobs.map((j) => j.registration_id).filter((id) => id != null && !(id in characterName))),
+    ...new Set(jobs.map((j) => j.registration_id).filter((id): id is string => id != null && !(id in characterName))),
   ]
   if (foreignRegistrationIds.length > 0) {
     const { data: directoryEntries } = await supabase
@@ -272,6 +292,25 @@ const StructurePage = async ({ params, searchParams }: StructureParams) => {
       characterName[entry.registration_id] = entry.name
     })
   }
+
+  // A corp job names the character who installed it and the corporation it ran
+  // for: the pilot from universe_name, the corporation from the directory.
+  const installerIds = uniq(jobs.flatMap((j) => (j.installer_id != null ? [Number(j.installer_id)] : [])))
+  const jobCorpIds = uniq(jobs.flatMap((j) => (j.corporation_id != null ? [Number(j.corporation_id)] : [])))
+  const [{ data: installerRows }, { data: jobCorpRows }] = await Promise.all([
+    installerIds.length
+      ? supabase.from('universe_name').select('id, name').in('id', installerIds)
+      : Promise.resolve({ data: [] }),
+    jobCorpIds.length
+      ? supabase.from('corporation').select('corporation_id, name').in('corporation_id', jobCorpIds)
+      : Promise.resolve({ data: [] }),
+  ])
+  const installerNames = nameById((installerRows ?? []) as IdName[])
+  const jobCorpNames = new Map(
+    ((jobCorpRows ?? []) as Array<{ corporation_id: number | string; name: string | null }>).flatMap((c) =>
+      c.name != null ? [[String(c.corporation_id), c.name] as [string, string]] : []
+    )
+  )
 
   // Rigs fitted to this structure (pulled from corp assets by the corp-assets job).
   const { data: rigData } = await supabase
@@ -349,6 +388,30 @@ const StructurePage = async ({ params, searchParams }: StructureParams) => {
   // structure's own-rate charges alone — reusing costAvoidance() rather than
   // repeating the formula, so the two can't disagree about what a saving is.
   const taxRates = await fetchTaxRates(supabase, user.id)
+
+  // The figures this structure's tile on /structure leads with — Industry EIV,
+  // Taxes Paid (exact and estimated), Revenue, Cost Avoidance — and its
+  // Characters tab, from the same fold the index runs (../measures.ts), asked
+  // about this one structure. The ledger table below breaks the journal side
+  // down by payer and day; these are the totals that table can't carry.
+  const { characterJobs, corpJobs } = await fetchIndustryJobs(supabase, structureId)
+  const measures = await loadStructureMeasures(supabase, {
+    list: [
+      {
+        structure_id: Number(s.structure_id),
+        corporation_id: s.corporation_id != null ? Number(s.corporation_id) : null,
+        type_id: s.type_id != null ? Number(s.type_id) : null,
+        system_id: s.system_id != null ? Number(s.system_id) : null,
+      },
+    ],
+    characterJobs,
+    corpJobs,
+    ownRegistrationIds: new Set(((ownRegistrations ?? []) as Array<{ id: string }>).map((r) => r.id)),
+    ownCorporationIds: new Set([...ownCorporationIds].map(String)),
+    windowStart: since,
+    taxRates,
+  })
+  const installers = measures.installersByStructure.get(String(s.structure_id)) ?? []
   const avoidance = costAvoidance([{ structureId: String(s.structure_id), amount: selfPaidIsk }], taxRates)
   // What we paid that was NOT billed at our own rate: a landlord charges a
   // corporation it doesn't contain whatever it likes, so none of it is a saving.
@@ -571,6 +634,24 @@ const StructurePage = async ({ params, searchParams }: StructureParams) => {
         </section>
 
         <div className={styles.detailColumn}>
+          <section className={styles.panel} aria-label="Summary">
+            <div className={styles.panelHead}>
+              <h2>summary</h2>
+              <span className={styles.panelCaption}>as on the structures page, over the window</span>
+              <span className={styles.spacer} />
+              <SourceTag source="ledger" />
+            </div>
+            <div className={styles.fields}>
+              <MeasureFields structureId={String(s.structure_id)} measures={measures} />
+            </div>
+            {installers.length > 0 ? (
+              <StructureTabs services={[]} rigs={[]} characters={installers} />
+            ) : (
+              <div className={styles.panelNote}>
+                <p>No industry jobs of ours or a co-tenant&rsquo;s here in the last {windowDays} days.</p>
+              </div>
+            )}
+          </section>
           {sharedBy != null && (
             <p className={styles.plainNote}>
               Shared by {sharerName}. A structure share opens its details, services and rigs — never its fuel, its
@@ -790,7 +871,22 @@ const StructurePage = async ({ params, searchParams }: StructureParams) => {
                 {jobs.map((j) => (
                   <tr key={`job-${j.job_id}`}>
                     <td>
-                      <CharacterName name={characterName[j.registration_id]} />
+                      {j.registration_id != null ? (
+                        <CharacterName name={characterName[j.registration_id]} />
+                      ) : (
+                        <>
+                          <div>
+                            <CharacterName
+                              name={j.installer_id != null ? installerNames.get(String(j.installer_id)) : undefined}
+                            />
+                          </div>
+                          {j.corporation_id != null && (
+                            <div className={styles.cellSub}>
+                              for <Name name={jobCorpNames.get(String(j.corporation_id))} id={j.corporation_id} />
+                            </div>
+                          )}
+                        </>
+                      )}
                     </td>
                     <td className={styles.cellSoft}>{ACTIVITY_NAMES[j.activity_id] ?? `#${j.activity_id}`}</td>
                     <td>
