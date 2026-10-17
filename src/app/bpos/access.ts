@@ -9,8 +9,9 @@
 import type { SupabaseClient, User } from '@supabase/supabase-js'
 import { groupBy } from 'ramda'
 
-import { parseShareParam, tokenSalt, verifyShareToken } from '@/shareToken'
 import { createServiceClient } from '@/utils/supabase/service'
+
+import { shareAccess, type ShareAccess, type ShareRow } from '../shareLadder'
 
 import { characterSlug, pickCorporation, pickMain, slugLikePattern, type CorporationCandidate } from './slug'
 
@@ -117,56 +118,10 @@ export const resolveBposSubject = async (slug: string, viewer: User | null): Pro
 // see their page (that's where the share dialog lives), so 'owner' (the
 // account's holder) and 'member' (anyone with a character in the corporation)
 // are checked before any share row is read.
-export type BposAccess = 'owner' | 'member' | 'public' | 'link' | 'audience'
+export type BposAccess = 'owner' | 'member' | ShareAccess
 
 // Whether the viewer may manage the share — the two "this is my page" kinds.
 export const canManageShare = (access: BposAccess): boolean => access === 'owner' || access === 'member'
-
-type ShareRow = {
-  id: string
-  corporation_ids: number[] | null
-  alliance_ids: number[] | null
-  secret: string | null
-}
-
-const linkMatches = (share: ShareRow, param: string | undefined): boolean => {
-  if (param === undefined || param === '' || share.secret == null) return false
-  const { signature } = parseShareParam(param)
-  if (signature === '') return false
-  try {
-    return verifyShareToken(share.id, share.secret, tokenSalt(), signature)
-  } catch {
-    // No TOKEN_SALT on this deployment: links simply don't resolve.
-    return false
-  }
-}
-
-// The share ladder both subjects walk once their own people are ruled out:
-// no row → 404, fully public, signed link, then the audience arrays. `visible`
-// re-asks the same table as the VIEWER, so membership is Postgres's
-// share_audience_matches rather than a second implementation here.
-const shareAccess = async (
-  share: ShareRow | null,
-  viewer: User | null,
-  shareParam: string | undefined,
-  visible: () => Promise<boolean>
-): Promise<BposAccess | null> => {
-  if (!share) return null
-
-  const corporationIds = share.corporation_ids ?? []
-  const allianceIds = share.alliance_ids ?? []
-
-  // Fully public — the Revision 3 row that names no one. Decided here rather
-  // than by asking the table as `anon`, whose evaluation of the audience
-  // predicate would depend on my_corporation_ids() being reachable to it.
-  if (share.secret == null && corporationIds.length === 0 && allianceIds.length === 0) return 'public'
-
-  if (linkMatches(share, shareParam)) return 'link'
-
-  if (viewer && (await visible())) return 'audience'
-
-  return null
-}
 
 export const bposAccess = async (
   subject: BposSubject,

@@ -18,6 +18,17 @@
   color: var(--ink-soft);
 }
 
+/* The owner's share control, under the header — the arrangement the blueprint
+ * showcase uses (see bpos.module.css). */
+.subtitle {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8pt;
+  color: var(--ink-soft);
+  margin: 4pt 0 0;
+}
+
 /* Tiled corpse collection: item-icon tiles echoing the structures page's
  * tile grid (see structures.module.css), one tile per dead pilot. */
 .grid {
