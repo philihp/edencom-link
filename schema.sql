@@ -4123,6 +4123,60 @@ grant select                         on public.corp_bpo_share to anon;
 grant select, insert, update, delete on public.corp_bpo_share to authenticated;
 grant all                            on public.corp_bpo_share to service_role;
 
+-- ── corpse_share ───────────────────────────────────────────────────────────
+-- The audience for one account's frozen-corpse collection, the page at
+-- /corpses/[main-character-id]. Standard Revision 3 audience row
+-- (corporation_ids / alliance_ids / secret; fully public = the row that names
+-- no one), user_id-keyed exactly like `bpo_share`: the subject is every corpse
+-- the account holds, pooled across its characters.
+--
+-- The page is addressed by the account's MAIN character id and nothing else.
+-- That is load-bearing, not cosmetic: resolving an ALT's id to the account
+-- would hand an anonymous visitor the main's name, and two ids rendering one
+-- page would prove a shared owner — the correlation character_directory
+-- carries no user_id to prevent.
+--
+-- Pooling the collection across an account's characters is the same deliberate
+-- exception to the per-character grantor rule that bpo_share makes, and safe
+-- for the same reason: owner-initiated and opt-in, no row means not shared,
+-- the page 404s, and nothing is correlated until the owner asks.
+create table public.corpse_share (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null unique references auth.users(id) on delete cascade,
+  corporation_ids bigint[] not null default '{}',
+  alliance_ids bigint[] not null default '{}',
+  secret text,
+  created_at timestamptz not null default now()
+);
+
+alter table public.corpse_share enable row level security;
+
+-- Owner manages their own row outright (the `bpo_share`/`link` shape — the
+-- owner is a user, so the predicate is direct rather than a registration
+-- subquery).
+create policy "Users manage own corpse share"
+  on public.corpse_share
+  for all
+  to authenticated
+  using (user_id = (select auth.uid()))
+  with check (user_id = (select auth.uid()));
+
+-- Audience discovery, the load-bearing array policy every Revision 3 share
+-- table carries: the page asks this table, as the viewer, whether a share is
+-- aimed at them. Link-only rows match nobody here (RLS cannot see a URL token;
+-- signed links resolve at the app layer), and neither does the fully-public row
+-- for a signed-out visitor -- the page clears that case through the service
+-- role rather than leaning on an anon evaluation of my_corporation_ids().
+create policy "Audience reads corpse shares aimed at them"
+  on public.corpse_share
+  for select
+  to anon, authenticated
+  using (public.share_audience_matches(corporation_ids, alliance_ids, secret));
+
+grant select                         on public.corpse_share to anon;
+grant select, insert, update, delete on public.corpse_share to authenticated;
+grant all                            on public.corpse_share to service_role;
+
 -- ── character_clone_state ──────────────────────────────────────────────────
 -- Character-level fields from ESI /characters/{id}/clones/, written by the
 -- character-clones job alongside the per-clone SCD rows: when the last clone
