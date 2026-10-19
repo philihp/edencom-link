@@ -737,7 +737,7 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
               {eiv.totalEiv > 0 && (
                 <div className={styles.panelRow}>
                   <span className={styles.panelLabel}>
-                    total EIV <SourceTag source="estimate" />
+                    your total EIV <SourceTag source="estimate" />
                   </span>
                   <span className={styles.panelValue}>{formatIsk(eiv.totalEiv)}</span>
                 </div>
@@ -785,13 +785,13 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
                 )}
                 {eiv.totalEiv > 0 && (
                   <p>
-                    Total EIV is the Estimated Item Value of our manufacturing and reaction jobs installed at these
-                    structures over the window &mdash; each job&rsquo;s ME0 material bill priced at CCP&rsquo;s adjusted
-                    prices, the base the game levies every install fee against. Estimated taxes recover the facility tax
-                    at structures we don&rsquo;t own, where the charge leaves a wallet no journal of ours covers: a
-                    job&rsquo;s billed cost minus its system-index fee (at the index when it was installed) and the 4%
-                    SCC surcharge leaves the owner&rsquo;s cut, and dividing by EIV gives their rate. The estimate
-                    assumes Omega installers and current adjusted prices
+                    Your total EIV is the Estimated Item Value of the manufacturing and reaction jobs your own
+                    characters installed at these structures over the window &mdash; each job&rsquo;s ME0 material bill
+                    priced at CCP&rsquo;s adjusted prices, the base the game levies every install fee against. Estimated
+                    taxes recover the facility tax at structures we don&rsquo;t own, where the charge leaves a wallet no
+                    journal of ours covers: a job&rsquo;s billed cost minus its system-index fee (at the index when it
+                    was installed) and the 4% SCC surcharge leaves the owner&rsquo;s cut, and dividing by EIV gives
+                    their rate. The estimate assumes Omega installers and current adjusted prices
                     {eivSkipped > 0 && (
                       <>
                         ; {eivSkipped.toLocaleString()} job{eivSkipped === 1 ? '' : 's'} could not be priced (missing

@@ -33,9 +33,11 @@
 // The alpha-clone surcharge (0.25%) is assumed absent: an alpha installing our
 // jobs would inflate the recovered rate by exactly that much.
 //
-// Total EIV is simpler and broader in ownership but the same in activity: the
-// summed EIV of our manufacturing and reaction jobs at each structure, a
-// throughput measure. A research job pushes no materials through, so it
+// Your Total EIV is simpler but the same in activity: the summed EIV of the
+// manufacturing and reaction jobs our own characters installed at each
+// structure, a throughput measure. The caller hands this fold only those jobs
+// (src/app/structure/measures.ts) — never a co-tenant's or an unregistered
+// corpmate's. A research job pushes no materials through, so it
 // contributes nothing by construction rather than by omission.
 import { forEach } from 'ramda'
 
