@@ -33,6 +33,7 @@ import {
   contractDirection,
   contractSide,
   matchKindFilter,
+  matchStatusFilter,
   parseDirectionFilter,
   summariseItems,
   type ContractItemRow,
@@ -1277,7 +1278,7 @@ export const resolvers = {
       const typeIds = await typeIdsFor(args)
       const kinds = matchKindFilter(args.kind, args.kinds)
       if (!kinds.ok) return badRequest(kinds.message)
-      const statuses = matchKindFilter(args.status, args.statuses)
+      const statuses = matchStatusFilter(args.status, args.statuses)
       if (!statuses.ok) return badRequest(statuses.message)
       const direction = parseDirectionFilter(args.direction)
       if (!direction.ok) return badRequest(direction.message)

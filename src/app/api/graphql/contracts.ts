@@ -105,27 +105,52 @@ export type KindMatch = { ok: true; kinds: string[] | null } | { ok: false; mess
 
 export const KNOWN_KINDS = ['item_exchange', 'courier', 'auction', 'loan', 'unknown'] as const
 
-export const matchKindFilter = (
-  kind: string | null | undefined,
-  kinds: readonly string[] | null | undefined
-): KindMatch => {
-  const parsed = parseRefFilter(kind, kinds, 'kind')
-  if (!parsed.ok) return { ok: false, message: parsed.message }
-  const query = parsed.query
-  if (query.kind === 'none') return { ok: true, kinds: null }
+// ESI's contract statuses, as the status history stores them, plus the
+// `unknown` a contract reads as before its first status row lands. The three
+// finished_* states are why the singular is a search: "finished" means all of
+// them.
+export const KNOWN_STATUSES = [
+  'outstanding',
+  'in_progress',
+  'finished_issuer',
+  'finished_contractor',
+  'finished',
+  'cancelled',
+  'rejected',
+  'failed',
+  'deleted',
+  'reversed',
+  'unknown',
+] as const
 
-  if (query.kind === 'search') {
-    const wanted = query.term.toLowerCase()
-    const matched = KNOWN_KINDS.filter((k) => k.includes(wanted))
-    if (matched.length === 0) {
-      return { ok: false, message: `No contract kind matched "${query.term}". Known: ${KNOWN_KINDS.join(', ')}.` }
+// A raw-token filter over one of ESI's string columns: the singular searches
+// the known vocabulary, the plural passes through as an exact list.
+const matchRawFilter =
+  (label: string, plural: string, known: readonly string[]) =>
+  (single: string | null | undefined, list: readonly string[] | null | undefined): KindMatch => {
+    const parsed = parseRefFilter(single, list, label, plural)
+    if (!parsed.ok) return { ok: false, message: parsed.message }
+    const query = parsed.query
+    if (query.kind === 'none') return { ok: true, kinds: null }
+
+    if (query.kind === 'search') {
+      const wanted = query.term.toLowerCase()
+      const matched = known.filter((k) => k.includes(wanted))
+      if (matched.length === 0) {
+        return { ok: false, message: `No contract ${label} matched "${query.term}". Known: ${known.join(', ')}.` }
+      }
+      return { ok: true, kinds: [...matched] }
     }
-    return { ok: true, kinds: [...matched] }
+    // Exact entries pass through lowercased: the column holds ESI's raw token,
+    // so an unknown one is a legitimate ask rather than a typo to refuse.
+    return { ok: true, kinds: [...new Set(query.entries.map((e) => e.toLowerCase()))] }
   }
-  // Exact entries pass through lowercased: the column holds ESI's raw token, so
-  // an unknown one is a legitimate ask rather than a typo to refuse.
-  return { ok: true, kinds: [...new Set(query.entries.map((e) => e.toLowerCase()))] }
-}
+
+export const matchKindFilter = matchRawFilter('kind', 'kinds', KNOWN_KINDS)
+
+// The status filter searched the KIND vocabulary until 2026-10-19, so
+// `status: "finished"` was refused as "no contract kind matched".
+export const matchStatusFilter = matchRawFilter('status', 'statuses', KNOWN_STATUSES)
 
 // What was in the contract, as one flat cell — "12 × Tritanium, 1 × Rifter".
 // Flat because a Link renders its query as CSV and a nested list has no column
