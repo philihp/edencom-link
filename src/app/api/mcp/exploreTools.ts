@@ -7,12 +7,13 @@
 import type { McpServer } from '@modelcontextprotocol/server'
 import { z } from 'zod'
 
+import { getBlueprintsForProducts } from '@/sdeBlueprints'
 import { getRegionPlanets, getSdePlanets, getSystemPlanets, PLANET_GROUP_ID } from '@/sdePlanets'
 import { searchSdeRegions } from '@/sdeRegions'
 import { searchSdeSystems } from '@/sdeSystems'
-import { getSdeTypeNames, getSdeTypesInGroups } from '@/sdeTypes'
+import { getSdeType, getSdeTypeNames, getSdeTypesInGroups, getSdeTypeVariants } from '@/sdeTypes'
 
-import { capNote, MAX_ROWS, textResult, type ToolResult } from './lib'
+import { capNote, MAX_ROWS, resolveOneType, textResult, type ToolResult } from './lib'
 import {
   composition,
   formatPlanet,
@@ -22,6 +23,7 @@ import {
   roundSecurity,
   type PlanetLike,
 } from './planetQuery'
+import { formatFamily, parseTypeRef } from './variantQuery'
 
 // Planet type names for a set of planets, resolved in one bulk lookup.
 const planetTypeNames = (planets: PlanetLike[]): Promise<Record<number, string>> =>
@@ -158,6 +160,70 @@ export const registerExploreTools = (server: McpServer): void => {
         ...(capNote(systems.length, shown.length, 'systems') && {
           note: capNote(systems.length, shown.length, 'systems'),
         }),
+      })
+    }
+  )
+  server.registerTool(
+    'module_variants',
+    {
+      title: 'Module variants and meta levels',
+      description:
+        'The variant family of an item, from static game data: its Tech I root and every variant of it (named Tech I such as Compact or Enduring, Tech II, Storyline, Faction, Deadspace, Officer, Abyssal), each with its meta level and tier, lowest meta level first, and the blueprint that builds it where one does. Answers "what are the upgrades for a Damage Control II" — the variants above the item asked about are marked higher_meta — and gives the exact names to price with appraise_items and to search for with search_public_contracts (a blueprint name finds BPCs). Give an item name (fuzzy) or a type id. Unpublished variants, which cannot be bought or built, are left out unless include_unpublished is set.',
+      annotations: { readOnlyHint: true, openWorldHint: false },
+      inputSchema: z.object({
+        item: z
+          .string()
+          .min(1)
+          .describe('The module (or any item) by name or type id, e.g. "Damage Control II", "2048"'),
+        include_unpublished: z
+          .boolean()
+          .optional()
+          .describe('Also list variants CCP never published — they cannot be bought or built (default false)'),
+      }),
+    },
+    async ({ item, include_unpublished }): Promise<ToolResult> => {
+      const ref = parseTypeRef(item)
+      const resolved =
+        ref.kind === 'id'
+          ? await getSdeType(ref.typeID).then((t) =>
+              t == null
+                ? { ok: false as const, message: `No item type has id ${ref.typeID}.` }
+                : { ok: true as const, typeID: t.typeID, name: t.name, alsoMatched: [] as string[] }
+            )
+          : await resolveOneType(ref.query)
+      if (!resolved.ok) return textResult(resolved.message)
+
+      const family = await getSdeTypeVariants(resolved.typeID)
+      if (family.length === 0) {
+        return textResult(`No variant data for "${resolved.name}" — the SDE mirror may not be ingested yet.`)
+      }
+      const blueprints = await getBlueprintsForProducts(family.map((v) => v.typeID))
+      const blueprintNames = await getSdeTypeNames(Object.values(blueprints).map((b) => b.blueprintTypeID))
+      const formatted = formatFamily(family, resolved.typeID, include_unpublished ?? false, (typeID) => {
+        const blueprint = blueprints[typeID]
+        return blueprint == null ? undefined : blueprintNames[blueprint.blueprintTypeID]
+      })
+
+      const notes = [
+        ...(formatted.rows.length === 1 ? ['This item has no variants.'] : []),
+        ...(formatted.hiddenUnpublished > 0
+          ? [`${formatted.hiddenUnpublished} unpublished variant(s) left out; pass include_unpublished to list them.`]
+          : []),
+        ...(formatted.hasAbyssal
+          ? [
+              'Abyssal modules are mutated one by one: each item has its own attributes, which neither the market nor a contract listing shows.',
+            ]
+          : []),
+      ]
+      return textResult({
+        item: resolved.name,
+        type_id: String(resolved.typeID),
+        ...(resolved.alsoMatched.length > 0 && { also_matched: resolved.alsoMatched }),
+        ...(formatted.root != null && { family_root: formatted.root }),
+        total_variants: formatted.rows.length,
+        higher_meta_variants: formatted.higherMeta,
+        variants: formatted.rows,
+        ...(notes.length > 0 && { notes }),
       })
     }
   )

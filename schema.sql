@@ -215,6 +215,7 @@ drop function if exists public.industry_index_tracked_systems()    cascade;
 drop function if exists public.sde_refresh_views()                 cascade;
 drop function if exists public.sde_search_type(text, int)          cascade;
 drop function if exists public.sde_search_system(text, int)        cascade;
+drop function if exists public.sde_type_variants(bigint)            cascade;
 drop materialized view if exists public.sde_blueprint_product cascade;
 drop view if exists public.sde_published_type cascade;
 drop view if exists public.sde_named_type     cascade;
@@ -386,7 +387,7 @@ grant execute on function public.ensure_sde_mirror_table(text, text) to service_
 select public.ensure_sde_mirror_table(stem)
 from unnest(
   array['types', 'groups', 'categories', 'map_solar_systems', 'map_constellations', 'map_regions',
-        'npc_stations', 'blueprints', 'map_planets', 'map_stargates']
+        'npc_stations', 'blueprints', 'map_planets', 'map_stargates', 'type_dogma', 'meta_groups']
 ) as stem;
 
 -- One row per SDE build the ingest has seen; completed_at set only when every
@@ -466,6 +467,10 @@ create index sde_types_name_trgm on public.sde_types
   using gin ((data -> 'name' ->> 'en') extensions.gin_trgm_ops);
 create index sde_map_solar_systems_name_trgm on public.sde_map_solar_systems
   using gin ((data -> 'name' ->> 'en') extensions.gin_trgm_ops);
+-- A type's variation family in one probe, for sde_type_variants() (migration
+-- 20261019070830_sde_type_variants).
+create index sde_types_variation_parent_idx
+  on public.sde_types (((data ->> 'variationParentTypeID')::bigint));
 
 -- ── App-shaped projections ──────────────────────────────────────────────────
 -- The tuple shapes the app's SDE loaders (src/sde*.ts) use today, as views
@@ -713,6 +718,66 @@ $$;
 
 grant execute on function public.sde_search_type(text, int) to anon, authenticated, service_role;
 grant execute on function public.sde_search_system(text, int) to anon, authenticated, service_role;
+
+-- A type's variation family with each member's meta level (dogma attribute
+-- 633) and tier name — the MCP module_variants tool. The root plus every type
+-- naming it as variationParentTypeID, whichever member is asked about;
+-- unpublished members flagged, not dropped (migration
+-- 20261019070830_sde_type_variants).
+create or replace function public.sde_type_variants(p_type_id bigint)
+returns table (
+  type_id bigint,
+  name text,
+  group_id bigint,
+  meta_group_id bigint,
+  meta_group_name text,
+  meta_level int,
+  published boolean,
+  is_parent boolean
+)
+language sql
+stable
+set search_path = ''
+as $$
+  with parent as (
+    select coalesce((t.data ->> 'variationParentTypeID')::bigint, t._key) as id
+    from public.sde_types t
+    where t._key = p_type_id
+  ),
+  member as (
+    select p.id as type_id from parent p
+    union
+    select t._key
+    from public.sde_types t
+    join parent p on (t.data ->> 'variationParentTypeID')::bigint = p.id
+  )
+  select
+    t._key,
+    t.data -> 'name' ->> 'en',
+    (t.data ->> 'groupID')::bigint,
+    (t.data ->> 'metaGroupID')::bigint,
+    mg.data -> 'name' ->> 'en',
+    -- metaLevel's default is 0, and a plain Tech I type often omits it.
+    coalesce(ml.meta_level, 0),
+    coalesce((t.data ->> 'published')::boolean, false),
+    t._key = p.id
+  from member m
+  join public.sde_types t on t._key = m.type_id
+  cross join parent p
+  left join public.sde_meta_groups mg on mg._key = (t.data ->> 'metaGroupID')::bigint
+  left join lateral (
+    select round((a ->> 'value')::numeric)::int as meta_level
+    from public.sde_type_dogma d
+    cross join lateral jsonb_array_elements(d.data -> 'dogmaAttributes') a
+    where d._key = t._key
+      and (a ->> 'attributeID')::int = 633
+    limit 1
+  ) ml on true
+  where coalesce(trim(t.data -> 'name' ->> 'en'), '') <> ''
+  order by coalesce(ml.meta_level, 0), (t.data ->> 'metaGroupID')::bigint nulls first, t.data -> 'name' ->> 'en', t._key
+$$;
+
+grant execute on function public.sde_type_variants(bigint) to anon, authenticated, service_role;
 
 -- ── registration ──────────────────────────────────────────────────────────
 -- One row per linked EVE character (a user may link several).

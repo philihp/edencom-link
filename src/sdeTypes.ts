@@ -95,6 +95,58 @@ export const getSdeTypesInGroups = async (groupIDs: Iterable<number>): Promise<S
   return (data ?? []).map((r) => rowToType(r as TypeRow))
 }
 
+// A type's variation family, through the sde_type_variants RPC (migration
+// 20261019070830_sde_type_variants): the Tech I root plus every type naming it
+// as variationParentTypeID, whichever member is asked about, each with its
+// meta level (dogma attribute 633) and tier name, lowest meta level first.
+// Cached per asked-about id like the by-id loaders; an empty family (an unknown
+// id, or a mirror not yet ingested) is a miss and never cached.
+export type SdeTypeVariant = {
+  typeID: number
+  name: string
+  groupID: number | null
+  metaGroupID: number | null
+  metaGroupName: string | null
+  metaLevel: number
+  published: boolean
+  isParent: boolean
+}
+
+type VariantRow = {
+  type_id: number
+  name: string
+  group_id: number | null
+  meta_group_id: number | null
+  meta_group_name: string | null
+  meta_level: number
+  published: boolean
+  is_parent: boolean
+}
+
+const variantCache = createByIdCache<SdeTypeVariant[]>()
+
+export const getSdeTypeVariants = async (typeID: number): Promise<SdeTypeVariant[]> => {
+  const hit = variantCache.get(typeID)
+  if (hit) return hit
+  const { data, error } = await sdeSupabase().rpc('sde_type_variants', { p_type_id: typeID })
+  if (error) {
+    console.error(`[sdeTypes] variant lookup failed: ${error.message}`)
+    return []
+  }
+  const family = ((data ?? []) as VariantRow[]).map((r): SdeTypeVariant => ({
+    typeID: Number(r.type_id),
+    name: r.name,
+    groupID: r.group_id == null ? null : Number(r.group_id),
+    metaGroupID: r.meta_group_id == null ? null : Number(r.meta_group_id),
+    metaGroupName: r.meta_group_name,
+    metaLevel: Number(r.meta_level),
+    published: r.published,
+    isParent: r.is_parent,
+  }))
+  if (family.length > 0) variantCache.set(typeID, family)
+  return family
+}
+
 // Search results now carry the category id (from the view's group→category
 // join), so callers filtering by category (e.g. exclude blueprints) no longer
 // need a per-row getSdeType lookup.
