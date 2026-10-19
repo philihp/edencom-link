@@ -389,7 +389,7 @@ const StructurePage = async ({ params, searchParams }: StructureParams) => {
   // repeating the formula, so the two can't disagree about what a saving is.
   const taxRates = await fetchTaxRates(supabase, user.id)
 
-  // The figures this structure's tile on /structure leads with — Industry EIV,
+  // The figures this structure's tile on /structure leads with — Your Total EIV,
   // Taxes Paid (exact and estimated), Revenue, Cost Avoidance — and its
   // Characters tab, from the same fold the index runs (../measures.ts), asked
   // about this one structure. The ledger table below breaks the journal side

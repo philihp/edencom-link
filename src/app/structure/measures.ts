@@ -1,4 +1,4 @@
-// The per-structure measures a /structure tile shows — Industry EIV, Taxes
+// The per-structure measures a /structure tile shows — Your Total EIV, Taxes
 // Paid (exact and estimated), Revenue, Cost Avoidance and the Characters tab —
 // computed once, here, for whichever structures the caller lists. The index
 // passes every tile; /structure/[structureId] passes its one structure, so the
@@ -306,9 +306,37 @@ export const loadStructureMeasures = async (supabase: Supabase, input: Structure
     )
   )
 
+  // Our own registrations, by uuid and by EVE character id. RLS scopes
+  // `registration` to the caller, so every row here is a character of ours.
+  // Read up here because the EIV below is ours alone; the Characters tab
+  // further down names co-tenants on top of these.
+  type RegistrationRow = { id: string; name: string; character_id: number | string | null }
+  const { data: registrationRows } = await supabase
+    .from('registration')
+    .select('id, name, character_id')
+    .returns<RegistrationRow[]>()
+  const ownCharacterIds = new Set(
+    map(
+      String,
+      reject(
+        isNil,
+        map((r: RegistrationRow) => r.character_id, registrationRows ?? [])
+      )
+    )
+  )
+
+  // Only jobs one of our characters installed: a personal job of one of our
+  // registrations, or a corp job whose installer is one of our characters. A
+  // co-tenant's job, or a corpmate's we hold no registration for, is someone
+  // else's throughput — counting it made "EIV" read as the structure's whole
+  // industry rather than ours. Not isOwnJob: that admits every corp job of an
+  // own corporation, whoever installed it.
+  const installedByUs = (j: JobRow) =>
+    (j.registration_id != null && ownRegistrationIds.has(String(j.registration_id))) ||
+    (j.installer_id != null && ownCharacterIds.has(String(j.installer_id)))
   const eivJobs = filter((j: JobRow) => {
     const a = Number(j.activity_id)
-    return a === 1 || a === 9
+    return (a === 1 || a === 9) && installedByUs(j)
   }, allJobs)
 
   // ME0 bills for the blueprints those jobs run. getBlueprintsByTypeIDs
@@ -449,11 +477,6 @@ export const loadStructureMeasures = async (supabase: Supabase, input: Structure
   // which maps a registration uuid to its character and name and nothing more.
   // Corp jobs name the corporation they were run for, which is the only honest
   // unit for them. See ./installers.ts.
-  type RegistrationRow = { id: string; name: string; character_id: number | string | null }
-  const { data: registrationRows } = await supabase
-    .from('registration')
-    .select('id, name, character_id')
-    .returns<RegistrationRow[]>()
   const registrationsById = new Map(
     map(
       (r: RegistrationRow) =>

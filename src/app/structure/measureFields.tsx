@@ -1,4 +1,4 @@
-// The figures a /structure tile leads with — Industry EIV, Taxes Paid (exact
+// The figures a /structure tile leads with — Your Total EIV, Taxes Paid (exact
 // and estimated), Revenue, Cost Avoidance — as label/value pairs for a
 // `styles.fields` grid. The index tile and /structure/[structureId] both render
 // this one component over the same fold (./measures.ts), so the detail page
@@ -33,7 +33,7 @@ export const MeasureFields = ({ structureId, measures }: { structureId: string; 
       {hasMeasures && (
         <HelpTip
           text={[
-            "Industry EIV — the Estimated Item Value of the manufacturing and reaction jobs installed here in the window: the total industrial impact on the system's cost index. The index fee, the owner's facility tax, and the 4% SCC surcharge are all charged as fractions of it — think of it as this structure's market share of the system's industry.",
+            "Your Total EIV — the Estimated Item Value of the manufacturing and reaction jobs your own characters installed here in the window: your industrial impact on the system's cost index. Co-tenants' jobs, and corp jobs installed by corpmates you have no registration for, are not counted. The index fee, the owner's facility tax, and the 4% SCC surcharge are all charged as fractions of it — think of it as your market share of the system's industry.",
             "Taxes Paid — facility tax paid to this structure's owner: exact from the corp wallet journal where we can read it, estimated from job costs elsewhere (cost minus index fee minus 4% SCC surcharge). The subtracted fees are ~14× the typical tax, so the estimate resolves whole fractions of a percent at best: ≈0% means at or below what it can distinguish from free, not that the owner provably charges nothing.",
             'Revenue — industry tax received into our corp wallets from jobs run in this structure.',
             'Cost Avoidance — facility tax never incurred because our own jobs ran at our own rate instead of a public one.',
@@ -42,7 +42,7 @@ export const MeasureFields = ({ structureId, measures }: { structureId: string; 
       )}
       {row != null && row.eiv > 0 && (
         <>
-          <span className={styles.label}>industry EIV</span>
+          <span className={styles.label}>your total EIV</span>
           <span className={`${styles.value} ${styles.num}`}>{formatIsk(row.eiv)}</span>
         </>
       )}
