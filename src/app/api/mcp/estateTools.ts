@@ -11,7 +11,7 @@
 // openWorldHint: true. It sends type names and quantities and nothing else; no
 // owner, character, corporation or location ever reaches the provider.
 import type { AuthInfo, McpServer } from '@modelcontextprotocol/server'
-import { ascend, descend, groupBy, sortWith } from 'ramda'
+import { ascend, descend, groupBy, sortWith, uniq } from 'ramda'
 import { z } from 'zod'
 
 import { MAX_LINES } from '@/app/api/appraisal/assetLines'
@@ -32,6 +32,7 @@ import { createBearerClient } from '@/utils/supabase/bearer'
 import {
   dataFreshness,
   fetchAllRows,
+  fetchForeignOwnerNames,
   fetchOwnerContext,
   resolveOwnerFilter,
   resolveTypeFilter,
@@ -643,7 +644,7 @@ export const registerEstateTools = (server: McpServer): void => {
     {
       title: 'List mercenary dens',
       description:
-        'The Mercenary Dens the user\'s characters have deployed, each on its planet, with its current state, development and anarchy levels, infomorph count, and reinforcement timer. Answers "which dens are reinforced" or "when do my timers come out".',
+        'The Mercenary Dens the user\'s characters have deployed, each on its planet, with its current state, development and anarchy levels, infomorph count, and reinforcement timer — plus any dens alliance members share with them, marked shared: true. Answers "which dens are reinforced" or "when do my timers come out".',
       annotations: { readOnlyHint: true, openWorldHint: false },
       inputSchema: z.object({
         reinforced_only: z
@@ -693,6 +694,14 @@ export const registerEstateTools = (server: McpServer): void => {
       // the same key /mercenary-dens uses.
       const planets = await getSdePlanets(dens.map((d) => Number(d.planet_id)))
       const typeNames = await getSdeTypeNames(dens.flatMap((d) => (d.type_id != null ? [Number(d.type_id)] : [])))
+      // A den an alliance member shares with the caller (character_mercenary_den_share)
+      // comes through RLS under a registration that isn't theirs: name its pilot
+      // from the world-readable directory rather than printing the uuid.
+      const foreignNames = await fetchForeignOwnerNames(
+        supabase,
+        uniq(dens.map((d) => d.registration_id).filter((id) => !owners.nameById.has(id))),
+        []
+      )
 
       const now = Date.now()
       const rows = dens
@@ -702,7 +711,8 @@ export const registerEstateTools = (server: McpServer): void => {
           return {
             planet: planet?.name ?? `Planet #${d.planet_id}`,
             system: planet?.systemName ?? null,
-            owner: owners.nameById.get(d.registration_id) ?? d.registration_id,
+            owner: owners.nameById.get(d.registration_id) ?? foreignNames.get(d.registration_id) ?? d.registration_id,
+            ...(!owners.nameById.has(d.registration_id) && { shared: true }),
             ...(d.type_id != null && { type: typeNames[Number(d.type_id)] ?? `Type #${d.type_id}` }),
             state: d.state,
             reinforced,
