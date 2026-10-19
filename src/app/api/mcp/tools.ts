@@ -91,7 +91,7 @@ const INCLUDE_SHARED_SHAPE = z
   .boolean()
   .optional()
   .describe(
-    'Also return items other players have shared with this user (default false). Shared items come back marked shared: true, with the owner who shared them but never their location — system and station are null. Cannot be combined with as_of.'
+    'Also return items other players have shared with this user (default false). Shared items come back marked shared: true, with the owner who shared them. An item share never says where the item is (system and station are null, so a system filter drops it); a share of a whole station, structure or system names that place. Cannot be combined with as_of.'
   )
 
 const SHARED_WITH_AS_OF = 'include_shared reads the hangars as they stand now, so it cannot be combined with as_of.'
@@ -1146,7 +1146,7 @@ export const registerTools = (server: McpServer): void => {
     {
       title: 'List structures',
       description:
-        'The Upwell structures the user\'s corporations own and monitor — hull type and class, solar system and security, state, fuel expiry, online and offline services, and fitted rigs. Answers "which structures are in 27-HP0", "what runs out of fuel this week", or "what rigs are on the Athanor". Each row\'s structure_id is what blueprint_for_product and blueprints_using_material take as structure_id: pass it there to get a material bill costed for this structure, since what a fitted rig is worth depends on what you are building (use rigs_for_blueprint to check a rig covers a product).',
+        'The Upwell structures the user\'s corporations own and monitor, plus those other corporations share with them (marked shared: true, with no fuel expiry — fuel stays with the owner\'s directors) — hull type and class, solar system and security, state, fuel expiry, online and offline services, and fitted rigs. Answers "which structures are in 27-HP0", "what runs out of fuel this week", or "what rigs are on the Athanor". Each row\'s structure_id is what blueprint_for_product and blueprints_using_material take as structure_id: pass it there to get a material bill costed for this structure, since what a fitted rig is worth depends on what you are building (use rigs_for_blueprint to check a rig covers a product).',
       annotations: { readOnlyHint: true, openWorldHint: false },
       inputSchema: z.object({
         system: z.string().optional().describe('Only structures in this solar system, e.g. "27-HP0"'),
@@ -1221,10 +1221,24 @@ export const registerTools = (server: McpServer): void => {
         supabase,
         rows.map((s) => Number(s.system_id))
       )
+      // A structure another corporation shares with the caller (corp_structure_share:
+      // its alliance default, a corporation or alliance list, its tenants, or
+      // public) comes through RLS beside their own. Name its owner from the
+      // world-readable directory and mark it, since its fuel stays directors-only.
+      const ownCorporationIds = new Set(owners.corporationIds.map(String))
+      const isShared = (row: StructureRow) => !ownCorporationIds.has(String(row.corporation_id))
+      const sharedOwnerNames = await fetchForeignOwnerNames(
+        supabase,
+        [],
+        uniq(rows.filter(isShared).map((s) => String(s.corporation_id)))
+      )
 
-      const shown = rows.slice(0, MAX_ROWS).map((row) =>
-        formatStructure(row, {
-          ownerName: (corporationId) => owners.nameById.get(corporationId) ?? `Corporation #${corporationId}`,
+      const shown = rows.slice(0, MAX_ROWS).map((row) => ({
+        ...formatStructure(row, {
+          ownerName: (corporationId) =>
+            owners.nameById.get(corporationId) ??
+            sharedOwnerNames.get(corporationId) ??
+            `Corporation #${corporationId}`,
           hullName: (typeId) => hullTypes[typeId]?.name ?? `Type #${typeId}`,
           hullGroupId: (typeId) => hullTypes[typeId]?.groupID ?? null,
           systemName: (systemId) => systemNames[systemId] ?? null,
@@ -1235,8 +1249,9 @@ export const registerTools = (server: McpServer): void => {
           fuelExpires: (structureId) => fuelByStructure.get(structureId) ?? null,
           rigs: (structureId) =>
             (rigTypeIdsByStructure.get(structureId) ?? []).map((id) => rigNames[id] ?? `Type #${id}`),
-        })
-      )
+        }),
+        ...(isShared(row) && { shared: true }),
+      }))
 
       return textResult({
         filters: {
@@ -1309,8 +1324,13 @@ export const registerTools = (server: McpServer): void => {
         ownerFilter.ownerIds == null
           ? owners.registrationIds
           : owners.registrationIds.filter((id) => ownerFilter.ownerIds!.has(id))
+      // Only the caller's own corporations: since co-tenants of a structure read
+      // each other's current jobs through RLS (cost blanked), the corp view also
+      // returns other corporations' jobs, and a job seen is not a job owned.
+      const ownCorporationIds = new Set(owners.corporationIds.map(String))
       const corpWanted = (corporationId: number | string) =>
-        ownerFilter.ownerIds == null || ownerFilter.ownerIds.has(String(corporationId))
+        ownCorporationIds.has(String(corporationId)) &&
+        (ownerFilter.ownerIds == null || ownerFilter.ownerIds.has(String(corporationId)))
 
       // Every job normalized to one shape, since the historical path returns
       // the owner's name where the live path returns an id to look up.

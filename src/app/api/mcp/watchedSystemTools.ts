@@ -155,12 +155,12 @@ export const registerWatchedSystemTools = (server: McpServer): void => {
     {
       title: 'Edit watched systems',
       description:
-        'Read and edit the ordered list of solar systems this user watches on the /indexes page — the systems industry_cost_indices reports on when none is named, and the ones the industry-systems extract keeps cost-index history for. Four commands: SELECT reports where a system sits in the list (an array of systems answers with one row of indexes each; no system at all lists the whole watch list), INSERT adds a system at an index without removing anything, DELETE removes it from wherever it sits, and UPDATE moves an already-watched system to a new index. The index is where the system ends up: after INSERT or UPDATE at index 2 the system is the third in the list, and everything from there down shifts along. Omit the index to put the system last. Writes: INSERT, DELETE and UPDATE change what this user sees on /indexes and, over time, which systems have index history recorded.',
+        'Read and edit the ordered list of solar systems this user watches on the /indexes page — the systems industry_cost_indices reports on when none is named. Adding a system starts its cost-index history; removing it does not stop that history, which the industry-systems extract keeps for every system it has ever recorded. Four commands: SELECT reports where a system sits in the list (an array of systems answers with one row of indexes each; no system at all lists the whole watch list), INSERT adds a system at an index without removing anything, DELETE removes it from wherever it sits, and UPDATE moves an already-watched system to a new index. The index is where the system ends up: after INSERT or UPDATE at index 2 the system is the third in the list, and everything from there down shifts along. Omit the index to put the system last. Writes: INSERT, DELETE and UPDATE change what this user sees on /indexes.',
       annotations: {
         readOnlyHint: false,
-        // DELETE removes a row. Trivially undone by re-adding the system, but
-        // the cost-index history recorded for it stops accruing, so this is a
-        // removal rather than an in-place amendment.
+        // DELETE removes a row: a removal rather than an in-place amendment,
+        // though re-adding the system undoes it, and its cost-index history
+        // keeps accruing either way (industry_index_tracked_systems()).
         destructiveHint: true,
         // Every command lands on the same list when repeated: a second INSERT
         // of a watched system is refused, and a second UPDATE to the same index

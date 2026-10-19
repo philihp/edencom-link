@@ -44,28 +44,45 @@ const rowToBlueprint = (r: BlueprintRow): Blueprint => ({
     .sort((a, b) => a.typeID - b.typeID),
 })
 
-// The blueprint that produces the given product. Manufacturing is preferred
-// over a reaction when a product is somehow made by both, and lower blueprint
-// type id breaks any remaining tie — so the choice is stable across builds.
-export const getBlueprintForProduct = async (productTypeID: number): Promise<Blueprint | null> => {
-  const { data, error } = await sdeSupabase()
-    .from('sde_blueprint_product')
-    .select('blueprint_type_id, activity_id, product_type_id, product_quantity, materials')
-    .eq('product_type_id', productTypeID)
-  if (error) {
-    console.error(`[sdeBlueprints] product lookup failed: ${error.message}`)
-    return null
-  }
-  const candidates = (data ?? []) as BlueprintRow[]
-  if (candidates.length === 0) return null
-  return candidates
-    .map(rowToBlueprint)
-    .sort(
-      (a, b) =>
-        Number(b.activityID === MANUFACTURING) - Number(a.activityID === MANUFACTURING) ||
-        a.blueprintTypeID - b.blueprintTypeID
-    )[0]
+// The blueprint that produces each given product, keyed by product type id; a
+// product nothing builds is absent. Manufacturing is preferred over a reaction
+// when a product is somehow made by both, and lower blueprint type id breaks
+// any remaining tie — so the choice is stable across builds. Chunked at 500
+// like the reverse lookup below.
+export const getBlueprintsForProducts = async (
+  productTypeIDs: Iterable<number>
+): Promise<Record<number, Blueprint>> => {
+  const ids = [...new Set(productTypeIDs)].filter((id) => Number.isFinite(id))
+  if (ids.length === 0) return {}
+
+  const chunks = await Promise.all(
+    splitEvery(500, ids).map(async (chunk) => {
+      const { data, error } = await sdeSupabase()
+        .from('sde_blueprint_product')
+        .select('blueprint_type_id, activity_id, product_type_id, product_quantity, materials')
+        .in('product_type_id', chunk)
+      if (error) {
+        console.error(`[sdeBlueprints] product lookup failed: ${error.message}`)
+        return [] as BlueprintRow[]
+      }
+      return (data ?? []) as BlueprintRow[]
+    })
+  )
+
+  return chunks.flat().reduce<Record<number, Blueprint>>((acc, row) => {
+    const blueprint = rowToBlueprint(row)
+    const seen = acc[blueprint.productTypeID]
+    const better =
+      seen == null ||
+      Number(blueprint.activityID === MANUFACTURING) - Number(seen.activityID === MANUFACTURING) > 0 ||
+      (blueprint.activityID === seen.activityID && blueprint.blueprintTypeID < seen.blueprintTypeID)
+    if (better) acc[blueprint.productTypeID] = blueprint
+    return acc
+  }, {})
 }
+
+export const getBlueprintForProduct = async (productTypeID: number): Promise<Blueprint | null> =>
+  (await getBlueprintsForProducts([productTypeID]))[productTypeID] ?? null
 
 // Every blueprint that consumes the given type as an input material, ordered
 // by product type id for a stable, browsable result. The GIN jsonb_path_ops

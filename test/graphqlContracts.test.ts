@@ -11,6 +11,7 @@ import {
   contractDirection,
   contractSide,
   matchKindFilter,
+  matchStatusFilter,
   parseDirectionFilter,
   summariseItems,
   type ContractRow,
@@ -136,6 +137,29 @@ test('the kind filter searches on the singular and takes exact entries on the pl
   const both = matchKindFilter('courier', ['loan'])
   assert.ok(!both.ok)
   assert.match(both.message, /kind or kinds/)
+})
+
+test('the status filter searches the status vocabulary, not the kind one', () => {
+  // It used to search KNOWN_KINDS, so this was refused as "no contract kind matched".
+  const finished = matchStatusFilter('finished', null)
+  assert.ok(finished.ok)
+  assert.deepEqual(finished.kinds, ['finished_issuer', 'finished_contractor', 'finished'])
+
+  const outstanding = matchStatusFilter('Outstanding', null)
+  assert.ok(outstanding.ok)
+  assert.deepEqual(outstanding.kinds, ['outstanding'])
+
+  const exact = matchStatusFilter(null, ['In_Progress', 'expired_or_new'])
+  assert.ok(exact.ok)
+  assert.deepEqual(exact.kinds, ['in_progress', 'expired_or_new'])
+
+  const noMatch = matchStatusFilter('courier', null)
+  assert.ok(!noMatch.ok)
+  assert.match(noMatch.message, /No contract status matched "courier"/)
+
+  const both = matchStatusFilter('finished', ['failed'])
+  assert.ok(!both.ok)
+  assert.match(both.message, /status or statuses/)
 })
 
 test('the item summary names what was included, stacking repeats', () => {

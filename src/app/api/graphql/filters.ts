@@ -44,7 +44,9 @@ export type RefParse = { ok: true; query: RefQuery } | { ok: false; message: str
 export const parseRefFilter = (
   single: string | null | undefined,
   list: readonly string[] | null | undefined,
-  label: string
+  label: string,
+  // The plural argument's name, for the one label that is not label + "s".
+  plural = `${label}s`
 ): RefParse => {
   const term = (single ?? '').trim()
   const entries = (list ?? []).map((e) => (e ?? '').trim()).filter((e) => e !== '')
@@ -54,7 +56,7 @@ export const parseRefFilter = (
   if (term !== '') {
     return {
       ok: false,
-      message: `Pass ${label} or ${label}s, not both — one is a name search, the other an exact list.`,
+      message: `Pass ${label} or ${plural}, not both — one is a name search, the other an exact list.`,
     }
   }
   return { ok: true, query: { kind: 'exact', entries: [...new Set(entries)] } }
