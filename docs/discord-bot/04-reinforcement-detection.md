@@ -98,6 +98,13 @@ hourly feels too chatty for ESI etiquette, every 2–3h is still a big
 improvement. Decide in the PR, but decide deliberately — this bounds the
 product's usefulness.
 
+**Since 2026-10-20 (docs/workflow-events.md §2):** hourly only for den
+owners. `/api/cron/character-mercenary-dens?owners=1` at `30 * * * *` walks
+just the characters holding a current den row (`enumerateDenOwners`), and the
+bare path at `32 */6 * * *` walks everyone with the scope — the run that
+discovers a new owner. A den held from the start therefore pings within the
+hour; a character's *first* den is picked up within 6h, then hourly.
+
 ## Milestone / acceptance
 
 - `pnpm run lint` + `pnpm run build` pass; migration applies.

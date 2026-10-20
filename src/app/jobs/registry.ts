@@ -8,10 +8,8 @@
 // vercel.json entry (character-skills, esf-data, sheet-csv, and the individual
 // live-state modules) is manual-only and says so.
 
-import { fromPairs, map } from 'ramda'
-
 import vercel from '../../../vercel.json'
-import { nextCronRun, previousCronRun } from './schedule'
+import { cronsByJob, nextCronRunOf, previousCronRunOf } from './schedule'
 
 export type JobSection = 'character' | 'corporation' | 'universe'
 
@@ -205,23 +203,14 @@ export const jobsInSection = (section: JobSection) => JOBS.filter((entry) => ent
 // list — which is also what makes it unkickable (see ./actions.ts).
 export const jobEntry = (job: string): JobEntry | undefined => JOBS.find((entry) => entry.job === job)
 
-// vercel.json's cron paths are all /api/cron/<job>, so the last segment is the
-// job name this page keys everything else by.
-const CRON_BY_JOB: Record<string, string> = fromPairs(
-  map(
-    (entry: { path: string; schedule: string }): [string, string] => [entry.path.replace(/^.*\//, ''), entry.schedule],
-    vercel.crons
-  )
-)
+// vercel.json's crons keyed by job name (see cronsByJob: a job may have several).
+const CRONS_BY_JOB = cronsByJob(vercel.crons)
 
-// The 5-field UTC cron this job is scheduled with, or null when nothing in
+// The 5-field UTC crons this job is scheduled with, empty when nothing in
 // vercel.json triggers it (manual/backfill routes and the CLI only).
-export const cronFor = (job: string): string | null => CRON_BY_JOB[job] ?? null
+export const cronsFor = (job: string): string[] => CRONS_BY_JOB[job] ?? []
 
-export const nextRunFor = (job: string, from: Date = new Date()): Date | null => {
-  const cron = cronFor(job)
-  return cron === null ? null : nextCronRun(cron, from)
-}
+export const nextRunFor = (job: string, from: Date = new Date()): Date | null => nextCronRunOf(cronsFor(job), from)
 
 // A run can start a little late and takes time to record its heartbeat, so a
 // missed fire is only called out once it's this far past due. Well under the
@@ -235,7 +224,7 @@ const MISSED_GRACE_MINUTES = 30
 // place. Heuristic, deliberately: for a fan-out job we only see the caller's own
 // characters, so this answers "my data missed its pull", not "the cron is down".
 export const isOverdue = (job: string, lastRunAt: string | null | undefined, from: Date = new Date()): boolean => {
-  const previous = previousCronRun(cronFor(job) ?? '', from)
+  const previous = previousCronRunOf(cronsFor(job), from)
   if (previous === null) return false
   const due = previous.getTime() + MISSED_GRACE_MINUTES * 60_000
   if (due > from.getTime()) return false
