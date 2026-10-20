@@ -1,6 +1,6 @@
 // "Did this unit of work just run?" — the rule that stops a job start cold
 // when the same work completed, or is still going, within the last five
-// minutes. A scheduled child run landing two minutes after an on-demand run,
+// minutes. A scheduled character turn landing two minutes after an on-demand run,
 // a refresh pressed twice, a corp reached through two alts' tokens: the
 // second start writes no heartbeat, refreshes no token, and to the user never
 // happened. Pure; the query lives in ranRecently.js. Tested in
