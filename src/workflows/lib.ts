@@ -66,14 +66,8 @@ export async function forgetTask(taskId: string) {
   await sudoSupabase.from('refresh_task').delete().eq('id', taskId)
 }
 
-// The two halves of withRefreshTask, usable on their own by a workflow whose
-// run is a fan-out rather than a single call (market-prices): there is no one
-// function to wrap, so the row is flipped to running alongside the heartbeat
-// that opens the run and settled alongside the one that closes it. Same
-// best-effort semantics — a tracked run always reaches a terminal state the
-// /jobs poller can see. Plain helpers, NOT steps: import them dynamically
-// inside a `'use step'` body, per the rules above.
-export async function markTaskRunning(taskId: string) {
+// The two halves of withRefreshTask: flip the row to running, then settle it.
+async function markTaskRunning(taskId: string) {
   const { sudoSupabase } = await import('@/supabase.js')
   await sudoSupabase
     .from('refresh_task')
@@ -83,7 +77,7 @@ export async function markTaskRunning(taskId: string) {
 
 // Settle the row: done when `failure` is absent, error (carrying its message)
 // otherwise.
-export async function markTaskSettled(taskId: string, failure?: unknown) {
+async function markTaskSettled(taskId: string, failure?: unknown) {
   const { sudoSupabase } = await import('@/supabase.js')
   await sudoSupabase
     .from('refresh_task')

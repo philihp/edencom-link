@@ -9,6 +9,15 @@ their linked channels via the Discord REST API. After this stage the
 end-to-end loop is closed: den reinforced → extract detects → message
 appears in the corp channel.
 
+> **Status: unscheduled.** The `/api/cron/discord-notification-send` entry
+> is out of `vercel.json` until the bot ships — a 5-minute sweep over an
+> almost-always-empty outbox cost 288 workflow runs a day. The route,
+> workflow and job module stay, `CRON_SECRET`-triggerable. When the bot
+> ships, `enqueueDenReinforcement` and the structure-fuel enqueue should
+> `start()` the sender themselves (with a `sleep` until `scheduled_at`), and
+> the cron returns only as a slow retry backstop: the outbox should not be
+> polled.
+
 ## The job — `discord-notification-send`
 
 Follows the extract-job conventions (name = npm script = heartbeat label =
