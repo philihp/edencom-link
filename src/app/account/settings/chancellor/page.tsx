@@ -75,6 +75,11 @@ const ChancellorPage = async () => {
   // Chancellor-only page where an extra Auth call costs nothing anyone notices.
   const { data: profile } = await service.auth.admin.getUserById(user.id)
 
+  // An explicit list, not a table walk. The mail tables (character_mail,
+  // character_mail_label, character_mailing_list, character_mail_sync) are left
+  // out ON PURPOSE and must stay out: a mailbox copy is the most personal thing
+  // this database holds, and this dump is no place to read it (docs/eve-mail.md
+  // "Privacy").
   const debugInfo = {
     user_id: user.id,
     email: user.email,

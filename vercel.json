@@ -26,6 +26,10 @@
       "schedule": "34 */6 * * *"
     },
     {
+      "path": "/api/cron/character-mail",
+      "schedule": "19 */6 * * *"
+    },
+    {
       "path": "/api/cron/corp-wallet-journal",
       "schedule": "37 */6 * * *"
     },

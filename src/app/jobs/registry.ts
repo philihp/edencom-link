@@ -40,6 +40,14 @@ export type JobEntry = {
   // the shared-universe jobs, which pull public data under no grant at all.
   // /registration reads these to fuse grant state into each job cell.
   scopes: readonly string[]
+  // A grant that can change something in game rather than only read it. The
+  // /account/registrations toggle hides these columns by default.
+  changes?: boolean
+  // How a multi-scope column reads as granted: 'any' (the default; e.g.
+  // character-status runs whichever endpoints the token carries) or 'all'
+  // (mail: one checkbox requests read and send together, and the job needs
+  // read, so a token holding only one is not a tick).
+  grantRule?: 'any' | 'all'
 }
 
 export const JOBS: readonly JobEntry[] = [
@@ -105,6 +113,17 @@ export const JOBS: readonly JobEntry[] = [
     section: 'character',
     kickable: 'always',
     scopes: ['esi-fittings.read_fittings.v1'],
+  },
+  // A copy of the mailbox (docs/eve-mail.md). The job reads on read_mail alone;
+  // the column carries send_mail too because its one checkbox grants both.
+  {
+    job: 'character-mail',
+    label: 'mail',
+    section: 'character',
+    kickable: 'always',
+    scopes: ['esi-mail.read_mail.v1', 'esi-mail.send_mail.v1'],
+    changes: true,
+    grantRule: 'all',
   },
   // Combined live-state pull: wallet, location, implants, clones, ship, skills
   // in one invocation (src/jobs/characterStatus.js).
