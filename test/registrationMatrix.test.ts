@@ -39,6 +39,25 @@ test('columnGrant: a multi-scope column is granted by ANY of its scopes', () => 
   assert.equal(columnGrant(STATUS, new Set([STATUS[1]]), new Set(STATUS)), 'on')
 })
 
+const MAIL = ['esi-mail.read_mail.v1', 'esi-mail.send_mail.v1']
+
+test('columnGrant: the default rule is any, so existing columns read as before', () => {
+  assert.equal(columnGrant(STATUS, new Set([STATUS[0]]), new Set(STATUS)), 'on')
+  assert.equal(columnGrant(STATUS, new Set([STATUS[0]]), new Set(STATUS), 'any'), 'on')
+})
+
+test('columnGrant all: half the pair granted is not a grant', () => {
+  // A token holding only send_mail must not show ✓ over a job that reads mail.
+  assert.equal(columnGrant(MAIL, new Set([MAIL[1]]), new Set(MAIL), 'all'), 'missing')
+  assert.equal(columnGrant(MAIL, new Set(MAIL), new Set(MAIL), 'all'), 'on')
+})
+
+test('columnGrant all: half the pair requested is not a request', () => {
+  assert.equal(columnGrant(MAIL, new Set(MAIL), new Set([MAIL[0]]), 'all'), 'extra')
+  assert.equal(columnGrant(MAIL, new Set([MAIL[0]]), new Set([MAIL[0]]), 'all'), 'off')
+  assert.equal(columnGrant(MAIL, new Set(), new Set(), 'all'), 'off')
+})
+
 test('grantAllowsRun: only on and extra cells have anything to kick', () => {
   assert.equal(grantAllowsRun('on'), true)
   assert.equal(grantAllowsRun('extra'), true)

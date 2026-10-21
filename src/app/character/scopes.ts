@@ -152,9 +152,23 @@ export const esiScopes: EsiScope[] = [
   {
     scope: 'esi-fittings.write_fittings.v1',
     name: 'Save and delete fittings',
-    why: 'Lets you archive a fitting — save it here and delete it from the game to free one of the character’s 500 saved-fitting slots — and restore an archived fitting back into the game later. This is the only scope that changes anything in game, so it is off unless you turn it on, and every fitting deleted this way is stored here in full first.',
+    why: 'Lets you archive a fitting — save it here and delete it from the game to free one of the character’s 500 saved-fitting slots — and restore an archived fitting back into the game later. This changes something in game, so it is off unless you turn it on, and every fitting deleted this way is stored here in full first.',
     without:
       'fittings can be browsed but not archived or restored; the character keeps every fit in its 500 in-game slots.',
+    optIn: true,
+  },
+  {
+    scope: 'esi-mail.read_mail.v1',
+    name: 'Read in-game mail',
+    why: 'Keeps a copy of this character’s mail here — every header, body, label and mailing list — so it can be searched later and survives being deleted in game.',
+    without: 'this character’s mail is not copied.',
+    optIn: true,
+  },
+  {
+    scope: 'esi-mail.send_mail.v1',
+    name: 'Send in-game mail',
+    why: 'Lets this site send an EVE mail as this character. Nothing on the site sends one today; this is the grant a later assistant tool will use, and every send is logged here in full before it goes.',
+    without: 'no mail can be sent as this character.',
     optIn: true,
   },
   {

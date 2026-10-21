@@ -20,13 +20,21 @@ export type GrantState = 'on' | 'missing' | 'extra' | 'off'
 // endpoints the token carries, so one grant is enough for the job to exist.
 // Requested follows the same rule: a template asking for any of the six is
 // asking for a status pull.
+//
+// The 'all' rule is the other case: a column whose scopes only mean something
+// together (mail — read and send behind one checkbox) is granted only when
+// every scope is, and requested only when every scope is asked for, so a
+// token carrying half the pair never reads as a ✓ over a job that won't run.
 export const columnGrant = (
   scopes: readonly string[],
   granted: ReadonlySet<string>,
-  template: ReadonlySet<string>
+  template: ReadonlySet<string>,
+  rule: 'any' | 'all' = 'any'
 ): GrantState => {
-  const has = scopes.some((scope) => granted.has(scope))
-  const wants = scopes.some((scope) => template.has(scope))
+  const holds = (set: ReadonlySet<string>) =>
+    rule === 'all' ? scopes.every((scope) => set.has(scope)) : scopes.some((scope) => set.has(scope))
+  const has = holds(granted)
+  const wants = holds(template)
   if (has) return wants ? 'on' : 'extra'
   return wants ? 'missing' : 'off'
 }
@@ -35,11 +43,12 @@ export const columnGrant = (
 // a grant that unlocks an action rather than a pull. Without a column here the
 // template row has no checkbox for them, so an opt-in scope could only be
 // requested from /settings/grants. Their cells carry the grant icon and
-// nothing to refresh.
-export type GrantColumn = { key: string; label: string; scopes: readonly string[] }
+// nothing to refresh. `changes` marks a grant that lets this site change
+// something in game (hidden unless the viewer asks — changeColumns.ts).
+export type GrantColumn = { key: string; label: string; scopes: readonly string[]; changes?: boolean }
 
 export const GRANT_COLUMNS: readonly GrantColumn[] = [
-  { key: 'fittings-write', label: 'save/delete fits', scopes: ['esi-fittings.write_fittings.v1'] },
+  { key: 'fittings-write', label: 'save/delete fits', scopes: ['esi-fittings.write_fittings.v1'], changes: true },
 ]
 
 // A cell in one of these states has a job that can actually run; the refresh

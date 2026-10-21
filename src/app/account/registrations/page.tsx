@@ -8,6 +8,7 @@
 // corporation matrix, and the /jobs sections parity keeps below the fold
 // (shared universe, recent activity, poller). /character and /jobs stay live
 // and unchanged until a separate sunset decision.
+import { cookies } from 'next/headers'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import type { CSSProperties } from 'react'
@@ -39,6 +40,9 @@ import {
 } from './matrix'
 import { CellKick, ColumnKick, RefreshAll, Retry, RowKick, TemplateToggle, UniverseKick } from './matrixButtons'
 import { fetchGrantOverview } from './matrixData'
+import { visibleGrantColumns, visibleJobColumns } from './changeColumns'
+import { SHOW_CHANGES_COOKIE, parseShowChanges } from './registrationsShowChanges'
+import { ShowChangesToggle } from './showChangesToggle'
 import styles from './registration.module.css'
 
 // The poller re-requests this server component while a kicked job is in
@@ -193,10 +197,11 @@ const RegistrationPage = async () => {
     redirect('/')
   }
 
-  const [{ characters, status, statusText, error }, noOptionalScopes, jobs] = await Promise.all([
+  const [{ characters, status, statusText, error }, noOptionalScopes, jobs, cookieStore] = await Promise.all([
     fetchCharacterOverviews(supabase),
     hasNoOptionalScopes(supabase, user.id),
     fetchJobsOverview(supabase, user.id),
+    cookies(),
   ])
   const { grantedByRegistration, template } = await fetchGrantOverview(
     supabase,
@@ -204,8 +209,13 @@ const RegistrationPage = async () => {
     jobs.registrations.map((r) => r.id)
   )
 
-  const characterJobs = jobsInSection('character')
-  const corporationJobs = jobsInSection('corporation')
+  // Grants that change things in game are drawn only when the viewer asked
+  // (showChangesToggle.tsx). Filtered here, before anything counts or draws a
+  // column — but not the re-auth counts, which compare the whole template.
+  const showChanges = parseShowChanges(cookieStore.get(SHOW_CHANGES_COOKIE)?.value)
+  const characterJobs = visibleJobColumns(jobsInSection('character'), showChanges)
+  const corporationJobs = visibleJobColumns(jobsInSection('corporation'), showChanges)
+  const grantColumns = visibleGrantColumns(GRANT_COLUMNS, showChanges)
   const overviewById = new Map(characters.map((c) => [c.id, c]))
   const entityById = (job: string) => new Map((jobs.characterEntities[job] ?? []).map((e) => [e.id, e]))
   const cellsByJob = new Map(characterJobs.map((entry) => [entry.job, entityById(entry.job)]))
@@ -218,17 +228,19 @@ const RegistrationPage = async () => {
 
   // The legend's warn summary counts every requested-but-ungranted cell.
   const blocked = blockedCellCount(
-    jobs.registrations.flatMap((r) => characterJobs.map((entry) => columnGrant(entry.scopes, granted(r.id), template)))
+    jobs.registrations.flatMap((r) =>
+      characterJobs.map((entry) => columnGrant(entry.scopes, granted(r.id), template, entry.grantRule))
+    )
   )
 
   // One countdown for the page: the soonest next fire across the per-character
   // jobs (each column's own sits in its header).
   const nextSweep = soonestNextRun(characterJobs.map((entry) => nextRunFor(entry.job)))
 
-  const requestedColumns = [...characterJobs, ...GRANT_COLUMNS].filter(
+  const requestedColumns = [...characterJobs, ...grantColumns].filter(
     (entry) => templateCheck(entry.scopes, template) === 'all'
   ).length
-  const columnCount = characterJobs.length + GRANT_COLUMNS.length
+  const columnCount = characterJobs.length + grantColumns.length
 
   const columnStyle = { '--cols': columnCount } as CSSProperties
   const corpColumnStyle = { '--cols': corporationJobs.length } as CSSProperties
@@ -270,7 +282,7 @@ const RegistrationPage = async () => {
           <TemplateToggle scopes={entry.scopes} check={templateCheck(entry.scopes, template)} label={entry.label} />
         </span>
       ))}
-      {GRANT_COLUMNS.map((column) => (
+      {grantColumns.map((column) => (
         <span key={column.key} className={styles.cell}>
           <span className={styles.cellLabel}>{column.label}</span>
           <TemplateToggle scopes={column.scopes} check={templateCheck(column.scopes, template)} label={column.label} />
@@ -307,6 +319,7 @@ const RegistrationPage = async () => {
           </div>
         </div>
         <div className={styles.headerActions}>
+          <ShowChangesToggle on={showChanges} />
           {characters.length > 0 && <RefreshAll />}
           <form className={styles.registerForm}>
             <button formAction={register}>+ Register a character</button>
@@ -337,7 +350,7 @@ const RegistrationPage = async () => {
                 sweep={characters.length > 1 && entry.kickable === 'always'}
               />
             ))}
-            {GRANT_COLUMNS.map((column) => (
+            {grantColumns.map((column) => (
               <span key={column.key} className={styles.columnHead}>
                 <span className={styles.columnLabel} title={column.scopes.join(' ')}>
                   {column.label}
@@ -359,7 +372,7 @@ const RegistrationPage = async () => {
                   <div className={styles.ghostAvatar} />
                   <div className={styles.ghostBar} />
                 </div>
-                {[...characterJobs.map((entry) => entry.job), ...GRANT_COLUMNS.map((column) => column.key)].map(
+                {[...characterJobs.map((entry) => entry.job), ...grantColumns.map((column) => column.key)].map(
                   (key) => (
                     <span key={key} className={styles.cell}>
                       <span className={styles.ghostCell} />
@@ -480,12 +493,12 @@ const RegistrationPage = async () => {
                           error: null,
                         }
                       }
-                      grant={columnGrant(entry.scopes, scopes, template)}
+                      grant={columnGrant(entry.scopes, scopes, template, entry.grantRule)}
                       kickable={entry.kickable === 'always'}
                       now={jobs.now}
                     />
                   ))}
-                  {GRANT_COLUMNS.map((column) => (
+                  {grantColumns.map((column) => (
                     <GrantCell
                       key={column.key}
                       label={column.label}
@@ -602,7 +615,7 @@ const RegistrationPage = async () => {
                           job={entry.job}
                           label={entry.label}
                           entity={entity}
-                          grant={columnGrant(entry.scopes, memberGranted, template)}
+                          grant={columnGrant(entry.scopes, memberGranted, template, entry.grantRule)}
                           kickable={entry.kickable === 'always'}
                           now={jobs.now}
                           runsAs={{ name: entity.runsAs ?? null, corpmate: entity.runsAsCorpmate === true }}
