@@ -40,13 +40,13 @@ export type JobEntry = {
   // the shared-universe jobs, which pull public data under no grant at all.
   // /registration reads these to fuse grant state into each job cell.
   scopes: readonly string[]
-  // A grant that can change something in game rather than only read it. The
-  // /account/registrations toggle hides these columns by default.
+  // A grant that lets this site CHANGE something in game rather than only read
+  // it. /account/registrations hides these columns unless the viewer turns on
+  // "Show grants that change things" (changeColumns.ts).
   changes?: boolean
-  // How a multi-scope column reads as granted: 'any' (the default; e.g.
-  // character-status runs whichever endpoints the token carries) or 'all'
-  // (mail: one checkbox requests read and send together, and the job needs
-  // read, so a token holding only one is not a tick).
+  // How a multi-scope column's grant is read (matrix.ts columnGrant): 'any'
+  // (the default — character-status runs whichever endpoints the token
+  // carries) or 'all', for a job that needs every one of its scopes.
   grantRule?: 'any' | 'all'
 }
 
