@@ -7,7 +7,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { STAGGER_WINDOW_SECONDS, staggerDelaySeconds } from '../src/workflows/staggerDelay.ts'
+import { bySlot, slotSeconds, STAGGER_WINDOW_SECONDS, staggerDelaySeconds } from '../src/workflows/staggerDelay.ts'
 
 const ALICE = '00000000-0000-0000-0000-000000000e10' // 0xe10 = 3600 → second 0
 const BOB = '00000000-0000-0000-0000-00000000012c' // 0x12c = 300 → second 300
@@ -47,4 +47,30 @@ test('different characters start at different seconds of the hour', () => {
     (now + staggerDelaySeconds(ALICE, now)) % STAGGER_WINDOW_SECONDS,
     (now + staggerDelaySeconds(BOB, now)) % STAGGER_WINDOW_SECONDS
   )
+})
+
+// A scheduled run drains its lanes itself, so the slots are measured from the
+// run's start, and each lane is ordered by them.
+const CAROL = '00000000-0000-0000-0000-000000000708' // 0x708 = 1800 → second 1800
+
+test('a slot is the first time the character’s second comes at or after the run’s start', () => {
+  const start = Date.UTC(2026, 9, 20, 12, 26) / 1000 // :26, second 1560
+  assert.equal(slotSeconds(CAROL, start), start + 240) // later this hour
+  assert.equal(slotSeconds(BOB, start), start + 3600 - 1260) // passed: next hour
+  assert.equal(slotSeconds(ALICE, start - 1560), start - 1560) // the start itself
+})
+
+test('bySlot orders the characters by when their slots come after the start', () => {
+  const start = Date.UTC(2026, 9, 20, 12, 26) / 1000
+  // CAROL at :30 this hour, then ALICE at :00 and BOB at :05 next hour.
+  assert.deepEqual(bySlot([BOB, ALICE, CAROL], start), [CAROL, ALICE, BOB])
+  // Started at :00, the same three walk the hour from its top.
+  assert.deepEqual(bySlot([CAROL, BOB, ALICE], start - 1560), [ALICE, BOB, CAROL])
+})
+
+test('bySlot is stable and leaves its input alone', () => {
+  const twin = '00000000-0000-0000-0000-000000001518' // 0x1518 = 5400 → second 1800, as CAROL
+  const ids = [twin, BOB, CAROL]
+  assert.deepEqual(bySlot(ids, 0), [BOB, twin, CAROL])
+  assert.deepEqual(ids, [twin, BOB, CAROL])
 })

@@ -11,7 +11,7 @@
 import { map, reduce, splitEvery, transpose } from 'ramda'
 
 import { enumerateCharacters, type OnDemandTarget } from './lib'
-import { waitForSlot } from './stagger'
+import { bySlot, runStartSeconds, waitForSlot } from './stagger'
 
 // This job's ESI scope, and the lane count. Four lanes matches the other
 // per-character jobs; a character's step is one paged contracts call plus up to
@@ -31,37 +31,28 @@ async function syncCharacter(registrationId: string, taskId?: string) {
   await withRefreshTask(taskId, () => runCharacterContracts({ registrationIds: [registrationId] }))
 }
 
-// Step: start this workflow again as a staggered child run for one character
-// (see ./stagger). One step per character, so a retry can start again only
-// that one run.
-async function dispatchCharacter(registrationId: string) {
-  'use step'
-  const { start } = await import('workflow/api')
-  const { characterContractsWorkflow } = await import('./characterContracts')
-  const run = await start(characterContractsWorkflow, [{ registrationIds: [registrationId], staggered: true }])
-  console.log(`[character-contracts] character ${registrationId}: dispatched run=${run.runId}`)
-}
-
 export async function characterContractsWorkflow(target?: OnDemandTarget) {
   'use workflow'
   // The workflow body stays deterministic control flow over step calls; ramda's
   // pure combinators are safe here (referentially transparent, no Node imports).
-  // A scheduled run (the cron route starts it with no target) only fans out:
-  // one child run per character. Each child sleeps in this workflow body until
-  // its character's second of the hour, and only then do its lanes start. An
-  // on-demand run is not staggered and starts at once.
-  if (target === undefined) {
-    await Promise.all(map(dispatchCharacter, await enumerateCharacters(SCOPES)))
-    return
-  }
-  const ids = target.registrationIds ?? (await enumerateCharacters(SCOPES))
-  if (target.staggered) await Promise.all(map(waitForSlot, ids))
+  // A scheduled run (the cron route starts it with no target) staggers its
+  // characters: each lane sleeps until a character's second of the hour, then
+  // runs that character's step, then sleeps until the next one's (./stagger).
+  // One sleep and one step per character, all inside this run. An on-demand run
+  // (with a target) is not staggered and starts at once.
+  const ids = target?.registrationIds ?? (await enumerateCharacters(SCOPES))
+  const staggered = target === undefined
+  const startSeconds = runStartSeconds()
+  const awaitTurn = (id: string): Promise<void> => (staggered ? waitForSlot(id, startSeconds) : Promise.resolve())
 
-  // Round-robin the characters into LANES lanes (splitEvery chunks rows of
-  // LANES, transpose flips rows→columns, so id i lands in lane i % LANES with no
-  // empty trailing lanes). Identical on every replay. Within a lane characters
-  // run sequentially; lanes run concurrently.
-  const lanes = transpose(splitEvery(LANES, ids))
+  // Round-robin the characters into LANES lanes: splitEvery chunks the ids into
+  // rows of LANES, then transpose flips rows→columns, so id i lands in lane
+  // i % LANES, with no empty trailing lanes when there are fewer ids than lanes.
+  // A staggered run sorts the ids by slot first (bySlot), so every lane walks the
+  // hour forwards and each stretch of the hour is spread across the lanes. Both
+  // depend only on the ids and the run's start, so every replay derives the same
+  // lanes. Within a lane characters run sequentially; lanes run concurrently.
+  const lanes = transpose(splitEvery(LANES, staggered ? bySlot(ids, startSeconds) : ids))
 
   // Drain each lane sequentially (the forEachSequential promise-chain, inlined
   // because src/jobs/lib.js can't be imported into workflow context). A failing
@@ -72,12 +63,14 @@ export async function characterContractsWorkflow(target?: OnDemandTarget) {
   const drainLane = (lane: string[]): Promise<void> =>
     reduce(
       (p, id) =>
-        p.then(() =>
-          syncCharacter(id, target.taskId).catch((err) => {
-            console.error(`[character-contracts] character ${id} failed:`, err)
-            failures.push(id)
-          })
-        ),
+        p
+          .then(() => awaitTurn(id))
+          .then(() =>
+            syncCharacter(id, target?.taskId).catch((err) => {
+              console.error(`[character-contracts] character ${id} failed:`, err)
+              failures.push(id)
+            })
+          ),
       Promise.resolve(),
       lane
     )
