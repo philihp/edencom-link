@@ -297,6 +297,48 @@ export const contractItems = (access_token, characterID, contractID) =>
     label: `contractItems ${characterID}/${contractID}`,
   })
 
+// One page of a character's mail headers: the 50 newest, newest first, or the
+// 50 older than `lastMailId` when given (ESI's only way to page — there is no
+// count and no page number). Conditional: the newest page is what changes, so
+// the character-mail job sends its stored ETag there and reads a 304 as "no new
+// mail and no read-state change among the newest 50". Older pages go
+// unconditional (no ifNoneMatch), since an ETag stored per character can only
+// ever describe one of them. Returns { status, json, etag }; see
+// esiConditionalJson. Needs esi-mail.read_mail.v1, as do the three below.
+export const mailHeaders = (access_token, characterID, { lastMailId, ifNoneMatch } = {}) =>
+  esiConditionalJson(`/characters/${characterID}/mail/`, {
+    access_token,
+    params: lastMailId != null ? { last_mail_id: lastMailId } : {},
+    ifNoneMatch,
+    label: `mailHeaders ${characterID}${lastMailId != null ? ` last_mail_id=${lastMailId}` : ''}`,
+  })
+
+// One mail with its body (EVE markup, kept verbatim by the caller). Immutable,
+// so fetched once per mail. Tolerates 404 — a mail deleted in the client
+// between listing and fetch — as json: null, which the caller stamps so the
+// mail is never asked about again.
+export const mail = (access_token, characterID, mailID) =>
+  esiJsonTolerant(`/characters/${characterID}/mail/${mailID}/`, {
+    access_token,
+    tolerate: [404],
+    label: `mail ${characterID}/${mailID}`,
+  })
+
+// The character's mail labels ({ labels[], total_unread_count }).
+export const mailLabels = (access_token, characterID) =>
+  esiJson(`/characters/${characterID}/mail/labels/`, {
+    access_token,
+    label: `mailLabels ${characterID}`,
+  })
+
+// The mailing lists the character is on ([{ mailing_list_id, name }]) — the
+// only source of a name for a `mailing_list` recipient id.
+export const mailingLists = (access_token, characterID) =>
+  esiJson(`/characters/${characterID}/mail/lists/`, {
+    access_token,
+    label: `mailingLists ${characterID}`,
+  })
+
 // A corporation's contracts. Requires no in-game role beyond membership for
 // corp-issued contracts. Page-numbered, same as the character endpoint.
 export const corpContracts = (access_token, corporationID, page = 1) =>

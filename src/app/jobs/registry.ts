@@ -112,6 +112,17 @@ export const JOBS: readonly JobEntry[] = [
     kickable: 'always',
     scopes: ['esi-fittings.read_fittings.v1'],
   },
+  // A copy of the mailbox (docs/eve-mail.md). The job reads on read_mail alone;
+  // the column carries send_mail too because its one checkbox grants both.
+  {
+    job: 'character-mail',
+    label: 'mail',
+    section: 'character',
+    kickable: 'always',
+    scopes: ['esi-mail.read_mail.v1', 'esi-mail.send_mail.v1'],
+    changes: true,
+    grantRule: 'all',
+  },
   // Combined live-state pull: wallet, location, implants, clones, ship, skills
   // in one invocation (src/jobs/characterStatus.js).
   {
