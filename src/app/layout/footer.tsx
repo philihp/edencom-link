@@ -27,9 +27,12 @@ const Footer = () => {
           </>
         ) : null}
         <span className={styles.links}>
+          {' · '}
           <Link href="/privacy">Privacy</Link>
           {' · '}
           <Link href="/terms">Terms</Link>
+          {' · '}
+          <Link href="/mcp-server">MCP Server</Link>
         </span>
       </footer>
     </>
