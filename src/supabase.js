@@ -160,6 +160,24 @@ export const selectRegistrationIdsWithScopes = async (scopes) => {
   return [...new Set(unnest(perScope))]
 }
 
+// The scoped characters that currently hold a mercenary den: the ids above,
+// narrowed to those with an is_current character_mercenary_den_over_time row
+// (character_mercenary_den_over_time_registration_id_idx). The hourly
+// character-mercenary-dens run walks only these (docs/workflow-events.md §2);
+// the 6-hourly run walks everyone with the scope, which is how a new owner
+// lands in this list.
+export const selectDenOwnerRegistrationIds = async (scopes) => {
+  const registrationIds = await selectRegistrationIdsWithScopes(scopes)
+  if (registrationIds.length === 0) return []
+  const { data, error } = await sudoSupabase
+    .from('character_mercenary_den_over_time')
+    .select('registration_id')
+    .eq('is_current', true)
+    .in('registration_id', registrationIds)
+  if (error) throw error
+  return [...new Set(pluck('registration_id', data ?? []))]
+}
+
 // Every character carrying any of `scopes`, grouped by corporation — `byCorp`
 // maps corporation_id to the character ids known to belong to it; `unresolved`
 // lists characters whose corporation hasn't been resolved yet (brand-new

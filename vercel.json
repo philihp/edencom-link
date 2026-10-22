@@ -14,8 +14,12 @@
       "schedule": "28 */6 * * *"
     },
     {
-      "path": "/api/cron/character-mercenary-dens",
+      "path": "/api/cron/character-mercenary-dens?owners=1",
       "schedule": "30 * * * *"
+    },
+    {
+      "path": "/api/cron/character-mercenary-dens",
+      "schedule": "32 */6 * * *"
     },
     {
       "path": "/api/cron/discord-notification-send",

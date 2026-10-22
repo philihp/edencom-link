@@ -9,7 +9,15 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { nextCronRun, parseCron, previousCronRun } from '../src/app/jobs/schedule.ts'
+import {
+  cronsByJob,
+  jobOfCronPath,
+  nextCronRun,
+  nextCronRunOf,
+  parseCron,
+  previousCronRun,
+  previousCronRunOf,
+} from '../src/app/jobs/schedule.ts'
 
 const at = (iso: string) => new Date(iso)
 const iso = (d: Date | null) => (d === null ? null : d.toISOString())
@@ -113,4 +121,33 @@ test('previous and next bracket the moment between them', () => {
   assert.ok((previous as Date) < now && now < (next as Date))
   assert.equal(iso(previous), '2026-07-26T12:46:00.000Z')
   assert.equal(iso(next), '2026-07-26T18:46:00.000Z')
+})
+
+test('keys vercel.json crons by job, a query string naming no new job', () => {
+  assert.equal(jobOfCronPath('/api/cron/character-mercenary-dens?owners=1'), 'character-mercenary-dens')
+  assert.equal(jobOfCronPath('/api/cron/character-assets'), 'character-assets')
+  assert.deepEqual(
+    cronsByJob([
+      { path: '/api/cron/character-mercenary-dens?owners=1', schedule: '30 * * * *' },
+      { path: '/api/cron/character-assets', schedule: '26 */6 * * *' },
+      { path: '/api/cron/character-mercenary-dens', schedule: '32 */6 * * *' },
+    ]),
+    {
+      'character-mercenary-dens': ['30 * * * *', '32 */6 * * *'],
+      'character-assets': ['26 */6 * * *'],
+    }
+  )
+})
+
+test('a job with two crons runs next at the sooner, and is overdue only against the older previous fire', () => {
+  const dens = ['30 * * * *', '32 */6 * * *']
+  // 05:40: the hourly fires at 06:30, the 6-hourly at 06:32 — the hourly wins.
+  assert.equal(iso(nextCronRunOf(dens, at('2026-10-20T05:40:00Z'))), '2026-10-20T06:30:00.000Z')
+  // 06:31: the 6-hourly at 06:32 now comes first.
+  assert.equal(iso(nextCronRunOf(dens, at('2026-10-20T06:31:00Z'))), '2026-10-20T06:32:00.000Z')
+  // 08:00: the hourly last fired 07:30, the full run 06:32 — overdue is judged
+  // against the full run, the one every character is part of.
+  assert.equal(iso(previousCronRunOf(dens, at('2026-10-20T08:00:00Z'))), '2026-10-20T06:32:00.000Z')
+  assert.equal(nextCronRunOf([], at('2026-10-20T08:00:00Z')), null)
+  assert.equal(previousCronRunOf(['not a cron'], at('2026-10-20T08:00:00Z')), null)
 })

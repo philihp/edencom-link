@@ -12,7 +12,22 @@
 // `W`/`#` extensions; none appear in vercel.json and an unparseable expression
 // returns null rather than guessing.
 
-import { all, filter, find, findLast, head, last, map, range as rRange, sortBy, uniq } from 'ramda'
+import {
+  all,
+  filter,
+  find,
+  findLast,
+  head,
+  isNil,
+  last,
+  map,
+  pipe,
+  range as rRange,
+  reduce,
+  reject,
+  sortBy,
+  uniq,
+} from 'ramda'
 
 export type CronFields = {
   minutes: number[]
@@ -185,3 +200,41 @@ export const previousCronRun = (expression: string, from: Date = new Date()): Da
   const ceil = new Date(Math.floor(from.getTime() / MINUTE_MS) * MINUTE_MS)
   return scanBackward(fields, utcMidnight(ceil), ceil.getUTCHours(), ceil.getUTCMinutes(), MAX_DAYS)
 }
+
+// A job scheduled by several vercel.json entries (character-mercenary-dens:
+// den owners hourly, everyone every 6h) runs next at the soonest of them.
+export const nextCronRunOf = (expressions: string[], from: Date = new Date()): Date | null =>
+  pipe(
+    map((expression: string) => nextCronRun(expression, from)),
+    reject(isNil),
+    sortBy((at: Date) => at.getTime()),
+    head<Date>
+  )(expressions) ?? null
+
+// ...and is overdue only against the *oldest* of their previous fires: an entry
+// that narrows the set (the hourly den-owners run) skips most characters, so
+// only the entry every character is part of — the least frequent one here —
+// says a given character's run was missed.
+export const previousCronRunOf = (expressions: string[], from: Date = new Date()): Date | null =>
+  pipe(
+    map((expression: string) => previousCronRun(expression, from)),
+    reject(isNil),
+    sortBy((at: Date) => at.getTime()),
+    head<Date>
+  )(expressions) ?? null
+
+// vercel.json's cron paths are all /api/cron/<job>, so the last segment (less
+// any query string) is the job name the /account/registrations page keys
+// everything by. A job may have several entries — character-mercenary-dens runs
+// `?owners=1` hourly and bare every 6h — so each name keys a list.
+export const jobOfCronPath = (path: string): string => path.replace(/\?.*$/, '').replace(/^.*\//, '')
+
+export const cronsByJob = (entries: { path: string; schedule: string }[]): Record<string, string[]> =>
+  reduce(
+    (acc: Record<string, string[]>, entry: { path: string; schedule: string }) => {
+      const job = jobOfCronPath(entry.path)
+      return { ...acc, [job]: [...(acc[job] ?? []), entry.schedule] }
+    },
+    {},
+    entries
+  )
