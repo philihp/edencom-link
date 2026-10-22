@@ -300,7 +300,7 @@ sendMail(caller: Caller, registrationId: string, draft: MailDraft): Promise<Send
 ```
 
 1. Validate with the pure `src/mailCompose.ts` (tested): the registration is
-   the caller's; 1–52 recipients, each a known `recipient_type` and a
+   the caller's; 1–50 recipients (the live spec's `maxItems`), each a known `recipient_type` and a
    positive id; subject ≤ 1,000 and body ≤ 10,000 characters (the spec's
    limits — pin them from the spec, not from here); `approvedCost` a
    non-negative integer, default 0.

@@ -27,7 +27,7 @@
 
 import { map, reduce, splitEvery, transpose } from 'ramda'
 
-import { enumerateCharacters, type OnDemandTarget } from './lib'
+import { enumerateCharacters, enumerateDenOwners, type OnDemandTarget } from './lib'
 import { bySlot, runStartSeconds, waitForSlot } from './stagger'
 
 // This job's ESI scope, and the lane count. Four lanes keeps a big account
@@ -63,8 +63,12 @@ export async function characterMercenaryDensWorkflow(target?: OnDemandTarget) {
   // runs that character's step, then sleeps until the next one's (./stagger).
   // One sleep and one step per character, all inside this run. An on-demand run
   // (with a target) is not staggered and starts at once.
-  const ids = target?.registrationIds ?? (await enumerateCharacters(SCOPES))
-  const staggered = target === undefined
+  // The hourly cron starts it with { denOwnersOnly: true }: a scheduled run
+  // too, over only the characters holding a den (docs/workflow-events.md §2).
+  const ids =
+    target?.registrationIds ??
+    (await (target?.denOwnersOnly ? enumerateDenOwners(SCOPES) : enumerateCharacters(SCOPES)))
+  const staggered = target === undefined || target.denOwnersOnly === true
   const startSeconds = runStartSeconds()
   const awaitTurn = (id: string): Promise<void> => (staggered ? waitForSlot(id, startSeconds) : Promise.resolve())
 

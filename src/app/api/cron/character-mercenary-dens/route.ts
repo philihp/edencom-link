@@ -17,8 +17,12 @@ export async function GET(request: NextRequest) {
 
   const { start } = await import('workflow/api')
   const { characterMercenaryDensWorkflow } = await import('@/workflows/characterMercenaryDens')
-  const run = await start(characterMercenaryDensWorkflow, [])
-  console.log(`[cron/character-mercenary-dens] started workflow run=${run.runId}`)
+  // Two vercel.json entries share this route: `?owners=1` hourly walks only the
+  // characters holding a den, the bare path every 6h walks everyone with the
+  // scope (docs/workflow-events.md §2).
+  const ownersOnly = request.nextUrl.searchParams.get('owners') === '1'
+  const run = await start(characterMercenaryDensWorkflow, ownersOnly ? [{ denOwnersOnly: true }] : [])
+  console.log(`[cron/character-mercenary-dens] started workflow run=${run.runId}${ownersOnly ? ' (den owners)' : ''}`)
 
   return NextResponse.json({ ok: true, runId: run.runId })
 }

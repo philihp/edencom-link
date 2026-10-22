@@ -26,9 +26,11 @@
 // registrationIds pins the run to one character (or, for a corp-scoped job, one
 // corp's whole character group; absent for the account-wide jobs), and taskId
 // names the refresh_task row the run reports its status to via withRefreshTask.
-// Types are erased at compile time, so importing this at a workflow file's top
-// level is fine.
-export type OnDemandTarget = { registrationIds?: string[]; taskId?: string }
+// denOwnersOnly is the hourly character-mercenary-dens cron's flag: enumerate
+// only the characters holding a den (enumerateDenOwners) rather than everyone
+// with the scope; the on-demand path never sets it. Types are erased at compile
+// time, so importing this at a workflow file's top level is fine.
+export type OnDemandTarget = { registrationIds?: string[]; taskId?: string; denOwnersOnly?: boolean }
 
 // Wrap a job run in refresh_task status tracking, preserving the retired queue
 // consumer's exact best-effort semantics: flip the row to running before the
@@ -147,6 +149,15 @@ export async function enumerateCharacters(scopes: string[]): Promise<string[]> {
   'use step'
   const { selectRegistrationIdsWithScopes } = await import('@/supabase.js')
   return (await selectRegistrationIdsWithScopes(scopes)) as string[]
+}
+
+// Step: enumerateCharacters narrowed to the characters that currently hold a
+// mercenary den — the hourly character-mercenary-dens run's set
+// (docs/workflow-events.md §2).
+export async function enumerateDenOwners(scopes: string[]): Promise<string[]> {
+  'use step'
+  const { selectDenOwnerRegistrationIds } = await import('@/supabase.js')
+  return (await selectDenOwnerRegistrationIds(scopes)) as string[]
 }
 
 // Step: build the per-corp fan-out set — one group per corporation plus a
