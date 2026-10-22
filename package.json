@@ -68,6 +68,7 @@
     "esf-data": "node src/jobs/esfData.js",
     "sheet-csv": "node src/jobs/sheetCsv.js",
     "connect": "node src/connect.js",
+    "mail-send": "node src/mailSend.ts",
     "db:new": "supabase migration new",
     "discord-notification-send": "node src/jobs/discordNotificationSend.js",
     "discord-register-commands": "node src/discordRegisterCommands.js",

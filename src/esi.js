@@ -233,8 +233,8 @@ export const fittings = (access_token, characterID, ifNoneMatch) =>
 // { fitting_id }: page a fit out and back in and it comes back with a new one,
 // which is why the archive keys on content rather than on the game's id.
 //
-// Needs esi-fittings.write_fittings.v1 — this and deleteFitting are the only
-// calls in this file that change a character's game state.
+// Needs esi-fittings.write_fittings.v1. This, deleteFitting and sendMail are
+// the only three calls in this file that change a character's game state.
 export const createFitting = (access_token, characterID, fitting) =>
   esiJson(`/characters/${characterID}/fittings/`, {
     access_token,
@@ -255,6 +255,24 @@ export const deleteFitting = async (access_token, characterID, fittingID) => {
     label: `deleteFitting ${characterID} ${fittingID}`,
   })
 }
+
+// Send one EVE mail as the character. Needs esi-mail.send_mail.v1 — the third
+// call in this file that changes game state, beside createFitting and
+// deleteFitting. `mail` is { subject, body, recipients: [{ recipient_id,
+// recipient_type }], approved_cost }; ESI answers 201 with the new mail id as
+// a bare integer, which is what this returns. A recipient whose CSPA charge
+// exceeds approved_cost fails the whole send (520). Irreversible — the caller
+// logs the draft first (src/app/mail/lib.ts writes mail_send_log before it
+// ever gets here).
+export const sendMail = async (access_token, characterID, { subject, body, recipients, approved_cost = 0 }) =>
+  Number(
+    await esiJson(`/characters/${characterID}/mail/`, {
+      access_token,
+      method: 'POST',
+      body: { subject, body, recipients, approved_cost },
+      label: `sendMail ${characterID}`,
+    })
+  )
 
 // A character's contracts — every contract they issued or were assigned,
 // covering the last 30 days plus anything still outstanding or in progress.
