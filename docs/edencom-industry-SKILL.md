@@ -213,44 +213,43 @@ gas in C-J6MT, ready to react. There are four sources for each gas:
 | Raw gas in Jita, shipped        | N                         | `Jita sell + rate × m³`          |
 | Compressed gas in Jita, shipped | N ÷ 0.95                  | `(Jita sell + rate × m³) ÷ 0.95` |
 
-- Decompression gives back 95% of the units. Buy N ÷ 0.95 compressed units,
-  rounded up, to have N usable units. Only the compressed sources lose units.
+- Decompression gives back 95% of the units, so only the compressed sources
+  need N ÷ 0.95 units, rounded up.
 - The compressed name is "Compressed " and the gas name. Take `volume_m3`
   from `appraise_items`, not from memory: a Fullerite is 1 to 10 m³ a unit, a
   Mykoserocin or Cytoserocin 10 m³, and the compressed form a tenth of that.
-- `rate × m³` is the freight for one unit. Get the rate from `shipping_quote`
-  with no arguments: it lists the Jita → C-J6MT lane and its tiers.
+- `rate × m³` is the freight for one unit. `shipping_quote` with no arguments
+  lists the Jita → C-J6MT lane and its tiers.
 
 The procedure:
 
 1. Call `appraise_items` twice, with `market` `jita` and with `market`
-   `cj6mt`. In each call, put every gas in raw and compressed form. Price
-   C-J6MT also when the user says it is sold out: one gas can be sold out
-   and the next one not.
-2. Use `sell_price`: it is what the user pays to buy now. A `sell_price` of 0
-   or null means that nobody sells the item in that market. That source is
-   not available. It is not free.
-3. For each gas, compute the cost per usable unit of the four sources and
-   pick the cheapest. Decide gas by gas, never on the total: the price gap
-   between the forms changes from gas to gas, and the 95% yield often makes
-   the raw form cheaper.
-4. Add up the volume and the Jita sell value of everything bought in Jita.
-   Call `shipping_quote` with origin `Jita`, destination `C-J6MT`,
-   `volume_m3` and `collateral_isk` for that one haul.
-5. Freight is billed per haul, by tier, and a tier can change the answer. At
-   this time the smallest tier on this lane, up to 4,000 m³, costs nothing,
-   and a larger load costs 700 ISK for each m³ of the whole load. If
-   compressing a gas you planned to ship raw puts the haul under a cheaper
-   tier, compare the two plans with a quote for each. Rates change, so quote;
-   do not assume these figures.
+   `cj6mt`, each with every gas in raw and compressed form. Use `sell_price`,
+   what the user pays now. A `sell_price` of 0 or null means nobody sells
+   there: that source is not available, not free.
+2. For each gas, pick the cheaper Jita source per usable unit. Decide gas by
+   gas, never on the total: the 95% yield often makes the raw form cheaper.
+   That cost is the gas's **C-J6 ceiling**.
+3. C-J6MT supply is often thin, and `sell_price` is only its lowest order,
+   not how many units are on sale. So do not plan the whole quantity there.
+   Tell the user to buy in C-J6MT as much as they can at or below the ceiling
+   for raw gas, or 0.95 × the ceiling for compressed gas, and the rest in
+   Jita in the form from step 2.
+4. Call `shipping_quote` (origin `Jita`, destination `C-J6MT`) with the
+   volume and Jita sell value of the whole quantity bought in Jita, and say
+   that the haul shrinks by what they buy in C-J6MT.
+5. Freight is billed per haul, by tier. At this time the tier up to
+   4,000 m³ costs nothing, and a larger load costs 700 ISK for each m³ of
+   the whole load. If compressing a gas puts the haul under a cheaper tier,
+   compare a quote for each plan. Rates change, so quote; do not assume.
 
-Give the answer as a table: for each gas, the source, the form, the units to
-buy, the cost per usable unit and the total. Then give the haul: its volume,
-the freight, and the reward and collateral to set on the courier contract.
-If the spread between buy and sell is wide, say that a buy order at
-`buy_price` can cost less, if the user can wait for it to fill. For the game's
-Multibuy window, give one line per item, `<type name> <units to buy>`, with
-the compressed quantities already divided by 0.95.
+Give the answer as a table: for each gas, the C-J6 ceiling (raw and
+compressed), the Jita form, the units to buy in Jita and the cost per usable
+unit. Then give the haul: volume, freight, and the reward and collateral for
+the courier contract. If the buy-sell spread is wide, say that a buy order at
+`buy_price` can cost less, if the user can wait. For the game's Multibuy
+window, give one line per item, `<type name> <units to buy>`, with the
+compressed quantities already divided by 0.95.
 
 ## Capital hulls have no market price
 
