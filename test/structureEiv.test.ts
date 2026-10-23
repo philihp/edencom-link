@@ -8,8 +8,17 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { foldEiv, hullCostMultiplier, indexAt, recoveredRate, SCC_SURCHARGE } from '../src/app/structure/eiv.ts'
+import {
+  eivJobSets,
+  foldEiv,
+  hullCostMultiplier,
+  indexAt,
+  priceJobs,
+  recoveredRate,
+  SCC_SURCHARGE,
+} from '../src/app/structure/eiv.ts'
 import type { EivInput } from '../src/app/structure/eiv.ts'
+import { foldInstallers } from '../src/app/structure/installers.ts'
 
 const RENTED = '1000000000001'
 const OURS = '1000000000002'
@@ -205,4 +214,68 @@ test('a structure our corp owns but whose wallet we cannot read still recovers',
   // Either way the throughput is the same: coverage decides who bills the tax,
   // never whether the jobs happened.
   assert.equal(row.eiv, covered.byStructure.get(OURS)?.eiv)
+})
+
+// ── The tile is ours; the Characters tab is everyone's ───────────────────
+// Your Total EIV counts only the jobs our own characters installed. The
+// Characters tab lists everyone who ran jobs at the structure, and each row's
+// EIV is what that pilot or corporation put through it. One job set once fed
+// both, so narrowing it for the tile left every co-tenant's row reading "—".
+const OWN = { registrationIds: new Set(['reg-ours']), characterIds: new Set(['90000001']) }
+
+const visible = [
+  job({ job_id: 1, registration_id: 'reg-ours' }), // our personal job
+  job({ job_id: 2, registration_id: 'reg-cotenant' }), // a co-tenant's personal job
+  job({ job_id: 3, corporation_id: '98000001', installer_id: '90000001' }), // a corp job we installed
+  job({ job_id: 4, corporation_id: '98000001', installer_id: '90000099' }), // a corpmate's corp job
+  job({ job_id: 5, registration_id: 'reg-cotenant', activity_id: 3 }), // research: never priced
+]
+
+test('every visible manufacturing job is priced; only our installs are ours', () => {
+  const { priced, ours } = eivJobSets(visible, OWN)
+  assert.deepEqual(
+    priced.map((j) => j.job_id),
+    [1, 2, 3, 4]
+  )
+  assert.deepEqual(
+    ours.map((j) => j.job_id),
+    [1, 3]
+  )
+})
+
+test('priceJobs prices a job whoever ran it, under the same gates as the tile', () => {
+  const eivByJob = priceJobs(
+    [
+      job({ job_id: 1, registration_id: 'reg-cotenant', runs: 2 }),
+      job({ job_id: 2, activity_id: 4 }), // research
+      job({ job_id: 3, station_id: '1000000000099' }), // no tile
+      job({ job_id: 4, start_date: '2026-07-30T00:00:00Z' }), // before the window
+      job({ job_id: 5, blueprint_type_id: 12345 }), // no bill
+    ],
+    baseInput()
+  )
+  assert.deepEqual([...eivByJob], [['1', 2000]])
+})
+
+test("the tile sums our installs while the tab shows a co-tenant's throughput", () => {
+  const { priced, ours } = eivJobSets(visible, OWN)
+  const tile = foldEiv(ours, baseInput())
+  assert.equal(tile.totalEiv, 2000)
+
+  const roster = foldInstallers(visible, {
+    onPage: new Set([RENTED]),
+    since: '2026-08-01T00:00:00Z',
+    registrations: new Map([
+      ['reg-ours', { name: 'Sir Cuddles', characterId: '90000001' }],
+      ['reg-cotenant', { name: 'Quuixote', characterId: '90000002' }],
+    ]),
+    corporationNames: new Map([['98000001', 'Sanguine Systems']]),
+    eivByJob: priceJobs(priced, baseInput()),
+  })
+  const eivOf = new Map((roster.get(RENTED) ?? []).map((row) => [row.name, row.eiv]))
+  assert.equal(eivOf.get('Quuixote'), 1000, "the co-tenant's row carries their EIV")
+  assert.equal(eivOf.get('Sir Cuddles'), 1000)
+  // Both corp jobs, the corpmate's included: the corporation's row is the
+  // corporation's whole output here.
+  assert.equal(eivOf.get('Sanguine Systems'), 2000)
 })

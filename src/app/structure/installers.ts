@@ -49,9 +49,10 @@ export type InstallerInput = {
   registrations: ReadonlyMap<string, { name: string; characterId: string | null }>
   // corporation id -> name, from the `corporation` directory.
   corporationNames: ReadonlyMap<string, string>
-  // job id -> the job's EIV, from the EIV fold. A job it couldn't price (or a
-  // research job, which pushes no materials) contributes 0 — the roster keeps
-  // the row, with the throughput it can vouch for.
+  // job id -> the job's EIV, from ./eiv.ts priceJobs over every job we can
+  // see, a co-tenant's as much as ours. A job it couldn't price (or a research
+  // job, which pushes no materials) contributes 0 — the roster keeps the row,
+  // with the throughput it can vouch for.
   eivByJob: ReadonlyMap<string, number>
 }
 
