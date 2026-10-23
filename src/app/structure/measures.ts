@@ -13,7 +13,7 @@ import type { createClient } from '@/utils/supabase/server'
 
 import type { TaxRates } from '../settings/tax/rates'
 import { costAvoidance } from './costAvoidance'
-import { foldEiv, type IndexSample } from './eiv'
+import { eivJobSets, foldEiv, priceJobs, type IndexSample } from './eiv'
 import { foldInstallers } from './installers'
 import { journalCoveredStructures } from './journalCoverage'
 import { jobLocationId } from './roster'
@@ -308,8 +308,8 @@ export const loadStructureMeasures = async (supabase: Supabase, input: Structure
 
   // Our own registrations, by uuid and by EVE character id. RLS scopes
   // `registration` to the caller, so every row here is a character of ours.
-  // Read up here because the EIV below is ours alone; the Characters tab
-  // further down names co-tenants on top of these.
+  // Read up here because the tile's EIV below is ours alone; the Characters
+  // tab further down names co-tenants on top of these.
   type RegistrationRow = { id: string; name: string; character_id: number | string | null }
   const { data: registrationRows } = await supabase
     .from('registration')
@@ -325,25 +325,25 @@ export const loadStructureMeasures = async (supabase: Supabase, input: Structure
     )
   )
 
-  // Only jobs one of our characters installed: a personal job of one of our
-  // registrations, or a corp job whose installer is one of our characters. A
-  // co-tenant's job, or a corpmate's we hold no registration for, is someone
-  // else's throughput — counting it made "EIV" read as the structure's whole
-  // industry rather than ours. Not isOwnJob: that admits every corp job of an
-  // own corporation, whoever installed it.
-  const installedByUs = (j: JobRow) =>
-    (j.registration_id != null && ownRegistrationIds.has(String(j.registration_id))) ||
-    (j.installer_id != null && ownCharacterIds.has(String(j.installer_id)))
-  const eivJobs = filter((j: JobRow) => {
-    const a = Number(j.activity_id)
-    return (a === 1 || a === 9) && installedByUs(j)
-  }, allJobs)
+  // Two sets (./eiv.ts eivJobSets). `pricedJobs` is every manufacturing and
+  // reaction job we can see, co-tenants' included: the Characters tab shows
+  // what each of them put through the structure. `eivJobs` is the subset one
+  // of our characters installed: a personal job of one of our registrations,
+  // or a corp job whose installer is one of our characters. Only that subset
+  // feeds the tile's Your Total EIV and the recovered tax — a co-tenant's job,
+  // or a corpmate's we hold no registration for, is someone else's throughput.
+  // Not isOwnJob: that admits every corp job of an own corporation, whoever
+  // installed it.
+  const { priced: pricedJobs, ours: eivJobs } = eivJobSets(allJobs, {
+    registrationIds: ownRegistrationIds,
+    characterIds: ownCharacterIds,
+  })
 
   // ME0 bills for the blueprints those jobs run. getBlueprintsByTypeIDs
   // prefers a blueprint's manufacturing activity and falls through to its
   // reaction, which is exactly the bill each job kind consumes.
   const blueprints = await getBlueprintsByTypeIDs(
-    map((j: JobRow) => Number(j.blueprint_type_id), eivJobs).filter(Number.isFinite)
+    map((j: JobRow) => Number(j.blueprint_type_id), pricedJobs).filter(Number.isFinite)
   )
   const bills = Object.fromEntries(Object.entries(blueprints).map(([typeId, bp]) => [typeId, bp.materials]))
 
@@ -468,6 +468,10 @@ export const loadStructureMeasures = async (supabase: Supabase, input: Structure
     journalPaidJobIds: ledger.paidJobIds,
   })
   const eivSkipped = eiv.skipped.noBill + eiv.skipped.noPrice + eiv.skipped.noIndex
+  // Every visible job's EIV, for the Characters tab. The co-tenant views blank
+  // `cost` but not the blueprint, runs or activity, so their EIV prices exactly
+  // like ours.
+  const eivByJob = priceJobs(pricedJobs, { onPage, since: windowStart, bills, prices: adjustedPrices })
 
   // ── Who ran jobs at each structure (the tile's Characters tab) ────────────
   // Personal jobs name a registration, and each is its own row: an account can
@@ -476,7 +480,9 @@ export const loadStructureMeasures = async (supabase: Supabase, input: Structure
   // (RLS hides theirs) resolves through the world-readable character directory,
   // which maps a registration uuid to its character and name and nothing more.
   // Corp jobs name the corporation they were run for, which is the only honest
-  // unit for them. See ./installers.ts.
+  // unit for them. Each row's EIV covers all of its jobs here, a co-tenant's as
+  // much as ours, so the rows can add up to more than the tile's Your Total
+  // EIV. See ./installers.ts.
   const registrationsById = new Map(
     map(
       (r: RegistrationRow) =>
@@ -551,7 +557,7 @@ export const loadStructureMeasures = async (supabase: Supabase, input: Structure
     since: windowStart,
     registrations: registrationsById,
     corporationNames: jobCorporationNames,
-    eivByJob: eiv.eivByJob,
+    eivByJob,
   })
 
   return {

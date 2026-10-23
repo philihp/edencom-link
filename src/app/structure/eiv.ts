@@ -36,10 +36,14 @@
 // Your Total EIV is simpler but the same in activity: the summed EIV of the
 // manufacturing and reaction jobs our own characters installed at each
 // structure, a throughput measure. The caller hands this fold only those jobs
-// (src/app/structure/measures.ts) — never a co-tenant's or an unregistered
+// (eivJobSets' `ours`, below) — never a co-tenant's or an unregistered
 // corpmate's. A research job pushes no materials through, so it
 // contributes nothing by construction rather than by omission.
-import { forEach } from 'ramda'
+//
+// The Characters tab prices wider: every job we can see there, co-tenants'
+// included (eivJobSets' `priced`, through priceJobs), so each row shows what
+// that pilot or corporation put through the structure.
+import { filter, forEach, reduce } from 'ramda'
 
 // ESI *job* activity ids (src/app/industry/jobFields.ts): manufacturing 1,
 // reactions 9. The SDE numbers reactions 11 (src/sdeBlueprints.ts REACTION),
@@ -79,6 +83,14 @@ export type EivJob = {
   start_date?: string | null
   station_id?: number | string | null
   facility_id?: number | string | null
+}
+
+// A job as the measures hold it: who installed it decides whether it counts
+// toward the tile. A personal job names a registration; a corp job names the
+// EVE character who installed it.
+export type EivOwnedJob = EivJob & {
+  registration_id?: string | null
+  installer_id?: number | string | null
 }
 
 export type Bill = ReadonlyArray<{ typeID: number; quantity: number }>
@@ -128,9 +140,6 @@ export type StructureEiv = {
 
 export type EivResult = {
   byStructure: Map<string, StructureEiv>
-  // job id -> that job's EIV, for every job the fold priced. What lets the
-  // Characters tab attribute throughput to installers without re-pricing.
-  eivByJob: Map<string, number>
   totalEiv: number
   totalRecoveredTax: number
   // Jobs that would have counted but were missing an input. Surfaced so a
@@ -172,50 +181,92 @@ const priceBill = (bill: Bill, runs: number, prices: ReadonlyMap<number, number>
   return sum * runs
 }
 
+// What pricing a job needs, and all the Characters tab's map needs.
+export type EivPricing = Pick<EivInput, 'onPage' | 'since' | 'bills' | 'prices'>
+
+const isPriceable = (job: EivJob): boolean => {
+  const activity = Number(job.activity_id)
+  return activity === JOB_MANUFACTURING || activity === JOB_REACTION
+}
+
+// The two job sets the EIV measures price, from every job we can see.
+//
+//   priced — every manufacturing and reaction job, co-tenants' included: the
+//            Characters tab's EIV column (priceJobs).
+//   ours   — the subset our own characters installed: a personal job of one of
+//            our registrations, or a corp job whose installer is one of our
+//            characters. The tile's Your Total EIV and the recovered tax
+//            (foldEiv). Not "every corp job of an own corporation": that admits
+//            jobs installed by corpmates we hold no registration for.
+//
+// Two sets, because one set did both jobs once: narrowing it to our own
+// installs for the tile blanked every co-tenant's row on the tab as well.
+export const eivJobSets = <J extends EivOwnedJob>(
+  jobs: readonly J[],
+  own: { registrationIds: ReadonlySet<string>; characterIds: ReadonlySet<string> }
+): { priced: readonly J[]; ours: readonly J[] } => {
+  const installedByUs = (job: J) =>
+    (job.registration_id != null && own.registrationIds.has(String(job.registration_id))) ||
+    (job.installer_id != null && own.characterIds.has(String(job.installer_id)))
+  const priced = filter(isPriceable, jobs)
+  return { priced, ours: filter(installedByUs, priced) }
+}
+
+// One job's place and worth: the structure it counts toward and its EIV, or the
+// input it lacked. Null when the job is not one either fold prices at all —
+// not manufacturing or reaction, not at a structure with a tile, installed
+// before the window — or has no runs to scale by.
+type Priced =
+  { structureId: string; startDate: string; eiv: number } | { structureId: string; missing: 'noBill' | 'noPrice' }
+
+const priceJob = (job: EivJob, { onPage, since, bills, prices }: EivPricing): Priced | null => {
+  if (!isPriceable(job) || job.job_id == null) return null
+  const structureId = job.station_id ?? job.facility_id
+  if (structureId == null || !onPage.has(String(structureId))) return null
+  if (job.start_date == null || job.start_date < since) return null
+  const key = String(structureId)
+  const bill = job.blueprint_type_id != null ? bills[Number(job.blueprint_type_id)] : undefined
+  if (bill == null) return { structureId: key, missing: 'noBill' }
+  const runs = Number(job.runs)
+  if (!Number.isFinite(runs) || runs <= 0) return null
+  const eiv = priceBill(bill, runs, prices)
+  return eiv == null ? { structureId: key, missing: 'noPrice' } : { structureId: key, startDate: job.start_date, eiv }
+}
+
+// job id -> EIV for every job handed in that could be priced, whoever ran it.
+// The Characters tab reads this over eivJobSets' `priced`; foldEiv sums only
+// the jobs it is handed, and the tile hands it `ours`. A job both extracts list
+// is the same job either way, so it lands on one key.
+export const priceJobs = (jobs: readonly EivJob[], pricing: EivPricing): Map<string, number> =>
+  reduce(
+    (acc: Map<string, number>, job: EivJob) => {
+      const priced = priceJob(job, pricing)
+      return priced != null && 'eiv' in priced ? acc.set(String(job.job_id), priced.eiv) : acc
+    },
+    new Map<string, number>(),
+    jobs
+  )
+
 export const foldEiv = (jobs: readonly EivJob[], input: EivInput): EivResult => {
-  const {
-    onPage,
-    since,
-    bills,
-    prices,
-    indexSamples,
-    systemOf,
-    hullOf,
-    journalCoveredStructureIds,
-    journalPaidJobIds,
-  } = input
+  const { indexSamples, systemOf, hullOf, journalCoveredStructureIds, journalPaidJobIds } = input
 
   const byStructure = new Map<string, StructureEiv>()
-  const eivByJob = new Map<string, number>()
   const skipped = { noBill: 0, noPrice: 0, noIndex: 0 }
   // The character and corp extracts can both list one job; one job is priced
   // once — the same reason the tax fold keeps `credited`/`paid` sets.
   const counted = new Set<string>()
 
   forEach((job: EivJob) => {
-    const activity = Number(job.activity_id)
-    if (activity !== JOB_MANUFACTURING && activity !== JOB_REACTION) return
-    const structureId = job.station_id ?? job.facility_id
-    if (structureId == null || !onPage.has(String(structureId))) return
-    if (job.start_date == null || job.start_date < since) return
-    if (job.job_id == null || counted.has(String(job.job_id))) return
+    const priced = priceJob(job, input)
+    if (priced == null || counted.has(String(job.job_id))) return
     counted.add(String(job.job_id))
-
-    const key = String(structureId)
-    const runs = Number(job.runs)
-    const bill = job.blueprint_type_id != null ? bills[Number(job.blueprint_type_id)] : undefined
-    if (bill == null) {
-      skipped.noBill += 1
-      return
-    }
-    if (!Number.isFinite(runs) || runs <= 0) return
-    const eiv = priceBill(bill, runs, prices)
-    if (eiv == null) {
-      skipped.noPrice += 1
+    if ('missing' in priced) {
+      skipped[priced.missing] += 1
       return
     }
 
-    eivByJob.set(String(job.job_id), eiv)
+    const { structureId: key, startDate, eiv } = priced
+    const activity = Number(job.activity_id)
     const row = byStructure.get(key) ?? { eiv: 0, jobs: 0, recoveredTax: 0, recoveredEiv: 0, recoveredJobs: 0 }
     row.eiv += eiv
     row.jobs += 1
@@ -234,7 +285,7 @@ export const foldEiv = (jobs: readonly EivJob[], input: EivInput): EivResult => 
     }
     const systemId = systemOf.get(key)
     const index =
-      systemId != null ? indexAt(indexSamples.get(`${systemId}:${INDEX_ACTIVITY[activity]}`), job.start_date) : null
+      systemId != null ? indexAt(indexSamples.get(`${systemId}:${INDEX_ACTIVITY[activity]}`), startDate) : null
     if (index == null) {
       skipped.noIndex += 1
       return
@@ -256,5 +307,5 @@ export const foldEiv = (jobs: readonly EivJob[], input: EivInput): EivResult => 
     totalEiv += row.eiv
     totalRecoveredTax += row.recoveredTax
   })
-  return { byStructure, eivByJob, totalEiv, totalRecoveredTax, skipped }
+  return { byStructure, totalEiv, totalRecoveredTax, skipped }
 }
