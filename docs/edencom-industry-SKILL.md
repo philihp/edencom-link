@@ -4,6 +4,23 @@ This document tells an AI agent how EVE Online industry works, and how to use
 the tools of this MCP server. Read it once at the start of a session. The
 `get_skill` tool returns this text.
 
+## How to answer
+
+When a section of this manual covers the task, do its procedure step by step.
+Do not answer from general EVE knowledge, also when the problem looks
+familiar. A familiar problem is where an agent skips the procedure.
+
+When you see an unknown that can change the answer (a yield, a rate, a tier,
+a market you did not price), find it before you answer. Do not give it to the
+user as a caveat: the user acts on your numbers, not on your caveats.
+
+The failure this prevents: on 2026-10-23 an agent planned a gas purchase
+without this manual. It compared compressed and raw gas on freight alone,
+never applied the 95% decompression yield, never priced C-J6MT, and wrote
+"check your decompression yield" as a caveat. The user bought 5% too little
+of each compressed gas, four gases were cheaper raw, and the error cost about
+105M ISK.
+
 ## What this server is
 
 EDENCOM Link extracts EVE Online data and saves it in a database. The tools of
@@ -100,9 +117,8 @@ it when you give them modifiers. For each material:
 need = max(runs, ceil(round2(runs × base × (1 − ME) × (1 − structure) × (1 − rig × sec))))
 ```
 
-The order of operations is part of the game rules. First multiply all
-modifiers. Then round the product to 2 decimal places. Then take the ceiling.
-Then apply the minimum of 1 unit for each run.
+The order is part of the game rules: multiply all modifiers, round to 2
+decimal places, take the ceiling, then apply the minimum of 1 unit a run.
 
 The four modifiers:
 
@@ -115,8 +131,8 @@ The four modifiers:
 
 The security band comes from the displayed (rounded) security of the system:
 0.5 and more is highsec, more than 0.0 is lowsec, all other space is nullsec.
-Note that the security multiplier applies to the rig bonus only. A T2 rig in
-nullsec gives `0.024 × 2.1` = 5.04% material reduction.
+The security multiplier scales the rig bonus only: a T2 rig in nullsec gives
+`0.024 × 2.1` = 5.04%.
 
 The per-run minimum has a consequence: a material with a base quantity of 1
 never decreases. Bonuses only help materials with larger base quantities.
@@ -140,12 +156,10 @@ L-Set and XL-Set "Efficiency" rigs reduce materials too: for example,
 material rig from its modifiers, not from its name. Do not ignore a rig in a
 `list_structures` result because of its name.
 
-The blueprint tools accept the modifiers in two forms. You can give
-`structure`, `rig`, and `security` by hand. Or you can give `structure_id`
-for one of the user's monitored structures, and the tool derives the hull
-role bonus, the strongest applicable fitted rig, and the system security for
-you. Prefer `structure_id` when the user names where they build. A structure
-that another corporation shares with the user works as `structure_id` too.
+Give the blueprint tools `structure`, `rig` and `security` by hand, or give
+the `structure_id` of a monitored or shared structure: the tool then derives
+the role bonus, the strongest applicable rig and the security. Prefer
+`structure_id` when the user names where they build.
 
 ## Invention
 
@@ -179,26 +193,17 @@ return invention bills of materials.
 
 ## Compressed and uncompressed inputs
 
-A bill of materials names the form a job consumes, and that form is never
-the compressed one. A manufacturing bill names minerals, not ore. A reaction
-bill names fullerites and moon materials, not their compressed forms.
-`Compressed Fullerite-C50` is the same gas packed for hauling, at a tenth of
-the volume (0.1 m³ against 1 m³). No blueprint consumes it, and decompressing
-it gives back 95% of the units (see "Buying gas for C-J6MT").
-
-So when a user asks "do I need compressed or uncompressed X for this job",
-call `blueprint_for_product` and read the names in the bill. The name in the
-bill is the exact type the job takes. `blueprints_using_material` on the
-compressed name returns no blueprints, which is the same answer. The
-compressed form is for freight: `shipping_quote` with an `items` manifest
-takes volume from the names you give it, so name the compressed form when the
-question is about moving the material, and the uncompressed form when the
-question is about reacting or building with it.
+A bill of materials never names a compressed form: it names minerals, not
+ore, and fullerites and moon materials, not `Compressed Fullerite-C50`. The name in the
+`blueprint_for_product` bill is the exact type a job takes; on a compressed
+name, `blueprints_using_material` returns nothing. Compressed forms are for
+freight, at a tenth of the volume. In a `shipping_quote` `items` manifest,
+name the form you will haul.
 
 ## Buying gas for C-J6MT
 
 When the user gives a list of Fullerite, Mykoserocin or Cytoserocin gases and
-asks where to buy them for the best price, find the cheapest way to have each
+asks where or in which form to buy them, find the cheapest way to have each
 gas in C-J6MT, ready to react. There are four sources for each gas:
 
 | Source                          | Units to buy for N usable | Cost per usable unit             |
@@ -210,24 +215,25 @@ gas in C-J6MT, ready to react. There are four sources for each gas:
 
 - Decompression gives back 95% of the units. Buy N ÷ 0.95 compressed units,
   rounded up, to have N usable units. Only the compressed sources lose units.
-- The compressed name is "Compressed " and the gas name, for example
-  `Compressed Amber Mykoserocin`. It has a tenth of the volume of the raw gas,
-  so it costs a tenth to ship. Do not use volumes from memory: take
-  `volume_m3` from `appraise_items`, because the gases differ (a Fullerite is
-  1 to 10 m³ a unit, a Mykoserocin or Cytoserocin 10 m³).
+- The compressed name is "Compressed " and the gas name. Take `volume_m3`
+  from `appraise_items`, not from memory: a Fullerite is 1 to 10 m³ a unit, a
+  Mykoserocin or Cytoserocin 10 m³, and the compressed form a tenth of that.
 - `rate × m³` is the freight for one unit. Get the rate from `shipping_quote`
   with no arguments: it lists the Jita → C-J6MT lane and its tiers.
 
 The procedure:
 
 1. Call `appraise_items` twice, with `market` `jita` and with `market`
-   `cj6mt`. In each call, put every gas in raw and compressed form.
+   `cj6mt`. In each call, put every gas in raw and compressed form. Price
+   C-J6MT also when the user says it is sold out: one gas can be sold out
+   and the next one not.
 2. Use `sell_price`: it is what the user pays to buy now. A `sell_price` of 0
    or null means that nobody sells the item in that market. That source is
    not available. It is not free.
 3. For each gas, compute the cost per usable unit of the four sources and
-   pick the cheapest. The price gap between the raw and compressed forms
-   changes from gas to gas, so compressed is not always cheaper.
+   pick the cheapest. Decide gas by gas, never on the total: the price gap
+   between the forms changes from gas to gas, and the 95% yield often makes
+   the raw form cheaper.
 4. Add up the volume and the Jita sell value of everything bought in Jita.
    Call `shipping_quote` with origin `Jita`, destination `C-J6MT`,
    `volume_m3` and `collateral_isk` for that one haul.
@@ -242,14 +248,15 @@ Give the answer as a table: for each gas, the source, the form, the units to
 buy, the cost per usable unit and the total. Then give the haul: its volume,
 the freight, and the reward and collateral to set on the courier contract.
 If the spread between buy and sell is wide, say that a buy order at
-`buy_price` can cost less, if the user can wait for it to fill.
+`buy_price` can cost less, if the user can wait for it to fill. For the game's
+Multibuy window, give one line per item, `<type name> <units to buy>`, with
+the compressed quantities already divided by 0.95.
 
 ## Capital hulls have no market price
 
-Supercarriers and titans are not sold on the market. They change hands by
-contract, usually inside an alliance, at prices nobody publishes. The
-appraisal service therefore answers zero, or a number that is wrong by a
-factor of a thousand, for a Nyx or a Ragnarok.
+Supercarriers and titans change hands by contract, at prices nobody
+publishes, so the appraisal service answers zero or a number wrong by a factor
+of a thousand for them.
 
 This deployment keeps a table of hull prices that a Chancellor sets by hand:
 one price per supercarrier and titan hull. As starting points, a Tech 1
@@ -419,17 +426,13 @@ the market, on a contract, or by building them from a BPC.
    BPC value = runs × (value of the product − value of the inputs for one run)
    ```
 
-   Get the inputs from `blueprint_for_product`, and price the product and the
-   inputs with `appraise_items`. The short method: use the ME 0 bill and
-   ignore the job fee. The ME saving and the job fee are usually of about the
-   same size, so they cancel. The full method: give `blueprint_for_product`
-   the BPC's ME and the best structure the user builds in (`structure_id`),
-   or an ideal one (`structure` `engineering_complex`, `rig` `t2`, with the
-   user's `security`). Then subtract the job fee, about
-   `EIV × (cost index + facility tax + 0.04)` (see "Job installation cost").
-   A cost index of 4% is typical. For a closer figure, use the manufacturing
-   index from `industry_cost_indices` for the systems where the user's recent
-   jobs ran (`list_industry_jobs` with `status` `all`). A BPC is a good buy
+   Price the `blueprint_for_product` bill and the product with
+   `appraise_items`. Short method: the ME 0 bill and no job fee, because the
+   ME saving and the fee about cancel. Full method: the BPC's ME and the
+   user's best `structure_id` (or `engineering_complex`, `t2`, their `security`),
+   less a fee of about `EIV × (cost index + facility tax + 0.04)`. A 4% index
+   is typical; for a closer one, use `industry_cost_indices` where the user's
+   recent jobs ran (`list_industry_jobs`, `status` `all`). A BPC is a good buy
    when its price is below its value by the same percentage.
 
 6. The tools cannot check whether a module fits. A higher meta level can need
@@ -454,11 +457,9 @@ The statuses:
 - `outstanding`: the contract is listed now. This is the default.
 - `expired`: the contract left the listing at or after its expiry.
 - `gone`: the contract left the listing before its expiry. It was accepted or
-  withdrawn, and ESI does not tell which.
+  withdrawn, and ESI does not tell which, so never say that it sold. An
+  acceptance close to the expiry can show as `expired`.
 - `closed` asks for `expired` and `gone` together. `any` asks for all.
-
-Do not say that a `gone` contract sold. Say that it was accepted or
-withdrawn. An acceptance close to the expiry can show as `expired`.
 
 Read the results with these rules:
 
@@ -565,8 +566,7 @@ see them only in these ways:
   `list_industry_jobs` never lists them; it lists only the user's own jobs.
 - Fittings. `list_fittings` includes fits that other players share with the
   caller. The marshalled archive is the account's own, and is never shared.
-- A Data Link shared with the caller runs under its creator's data. The
-  caller sees the results, never the underlying rows.
+- A Data Link shared with the caller: see "The GraphQL surface".
 - A ship share link (`/ship/<id>?share=…`) keeps working after the ship
   leaves the owner's hangar. The page then shows the ship as it was last
   seen, with the time of that sighting, and marks a sighting older than one
