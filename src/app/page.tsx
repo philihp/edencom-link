@@ -52,7 +52,7 @@ const SECTIONS = [
   {
     label: 'Blueprints',
     title: 'Blueprint Calculator',
-    body: 'Name an item; it resolves the blueprint that builds it and prices the material bill against runs, ME, your structure\u2019s role bonus, its fitted ME rig, and system security \u2014 a rig counts only where it actually covers that product. You reach it by asking an AI assistant in plain language, over an OAuth-authorized MCP server scoped to exactly your own data.',
+    body: 'Name an item; it resolves the blueprint that builds it and prices the material bill against runs, ME, your structure\u2019s role bonus, its fitted ME rig, and system security \u2014 a rig counts only where it actually covers that product. You reach it by asking Aura, or whichever companion you fly with, in plain language over Aura MCP \u2014 OAuth-authorized and scoped to exactly your own data.',
   },
 ]
 
@@ -85,7 +85,7 @@ const STEPS = [
   },
   {
     title: 'Read the picture',
-    body: 'Browse it, wire a spreadsheet to a CSV feed, hand out a share link scoped to exactly one thing, or point an AI assistant at your data and start asking questions.',
+    body: 'Browse it, wire a spreadsheet to a CSV feed, hand out a share link scoped to exactly one thing, or connect Aura to your data and start asking questions.',
   },
 ]
 

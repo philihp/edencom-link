@@ -32,7 +32,7 @@ const Footer = () => {
           {' · '}
           <Link href="/terms">Terms</Link>
           {' · '}
-          <Link href="/mcp-server">MCP Server</Link>
+          <Link href="/mcp-server">Aura MCP</Link>
         </span>
       </footer>
     </>

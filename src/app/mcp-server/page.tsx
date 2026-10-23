@@ -6,8 +6,9 @@ import legal from '../legal.module.css'
 import styles from './page.module.css'
 
 export const metadata: Metadata = {
-  title: 'MCP Server — Edencom Link',
-  description: 'Connect Claude, ChatGPT or any MCP-capable AI assistant to your EVE Online data on Edencom Link.',
+  title: 'Aura MCP — Edencom Link',
+  description:
+    'Connect Aura, Claude, ChatGPT or any other MCP-capable companion to your EVE Online data on Edencom Link.',
 }
 
 const SERVER_URL = 'https://edencom.link/api/mcp'
@@ -17,7 +18,7 @@ type Section = { id: string; title: string; body: ReactNode }
 
 // What a client sees once connected — grouped the way the tools are registered
 // (src/app/api/mcp/*Tools.ts). Keep in step with the server; the list is
-// cosmetic, the server is what the assistant actually calls.
+// cosmetic, the server is what the companion actually calls.
 const TOOL_GROUPS: { title: string; tools: string[] }[] = [
   {
     title: 'Hangars and wallets',
@@ -57,15 +58,17 @@ const SECTIONS: Section[] = [
     body: (
       <>
         <p>
-          Edencom Link runs a <a href="https://modelcontextprotocol.io">Model Context Protocol</a> (MCP) server. MCP is
-          the open standard AI assistants use to call tools outside themselves. Connect it, and the assistant you
-          already use can look at your hangars, wallets, industry jobs, blueprints, structures, fittings and market data
-          and answer questions about them in plain language.
+          Every capsuleer flies with a companion. For some it is Aura, who has talked them through every undock since
+          the rookie ship. For others it is Claude, or ChatGPT. Aura MCP is how a companion reaches Edencom Link: a{' '}
+          <a href="https://modelcontextprotocol.io">Model Context Protocol</a> (MCP) server, the open standard
+          companions use to call tools outside themselves. Connect yours, and it can look at your hangars, wallets,
+          industry jobs, blueprints, structures, fittings and market data and answer questions about them in plain
+          language.
         </p>
         <p>
-          The server reads the same database the website reads. It never calls EVE&rsquo;s ESI API itself, so an
-          assistant sees exactly what the site shows you, as fresh as the last extract. Every tool runs under your own
-          account, so the assistant can see what you can see and nothing more.
+          Aura MCP reads the same database the website reads. It never calls EVE&rsquo;s ESI API itself, so your
+          companion sees exactly what the site shows you, as fresh as the last extract. Every tool runs under your own
+          account, so your companion can see what you can see and nothing more.
         </p>
         <p className={styles.endpoint}>
           <span className={styles.label}>Server URL</span>
@@ -80,19 +83,35 @@ const SECTIONS: Section[] = [
     body: (
       <ul>
         <li>
-          You need an Edencom Link account with at least one EVE character linked. The assistant can only read data that
-          an extract has already pulled in, so link your characters first and let the jobs run.
+          You need an Edencom Link account with at least one EVE character linked. Your companion can only read data
+          that an extract has already pulled in, so link your characters first and let the jobs run.
         </li>
         <li>
-          Signing in works through your browser. When you add the server, the assistant opens a consent page on
-          edencom.link. Sign in there as you normally would, approve the connection, and the assistant is in. No API
+          Signing in works through your browser. When you add the server, your companion opens a consent page on
+          edencom.link. Sign in there as you normally would, approve the connection, and your companion is in. No API
           token to copy and nothing to paste.
         </li>
         <li>
-          The connection is a credential. Anything the assistant does through it, it does as you. Read the{' '}
+          The connection is a credential. Anything your companion does through it, it does as you. Read the{' '}
           <a href="/terms#api">API Access</a> section of the Terms of Service before you connect one.
         </li>
       </ul>
+    ),
+  },
+  {
+    id: 'aura',
+    title: 'Aura',
+    body: (
+      <>
+        <p>
+          Aura already speaks MCP. Ask Aura to add a connection, give it the server URL above, and Aura sends you to
+          edencom.link to sign in and approve. That is the whole setup.
+        </p>
+        <p>
+          From then on, when you ask Aura what your Jita hangar is worth or which jobs finish tonight, Aura looks it up
+          in your own data instead of guessing.
+        </p>
+      </>
     ),
   },
   {
@@ -102,7 +121,7 @@ const SECTIONS: Section[] = [
       <>
         <p>
           <strong>Claude.ai and the Claude apps.</strong> Open <em>Settings</em> → <em>Connectors</em> and choose{' '}
-          <em>Add custom connector</em>. Give it a name, paste the server URL, and save. Claude redirects you to
+          <em>Add custom connector</em>. Name it Aura, paste the server URL, and save. Claude redirects you to
           edencom.link to sign in and approve. Once connected, turn the connector on in a conversation from the tools
           menu.
         </p>
@@ -110,7 +129,7 @@ const SECTIONS: Section[] = [
           <strong>Claude Code.</strong> From a terminal, add the server once and authenticate on first use:
         </p>
         <pre>
-          <code>{`claude mcp add --transport http edencom-link ${SERVER_URL}\nclaude\n/mcp`}</code>
+          <code>{`claude mcp add --transport http aura ${SERVER_URL}\nclaude\n/mcp`}</code>
         </pre>
         <p>
           The <code>/mcp</code> command lists the server and offers to sign in. Your browser opens the consent page;
@@ -127,9 +146,9 @@ const SECTIONS: Section[] = [
         <p>
           ChatGPT connects to remote MCP servers through its <em>Connectors</em> feature. In <em>Settings</em> →{' '}
           <em>Connectors</em>, turn on <em>Developer mode</em> under <em>Advanced</em> if it is not already on, then
-          choose <em>Create</em> and paste the server URL. Pick OAuth for authentication; leave the client id and secret
-          empty, since the server registers clients on its own. ChatGPT sends you to edencom.link to sign in and
-          approve.
+          choose <em>Create</em>, name it Aura and paste the server URL. Pick OAuth for authentication; leave the client
+          id and secret empty, since the server registers clients on its own. ChatGPT sends you to edencom.link to sign
+          in and approve.
         </p>
         <p>
           Connector support depends on your ChatGPT plan and may be limited to certain regions. If the option is not
@@ -145,10 +164,10 @@ const SECTIONS: Section[] = [
       <>
         <p>
           Any client that speaks MCP over Streamable HTTP with OAuth 2.1 can connect. Most of them read a small JSON
-          configuration; the entry for this server looks like this:
+          configuration; the entry for Aura MCP looks like this:
         </p>
         <pre>
-          <code>{`{\n  "mcpServers": {\n    "edencom-link": {\n      "url": "${SERVER_URL}"\n    }\n  }\n}`}</code>
+          <code>{`{\n  "mcpServers": {\n    "aura": {\n      "url": "${SERVER_URL}"\n    }\n  }\n}`}</code>
         </pre>
         <ul>
           <li>
@@ -175,9 +194,9 @@ const SECTIONS: Section[] = [
     body: (
       <>
         <p>
-          Ask the assistant to call <code>get_skill</code> first. It returns the operator&rsquo;s manual for this
-          server: how EVE industry math works, where the data comes from, which tool answers which question, and how to
-          write queries. Good assistants do this on their own; a nudge never hurts.
+          Ask your companion to call <code>get_skill</code> first. It returns the operator&rsquo;s manual for Aura MCP:
+          how EVE industry math works, where the data comes from, which tool answers which question, and how to write
+          queries. Good companions do this on their own; a nudge never hurts.
         </p>
         <p>Then ask whatever you would have clicked around the site to find out:</p>
         <ul>
@@ -192,7 +211,7 @@ const SECTIONS: Section[] = [
   },
   {
     id: 'tools',
-    title: 'What the assistant can do',
+    title: 'What your companion can do',
     body: (
       <>
         <p>
@@ -226,17 +245,17 @@ const SECTIONS: Section[] = [
     body: (
       <>
         <p>
-          The server holds no copy of your conversation. The assistant sends a tool call, the server answers from the
-          database, and what the assistant does with the answer is between you and its provider. Read that
+          Aura MCP holds no copy of your conversation. Your companion sends a tool call, the server answers from the
+          database, and what your companion does with the answer is between you and its provider. Read that
           provider&rsquo;s privacy policy to understand how it keeps the data it receives.
         </p>
         <p>
-          To disconnect, remove the connector in the assistant. That is the only switch today: Link has no page listing
-          the assistants connected to your account yet, and a token an assistant still holds works until it expires. If
-          you think one has leaked, open an issue and we will revoke it by hand.
+          To disconnect, remove the connection in your companion. That is the only switch today: Link has no page
+          listing the companions connected to your account yet, and a token a companion still holds works until it
+          expires. If you think one has leaked, open an issue and we will revoke it by hand.
         </p>
         <p>
-          The server, like the rest of Link, is open source. Read the tools in the{' '}
+          Aura MCP, like the rest of Link, is open source. Read the tools in the{' '}
           <a href={`${REPO}/tree/main/src/app/api/mcp`}>repository</a>, or open an issue there if something does not
           connect.
         </p>
@@ -247,8 +266,8 @@ const SECTIONS: Section[] = [
 
 const McpServerPage = () => (
   <main className={legal.wrap}>
-    <h1>MCP Server</h1>
-    <p className={legal.updated}>Connect Claude, ChatGPT or any MCP-capable assistant to your EVE data.</p>
+    <h1>Aura MCP</h1>
+    <p className={legal.updated}>Connect Aura, Claude, ChatGPT or whichever companion you fly with to your EVE data.</p>
 
     <h2>Contents</h2>
     <ol className={legal.contents}>
