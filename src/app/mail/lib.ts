@@ -5,10 +5,11 @@
 // that is used once, so a client that lost a response can retry without the
 // mail going out twice.
 //
-// Nothing on the site calls this yet. Its callers are `pnpm run mail-send`
-// (src/mailSend.ts) and, later, the MCP `send_mail` tool. Both build a Caller
-// the way the fittings routes do (callerForUser), on the service role, so
-// every query below scopes itself to the caller's registrations by hand.
+// No page on the site calls this. Its callers are `pnpm run mail-send`
+// (src/mailSend.ts) and the MCP `send_mail` tool (src/app/api/mcp/
+// mailTools.ts). Both hand it a Caller on the service role (the CLI builds
+// one, the tool takes callerForUser's), so every query below scopes itself
+// to the caller's registrations by hand.
 //
 // Imports are relative with extensions, and the fittings types `import type`
 // only, so the CLI can run this file under plain `node` (type stripping) as
@@ -69,6 +70,23 @@ const sendToken = async (caller: Caller, registration: Registration): Promise<{ 
   } catch {
     return failure(403, `Could not refresh the EVE token for ${nameOf(registration)}.`)
   }
+}
+
+/**
+ * Whether one of the caller's characters holds a token carrying the send
+ * grant, read from our own row with no refresh — what send_mail's preview
+ * answers. A send still refreshes the token (sendToken), which is the check
+ * that CCP has not revoked the grant since.
+ */
+export const sendGrantHeld = async (caller: Caller, registrationId: string): Promise<boolean> => {
+  if (!caller.registrations.some((r) => r.registration_id === registrationId)) return false
+  const { data, error } = await caller.supabase
+    .from('token')
+    .select('id')
+    .eq('registration_id', registrationId)
+    .contains('scope', [SEND_SCOPE])
+    .limit(1)
+  return !error && (data ?? []).length > 0
 }
 
 type SpentRequest = { mail_id: number | null; status: string } | null

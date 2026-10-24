@@ -1,12 +1,16 @@
 # Plan: EVE mail — a local copy of each character's mailbox, and the grant to send
 
-**Planned 2026-10-20. Nothing here is built.** A quiet launch: no page on the
-site shows a mail, nothing on the site sends one. What ships is the two ESI
-grants, an extract job that keeps a copy of every registered character's
-mailbox in Supabase, the one module that can send a mail through ESI, and the
-Registrations-page toggle that decides whether grants that *change* game state
-are drawn at all. The MCP tools that read and send mail are the follow-up this
-is shaped for (PR 4, sketched at the end, not in scope).
+**Planned 2026-10-20. All four PRs shipped:** PR 1 #1183, PR 3 #1184, PR 2
+#1185 (2026-10-22), and PR 4, the MCP tools (see "The MCP tools" below). The
+first mailbox was copied on 2026-10-24. Still owed: the one real send through
+`pnpm run mail-send` that PR 3's verify step asks for (the owner's, by hand).
+
+A quiet launch: no page on the site shows a mail, and no page sends one. What
+ships is the two ESI grants, an extract job that keeps a copy of every
+registered character's mailbox in Supabase, the one module that can send a
+mail through ESI, the Registrations-page toggle that decides whether grants
+that *change* game state are drawn at all, and the three MCP tools that read
+and send mail through that module.
 
 ## Goal
 
@@ -77,7 +81,8 @@ the fittings pair uses:
   send an EVE mail as this character. Nothing on the site sends one today;
   this is the grant a later assistant tool will use, and every send is
   logged here in full before it goes. _without:_ no mail can be sent as this
-  character.
+  character. (PR 4 rewrote the _why_ once the tool existed: it lets an
+  assistant connected to Aura MCP send a mail when the player asks it to.)
 
 The `/settings/grants` page lists them with that copy as soon as PR 1 lands,
 which is harmless: a grant with no job behind it does nothing until PR 2.
@@ -325,12 +330,74 @@ takes a registration, recipient, subject and body from flags, mints the
 request id, prints the log row), used once against their own character. The
 MCP `send_mail` tool is the intended caller and is PR 4.
 
+## The MCP tools (PR 4, as built)
+
+`src/app/api/mcp/mailTools.ts`, registered last in `route.ts`. Pure seams
+`mailQuery.ts` (beside it) and `src/mailText.ts`, both tested
+(`test/mailQuery.test.ts`, `test/mailText.test.ts`). The skill doc
+(`docs/edencom-industry-SKILL.md`) has an "EVE mail" section with the send
+procedure, and `/mcp-server` lists the three tools.
+
+- **`list_mail`** — headers only, newest first, on the caller's bearer
+  client. Filters AND together: `character` (name, EVE id or substring of
+  the caller's own), `label` (Inbox / Sent / Corp / Alliance by fixed id,
+  brackets optional; a player's own label by name, resolved to its id on
+  each character, since the same name is a different id on each alt — sent
+  as one PostgREST `or` of `and(registration_id, labels cs {id})` pairs),
+  `from` (EVE id, or a name substring over `universe_name`,
+  `character_directory` and the caller's mailing lists, refused past 100
+  senders), `subject` and `body` substrings, `since`/`until`, `unread_only`,
+  `limit` (50, at most 200). Copies of one mail on several alts are listed
+  once with every character in `characters`; `is_read` is true only when
+  every copy is. The answer carries `coverage` per extracted character (the
+  oldest mail held, `backfill_complete`, `bodies_pending`) and
+  `no_mail_copy` for the characters with no sync row, so a model can tell
+  "no such mail" from "not copied yet".
+- **`read_mail`** — up to 20 `mail_ids`, bearer client, the body from
+  whichever copy holds one, as plain text (`mailText`: `<br>` to newlines,
+  tags dropped, a web link keeping its address, entities decoded once) or
+  `raw_markup`. `body_state` is `copied`, `pending` (not fetched yet) or
+  `deleted` (ESI's 404).
+- **`send_mail`** — `character`, `recipients` (each an exact name, or an EVE
+  id with an optional type), `subject`, `body`, `body_format` (`text`, the
+  default: `&`/`<`/`>` escaped and newlines to `<br>`, since the client shows
+  no bare newline; `eve_markup`: as written), `approved_cost` (default 0),
+  `request_id` (minted when absent, and returned), `preview`. A name resolves
+  only to an exact, case-insensitive hit in the caller's own characters,
+  `character_directory`, `universe_name` (character / corporation /
+  alliance), `corporation`, `alliance`, or the **sender's** mailing lists; a
+  name that is two things is refused until a type picks one, and an unknown
+  name asks for the id. `preview` resolves and validates (`validateDraft`
+  plus the token's scope, via `sendGrantHeld`) and sends nothing; its
+  `request_id` is meant to be passed to the real send. The send itself is
+  `sendMail(caller, registrationId, draft, 'mcp')`.
+
+Three departures from the sketch in the delivery table:
+
+- **The send runs on the service role.** The sketch put all three tools on
+  the bearer client, but the send path reads `token`, which only the service
+  role does here. So the reads stay on the bearer and `send_mail` takes
+  `callerForUser(userId)` with the user id from the verified bearer — the
+  shape `src/app/fitting/marshalActions.ts` uses with a cookie session. The
+  privacy rule below is amended to say so.
+- **`idempotentHint: false`**, not `true`. A `request_id` makes a retry safe,
+  but the tool cannot require one: a model asked for a uuid too often types
+  a well-known example one, and since the index is global, a collision
+  would refuse a stranger's send. Without one, a repeat sends
+  again, so the honest hint is false.
+- **`openWorldHint: true`**, not `false`. The hint is about whether a tool
+  reaches outside the deployment's own world, and a sent mail lands in other
+  players' mailboxes.
+
 ## Privacy
 
 - Owner-only RLS, service-role writes, no `anon` grant, no share model, no
   GraphQL field, no CSV route, no card, no page — in this plan and as a
-  stated rule for the follow-ups: a mail surface is always the owner's
-  bearer or cookie session, never the service role on their behalf.
+  stated rule for the follow-ups: a mail surface reads through the owner's
+  bearer or cookie session, never the service role on their behalf. The one
+  exception is the send, which needs the token: it runs on the service-role
+  Caller of the user the bearer or session proved, scoped by hand to that
+  user's registrations, and writes only `mail_send_log`.
 - The Chancellor account debug dump (`/account/settings/chancellor`) must not
   include mail tables. Impersonation reaches whatever the impersonated
   session reaches; that is the existing rule and this plan does not widen it,
@@ -344,23 +411,29 @@ MCP `send_mail` tool is the intended caller and is PR 4.
 | 1  | The two `EsiScope` entries (opt-in). `changes` on `JobEntry`/`GrantColumn`, `save/delete fits` flagged. `changeColumns.ts` + `registrationsShowChanges.ts` + `showChangesToggle.tsx`; the page filters through them; cookie read/write. `columnGrant` `rule`. | `pnpm test` (new `changeColumns`, extended `registrationMatrix`); `build`+`lint`; the column hides/shows and `--cols` follows. |
 | 2  | Schema + migration for the four tables; `mailFields.js`; `characterMail.js`; workflow, cron route, `vercel.json`, `package.json`, `PER_CHARACTER_JOBS`, registry entry (`changes: true`, `grantRule: 'all'`); `resolveBatch` of sender ids; dump exclusion.      | `pnpm test` (`mailFields`); `test:sql` (`character_mail.sql`); grant on one character, run the CLI, watch the matrix cell.      |
 | 3  | `mail_send_log`; `esi.js` `sendMail`; `mailCompose.ts`; `src/app/mail/lib.ts`; `pnpm run mail-send`.                                                                                                                                                             | `pnpm test` (`mailCompose`); one real send to the owner's own alt; the log row flips `pending → ok`; the extract picks it up.   |
-| 4  | _Follow-up, out of scope:_ MCP `list_mail` (label / sender / since / unread / subject filters over `character_mail`, names resolved, bodies only on request or by id), `read_mail(mail_id)`, `send_mail(draft)` — on the caller's bearer client, `send_mail` with `readOnlyHint: false`, `destructiveHint: false`, `idempotentHint: true` (the request id), `openWorldHint: false` (ESI is CCP, not a third party — but say so in the description). | the skill doc gains a mail section; the tool refuses a draft that fails `mailCompose`.                                           |
+| 4  | _Shipped; see "The MCP tools" for what changed from this sketch._ MCP `list_mail` (label / sender / since / unread / subject filters over `character_mail`, names resolved, bodies only on request or by id), `read_mail(mail_id)`, `send_mail(draft)` — on the caller's bearer client, `send_mail` with `readOnlyHint: false`, `destructiveHint: false`, `idempotentHint: true` (the request id), `openWorldHint: false` (ESI is CCP, not a third party — but say so in the description). | the skill doc gains a mail section; the tool refuses a draft that fails `mailCompose`.                                           |
 
-PRs 1 and 2 are independent of each other; 3 needs 2's migration only for
+All four shipped. PRs 1 and 2 were independent of each other; 3 needed 2's migration only for
 `mail_send_log` (fold it into 2's migration if they land together, else a
 fresh timestamp). CLAUDE.md's table and job lists, and `docs/README.md`,
 update with each PR.
 
-## Open questions for the owner
+## Decisions (were open questions, settled 2026-10-24)
 
-- **Schedule.** Every 6 h matches the other per-character jobs. Mail that
-  wants to be read within minutes (a later notification) would need hourly
-  runs; the ETag makes the no-change case nearly free, so hourly is cheap if
-  wanted. Default here: 6 h.
-- **Backfill depth.** Everything, by default. If the owner would rather cap
-  at, say, a year, `walkPlan` takes a cutoff on `sent_at`.
-- **Corp and alliance mail arrives through every member.** Three registered
-  corpmates each hold a copy of the same corp mail under their own
-  `registration_id`. Deduplicating across registrations would need a shared
-  table keyed on `mail_id`, which is the same mail id across recipients, and
-  a reading rule; not worth it until something reads mail across characters.
+- **Schedule: 6 h.** It matches the other per-character jobs. Mail that has
+  to be read within minutes (a later notification) would need hourly runs;
+  the ETag makes the no-change case nearly free, so hourly stays cheap if a
+  feature ever needs it. Nothing does yet.
+- **Backfill depth: everything.** The first mailbox reached back almost two
+  years in one run of 21 pages, and the budget already spreads the rest over a few
+  runs. No `sent_at` cutoff.
+- **Corp and alliance mail: one copy per character, no shared table.** Three
+  registered corpmates each hold a copy under their own `registration_id`.
+  The one reader across characters, `list_mail`, folds the copies of one mail
+  id on one account into one entry in its answer; a shared table keyed on
+  `mail_id` would only pay off for a reader across accounts, and mail has no
+  such reader by rule (see Privacy).
+- **Body backlog: `MAX_BODY_FETCHES` stays 100.** A new grant copies 1,000
+  headers per run but 100 bodies, so the bodies trail the headers by days,
+  and a mail deleted in game before its body is fetched keeps only its
+  header (`body_state: deleted`). Raise the cap if that loss is ever seen.

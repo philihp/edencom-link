@@ -46,6 +46,10 @@ const TOOL_GROUPS: { title: string; tools: string[] }[] = [
     tools: ['list_structures', 'list_clones', 'list_fittings', 'list_mercenary_dens', 'list_planets'],
   },
   {
+    title: 'EVE mail',
+    tools: ['list_mail', 'read_mail', 'send_mail'],
+  },
+  {
     title: 'Queries and Data Links',
     tools: ['link_schema', 'run_query', 'list_links', 'create_link', 'update_link', 'edit_watched_systems'],
   },
@@ -62,13 +66,14 @@ const SECTIONS: Section[] = [
           the rookie ship. For others it is Claude, or ChatGPT. Aura MCP is how a companion reaches Edencom Link: a{' '}
           <a href="https://modelcontextprotocol.io">Model Context Protocol</a> (MCP) server, the open standard
           companions use to call tools outside themselves. Connect yours, and it can look at your hangars, wallets,
-          industry jobs, blueprints, structures, fittings and market data and answer questions about them in plain
-          language.
+          industry jobs, blueprints, structures, fittings, market data and, if you allow it, your EVE mail, and answer
+          questions about them in plain language.
         </p>
         <p>
-          Aura MCP reads the same database the website reads. It never calls EVE&rsquo;s ESI API itself, so your
-          companion sees exactly what the site shows you, as fresh as the last extract. Every tool runs under your own
-          account, so your companion can see what you can see and nothing more.
+          Aura MCP reads the same database the website reads. It never calls EVE&rsquo;s ESI API to read, so your
+          companion sees exactly what the site holds for you, as fresh as the last extract. The one call it makes to ESI
+          is to send a mail, below. Every tool runs under your own account, so your companion can see what you can see
+          and nothing more.
         </p>
         <p className={styles.endpoint}>
           <span className={styles.label}>Server URL</span>
@@ -215,10 +220,13 @@ const SECTIONS: Section[] = [
     body: (
       <>
         <p>
-          Every tool is read-only except the last group. <code>create_link</code> and <code>update_link</code> save a
+          Most tools only read. Four change something. <code>create_link</code> and <code>update_link</code> save a
           query as a Data Link under your account, and <code>edit_watched_systems</code> edits the watch list on your{' '}
-          <a href="/indexes">cost indices</a> page. Nothing here can touch your EVE account, delete a fitting, or send
-          an EVE mail.
+          <a href="/indexes">cost indices</a> page. <code>send_mail</code> sends an EVE mail in the game as one of your
+          characters, and only from a character you gave the opt-in <a href="/settings/grants">Send in-game mail</a>{' '}
+          grant. Your companion is told to show you each mail and wait for your yes before it sends, and every mail is
+          logged under your account before it goes. Nothing here can delete a fitting or change anything else in your
+          EVE account.
         </p>
         <dl className={styles.tools}>
           {map(
@@ -232,9 +240,10 @@ const SECTIONS: Section[] = [
           )}
         </dl>
         <p>
-          The two appraisal tools and <code>shipping_quote</code> are the only ones that leave the site: they send item
-          names and quantities, or route and cargo figures, to <a href="https://innomin.at">innomin.at</a> or KumGo for
-          pricing. Nothing from your account goes with them.
+          Three tools leave the site to price things: the two appraisal tools and <code>shipping_quote</code> send item
+          names and quantities, or route and cargo figures, to <a href="https://innomin.at">innomin.at</a> or KumGo.
+          Nothing from your account goes with them. <code>send_mail</code> leaves the site too: it hands EVE the mail
+          you agreed to, the same as your game client does. No other tool leaves the site.
         </p>
       </>
     ),
@@ -248,6 +257,11 @@ const SECTIONS: Section[] = [
           Aura MCP holds no copy of your conversation. Your companion sends a tool call, the server answers from the
           database, and what your companion does with the answer is between you and its provider. Read that
           provider&rsquo;s privacy policy to understand how it keeps the data it receives.
+        </p>
+        <p>
+          Your EVE mail is the most private thing Link keeps. Link copies it only for a character you gave the opt-in{' '}
+          <a href="/settings/grants">Read in-game mail</a> grant, shows it on no page and shares it with no one, and{' '}
+          <code>list_mail</code> and <code>read_mail</code> read it only for your own account.
         </p>
         <p>
           To disconnect, remove the connection in your companion. That is the only switch today: Link has no page

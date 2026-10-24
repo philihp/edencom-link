@@ -167,7 +167,7 @@ export const esiScopes: EsiScope[] = [
   {
     scope: 'esi-mail.send_mail.v1',
     name: 'Send in-game mail',
-    why: 'Lets this site send an EVE mail as this character. Nothing on the site sends one today; this is the grant a later assistant tool will use, and every send is logged here in full before it goes.',
+    why: 'Lets an assistant you connect to Aura MCP send an EVE mail as this character, when you ask it to. No page on the site sends one, and every send is logged here in full before it goes.',
     without: 'no mail can be sent as this character.',
     optIn: true,
   },
