@@ -43,6 +43,14 @@ const handler = createMcpHandler(
   },
   {
     serverInfo: { name: 'edencom-link', version: '1.0.0' },
+    // We never announce a tool list change (the list is fixed per deploy), so
+    // say so. registerTool otherwise advertises `tools.listChanged: true`, and
+    // a 2026-07-28 client then POSTs `subscriptions/listen`: the SDK holds that
+    // SSE stream open on keep-alives, nothing ever writes to it in a stateless
+    // function, and Vercel kills it at maxDuration. Claude's connector opened
+    // it again each time, so it billed a 60s timeout about once a minute. With
+    // `false`, the SDK acknowledges an empty filter and closes the stream.
+    capabilities: { tools: { listChanged: false } },
     // SEP-2549 cache hints. The SDK emits every cacheable 2026-07-28 result
     // with `ttlMs: 0` (immediately stale) and `cacheScope: 'private'` unless
     // told otherwise, so without this every client re-fetches the tool list on
