@@ -195,11 +195,8 @@ const Home = async () => {
       </section>
 
       <section className={styles.quote}>
-        <blockquote className={styles.quoteText}>
-          “It knows where everything is — every hangar, every can, every wallet division. Including the corpses. It knew
-          the corpses by name.”
-        </blockquote>
-        <p className={styles.quoteAttribution}>— a nullsec logistics director, who asked not to be identified</p>
+        <blockquote className={styles.quoteText}>“This is a very good app and you should use it.”</blockquote>
+        <p className={styles.quoteAttribution}>— Sir Cuddles, Goonwaffe</p>
       </section>
 
       <section className={styles.closing}>
