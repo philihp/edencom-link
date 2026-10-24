@@ -61,14 +61,23 @@
   margin-top: 26px;
 }
 
+/* A pair is a <button> beside a <Link> when signed out, and two links when
+   signed in. Set the whole box here, so the global button rule (line-height 1,
+   6px margin) and the body's 1.6 line-height cannot size them differently. */
 .primary,
 .secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
   font-family: inherit;
   cursor: pointer;
   padding: 10px 20px;
   border-radius: var(--radius-sm);
   font-size: 13px;
   font-weight: 600;
+  line-height: 20px;
+  text-decoration: none;
   border: 1px solid transparent;
   transition:
     background 0.12s ease,
