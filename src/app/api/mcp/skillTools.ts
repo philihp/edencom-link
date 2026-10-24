@@ -23,7 +23,7 @@ export const registerSkillTools = (server: McpServer): void => {
     {
       title: 'EDENCOM Link — industry skill',
       description:
-        "The operator's manual for this server: how EVE industry math works (blueprint ME/TE, structure and rig bonuses, security multipliers, invention, job installation cost, facility tax, job profit), where the data comes from (ESI extracts into a database — the tools never call ESI — and the in-game roles corporation data needs), how to read public contracts, wallet journals, fittings and what others share with the user, which tool answers which question, which tools write, and how to use the GraphQL surface (link_schema, run_query, create_link). Call this once at the start of a session, before planning builds, answering questions about contracts or shares, or writing queries.",
+        "The operator's manual for this server: how EVE industry math works (blueprint ME/TE, structure and rig bonuses, security multipliers, invention, job installation cost, facility tax, job profit), where the data comes from (ESI extracts into a database — the tools never call ESI — and the in-game roles corporation data needs), how to read public contracts, wallet journals, fittings and what others share with the user, which tool answers which question, which tools write, and how to use the GraphQL surface (link_schema, run_query, create_link). Call this before your first answer in a session, also when the question looks familiar: it holds this deployment's procedures (gas purchases, fit upgrades, job profit), and an answer from general EVE knowledge has cost a user real ISK.",
       annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
       inputSchema: z.object({}),
     },

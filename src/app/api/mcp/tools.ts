@@ -1852,7 +1852,7 @@ export const registerTools = (server: McpServer): void => {
     {
       title: 'Appraise items',
       description:
-        'Estimate the ISK market value of a batch of items via the innomin.at appraisal service (Jita by default). Answers "what\'s 3 Rifters and 100k Tritanium worth" or follows up a search_assets result with prices. Item names are matched fuzzily against EVE types. Prices are live market data, not the user\'s own orders — except supercarrier and titan hulls, which have no order book: those take the price set on this deployment (hull_price) as sell and buy, and the result names them under hull_priced.',
+        'Estimate the ISK market value of a batch of items via the innomin.at appraisal service (Jita by default). Answers "what\'s 3 Rifters and 100k Tritanium worth" or follows up a search_assets result with prices. Item names are matched fuzzily against EVE types. Prices are live market data, not the user\'s own orders — except supercarrier and titan hulls, which have no order book: those take the price set on this deployment (hull_price) as sell and buy, and the result names them under hull_priced. Before you plan a purchase or a haul with this tool, read get_skill: it has procedures (for example "Buying gas for C-J6MT", where compressed gas decompresses at 95%) that general EVE knowledge gets wrong.',
       annotations: { readOnlyHint: true, openWorldHint: true },
       inputSchema: z.object({
         items: z
