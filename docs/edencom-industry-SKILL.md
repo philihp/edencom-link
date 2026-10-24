@@ -24,11 +24,13 @@ of each compressed gas, four gases were cheaper raw, and the error cost about
 ## What this server is
 
 EDENCOM Link extracts EVE Online data and saves it in a database. The tools of
-this server read that database. The tools never call ESI.
+this server read that database. The tools never call ESI, with one exception:
+`send_mail` sends an EVE mail through ESI (see "EVE mail").
 
 Extract jobs read the EVE ESI endpoints for each registered character and
 corporation: assets, blueprints, industry jobs, orders, wallets, skills,
-clones, fittings, contracts, structures, mercenary dens. The per-character
+clones, fittings, contracts, structures, mercenary dens, and mail for a
+character that has the opt-in mail grant. The per-character
 jobs run every 6 hours, each character at its own moment of the hour. The
 corporation jobs for assets, blueprints and structures run once a day. A job
 reads the public contracts of every region every 15 minutes. A nightly job
@@ -522,6 +524,63 @@ GraphQL `contracts` field (call `link_schema` first).
     planetary industry.
 - A planet name is "<system> <Roman numeral>". The SDE stores no planet names.
 
+## EVE mail
+
+The site keeps a copy of the EVE mail of each character that has the opt-in
+"Read in-game mail" grant. The `character-mail` extract adds new mail every 6
+hours. A mail that the player deletes in the game stays in the copy. Mail is
+the user's private data: no share, Data Link or GraphQL field shows it.
+
+- `list_mail` finds mail by character, label, sender, words in the subject or
+  the body, time, or read state. It gives headers only, newest first.
+  `read_mail` gives full mails by `mail_id`, up to 20 in one call, with the
+  body as plain text.
+- After a new grant, the copy fills over some days. Each run copies up to
+  1,000 older headers and 100 bodies for each character, newest first. Before
+  you say that a mail does not exist, look at `coverage`. If
+  `backfill_complete` is false, older mail is not copied yet. If
+  `bodies_pending` is more than 0, some bodies are not copied yet, and
+  `list_mail` with `body` cannot find words in them.
+- `no_mail_copy` names the characters that have no copy. To start one, the
+  user turns on "Read in-game mail" on `/settings/grants`, then re-auths the
+  character on `/account/registrations`.
+- A mail to a corporation, an alliance or a mailing list arrives once for
+  each registered character that receives it. `list_mail` shows it one time,
+  with all the characters that hold it in `characters`. `matched_copies`
+  counts each copy.
+- Inbox, Sent, Corp and Alliance are the same label on every character. The
+  player's own labels have a different id on each character, so give
+  `list_mail` the label name.
+
+### Sending mail
+
+`send_mail` sends an EVE mail in the game as one of the user's characters.
+The mail cannot be recalled. Do this procedure for each mail:
+
+1. Write the draft as plain text. The tool keeps the line breaks.
+2. Call `send_mail` with `preview: true`. It finds each recipient and checks
+   the draft. It sends nothing.
+3. Show the user the sender, the recipients as the preview found them, the
+   subject and the full body. Ask for a yes.
+4. Call `send_mail` again without `preview`, with the `request_id` from the
+   preview.
+
+- A recipient is a character, a corporation, an alliance or a mailing list.
+  Give its exact name, or its EVE id and type. The tool knows the names of the
+  user's correspondents, of registered characters, of the corporations and
+  alliances in the site's directories, and of the sender's own mailing lists.
+  It refuses any other name. Then ask the user for the id. Do not guess one.
+- The character needs the opt-in "Send in-game mail" grant. Without it, the
+  preview says `can_send: false`.
+- Keep `approved_cost` at 0 unless the user gives you a CSPA charge to pay.
+  If a recipient charges more, EVE refuses the mail, and the tool does not
+  try again.
+- If a send gives no answer, call again with the same `request_id`. A used
+  `request_id` is refused, so the mail does not go two times. For a new mail,
+  use a new `request_id`.
+- The site logs each send in full before it goes. The sent mail comes into
+  the copy under the Sent label on the next extract.
+
 ## Spreadsheets
 
 A Google Sheet reads this deployment's price data without any script:
@@ -573,8 +632,9 @@ see them only in these ways:
 
 ## Tools that write
 
-Three tools change data. Each changes only the user's own rows on this site,
-and none changes the game:
+Four tools change data. `send_mail` changes the game: it sends an EVE mail as
+one of the user's characters (see "Sending mail"). The other three change
+only the user's own rows on this site:
 
 - `create_link` saves a Data Link, and can share it.
 - `update_link` changes a Data Link. Its audience sees the change the next
@@ -586,7 +646,8 @@ and none changes the game:
   where the system is after the change, counted from 0. Removing a system
   does not stop its cost-index history.
 
-Confirm a change with the user before you call a tool that writes.
+Confirm a change with the user before you call a tool that writes. For
+`send_mail`, show the user the full mail first.
 
 ## Which tool answers which question
 
@@ -606,6 +667,8 @@ Confirm a change with the user before you call a tool that writes.
 - Balances: `wallet_summary`. Trades: `search_transactions`. Open orders:
   `list_market_orders`. The user's own contracts: `run_query` on `contracts`.
   Anyone's public contracts: `search_public_contracts`.
+- EVE mail: `list_mail` finds it, `read_mail` reads it, `send_mail` sends
+  one (see "EVE mail").
 - Characters, ships, clones: `list_clones`. Saved fits and the archive:
   `list_fittings`. Structures: `list_structures`.
 - Mercenary dens: `list_mercenary_dens`. Planets and planet types:
@@ -646,6 +709,8 @@ change the query or its variables.
 Some work has no tool. Send the user to the page:
 
 - Refresh an extract: `/account/registrations`.
+- Turn on the mail grants: `/settings/grants`, then re-auth the character on
+  `/account/registrations`.
 - Share an item, a place, a structure, a fit or a blueprint library: the
   Share button on its page.
 - Marshal, unmarshal, transfer or delete a fit: the fit's page under

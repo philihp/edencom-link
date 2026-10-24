@@ -2,9 +2,11 @@
 // via OAuth 2.1 against Supabase Auth acting as the authorization server (the
 // consent page lives at /oauth/consent; discovery metadata at
 // /.well-known/oauth-protected-resource). Tools are read-only queries over
-// the extracted DB — see tools.ts — with two exceptions: linkTools.ts can
+// the extracted DB — see tools.ts — with three exceptions: linkTools.ts can
 // create and share a link, and watchedSystemTools.ts can edit the caller's
-// /indexes watch list. Both write only rows the caller owns.
+// /indexes watch list (both write only rows the caller owns), and
+// mailTools.ts's send_mail sends an EVE mail as one of the caller's
+// characters — the one tool that changes the game.
 import { createMcpHandler, withMcpAuth } from 'mcp-handler'
 
 import { verifySupabaseToken } from './auth'
@@ -12,6 +14,7 @@ import { registerEstateTools } from './estateTools'
 import { registerExploreTools } from './exploreTools'
 import { registerIndustryTools } from './industryTools'
 import { registerLinkTools } from './linkTools'
+import { registerMailTools } from './mailTools'
 import { registerPublicContractTools } from './publicContractTools'
 import { registerShippingTools } from './shippingTools'
 import { registerSkillTools } from './skillTools'
@@ -36,6 +39,7 @@ const handler = createMcpHandler(
     registerLinkTools(server)
     registerSkillTools(server)
     registerWatchedSystemTools(server)
+    registerMailTools(server)
   },
   {
     serverInfo: { name: 'edencom-link', version: '1.0.0' },
