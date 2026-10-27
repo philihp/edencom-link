@@ -174,8 +174,9 @@ a T2 BPC with invention:
    decryptor is optional, and is consumed.
 3. Each attempt succeeds with a probability. Success gives a T2 BPC at ME 2,
    TE 4, with a base run count — usually 1 for ships and rigs, 10 for modules
-   and ammunition. A decryptor changes the probability, the run count, the
-   ME, and the TE.
+   and ammunition, but 5 for Standup structure modules. The run count is
+   per blueprint, so look it up. A decryptor changes the probability, the
+   run count, the ME, and the TE.
 
 The probability is:
 
@@ -303,6 +304,101 @@ This holds for manufacturing and reaction jobs only. The tools do not give
 adjusted prices or past cost indices, so do not try to compute it yourself.
 The `/structure` page of the site does it: each structure where the user
 rents shows "Taxes Paid (est.)" and the recovered rate.
+
+## Cost to build an item
+
+When the user asks what it costs to build an item, give the cost of the
+whole build chain, not of the last job. A bill of materials names
+components. A component names composites, a composite names intermediates,
+and an intermediate names raw moon materials. The user mines, farms or
+imports the raw inputs, so the cost of the build is the cost of those inputs
+and of every job between them and the product.
+
+The failure this prevents: on 2026-10-27 an agent priced an Azbel from its
+12 structure components at Jita sell, 4.1B ISK, and left out the quantum
+core. The full chain cost 3.75B, and the core added 3.23B.
+
+The procedure:
+
+1. Find a structure for each job. For the product, each component and each
+   reaction, find a structure in the user's space with a material rig that
+   covers that product (`rigs_for_blueprint`, `list_structures`). Prefer one
+   system that has all of them, to keep the freight short. Name the
+   structure of each job in the answer.
+2. Get the bill of each job with `blueprint_for_product`. Give the ME of the
+   blueprint: 10 for a researched T1 BPO, 2 for an invented BPC with no
+   decryptor, 0 for a reaction formula. If the user does not have the
+   blueprint (`list_blueprints`), say so and the ME you assumed.
+3. Recurse into each material that has a blueprint. Stop at a material that
+   has none: minerals, Morphite, moon materials, PI items, ice products,
+   datacores. These are the raw inputs.
+4. Size each job in whole runs. A job makes `produces_per_run` units for each
+   run, so `runs = ceil(units needed ÷ produces_per_run)`. Many blueprints
+   make large batches: 200 for an intermediate reaction, 200 to 10,000 for a
+   composite, 100 for an R.A.M. and for missiles, 200 for Standup Flak
+   rounds. Other blueprints make 1, for example the Standup guided bombs.
+5. Before you size the job of a material, add the needs of all its
+   consumers. One job that makes Sylramic Fibers for four armor plates
+   wastes less than four jobs.
+6. Apply the rounding of "Material mathematics" at each job, with the runs
+   of that job. Call `blueprint_for_product` with `runs`, or apply the
+   formula in code. Never apply a bonus to a total of the chain: the ceiling
+   is per job.
+7. Price each raw input at Jita `sell_price` (`appraise_items`). That is
+   what it costs the user to import it. Price fuel blocks, PI items and
+   datacores the same way, unless the user says that they build them.
+8. Add the installation fee of each job (see "Job installation cost"), with
+   the index of the system where the job runs. The reaction index is often
+   higher than the manufacturing index.
+9. For a Tech 2 item, add invention: the cost of one attempt (datacores and
+   decryptor) ÷ P ÷ the runs on the invented BPC. The SDE view of this
+   server has no invention data, so find the datacores, the base chance and
+   the runs (for example on the blueprint's page at everef.net). The tools
+   do not give the user's skills, so say which skill levels you assumed.
+10. For an Upwell structure, add its quantum core (for example "Azbel Upwell
+    Quantum Core"). The blueprint does not list the core, but the structure
+    cannot anchor without it, and the core can cost as much as the build
+    chain. Its market is thin: price it in more than one market, and look at
+    `search_public_contracts` for the core, and for the structure and core
+    sold together.
+
+When you code the chain, put every job in one table and walk it from the
+product down. Expand a material only after all its consumers are expanded,
+so its demand is complete when you size its job.
+
+Give the answer with these parts:
+
+- **The cost of the item**, in parts: minerals, moon materials, PI, fuel
+  blocks, job fees, invention, and the core.
+- **The leftovers.** Whole runs make more than one item needs. Value each
+  leftover at its own production cost and subtract it, to get the cost of
+  the item. Also give the cash that one build needs. For one Guardian, the
+  reactions left 41M of stock against 128M of inputs, so one hull cost as
+  much cash as buying it in Jita.
+- **The rounding loss**: what the ceilings cost against the unrounded
+  quantities, with the jobs that lose the most. A job with few runs and base
+  quantities of 4 to 10 loses the most. On one Azbel, 10 of the 12
+  structure components have a base quantity of 4. With every bonus that is
+  3.38, and the ceiling makes it 4 again, so ME 10 and a T2 rig save
+  nothing on those lines. Building 10 hulls in one job needs 34 of each
+  instead of 40. Tell the user how many runs recover the loss.
+- **The comparison** with the Jita sell and buy prices of the finished item.
+  Name each item that costs more to build than to buy. If the spread of an
+  item is wide, say that its sell price overstates the saving.
+
+Two tool problems can change the answer. Look for them in each result:
+
+- `blueprint_for_product` can choose an unpublished blueprint. For
+  "Tungsten Carbide" it returns "Test Reaction Blueprint", which makes 20
+  units for each run. The real "Tungsten Carbide Reaction Formula" makes
+  10,000. If the `blueprint` of a result is not "<product> Blueprint" or
+  "<product> Reaction Formula", call `blueprints_using_material` on one of
+  its inputs to find the real blueprint, and use the output of a similar
+  formula (the other carbides make 10,000).
+- A `structure_id` result has `role_bonus_applies`. For a Raitaru, Azbel or
+  Sotiyo it must be `true`. Some alliance Azbels come back from
+  `list_structures` with `class: null`, and the tool then drops their 1%
+  role bonus. For those, give `structure`, `rig` and `security` by hand.
 
 ## Job profit (lift)
 
@@ -679,6 +775,9 @@ Confirm a change with the user before you call a tool that writes. For
 - Upgrades for a fit: `list_fittings`, `module_variants`, `appraise_items`,
   `search_public_contracts` and `blueprint_for_product` (see "Upgrading a
   ship's fit").
+- What it costs to build an item, a structure or a fit: `rigs_for_blueprint`,
+  `list_structures`, `blueprint_for_product`, `appraise_items` and
+  `industry_cost_indices` (see "Cost to build an item").
 - This manual: `get_skill`.
 
 If no fixed tool answers the question, use the GraphQL surface below.
