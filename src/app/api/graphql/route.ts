@@ -44,6 +44,10 @@ const { handleRequest } = createYoga({
     ),
   landingPage: false,
   batching: false,
+  // Yoga 6 logs a multi-line "Request processed" entry per request at info,
+  // duplicating timingPlugin's metric below. At warn only errors (masked
+  // resolver errors among them) are written — what yoga 5 wrote by default.
+  logging: 'warn',
   // One request.timing metric per executed operation (src/observability.js).
   plugins: [timingPlugin],
   // Wildcard origin with credentials OFF is the safe pairing: external UIs
