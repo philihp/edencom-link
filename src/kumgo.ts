@@ -2,8 +2,9 @@
 // (https://kumgo.space) — a public, unauthenticated quote API for the
 // alliance's shipping routes. Like src/innominate.ts this is a deliberate,
 // narrow exception to the "UI/MCP read the DB, never call a third-party"
-// rule: freight rates aren't in our DB, so the shipping_quote MCP tool and
-// /asset/shipping call kumgo.space server-side at request time. Nothing is
+// rule: freight rates aren't in our DB, so the shipping_quote MCP tool calls
+// kumgo.space server-side at request time (the /asset/shipping page that
+// once did too now redirects to KumGo itself). Nothing is
 // persisted, nothing about the caller's account is sent — only route id,
 // volume, collateral, and the rush flag. The API publishes no rate limit and
 // quotes are pure arithmetic on its side, so unlike innomin.at there is no

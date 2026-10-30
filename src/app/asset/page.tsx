@@ -95,9 +95,6 @@ const Locations = async ({ supabase }: { supabase: SupabaseClient }) => {
           <Link href={`/corpses/${mainCharacterId}`}>View frozen corpses</Link>
         </p>
       )}
-      <p className={styles.corpses}>
-        <Link href="/asset/shipping">Shipping calculator</Link>
-      </p>
       <AssetSearchForm />
       <AssetsTable locations={locations} owners={owners} />
       <p className={styles.lastRun}>

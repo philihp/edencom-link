@@ -123,6 +123,10 @@ const nextConfig = {
     { source: '/account/chancellor', destination: '/account/settings/chancellor', permanent: true },
     // The debug dump and impersonate form folded into the Chancellor tools.
     { source: '/account/debug', destination: '/account/settings/chancellor', permanent: true },
+    // The shipping calculator was a front end for KumGo's quote API; KumGo
+    // now has its own "paste from game" cargo input, so the page is retired
+    // and the link hands over to the service itself.
+    { source: '/asset/shipping', destination: 'https://kumgo.space/', permanent: false },
   ],
 }
 

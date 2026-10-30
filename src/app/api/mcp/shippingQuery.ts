@@ -1,5 +1,5 @@
-// Route-resolution seam for the shipping_quote MCP tool and the
-// /asset/shipping page. Like planetQuery.ts this pulls in no I/O — callers
+// Route-resolution seam for the shipping_quote MCP tool. Like planetQuery.ts
+// this pulls in no I/O — callers
 // fetch the KumGo route list and hand it here — so the fuzzy origin/
 // destination matching, the tier arithmetic and the wording of a refusal are
 // unit-testable without the network (see test/shippingQuery.test.ts).
