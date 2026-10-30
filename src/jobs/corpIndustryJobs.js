@@ -4,6 +4,7 @@ import { corpIndustryJobs } from '../esi.js'
 import { sudoSupabase } from '../supabase.js'
 import { partitionJobs } from './industryJobReconcile.js'
 import { cli, fetchAllPages, forEachCorporation, forEachSequential, recordStructureTenancy } from './lib.js'
+import { rollupAfterJobs } from './structureMeasures.js'
 
 const TAG = 'corp-industry-jobs'
 export const SCOPE = 'esi-industry.read_corporation_jobs.v1'
@@ -39,7 +40,10 @@ const fetchCurrentRows = async (corporation_id, cols, from = 0) => {
 // returning a short list — so a job's absence here is real and not a page that
 // failed to load. partitionJobs depends on that.
 const reconcile = async (corporation_id, fetched) => {
-  const cols = 'id, job_id, status, pause_date, completed_date, completed_character_id, successful_runs'
+  // start_date and installer_id ride along so the structure-measure rollup
+  // knows which days, and which installers' registrations, this run changed.
+  const cols =
+    'id, job_id, status, pause_date, completed_date, completed_character_id, successful_runs, start_date, installer_id'
   const current = await fetchCurrentRows(corporation_id, cols)
 
   const now = new Date().toISOString()
@@ -92,7 +96,16 @@ const reconcile = async (corporation_id, fetched) => {
     if (error) throw error
   })
 
-  return { touched: touchIds.length, opened: inserts.length, closed: closeIds.length, agedOut: agedOutIds.length }
+  const rowById = new Map(map((c) => [c.id, c], current))
+  const changed = [...openJobs, ...map((id) => rowById.get(id), agedOutIds).filter(Boolean)]
+
+  return {
+    touched: touchIds.length,
+    opened: inserts.length,
+    closed: closeIds.length,
+    agedOut: agedOutIds.length,
+    changed,
+  }
 }
 
 // GET /corporations/{id}/industry/jobs/ → corp_industry_job_over_time (SCD type
@@ -102,9 +115,12 @@ export const runCorpIndustryJobs = ({ registrationIds } = {}) =>
   forEachCorporation(TAG, { scope: SCOPE, registrationIds }, async ({ access_token, corporation_id, ctx }) => {
     const t0 = Date.now()
     const jobs = await fetchAllPages((page) => corpIndustryJobs(access_token, corporation_id, page))
-    const { touched, opened, closed, agedOut } = await reconcile(corporation_id, jobs)
+    const { touched, opened, closed, agedOut, changed } = await reconcile(corporation_id, jobs)
     // Where this corporation builds, from the listing just reconciled.
     await recordStructureTenancy(TAG, { corporation_id }, jobs)
+    // The /structure rollup, over the days this run changed — the corporation's
+    // rows and the installing characters' registrations'.
+    await rollupAfterJobs(TAG, { corporation_id }, changed)
     console.log(
       `[${TAG}] ${ctx}: corp ${corporation_id} ${jobs.length} industry job(s); ${touched} unchanged, ${opened} opened, ${closed} closed, ${agedOut} aged out in ${Date.now() - t0}ms`
     )

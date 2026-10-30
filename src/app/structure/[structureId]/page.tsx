@@ -25,7 +25,7 @@ import { resolveStructureAccess, resolveStructureShare } from '../access'
 import { colourOf, initialsOf } from '../avatar'
 import { FavoriteStar } from '../favoriteStar'
 import { MeasureFields } from '../measureFields'
-import { fetchIndustryJobs, loadStructureMeasures } from '../measures'
+import { loadStructureMeasures } from '../measures'
 import { fetchStructureShareDialogData } from '../shareData'
 import { StructureShareDialog } from '../structureShareDialog'
 import { SharedStructurePage } from './sharedStructure'
@@ -391,21 +391,17 @@ const StructurePage = async ({ params, searchParams }: StructureParams) => {
 
   // The figures this structure's tile on /structure leads with — Your Total EIV,
   // Taxes Paid (exact and estimated), Revenue, Cost Avoidance — and its
-  // Characters tab, from the same fold the index runs (../measures.ts), asked
-  // about this one structure. The ledger table below breaks the journal side
-  // down by payer and day; these are the totals that table can't carry.
-  const { characterJobs, corpJobs } = await fetchIndustryJobs(supabase, structureId)
+  // Characters tab, from the same rollup the index sums (../measures.ts),
+  // asked about this one structure. The ledger table below breaks the journal
+  // side down by payer and day; these are the totals that table can't carry.
   const measures = await loadStructureMeasures(supabase, {
+    structureId,
     list: [
       {
         structure_id: Number(s.structure_id),
         corporation_id: s.corporation_id != null ? Number(s.corporation_id) : null,
-        type_id: s.type_id != null ? Number(s.type_id) : null,
-        system_id: s.system_id != null ? Number(s.system_id) : null,
       },
     ],
-    characterJobs,
-    corpJobs,
     ownRegistrationIds: new Set(((ownRegistrations ?? []) as Array<{ id: string }>).map((r) => r.id)),
     ownCorporationIds: new Set([...ownCorporationIds].map(String)),
     windowStart: since,

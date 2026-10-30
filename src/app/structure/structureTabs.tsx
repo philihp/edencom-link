@@ -6,7 +6,7 @@
 //
 // A row is a character or a corporation: a personal job counts for the
 // character who ran it, and a corp job for the corporation it was run for (see
-// ./installers.ts for why those group differently). The row says which it is,
+// ./measureRollup.ts for why those group differently). The row says which it is,
 // so a corporation is never read as a pilot.
 import { useState } from 'react'
 

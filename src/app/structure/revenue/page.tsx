@@ -236,7 +236,7 @@ const RevenuePage = async ({ searchParams }: RevenueParams) => {
   // our own corporation paid, which for a job installed AS THE CORPORATION into that same
   // corporation's structure is money that never left the entity (CCP writes only the outgoing
   // side). Summing them together reported a corp that runs everything under corp ownership as
-  // having NEGATIVE tax revenue; see src/app/structure/taxLedger.ts, which is what turns those
+  // having NEGATIVE tax revenue; see src/app/structure/measureRollup.ts, which is what turns those
   // outgoing rows into the /structure cost-avoidance figure.
   const dayRevenue = entries.reduce((sum, e) => sum + Math.max(0, Number(e.amount ?? 0)), 0)
   const dayPaid = entries.reduce((sum, e) => sum + Math.min(0, Number(e.amount ?? 0)), 0)

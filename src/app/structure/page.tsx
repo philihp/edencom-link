@@ -37,7 +37,7 @@ import {
   INDEX_ACTIVITY_LABELS,
   structureIndexActivities,
 } from './industryIndex'
-import { groupByTier, jobStructureIds } from './roster'
+import { groupByTier } from './roster'
 import { fetchTaxRates, formatRate } from '../settings/tax/rates'
 import { formatRelativeFuture } from '../relativeTime'
 import { resolveServiceIcons } from './serviceIcons'
@@ -47,7 +47,7 @@ import { Sparkline } from './sparkline'
 import { UrlWindowSelect } from '../windowSelect'
 import { indexBucketHours, structureWindowDays } from './windows'
 import { MeasureFields } from './measureFields'
-import { fetchAllRows, fetchIndustryJobs, loadStructureMeasures, RPC_BATCH, type JobRow } from './measures'
+import { fetchAllRows, fetchJobStructureIds, loadStructureMeasures, RPC_BATCH } from './measures'
 import styles from './structures.module.css'
 
 type Structure = {
@@ -145,15 +145,12 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
       )
     )
   )
-  // Every industry job we can see (./measures.ts): the job -> structure map,
-  // discovery of the structures we use but don't scan, and the Characters tab.
-  const { characterJobs, corpJobs } = await fetchIndustryJobs(supabase)
-  const allJobs = concat(characterJobs, corpJobs)
-
-  // Structures our jobs ran in that no director of ours scans. NPC stations are
-  // filtered out by the id floor, and anything already in corp_structure is
-  // dropped so a structure is never listed twice.
-  const externalIds = reject((id: string) => scannedIds.has(id), jobStructureIds(allJobs))
+  // Structures our jobs ran in that no director of ours scans, from the
+  // rollup our own jobs are folded into (./measures.ts) — no job view is
+  // drained for it. NPC stations are filtered out by the id floor, and
+  // anything already in corp_structure is dropped so a structure is never
+  // listed twice.
+  const externalIds = reject((id: string) => scannedIds.has(id), await fetchJobStructureIds(supabase))
 
   // What ESI tells a visitor: a name, a system, a type and an owner. Asked in
   // batches, because a long `in` list is a URL a proxy is entitled to refuse —
@@ -357,54 +354,28 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
     { days: windowDays, bucketHours: indexBucketHours(windowDays) }
   )
 
-  // The tiles' figures, the same fold /structure/[structureId] runs for one
-  // structure (./measures.ts).
+  // The tiles' figures, the same sum of rollup days /structure/[structureId]
+  // runs for one structure (./measures.ts).
   const measures = await loadStructureMeasures(supabase, {
     list,
-    characterJobs,
-    corpJobs,
     ownRegistrationIds,
     ownCorporationIds,
     windowStart,
     taxRates,
   })
-  const { structureByJob, ledger, avoidance, eiv, eivSkipped, installersByStructure } = measures
+  const { ledger, avoidance, eiv, eivSkipped, installersByStructure } = measures
   const taxesPaidTotal = sum([...ledger.taxesPaidByStructure.values()])
   const unaccounted = ledger.unaccounted
   const unaccountedByParty = ledger.unaccountedByParty
 
-  // Tax that left for a landlord with no tile here. The recipient corporation
-  // comes straight off the journal entry, so the total is known even when the
-  // job doesn't resolve; the SYSTEM needs the job, which was never fetched above
-  // (that select is filtered to structures on the page), so the handful of job
-  // ids involved are looked up directly. Only corp jobs can appear here — a
-  // character's personal job pays from a wallet we have no journal for.
-  const unlistedJobIds = uniq(
-    ledger.unlistedPayments.map((p) => p.jobId).filter((id): id is string => id != null && !structureByJob.has(id))
-  )
-  const unlistedJobStructure = new Map<string, string>()
-  if (unlistedJobIds.length > 0) {
-    const batches = await Promise.all(
-      map(
-        (batch: string[]) =>
-          supabase.from('corp_industry_job').select('job_id, station_id, facility_id').in('job_id', batch.map(Number)),
-        splitEvery(RPC_BATCH, unlistedJobIds)
-      )
-    )
-    forEach(
-      (j: JobRow) => {
-        const structureId = j.station_id ?? j.facility_id
-        if (structureId != null) unlistedJobStructure.set(String(j.job_id), String(structureId))
-      },
-      chain(({ data }) => (data ?? []) as JobRow[], batches)
-    )
-  }
-
-  // Those structures' systems, from the universe_structure cache the
-  // universe-structures job maintains. A structure we've never been able to
-  // resolve simply contributes no system rather than blocking the ISK figure.
+  // Tax that left for a landlord with no tile here, by landlord (the rollup
+  // carries the recipient on every row, so the total is known even where the
+  // job never resolved), with the systems of the structures it could place
+  // the charges at — from the universe_structure cache the universe-structures
+  // job maintains. A structure the cache has never resolved simply contributes
+  // no system rather than blocking the ISK figure.
+  const unlistedStructureIds = uniq(chain((row) => [...row.structureIds], [...ledger.unlistedLandlords.values()]))
   const unlistedSystemByStructure = new Map<string, string>()
-  const unlistedStructureIds = uniq([...unlistedJobStructure.values()])
   if (unlistedStructureIds.length > 0) {
     const { data: known } = await supabase
       .from('universe_structure')
@@ -419,19 +390,26 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
   }
 
   // One row per landlord: what they took, and where. Largest first.
-  const unlistedByCorp = new Map<string, { amount: number; systemIds: Set<string> }>()
-  forEach((payment: (typeof ledger.unlistedPayments)[number]) => {
-    const key = payment.corporationId ?? 'unknown'
-    const row = unlistedByCorp.get(key) ?? { amount: 0, systemIds: new Set<string>() }
-    row.amount += payment.amount
-    const structureId = payment.jobId != null ? unlistedJobStructure.get(payment.jobId) : undefined
-    const systemId = structureId != null ? unlistedSystemByStructure.get(structureId) : undefined
-    if (systemId != null) row.systemIds.add(systemId)
-    unlistedByCorp.set(key, row)
-  }, ledger.unlistedPayments)
   const unlistedLandlords = sortWith(
     [descend(([, row]: [string, { amount: number }]) => row.amount)],
-    [...unlistedByCorp.entries()]
+    map(
+      ([corporationId, row]): [string, { amount: number; systemIds: Set<string> }] => [
+        corporationId,
+        {
+          amount: row.amount,
+          systemIds: new Set(
+            chain(
+              (structureId: string) => {
+                const systemId = unlistedSystemByStructure.get(structureId)
+                return systemId != null ? [systemId] : []
+              },
+              [...row.structureIds]
+            )
+          ),
+        },
+      ],
+      [...ledger.unlistedLandlords.entries()]
+    )
   )
   const unlistedTotal = sum(map(([, row]) => row.amount, unlistedLandlords))
 
@@ -765,8 +743,8 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
                     </>
                   ) : (
                     <>
-                      Cost avoidance is facility tax never incurred: {avoidance.jobs.toLocaleString()} job
-                      {avoidance.jobs === 1 ? '' : 's'} of ours ran in our own structures and paid us{' '}
+                      Cost avoidance is facility tax never incurred: {ledger.ownReceiptJobs.toLocaleString()} job
+                      {ledger.ownReceiptJobs === 1 ? '' : 's'} of ours ran in our own structures and paid us{' '}
                       {formatIsk(avoidance.billed)} at {formatRate(taxRates.own)}, where a public{' '}
                       {formatRate(taxRates.public)} would have cost {formatIsk(avoidance.counterfactual ?? 0)} and kept
                       it. No ISK changed hands, so it is not revenue.{' '}

@@ -11,7 +11,6 @@ import {
   groupByTier,
   isPlayerStructureId,
   jobLocationId,
-  jobStructureIds,
   structureTier,
   STRUCTURE_ID_FLOOR,
 } from '../src/app/structure/roster.ts'
@@ -44,19 +43,6 @@ test('a job resolves to its station, falling back to its facility', () => {
   assert.equal(jobLocationId({ station_id: '1000000000001', facility_id: '1000000000002' }), '1000000000001')
   assert.equal(jobLocationId({ station_id: null, facility_id: '1000000000002' }), '1000000000002')
   assert.equal(jobLocationId({ station_id: 60_003_760, facility_id: null }), null)
-})
-
-test('discovery pools every player structure our jobs ran in, once each', () => {
-  assert.deepEqual(
-    jobStructureIds([
-      { station_id: '1000000000001', facility_id: null },
-      { station_id: null, facility_id: '1000000000001' },
-      { station_id: null, facility_id: '1000000000002' },
-      { station_id: 60_003_760, facility_id: null },
-      { station_id: null, facility_id: null },
-    ]),
-    ['1000000000001', '1000000000002']
-  )
 })
 
 test('a structure we scan is ours, alliance-mate or not', () => {
