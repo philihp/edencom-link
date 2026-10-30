@@ -25,7 +25,7 @@ of each compressed gas, four gases were cheaper raw, and the error cost about
 
 EDENCOM Link extracts EVE Online data and saves it in a database. The tools of
 this server read that database. The tools never call ESI, with one exception:
-`send_mail` sends an EVE mail through ESI (see "EVE mail").
+`send_mail` enqueues an EVE mail for delivery through ESI (see "EVE mail").
 
 Extract jobs read the EVE ESI endpoints for each registered character and
 corporation: assets, blueprints, industry jobs, orders, wallets, skills,
@@ -650,12 +650,13 @@ the user's private data: no share, Data Link or GraphQL field shows it.
 
 ### Sending mail
 
-`send_mail` sends an EVE mail in the game as one of the user's characters.
-The mail cannot be recalled. Do this procedure for each mail:
+`send_mail` enqueues an EVE mail for delivery as one of the user's
+characters. The call hands the draft to the site's mail queue, which delivers
+it to the recipients in the game. Do this procedure for each mail:
 
 1. Write the draft as plain text. The tool keeps the line breaks.
 2. Call `send_mail` with `preview: true`. It finds each recipient and checks
-   the draft. It sends nothing.
+   the draft. It enqueues nothing.
 3. Show the user the sender, the recipients as the preview found them, the
    subject and the full body. Ask for a yes.
 4. Call `send_mail` again without `preview`, with the `request_id` from the
@@ -671,11 +672,11 @@ The mail cannot be recalled. Do this procedure for each mail:
 - Keep `approved_cost` at 0 unless the user gives you a CSPA charge to pay.
   If a recipient charges more, EVE refuses the mail, and the tool does not
   try again.
-- If a send gives no answer, call again with the same `request_id`. A used
-  `request_id` is refused, so the mail does not go two times. For a new mail,
-  use a new `request_id`.
-- The site logs each send in full before it goes. The sent mail comes into
-  the copy under the Sent label on the next extract.
+- If a call gives no answer, call again with the same `request_id`. A used
+  `request_id` is refused, so the mail is not queued two times. For a new
+  mail, use a new `request_id`.
+- The site logs each mail in full before it is queued. The sent mail comes
+  into the copy under the Sent label on the next extract.
 
 ## Spreadsheets
 
@@ -728,9 +729,9 @@ see them only in these ways:
 
 ## Tools that write
 
-Four tools change data. `send_mail` changes the game: it sends an EVE mail as
-one of the user's characters (see "Sending mail"). The other three change
-only the user's own rows on this site:
+Four tools change data. `send_mail` changes the game: it enqueues an EVE mail
+for delivery as one of the user's characters (see "Sending mail"). The other
+three change only the user's own rows on this site:
 
 - `create_link` saves a Data Link, and can share it.
 - `update_link` changes a Data Link. Its audience sees the change the next
