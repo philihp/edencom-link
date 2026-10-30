@@ -36,6 +36,7 @@
     "character-wallet-transactions": "node src/jobs/characterWalletTransactions.js",
     "character-wallet-journal": "node src/jobs/characterWalletJournal.js",
     "import-jeve-journal": "node src/jobs/importJeveJournal.js",
+    "import-jeve-transactions": "node src/jobs/importJeveTransactions.js",
     "import-gez-structures": "node src/jobs/importGezStructures.js",
     "character-contracts": "node src/jobs/characterContracts.js",
     "character-industry-jobs": "node src/jobs/characterIndustryJobs.js",
