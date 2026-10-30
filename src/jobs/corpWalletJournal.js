@@ -3,6 +3,7 @@ import { filter, map, pipe, reduce } from 'ramda'
 import { corpWalletJournal, isRoleDenial } from '../esi.js'
 import { sudoSupabase } from '../supabase.js'
 import { cli, forEachCorporation, forEachSequential } from './lib.js'
+import { rollupAfterJournal } from './structureMeasures.js'
 
 const TAG = 'corp-wallet-journal'
 const SCOPE = 'esi-wallet.read_corporation_wallets.v1'
@@ -60,6 +61,9 @@ export const runCorpWalletJournal = ({ registrationIds } = {}) =>
     const cutoff = Date.now() - JOURNAL_LOOKBACK_MS
     let failures = 0
     let lastDenial = null
+    // The industry_job_tax entries this run pulled, across divisions, for the
+    // structure-measure rollup below.
+    const taxRows = []
     await forEachSequential(WALLET_DIVISIONS, async (division) => {
       try {
         const rows = await fetchDivision(access_token, corporation_id, division, cutoff)
@@ -68,6 +72,9 @@ export const runCorpWalletJournal = ({ registrationIds } = {}) =>
             .from('corp_wallet_journal')
             .upsert(rows, { onConflict: 'corporation_id,division,entry_id', ignoreDuplicates: true })
           if (error) throw error
+          rows.forEach((row) => {
+            if (row.ref_type === 'industry_job_tax') taxRows.push(row)
+          })
         }
         console.log(`[${TAG}] ${ctx}: corp ${corporation_id} div ${division} ${rows.length} entries`)
       } catch (e) {
@@ -88,6 +95,11 @@ export const runCorpWalletJournal = ({ registrationIds } = {}) =>
     // accountant"), not a failure, records the denial in corp_job_access, and
     // remembers it for a week before asking ESI again. Any other cause —
     // 429s, a network fault — stays a failure so it is retried next run.
+    // The /structure rollup: revenue over the days these entries fall on, and
+    // the charges on the jobs the recent ones name. Best-effort, after the
+    // upserts committed.
+    if (taxRows.length > 0) await rollupAfterJournal(TAG, corporation_id, taxRows)
+
     if (failures === WALLET_DIVISIONS.length) {
       if (lastDenial !== null) throw lastDenial
       throw new Error(`corp ${corporation_id}: all ${WALLET_DIVISIONS.length} wallet divisions failed`)

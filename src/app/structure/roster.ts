@@ -19,7 +19,7 @@
 //
 // Both are already in Postgres, so discovering the second set costs no ESI call
 // (the same trick `universe-structures` plays to build its candidate list).
-import { filter, forEach, map, uniq } from 'ramda'
+import { forEach } from 'ramda'
 
 // Player Upwell structures use ids at or above this; NPC stations (≤64M) sit
 // far below it. A job location under the floor is a station, which is nobody's
@@ -45,12 +45,6 @@ export const jobLocationId = (job: JobLocation): string | null => {
   const id = job.station_id ?? job.facility_id
   return isPlayerStructureId(id) ? String(id) : null
 }
-
-// Every player structure our jobs have run in, as strings (PostgREST hands
-// bigints back as strings often enough that keying on anything else silently
-// splits a structure in two).
-export const jobStructureIds = (jobs: readonly JobLocation[]): string[] =>
-  uniq(filter((id): id is string => id != null, map(jobLocationId, jobs)))
 
 // The three blocks, in render order.
 export type Tier = 'favorite' | 'ours' | 'others'

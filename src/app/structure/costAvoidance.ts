@@ -8,7 +8,8 @@
 // structure it would have paid theirs and kept none of it, and the gap between
 // the two rates on the same job is the expense we avoided.
 //
-// Which charges count is decided in taxLedger.ts. Both directions qualify: tax
+// Which charges count is decided in measureRollup.ts (filed per owner) and
+// measureWindow.ts (kept where the reader owns the structure). Both directions qualify: tax
 // a member paid into the corp wallet for a personal job, and tax the corp paid
 // out of that same wallet for a job installed as the corporation into its own
 // structure (where CCP writes only the outgoing side, since the ISK never
@@ -44,7 +45,7 @@ export type CostAvoidance = {
   byStructure: Array<[structureId: string, avoided: number]>
   // Tax we actually billed ourselves — the figure this is derived from.
   // Positive whether it was received from a member or paid by the corporation
-  // to itself; taxLedger.ts has already normalised the sign.
+  // to itself; measureRollup.ts has already normalised the sign.
   billed: number
   // What the same jobs would have been billed at the public rate.
   counterfactual: number | null

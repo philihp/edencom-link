@@ -65,6 +65,7 @@
     "universe-names": "node src/jobs/universeNames.js",
     "structure-directory": "node src/jobs/structureDirectory.js",
     "universe-structures": "node src/jobs/universeStructures.js",
+    "structure-measures": "node src/jobs/structureMeasures.js",
     "sde-mirror": "node src/jobs/sdeMirror.js",
     "sde-moons": "node src/jobs/sdeMoons.js",
     "esf-data": "node src/jobs/esfData.js",
