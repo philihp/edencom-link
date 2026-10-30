@@ -64,10 +64,6 @@ const Header = async () => {
           <span className={styles.bracket}>[</span>
           {!user ? (
             <>
-              {/* Shipping is KumGo's own site now; it works signed out, and
-                  /asset, where the link otherwise lives, is gated. */}
-              <a href="https://kumgo.space/">shipping</a>
-              <span className={styles.sep}>|</span>
               <Link href="/account/login">login</Link>
               <span className={styles.sep}>|</span>
               <Link href="/account/register">register</Link>

@@ -95,9 +95,6 @@ const Locations = async ({ supabase }: { supabase: SupabaseClient }) => {
           <Link href={`/corpses/${mainCharacterId}`}>View frozen corpses</Link>
         </p>
       )}
-      <p className={styles.corpses}>
-        <a href="https://kumgo.space/">Shipping calculator</a>
-      </p>
       <AssetSearchForm />
       <AssetsTable locations={locations} owners={owners} />
       <p className={styles.lastRun}>
