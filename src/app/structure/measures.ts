@@ -44,6 +44,26 @@ export const fetchAllRows = async <T>(
   return data.length < PAGE_SIZE ? rows : fetchAllRows(build, from + PAGE_SIZE, rows)
 }
 
+// The same drain, but by KEYSET rather than offset: each page asks for the
+// rows past the last key seen, `limit PAGE_SIZE`, instead of `range(from, to)`.
+// An offset page is "sort everything, skip `from` rows" — Postgres still
+// produces (and RLS still evaluates) every row before the offset, so page N
+// costs N pages' worth and the whole drain grows with the square of the row
+// count. A keyset page is one index range scan from the cursor, so every page
+// costs the same however deep it is. Requires a unique, ascending key; the
+// industry-job views have one in `job_id` (unique among current rows).
+export const fetchAllByKey = async <T>(
+  build: (after: number | string | null) => PromiseLike<{ data: T[] | null; error: unknown }>,
+  key: (row: T) => number | string,
+  after: number | string | null = null,
+  acc: readonly T[] = []
+): Promise<T[]> => {
+  const { data, error } = await build(after)
+  if (error || !data || data.length === 0) return [...acc]
+  const rows = concat(acc, data)
+  return data.length < PAGE_SIZE ? rows : fetchAllByKey(build, key, key(data[data.length - 1]), rows)
+}
+
 // What the measures need to know about a structure: where it is, what hull it
 // is, and who owns it.
 export type MeasuredStructure = {
@@ -107,33 +127,38 @@ type JournalRow = {
 // history has far more than max_rows (1000) jobs, and a single request
 // silently returns an arbitrary 1000 of them, so most jobs failed to resolve
 // and their tax fell into "unaccounted". Paging needs a total order, hence
-// order by job_id.
+// order by job_id — and it pages by keyset on that order (fetchAllByKey),
+// since an offset drain of a long job history re-sorted and re-skipped every
+// earlier page under RLS on each request.
 //
 // "Unfiltered" is the index's call. `structureId` narrows both tables to jobs at one structure, for the detail
 // page: the measures only ever count a job toward the structure it ran in, so
 // the rest are dead weight there.
 export const fetchIndustryJobs = async (supabase: Supabase, structureId?: string) => {
   const fetchJobs = (table: 'character_industry_job' | 'corp_industry_job') =>
-    fetchAllRows<JobRow>((from, to) => {
-      const query = supabase
-        .from(table)
-        .select(
-          table === 'corp_industry_job'
-            ? 'job_id, station_id, facility_id, cost, start_date, activity_id, blueprint_type_id, runs, corporation_id, installer_id'
-            : 'job_id, station_id, facility_id, cost, start_date, activity_id, blueprint_type_id, runs, registration_id'
+    fetchAllByKey<JobRow>(
+      (after) => {
+        const query = supabase
+          .from(table)
+          .select(
+            table === 'corp_industry_job'
+              ? 'job_id, station_id, facility_id, cost, start_date, activity_id, blueprint_type_id, runs, corporation_id, installer_id'
+              : 'job_id, station_id, facility_id, cost, start_date, activity_id, blueprint_type_id, runs, registration_id'
+          )
+        // Digits only: the caller validated the id before it reaches the filter.
+        const scoped =
+          structureId != null ? query.or(`station_id.eq.${structureId},facility_id.eq.${structureId}`) : query
+        return (
+          (after != null ? scoped.gt('job_id', after) : scoped)
+            .order('job_id', { ascending: true })
+            .limit(PAGE_SIZE)
+            // The typed query parser gives up past a dozen columns ("Unexpected
+            // input"); the shape is pinned explicitly instead.
+            .returns<JobRow[]>()
         )
-      // Digits only: the caller validated the id before it reaches the filter.
-      const scoped =
-        structureId != null ? query.or(`station_id.eq.${structureId},facility_id.eq.${structureId}`) : query
-      return (
-        scoped
-          .order('job_id', { ascending: true })
-          .range(from, to)
-          // The typed query parser gives up past a dozen columns ("Unexpected
-          // input"); the shape is pinned explicitly instead.
-          .returns<JobRow[]>()
-      )
-    })
+      },
+      (j) => j.job_id
+    )
   const [characterJobs, corpJobs] = await Promise.all([
     fetchJobs('character_industry_job'),
     fetchJobs('corp_industry_job'),
@@ -200,6 +225,61 @@ export const loadStructureMeasures = async (supabase: Supabase, input: Structure
   // rents slots without owning any occupied structure showed a negative figure under a heading that
   // reads "Revenue". But the second is still an own-rate charge, and the only one a corp that runs
   // everything under corp ownership ever generates, so it feeds cost avoidance (see taxLedger.ts).
+  // Who owns each structure on the page. corp_structure's RLS is own-corps OR a share's audience, so a
+  // tile here is not necessarily ours — and tax our corp paid into an ally's structure is a real
+  // expense, not an expense avoided. Comparing this against the paying corporation is what tells
+  // the two apart.
+  // A structure the directory has never resolved has no known owner, so it maps
+  // to nothing: `weOwn` reads it as not ours (correct — we can't say it is) and
+  // it adds no corporation to `listedOwners`.
+  const structureOwner = new Map<string, string>(
+    chain(
+      (st: Structure) =>
+        st.corporation_id != null ? [[String(st.structure_id), String(st.corporation_id)] as [string, string]] : [],
+      list
+    )
+  )
+  // Every corporation with a tile here. Tax paid to anyone else went to a
+  // landlord this page doesn't list, and is totalled separately below.
+  const listedOwners = new Set<string>(structureOwner.values())
+
+  // The reads below that depend on nothing but the structure list and the
+  // jobs already in hand start here, together, and are awaited where their
+  // results are first needed: our registrations (for the EIV job sets and the
+  // Characters tab), the journal-coverage probes (one per own corporation
+  // owning a tile) and the names of the corporations whose jobs we can see.
+  // Each used to wait its turn behind the journal drain and the RPC batches.
+  type RegistrationRow = { id: string; name: string; character_id: number | string | null }
+  const registrationRowsPromise = supabase
+    .from('registration')
+    .select('id, name, character_id')
+    .returns<RegistrationRow[]>()
+  const candidateCoveredCorps = uniq(
+    filter((corp: string) => ownCorporationIds.has(corp), [...structureOwner.values()])
+  )
+  const coverageProbesPromise = Promise.all(
+    map(async (corp: string) => {
+      const { data } = await supabase
+        .from('corp_wallet_journal')
+        .select('corporation_id')
+        .eq('corporation_id', Number(corp))
+        .limit(1)
+      return (data ?? []).length > 0 ? corp : null
+    }, candidateCoveredCorps)
+  )
+  const jobCorporationIds = uniq(
+    reject(
+      isNil,
+      map((j: JobRow) => (j.corporation_id != null ? Number(j.corporation_id) : null), corpJobs)
+    )
+  ) as number[]
+  const corporationNameBatchesPromise = Promise.all(
+    map(
+      (batch: number[]) => supabase.from('corporation').select('corporation_id, name').in('corporation_id', batch),
+      splitEvery(RPC_BATCH, jobCorporationIds)
+    )
+  )
+
   const journal = await fetchAllRows<JournalRow>((from, to) =>
     supabase
       .from('corp_wallet_journal')
@@ -251,24 +331,6 @@ export const loadStructureMeasures = async (supabase: Supabase, input: Structure
     chain(({ data }) => (data ?? []) as JobRow[], taxedBatches)
   )
 
-  // Who owns each structure on the page. corp_structure's RLS is own-corps OR a share's audience, so a
-  // tile here is not necessarily ours — and tax our corp paid into an ally's structure is a real
-  // expense, not an expense avoided. Comparing this against the paying corporation is what tells
-  // the two apart.
-  // A structure the directory has never resolved has no known owner, so it maps
-  // to nothing: `weOwn` reads it as not ours (correct — we can't say it is) and
-  // it adds no corporation to `listedOwners`.
-  const structureOwner = new Map<string, string>(
-    chain(
-      (st: Structure) =>
-        st.corporation_id != null ? [[String(st.structure_id), String(st.corporation_id)] as [string, string]] : [],
-      list
-    )
-  )
-  // Every corporation with a tile here. Tax paid to anyone else went to a
-  // landlord this page doesn't list, and is totalled separately below.
-  const listedOwners = new Set<string>(structureOwner.values())
-
   const ledger = foldTaxLedger(
     map(
       (entry: JournalRow) => ({
@@ -310,11 +372,7 @@ export const loadStructureMeasures = async (supabase: Supabase, input: Structure
   // `registration` to the caller, so every row here is a character of ours.
   // Read up here because the tile's EIV below is ours alone; the Characters
   // tab further down names co-tenants on top of these.
-  type RegistrationRow = { id: string; name: string; character_id: number | string | null }
-  const { data: registrationRows } = await supabase
-    .from('registration')
-    .select('id, name, character_id')
-    .returns<RegistrationRow[]>()
+  const { data: registrationRows } = await registrationRowsPromise
   const ownCharacterIds = new Set(
     map(
       String,
@@ -388,21 +446,7 @@ export const loadStructureMeasures = async (supabase: Supabase, input: Structure
   // ref_type=industry_job_tax — the question is whether the journal is being
   // ingested at all, and a corp with no industry tax this month still has an
   // exact record of that fact.
-  const candidateCoveredCorps = uniq(
-    filter((corp: string) => ownCorporationIds.has(corp), [...structureOwner.values()])
-  )
-  const coverageProbes = candidateCoveredCorps.length
-    ? await Promise.all(
-        map(async (corp: string) => {
-          const { data } = await supabase
-            .from('corp_wallet_journal')
-            .select('corporation_id')
-            .eq('corporation_id', Number(corp))
-            .limit(1)
-          return (data ?? []).length > 0 ? corp : null
-        }, candidateCoveredCorps)
-      )
-    : []
+  const coverageProbes = await coverageProbesPromise
   const journalCoveredCorps = new Set(reject(isNil, coverageProbes) as string[])
 
   const journalCoveredStructureIds = journalCoveredStructures({ onPage, structureOwner, journalCoveredCorps })
@@ -528,20 +572,7 @@ export const loadStructureMeasures = async (supabase: Supabase, input: Structure
   // Corp-job rows group by their corporation, so they need its name. The
   // `corporation` directory is what the external-owner lookup above already
   // reads; a corporation missing from it falls back to a labelled id.
-  const jobCorporationIds = uniq(
-    reject(
-      isNil,
-      map((j: JobRow) => (j.corporation_id != null ? Number(j.corporation_id) : null), corpJobs)
-    )
-  ) as number[]
-  const corporationNameBatches = jobCorporationIds.length
-    ? await Promise.all(
-        map(
-          (batch: number[]) => supabase.from('corporation').select('corporation_id, name').in('corporation_id', batch),
-          splitEvery(RPC_BATCH, jobCorporationIds)
-        )
-      )
-    : []
+  const corporationNameBatches = await corporationNameBatchesPromise
   const jobCorporationNames = new Map<string, string>(
     chain(
       (r: { corporation_id: number | string; name: string | null }) =>
