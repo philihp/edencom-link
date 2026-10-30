@@ -85,7 +85,7 @@ test('toRows imports only characters with exactly one registration, once per tra
   ]
   const { rows, skipped } = toRows(sources, registrations)
   assert.deepEqual(
-    rows.map((r) => [r.transaction_id, r.registration_id]),
+    rows.map((r: ReturnType<typeof toRow>) => [r.transaction_id, r.registration_id]),
     [
       [6905589362, 'reg-1'],
       [7, 'reg-1'],
