@@ -98,7 +98,7 @@
     "lint-staged": "17.6.0",
     "oxlint": "1.90.0",
     "prettier": "3.9.10",
-    "supabase": "2.121.0",
+    "supabase": "2.122.0",
     "typescript": "7.0.2"
   }
 }
