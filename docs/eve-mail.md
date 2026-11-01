@@ -389,6 +389,35 @@ Three departures from the sketch in the delivery table:
   reaches outside the deployment's own world, and a sent mail lands in other
   players' mailboxes.
 
+## Approval on the website (decided 2026-11-01, not yet built)
+
+**The decided model.** Approving a mail moves out of the MCP client and onto
+this website. `send_mail` only _enqueues_: it resolves the recipients,
+validates the draft and stores it as a mail awaiting the owner's approval,
+and nothing reaches ESI. The account owner reviews pending mails on
+edencom.link and approves (or discards) each one; only an approval calls ESI
+`POST /mail/`. So an MCP client (Aura, Claude, ChatGPT) may call `send_mail`
+as often as it likes, with no "are you sure" ritual of its own: a mistaken
+call costs a pending row the owner throws away, never a mail in someone
+else's inbox. What the tool refuses stays the same — a name it cannot
+resolve, a draft over ESI's limits, a character without the "Send in-game
+mail" grant — and so do the use-once `request_id`, the logging of the whole
+draft before anything leaves, and the CSPA rule (a `520` is reported, never
+retried with a higher `approved_cost`).
+
+**What exists today.** None of the gate. `sendMail()` in
+`src/app/mail/lib.ts` logs the draft `pending` and posts it to ESI in the
+same request, so a `send_mail` call without `preview` _is_ the send. The
+`pending` status on `mail_send_log` means "logged, ESI's answer not yet
+recorded" — it is not a queue anyone approves from.
+
+**Until the gate ships**, the live copy deliberately lags this design: the
+tool description, the skill doc's "Sending mail" procedure and `/mcp-server`
+keep telling clients to preview, show the user the whole mail and send only
+on a yes. Relax them in the same PR that makes ESI wait for the website, not
+before — a client told "approval happens elsewhere" stops confirming, and
+today nothing elsewhere would catch it.
+
 ## Privacy
 
 - Owner-only RLS, service-role writes, no `anon` grant, no share model, no
