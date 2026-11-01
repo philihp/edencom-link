@@ -5,6 +5,7 @@ import { recordEsiConditional } from '../observability.js'
 import { getEsiEtag, putEsiEtag, sudoSupabase } from '../supabase.js'
 import { partitionJobs } from './industryJobReconcile.js'
 import { cli, forEachCharacter, forEachSequential, recordStructureTenancy } from './lib.js'
+import { rollupAfterJobs } from './structureMeasures.js'
 
 const TAG = 'character-industry-jobs'
 const SCOPE = 'esi-industry.read_character_jobs.v1'
@@ -37,7 +38,9 @@ const fetchCurrentRows = async (registration_id, cols, from = 0) => {
 // every job we saw finish, matching the old plain table (which never swept
 // completed jobs).
 const reconcile = async (registration_id, fetched) => {
-  const cols = 'id, job_id, status, pause_date, completed_date, completed_character_id, successful_runs'
+  // start_date rides along so the structure-measure rollup knows which days
+  // this run changed.
+  const cols = 'id, job_id, status, pause_date, completed_date, completed_character_id, successful_runs, start_date'
   const current = await fetchCurrentRows(registration_id, cols)
 
   const now = new Date().toISOString()
@@ -97,7 +100,18 @@ const reconcile = async (registration_id, fetched) => {
     if (error) throw error
   })
 
-  return { touched: touchIds.length, opened: inserts.length, closed: closeIds.length, agedOut: agedOutIds.length }
+  // Every job whose row this run opened or closed for good: what the rollup
+  // has to refold.
+  const rowById = new Map(map((c) => [c.id, c], current))
+  const changed = [...openJobs, ...map((id) => rowById.get(id), agedOutIds).filter(Boolean)]
+
+  return {
+    touched: touchIds.length,
+    opened: inserts.length,
+    closed: closeIds.length,
+    agedOut: agedOutIds.length,
+    changed,
+  }
 }
 
 // GET /characters/{id}/industry/jobs/ → character_industry_job_over_time (SCD
@@ -128,10 +142,12 @@ export const runCharacterIndustryJobs = ({ registrationIds } = {}) =>
         return
       }
 
-      const { touched, opened, closed, agedOut } = await reconcile(registration_id, jobs)
+      const { touched, opened, closed, agedOut, changed } = await reconcile(registration_id, jobs)
       // Where this character builds, from the listing just reconciled. A 304
       // above skips this too, rightly: nothing about the jobs changed.
       await recordStructureTenancy(TAG, { registration_id }, jobs)
+      // The /structure rollup, over the days this run changed.
+      await rollupAfterJobs(TAG, { registration_id }, changed)
 
       // Store the ETag only after the reconcile committed (see characterOrders.js).
       await putEsiEtag(cacheKey, etag)

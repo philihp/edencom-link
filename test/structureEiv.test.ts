@@ -5,277 +5,69 @@
 // cost is EIV × (index × hull bonus + tax + SCC), and with CCP's adjusted
 // prices mirrored every term but the tax is knowable — so the remainder is the
 // owner's rate, the number ESI publishes nowhere.
+//
+// These are the per-job primitives; the fold over an owner's jobs is covered
+// by structureMeasureRollup.test.ts.
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import {
-  eivJobSets,
-  foldEiv,
   hullCostMultiplier,
-  indexAt,
-  priceJobs,
+  isPriceable,
+  priceJobEiv,
+  recoverFacilityTax,
   recoveredRate,
   SCC_SURCHARGE,
 } from '../src/app/structure/eiv.ts'
-import type { EivInput } from '../src/app/structure/eiv.ts'
-import { foldInstallers } from '../src/app/structure/installers.ts'
-
-const RENTED = '1000000000001'
-const OURS = '1000000000002'
 
 // One run of the bill costs 1000 ISK EIV: 10 × 60 + 20 × 20.
-const bills = {
-  999: [
-    { typeID: 34, quantity: 10 },
-    { typeID: 35, quantity: 20 },
-  ],
+const pricing = {
+  bills: {
+    999: [
+      { typeID: 34, quantity: 10 },
+      { typeID: 35, quantity: 20 },
+    ],
+  },
+  prices: new Map([
+    [34, 60],
+    [35, 20],
+  ]),
 }
-const prices = new Map([
-  [34, 60],
-  [35, 20],
-])
 
-const baseInput = (over: Partial<EivInput> = {}): EivInput => ({
-  onPage: new Set([RENTED, OURS]),
-  since: '2026-08-01T00:00:00Z',
-  bills,
-  prices,
-  indexSamples: new Map([
-    [
-      '30000142:manufacturing',
-      [
-        { recordedAt: '2026-08-01T00:00:00Z', costIndex: 0.03 },
-        { recordedAt: '2026-08-20T00:00:00Z', costIndex: 0.05 },
-      ],
-    ],
-  ]),
-  systemOf: new Map([
-    [RENTED, '30000142'],
-    [OURS, '30000142'],
-  ]),
-  hullOf: new Map([
-    [RENTED, 35827], // Sotiyo: 5% off the index term
-    [OURS, 35825],
-  ]),
-  journalCoveredStructureIds: new Set([OURS]),
-  journalPaidJobIds: new Set(),
-  ...over,
+test('EIV is the ME0 bill at adjusted prices, scaled by runs', () => {
+  assert.deepEqual(priceJobEiv({ activity_id: 1, blueprint_type_id: 999, runs: 3 }, pricing), { eiv: 3000 })
+  assert.deepEqual(priceJobEiv({ activity_id: 9, blueprint_type_id: 999, runs: 1 }, pricing), { eiv: 1000 })
 })
 
-const job = (over: object) => ({
-  job_id: 1,
-  activity_id: 1,
-  blueprint_type_id: 999,
-  runs: 1,
-  cost: null,
-  start_date: '2026-08-10T00:00:00Z',
-  station_id: RENTED,
-  facility_id: null,
-  ...over,
+test('only manufacturing and reactions are priced; research pushes no materials through', () => {
+  assert.equal(isPriceable({ activity_id: 3 }), false)
+  assert.equal(priceJobEiv({ activity_id: 3, blueprint_type_id: 999, runs: 1 }, pricing), null)
+  assert.equal(priceJobEiv({ activity_id: 1, blueprint_type_id: 999, runs: 0 }, pricing), null)
 })
 
-test('EIV is the ME0 bill priced at adjusted prices, scaled by runs', () => {
-  const result = foldEiv([job({ runs: 3 })], baseInput())
-  assert.equal(result.byStructure.get(RENTED)?.eiv, 3000)
-  assert.equal(result.totalEiv, 3000)
-})
-
-test('the recovered tax is the cost less the index fee and the SCC surcharge', () => {
-  // EIV 1000 at index 0.03 in a Sotiyo: fee = 1000 × 0.03 × 0.95 = 28.5,
-  // SCC = 40. A billed cost of 75 leaves 6.5 — a 0.65% owner, mid the usual
-  // 0.25–1% band.
-  const result = foldEiv([job({ cost: 75 })], baseInput())
-  const row = result.byStructure.get(RENTED)!
-  assert.ok(Math.abs(row.recoveredTax - 6.5) < 1e-9)
-  assert.ok(Math.abs((recoveredRate(row) ?? 0) - 0.0065) < 1e-9)
-})
-
-test('the index is read as it stood when the job was installed', () => {
-  // Installed the 25th: the 0.05 sample applies, not the 0.03 the window opened
-  // with. fee = 1000 × 0.05 × 0.95 = 47.5, SCC 40 → tax 2.5.
-  const result = foldEiv([job({ cost: 90, start_date: '2026-08-25T00:00:00Z' })], baseInput())
-  assert.ok(Math.abs(result.byStructure.get(RENTED)!.recoveredTax - 2.5) < 1e-9)
-})
-
-test('recovery never runs where the journal bills it, nor re-bills a journaled job', () => {
-  // A structure whose owner's wallet journal we can read: the journal is exact,
-  // an estimate would be worse — EIV still counts.
-  const home = foldEiv([job({ station_id: OURS, cost: 75 })], baseInput())
-  assert.equal(home.byStructure.get(OURS)?.eiv, 1000)
-  assert.equal(home.byStructure.get(OURS)?.recoveredTax, 0)
-  // A corp-installed job at the rented structure whose outgoing entry the
-  // journal already recorded: recovering it too would count one charge twice.
-  const journaled = foldEiv([job({ cost: 75 })], baseInput({ journalPaidJobIds: new Set(['1']) }))
-  assert.equal(journaled.byStructure.get(RENTED)?.recoveredTax, 0)
-})
-
-test('a job missing an input is counted skipped, never guessed at', () => {
-  const noBill = foldEiv([job({ blueprint_type_id: 12345 })], baseInput())
-  assert.equal(noBill.skipped.noBill, 1)
-  const noPrice = foldEiv([job({})], baseInput({ prices: new Map([[34, 60]]) }))
-  assert.equal(noPrice.skipped.noPrice, 1)
-  assert.equal(noPrice.totalEiv, 0)
-  const noIndex = foldEiv([job({ cost: 75 })], baseInput({ indexSamples: new Map() }))
-  // EIV still counts — only the split needs the index.
-  assert.equal(noIndex.byStructure.get(RENTED)?.eiv, 1000)
-  assert.equal(noIndex.skipped.noIndex, 1)
-  assert.equal(noIndex.byStructure.get(RENTED)?.recoveredTax, 0)
-})
-
-test('research and copy jobs contribute nothing — a different EIV base', () => {
-  const result = foldEiv([job({ activity_id: 4 }), job({ job_id: 2, activity_id: 5 })], baseInput())
-  assert.equal(result.totalEiv, 0)
-})
-
-test('reactions price like manufacturing, off their reaction bill', () => {
-  const result = foldEiv(
-    [job({ activity_id: 9 })],
-    baseInput({
-      indexSamples: new Map([['30000142:reaction', [{ recordedAt: '2026-08-01T00:00:00Z', costIndex: 0.02 }]]]),
-    })
+test('a missing bill or an unpriced material refuses the job rather than under-pricing it', () => {
+  assert.deepEqual(priceJobEiv({ activity_id: 1, blueprint_type_id: 123, runs: 1 }, pricing), { missing: 'noBill' })
+  assert.deepEqual(
+    priceJobEiv({ activity_id: 1, blueprint_type_id: 999, runs: 1 }, { ...pricing, prices: new Map([[34, 60]]) }),
+    {
+      missing: 'noPrice',
+    }
   )
-  assert.equal(result.byStructure.get(RENTED)?.eiv, 1000)
 })
 
-test('one job priced once, both extract tables notwithstanding', () => {
-  const result = foldEiv([job({}), job({})], baseInput())
-  assert.equal(result.byStructure.get(RENTED)?.eiv, 1000)
-})
-
-test('a drifted price cannot recover a negative tax', () => {
-  // cost below fee+SCC: stale inputs, not a rebate.
-  const result = foldEiv([job({ cost: 10 })], baseInput())
-  assert.equal(result.byStructure.get(RENTED)?.recoveredTax, 0)
-})
-
-test('the window filters on installation, when the ISK was charged', () => {
-  const result = foldEiv([job({ start_date: '2026-07-30T00:00:00Z' })], baseInput())
-  assert.equal(result.totalEiv, 0)
-})
-
-test('hull bonuses and the nearest-sample fallback', () => {
-  assert.equal(hullCostMultiplier(35827), 0.95)
-  assert.equal(hullCostMultiplier(35835), 1) // a refinery discounts nothing
-  assert.equal(hullCostMultiplier(null), 1)
-  const samples = [
-    { recordedAt: '2026-08-10T00:00:00Z', costIndex: 0.03 },
-    { recordedAt: '2026-08-20T00:00:00Z', costIndex: 0.05 },
-  ]
-  assert.equal(indexAt(samples, '2026-08-15T00:00:00Z'), 0.03)
-  // Before tracking began: the earliest observation stands in.
-  assert.equal(indexAt(samples, '2026-08-01T00:00:00Z'), 0.03)
-  assert.equal(indexAt([], '2026-08-15T00:00:00Z'), null)
+test('the recovered tax is the cost less the index fee (hull bonus applied) and the SCC surcharge, never negative', () => {
+  // 100 − 1000 × 0.05 × 0.95 − 1000 × 0.04 = 12.5
+  assert.equal(recoverFacilityTax({ eiv: 1000, cost: 100, costIndex: 0.05, hullTypeId: 35827 }), 12.5)
+  // No hull bonus for a citadel: 100 − 50 − 40 = 10
+  assert.equal(recoverFacilityTax({ eiv: 1000, cost: 100, costIndex: 0.05, hullTypeId: 35832 }), 10)
+  assert.equal(recoverFacilityTax({ eiv: 1000, cost: 1, costIndex: 0.05, hullTypeId: null }), 0)
   assert.equal(SCC_SURCHARGE, 0.04)
+  assert.equal(hullCostMultiplier(35825), 0.97)
+  assert.equal(hullCostMultiplier(null), 1)
 })
 
-test('a free landlord recovers a zero rate, not a missing one', () => {
-  // Cost exactly index fee + SCC (the AGCP-I case): the owner charges nothing.
-  // The fold must still count the job as recovered so the tile can SAY 0%,
-  // and recoveredRate must report 0 rather than null.
-  const input = baseInput()
-  const idx = 0.03
-  const eiv = 1000
-  const result = foldEiv([job({ cost: eiv * (idx * 0.95 + SCC_SURCHARGE) })], input)
-  const row = result.byStructure.get(RENTED)!
-  assert.equal(row.recoveredJobs, 1)
-  assert.equal(row.recoveredTax, 0)
-  assert.equal(recoveredRate(row), 0)
-})
-
-// ── Ownership is not journal coverage ────────────────────────────────────
-// The case this whole measure exists for, and the one it got wrong: a
-// structure owned by a corporation the account has a character in, where no
-// token of ours holds the wallet roles. corp-wallet-journal fails every run
-// for such a corp, so there is no journal row to bill the charge — and the
-// old gate, which suppressed recovery on *ownership*, left the facility tax
-// invisible under both measures at once. In production that hid ~624M ISK
-// across three structures this account pays real ISK to use.
-//
-// The fold is told about coverage, not ownership, so the suppression follows
-// what can actually be read. A structure owned by our own corp but absent from
-// the covered set must therefore recover exactly like a landlord's.
-test('a structure our corp owns but whose wallet we cannot read still recovers', () => {
-  // OURS is a Raitaru (0.97 on the index term) and the index standing when the
-  // job was installed is 0.03, so a billed cost of 75 leaves:
-  //   75 - 1000 × 0.03 × 0.97 - 1000 × 0.04  =  5.9 ISK of facility tax
-  const expected = 75 - 1000 * 0.03 * 0.97 - 1000 * SCC_SURCHARGE
-
-  const uncovered = foldEiv([job({ station_id: OURS, cost: 75 })], baseInput({ journalCoveredStructureIds: new Set() }))
-  const row = uncovered.byStructure.get(OURS)!
-  assert.equal(row.recoveredJobs, 1, 'the tile must show an estimate where no journal can bill the charge')
-  assert.ok(Math.abs(row.recoveredTax - expected) < 1e-9)
-
-  // The same job at the same structure, once its corporation's journal is
-  // readable again: suppressed, because the exact row now exists.
-  const covered = foldEiv([job({ station_id: OURS, cost: 75 })], baseInput())
-  assert.equal(covered.byStructure.get(OURS)?.recoveredJobs, 0)
-  assert.equal(covered.byStructure.get(OURS)?.recoveredTax, 0)
-
-  // Either way the throughput is the same: coverage decides who bills the tax,
-  // never whether the jobs happened.
-  assert.equal(row.eiv, covered.byStructure.get(OURS)?.eiv)
-})
-
-// ── The tile is ours; the Characters tab is everyone's ───────────────────
-// Your Total EIV counts only the jobs our own characters installed. The
-// Characters tab lists everyone who ran jobs at the structure, and each row's
-// EIV is what that pilot or corporation put through it. One job set once fed
-// both, so narrowing it for the tile left every co-tenant's row reading "—".
-const OWN = { registrationIds: new Set(['reg-ours']), characterIds: new Set(['90000001']) }
-
-const visible = [
-  job({ job_id: 1, registration_id: 'reg-ours' }), // our personal job
-  job({ job_id: 2, registration_id: 'reg-cotenant' }), // a co-tenant's personal job
-  job({ job_id: 3, corporation_id: '98000001', installer_id: '90000001' }), // a corp job we installed
-  job({ job_id: 4, corporation_id: '98000001', installer_id: '90000099' }), // a corpmate's corp job
-  job({ job_id: 5, registration_id: 'reg-cotenant', activity_id: 3 }), // research: never priced
-]
-
-test('every visible manufacturing job is priced; only our installs are ours', () => {
-  const { priced, ours } = eivJobSets(visible, OWN)
-  assert.deepEqual(
-    priced.map((j) => j.job_id),
-    [1, 2, 3, 4]
-  )
-  assert.deepEqual(
-    ours.map((j) => j.job_id),
-    [1, 3]
-  )
-})
-
-test('priceJobs prices a job whoever ran it, under the same gates as the tile', () => {
-  const eivByJob = priceJobs(
-    [
-      job({ job_id: 1, registration_id: 'reg-cotenant', runs: 2 }),
-      job({ job_id: 2, activity_id: 4 }), // research
-      job({ job_id: 3, station_id: '1000000000099' }), // no tile
-      job({ job_id: 4, start_date: '2026-07-30T00:00:00Z' }), // before the window
-      job({ job_id: 5, blueprint_type_id: 12345 }), // no bill
-    ],
-    baseInput()
-  )
-  assert.deepEqual([...eivByJob], [['1', 2000]])
-})
-
-test("the tile sums our installs while the tab shows a co-tenant's throughput", () => {
-  const { priced, ours } = eivJobSets(visible, OWN)
-  const tile = foldEiv(ours, baseInput())
-  assert.equal(tile.totalEiv, 2000)
-
-  const roster = foldInstallers(visible, {
-    onPage: new Set([RENTED]),
-    since: '2026-08-01T00:00:00Z',
-    registrations: new Map([
-      ['reg-ours', { name: 'Sir Cuddles', characterId: '90000001' }],
-      ['reg-cotenant', { name: 'Quuixote', characterId: '90000002' }],
-    ]),
-    corporationNames: new Map([['98000001', 'Sanguine Systems']]),
-    eivByJob: priceJobs(priced, baseInput()),
-  })
-  const eivOf = new Map((roster.get(RENTED) ?? []).map((row) => [row.name, row.eiv]))
-  assert.equal(eivOf.get('Quuixote'), 1000, "the co-tenant's row carries their EIV")
-  assert.equal(eivOf.get('Sir Cuddles'), 1000)
-  // Both corp jobs, the corpmate's included: the corporation's row is the
-  // corporation's whole output here.
-  assert.equal(eivOf.get('Sanguine Systems'), 2000)
+test('the recovered rate is tax over EIV, and zero is an answer where the landlord is free', () => {
+  assert.equal(recoveredRate({ eiv: 1000, jobs: 1, recoveredTax: 12.5, recoveredEiv: 1000, recoveredJobs: 1 }), 0.0125)
+  assert.equal(recoveredRate({ eiv: 1000, jobs: 1, recoveredTax: 0, recoveredEiv: 1000, recoveredJobs: 1 }), 0)
+  assert.equal(recoveredRate({ eiv: 1000, jobs: 1, recoveredTax: 0, recoveredEiv: 0, recoveredJobs: 0 }), null)
 })
