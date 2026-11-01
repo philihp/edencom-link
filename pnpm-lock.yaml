@@ -4105,7 +4105,7 @@ snapshots:
 
   '@vercel/queue@0.10.0':
     dependencies:
-      '@vercel/oidc': 3.8.5
+      '@vercel/oidc': 3.8.10
       minimatch: 10.2.6
       mixpart: 0.0.6
       picocolors: 1.1.1
