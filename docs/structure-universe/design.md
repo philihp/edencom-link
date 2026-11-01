@@ -286,6 +286,51 @@ NPC stations are excluded by id range, not by a lookup: player structures are
 already carries the floor as `STRUCTURE_ID_FLOOR`; `roster.ts` carries the
 same constant for the same reason, so a job installed in Jita 4-4 gets no tile.
 
+## Hand-inferred fittings
+
+Status: built (`pnpm run import-inferred-structures`).
+
+A structure in block 3 shows what ESI hands a visitor and nothing more. For
+the structures our jobs actually run in that is a poor answer: an Azbel that
+ran 3,300 of our copy jobs plainly has a research lab, and the owner's naming
+convention says what it is rigged with — GSF names an industry structure
+after its rigs, so "T2 Adv L T1 Basic L" is two tech II advanced-large-ship
+rigs and one tech I basic-large-ship rig, exactly how every scanned GEZ
+Raitaru reads.
+
+`src/jobs/inferredStructures.js` writes those guesses down, one entry per
+structure, each with the evidence it rests on (the name, and what our jobs
+did there), and `src/jobs/importInferredStructures.js` upserts them into
+`corp_structure` + `corp_structure_rig` under the structure's real id, the
+same way `import-gez-structures` lands the alliance sheet. The rules:
+
+- **A director scan always wins.** A row ESI wrote carries `reinforce_hour`
+  (ESI always sends it; no import ever does), and such a row is never
+  touched. The moment a director of the owning corp registers, the extract
+  replaces the guess.
+- **Owners are the directory's.** The owner comes from `universe_structure`;
+  where it never resolved one, the entry says so (`ownerGuessed`) and names
+  the sibling structures the guess rests on. A structure with no defensible
+  owner is left out rather than filed under us — `corporation_id` drives RLS,
+  the "ours"/"everyone else's" split and the cost-avoidance arithmetic, so a
+  wrong owner is worse than no row.
+- **Owners get the parity share.** Each owner gets its `corporation` row and
+  the seeded alliance `corp_structure_share` the `corp-structures` extract
+  would have given it on a first scan (`structureShareDefault.js`); without
+  that, `corp_structure`'s RLS shows the rows to the owner's own members
+  only. The GEZ import had written real-id rows for corporations it never
+  seeded, so they were invisible to everyone — this is what made them
+  readable.
+- **GEZ stubs are re-keyed.** The sheet import matched real ids by exact
+  "<system> - <name>"; a row whose in-game name differs got a synthetic id
+  in the stub band. `STUB_REKEYS` moves the sheet's services and rigs onto
+  the real id our jobs carry and drops the stub.
+
+The guesses render with the same `[ live ]` tag as a scan, which overstates
+them; a `source` column on `corp_structure` (`esi` / `gez-sheet` /
+`inferred`) and a matching `SourceTag` would say what each tile knows. Not
+built yet.
+
 ## Decisions
 
 1. **EVE Ref: taken.** It is the only way to name a structure no token of ours
