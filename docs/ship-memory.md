@@ -11,7 +11,13 @@ accumulates, and every version is kept.
 2026-11-01: migration `20261101065555_asset_claim_cross_hangar` and
 `test/sql/asset_claim_cross_hangar.sql`. Its production measurement found
 only handoffs waiting on a pull, so it is safe to merge (see One holder per
-item id). PRs 2–6 are planned.
+item id). PR 2 (storage and accent) was built the same day: migrations
+`20261101090426_item_memory` and `20261101090428_sde_type_faction`,
+`test/sql/item_memory.sql`, and `src/app/ship/memory/accent.ts` with
+`test/shipMemoryAccent.test.ts`. It differs from this plan in two places,
+both noted where they land: the table gains `closed_by` (see Storage), and the
+accent is keyed on the SDE's ids rather than its names (see Accent). PRs 3–6
+are planned.
 
 ## Decisions (owner, 2026-11-01)
 
@@ -57,15 +63,23 @@ recorded it.
 ### Accent
 
 The order is the type's **faction** first (`factionID`), then its **race**
-(`raceID`), then neutral. Faction and race names come from the mirrored
-`sde_factions` / `sde_races` tables (the mirror makes one table per CCP file).
-The pure module `src/app/ship/memory/accent.ts` maps those names to the chart
-below, and a test pins every row. **Confirmed against the mirror on
+(`raceID`), then neutral. The pure module `src/app/ship/memory/accent.ts`
+maps the ids to the chart below: `voiceOf({ factionId, raceId })`. It keys on
+ids, not on the names in the mirrored `sde_factions` / `sde_races` tables, so
+the loader reads two columns of `sde_published_type` and nothing else, and a
+CCP rename cannot drop a hull to neutral. A faction with no row (The
+Syndicate, EverMore, Rogue Drones, …) falls through to the race. The test
+reads this chart from this file and pins every row against the module, so
+an edit here fails until `accent.ts` matches. **Confirmed against the mirror on
 2026-11-01:** 1,385 types carry `factionID`. The Gila, for example, has
 `factionID` 500010 (Guristas) and `raceID` 1 (Caldari), which is why the
-faction has to come first. PR 2 adds a `faction_id` column to
-`sde_published_type`. If a hull has neither a faction nor a race, the
-voice is neutral. A hull's name is never used to guess its faction.
+faction has to come first. Every empire hull carries one too (a Rifter is
+500002), and Navy Issue hulls carry their empire's (the Caldari Navy Hookbill
+is 500001, Caldari State), so the "Caldari Navy" half of the drill sergeant's
+row is reached only through Mordu's Legion Command (Garmur, Orthrus,
+Barghest). PR 2 adds a `faction_id` column to `sde_published_type`. If a hull
+has neither a faction nor a race, the voice is neutral. A hull's name is never
+used to guess its faction.
 
 **Draft. The owner edits this chart.**
 
@@ -144,10 +158,11 @@ Two pilots. The first one babied me. The second one keeps me light.
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `id`                         | Identity. A memory's version id; the write tool's optimistic-concurrency handle.                                                                             |
 | `item_id`                    | The hull. **The key: one memory per hull, whoever owns it.** EVE never reuses an item id, and a hull keeps its id through every trade, so the memory passes to a buyer. No foreign key, because a memory outlives the asset row: a packed hull's memory waits for reassembly, and a dead id's rows stay with their authors (`written_by`) and on the dead hull's share link. |
-| `carried_from_item_id`       | Set on the first version under a reassembled hull's new id, naming the id it was carried from. Chained, it is the ship's lineage across every repackaging.        |
-| `written_by`                 | The account that wrote this version. Provenance only: it grants no write access, though it does let the author keep reading what they wrote after selling the hull (see RLS). |
+| `carried_from_item_id`       | Set on the first version under a reassembled hull's new id, naming the id it was carried from. Chained, it is the ship's lineage across every repackaging. Added by PR 6. |
+| `written_by`                 | The account that wrote this version. Provenance only: it grants no write access, though it does let the author keep reading what they wrote after selling the hull (see RLS). `on delete set null`: a deleted account leaves its text with the hull. |
+| `closed_by`                  | The account that superseded this version. Not in the first draft of this plan; PR 2 found it necessary (see RLS). `on delete set null`.                         |
 | `type_id`                    | The type at write time, so a dead hull's memory still knows what it was.                                                                                     |
-| `body`                       | Markdown, at most 20,000 characters (a check constraint).                                                                                                   |
+| `body`                       | Markdown, at most 20,000 characters and not blank (a check constraint).                                                                                     |
 | `author`                     | Provenance: the MCP client's name where the protocol supplies one, else `mcp`.                                                                               |
 | `is_current`, `valid_from`, `valid_until` | The usual SCD-2 columns. A unique partial index on `(item_id) where is_current`.                                                                   |
 
@@ -204,7 +219,10 @@ writes the one memory. There are no per-member copies.
 
 The only way to write is `item_memory_write(item_id, body, based_on)`, a
 SECURITY INVOKER function, so that closing the old version and opening the new
-one happen in one transaction. Two PostgREST calls cannot do that. It refuses:
+one happen in one transaction. Two PostgREST calls cannot do that. As built
+it is `item_memory_write(p_item_id, p_body, p_based_on, p_author default
+'mcp')`, returning the new version's id (the next write's `based_on`). It
+refuses:
 
 - an item the caller does not **hold**. The function probes the hull's one
   current asset row, of which there is one across both hangars (see One holder
@@ -213,17 +231,39 @@ one happen in one transaction. Two PostgREST calls cannot do that. It refuses:
   here either: `character_asset` also returns rows shared with the caller, and a
   share recipient must not be able to write. The asset rows come from ESI
   through the extracts, so nobody can claim a hull they do not hold in game.
+  SQLSTATE `42501`.
 - a stale write: `based_on` must be the current version's id, or null when no
   memory exists yet. Two conversations writing the same ship (or two members of
   the corporation holding it) must not silently overwrite each other. The
-  second write is told to re-read.
+  second write is told to re-read. SQLSTATE `PT409`, which PostgREST answers
+  as HTTP 409. A racing close is serialized by the row lock (the loser reads
+  `is_current` false and closes nothing), and two racing first writes by the
+  unique index.
 
-RLS for select: `written_by = auth.uid() or (is_current and holds_item(item_id))`.
+RLS for select: `written_by = auth.uid() or closed_by = auth.uid() or
+(is_current and holds_item(item_id))`.
+
+**Why `closed_by`.** Under invoker rights Postgres checks an `UPDATE`'s new
+row against the SELECT policy, and refuses the statement when the row would
+vanish from the caller's view. With the first draft's policy, a buyer closing
+the seller's version (written by the seller, no longer current) could not
+read the row they had just made, so the very first write after a sale failed.
+`closed_by` keeps the closed row readable to whoever closed it. That reveals
+nothing: the closer read it as the current text a moment before.
+
+**Direct writes.** RLS is the gate, not the function. `authenticated` may
+insert only `item_id`, `type_id`, `body` and `author` (the account, the flag
+and the timestamps are defaults), and update only `is_current`,
+`valid_until` and `closed_by`, under a policy that lets a holder close the
+current version and nothing else. So a holder writing the table directly can
+do what the function does, less the check that they read the version they
+replace. No delete, no anon.
 
 - **The current holder reads the current text,** including what earlier owners
   wrote, since that is what the ship remembers.
 - **Every author keeps reading their own versions,** so a seller can recover
-  what they wrote.
+  what they wrote. **Every closer keeps the versions they superseded,** which
+  they had read already.
 - **A superseded version by a former owner is not visible to the new holder.**
   If a seller rewrote the memory to drop something before selling, the dropped
   part stays dropped.
@@ -388,8 +428,8 @@ for example `react-markdown` without `rehype-raw`.
    `item_memory_write()`, `holds_item()`, RLS, `test/sql/item_memory.sql`
    (including the sale case), plus `schema.sql`
    and a migration. `accent.ts` with the chart (pure, tested). The
-   `faction_id` column on `sde_published_type` (a `src/jobs/sdeMirror.js` view
-   change plus a migration).
+   `faction_id` column on `sde_published_type` (a `schema.sql` view change
+   plus a migration; the mirror job defines no views). Built 2026-11-01.
 3. **The dossier and `recall_ship`.** The loader (character and corp hulls,
    across alts), the pure fold `dossier.ts` (names, debut, origin inference,
    itinerary, pilots, cargo, fuel, refits; tested hard, because the inference
