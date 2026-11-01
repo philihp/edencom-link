@@ -549,9 +549,9 @@ A ship can carry a memory: a markdown text in the ship's own voice about
 where it came from, where it has docked, what it has carried, how it keeps
 its fuel, and who has flown it. The memory belongs to the hull. It passes to
 whoever holds the hull next, and everyone the ship is shared with reads it.
+Two tools: `recall_ship` reads the facts, `remember_ship` stores the text.
 
-`recall_ship` gives the facts to write from. Call it with the ship's item id
-or its in-game name. It answers:
+`recall_ship` answers, for a ship named by item id or in-game name:
 
 - The dossier: the first sighting, where the hull came from (built,
   contracted, bought or unpacked, inferred and marked with a confidence, or
@@ -559,25 +559,40 @@ or its in-game name. It answers:
   extract), the docks and how long the ship stayed at each, the pilots, the
   cargo, the fuel bay, the fit and the refits, and whether the hull is still
   held. Every figure comes from samples taken every 6 hours (daily for a
-  corporation hangar). Write "at least" where the tool says so.
+  corporation hangar).
 - The voice: an accent from the hull's faction or race, with voice notes,
-  and a register from its hull class. Write in both.
-- The memory the ship has now, with its version id, and whether the current
-  text was written by an earlier owner.
+  and a register from its hull class.
+- The memory the ship has now, with its `version_id`, and `before_you`: whether
+  the current text was written by an earlier owner.
 - Who reads the memory: every share that reaches the hull, a container above
-  it, or its place. Tell the user before you write when the ship is shared
-  publicly.
+  it, or its place.
 
-The write tool, `remember_ship`, is not in this server yet. Until it is,
-give the user the text to keep. When writing:
+### Writing a ship's memory
 
-1. Keep what the old memory said unless the facts contradict it. Add, do not
-   rewrite.
-2. Never invent battles, cargo or places. Combat is not in the data.
-3. On a hull with an earlier owner, keep that owner's chapters as the ship's
-   past. Do not erase them.
-4. The memory is read by everyone the ship is shared with, and by whoever
-   owns it next. Check who that is before naming places or pilots.
+1. Call `recall_ship`.
+2. Write in the accent and register it names. The ship speaks in the first
+   person.
+3. Keep what the old memory said unless the facts contradict it. Add, don't
+   rewrite. The new text replaces the old one whole, so carry forward what
+   should stay.
+4. Use "at least" where the data is sampled: cargo, docks, pilots and refits
+   all are.
+5. Never invent battles, cargo or places. Combat is not in the data.
+6. The memory is read by everyone the ship is shared with, and by whoever
+   owns it next. Before naming places or pilots, read `readers` and tell the
+   user when the ship is shared publicly. A buyer inherits the text, not the
+   data.
+7. On a hull with an earlier owner (`before_you.inherited`), keep that owner's
+   chapters as the ship's past ("Before you, I hauled for…"). Don't erase
+   them.
+8. Call `remember_ship` with the whole text and `based_on` set to the
+   `version_id` from step 1 (null when the ship had no memory). If it answers
+   that the memory changed since you read it, call `recall_ship` again and
+   write on top of the new text. Never merge the two yourself.
+
+`remember_ship` changes nothing in the game. It needs no confirmation
+beyond the user asking for the memory to be written: every version is kept,
+and a later write can restore any earlier text.
 
 ## Public contracts
 
@@ -766,9 +781,12 @@ see them only in these ways:
 
 ## Tools that write
 
-Four tools change data. None of them changes the game. `send_mail` queues an
+Five tools change data. None of them changes the game. `send_mail` queues an
 EVE mail on the site for a person to send later (see "Sending mail"). The
-other three change only the user's own rows on this site:
+other four change only the user's own rows on this site:
+
+- `remember_ship` stores the next version of a held ship's memory (see "A
+  ship's memory"). Every version is kept.
 
 - `create_link` saves a Data Link, and can share it.
 - `update_link` changes a Data Link. Its audience sees the change the next
@@ -801,8 +819,9 @@ other three change only the user's own rows on this site:
 - EVE mail: `list_mail` finds it, `read_mail` reads it, `send_mail` queues
   one for a person to send later (see "EVE mail").
 - Characters, ships, clones: `list_clones`. Saved fits and the archive:
-  `list_fittings`. Structures: `list_structures`. What a ship knows about
-  itself, for writing its memory: `recall_ship` (see "A ship's memory").
+  `list_fittings`. Structures: `list_structures`. A ship's memory:
+  `recall_ship` reads the facts, `remember_ship` stores the text (see "A
+  ship's memory").
 - Mercenary dens: `list_mercenary_dens`. Planets and planet types:
   `list_planets`.
 - Where to buy reaction gas for C-J6MT: `appraise_items` in `jita` and

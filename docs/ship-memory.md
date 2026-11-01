@@ -24,8 +24,12 @@ loader, both hangars), `src/sdeDogma.ts` (the fuel-bay capacity, dogma
 attribute 1549), `src/app/api/mcp/memoryTools.ts` with its pure seam
 `memoryQuery.ts` (tested), and a first "A ship's memory" section in the skill
 doc, since `get_skill` must name every tool. Where it differs from the plan is
-noted where it lands (see Where it came from, and the MCP tools). PRs 4–6 are
-planned.
+noted where it lands (see Where it came from, and the MCP tools). PR 4
+(`remember_ship` and the skill section) was built the same day, in
+`memoryTools.ts` beside the read tool, with the write seam in
+`memoryQuery.ts` (tested) and "Writing a ship's memory" in
+`docs/edencom-industry-SKILL.md`. `inherit_from` waits for PR 6, which adds
+the packs it settles. PRs 5–6 are planned.
 
 ## Decisions (owner, 2026-11-01)
 
@@ -373,12 +377,19 @@ on the caller's bearer client.
   another account, and the hull's earliest version in the caller's own data
   is later than the memory's first write.
   Annotations: `readOnlyHint: true`, `openWorldHint: false`.
-- **`remember_ship(ship, memory, based_on)`**: a write tool. It stores the
-  whole new text through `item_memory_write`. On a stale `based_on` it answers
-  "the memory changed since you read it; call `recall_ship` again", and it
-  never merges. With `inherit_from` (a pending pack of the caller's, of the
-  same type, on a hull that has no memory yet) it settles an ambiguous
-  reassembly. It runs the carry first, and then writes the new text on top. Annotations: `readOnlyHint: false`, `destructiveHint: false`
+- **`remember_ship(ship, memory, based_on, author?)`**: a write tool. It
+  stores the whole new text through `item_memory_write`. On a stale
+  `based_on` it answers "the memory changed since you read it; call
+  `recall_ship` again", and it never merges. An unheld hull is refused with
+  the function's `42501`, read as "you do not hold it now"; the body is
+  checked against the storage's limits (blank, 20,000 characters) before the
+  call so the refusal says what is wrong. `author` is the client's name,
+  since the server context carries none; default `mcp`. The answer repeats
+  who reads the text (the same `readers` as `recall_ship`). With
+  `inherit_from` (a pending pack of the caller's, of the same type, on a hull
+  that has no memory yet) it will settle an ambiguous reassembly, running the
+  carry first and then writing the new text on top: **PR 6**, with the packs
+  it reads. Annotations: `readOnlyHint: false`, `destructiveHint: false`
   (every version is kept), `idempotentHint: false`.
 
 The procedure goes in `docs/edencom-industry-SKILL.md`, which `get_skill`
@@ -450,7 +461,8 @@ for example `react-markdown` without `rehype-raw`.
    the ship page reads dogma only in the browser. "Record start" is the
    owner's earliest asset version rather than a heartbeat: the first extract
    wrote every item at once, and heartbeats are not kept forever.
-4. **`remember_ship` and the skill section.**
+4. **`remember_ship` and the skill section.** Built 2026-11-01, without
+   `inherit_from` (PR 6).
 5. **Display.** The Memory panel, the share-loader read, the `show_as_main`
    rule, the Share-dialog line, and the markdown dependency.
 6. **Reassembly.** First the id measurement. Then `item_memory_pack`,
