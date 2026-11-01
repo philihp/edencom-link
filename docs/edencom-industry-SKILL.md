@@ -651,19 +651,7 @@ the user's private data: no share, Data Link or GraphQL field shows it.
 ### Sending mail
 
 `send_mail` enqueues an EVE mail for delivery as one of the user's
-characters. The call hands the draft to the site's mail queue, which delivers
-it to the recipients in the game. Do this procedure for each mail:
-
-1. Write the draft as plain text. The tool keeps the line breaks.
-2. Call `send_mail` with `preview: true`. It finds each recipient and checks
-   the draft. It enqueues nothing.
-3. Show the user the sender, the recipients as the preview found them, the
-   subject and the full body. Ask for a yes.
-4. Call `send_mail` again without `preview`, with the `request_id` from the
-   preview.
-
-Approving mail will move to the edencom.link website. When it does, this
-procedure will become simpler. Until then, do all four steps for each mail.
+characters. The call hands the draft to the site's mail queue, which delivers it to the recipients in the game.
 
 - A recipient is a character, a corporation, an alliance or a mailing list.
   Give its exact name, or its EVE id and type. The tool knows the names of the
@@ -745,9 +733,6 @@ three change only the user's own rows on this site:
   `UPDATE` moves a system to an index, and `DELETE` removes it. The index is
   where the system is after the change, counted from 0. Removing a system
   does not stop its cost-index history.
-
-Confirm a change with the user before you call a tool that writes. For
-`send_mail`, show the user the full mail first.
 
 ## Which tool answers which question
 
