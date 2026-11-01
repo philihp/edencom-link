@@ -14,7 +14,10 @@
 // synchronous: sendMail() calls ESI and returns ESI's mail id in the same
 // request. Keep the copy's promises (preview, logging, use-once request_id)
 // true; do not let the word "enqueue" grow into a claim that a queued mail
-// can be cancelled. It does not write anything itself: it resolves the
+// can be cancelled. Approval is moving to the website (docs/eve-mail.md
+// "Approval on the website", decided 2026-11-01, not yet built); until ESI
+// waits for that approval, keep the description's confirm-first guidance.
+// It does not write anything itself: it resolves the
 // sender and the recipients, then hands the draft to the one send path,
 // src/app/mail/lib.ts, the same function `pnpm run mail-send` calls. That
 // path needs the character's token, which only the service role reads, so the
@@ -551,7 +554,7 @@ export const registerMailTools = (server: McpServer): void => {
     {
       title: 'Enqueue EVE mail',
       description:
-        "Enqueue an EVE mail for delivery as one of the user's own characters. The call hands the draft to this site's mail queue and returns; the mail is delivered to the recipients' in-game mailboxes from there. Show the user the sender, the recipients and the text, and enqueue once they agree; preview: true resolves the recipients and checks the draft without enqueuing anything. A recipient is a character, corporation, alliance or mailing list, by its exact name or by EVE id and type; a name this site does not know needs the id. The character needs the opt-in \"Send in-game mail\" grant. approved_cost is the most ISK the user agrees to pay in CSPA charges (default 0): a recipient who charges more makes EVE refuse the mail, and nothing is retried. Every mail is logged on this site before it is queued. To retry after a lost answer, call again with the same request_id: a used request_id is refused, so the mail is never queued twice.",
+        "Enqueue an EVE mail for delivery as one of the user's own characters. The call hands the draft to this site's mail queue and returns; the mail is delivered to the recipients' in-game mailboxes from there. Show the user the sender, the recipients and the text, and enqueue once they agree; preview: true resolves the recipients and checks the draft without enqueuing anything. A recipient is a character, corporation, alliance or mailing list, by its exact name or by EVE id and type; a name this site does not know needs the id. The character needs the opt-in \"Send in-game mail\" grant. approved_cost is the most ISK the user agrees to pay in CSPA charges (default 0): a recipient who charges more makes EVE refuse the mail, and nothing is retried. Every mail is logged on this site before it is queued. To retry after a lost answer, call again with the same request_id: a used request_id is refused, so the mail is never queued twice. Approving mail is moving to the edencom.link website, and this guidance will relax when it does; until then, confirm with the user before every send.",
       annotations: {
         readOnlyHint: false,
         // A sent mail adds to the recipients' mailboxes; it removes nothing.

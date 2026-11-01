@@ -662,6 +662,9 @@ it to the recipients in the game. Do this procedure for each mail:
 4. Call `send_mail` again without `preview`, with the `request_id` from the
    preview.
 
+Approving mail will move to the edencom.link website. When it does, this
+procedure will become simpler. Until then, do all four steps for each mail.
+
 - A recipient is a character, a corporation, an alliance or a mailing list.
   Give its exact name, or its EVE id and type. The tool knows the names of the
   user's correspondents, of registered characters, of the corporations and
