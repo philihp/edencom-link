@@ -133,6 +133,16 @@ names, a corp extract was tried for, or a scanned structure belongs to) over
 all time; `--since YYYY-MM-DD` bounds it. Run once after the migration, and
 again if the pricing rules change. It is not scheduled.
 
+**Skipping it blanks the page, quietly.** #1209 merged without it: for the
+first eleven hours the rollup held only what the extracts had recomputed
+since the deploy — 45 of ~216 owners, 803 jobs with EIV in a 30-day window
+against ~24,000 current jobs — so Revenue survived (the journal extract refolds
+its 30 days every run) while EIV, Taxes Paid, Cost Avoidance and the
+Characters tab went mostly empty. Nothing errored and no test could see it:
+the folds were right, they were just reading an empty table. Run on
+2026-11-01 with `--since 2026-08-01` (the page's widest window is 90 days):
+217 owners in ~7 s, 6,492 measure rows, 24,467 jobs in the 30-day window.
+
 ## What changed for the reader
 
 - **The window is whole UTC days.** Days from the one `now − N days` falls on,
@@ -161,3 +171,42 @@ RLS predicates, the view's masking and the two RPCs. After the migration and
 backfill, a fresh account and a long-history one should both render
 `/structure` with the same figures as before for the same window, and the page
 should issue no select against either industry-job view.
+
+## Where the remaining time went
+
+Measured 2026-11-01, after the backfill, from production:
+
+- **Vercel metrics** (`vercel metrics vercel.function_invocation.function_duration_ms
+  --prod -f 'route:"/structure"'`): the function runs in `sfo1`, next to the
+  database in `us-west-1`, so a round trip costs milliseconds and the number
+  of sequential stages is not what costs seconds. Since the rollup deploy:
+  p50 16 ms (prefetches), p90 1.66 s, worst hours 8–9 s.
+- **`pg_stat_statements`**, filtered to the queries the page issues: the
+  rollup reads are cheap — `structure_measure_day` 10.9 ms mean, the
+  installer view 26.9 ms, `structure_measure_structure_ids()` 18.6 ms. What
+  wasn't:
+
+  | read                                                                  | mean   | worst |
+  | --------------------------------------------------------------------- | ------ | ----- |
+  | `industry_system_index` newest `recorded_at`                          | 482 ms | 2.0 s |
+  | `industry_system_index` rows at that `recorded_at` (waits on the one above) | 819 ms | 2.3 s |
+  | clone-bay journal (`ref_type in (…) and date >= …`)                  | 249 ms | 1.8 s |
+  | `industry_system_index_bucket` sparklines                             | 77 ms  | 1.8 s |
+
+  `industry_system_index` is append-only (640k rows, 2,497 snapshots) and
+  its one index leads with `system_id`, so `fetchLatestSystemIndexes()` made
+  two whole-table passes in series — the longest leg of the page's third
+  stage, which waits on all its reads together. The clone footer walked every
+  corporation's journal window under `corp_wallet_journal_corp_date_idx` and
+  filtered on `ref_type`.
+
+Migration `20261101173740_structure_latency_indexes` adds
+`industry_system_index (recorded_at desc)` (one probe, then one snapshot's
+~560 rows; `/indexes`, `/structure/[structureId]` and MCP
+`industry_cost_indices` share the function) and `corp_wallet_journal
+(ref_type, date desc)`. The page itself starts the clone-bay journal and the
+`corp-structures` heartbeat with the first stage instead of after the last,
+and runs the two footer lookup chains (unlisted landlords; unaccounted payers)
+side by side; `measures.ts` asks the character directory and the corporation
+directory together. The sparkline view is left as it is: 77 ms mean, and its
+worst cases coincide with the hours the extracts write.

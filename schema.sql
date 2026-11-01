@@ -5196,6 +5196,10 @@ create table public.industry_system_index (
 );
 create index industry_system_index_system_activity_idx
   on public.industry_system_index (system_id, activity, recorded_at desc);
+-- The latest snapshot, by fetchLatestSystemIndexes(): newest recorded_at,
+-- then that snapshot's rows. Without it both were whole-table passes.
+create index industry_system_index_recorded_at_idx
+  on public.industry_system_index (recorded_at desc);
 
 alter table public.industry_system_index enable row level security;
 create policy "Everyone reads industry indexes"
@@ -5776,6 +5780,10 @@ create table public.corp_wallet_journal (
   primary key (corporation_id, division, entry_id)
 );
 create index corp_wallet_journal_corp_date_idx on public.corp_wallet_journal (corporation_id, date desc);
+-- A ref_type over a window across every corporation the caller reads (the
+-- /structure clone-bay footer). Not partial: PostgREST binds the list as a
+-- parameter, which a generic plan cannot match to an index predicate.
+create index corp_wallet_journal_ref_type_date_idx on public.corp_wallet_journal (ref_type, date desc);
 -- A job's tax entries, by the job: industry_job_tax_facility() proves the
 -- caller was taxed for a job with an `exists` probe by context_id (without
 -- this the probe scanned the journal per batch), and the structure-measure
