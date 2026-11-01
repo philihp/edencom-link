@@ -1018,10 +1018,14 @@ grant select on public.character_asset           to anon, authenticated, service
 -- the previous holder's still-open row. This closes the open row for each
 -- incoming item_id whoever holds it, then inserts the new versions, in one
 -- transaction. See supabase/migrations/20260831043706_asset_handoff_claim.sql.
+-- The holder is one across both hangars, not just within this table: the claim
+-- also closes corp_asset_version's open row for an incoming item, and
+-- corp_asset_claim() closes this table's (docs/ship-memory.md, "One holder per
+-- item id").
 --
 -- SECURITY INVOKER on purpose: it carries no privilege of its own, so the fact
 -- that a reconcile may expire another account's row rests on the caller holding
--- INSERT/UPDATE — which only service_role does. The advisory lock serializes
+-- INSERT/UPDATE — which only service_role does. The advisory locks serialize
 -- just the claim window, because the per-character workflow runs owners
 -- concurrently and atomicity alone does not stop two of them racing for one
 -- item under READ COMMITTED.
@@ -1046,7 +1050,13 @@ begin
     into v_items, v_now
     from jsonb_array_elements(p_rows) r;
 
+  -- Both claims take both locks, character first, then corp. Each closes rows
+  -- in the other's table, and no unique index spans two tables, so the locks
+  -- are the only thing stopping a character claim and a corp claim for one
+  -- item from each missing the other's uncommitted insert and leaving it open
+  -- in both hangars. The fixed order is what keeps the two from deadlocking.
   perform pg_advisory_xact_lock(hashtext('public.character_asset_over_time')::bigint);
+  perform pg_advisory_xact_lock(hashtext('public.corp_asset_over_time')::bigint);
 
   -- The run's clock, carried on every row as valid_until: the close below
   -- stamps the previous owner's row with it, so a ship and what was aboard
@@ -1054,6 +1064,14 @@ begin
   -- what the share page's last-known-contents query compares. Only when a
   -- caller sends no stamp does the database clock stand in.
   update public.character_asset_version
+     set is_current = false, valid_until = v_now
+   where is_current
+     and item_id = any (v_items);
+
+  -- An item that left a corp hangar for a character's (a director took it
+  -- out, say) is closed there on the same instant, rather than staying open
+  -- in both hangars until the corporation's next corp-assets run.
+  update public.corp_asset_version
      set is_current = false, valid_until = v_now
    where is_current
      and item_id = any (v_items);
@@ -6746,10 +6764,14 @@ grant select on public.corp_asset_version to anon;
 -- the previous holder's still-open row. This closes the open row for each
 -- incoming item_id whoever holds it, then inserts the new versions, in one
 -- transaction. See supabase/migrations/20260831043706_asset_handoff_claim.sql.
+-- The holder is one across both hangars, not just within this table: the claim
+-- also closes character_asset_version's open row for an incoming item, and
+-- character_asset_claim() closes this table's (docs/ship-memory.md, "One
+-- holder per item id").
 --
 -- SECURITY INVOKER on purpose: it carries no privilege of its own, so the fact
 -- that a reconcile may expire another account's row rests on the caller holding
--- INSERT/UPDATE — which only service_role does. The advisory lock serializes
+-- INSERT/UPDATE — which only service_role does. The advisory locks serialize
 -- just the claim window, because the per-character workflow runs owners
 -- concurrently and atomicity alone does not stop two of them racing for one
 -- item under READ COMMITTED.
@@ -6774,9 +6796,21 @@ begin
     into v_items, v_now
     from jsonb_array_elements(p_rows) r;
 
+  -- Both locks, in character_asset_claim()'s order — character, then corp —
+  -- so the two claims serialize against each other without deadlocking.
+  perform pg_advisory_xact_lock(hashtext('public.character_asset_over_time')::bigint);
   perform pg_advisory_xact_lock(hashtext('public.corp_asset_over_time')::bigint);
 
   update public.corp_asset_version
+     set is_current = false, valid_until = v_now
+   where is_current
+     and item_id = any (v_items);
+
+  -- An item that left a character's hangar for the corporation's (given to
+  -- the corp, or bought on a contract made out to it) is closed there on the
+  -- same instant, rather than staying open in both hangars until the
+  -- character's next character-assets run.
+  update public.character_asset_version
      set is_current = false, valid_until = v_now
    where is_current
      and item_id = any (v_items);
