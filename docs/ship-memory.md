@@ -9,8 +9,9 @@ accumulates, and every version is kept.
 
 **Status:** 🔨 in progress. PR 1 (one holder per item id) was built on
 2026-11-01: migration `20261101065555_asset_claim_cross_hangar` and
-`test/sql/asset_claim_cross_hangar.sql`. The measurement it starts with has
-not been run (see PR 1). PRs 2–6 are planned.
+`test/sql/asset_claim_cross_hangar.sql`. Its production measurement found
+only handoffs waiting on a pull, so it is safe to merge (see One holder per
+item id). PRs 2–6 are planned.
 
 ## Decisions (owner, 2026-11-01)
 
@@ -168,13 +169,26 @@ memory's edit rights follow that holder.
   touches the other table, so a hull moving between a character hangar and a
   corp hangar (given to the corp, a contract made out to a corporation, a
   director moving it out) stays current in both until the old holder's next
-  extract, which can be up to 6h. **PR 1 closes that gap:** each claim
-  function also closes the _other_ table's current row for the incoming ids.
-  Both functions take both advisory locks, always in the same order (character
-  first, then corp), so that a character claim and a corp claim racing for one
-  item cannot deadlock. The extra cost is one indexed update per claim chunk.
-  PR 1 starts with a read: how many item ids are current in both tables right
-  now. Its test is `test/sql/asset_claim_cross_hangar.sql`.
+  pull. That is up to 6h for a character, a day for a corporation
+  (`corp-assets` is daily), and a week while a role denial pauses a
+  corporation's pulls. **PR 1 closes that gap:** each claim function also
+  closes the _other_ table's current row for the incoming ids. Both functions
+  take both advisory locks, always in the same order (character first, then
+  corp), so that a character claim and a corp claim racing for one item cannot
+  deadlock. The extra cost is one indexed update per claim chunk. Its test is
+  `test/sql/asset_claim_cross_hangar.sql`.
+- **Measured on production, 2026-11-01**, before merging PR 1:
+  - 12 ids were current in both tables. All 12 were one handoff, corp →
+    character: 11 BPOs and a packaged Athanor, waiting on that day's corp
+    pull.
+  - Since 2026-10-05 there were 3,299 overlaps across 2,240 items: 1,312
+    cleared within 6h, 1,974 within 25h, and none between 25h and 3 days.
+  - The 13 that lasted longer were one Prospect and its 12 fitted modules,
+    open in both hangars for 5 days. The corporation's extract skipped on a
+    role denial 5 times in that window and pulled 0 times.
+  - So every overlap was a handoff waiting on the old holder's pull. None was
+    an item ESI lists in two hangars at once, which is the case where this
+    fix would churn versions.
 - **"Last" means our run clock, not ESI's snapshot time.** ESI caches an
   asset listing for up to an hour. A previous holder's listing fetched just
   after the trade, but cached from before it, could claim the hull back until

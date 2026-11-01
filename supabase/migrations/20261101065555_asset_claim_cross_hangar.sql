@@ -3,9 +3,15 @@
 -- incoming item, but only in their own table, and no unique index can span
 -- two tables. So an item moving between a character hangar and a corp hangar
 -- (given to the corporation, a contract made out to it, a director taking a
--- hull out) stayed open in both until the old holder's next asset run, up to
--- six hours later. Each claim now also closes the other table's open row,
--- stamped with the same run clock as its own close.
+-- hull out) stayed open in both until the old holder's next asset pull: up to
+-- six hours for a character, a day for a corporation (corp-assets is daily),
+-- and a week while a role denial pauses a corporation's pulls. Production on
+-- 2026-11-01 had 3,299 such overlaps across 2,240 items since 2026-10-05, the
+-- longest a Prospect and its fit open in both hangars for five days behind a
+-- corporation skipping on a role denial. Every one was a handoff waiting on
+-- the old holder's pull, never an item ESI lists in both hangars at once. Each
+-- claim now also closes the other table's open row, stamped with the same run
+-- clock as its own close.
 --
 -- Both functions take both advisory locks, character first, then corp. The
 -- locks are what serialize a character claim and a corp claim for the same
