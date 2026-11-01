@@ -6,7 +6,7 @@
   "packageManager": "pnpm@12.16.1",
   "dependencies": {
     "@eveshipfit/dogma-engine": "file:vendor/eveshipfit/eveshipfit-dogma-engine-7.1.0.tgz",
-    "@modelcontextprotocol/server": "2.3.1",
+    "@modelcontextprotocol/server": "2.4.0",
     "@philihp/eve-sso": "2.1.0",
     "@supabase/ssr": "0.12.7",
     "@supabase/supabase-js": "2.118.0",
