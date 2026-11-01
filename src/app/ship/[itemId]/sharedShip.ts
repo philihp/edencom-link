@@ -5,6 +5,7 @@ import { getSdeType, type SdeType } from '@/sdeTypes'
 import { createServiceClient } from '@/utils/supabase/service'
 
 import { resolveShareParams } from '../../asset/access'
+import { readShipMemory, type ShipMemory } from '../memory/read'
 import { latestPerItem, sightingOf, type Sighting } from './lastSeen'
 import { mainOwnerOf } from './mainOwner'
 import { hideHolder, PRESENTED_OWNER_ID, UNNAMED_OWNER } from './presentedOwner'
@@ -46,6 +47,13 @@ export type SharedShip = {
   ownerId: string
   ownerKind: 'character' | 'corporation'
   sighting: Sighting
+  // The ship's memory (docs/ship-memory.md, "Display"), read here on the
+  // service role so the resolved share stays the one gate: the current text
+  // for a held hull, the text as it stood at the last sighting for one the
+  // sharer no longer holds. Null when there is none, and always null on a
+  // share that shows the account's main, which promises the page sends
+  // nothing that leads to the holder — no code can check free text for that.
+  memory: ShipMemory | null
 }
 
 export type ShareParams = { token?: string; share?: string }
@@ -167,6 +175,9 @@ const loadSharedShip = async (itemId: string, share?: string, token?: string): P
   const hangar: Hangar = characterSelf
     ? { kind: 'character', ids: scope.registrationIds }
     : { kind: 'corporation', ids: corporationIds }
+  const memory = scope.showAsMain
+    ? null
+    : await readShipMemory(supabase, itemId, { asOf: self.is_current ? null : self.valid_until })
   const children = !self.is_current
     ? await childrenAsOf(supabase, itemId, hangar, self.valid_until)
     : hangar.kind === 'character'
@@ -200,6 +211,7 @@ const loadSharedShip = async (itemId: string, share?: string, token?: string): P
         ownerId: PRESENTED_OWNER_ID,
         ownerKind: 'character',
         sighting,
+        memory: null,
       }
     }
     // The share scope carries the sharer's name but not their EVE id, which is
@@ -221,6 +233,7 @@ const loadSharedShip = async (itemId: string, share?: string, token?: string): P
       ownerId: characterSelf.registration_id,
       ownerKind: 'character',
       sighting,
+      memory,
     }
   }
 
@@ -238,6 +251,7 @@ const loadSharedShip = async (itemId: string, share?: string, token?: string): P
     ownerId: String(corporationId),
     ownerKind: 'corporation',
     sighting,
+    memory,
   }
 }
 

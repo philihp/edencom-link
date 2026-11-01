@@ -401,9 +401,18 @@ serves, as a section called "Writing a ship's memory":
 On `/ship/[itemId]`, a **Memory** panel below the fitting stack renders the
 markdown with raw HTML disabled, and opens links with
 `rel="nofollow noopener"`. The panel shows "written N times, last on …", and
-when no memory exists it shows nothing.
+when no memory exists it shows nothing. **As built**, images are not drawn
+either (`disallowedElements: ['img']`, unwrapped to their alt text): an image
+URL in a text an AI wrote would send every reader's address to whoever hosts
+it. "Written N times" counts the versions up to the one shown, so a dead
+hull's link never counts a buyer's later writes (`select.ts`, tested).
 
-- **The holder** sees the hull's memory, read on the cookie session.
+- **The holder** sees the hull's memory, read on the cookie session. **A
+  signed-in share recipient** opening the plain `/ship/[itemId]` (no
+  `?share=`) reads the hull's row through the audience policy but holds
+  nothing, so that read is empty for them; the page then reads the memory
+  on the service role, since the hull row having come through RLS is the
+  proof a share reaches them — the same answer the share loader gives.
 - **A share recipient** sees the same memory, read through `sharedShip.ts` on
   the service role. That loader already resolved the share, so it stays the
   one gate. A hull has only one memory, so there is no question of whose to
@@ -422,9 +431,9 @@ The Share dialog on a hull gains one line when a memory exists: "This ship's
 memory is shown to everyone this reaches." The Memory panel itself carries a
 standing note: "Goes with the ship if you sell it."
 
-Markdown rendering needs a dependency, because the repo has no markdown
-renderer today. PR 5 picks one that is safe by default with no raw-HTML pass,
-for example `react-markdown` without `rehype-raw`.
+Markdown rendering needs a dependency, because the repo had no markdown
+renderer. PR 5 added `react-markdown` (10.x) without `rehype-raw`, so raw
+HTML is never rendered, with `skipHtml` so its text is dropped too.
 
 ## PRs
 
@@ -452,7 +461,8 @@ for example `react-markdown` without `rehype-raw`.
    wrote every item at once, and heartbeats are not kept forever.
 4. **`remember_ship` and the skill section.**
 5. **Display.** The Memory panel, the share-loader read, the `show_as_main`
-   rule, the Share-dialog line, and the markdown dependency.
+   rule, the Share-dialog line, and the markdown dependency. Built
+   2026-11-01.
 6. **Reassembly.** First the id measurement. Then `item_memory_pack`,
    `carried_from_item_id`, the fold `src/jobs/reassembly.js`, the post-reconcile
    step in both asset extracts, `inherit_from`, and the dossier walking the
