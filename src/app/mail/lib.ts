@@ -5,11 +5,19 @@
 // that is used once, so a client that lost a response can retry without the
 // mail going out twice.
 //
-// No page on the site calls this. Its callers are `pnpm run mail-send`
-// (src/mailSend.ts) and the MCP `send_mail` tool (src/app/api/mcp/
-// mailTools.ts). Both hand it a Caller on the service role (the CLI builds
-// one, the tool takes callerForUser's), so every query below scopes itself
-// to the caller's registrations by hand.
+// Two verbs (docs/eve-mail.md "Approval on the website"):
+//
+//   enqueueMail  — validate the draft and hold it on the site as a 'queued'
+//                  mail_send_log row. Nothing reaches ESI. What the MCP
+//                  `send_mail` tool (src/app/api/mcp/mailTools.ts) does, and
+//                  all it does: a person sends the queue later, by hand.
+//   sendMail     — the real send: log 'pending', call ESI, log ok/error.
+//                  Called by `pnpm run mail-send` (src/mailSend.ts) for a
+//                  fresh draft, and through sendQueuedMail for a queued row.
+//
+// No page on the site calls either. Every caller hands over a Caller on the
+// service role (the CLI builds one, the tool takes callerForUser's), so every
+// query below scopes itself to the caller's registrations by hand.
 //
 // Imports are relative with extensions, and the fittings types `import type`
 // only, so the CLI can run this file under plain `node` (type stripping) as
@@ -18,11 +26,25 @@
 import type { Caller, Failure, Registration } from '../api/fittings/lib.ts'
 
 import { sendMail as esiSendMail } from '../../esi.js'
-import { type MailDraft, type ValidDraft, validateDraft } from '../../mailCompose.ts'
+import { type MailDraft, type Recipient, type ValidDraft, validateDraft } from '../../mailCompose.ts'
 
 export const SEND_SCOPE = 'esi-mail.send_mail.v1'
 
 export type SendOutcome = { ok: true; mailId: number; logId: number } | Failure
+export type EnqueueOutcome = { ok: true; logId: number; requestId: string } | Failure
+
+/** One row of the queue: a mail a person still has to send. */
+export type QueuedMail = {
+  id: number
+  registration_id: string
+  request_id: string
+  recipients: Recipient[]
+  subject: string
+  body: string
+  approved_cost: number
+  source: string
+  created_at: string
+}
 
 const failure = (status: number, error: string, detail?: Record<string, unknown>): Failure => ({
   status,
@@ -113,10 +135,32 @@ const conflict = (requestId: string, spent: SpentRequest): Failure =>
     ...(spent?.status ? { previous_status: spent.status } : {}),
   })
 
-// Open the mail_send_log row and hand back its closer. The insert is the
-// point: the draft is on our side before CCP has it, so a crash after this
-// leaves a 'pending' row saying exactly what may or may not have gone out.
-const openLog = async (caller: Caller, registration: Registration, draft: ValidDraft, source: string) => {
+// The closer of one mail_send_log row: the send's outcome, written once.
+const closerOf = (caller: Caller, id: number) => {
+  const close = async (patch: { status: 'ok'; mail_id: number } | { status: 'error'; error: string }) => {
+    await caller.supabase
+      .from('mail_send_log')
+      .update({ ...patch, finished_at: new Date().toISOString() })
+      .eq('id', id)
+  }
+  return {
+    id,
+    succeeded: (mailId: number) => close({ status: 'ok', mail_id: mailId }),
+    failed: (message: string) => close({ status: 'error', error: message.slice(0, 1000) }),
+  }
+}
+
+// Open the mail_send_log row. The insert is the point: the draft is on our
+// side before CCP has it, so a crash after this leaves a 'pending' row saying
+// exactly what may or may not have gone out — or a 'queued' one that is simply
+// still waiting for a person.
+const openLog = async (
+  caller: Caller,
+  registration: Registration,
+  draft: ValidDraft,
+  source: string,
+  status: 'queued' | 'pending'
+) => {
   const { data, error } = await caller.supabase
     .from('mail_send_log')
     .insert({
@@ -128,7 +172,7 @@ const openLog = async (caller: Caller, registration: Registration, draft: ValidD
       body: draft.body,
       approved_cost: draft.approvedCost,
       source,
-      status: 'pending',
+      status,
     })
     .select('id')
     .single<{ id: number }>()
@@ -136,23 +180,72 @@ const openLog = async (caller: Caller, registration: Registration, draft: ValidD
   // any read before it, is what makes the id use-once under a race.
   if (error?.code === '23505') return 'taken' as const
   if (error || !data) throw new Error(`mail_send_log insert failed: ${error?.message ?? 'no row'}`)
-
-  const close = async (patch: { status: 'ok'; mail_id: number } | { status: 'error'; error: string }) => {
-    await caller.supabase
-      .from('mail_send_log')
-      .update({ ...patch, finished_at: new Date().toISOString() })
-      .eq('id', data.id)
-  }
-  return {
-    id: data.id,
-    succeeded: (mailId: number) => close({ status: 'ok', mail_id: mailId }),
-    failed: (message: string) => close({ status: 'error', error: message.slice(0, 1000) }),
-  }
+  return data.id
 }
 
 // ESI's CSPA refusal. Reported, never retried with a higher approved_cost:
 // spending the player's ISK is a decision only the caller makes, explicitly.
 const isCspaRefusal = (e: unknown) => (e as { status?: number })?.status === 520
+
+// The one place ESI is called: a 'pending' row exists, the draft is valid,
+// the character is the caller's. Closes the row with the outcome.
+const deliver = async (
+  caller: Caller,
+  registration: Registration,
+  draft: ValidDraft,
+  logId: number
+): Promise<SendOutcome> => {
+  const log = closerOf(caller, logId)
+  const token = await sendToken(caller, registration)
+  if ('error' in token) {
+    await log.failed(token.error)
+    return token
+  }
+
+  let mailId: number
+  try {
+    mailId = await esiSendMail(token.access_token, registration.character_id, {
+      subject: draft.subject,
+      body: draft.body,
+      recipients: draft.recipients,
+      approved_cost: draft.approvedCost,
+    })
+  } catch (e) {
+    const message = (e as Error).message
+    await log.failed(message)
+    return isCspaRefusal(e)
+      ? failure(
+          402,
+          `EVE refused the mail: a recipient's CSPA charge exceeds the approved ${draft.approvedCost} ISK. Nothing was retried; send again under a new request id with a higher approved cost if that is intended.`,
+          { log_id: log.id }
+        )
+      : failure(502, `EVE refused the mail: ${message}`, { log_id: log.id })
+  }
+
+  if (!Number.isSafeInteger(mailId) || mailId <= 0) {
+    // ESI said 201 but not with a mail id. The mail almost certainly went out,
+    // so the row must not read as a clean failure either.
+    await log.failed(`ESI accepted the send but answered with no mail id (${String(mailId)}).`)
+    return failure(502, 'EVE accepted the mail but did not say which it was.', { log_id: log.id })
+  }
+
+  await log.succeeded(mailId)
+  return { ok: true, mailId, logId: log.id }
+}
+
+// Own character and a valid draft, or the Failure that says why not. The
+// gate both verbs share.
+const admit = (
+  caller: Caller,
+  registrationId: string,
+  draft: MailDraft
+): { registration: Registration; draft: ValidDraft } | Failure => {
+  const registration = caller.registrations.find((r) => r.registration_id === registrationId)
+  if (!registration) return failure(404, `No character ${registrationId} on this account.`)
+  const verdict = validateDraft(draft)
+  if (!verdict.ok) return failure(400, 'The draft cannot be sent.', { reasons: verdict.reasons })
+  return { registration, draft: verdict.draft }
+}
 
 /**
  * Send one mail as `registrationId`, which must be one of the caller's own
@@ -171,48 +264,88 @@ export const sendMail = async (
   draft: MailDraft,
   source = 'cli'
 ): Promise<SendOutcome> => {
-  const registration = caller.registrations.find((r) => r.registration_id === registrationId)
-  if (!registration) return failure(404, `No character ${registrationId} on this account.`)
+  const admitted = admit(caller, registrationId, draft)
+  if ('error' in admitted) return admitted
 
-  const verdict = validateDraft(draft)
-  if (!verdict.ok) return failure(400, 'The draft cannot be sent.', { reasons: verdict.reasons })
+  const logId = await openLog(caller, admitted.registration, admitted.draft, source, 'pending')
+  if (logId === 'taken') return conflict(admitted.draft.requestId, await spentRequest(caller, admitted.draft.requestId))
 
-  const log = await openLog(caller, registration, verdict.draft, source)
-  if (log === 'taken') return conflict(verdict.draft.requestId, await spentRequest(caller, verdict.draft.requestId))
+  return deliver(caller, admitted.registration, admitted.draft, logId)
+}
 
-  const token = await sendToken(caller, registration)
-  if ('error' in token) {
-    await log.failed(token.error)
-    return token
+/**
+ * Hold one mail on the site for a person to send later. Same gate as sendMail
+ * — own character, valid draft, use-once request id — plus the send grant,
+ * checked from our own token row so the queue never holds a mail nobody could
+ * send. Then the whole draft goes into mail_send_log as 'queued', and the
+ * call is over: no token refresh, no ESI, nothing in anyone's inbox.
+ */
+export const enqueueMail = async (
+  caller: Caller,
+  registrationId: string,
+  draft: MailDraft,
+  source = 'mcp'
+): Promise<EnqueueOutcome> => {
+  const admitted = admit(caller, registrationId, draft)
+  if ('error' in admitted) return admitted
+
+  if (!(await sendGrantHeld(caller, registrationId))) {
+    return failure(
+      403,
+      `${nameOf(admitted.registration)} has not granted permission to send mail. Turn on "Send in-game mail" under /settings/grants, then re-auth the character on /account/registrations.`
+    )
   }
 
-  let mailId: number
-  try {
-    mailId = await esiSendMail(token.access_token, registration.character_id, {
-      subject: verdict.draft.subject,
-      body: verdict.draft.body,
-      recipients: verdict.draft.recipients,
-      approved_cost: verdict.draft.approvedCost,
-    })
-  } catch (e) {
-    const message = (e as Error).message
-    await log.failed(message)
-    return isCspaRefusal(e)
-      ? failure(
-          402,
-          `EVE refused the mail: a recipient's CSPA charge exceeds the approved ${verdict.draft.approvedCost} ISK. Nothing was retried; send again under a new request id with a higher approved cost if that is intended.`,
-          { log_id: log.id }
-        )
-      : failure(502, `EVE refused the mail: ${message}`, { log_id: log.id })
+  const logId = await openLog(caller, admitted.registration, admitted.draft, source, 'queued')
+  if (logId === 'taken') return conflict(admitted.draft.requestId, await spentRequest(caller, admitted.draft.requestId))
+
+  return { ok: true, logId, requestId: admitted.draft.requestId }
+}
+
+/** The caller's mails still waiting to be sent, oldest first. */
+export const listQueuedMail = async (caller: Caller): Promise<QueuedMail[]> => {
+  const { data, error } = await caller.supabase
+    .from('mail_send_log')
+    .select('id, registration_id, request_id, recipients, subject, body, approved_cost, source, created_at')
+    .eq('user_id', caller.userId)
+    .eq('status', 'queued')
+    .order('created_at', { ascending: true })
+    .returns<QueuedMail[]>()
+  if (error) throw new Error(`mail_send_log read failed: ${error.message}`)
+  return data ?? []
+}
+
+/**
+ * Send one queued mail, by its mail_send_log id. The row is claimed by
+ * flipping it queued → pending in one conditional update, so two people
+ * sending the same queue at once cannot both deliver it: the second finds no
+ * queued row and is told so. Then the ESI call, exactly as sendMail does it.
+ */
+export const sendQueuedMail = async (caller: Caller, logId: number): Promise<SendOutcome> => {
+  const { data: claimed, error } = await caller.supabase
+    .from('mail_send_log')
+    .update({ status: 'pending' })
+    .eq('id', logId)
+    .eq('user_id', caller.userId)
+    .eq('status', 'queued')
+    .select('id, registration_id, request_id, recipients, subject, body, approved_cost, source, created_at')
+    .maybeSingle<QueuedMail>()
+  if (error) return failure(500, `Claiming queued mail ${logId} failed: ${error.message}`)
+  if (!claimed) return failure(404, `No queued mail ${logId} on this account (already sent, or never queued).`)
+
+  const admitted = admit(caller, claimed.registration_id, {
+    requestId: claimed.request_id,
+    recipients: claimed.recipients,
+    subject: claimed.subject,
+    body: claimed.body,
+    approvedCost: Number(claimed.approved_cost),
+  })
+  if ('error' in admitted) {
+    // Queued under rules that have since tightened, or a character that left
+    // the account. The row is pending now, so close it rather than strand it.
+    await closerOf(caller, logId).failed(admitted.error)
+    return admitted
   }
 
-  if (!Number.isSafeInteger(mailId) || mailId <= 0) {
-    // ESI said 201 but not with a mail id. The mail almost certainly went out,
-    // so the row must not read as a clean failure either.
-    await log.failed(`ESI accepted the send but answered with no mail id (${String(mailId)}).`)
-    return failure(502, 'EVE accepted the mail but did not say which it was.', { log_id: log.id })
-  }
-
-  await log.succeeded(mailId)
-  return { ok: true, mailId, logId: log.id }
+  return deliver(caller, admitted.registration, admitted.draft, logId)
 }

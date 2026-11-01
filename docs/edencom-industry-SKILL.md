@@ -24,8 +24,9 @@ of each compressed gas, four gases were cheaper raw, and the error cost about
 ## What this server is
 
 EDENCOM Link extracts EVE Online data and saves it in a database. The tools of
-this server read that database. The tools never call ESI, with one exception:
-`send_mail` enqueues an EVE mail for delivery through ESI (see "EVE mail").
+this server read that database. The tools never call ESI. `send_mail` does not
+either: it queues a mail on the site for a person to send later (see "EVE
+mail").
 
 Extract jobs read the EVE ESI endpoints for each registered character and
 corporation: assets, blueprints, industry jobs, orders, wallets, skills,
@@ -650,8 +651,17 @@ the user's private data: no share, Data Link or GraphQL field shows it.
 
 ### Sending mail
 
-`send_mail` enqueues an EVE mail for delivery as one of the user's
-characters. The call hands the draft to the site's mail queue, which delivers it to the recipients in the game.
+`send_mail` queues an EVE mail on the site, to be sent later as one of the
+user's characters. **It does not send the mail.** A person reviews the queue
+on edencom.link and sends each mail by hand, or discards it. There is no
+schedule for that review.
+
+- Tell the user the mail is **queued for review**. Do not say that it was
+  sent, that it is on its way, or that it will arrive by a time. You cannot
+  know when, or if, a person sends it.
+- Because the call sends nothing, you do not need the user's confirmation
+  before you call it. A mistaken call costs a queued draft that the person
+  throws away.
 
 - A recipient is a character, a corporation, an alliance or a mailing list.
   Give its exact name, or its EVE id and type. The tool knows the names of the
@@ -659,15 +669,15 @@ characters. The call hands the draft to the site's mail queue, which delivers it
   alliances in the site's directories, and of the sender's own mailing lists.
   It refuses any other name. Then ask the user for the id. Do not guess one.
 - The character needs the opt-in "Send in-game mail" grant. Without it, the
-  preview says `can_send: false`.
+  preview says `can_queue: false`, and the call refuses to queue.
 - Keep `approved_cost` at 0 unless the user gives you a CSPA charge to pay.
-  If a recipient charges more, EVE refuses the mail, and the tool does not
-  try again.
+  It applies when a person sends the mail: if a recipient charges more, EVE
+  refuses the mail then, and nobody tries again.
 - If a call gives no answer, call again with the same `request_id`. A used
   `request_id` is refused, so the mail is not queued two times. For a new
   mail, use a new `request_id`.
-- The site logs each mail in full before it is queued. The sent mail comes
-  into the copy under the Sent label on the next extract.
+- The site logs each mail in full when it is queued. After a person sends
+  it, the mail comes into the copy under the Sent label on a later extract.
 
 ## Spreadsheets
 
@@ -720,9 +730,9 @@ see them only in these ways:
 
 ## Tools that write
 
-Four tools change data. `send_mail` changes the game: it enqueues an EVE mail
-for delivery as one of the user's characters (see "Sending mail"). The other
-three change only the user's own rows on this site:
+Four tools change data. None of them changes the game. `send_mail` queues an
+EVE mail on the site for a person to send later (see "Sending mail"). The
+other three change only the user's own rows on this site:
 
 - `create_link` saves a Data Link, and can share it.
 - `update_link` changes a Data Link. Its audience sees the change the next
@@ -752,8 +762,8 @@ three change only the user's own rows on this site:
 - Balances: `wallet_summary`. Trades: `search_transactions`. Open orders:
   `list_market_orders`. The user's own contracts: `run_query` on `contracts`.
   Anyone's public contracts: `search_public_contracts`.
-- EVE mail: `list_mail` finds it, `read_mail` reads it, `send_mail` sends
-  one (see "EVE mail").
+- EVE mail: `list_mail` finds it, `read_mail` reads it, `send_mail` queues
+  one for a person to send later (see "EVE mail").
 - Characters, ships, clones: `list_clones`. Saved fits and the archive:
   `list_fittings`. Structures: `list_structures`.
 - Mercenary dens: `list_mercenary_dens`. Planets and planet types:

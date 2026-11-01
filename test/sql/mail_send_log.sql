@@ -39,7 +39,7 @@ create table public.mail_send_log (
   approved_cost   bigint not null default 0,
   mail_id         bigint,
   source          text not null default 'cli',
-  status          text not null check (status in ('pending', 'ok', 'error')),
+  status          text not null check (status in ('queued', 'pending', 'ok', 'error')),
   error           text,
   created_at      timestamptz not null default now(),
   finished_at     timestamptz
@@ -138,7 +138,7 @@ do $$
 declare
   st text;
 begin
-  foreach st in array array['pending', 'ok', 'error'] loop
+  foreach st in array array['queued', 'pending', 'ok', 'error'] loop
     update public.mail_send_log set status = st
       where request_id = '22222222-2222-2222-2222-222222222222';
     begin
@@ -167,13 +167,37 @@ end $$;
 insert into public.mail_send_log (user_id, registration_id, request_id, recipients, subject, body, status)
 values (:'alice', :'areg', '55555555-5555-5555-5555-555555555555', '[]', 'next', 'next', 'pending');
 
--- ── The status is one of three ───────────────────────────────────────────
+-- ── A queued row is accepted, and the owner reads it like any other ──────
+-- MCP send_mail stores the draft 'queued' and calls nothing; a person sends it
+-- later by hand. The owner can see what is waiting; nobody else can.
+insert into public.mail_send_log (user_id, registration_id, request_id, recipients, subject, body, source, status)
+values (:'alice', :'areg', '77777777-7777-7777-7777-777777777777', '[]', 'later', 'later', 'mcp', 'queued');
+set local role authenticated;
+select set_config('test.uid', :'alice', true);
+do $$
+declare
+  n int;
+begin
+  select count(*) into n from public.mail_send_log where status = 'queued';
+  assert n = 1, format('alice should read her one queued mail, read %s', n);
+end $$;
+select set_config('test.uid', :'bob', true);
+do $$
+declare
+  n int;
+begin
+  select count(*) into n from public.mail_send_log where status = 'queued';
+  assert n = 0, format('bob read %s of alice''s queued mails', n);
+end $$;
+reset role;
+
+-- ── The status is one of four ────────────────────────────────────────────
 do $$
 begin
   insert into public.mail_send_log (user_id, registration_id, request_id, recipients, subject, body, status)
   values ('a0000000-0000-0000-0000-000000000000', '00000000-0000-0000-0000-0000000000aa',
           '66666666-6666-6666-6666-666666666666', '[]', 's', 'b', 'sent');
-  raise exception 'a status outside pending/ok/error was accepted';
+  raise exception 'a status outside queued/pending/ok/error was accepted';
 exception when check_violation then
   null;
 end $$;
