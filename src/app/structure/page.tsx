@@ -121,20 +121,48 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
   // corporation, so it covers only what we scan. Everything else we USE reaches
   // us as a bare facility id on one of our own industry jobs, named afterwards
   // from the public `universe_structure` directory.
-  const { data: structures } = await supabase
-    .from('corp_structure')
-    .select('structure_id, corporation_id, type_id, system_id, name, state, unanchors_at, services, last_seen_at')
-    .order('corporation_id', { ascending: true })
-    .order('structure_id', { ascending: true })
+  //
+  // Everything that needs only the session is asked for at once: the scanned
+  // roster, our registrations, every job we can see (the slowest read on the
+  // page, so it starts first), the pins, the tax rates and the share toggles.
+  // The page used to await these one after another, and every later stage
+  // waited on all of them — a dozen round trips in series before the roster
+  // was even known.
+  const [
+    { data: structures },
+    { data: ownRegistrations },
+    ownJobStructureIds,
+    { data: favoriteRows },
+    taxRates,
+    allianceShareDefaults,
+  ] = await Promise.all([
+    supabase
+      .from('corp_structure')
+      .select('structure_id, corporation_id, type_id, system_id, name, state, unanchors_at, services, last_seen_at')
+      .order('corporation_id', { ascending: true })
+      .order('structure_id', { ascending: true }),
+    // Our own corporations, from our own registrations (RLS-scoped to the
+    // caller). A structure any of them owns is a structure we own — including one
+    // owned by a corp none of the installing characters are in, and including one
+    // we can't scan because no linked character is a director there.
+    supabase.from('registration').select('id, corporation_id'),
+    // Every player structure one of our own jobs ran in, from the rollup
+    // (./measures.ts) — discovery of the structures we use but don't scan.
+    fetchJobStructureIds(supabase),
+    // Tier 1 of the page (docs/structure-universe/design.md): the caller's pinned
+    // structures sort above everything else, in their own `position` order.
+    supabase.from('structure_favorite').select('structure_id, position').order('position', { ascending: true }),
+    // The two rates behind the cost-avoidance figures live on /settings/tax.
+    fetchTaxRates(supabase, user.id),
+    // The Directors-only "share all structures with <alliance>" toggles, one per
+    // directed corporation in an alliance (docs/sharing-layer/12-structure-share.md):
+    // the seeded default, visible and revocable.
+    fetchAllianceShareDefaults(supabase),
+  ])
 
   const scannedList = map((s: Structure): Structure => ({ ...s, scanned: true }), (structures ?? []) as Structure[])
   const scannedIds = new Set(map((s: Structure) => String(s.structure_id), scannedList))
 
-  // Our own corporations, from our own registrations (RLS-scoped to the
-  // caller). A structure any of them owns is a structure we own — including one
-  // owned by a corp none of the installing characters are in, and including one
-  // we can't scan because no linked character is a director there.
-  const { data: ownRegistrations } = await supabase.from('registration').select('id, corporation_id')
   const ownRegistrationIds = new Set(map((r: { id: string }) => r.id, ownRegistrations ?? []))
   const ownCorporationIds = new Set(
     map(
@@ -150,23 +178,49 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
   // drained for it. NPC stations are filtered out by the id floor, and
   // anything already in corp_structure is dropped so a structure is never
   // listed twice.
-  const externalIds = reject((id: string) => scannedIds.has(id), await fetchJobStructureIds(supabase))
+  const externalIds = reject((id: string) => scannedIds.has(id), ownJobStructureIds)
 
-  // What ESI tells a visitor: a name, a system, a type and an owner. Asked in
-  // batches, because a long `in` list is a URL a proxy is entitled to refuse —
-  // and because a select is capped at max_rows like any other.
-  const directoryBatches = externalIds.length
-    ? await Promise.all(
-        map(
-          (batch: string[]) =>
-            supabase
-              .from('universe_structure')
-              .select('structure_id, name, system_id, type_id, owner_corporation_id, resolved_at')
-              .in('structure_id', batch.map(Number)),
-          splitEvery(RPC_BATCH, externalIds)
-        )
+  // Fuel timers live in corp_structure_status now (own-corp only). RLS returns a
+  // row only for structures the caller's corp owns, so an alliance-mate's
+  // structure that's visible via corp_structure simply has no fuel here.
+  // Scanned ids only: both tables are own-corp data that exists precisely
+  // because a director pulled it, so asking about a structure we don't scan can
+  // only ever come back empty — and would pad the URL with every id discovered
+  // from a job.
+  const scannedStructureIds = map((s: Structure) => Number(s.structure_id), scannedList)
+
+  // Second stage: everything that needs the scanned list or the jobs, and
+  // nothing further — the public directory for the structures we only use,
+  // and the fuel and rigs of the ones we scan.
+  const [directoryBatches, { data: statusRows }, { data: rigRows }] = await Promise.all([
+    // What ESI tells a visitor: a name, a system, a type and an owner. Asked in
+    // batches, because a long `in` list is a URL a proxy is entitled to refuse —
+    // and because a select is capped at max_rows like any other.
+    Promise.all(
+      map(
+        (batch: string[]) =>
+          supabase
+            .from('universe_structure')
+            .select('structure_id, name, system_id, type_id, owner_corporation_id, resolved_at')
+            .in('structure_id', batch.map(Number)),
+        splitEvery(RPC_BATCH, externalIds)
       )
-    : []
+    ),
+    scannedStructureIds.length
+      ? supabase
+          .from('corp_structure_status')
+          .select('structure_id, fuel_expires')
+          .in('structure_id', scannedStructureIds)
+      : Promise.resolve({ data: [] as Array<{ structure_id: number | string; fuel_expires: string | null }> }),
+    // Rigs fitted to each structure (pulled from corp assets by the corp-assets job).
+    scannedStructureIds.length
+      ? supabase
+          .from('corp_structure_rig')
+          .select('structure_id, location_flag, type_id')
+          .in('structure_id', scannedStructureIds)
+          .order('location_flag', { ascending: true })
+      : Promise.resolve({ data: [] as RigRow[] }),
+  ])
   const directory = new Map<string, DirectoryRow>(
     map(
       (r: DirectoryRow) => [String(r.structure_id), r] as [string, DirectoryRow],
@@ -198,9 +252,7 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
     }, externalIds)
   )
 
-  // Owner names for the structures we can't scan — the one thing a tile with no
-  // services, rigs or fuel timer can still lead with. From the world-readable
-  // corporation directory the character-directory job maintains.
+  // The owners of the structures we can't scan, named in the third stage below.
   const externalOwnerIds = uniq(
     map(
       Number,
@@ -210,23 +262,12 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
       )
     )
   ) as number[]
-  const { data: externalOwners } = externalOwnerIds.length
-    ? await supabase.from('corporation').select('corporation_id, name').in('corporation_id', externalOwnerIds)
-    : { data: [] }
-  const ownerNames = new Map<string, string>(
-    chain(
-      (c: { corporation_id: number | string; name: string | null }) =>
-        c.name != null ? [[String(c.corporation_id), c.name] as [string, string]] : [],
-      (externalOwners ?? []) as Array<{ corporation_id: number | string; name: string | null }>
-    )
-  )
+  // Asked for alongside the rest of the per-roster lookups below.
+  const fetchExternalOwners = () =>
+    externalOwnerIds.length
+      ? supabase.from('corporation').select('corporation_id, name').in('corporation_id', externalOwnerIds)
+      : Promise.resolve({ data: [] as Array<{ corporation_id: number | string; name: string | null }> })
 
-  // Tier 1 of the page (docs/structure-universe/design.md): the caller's pinned
-  // structures sort above everything else, in their own `position` order.
-  const { data: favoriteRows } = await supabase
-    .from('structure_favorite')
-    .select('structure_id, position')
-    .order('position', { ascending: true })
   const favoritePosition = new Map<string, number>(
     map(
       (r: { structure_id: number | string; position: number }) =>
@@ -261,28 +302,76 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
   // one flat list; the blocks above only decide where each tile renders.
   const list = chain((block) => block.structures, blocks)
 
-  // The two rates behind the cost-avoidance figures live on /settings/tax.
-  const taxRates = await fetchTaxRates(supabase, user.id)
+  // Anchor for the relative fuel countdowns. Computed once in the server
+  // render so every tile agrees and hydration has fixed text to adopt.
+  const now = new Date()
 
-  // The Directors-only "share all structures with <alliance>" toggles, one per
-  // directed corporation in an alliance (docs/sharing-layer/12-structure-share.md):
-  // the seeded default, visible and revocable.
-  const allianceShareDefaults = await fetchAllianceShareDefaults(supabase)
+  // A structure the directory hasn't resolved has no system and no type, and
+  // `Number(null)` is 0 — a perfectly finite id every one of these resolvers
+  // would dutifully go looking for. Drop the nulls instead.
+  const ids = (pick: (s: Structure) => number | null) => uniq(map(Number, reject(isNil, map(pick, list)))) as number[]
 
-  // Fuel timers live in corp_structure_status now (own-corp only). RLS returns a
-  // row only for structures the caller's corp owns, so an alliance-mate's
-  // structure that's visible via corp_structure simply has no fuel here.
-  // Scanned ids only: both tables are own-corp data that exists precisely
-  // because a director pulled it, so asking about a structure we don't scan can
-  // only ever come back empty — and would pad the URL with every id discovered
-  // from a job.
-  const scannedStructureIds = map((s: Structure) => Number(s.structure_id), scannedList)
-  const { data: statusRows } = scannedStructureIds.length
-    ? await supabase
-        .from('corp_structure_status')
-        .select('structure_id, fuel_expires')
-        .in('structure_id', scannedStructureIds)
-    : { data: [] }
+  const rigList = (rigRows ?? []) as RigRow[]
+
+  // Third stage: every lookup keyed on the final roster, together. None of
+  // these depends on another — names, icons, indices and the ledger each want
+  // only `list` (and the jobs already in hand) — so they overlap rather than
+  // queue; the measures fold is the longest of them and runs the whole time.
+  const [
+    { data: externalOwners },
+    rigTypeNames,
+    serviceIcons,
+    systemNames,
+    structureTypeNames,
+    indexesBySystem,
+    indexHistoryBySystem,
+    measures,
+  ] = await Promise.all([
+    fetchExternalOwners(),
+    fetchTypeNames(map((r: RigRow) => Number(r.type_id), rigList)),
+    // Icons for the Services chips: ESI names services rather than modules, so
+    // each known name resolves to its providing Standup module's type id through
+    // the SDE (./serviceIcons.ts); an unknown name keeps a bare chip.
+    resolveServiceIcons(uniq(chain((st: Structure) => map((svc) => svc.name, st.services ?? []), list))),
+    fetchSystemNames(ids((s) => s.system_id)),
+    fetchTypeNames(ids((s) => s.type_id)),
+    // Latest industry cost indices for the systems we hold structures in. We only
+    // show, per structure, the activities its fitted service modules enable.
+    fetchLatestSystemIndexes(
+      supabase,
+      ids((s) => s.system_id)
+    ),
+    // The same window that drives the revenue footer also scopes the index
+    // sparklines. indexBucketHours widens the bucket for longer windows so the
+    // point count stays sane on a 100px sparkline, and names one of the widths
+    // the bucketed view materializes.
+    fetchSystemIndexHistory(
+      supabase,
+      ids((s) => s.system_id),
+      { days: windowDays, bucketHours: indexBucketHours(windowDays) }
+    ),
+    // The tiles' figures, the same sum of rollup days /structure/[structureId]
+    // runs for one structure (./measures.ts).
+    loadStructureMeasures(supabase, {
+      list,
+      ownRegistrationIds,
+      ownCorporationIds,
+      windowStart,
+      taxRates,
+    }),
+  ])
+
+  // Owner names for the structures we can't scan — the one thing a tile with no
+  // services, rigs or fuel timer can still lead with. From the world-readable
+  // corporation directory the character-directory job maintains.
+  const ownerNames = new Map<string, string>(
+    chain(
+      (c: { corporation_id: number | string; name: string | null }) =>
+        c.name != null ? [[String(c.corporation_id), c.name] as [string, string]] : [],
+      (externalOwners ?? []) as Array<{ corporation_id: number | string; name: string | null }>
+    )
+  )
+
   const fuelByStructure = new Map<string, string | null>(
     ((statusRows ?? []) as Array<{ structure_id: number | string; fuel_expires: string | null }>).map((r) => [
       String(r.structure_id),
@@ -293,17 +382,6 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
     st.fuel_expires = fuelByStructure.get(String(st.structure_id)) ?? null
   }, list)
 
-  // Rigs fitted to each structure (pulled from corp assets by the corp-assets job).
-  const { data: rigRows } = scannedStructureIds.length
-    ? await supabase
-        .from('corp_structure_rig')
-        .select('structure_id, location_flag, type_id')
-        .in('structure_id', scannedStructureIds)
-        .order('location_flag', { ascending: true })
-    : { data: [] }
-
-  const rigList = (rigRows ?? []) as RigRow[]
-  const rigTypeNames = await fetchTypeNames(map((r: RigRow) => Number(r.type_id), rigList))
   // Push-mutated per structure rather than re-spread per rig: the order the
   // select asked for is the order they render in.
   const rigsByStructure = reduce(
@@ -319,50 +397,6 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
     rigList
   )
 
-  // Icons for the Services chips: ESI names services rather than modules, so
-  // each known name resolves to its providing Standup module's type id through
-  // the SDE (./serviceIcons.ts); an unknown name keeps a bare chip.
-  const serviceIcons = await resolveServiceIcons(
-    uniq(chain((st: Structure) => map((svc) => svc.name, st.services ?? []), list))
-  )
-
-  // Anchor for the relative fuel countdowns. Computed once in the server
-  // render so every tile agrees and hydration has fixed text to adopt.
-  const now = new Date()
-
-  // A structure the directory hasn't resolved has no system and no type, and
-  // `Number(null)` is 0 — a perfectly finite id every one of these resolvers
-  // would dutifully go looking for. Drop the nulls instead.
-  const ids = (pick: (s: Structure) => number | null) => uniq(map(Number, reject(isNil, map(pick, list)))) as number[]
-
-  const systemNames = await fetchSystemNames(ids((s) => s.system_id))
-  const structureTypeNames = await fetchTypeNames(ids((s) => s.type_id))
-
-  // Latest industry cost indices for the systems we hold structures in. We only
-  // show, per structure, the activities its fitted service modules enable.
-  const indexesBySystem = await fetchLatestSystemIndexes(
-    supabase,
-    ids((s) => s.system_id)
-  )
-  // The same window that drives the revenue footer also scopes the index
-  // sparklines. indexBucketHours widens the bucket for longer windows so the
-  // point count stays sane on a 100px sparkline, and names one of the widths
-  // the bucketed view materializes.
-  const indexHistoryBySystem = await fetchSystemIndexHistory(
-    supabase,
-    ids((s) => s.system_id),
-    { days: windowDays, bucketHours: indexBucketHours(windowDays) }
-  )
-
-  // The tiles' figures, the same sum of rollup days /structure/[structureId]
-  // runs for one structure (./measures.ts).
-  const measures = await loadStructureMeasures(supabase, {
-    list,
-    ownRegistrationIds,
-    ownCorporationIds,
-    windowStart,
-    taxRates,
-  })
   const { ledger, avoidance, eiv, eivSkipped, installersByStructure } = measures
   const taxesPaidTotal = sum([...ledger.taxesPaidByStructure.values()])
   const unaccounted = ledger.unaccounted

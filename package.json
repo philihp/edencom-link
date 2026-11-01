@@ -18,7 +18,7 @@
     "graphql": "^17.0.2",
     "graphql-yoga": "^6.0.0",
     "mcp-handler": "^2.1.0",
-    "next": "16.4.2",
+    "next": "16.4.3",
     "protobufjs": "^8.7.0",
     "ramda": "^0.32.0",
     "react": "19.3.1",
@@ -91,15 +91,15 @@
   "prettier": "@philihp/prettier-config",
   "devDependencies": {
     "@philihp/prettier-config": "1.0.0",
-    "@types/node": "26.6.5",
+    "@types/node": "26.6.6",
     "@types/ramda": "0.32.0",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "husky": "9.1.7",
     "lint-staged": "17.6.0",
-    "oxlint": "1.89.0",
+    "oxlint": "1.90.0",
     "prettier": "3.9.10",
-    "supabase": "2.121.0",
+    "supabase": "2.122.0",
     "typescript": "7.0.2"
   }
 }

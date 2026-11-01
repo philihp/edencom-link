@@ -108,8 +108,11 @@ export const loadStructureMeasures = async (supabase: Supabase, input: Structure
     ...(corporationList ? [`corporation_id.in.(${corporationList})`] : []),
   ].join(',')
 
-  const measureRows = ownerFilter
-    ? await fetchAllRows<MeasureWindowRow>((from, to) => {
+  // The four reads below depend on nothing but the structure list, so they
+  // start together and are awaited where first needed, rather than each
+  // waiting its turn behind the one before (the shape #1208 gave the old fold).
+  const measureRowsPromise = ownerFilter
+    ? fetchAllRows<MeasureWindowRow>((from, to) => {
         const query = supabase
           .from('structure_measure_day')
           .select(
@@ -126,11 +129,11 @@ export const loadStructureMeasures = async (supabase: Supabase, input: Structure
           .range(from, to)
           .returns<MeasureWindowRow[]>()
       })
-    : []
+    : Promise.resolve([] as MeasureWindowRow[])
 
   // The Characters tab: our rows and every co-tenant's at the structures on
   // the page (the view's tenant policy), asked by structure in batches.
-  const installerBatches = await Promise.all(
+  const installerBatchesPromise = Promise.all(
     map(
       (batch: string[]) =>
         fetchAllRows<InstallerWindowRow>((from, to) =>
@@ -150,8 +153,6 @@ export const loadStructureMeasures = async (supabase: Supabase, input: Structure
       splitEvery(RPC_BATCH, [...onPage])
     )
   )
-  const installerRows = chain((rows) => rows, installerBatches)
-
   // Which of our corporations we can actually read a wallet journal for.
   //
   // The recovered estimate is suppressed where the journal already bills the
@@ -164,7 +165,7 @@ export const loadStructureMeasures = async (supabase: Supabase, input: Structure
   // probe. Not scoped to the window or to industry_job_tax on purpose: the
   // question is whether the journal is ingested at all.
   const candidateCoveredCorps = uniq([...structureOwner.values()].filter((corp: string) => ownCorporationIds.has(corp)))
-  const coverageProbes = await Promise.all(
+  const coverageProbesPromise = Promise.all(
     map(async (corp: string) => {
       const { data } = await supabase
         .from('corp_wallet_journal')
@@ -174,6 +175,19 @@ export const loadStructureMeasures = async (supabase: Supabase, input: Structure
       return (data ?? []).length > 0 ? corp : null
     }, candidateCoveredCorps)
   )
+  type RegistrationRow = { id: string; name: string; character_id: number | string | null }
+  const registrationRowsPromise = supabase
+    .from('registration')
+    .select('id, name, character_id')
+    .returns<RegistrationRow[]>()
+
+  const [measureRows, installerBatches, coverageProbes, { data: registrationRows }] = await Promise.all([
+    measureRowsPromise,
+    installerBatchesPromise,
+    coverageProbesPromise,
+    registrationRowsPromise,
+  ])
+  const installerRows = chain((rows) => rows, installerBatches)
   const journalCoveredCorps = new Set(reject(isNil, coverageProbes) as string[])
   const journalCoveredStructureIds = journalCoveredStructures({ onPage, structureOwner, journalCoveredCorps })
 
@@ -192,11 +206,6 @@ export const loadStructureMeasures = async (supabase: Supabase, input: Structure
   // character directory, which maps a registration uuid to its character and
   // name and nothing more. A corporation row needs the corp's name from the
   // `corporation` directory; one missing from it falls back to a labelled id.
-  type RegistrationRow = { id: string; name: string; character_id: number | string | null }
-  const { data: registrationRows } = await supabase
-    .from('registration')
-    .select('id, name, character_id')
-    .returns<RegistrationRow[]>()
   const registrationsById = new Map(
     map(
       (r: RegistrationRow) =>

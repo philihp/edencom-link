@@ -5748,10 +5748,14 @@ create table public.corp_wallet_journal (
   primary key (corporation_id, division, entry_id)
 );
 create index corp_wallet_journal_corp_date_idx on public.corp_wallet_journal (corporation_id, date desc);
--- A job's tax entries, by the job: industry_job_tax_facility()'s probe and the
--- structure-measure rollup's per-job lookup.
+-- A job's tax entries, by the job: industry_job_tax_facility() proves the
+-- caller was taxed for a job with an `exists` probe by context_id (without
+-- this the probe scanned the journal per batch), and the structure-measure
+-- rollup looks a job's entries up the same way. Partial, since only tax
+-- entries are ever looked up by context.
 create index corp_wallet_journal_industry_tax_context_idx
-  on public.corp_wallet_journal (context_id) where ref_type = 'industry_job_tax';
+  on public.corp_wallet_journal (context_id)
+  where ref_type = 'industry_job_tax';
 
 alter table public.corp_wallet_journal enable row level security;
 create policy "Users read journal for own corps"
