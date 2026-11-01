@@ -15,6 +15,7 @@ import { registerExploreTools } from './exploreTools'
 import { registerIndustryTools } from './industryTools'
 import { registerLinkTools } from './linkTools'
 import { registerMailTools } from './mailTools'
+import { registerMemoryTools } from './memoryTools'
 import { registerPublicContractTools } from './publicContractTools'
 import { registerShippingTools } from './shippingTools'
 import { registerSkillTools } from './skillTools'
@@ -40,6 +41,7 @@ const handler = createMcpHandler(
     registerSkillTools(server)
     registerWatchedSystemTools(server)
     registerMailTools(server)
+    registerMemoryTools(server)
   },
   {
     serverInfo: { name: 'edencom-link', version: '1.0.0' },

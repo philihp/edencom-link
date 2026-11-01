@@ -543,6 +543,42 @@ For each module, give the best upgrade found: the item, where to get it
 reference price, and the percentage below the reference. Leave out the
 modules that have no upgrade at a good price.
 
+## A ship's memory
+
+A ship can carry a memory: a markdown text in the ship's own voice about
+where it came from, where it has docked, what it has carried, how it keeps
+its fuel, and who has flown it. The memory belongs to the hull. It passes to
+whoever holds the hull next, and everyone the ship is shared with reads it.
+
+`recall_ship` gives the facts to write from. Call it with the ship's item id
+or its in-game name. It answers:
+
+- The dossier: the first sighting, where the hull came from (built,
+  contracted, bought or unpacked, inferred and marked with a confidence, or
+  "predates the record" when the hull was already in the hangar at the first
+  extract), the docks and how long the ship stayed at each, the pilots, the
+  cargo, the fuel bay, the fit and the refits, and whether the hull is still
+  held. Every figure comes from samples taken every 6 hours (daily for a
+  corporation hangar). Write "at least" where the tool says so.
+- The voice: an accent from the hull's faction or race, with voice notes,
+  and a register from its hull class. Write in both.
+- The memory the ship has now, with its version id, and whether the current
+  text was written by an earlier owner.
+- Who reads the memory: every share that reaches the hull, a container above
+  it, or its place. Tell the user before you write when the ship is shared
+  publicly.
+
+The write tool, `remember_ship`, is not in this server yet. Until it is,
+give the user the text to keep. When writing:
+
+1. Keep what the old memory said unless the facts contradict it. Add, do not
+   rewrite.
+2. Never invent battles, cargo or places. Combat is not in the data.
+3. On a hull with an earlier owner, keep that owner's chapters as the ship's
+   past. Do not erase them.
+4. The memory is read by everyone the ship is shared with, and by whoever
+   owns it next. Check who that is before naming places or pilots.
+
 ## Public contracts
 
 `search_public_contracts` searches every public contract that ESI listed in
@@ -765,7 +801,8 @@ other three change only the user's own rows on this site:
 - EVE mail: `list_mail` finds it, `read_mail` reads it, `send_mail` queues
   one for a person to send later (see "EVE mail").
 - Characters, ships, clones: `list_clones`. Saved fits and the archive:
-  `list_fittings`. Structures: `list_structures`.
+  `list_fittings`. Structures: `list_structures`. What a ship knows about
+  itself, for writing its memory: `recall_ship` (see "A ship's memory").
 - Mercenary dens: `list_mercenary_dens`. Planets and planet types:
   `list_planets`.
 - Where to buy reaction gas for C-J6MT: `appraise_items` in `jita` and

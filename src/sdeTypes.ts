@@ -185,3 +185,31 @@ export const searchSdeTypes = async (query: string, limit = 25): Promise<SdeSear
   }
   return ((data ?? []) as SearchRow[]).map(rowToSearchResult)
 }
+
+// The faction a type belongs to (SDE factionID, migration 20261101090428),
+// read from sde_published_type: the ship-memory accent keys on it first, then
+// on raceID (src/app/ship/memory/accent.ts). Separate from SdeType because
+// the by-id loader reads sde_named_type, which does not carry the column, and
+// only ships ever ask. Null for the many types the SDE does not stamp.
+const factionCache = createByIdCache<{ factionID: number | null }>()
+
+export const getSdeTypeFactions = async (typeIDs: Iterable<number>): Promise<Record<number, number | null>> => {
+  const found = await bulkLookup(factionCache, typeIDs, async (chunk) => {
+    const { data, error } = await sdeSupabase()
+      .from('sde_published_type')
+      .select('type_id, faction_id')
+      .in('type_id', chunk)
+    if (error) {
+      console.error(`[sdeTypes] faction lookup failed: ${error.message}`)
+      return []
+    }
+    return (data ?? []).map((r): [number, { factionID: number | null }] => {
+      const row = r as { type_id: number; faction_id: number | null }
+      return [Number(row.type_id), { factionID: row.faction_id == null ? null : Number(row.faction_id) }]
+    })
+  })
+  return Object.fromEntries(Object.entries(found).map(([id, f]) => [id, f.factionID]))
+}
+
+export const getSdeTypeFaction = async (typeID: number): Promise<number | null> =>
+  (await getSdeTypeFactions([typeID]))[typeID] ?? null
