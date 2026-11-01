@@ -276,8 +276,17 @@ export const STUB_REKEYS = [
 ]
 
 // Every owner the two lists name, once.
+/** @type {() => Owner[]} */
 export const owners = () =>
-  uniq(reject((o) => o == null, [...map((s) => s.owner, INFERRED_STRUCTURES), ...map((r) => r.owner, STUB_REKEYS)]))
+  uniq(
+    reject(
+      (o) => o == null,
+      /** @type {(Owner | undefined)[]} */ ([
+        ...map((s) => s.owner, INFERRED_STRUCTURES),
+        ...map((r) => r.owner, STUB_REKEYS),
+      ])
+    )
+  )
 
 // The ESI shape of a services list.
 export const toServiceRows = map((name) => ({ name, state: 'online' }))
