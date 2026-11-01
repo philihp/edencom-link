@@ -567,6 +567,15 @@ or its in-game name. It answers:
 - Who reads the memory: every share that reaches the hull, a container above
   it, or its place. Tell the user before you write when the ship is shared
   publicly.
+- The lineage, when the hull was repackaged and assembled again: the earlier
+  item ids its memory came through. The dossier then covers all of them. One
+  ship, several ids; do not write it as two ships.
+- `inherit_candidates`, when the hull has no memory and packed hulls of its
+  type are waiting: the memory of a repackaged hull goes back into the hull
+  assembled from it, and when two hulls of one type went into one stack, the
+  server cannot tell which came out. Each candidate has a `pack_id`. Ask the
+  user which packed hull this is before you carry one; a wrong pick gives the
+  hull another ship's past.
 
 The write tool, `remember_ship`, is not in this server yet. Until it is,
 give the user the text to keep. When writing:

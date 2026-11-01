@@ -2,7 +2,15 @@ import { filter, forEach, identity, juxt, map, pipe, prop, reduce, splitEvery } 
 
 import { assets, assetNames } from '../esi.js'
 import { sudoSupabase } from '../supabase.js'
-import { claimRows, cli, fetchAllPages, forEachCharacter, forEachSequential, refreshAssetSummary } from './lib.js'
+import {
+  claimRows,
+  cli,
+  fetchAllPages,
+  forEachCharacter,
+  forEachSequential,
+  recordReassembly,
+  refreshAssetSummary,
+} from './lib.js'
 
 const TAG = 'character-assets'
 const SCOPE = 'esi-assets.read_assets.v1'
@@ -51,10 +59,22 @@ const fetchNames = async (access_token, characterID, fetched) => {
 // hangar doesn't silently truncate the "current" set. Reading a truncated set
 // makes the un-read items look new, so they'd be re-inserted and collide with
 // their existing current row on character_asset_version_current_item_idx.
-// Each page is folded into a compact item_id → { id, sig } map as it arrives
-// and then discarded — the classify step only ever compares signatures, so
-// holding every current row's full 10 columns just multiplied peak memory.
+// Each page is folded into a compact item_id → { id, sig, … } map as it
+// arrives and then discarded — the classify step only ever compares
+// signatures, so holding every current row's full 10 columns just multiplied
+// peak memory. The four facts kept beside the signature (type, place,
+// quantity, singleton) are what the reassembly step needs of a row that
+// vanished or changed, so it never re-reads them.
 const PAGE = 1000
+
+// The few facts of a row the reassembly fold reads (src/jobs/reassembly.js).
+const shapeOf = (a) => ({
+  itemId: Number(a.item_id),
+  typeId: Number(a.type_id),
+  locationId: a.location_id == null ? null : Number(a.location_id),
+  quantity: a.quantity == null ? 1 : Number(a.quantity),
+  isSingleton: a.is_singleton ?? null,
+})
 
 const fetchCurrentByItem = async (registration_id) => {
   const cols =
@@ -70,7 +90,7 @@ const fetchCurrentByItem = async (registration_id) => {
       .range(from, from + PAGE - 1)
     if (error) throw error
     const page = data ?? []
-    forEach((c) => byItem.set(Number(c.item_id), { id: c.id, sig: signature(c) }), page)
+    forEach((c) => byItem.set(Number(c.item_id), { id: c.id, sig: signature(c), ...shapeOf(c) }), page)
     if (page.length === PAGE) await fetchPage(from + PAGE)
   }
   await fetchPage(0)
@@ -102,8 +122,10 @@ const reconcile = async (registration_id, fetched, names) => {
   // changed (close + insert), or new (insert only). Built with a plain local
   // accumulator mutated via push — a character can hold tens of thousands of
   // items, and rebuilding immutable arrays on every iteration here would turn
-  // an O(n) pass into O(n²).
-  const { unchanged, closeIds, inserts } = reduce(
+  // an O(n) pass into O(n²). The debuts and the changed rows (with the
+  // quantity they had) are kept for the reassembly step, which reads them
+  // and nothing else of the listing.
+  const { unchanged, closeIds, inserts, debuts, changed } = reduce(
     (acc, a) => {
       const itemId = Number(a.item_id)
       const name = names.get(itemId) ?? null
@@ -111,7 +133,10 @@ const reconcile = async (registration_id, fetched, names) => {
       if (cur && cur.sig === signature(a, name)) {
         acc.unchanged += 1
       } else {
-        if (cur) acc.closeIds.push(cur.id)
+        if (cur) {
+          acc.closeIds.push(cur.id)
+          acc.changed.push({ ...shapeOf(a), previousQuantity: cur.quantity })
+        } else acc.debuts.push(shapeOf(a))
         // valid_from is left to its `default now()` so it marks this version's debut.
         acc.inserts.push({
           item_id: a.item_id,
@@ -129,14 +154,24 @@ const reconcile = async (registration_id, fetched, names) => {
       }
       return acc
     },
-    { unchanged: 0, closeIds: [], inserts: [] },
+    { unchanged: 0, closeIds: [], inserts: [], debuts: [], changed: [] },
     [...fetchedByItem.values()]
   )
 
   // Anything still open but not seen this run has left the character's assets.
   const vanishedIds = []
-  currentByItem.forEach(({ id }, itemId) => {
-    if (!fetchedByItem.has(itemId)) vanishedIds.push(id)
+  const vanished = []
+  currentByItem.forEach((cur, itemId) => {
+    if (!fetchedByItem.has(itemId)) {
+      vanishedIds.push(cur.id)
+      vanished.push({
+        itemId,
+        typeId: cur.typeId,
+        locationId: cur.locationId,
+        quantity: cur.quantity,
+        isSingleton: cur.isSingleton,
+      })
+    }
   })
   const allCloseIds = [...closeIds, ...vanishedIds]
 
@@ -156,7 +191,7 @@ const reconcile = async (registration_id, fetched, names) => {
   // changing hands looks like and what a plain insert collided with.
   const opened = await claimRows('character_asset_claim', inserts)
 
-  return { unchanged, opened, closed: allCloseIds.length }
+  return { unchanged, opened, closed: allCloseIds.length, changes: { vanished, debuts, changed }, reconciledAt: now }
 }
 
 export const runCharacterAssets = ({ registrationIds } = {}) =>
@@ -167,11 +202,16 @@ export const runCharacterAssets = ({ registrationIds } = {}) =>
       const t0 = Date.now()
       const fetched = await fetchAllPages((page) => assets(access_token, characterID, page))
       const names = await fetchNames(access_token, characterID, fetched)
-      const { unchanged, opened, closed } = await reconcile(registration_id, fetched, names)
+      const { unchanged, opened, closed, changes, reconciledAt } = await reconcile(registration_id, fetched, names)
 
       // /asset reads a rollup of the container walk rather than recomputing it,
       // so the reconcile is only half done until that rollup agrees with it.
       await refreshAssetSummary('refresh_asset_location_summary_cache', { p_user_id: userId })
+
+      // A repackaged hull's memory follows it into the hull assembled from it
+      // (docs/ship-memory.md "Reassembly"); best-effort, after the claim has
+      // opened the debut rows the carry writes against.
+      await recordReassembly(TAG, { registration_id }, changes, reconciledAt)
 
       const dt = Date.now() - t0
       console.log(

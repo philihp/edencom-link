@@ -24,8 +24,19 @@ loader, both hangars), `src/sdeDogma.ts` (the fuel-bay capacity, dogma
 attribute 1549), `src/app/api/mcp/memoryTools.ts` with its pure seam
 `memoryQuery.ts` (tested), and a first "A ship's memory" section in the skill
 doc, since `get_skill` must name every tool. Where it differs from the plan is
-noted where it lands (see Where it came from, and the MCP tools). PRs 4–6 are
-planned.
+noted where it lands (see Where it came from, and the MCP tools). PR 6
+(reassembly) was built the same day, beside PRs 4 and 5 still in review:
+migration `20261101220500_item_memory_reassembly` (`carried_from_item_id`,
+`item_memory_pack`, `item_memory_carry()`, and the trigger that copies the
+lineage pointer forward), `test/sql/item_memory_reassembly.sql`, the pure fold
+`src/jobs/reassembly.js` with `test/reassembly.test.ts`, the writer
+`recordReassembly` in `src/jobs/lib.js` called by both asset extracts, the
+lineage walk in `load.ts`/`dossier.ts`, `inherit_candidates` on `recall_ship`,
+and `src/app/ship/memory/inherit.ts`, the `inherit_from` check-and-carry that
+`remember_ship` wires in once PR 4 lands. **The id measurement it was meant to
+start with did not run**: the session had no production read, so the matcher
+ships written for either outcome, as the plan says it must be, and the
+measurement stays owed (see Reassembly). PRs 4 and 5 are in review.
 
 ## Decisions (owner, 2026-11-01)
 
@@ -166,7 +177,7 @@ Two pilots. The first one babied me. The second one keeps me light.
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `id`                         | Identity. A memory's version id; the write tool's optimistic-concurrency handle.                                                                             |
 | `item_id`                    | The hull. **The key: one memory per hull, whoever owns it.** EVE never reuses an item id, and a hull keeps its id through every trade, so the memory passes to a buyer. No foreign key, because a memory outlives the asset row: a packed hull's memory waits for reassembly, and a dead id's rows stay with their authors (`written_by`) and on the dead hull's share link. |
-| `carried_from_item_id`       | Set on the first version under a reassembled hull's new id, naming the id it was carried from. Chained, it is the ship's lineage across every repackaging. Added by PR 6. |
+| `carried_from_item_id`       | Set by `item_memory_carry()` on the first version under a reassembled hull's new id, naming the id it was carried from, and **copied onto every later version of that item** by a `before insert` trigger (`item_memory_inherit_lineage()`, invoker rights: it reads the version the writer just closed, which `closed_by` makes theirs to read). So the holder reads the pointer on the current row, and no column grant was added: a direct write still cannot name it. Chained through the earlier id's versions, it is the ship's lineage across every repackaging. PR 6. |
 | `written_by`                 | The account that wrote this version. Provenance only: it grants no write access, though it does let the author keep reading what they wrote after selling the hull (see RLS). `on delete set null`: a deleted account leaves its text with the hull. |
 | `closed_by`                  | The account that superseded this version. Not in the first draft of this plan; PR 2 found it necessary (see RLS). `on delete set null`.                         |
 | `type_id`                    | The type at write time, so a dead hull's memory still knows what it was.                                                                                     |
@@ -289,8 +300,9 @@ alone.
 A repackaged hull's personality goes back into the hull that is assembled from
 it, wherever the extract can tie the two together.
 
-**First, measure what EVE does to the id.** This session tried and was refused
-a production read, so the measurement is the reassembly PR's first step:
+**First, measure what EVE does to the id.** The PR 3 session tried and was
+refused a production read, and the PR 6 session had no production credentials
+at all, so **the measurement is still owed** and runs after the merge:
 among ship-category item ids in `character_asset_version`, count the ids seen
 both assembled and packaged against the ids seen in only one of those states.
 `is_singleton` is in the reconcile's signature, so a flip on one id opens a
@@ -303,7 +315,9 @@ There are two possible outcomes:
 - **The id is replaced.** The matcher below is the whole mechanism.
 
 The matcher is written so that it works under either outcome. Under the first
-it rarely fires.
+it rarely fires. As built it never reads a vanished row's singleton flag: a
+memory on a packaged row of one unit (the first outcome, before the row
+merges into a stack) is treated as the hull it is.
 
 **The events.** Each asset run's reconcile already knows which item ids
 vanished from the listing and which made their debut. Every closed row is not
@@ -315,7 +329,10 @@ is that the item id is _gone_. From those sets the run derives two events:
   writes a pending row to `item_memory_pack`: the hull, its type, the owner
   (registration or corporation), the stack's item id, the place, and when it
   was packed. A hull that vanished with no stack appearing was destroyed or
-  traded away assembled, which is not a pack.
+  traded away assembled, which is not a pack. As built, when several stacks
+  of the type grew at that place in one run, the pack records the place and
+  **no stack** (`stack_item_id` null): rule 3 can still find the hull again,
+  rule 2 cannot.
 - **Unpack**: an assembled hull of type T made its debut with no earlier
   version under any owner, so it is a new id and not a hull back from a trip.
 
@@ -336,7 +353,20 @@ If no rule yields a candidate, the hull starts blank. If a rule yields several
 candidates (two named hulls of one type packed into one stack, which the game
 itself can no longer tell apart), **nothing is carried**: `recall_ship` lists
 the candidates, and the owner picks one through `remember_ship`'s
-`inherit_from`.
+`inherit_from`. As built, "the first rule that yields exactly one candidate
+wins" is read as _the first rule that yields any candidate decides_: an
+ambiguous rule does not fall through to a later rule that happens to be
+clean, since the later rule's one candidate is no more likely to be the hull
+than the earlier rule's several. Two debut hulls in one run that both point
+at one memory are both left for the owner, for the same reason. A debut hull
+with a closed asset row under any owner is a hull back from a trip, not a new
+id, and is never carried into. `recall_ship` lists the candidates as
+`inherit_candidates` — the caller's pending packs of the hull's type, when
+the hull has no memory and is in the hangar — and the check-and-carry behind
+`inherit_from` is `src/app/ship/memory/inherit.ts` (`inheritMemory`: the pack
+is the caller's and pending, the hull is held and of the pack's type and has
+no memory, all on the bearer client; then `item_memory_carry()` on the
+service role). PR 4 adds the `remember_ship` parameter that calls it.
 
 **The carry.** The service role opens a version under the new id with the old
 body, keeps `written_by`, sets `author` to `reassembly` and
@@ -346,12 +376,21 @@ holder reads and writes it under the same rules. Superseded versions on the
 old id stay with their authors.
 
 **Where it runs.** As a best-effort step after the `character-assets` and
-`corp-assets` reconciles, in the shape of `recordStructureTenancy`. A failure
-there never fails the extract. The step costs at most two indexed probes per
-run: memories among the vanished hull ids, and pending packs for the owner.
-Both almost always come back empty, so the reconcile itself does no new
-writes. The pure fold is `src/jobs/reassembly.js` (tested), covering the
-three rules, the vanish test, and ambiguity.
+`corp-assets` reconciles, in the shape of `recordStructureTenancy`
+(`recordReassembly` in `src/jobs/lib.js`). A failure there never fails the
+extract. Each reconcile already keeps, beside every current row's signature,
+the four facts the fold reads (type, place, quantity, singleton), and hands
+the step the ids that vanished, the ids that debuted and the rows that
+changed with their previous quantity. The step costs at most two indexed
+probes per run: the memories among the vanished ids (`item_memory`, chunked),
+and, only when a singleton debuted, every pending pack (the table is tiny: a
+row needs a memory-bearing hull to have been repackaged, so one read is the
+whole set, under any owner, which is what rule 2 needs). Both almost always
+come back empty, so the reconcile itself does no new writes. A carry adds one
+indexed probe per asset table for the new-id test. The pure fold is
+`src/jobs/reassembly.js` (tested), covering the three rules, the vanish test,
+and ambiguity. The carry runs after the claim has opened the debut rows, since
+`item_memory_carry()` reads the new hull's current asset row for its type.
 
 ## MCP tools
 
@@ -456,7 +495,10 @@ for example `react-markdown` without `rehype-raw`.
 6. **Reassembly.** First the id measurement. Then `item_memory_pack`,
    `carried_from_item_id`, the fold `src/jobs/reassembly.js`, the post-reconcile
    step in both asset extracts, `inherit_from`, and the dossier walking the
-   lineage.
+   lineage. Built 2026-11-01, without the measurement (no production read in
+   that session; it is owed after the merge). `inherit_from` shipped as the
+   lib `inherit.ts` plus `recall_ship`'s `inherit_candidates`; the parameter
+   on `remember_ship` lands with PR 4, which was in review at the time.
 
 ## Open questions
 

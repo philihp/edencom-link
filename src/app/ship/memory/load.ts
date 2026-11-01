@@ -26,6 +26,7 @@ import {
   type DossierInput,
   type HullVersion,
   type JobCandidate,
+  type LineageLink,
   type Owner,
   type OwnerKind,
   type Place,
@@ -412,16 +413,45 @@ const boardingsOf = async (supabase: SupabaseClient, owners: Owners, itemId: num
 
 const iso = (ms: number): string => new Date(ms).toISOString()
 
+// How many repackagings back the dossier follows. A hull is rarely
+// reassembled once; this is a guard against a pointer loop, not a budget.
+export const MAX_LINEAGE = 8
+
+type LineageRow = { carried_from_item_id: number | string; valid_from: string }
+
+// The earlier item ids this hull's memory came through (docs/ship-memory.md
+// "Reassembly"), nearest first. The lineage pointer sits on every version of
+// a carried memory, so the holder reads it on the current row under RLS, and
+// an earlier id's pointer on the versions they wrote or closed — which is as
+// far as their own asset history reaches anyway. A buyer's walk stops where
+// the seller's record begins.
+const lineageOf = async (supabase: SupabaseClient, itemId: number, acc: LineageLink[] = []): Promise<LineageLink[]> => {
+  if (acc.length >= MAX_LINEAGE) return acc
+  const { data } = await supabase
+    .from('item_memory_over_time')
+    .select('carried_from_item_id, valid_from')
+    .eq('item_id', itemId)
+    .not('carried_from_item_id', 'is', null)
+    .order('valid_from')
+    .limit(1)
+    .maybeSingle<LineageRow>()
+  if (data == null) return acc
+  const from = Number(data.carried_from_item_id)
+  if (from === itemId || acc.some((l) => l.itemId === from)) return acc
+  return lineageOf(supabase, from, [...acc, { itemId: from, carriedAt: data.valid_from }])
+}
+
 // Null when the caller has never held the hull: nothing to remember.
 export const loadDossierInput = async (
   supabase: SupabaseClient,
   owners: Owners,
   itemId: number
 ): Promise<DossierInput | null> => {
-  const [characterHull, corpHull] = await Promise.all(hangars(owners).map((h) => hullVersions(supabase, h, itemId)))
-  const hull = [...characterHull, ...corpHull].sort(
-    (a, b) => new Date(a.validFrom).getTime() - new Date(b.validFrom).getTime()
-  )
+  // The hull and every id its memory was carried from: one ship, several ids.
+  const lineage = await lineageOf(supabase, itemId)
+  const ids = [itemId, ...lineage.map((l) => l.itemId)]
+  const hullSets = await Promise.all(ids.flatMap((id) => hangars(owners).map((h) => hullVersions(supabase, h, id))))
+  const hull = hullSets.flat().sort((a, b) => new Date(a.validFrom).getTime() - new Date(b.validFrom).getTime())
   if (hull.length === 0) return null
 
   const first = hull[0]
@@ -435,8 +465,10 @@ export const loadDossierInput = async (
 
   const [children, boardings, jobs, contracts, buys, stackSets, recordStart, lastRefresh, fuelBayCapacity] =
     await Promise.all([
-      Promise.all(hangars(owners).map((h) => childVersions(supabase, h, itemId))).then((sets) => sets.flat()),
-      boardingsOf(supabase, owners, itemId),
+      Promise.all(ids.flatMap((id) => hangars(owners).map((h) => childVersions(supabase, h, id)))).then((sets) =>
+        sets.flat()
+      ),
+      Promise.all(ids.map((id) => boardingsOf(supabase, owners, id))).then((sets) => sets.flat()),
       jobsAround(supabase, owners, typeId, since, until),
       contractsAround(supabase, owners, typeId, since, until),
       buysAround(supabase, owners, typeId, since, until),
@@ -450,6 +482,7 @@ export const loadDossierInput = async (
 
   return {
     itemId,
+    lineage,
     hull,
     children,
     boardings,

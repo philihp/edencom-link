@@ -82,8 +82,18 @@ export type StackVersion = {
   validUntil: string
 }
 
+// One hop of the ship's lineage (docs/ship-memory.md "Reassembly"): the item
+// id this hull's memory was carried from when it was assembled, and when.
+// Nearest first. The loader has already folded those hulls' versions into
+// `hull`, `children` and `boardings`, so the itinerary covers the ship's
+// whole life; this is the list of ids it ran under.
+export type LineageLink = { itemId: number; carriedAt: string }
+
 export type DossierInput = {
   itemId: number
+  // The earlier item ids this hull's memory came through, nearest first;
+  // empty for a hull that was never reassembled.
+  lineage: LineageLink[]
   hull: HullVersion[]
   children: ChildVersion[]
   boardings: BoardingRow[]
@@ -159,6 +169,7 @@ export type Fit = { current: FitLine[]; fitsSeen: number; refits: number }
 
 export type Dossier = {
   itemId: number
+  lineage: LineageLink[]
   typeId: number
   names: NameSpan[]
   debut: { at: string; owner: Owner; place: Place | null; predatesRecord: boolean }
@@ -518,6 +529,7 @@ export const dossier = (input: DossierInput): Dossier | null => {
   const debut = { at: first.validFrom, owner: first.owner, place: first.place }
   return {
     itemId: input.itemId,
+    lineage: input.lineage,
     typeId: newest.typeId,
     names: nameSpans(hull),
     debut: { ...debut, predatesRecord: predatesRecord(input.recordStart, debut.at) },
