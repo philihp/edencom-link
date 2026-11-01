@@ -115,6 +115,32 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
   const windowDays = structureWindowDays(daysParam)
   const windowStart = new Date(Date.now() - windowDays * 86_400_000).toISOString()
 
+  // Two reads that need nothing but the window: started now and awaited at
+  // the bottom, rather than queued after every stage above them.
+  //
+  // Revenue from structure clone bays (jump clone installation and activation
+  // fees), over the same window as the tax revenue.
+  const cloneJournalPromise = fetchAllRows<{ amount: number | string | null }>((from, to) =>
+    supabase
+      .from('corp_wallet_journal')
+      .select('amount')
+      .in('ref_type', ['jump_clone_installation_fee', 'jump_clone_activation_fee'])
+      .gte('date', windowStart)
+      .order('date', { ascending: false })
+      .range(from, to)
+  )
+  // When the Structures background job last finished. Each scheduled run writes a
+  // public.heartbeat row stamped with ended_at and a link to the workflow run; we
+  // read back the most recent completed one.
+  const lastRunPromise = supabase
+    .from('heartbeat')
+    .select('ended_at, run_url')
+    .eq('job', 'corp-structures')
+    .not('ended_at', 'is', null)
+    .order('ended_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
   // ── The roster ────────────────────────────────────────────────────────────
   // Two sources, unioned (src/app/structure/roster.ts). corp_structure is the
   // rich one — state, services, fuel, rigs — and needs a director in the owning
@@ -409,19 +435,52 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
   // job maintains. A structure the cache has never resolved simply contributes
   // no system rather than blocking the ISK figure.
   const unlistedStructureIds = uniq(chain((row) => [...row.structureIds], [...ledger.unlistedLandlords.values()]))
-  const unlistedSystemByStructure = new Map<string, string>()
-  if (unlistedStructureIds.length > 0) {
-    const { data: known } = await supabase
-      .from('universe_structure')
-      .select('structure_id, system_id')
-      .in('structure_id', unlistedStructureIds.map(Number))
-    forEach(
-      (r: { structure_id: number | string; system_id: number | string | null }) => {
-        if (r.system_id != null) unlistedSystemByStructure.set(String(r.structure_id), String(r.system_id))
-      },
+  const landlordIds = reject((id: string) => id === 'unknown', [...ledger.unlistedLandlords.keys()])
+
+  // Largest payers first.
+  const unaccountedParties = sortWith([descend(([, isk]: [string, number]) => isk)], [...unaccountedByParty.entries()])
+
+  // Resolve each payer (a character) to their name and the corp they fly for. Names come from the
+  // universe_name table (populated by the universe-names job) and corp affiliations from
+  // character_affiliation (populated by the character-directory job); ids not yet resolved fall
+  // back to showing the raw id.
+  const partyIds = map(
+    Number,
+    reject(
+      (p: string) => p === 'unknown',
+      map(([party]: [string, number]) => party, unaccountedParties)
+    )
+  )
+
+  // The two footers' lookups, neither waiting on the other: where the
+  // unlisted landlords' structures sit and who the landlords are (from the
+  // world-readable corporation directory), and who each payer is and whose
+  // corporation they fly for. They used to run one after another.
+  const [{ data: known }, { data: corps }, { data: charNames }, { data: affiliations }] = await Promise.all([
+    unlistedStructureIds.length
+      ? supabase
+          .from('universe_structure')
+          .select('structure_id, system_id')
+          .in('structure_id', unlistedStructureIds.map(Number))
+      : Promise.resolve({ data: [] }),
+    landlordIds.length
+      ? supabase.from('corporation').select('corporation_id, name').in('corporation_id', landlordIds.map(Number))
+      : Promise.resolve({ data: [] }),
+    partyIds.length
+      ? supabase.from('universe_name').select('id, name').in('id', partyIds)
+      : Promise.resolve({ data: [] }),
+    partyIds.length
+      ? supabase.from('character_affiliation').select('character_id, corporation_id').in('character_id', partyIds)
+      : Promise.resolve({ data: [] }),
+  ])
+
+  const unlistedSystemByStructure = new Map<string, string>(
+    chain(
+      (r: { structure_id: number | string; system_id: number | string | null }) =>
+        r.system_id != null ? [[String(r.structure_id), String(r.system_id)] as [string, string]] : [],
       (known ?? []) as Array<{ structure_id: number | string; system_id: number | string | null }>
     )
-  }
+  )
 
   // One row per landlord: what they took, and where. Largest first.
   const unlistedLandlords = sortWith(
@@ -447,49 +506,15 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
   )
   const unlistedTotal = sum(map(([, row]) => row.amount, unlistedLandlords))
 
-  // Landlord names from the world-readable corporation directory, and system
-  // names alongside the ones the tiles already resolve.
-  const landlordNames = new Map<string, string>()
-  const landlordIds = unlistedLandlords.map(([id]) => id).filter((id) => id !== 'unknown')
-  if (landlordIds.length > 0) {
-    const { data: corps } = await supabase
-      .from('corporation')
-      .select('corporation_id, name')
-      .in('corporation_id', landlordIds.map(Number))
-    forEach(
-      (c: { corporation_id: number | string; name: string | null }) => {
-        if (c.name != null) landlordNames.set(String(c.corporation_id), c.name)
-      },
+  const landlordNames = new Map<string, string>(
+    chain(
+      (c: { corporation_id: number | string; name: string | null }) =>
+        c.name != null ? [[String(c.corporation_id), c.name] as [string, string]] : [],
       (corps ?? []) as Array<{ corporation_id: number | string; name: string | null }>
     )
-  }
-  const unlistedSystemNames = await fetchSystemNames(
-    uniq(unlistedLandlords.flatMap(([, row]) => [...row.systemIds])).map(Number)
   )
 
-  // Largest payers first.
-  const unaccountedParties = sortWith([descend(([, isk]: [string, number]) => isk)], [...unaccountedByParty.entries()])
-
-  // Resolve each payer (a character) to their name and the corp they fly for. Names come from the
-  // universe_name table (populated by the universe-names job) and corp affiliations from
-  // character_affiliation (populated by the character-directory job); ids not yet resolved fall
-  // back to showing the raw id.
-  const partyIds = map(
-    Number,
-    reject(
-      (p: string) => p === 'unknown',
-      map(([party]: [string, number]) => party, unaccountedParties)
-    )
-  )
-
-  const { data: charNames } = partyIds.length
-    ? await supabase.from('universe_name').select('id, name').in('id', partyIds)
-    : { data: [] }
   const payerNames = nameById((charNames ?? []) as IdName[])
-
-  const { data: affiliations } = partyIds.length
-    ? await supabase.from('character_affiliation').select('character_id, corporation_id').in('character_id', partyIds)
-    : { data: [] }
   const affiliationRows = (affiliations ?? []) as AffiliationRow[]
   const corpByParty = map(
     (a: AffiliationRow) => [String(a.character_id), String(a.corporation_id)] as [string, string],
@@ -497,9 +522,14 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
   )
   const corpIds = uniq(map((a: AffiliationRow) => Number(a.corporation_id), affiliationRows))
 
-  const { data: corpNames } = corpIds.length
-    ? await supabase.from('universe_name').select('id, name').in('id', corpIds)
-    : { data: [] }
+  // The second round of each: the landlords' system names (alongside the ones
+  // the tiles already resolve) and the payers' corporation names.
+  const [unlistedSystemNames, { data: corpNames }] = await Promise.all([
+    fetchSystemNames(uniq(unlistedLandlords.flatMap(([, row]) => [...row.systemIds])).map(Number)),
+    corpIds.length
+      ? supabase.from('universe_name').select('id, name').in('id', corpIds)
+      : Promise.resolve({ data: [] }),
+  ])
   const corpNameById = nameById((corpNames ?? []) as IdName[])
 
   // A party whose corporation the directory hasn't named yet simply has no corp
@@ -511,31 +541,8 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
     }, corpByParty)
   )
 
-  // Revenue from structure clone bays (jump clone installation and activation
-  // fees), over the same window as the tax revenue above.
-  const cloneJournal = await fetchAllRows<{ amount: number | string | null }>((from, to) =>
-    supabase
-      .from('corp_wallet_journal')
-      .select('amount')
-      .in('ref_type', ['jump_clone_installation_fee', 'jump_clone_activation_fee'])
-      .gte('date', windowStart)
-      .order('date', { ascending: false })
-      .range(from, to)
-  )
-
+  const [cloneJournal, { data: lastRun }] = await Promise.all([cloneJournalPromise, lastRunPromise])
   const cloneRevenue = sum(map((entry: { amount: number | string | null }) => Number(entry.amount ?? 0), cloneJournal))
-
-  // When the Structures background job last finished. Each scheduled run writes a
-  // public.heartbeat row stamped with ended_at and a link to the workflow run; we
-  // read back the most recent completed one.
-  const { data: lastRun } = await supabase
-    .from('heartbeat')
-    .select('ended_at, run_url')
-    .eq('job', 'corp-structures')
-    .not('ended_at', 'is', null)
-    .order('ended_at', { ascending: false })
-    .limit(1)
-    .maybeSingle()
 
   // The subtitle's two counts: every tile, and the ones a corporation of ours
   // owns (favorites included — pinning moves a tile, it doesn't change whose
