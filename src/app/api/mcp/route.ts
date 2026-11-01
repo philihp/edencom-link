@@ -3,10 +3,10 @@
 // consent page lives at /oauth/consent; discovery metadata at
 // /.well-known/oauth-protected-resource). Tools are read-only queries over
 // the extracted DB — see tools.ts — with three exceptions: linkTools.ts can
-// create and share a link, and watchedSystemTools.ts can edit the caller's
-// /indexes watch list (both write only rows the caller owns), and
-// mailTools.ts's send_mail sends an EVE mail as one of the caller's
-// characters — the one tool that changes the game.
+// create and share a link, watchedSystemTools.ts can edit the caller's
+// /indexes watch list, and mailTools.ts's send_mail queues an EVE mail for a
+// person to send by hand later (all three write only rows the caller owns;
+// none calls ESI or changes the game).
 import { createMcpHandler, withMcpAuth } from 'mcp-handler'
 
 import { verifySupabaseToken } from './auth'

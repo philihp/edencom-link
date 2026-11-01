@@ -3105,8 +3105,11 @@ grant all    on public.fitting_write_log to service_role;
 -- retries under the same id and is refused by the unique index rather than
 -- sending the mail twice. Any row spends its id, whatever its status.
 --
--- Append-only in practice: rows are inserted 'pending' and updated once to
--- 'ok' (with ESI's mail_id) or 'error'. Nothing deletes from here except the
+-- Append-only in practice. A row is inserted 'queued' (the draft is held on
+-- the site for a person to send by hand later; nothing reaches ESI) or
+-- 'pending' (the send is in flight — written just before the ESI call), and
+-- updated once to 'ok' (with ESI's mail_id) or 'error'. Sending a queued row
+-- moves it queued → pending → ok/error. Nothing deletes from here except the
 -- registration's own cascade.
 create table public.mail_send_log (
   id              bigint generated always as identity primary key,
@@ -3124,7 +3127,7 @@ create table public.mail_send_log (
   mail_id         bigint,
   -- 'cli' | 'mcp' | 'web' as callers arrive.
   source          text not null default 'cli',
-  status          text not null check (status in ('pending', 'ok', 'error')),
+  status          text not null check (status in ('queued', 'pending', 'ok', 'error')),
   error           text,
   created_at      timestamptz not null default now(),
   finished_at     timestamptz

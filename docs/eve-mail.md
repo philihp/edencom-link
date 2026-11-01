@@ -5,12 +5,17 @@
 first mailbox was copied on 2026-10-24. Still owed: the one real send through
 `pnpm run mail-send` that PR 3's verify step asks for (the owner's, by hand).
 
+**Since 2026-11-01, MCP `send_mail` sends nothing.** It queues the draft on
+the site (`mail_send_log` status `queued`) and a person sends it later by hand
+with `pnpm run mail-send --queued <id>`. Nothing drains the queue on its own.
+See "Approval on the website".
+
 A quiet launch: no page on the site shows a mail, and no page sends one. What
 ships is the two ESI grants, an extract job that keeps a copy of every
 registered character's mailbox in Supabase, the one module that can send a
 mail through ESI, the Registrations-page toggle that decides whether grants
 that *change* game state are drawn at all, and the three MCP tools that read
-and send mail through that module.
+mail and queue a mail for that module to send later.
 
 ## Goal
 
@@ -300,9 +305,20 @@ fine, but the caps are the knobs if a step ever runs long).
 `src/app/api/fittings/lib.ts`, and built the same way:
 
 ```ts
-sendMail(caller: Caller, registrationId: string, draft: MailDraft): Promise<SendOutcome>
+sendMail(caller: Caller, registrationId: string, draft: MailDraft, source?): Promise<SendOutcome>
+enqueueMail(caller: Caller, registrationId: string, draft: MailDraft, source?): Promise<EnqueueOutcome>
+listQueuedMail(caller: Caller): Promise<QueuedMail[]>
+sendQueuedMail(caller: Caller, logId: number): Promise<SendOutcome>
 // MailDraft = { requestId: uuid, recipients: Recipient[], subject, body, approvedCost?: number }
 ```
+
+`sendMail` is the real send, below. `enqueueMail` runs steps 1 and 2 with the
+row written `queued` instead of `pending` — plus `sendGrantHeld`, so the queue
+never holds a mail nobody could send — and stops: no token, no ESI. It is all
+MCP `send_mail` does. `sendQueuedMail` claims a queued row (one conditional
+`update … where status = 'queued'`, so two hands on the same id cannot both
+send it), then runs steps 3 and 4 on it. `listQueuedMail` is one account's
+queue, oldest first.
 
 1. Validate with the pure `src/mailCompose.ts` (tested): the registration is
    the caller's; 1–50 recipients (the live spec's `maxItems`), each a known `recipient_type` and a
@@ -324,11 +340,12 @@ sendMail(caller: Caller, registrationId: string, draft: MailDraft): Promise<Send
    explicitly). The sent mail reaches `character_mail` on the next extract
    through the Sent label, so the module writes nothing there itself.
 
-Nothing on the site calls it in this plan. To prove the path end to end the
-owner gets `pnpm run mail-send` (`src/mailSend.js`, beside `connect`/`ping`;
-takes a registration, recipient, subject and body from flags, mints the
-request id, prints the log row), used once against their own character. The
-MCP `send_mail` tool is the intended caller and is PR 4.
+Nothing on the site calls it. `pnpm run mail-send` (`src/mailSend.ts`,
+beside `connect`/`ping`) is the owner's hand on the path: `--list-queued`
+prints every account's queued mails, `--queued <id>` sends one of them, and
+the flag form (registration, recipients, subject, body) sends a fresh draft at
+once, never queued — the end-to-end check. No job runs it; a queued mail waits
+for a person.
 
 ## The MCP tools (PR 4, as built)
 
@@ -368,55 +385,66 @@ procedure, and `/mcp-server` lists the three tools.
   alliance), `corporation`, `alliance`, or the **sender's** mailing lists; a
   name that is two things is refused until a type picks one, and an unknown
   name asks for the id. `preview` resolves and validates (`validateDraft`
-  plus the token's scope, via `sendGrantHeld`) and sends nothing; its
-  `request_id` is meant to be passed to the real send. The send itself is
-  `sendMail(caller, registrationId, draft, 'mcp')`.
+  plus the token's scope, via `sendGrantHeld`) and queues nothing; its
+  `request_id` is meant to be passed to the call that queues. The call
+  without `preview` is `enqueueMail(caller, registrationId, draft, 'mcp')` —
+  a `queued` row, and **no ESI call** (since 2026-11-01; it was `sendMail`
+  before). The answer says `queued: true, sent: false`, and its note tells
+  the client to describe the mail as queued for review, never as sent.
 
 Three departures from the sketch in the delivery table:
 
-- **The send runs on the service role.** The sketch put all three tools on
-  the bearer client, but the send path reads `token`, which only the service
-  role does here. So the reads stay on the bearer and `send_mail` takes
+- **The queue write runs on the service role.** The sketch put all three
+  tools on the bearer client, but the path reads `token` (for the grant
+  check), which only the service role does here, and `mail_send_log` has no
+  `authenticated` write. So the reads stay on the bearer and `send_mail` takes
   `callerForUser(userId)` with the user id from the verified bearer — the
   shape `src/app/fitting/marshalActions.ts` uses with a cookie session. The
   privacy rule below is amended to say so.
 - **`idempotentHint: false`**, not `true`. A `request_id` makes a retry safe,
   but the tool cannot require one: a model asked for a uuid too often types
   a well-known example one, and since the index is global, a collision
-  would refuse a stranger's send. Without one, a repeat sends
-  again, so the honest hint is false.
-- **`openWorldHint: true`**, not `false`. The hint is about whether a tool
-  reaches outside the deployment's own world, and a sent mail lands in other
-  players' mailboxes.
+  would refuse a stranger's mail. Without one, a repeat queues again, so the
+  honest hint is false.
+- **`openWorldHint: false`**. It was `true` while the tool posted to ESI (a
+  sent mail lands in other players' mailboxes); since the tool only writes a
+  row on this site, nothing leaves the deployment in the call.
 
-## Approval on the website (decided 2026-11-01, not yet built)
+## Approval on the website (decided 2026-11-01; the queue half shipped the same day)
 
 **The decided model.** Approving a mail moves out of the MCP client and onto
-this website. `send_mail` only _enqueues_: it resolves the recipients,
-validates the draft and stores it as a mail awaiting the owner's approval,
-and nothing reaches ESI. The account owner reviews pending mails on
-edencom.link and approves (or discards) each one; only an approval calls ESI
-`POST /mail/`. So an MCP client (Aura, Claude, ChatGPT) may call `send_mail`
-as often as it likes, with no "are you sure" ritual of its own: a mistaken
-call costs a pending row the owner throws away, never a mail in someone
-else's inbox. What the tool refuses stays the same — a name it cannot
-resolve, a draft over ESI's limits, a character without the "Send in-game
-mail" grant — and so do the use-once `request_id`, the logging of the whole
-draft before anything leaves, and the CSPA rule (a `520` is reported, never
-retried with a higher `approved_cost`).
+this website. `send_mail` only _queues_: it resolves the recipients,
+validates the draft and stores it as a mail awaiting a person, and nothing
+reaches ESI. Someone reviews the queue on edencom.link and sends (or
+discards) each mail; only that calls ESI `POST /mail/`. So an MCP client
+(Aura, Claude, ChatGPT) may call `send_mail` as often as it likes, with no
+"are you sure" ritual of its own: a mistaken call costs a queued row a person
+throws away, never a mail in someone else's inbox. What the tool refuses
+stays the same — a name it cannot resolve, a draft over ESI's limits, a
+character without the "Send in-game mail" grant — and so do the use-once
+`request_id`, the logging of the whole draft, and the CSPA rule (a `520` is
+reported, never retried with a higher `approved_cost`).
 
-**What exists today.** None of the gate. `sendMail()` in
-`src/app/mail/lib.ts` logs the draft `pending` and posts it to ESI in the
-same request, so a `send_mail` call without `preview` _is_ the send. The
-`pending` status on `mail_send_log` means "logged, ESI's answer not yet
-recorded" — it is not a queue anyone approves from.
+**What exists today (2026-11-01).** The queue, and a hand to send it. The
+tool calls `enqueueMail()`, which writes the row `queued` and stops; nothing
+reaches ESI from an MCP call, and no job or cron drains the queue. The owner
+lists it with `pnpm run mail-send --list-queued` and sends one mail with
+`--queued <id>` (`sendQueuedMail()`: queued → pending → ok/error). `pending`
+keeps its old meaning — the ESI call is in flight — and only the CLI writes
+it. **Not built:** the page where an account owner reviews and sends their own
+queue; until then the person sending is the deployment's owner, by hand, and
+there is no promise about when.
 
-**Until the gate ships**, the live copy deliberately lags this design: the
-tool description, the skill doc's "Sending mail" procedure and `/mcp-server`
-keep telling clients to preview, show the user the whole mail and send only
-on a yes. Relax them in the same PR that makes ESI wait for the website, not
-before — a client told "approval happens elsewhere" stops confirming, and
-today nothing elsewhere would catch it.
+**The copy says so everywhere.** Because a queued mail may wait indefinitely
+and may never go out, nothing a user or an MCP client reads may say or imply
+that `send_mail` sends: the tool title (**Queue an EVE mail**) and
+description, its answers (`queued: true, sent: false` and a note), the skill
+doc's "Sending mail", `/mcp-server`, and the "Send in-game mail" grant's
+_why_ all say _queued for a person to send later_, and tell the client never
+to report the mail as sent or on its way. A client no longer needs the user's
+confirmation before calling, since the call sends nothing. When the review
+page ships, update these surfaces to name it; do not let "sent" back in
+anywhere a send is not what happened.
 
 ## Privacy
 
@@ -424,9 +452,10 @@ today nothing elsewhere would catch it.
   GraphQL field, no CSV route, no card, no page — in this plan and as a
   stated rule for the follow-ups: a mail surface reads through the owner's
   bearer or cookie session, never the service role on their behalf. The one
-  exception is the send, which needs the token: it runs on the service-role
-  Caller of the user the bearer or session proved, scoped by hand to that
-  user's registrations, and writes only `mail_send_log`.
+  exception is the queue write (and the CLI's send), which needs the token:
+  it runs on the service-role Caller of the user the bearer or session
+  proved, scoped by hand to that user's registrations, and writes only
+  `mail_send_log`.
 - The Chancellor account debug dump (`/account/settings/chancellor`) must not
   include mail tables. Impersonation reaches whatever the impersonated
   session reaches; that is the existing rule and this plan does not widen it,
