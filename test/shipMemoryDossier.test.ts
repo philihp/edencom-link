@@ -60,6 +60,7 @@ const WINDOW = 6 * HOUR
 
 const input = (over: Partial<DossierInput> = {}): DossierInput => ({
   itemId: 1_000_000_001,
+  lineage: [],
   hull: [hullAt({ validFrom: at(24), validUntil: at(30) }), hullAt({ validFrom: at(30), isCurrent: true })],
   children: [],
   boardings: [],
@@ -391,4 +392,34 @@ test('dossier: null for a hull never held; otherwise the debut is the earliest v
   assert.equal(d.lastSeen, at(100))
   assert.equal(d.versions, 2)
   assert.equal(d.tenures.length, 2)
+})
+
+// ── lineage ───────────────────────────────────────────────────────────────
+
+test("a reassembled hull's dossier spans the ids its memory came through, debut and all", () => {
+  // The loader folds the earlier hull's versions in; the fold sees one chain.
+  const d = dossier(
+    input({
+      lineage: [{ itemId: 1_000_000_000, carriedAt: at(40) }],
+      hull: [
+        hullAt({ validFrom: at(12), validUntil: at(36), name: 'Rusty Kettle' }),
+        hullAt({ validFrom: at(40), isCurrent: true, name: 'Rusty Kettle II', place: HEK }),
+      ],
+    })
+  )
+  assert.ok(d)
+  assert.deepEqual(d.lineage, [{ itemId: 1_000_000_000, carriedAt: at(40) }])
+  assert.equal(d.debut.at, at(12))
+  assert.deepEqual(
+    d.itinerary.map((s) => s.place?.id),
+    [RENS.id, HEK.id]
+  )
+  assert.deepEqual(
+    d.names.map((n) => n.name),
+    ['Rusty Kettle', 'Rusty Kettle II']
+  )
+})
+
+test('a hull never reassembled has an empty lineage', () => {
+  assert.deepEqual(dossier(input())?.lineage, [])
 })

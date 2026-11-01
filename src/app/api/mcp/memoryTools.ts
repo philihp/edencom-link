@@ -17,6 +17,7 @@ import { resolveLocations, type LocationRef } from '@/app/resolveLocations'
 import { SHIP_CATEGORY_ID } from '@/app/ship/[itemId]/shipRows'
 import { voiceOf } from '@/app/ship/memory/accent'
 import { dossier, type Dossier, type Owner, type Place } from '@/app/ship/memory/dossier'
+import { pendingPacksOfType } from '@/app/ship/memory/inherit'
 import { loadDossierInput } from '@/app/ship/memory/load'
 import { registerOf } from '@/app/ship/memory/register'
 import { getSdeType, getSdeTypeFaction, getSdeTypeNames, getSdeTypes } from '@/sdeTypes'
@@ -138,6 +139,13 @@ const describe = async (supabase: SupabaseClient, owners: OwnerContext, d: Dossi
 
   const origin = d.origin
   return {
+    lineage:
+      d.lineage.length === 0
+        ? null
+        : {
+            note: 'The hull was repackaged and assembled again; its memory came through these earlier item ids, nearest first, and the docks, pilots and cargo below cover them all. One ship, several ids.',
+            earlier_ids: d.lineage.map((l) => ({ item_id: l.itemId, carried: l.carriedAt })),
+          },
     names: d.names.map((n) => ({ name: n.name, from: n.from, until: n.until })),
     debut: {
       first_seen: d.debut.at,
@@ -258,6 +266,12 @@ export const registerMemoryTools = (server: McpServer): void => {
       const voice = voiceOf({ factionId, raceId: type.raceID })
       const register = registerOf(type.groupName)
       const memory = memoryRow ?? null
+      // A hull with no memory may be a reassembled one whose memory the
+      // extract could not place: two hulls of its type went into one stack,
+      // and the game itself no longer tells them apart. The owner's pending
+      // packs of the type are the candidates (docs/ship-memory.md
+      // "Reassembly"); remember_ship's inherit_from settles it.
+      const candidates = memory == null && d.inHangar ? await pendingPacksOfType(supabase, owners, d.typeId) : []
       const before = inheritance(memory, (versionRows ?? []) as MemoryVersionLike[], d.debut.at, userIdOf(ctx))
       const currentName = d.names[d.names.length - 1]?.name ?? null
 
@@ -293,6 +307,19 @@ export const registerMemoryTools = (server: McpServer): void => {
               },
         versions_you_can_see: (versionRows ?? []).length,
         before_you: before,
+        inherit_candidates:
+          candidates.length === 0
+            ? null
+            : {
+                note: `This hull has no memory, and ${candidates.length === 1 ? 'one packed hull' : `${candidates.length} packed hulls`} of its type ${candidates.length === 1 ? 'is' : 'are'} waiting for a hull to be assembled. If this is one of them, pass its pack_id as remember_ship's inherit_from and the packed memory is carried here first; a wrong pick gives this hull another ship's past, so ask the player when in doubt.`,
+                packs: candidates.map((c) => ({
+                  pack_id: c.pack_id,
+                  packed_hull_item_id: c.from_item_id,
+                  packed_at: c.packed_at,
+                  place_id: c.location_id,
+                  stack_item_id: c.stack_item_id,
+                })),
+              },
         readers: {
           note:
             readers.length === 0
