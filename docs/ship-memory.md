@@ -16,8 +16,16 @@ item id). PR 2 (storage and accent) was built the same day: migrations
 `test/sql/item_memory.sql`, and `src/app/ship/memory/accent.ts` with
 `test/shipMemoryAccent.test.ts`. It differs from this plan in two places,
 both noted where they land: the table gains `closed_by` (see Storage), and the
-accent is keyed on the SDE's ids rather than its names (see Accent). PRs 3–6
-are planned.
+accent is keyed on the SDE's ids rather than its names (see Accent). PR 3 (the
+dossier and `recall_ship`) was built the same day: `src/app/ship/memory/dossier.ts`
+(the pure fold, `test/shipMemoryDossier.test.ts`), `register.ts` (the hull-class
+register, pinned against the chart below like the accent), `load.ts` (the one
+loader, both hangars), `src/sdeDogma.ts` (the fuel-bay capacity, dogma
+attribute 1549), `src/app/api/mcp/memoryTools.ts` with its pure seam
+`memoryQuery.ts` (tested), and a first "A ship's memory" section in the skill
+doc, since `get_skill` must name every tool. Where it differs from the plan is
+noted where it lands (see Where it came from, and the MCP tools). PRs 4–6 are
+planned.
 
 ## Decisions (owner, 2026-11-01)
 
@@ -38,7 +46,7 @@ call and no new scope.**
 | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Its names                  | `name` on `character_asset_version` / `corp_asset_version`. The name is part of the reconcile's change signature, so a rename opens a version.                                                                                                                                                                                                             | A name held between two extracts.                                                                                                                                                                          |
 | Its first sighting         | The `valid_from` of the earliest version of its `item_id`, across all of the account's registrations and corporations.                                                                                                                                                                                                                                    | This is its debut in our data, not its birth. A hull already in the hangar at the registration's first `character-assets` heartbeat predates our record, and the dossier says so instead of inventing an origin. |
-| Where it came from         | A match on type and time at the first sighting, tried in this order: (1) a delivered manufacturing job (activity 1) of ours whose `product_type_id` is the hull type; (2) a completed item-exchange contract carrying the type; (3) a market buy of the type (`character_wallet_transaction.is_buy`); (4) the same `item_id` closed under another of the account's owners, which is a hand-over between alts; (5) **reassembled**: a packaged stack of the type at the same place shrank at the debut. Where the reassembly matcher tied the hull to an earlier one (`carried_from_item_id`), the dossier also walks back through that hull's history, so the itinerary covers the ship's whole life. Otherwise the dossier says the hull has no known past. | No table links an output item to its job, contract or transaction. The match is "same type, within one extract interval before the debut", so it is reported with its evidence and a `confidence`.            |
+| Where it came from         | A match on type and time at the first sighting, tried in this order: (1) a delivered manufacturing job (activity 1) of ours whose `product_type_id` is the hull type; (2) a completed item-exchange or auction contract carrying the type; (3) a market buy of the type (`character_wallet_transaction.is_buy`); (4) **reassembled**: a packaged stack of the type at the same place, under the same owner, shrank or vanished at the debut (a successor version of the stack at the same size is a repack, not an assembly). The plan's rule for a hand-over between alts is not an origin rule as built: the debut is the earliest version across every owner of the account, so a hand-over is reported as a second entry in the dossier's `owners` chain instead. The window is one extract interval before the debut (6h for a character hangar, a day for a corporation's), inclusive; one candidate is `high` confidence, several of one kind are the nearest at `medium`, with the count reported. A cancelled or reverted job never counts, nor does a courier. Where the reassembly matcher tied the hull to an earlier one (`carried_from_item_id`), the dossier also walks back through that hull's history, so the itinerary covers the ship's whole life. Otherwise the dossier says the hull has no known past. | No table links an output item to its job, contract or transaction. The match is "same type, within one extract interval before the debut", so it is reported with its evidence and a `confidence`.            |
 | Where it has docked        | The ship's version chain. Each version's root place comes from `character_asset_location` / `corp_asset_location`. Consecutive repeats are collapsed, and dwell time is measured per stop.                                                                                                                                                                  | Samples come every 6h. The route between docks is invisible: `character_location` is one live row with no history.                                                                                          |
 | Who has flown it           | `character_ship_over_time` rows for its `ship_item_id`.                                                                                                                                                                                                                                                                                                     | `character-status` samples every 6h, so a short sortie between samples is missed.                                                                                                                         |
 | What it has carried        | Child versions whose `location_id` is the ship and whose flag is a hold (cargo, fleet hangar, ore hold, …). Each child `item_id` counts once, at its largest quantity aboard. Volume comes from the SDE. | Anything loaded and unloaded between two extracts. The figures are "at least" figures.                                                                                                                       |
@@ -350,9 +358,12 @@ three rules, the vanish test, and ambiguity.
 Both tools live in a new module, `src/app/api/mcp/memoryTools.ts`, and both run
 on the caller's bearer client.
 
-- **`recall_ship(ship)`**: read-only. `ship` is an item id, or a name matched
-  over the caller's own hulls, current and dead, with ambiguous matches refused
-  (the `match.ts` rule). It answers the dossier above, the accent and register,
+- **`recall_ship(ship)`**: read-only. `ship` is an item id (a run of five or
+  more digits), or a name matched over the caller's own hulls, current and
+  dead, with ambiguous matches refused (the `match.ts` rule; a dead hull is
+  listed as "no longer held"). Corp hulls carry no name in ESI, so a corp hull
+  is reached by id. The dossier is loaded only for the caller's own owners
+  (`fetchOwnerContext`), never for a hull someone shared with them. It answers the dossier above, the accent and register,
   the current memory with its version id, and **who can read the memory**: the
   share rows whose subject is the hull, a container above it
   (`asset_ancestors()`), or its place. The AI can then tell the player "this
@@ -433,7 +444,12 @@ for example `react-markdown` without `rehype-raw`.
 3. **The dossier and `recall_ship`.** The loader (character and corp hulls,
    across alts), the pure fold `dossier.ts` (names, debut, origin inference,
    itinerary, pilots, cargo, fuel, refits; tested hard, because the inference
-   windows are the whole tool), and the read tool.
+   windows are the whole tool), and the read tool. Built 2026-11-01. The
+   register chart got its own pure module (`register.ts`) beside the accent,
+   and the fuel-bay capacity its own SDE reader (`src/sdeDogma.ts`), since
+   the ship page reads dogma only in the browser. "Record start" is the
+   owner's earliest asset version rather than a heartbeat: the first extract
+   wrote every item at once, and heartbeats are not kept forever.
 4. **`remember_ship` and the skill section.**
 5. **Display.** The Memory panel, the share-loader read, the `show_as_main`
    rule, the Share-dialog line, and the markdown dependency.
