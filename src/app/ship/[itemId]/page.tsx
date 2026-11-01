@@ -5,6 +5,7 @@ import { Suspense } from 'react'
 
 import { getSdeType, getSdeTypes } from '@/sdeTypes'
 import { createClient } from '@/utils/supabase/server'
+import { createServiceClient } from '@/utils/supabase/service'
 
 import { establishedUser } from '../../account/lib/establishedUser'
 import { AppraisalPanel } from '../../asset/[locationId]/appraisalPanel'
@@ -19,6 +20,8 @@ import { shipShareMetadata, shipShareViewport } from './card/metadata'
 import { toEsiFit } from './esfFit'
 import { FitExport } from './fitExport'
 import { ShipIdentity } from './identity'
+import { MemoryPanel } from '../memory/memoryPanel'
+import { readShipMemory } from '../memory/read'
 import { fetchPilotSkills, pilotSkills } from './pilotSkills'
 import { hideHolder, labelWithoutHolder } from './presentedOwner'
 import { ShipContents, SharedShipContents } from './shipContents'
@@ -114,7 +117,7 @@ const ShipPage = async ({ params, searchParams }: ShipPageProps) => {
   // Non-ships (containers, loose stacks) live on the asset browser instead.
   if (selfType?.categoryID !== SHIP_CATEGORY_ID) redirect(`/asset/${itemId}`)
 
-  const [{ data: characterChildren }, { data: corpChildren }, crumbs, ownerView, shareData, skillLevels] =
+  const [{ data: characterChildren }, { data: corpChildren }, crumbs, ownerView, shareData, skillLevels, ownMemory] =
     await Promise.all([
       supabase
         .from('character_asset')
@@ -140,8 +143,19 @@ const ShipPage = async ({ params, searchParams }: ShipPageProps) => {
       // decides: a corp hull has no character, and a ship shared with the caller
       // returns nothing, so both fall back to the all-V baseline.
       fetchPilotSkills(supabase, characterSelf?.registration_id),
+      // The ship's memory under the caller's own RLS: the holder reads the
+      // current version (docs/ship-memory.md, "Display").
+      readShipMemory(supabase, itemId),
     ])
   const { owner, hiddenHolder } = ownerView
+  // The memory follows the share. A signed-in recipient reads the hull's row
+  // through the audience policy but holds nothing, so the owner-scoped read
+  // above comes back empty for them; the hull row having come through RLS is
+  // the proof a share reaches them, and the share loader's gate — the service
+  // role, after the share resolved — answers the same way here. Never on a
+  // share that shows the account's main: that share promises the page sends
+  // nothing leading to the holder, and no code can check free text for that.
+  const memory = hiddenHolder != null ? null : (ownMemory ?? (await readShipMemory(createServiceClient(), itemId)))
   // A share that shows the account's main: the holder's registration uuid and
   // any name carrying theirs stay out of everything below (presentedOwner.ts).
   const shown = hiddenHolder == null ? identity : hideHolder(hiddenHolder)
@@ -183,6 +197,7 @@ const ShipPage = async ({ params, searchParams }: ShipPageProps) => {
                 urlPath={`/ship/${itemId}`}
                 path={sharePath(shownCrumbs, hull.name ?? typeName)}
                 data={shareData}
+                hasMemory={memory != null}
               />
             ) : null}
           </>
@@ -192,6 +207,7 @@ const ShipPage = async ({ params, searchParams }: ShipPageProps) => {
         esiFit={toEsiFit(Number(hull.type_id), hull.name ?? null, rows)}
         pilot={pilotSkills(owner.name, skillLevels)}
       />
+      <MemoryPanel memory={memory} />
       <Suspense fallback={<ContentsFallback />}>
         <ShipContents
           supabase={supabase}
@@ -230,7 +246,7 @@ const SharedShipPage = async ({
 }) => {
   const ship = await sharedShip(itemId, shareParams.share, shareParams.token)
   if (!ship) notFound()
-  const { self, selfType, children, owner, ownerId, ownerKind, sighting } = ship
+  const { self, selfType, children, owner, ownerId, ownerKind, sighting, memory } = ship
 
   const typeName = selfType?.name ?? `#${self.type_id}`
   const rows = fitRows(children)
@@ -254,6 +270,10 @@ const SharedShipPage = async ({
           client, so it *could* read the sharer's skill sheet — a share covers
           the ship, not what its owner has trained. */}
       <ShipViewDynamic esiFit={toEsiFit(Number(self.type_id), self.name ?? null, rows)} />
+      {/* The ship's memory as the share loader read it: the current text, or
+          for a hull the sharer no longer holds the text as it stood when the
+          hull was last seen; nothing on a share that shows the main. */}
+      <MemoryPanel memory={memory} />
       {/* The same table the owner sees, minus the drill-down: a nested
           container would need a share token of its own to open. */}
       <SharedShipContents self={self} owner={{ id: ownerId, name: owner.name, kind: ownerKind }} childRows={children} />
