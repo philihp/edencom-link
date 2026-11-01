@@ -2,7 +2,10 @@
 // the player's AI everything a hull knows about itself — the dossier, the
 // voice it speaks in, the memory it already carries and who can read what is
 // written — so the AI can write the next version in the ship's own words.
-// This module is the read side; remember_ship (PR 4) is the write.
+// remember_ship is the write: it stores the whole next version through
+// item_memory_write(), the one write path, which refuses a stale based_on
+// (PT409) and an item the caller does not hold (42501). It changes nothing in
+// the game, calls no ESI, and keeps every version.
 //
 // Same rules as tools.ts: every query runs on the caller's bearer client, so
 // RLS scopes the rows to the reader's own data; the loader narrows them to
@@ -25,14 +28,18 @@ import { createBearerClient } from '@/utils/supabase/bearer'
 
 import { dataFreshness, fetchOwnerContext, textResult, type OwnerContext, type ToolResult } from './lib'
 import {
+  authorOf,
   describeReader,
   type HullRow,
   inheritance,
+  MAX_MEMORY_LENGTH,
   type MemoryVersionLike,
   parseItemId,
   pickHull,
   type Reader,
   subjectOf,
+  validateMemory,
+  writeFailure,
 } from './memoryQuery'
 
 type SupabaseClient = ReturnType<typeof createBearerClient>
@@ -67,6 +74,32 @@ const hullByName = async (supabase: SupabaseClient, owners: OwnerContext, query:
   const ships = rows.filter((r) => types[Number(r.type_id)]?.categoryID === SHIP_CATEGORY_ID)
   const picked = pickHull(query, ships)
   return picked.ok ? { ok: true as const, itemId: Number(picked.id) } : picked
+}
+
+// The hull a tool call names: by id, or by name over the caller's own hulls.
+const resolveHull = async (supabase: SupabaseClient, owners: OwnerContext, ship: string) => {
+  const byId = parseItemId(ship)
+  return byId == null ? hullByName(supabase, owners, ship) : { ok: true as const, itemId: byId }
+}
+
+// The type of the hull's one current asset row under the caller's owners;
+// null when the caller holds no such item now.
+const heldType = async (supabase: SupabaseClient, owners: OwnerContext, itemId: number): Promise<number | null> => {
+  const read = async (table: 'character_asset_version' | 'corp_asset_version', column: string, ids: string[]) => {
+    if (ids.length === 0) return null
+    const { data } = await supabase
+      .from(table)
+      .select('type_id')
+      .eq('item_id', itemId)
+      .eq('is_current', true)
+      .in(column, ids)
+      .maybeSingle<{ type_id: number | string }>()
+    return data == null ? null : Number(data.type_id)
+  }
+  return (
+    (await read('character_asset_version', 'registration_id', owners.registrationIds)) ??
+    (await read('corp_asset_version', 'corporation_id', owners.corporationIds))
+  )
 }
 
 type MemoryRow = MemoryVersionLike & { id: number | string; author: string; body: string; type_id: number | string }
@@ -218,8 +251,7 @@ export const registerMemoryTools = (server: McpServer): void => {
       if (!supabase) return textResult('Missing bearer token.')
       const owners = await fetchOwnerContext(supabase)
 
-      const byId = parseItemId(ship)
-      const resolved = byId == null ? await hullByName(supabase, owners, ship) : { ok: true as const, itemId: byId }
+      const resolved = await resolveHull(supabase, owners, ship)
       if (!resolved.ok) return textResult(resolved.message)
       const itemId = resolved.itemId
 
@@ -305,6 +337,87 @@ export const registerMemoryTools = (server: McpServer): void => {
           how: 'Write in the accent and register above. Keep what the old memory says unless the facts contradict it; add, do not rewrite. Use "at least" where the data is sampled. Never invent battles, cargo or places. On a hull with an earlier owner, keep their chapters as the ship\'s past.',
         },
         data_refreshed,
+      })
+    }
+  )
+
+  server.registerTool(
+    'remember_ship',
+    {
+      title: "Write a ship's memory",
+      description:
+        "Store the next version of one of the user's ships' memory: the whole text, in markdown, in the ship's own voice (call recall_ship first for the facts, the accent and register, the current text and who will read it). Pass based_on as the version_id recall_ship returned, or null when the ship has no memory yet; if the memory changed since it was read, this refuses and says to recall again — it never merges. Only the character or corporation holding the ship now can write; every version is kept, and the memory goes with the hull if it is sold. Nothing in the game changes and no ESI call is made.",
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+      inputSchema: z.object({
+        ship: z
+          .string()
+          .min(1)
+          .describe('The ship: its item id (e.g. "1041234567890") or its in-game name, as for recall_ship'),
+        memory: z
+          .string()
+          .min(1)
+          .max(MAX_MEMORY_LENGTH)
+          .describe(
+            `The whole new memory, markdown, at most ${MAX_MEMORY_LENGTH.toLocaleString('en-US')} characters. It replaces the current text, so carry forward what should stay.`
+          ),
+        based_on: z
+          .number()
+          .int()
+          .positive()
+          .nullable()
+          .describe('The version_id recall_ship returned for the current memory, or null when the ship has none yet'),
+        author: z
+          .string()
+          .max(200)
+          .optional()
+          .describe('The name of the client writing, e.g. "Claude" or "Aura" (default "mcp"); provenance only'),
+      }),
+    },
+    async ({ ship, memory, based_on, author }, ctx): Promise<ToolResult> => {
+      const supabase = clientFor(ctx)
+      if (!supabase) return textResult('Missing bearer token.')
+      const owners = await fetchOwnerContext(supabase)
+
+      const resolved = await resolveHull(supabase, owners, ship)
+      if (!resolved.ok) return textResult(resolved.message)
+      const itemId = resolved.itemId
+
+      const valid = validateMemory(memory)
+      if (!valid.ok) return textResult(valid.message)
+
+      // The function refuses an unheld item itself (42501); asking first
+      // gives the type for the "not a ship" answer and a plainer message.
+      const typeId = await heldType(supabase, owners, itemId)
+      if (typeId == null) return textResult(writeFailure({ code: '42501' }, itemId))
+      const type = await getSdeType(typeId)
+      if (type?.categoryID !== SHIP_CATEGORY_ID) {
+        return textResult(
+          `Item #${itemId} is ${type?.name ?? 'an item'}, not a ship. The memory storage takes any item, but this tool writes only for hulls.`
+        )
+      }
+
+      const { data, error } = await supabase.rpc('item_memory_write', {
+        p_item_id: itemId,
+        p_body: valid.body,
+        p_based_on: based_on,
+        p_author: authorOf(author),
+      })
+      if (error) return textResult(writeFailure(error, itemId))
+
+      const readers = await readersOf(supabase, itemId)
+      return textResult({
+        ship: { item_id: itemId, type: type.name, url: `/ship/${itemId}` },
+        version_id: Number(data),
+        replaced_version_id: based_on,
+        characters: valid.body.length,
+        readers: {
+          note:
+            readers.length === 0
+              ? 'No share reaches this hull: only its holder reads the memory. It goes with the ship if it is sold.'
+              : 'Everyone these shares reach reads this text now, and so will whoever holds the hull next.',
+          shares: readers,
+        },
+        note: 'Stored. Every version is kept; the next write passes this version_id as based_on.',
       })
     }
   )
