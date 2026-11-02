@@ -13,30 +13,43 @@ import { filter, groupBy, map, reduce, uniq } from 'ramda'
 //     stack of its type at the same place appeared or grew. The memory waits
 //     on a pending item_memory_pack row. A hull that vanished with no stack
 //     taking it was destroyed or traded away assembled, which is not a pack.
-//   * an UNPACK: an assembled hull made its debut. Its memory is found by
-//     the rules below, in order; the first rule with any candidate decides.
-//     One candidate is carried. Several are left for the owner to settle
-//     through remember_ship's inherit_from, because the game itself can no
-//     longer tell two hulls of one type apart once they share a stack.
+//   * an UNPACK: a hull was assembled. Measured on production (2026-11-02,
+//     docs/ship-memory.md "Reassembly"): EVE gives the assembled hull the
+//     packaged row's own id — a stack of one or of thirty-one — so the
+//     assembly reaches the reconcile as a CHANGED row whose is_singleton
+//     turned true (a FLIP), and the remainder of a larger stack goes on
+//     under a new id. A hull also counts as assembled when it DEBUTS as a
+//     singleton, for the one case a flip cannot show: a hull repackaged and
+//     reassembled between two extracts, whose fresh stack id was never seen
+//     as a stack. The memory is found by the rules below, in order; the
+//     first rule with any candidate decides. One candidate is carried.
+//     Several are left for the owner to settle through remember_ship's
+//     inherit_from, because the game itself can no longer tell two hulls of
+//     one type apart once they share a stack.
 //
-// The matcher never looks at the id: it works whether EVE keeps an item id
-// through a repackage (is_singleton flips on one row, the memory never left,
-// and only a merge into a stack reaches here) or replaces it.
+// Because the flipped id IS the stack the pack named, rule 2 on a flip is
+// identity rather than inference: a pack alone in its stack is carried with
+// certainty, and several packs in one stack are exactly the ambiguous case.
+// A debut only ever takes rule 1 (or rule 2 by a stack that shrank, should
+// EVE ever hand the remainder the old id instead): a hull arriving assembled
+// from a contract or a trade debuts too, and matching it to a pending pack
+// by place alone (rule 3) would give it another ship's past.
 
 // What the reconcile saw of one item this run. `locationId` is the place as
 // ESI gives it (a station, structure or the parent item); `previousQuantity`
 // is set on a changed row only.
 /**
  * @typedef {{ itemId: number, typeId: number, locationId: number | null, quantity: number,
- *   isSingleton: boolean | null, previousQuantity?: number }} Seen
+ *   isSingleton: boolean | null, previousQuantity?: number, previousSingleton?: boolean | null }} Seen
  * @typedef {{ kind: string, id: string }} OwnerRef
  * @typedef {{ id: number, itemId: number, typeId: number, owner: OwnerRef,
  *   stackItemId: number | null, locationId: number | null }} PendingPack
  * @typedef {{ itemId: number, typeId: number, stackItemId: number | null, locationId: number | null,
  *   packedAt: string }} Pack
  * @typedef {{ fromItemId: number, packId: number | null }} Candidate
- * @typedef {{ fromItemId: number, toItemId: number, packId: number | null, rule: string | null }} Carry
- * @typedef {{ toItemId: number, rule: string | null, candidates: number[] }} Ambiguous
+ * @typedef {'flip' | 'debut'} Via
+ * @typedef {{ fromItemId: number, toItemId: number, packId: number | null, rule: string | null, via: Via }} Carry
+ * @typedef {{ toItemId: number, rule: string | null, candidates: number[], via: Via }} Ambiguous
  * @typedef {{ owner: OwnerRef, vanished: Seen[], debuts: Seen[], changed: Seen[],
  *   memories: Map<number, number>, pendingPacks: PendingPack[], now: string }} RunInput
  */
@@ -47,6 +60,9 @@ const asNumber = (v) => (v == null ? null : Number(v))
 // changed row with more units than before) is a stack that could have taken
 // a hull; shrank (fewer units, or gone) is one a hull could have come out of.
 const isStack = (row) => row.isSingleton === false
+// A changed row that was a stack and is a hull now: the assembly itself.
+const flipped = (row) => row.isSingleton === true && row.previousSingleton === false
+const isDebutHull = (row) => row.isSingleton === true
 const grew = (row) => isStack(row) && row.previousQuantity != null && row.quantity > row.previousQuantity
 const shrank = (row) => isStack(row) && row.previousQuantity != null && row.quantity < row.previousQuantity
 
@@ -63,9 +79,10 @@ const stacksTaking = (debuts, changed, typeId, locationId) =>
 
 // Did any stack of this type at this place change at all this run? Rule 1
 // asks, because a hull that left for a stack is a pack, not a hull that was
-// repackaged and reassembled between two extracts.
+// repackaged and reassembled between two extracts. A stack that flipped into
+// a hull changed too, though its row no longer reads as a stack.
 const anyStackChanged = (debuts, changed, vanished, typeId, locationId) =>
-  [...filter(isStack, debuts), ...filter(isStack, changed), ...filter(isStack, vanished)].some(
+  [...filter(isStack, debuts), ...filter((r) => isStack(r) || flipped(r), changed), ...filter(isStack, vanished)].some(
     (s) => Number(s.typeId) === Number(typeId) && samePlace(s.locationId, locationId)
   )
 
@@ -98,53 +115,61 @@ export const packsOf = ({ vanished, debuts, changed, memories, now }) =>
     vanished
   )
 
-// The candidates for one debut hull, by the first rule that yields any.
-//   1. within one interval: a memory-bearing hull of the type vanished this
-//      run at the same place under this owner, and no stack of the type at
-//      that place changed;
-//   2. the stack it went into: a pending pack whose stack shrank or vanished
-//      this run, under any owner (a stack keeping its id through a trade
-//      takes the memory to the buyer);
-//   3. same owner and place: a pending pack of the type under this owner at
-//      this place.
+// The candidates for one assembled hull, by the first rule that yields any.
+//   1. within one interval (a debut only): a memory-bearing hull of the type
+//      vanished this run at the same place under this owner, and no stack of
+//      the type at that place changed;
+//   2. the stack it went into: for a flip, every pending pack naming the
+//      flipped id as its stack — the pack's stack is the hull's own id; for
+//      either shape, a pending pack whose stack shrank or vanished this run,
+//      under any owner (a stack keeping its id through a trade takes the
+//      memory to the buyer);
+//   3. same owner and place (a flip only): a pending pack of the type under
+//      this owner at this place — the pack that could name no stack because
+//      several grew at once.
 /**
- * @param {{ debut: Seen } & Omit<RunInput, 'now'>} input
+ * @param {{ hull: Seen, via: Via } & Omit<RunInput, 'now'>} input
  * @returns {{ rule: string | null, candidates: Candidate[] }}
  */
-const candidatesFor = ({ debut, owner, vanished, debuts, changed, memories, pendingPacks }) => {
-  const typeId = Number(debut.typeId)
-  const interval = anyStackChanged(debuts, changed, vanished, typeId, debut.locationId)
-    ? []
-    : filter(
-        (h) =>
-          memories.has(Number(h.itemId)) && Number(h.typeId) === typeId && samePlace(h.locationId, debut.locationId),
-        vanished
-      )
+const candidatesFor = ({ hull, via, owner, vanished, debuts, changed, memories, pendingPacks }) => {
+  const typeId = Number(hull.typeId)
+  const asCandidate = (p) => ({ fromItemId: Number(p.itemId), packId: p.id })
+
+  const interval =
+    via !== 'debut' || anyStackChanged(debuts, changed, vanished, typeId, hull.locationId)
+      ? []
+      : filter(
+          (h) =>
+            memories.has(Number(h.itemId)) && Number(h.typeId) === typeId && samePlace(h.locationId, hull.locationId),
+          vanished
+        )
   if (interval.length > 0)
     return { rule: 'interval', candidates: map((h) => ({ fromItemId: Number(h.itemId), packId: null }), interval) }
 
-  const shrunkIds = new Set([
+  const ofType = filter((p) => Number(p.typeId) === typeId, pendingPacks)
+  const stackIds = new Set([
+    ...(via === 'flip' ? [Number(hull.itemId)] : []),
     ...map((s) => Number(s.itemId), filter(shrank, changed)),
     ...map((s) => Number(s.itemId), filter(isStack, vanished)),
   ])
-  const ofType = filter((p) => Number(p.typeId) === typeId, pendingPacks)
-  const byStack = filter((p) => p.stackItemId != null && shrunkIds.has(Number(p.stackItemId)), ofType)
-  if (byStack.length > 0)
-    return { rule: 'stack', candidates: map((p) => ({ fromItemId: Number(p.itemId), packId: p.id }), byStack) }
+  const byStack = filter((p) => p.stackItemId != null && stackIds.has(Number(p.stackItemId)), ofType)
+  if (byStack.length > 0) return { rule: 'stack', candidates: map(asCandidate, byStack) }
 
-  const byPlace = filter((p) => sameOwner(p.owner, owner) && samePlace(p.locationId, debut.locationId), ofType)
-  if (byPlace.length > 0)
-    return { rule: 'place', candidates: map((p) => ({ fromItemId: Number(p.itemId), packId: p.id }), byPlace) }
+  const byPlace =
+    via === 'flip' ? filter((p) => sameOwner(p.owner, owner) && samePlace(p.locationId, hull.locationId), ofType) : []
+  if (byPlace.length > 0) return { rule: 'place', candidates: map(asCandidate, byPlace) }
 
   return { rule: null, candidates: [] }
 }
 
-// The carries of a run — which debut hull inherits which memory — and the
-// debuts left ambiguous. A debut with exactly one candidate carries, unless
-// another debut this run claimed the same memory: two hulls assembled from
+// The carries of a run — which assembled hull inherits which memory — and
+// the hulls left ambiguous. A hull with exactly one candidate carries, unless
+// another hull this run claimed the same memory: two hulls assembled from
 // one stack cannot both be it, so neither is, and both are listed for the
-// owner. A debut is considered only when its type has a candidate at all,
+// owner. A hull is considered only when its type has a candidate at all,
 // which keeps the fold to a handful of rows on the rare run that has any.
+// `via` says which shape the hull arrived in; the writer skips its
+// new-id test for a flip, whose closed rows are its own packaged past.
 /** @param {RunInput} input @returns {{ carries: Carry[], ambiguous: Ambiguous[] }} */
 export const carriesOf = ({ owner, vanished, debuts, changed, memories, pendingPacks }) => {
   const candidateTypes = new Set([
@@ -154,10 +179,20 @@ export const carriesOf = ({ owner, vanished, debuts, changed, memories, pendingP
     ),
     ...map((p) => Number(p.typeId), pendingPacks),
   ])
-  const hulls = filter((d) => d.isSingleton === true && candidateTypes.has(Number(d.typeId)), debuts)
-  const picks = map((debut) => {
-    const { rule, candidates } = candidatesFor({ debut, owner, vanished, debuts, changed, memories, pendingPacks })
-    return { toItemId: Number(debut.itemId), rule, candidates }
+  const ofCandidateType = (r) => candidateTypes.has(Number(r.typeId))
+  const hulls = [
+    ...map(
+      (r) => ({ hull: r, via: /** @type {Via} */ ('flip') }),
+      filter((r) => flipped(r) && ofCandidateType(r), changed)
+    ),
+    ...map(
+      (r) => ({ hull: r, via: /** @type {Via} */ ('debut') }),
+      filter((r) => isDebutHull(r) && ofCandidateType(r), debuts)
+    ),
+  ]
+  const picks = map(({ hull, via }) => {
+    const { rule, candidates } = candidatesFor({ hull, via, owner, vanished, debuts, changed, memories, pendingPacks })
+    return { toItemId: Number(hull.itemId), rule, candidates, via }
   }, hulls)
 
   // A memory two debuts both point at is nobody's.
@@ -177,12 +212,19 @@ export const carriesOf = ({ owner, vanished, debuts, changed, memories, pendingP
       if (pick.candidates.length === 0) return acc
       const [only] = pick.candidates
       if (pick.candidates.length === 1 && !contested.has(only.fromItemId)) {
-        acc.carries.push({ fromItemId: only.fromItemId, toItemId: pick.toItemId, packId: only.packId, rule: pick.rule })
+        acc.carries.push({
+          fromItemId: only.fromItemId,
+          toItemId: pick.toItemId,
+          packId: only.packId,
+          rule: pick.rule,
+          via: pick.via,
+        })
       } else {
         acc.ambiguous.push({
           toItemId: pick.toItemId,
           rule: pick.rule,
           candidates: uniq(map((c) => c.fromItemId, pick.candidates)),
+          via: pick.via,
         })
       }
       return acc
