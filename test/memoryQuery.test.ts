@@ -5,12 +5,16 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import {
+  authorOf,
   describeReader,
   EXTRACT_INTERVAL_MS,
   inheritance,
+  MAX_MEMORY_LENGTH,
   parseItemId,
   pickHull,
   subjectOf,
+  validateMemory,
+  writeFailure,
 } from '../src/app/api/mcp/memoryQuery.ts'
 
 test('an item id is a run of digits; anything else is a name', () => {
@@ -91,4 +95,32 @@ test('inheritance: chapters before the caller’s record when the earliest visib
 test('the extract intervals are the cron cadence: 6h for a character, a day for a corporation', () => {
   assert.equal(EXTRACT_INTERVAL_MS.character, 6 * 60 * 60 * 1000)
   assert.equal(EXTRACT_INTERVAL_MS.corporation, 24 * 60 * 60 * 1000)
+})
+
+test('validateMemory: blank refused, over the storage limit refused, otherwise the body as given', () => {
+  assert.equal(validateMemory('   \n').ok, false)
+  const long = validateMemory('x'.repeat(MAX_MEMORY_LENGTH + 1))
+  assert.equal(long.ok, false)
+  if (!long.ok) assert.match(long.message, /20,000/)
+  assert.deepEqual(validateMemory('x'.repeat(MAX_MEMORY_LENGTH)), { ok: true, body: 'x'.repeat(MAX_MEMORY_LENGTH) })
+  assert.deepEqual(validateMemory('# The Rusty Kettle\n\nAye.'), { ok: true, body: '# The Rusty Kettle\n\nAye.' })
+})
+
+test('authorOf: the client name, trimmed and capped, else mcp', () => {
+  assert.equal(authorOf(undefined), 'mcp')
+  assert.equal(authorOf('   '), 'mcp')
+  assert.equal(authorOf(' Claude '), 'Claude')
+  assert.equal(authorOf('a'.repeat(300)).length, 200)
+})
+
+test('writeFailure: the three SQLSTATEs the function raises read as what they mean', () => {
+  assert.match(writeFailure({ code: '42501' }, 7), /do not hold item #7/)
+  assert.match(writeFailure({ code: 'PT409' }, 7), /changed since you read it/)
+  assert.match(writeFailure({ code: 'PT409' }, 7), /recall_ship/)
+  assert.match(writeFailure({ code: '23514' }, 7), /blank|20,000/)
+  assert.equal(
+    writeFailure({ code: 'XX000', message: 'boom', hint: 'try later' }, 7),
+    'Writing the memory failed: boom (try later)'
+  )
+  assert.equal(writeFailure({}, 7), 'Writing the memory failed: unknown error')
 })

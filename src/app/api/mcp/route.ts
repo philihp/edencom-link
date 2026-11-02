@@ -2,11 +2,12 @@
 // via OAuth 2.1 against Supabase Auth acting as the authorization server (the
 // consent page lives at /oauth/consent; discovery metadata at
 // /.well-known/oauth-protected-resource). Tools are read-only queries over
-// the extracted DB — see tools.ts — with three exceptions: linkTools.ts can
+// the extracted DB — see tools.ts — with four exceptions: linkTools.ts can
 // create and share a link, watchedSystemTools.ts can edit the caller's
-// /indexes watch list, and mailTools.ts's send_mail queues an EVE mail for a
-// person to send by hand later (all three write only rows the caller owns;
-// none calls ESI or changes the game).
+// /indexes watch list, mailTools.ts's send_mail queues an EVE mail for a
+// person to send by hand later, and memoryTools.ts's remember_ship writes the
+// next version of a held ship's memory (all four write only rows the caller
+// owns or holds; none calls ESI or changes the game).
 import { createMcpHandler, withMcpAuth } from 'mcp-handler'
 
 import { verifySupabaseToken } from './auth'
