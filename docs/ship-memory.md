@@ -47,7 +47,13 @@ replaces a hull's id when it is repackaged and keeps the packaged row's id
 when a hull is assembled from it** (see Reassembly, which also says what that
 meant for the matcher, re-shaped the same day). **The extension** to every
 singleton — blueprints, modules, containers — was planned the same day (see
-Extension: every singleton, and PRs 7–11); none of it is built.
+Extension: every singleton, and PRs 7–11). PR 7 (the generic tools and the
+blueprint dossier) was built the same day: `recall_item`/`remember_item` in
+`memoryTools.ts` with the ship tools as aliases, the resolver widened to a
+type name over what the caller holds, `src/app/ship/memory/nativeVoice.ts`
+(the kind and native voice per category, tested), the blueprint fold
+`blueprintDossier.ts` (tested) with its loader `loadBlueprint.ts`, and the
+skill doc's section renamed "An item's memory".
 
 ## Decisions (owner, 2026-11-01)
 
@@ -545,8 +551,8 @@ owner set the goal that **every singleton item we track can carry a memory
 through this one mechanism**: a Vexor Blueprint Original answers how many
 hulls it has built the way a Phoenix Navy Issue answers where it has docked.
 This chapter is the plan for that, measured against production the day it
-was written; nothing in it is built, and nothing above is undone by it. The
-extension's PRs are 7 to 11 in the list below.
+was written; nothing above is undone by it. The extension's PRs are 7 to 11
+in the list below; PR 7 is built, the rest are not.
 
 ### Decisions (owner, 2026-11-02)
 
@@ -887,7 +893,16 @@ The extension (planned 2026-11-02, nothing built):
    (name, then type name), the generic dossier, and the blueprint fold over
    the job and blueprint histories (pure, tested; the Vexor table above is
    its acceptance test). Skill doc section renamed. This alone answers the
-   owner's question.
+   owner's question. **Built 2026-11-02.** Where it differs from the plan:
+   the generic dossier is the ship fold itself — `dossier.ts` folds any
+   asset item's versions, and the ship parts (pilots, fuel, fit) come back
+   empty for a blueprint — so no separate generic fold was written, and the
+   tool draws the sections a kind has (a container keeps the cargo fold as
+   `contents`). The native-voice chart shipped in this PR as
+   `nativeVoice.ts` (the thug by current slot, the clerk's register by
+   research), ahead of PR 8, since the tool had to say some voice for every
+   kind; the acquired accents stay PR 8. A blueprint's `installers` are
+   named through the world-readable `character_directory`.
 8. **Module dossier and the droid voices.** The attachment fold,
    `nativeVoice.ts` with the chart above, `accentBlend.ts` for high-slot
    modules (tested against hand-built histories: one hull for 100 days is

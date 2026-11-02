@@ -543,15 +543,29 @@ For each module, give the best upgrade found: the item, where to get it
 reference price, and the percentage below the reference. Leave out the
 modules that have no upgrade at a good price.
 
-## A ship's memory
+## An item's memory
 
-A ship can carry a memory: a markdown text in the ship's own voice about
-where it came from, where it has docked, what it has carried, how it keeps
-its fuel, and who has flown it. The memory belongs to the hull. It passes to
-whoever holds the hull next, and everyone the ship is shared with reads it.
-Two tools: `recall_ship` reads the facts, `remember_ship` stores the text.
+Any singleton item the user holds can carry a memory: a markdown text in the
+item's own voice. A ship's is about where it came from, where it has docked,
+what it has carried, how it keeps its fuel, and who has flown it; a
+blueprint's about its research, the hulls it has built and the copies it has
+made; a container's about what has passed through it. The memory belongs to
+the item. It passes to whoever holds it next, and everyone it is shared with
+reads it. Two tools: `recall_item` reads the facts, `remember_item` stores
+the text. `recall_ship` and `remember_ship` are the same tools for hulls
+alone, kept for clients that learned them; they refuse anything else and
+point here. Stacks carry no memory — a packaged stack is fungible — so only
+singletons answer.
 
-`recall_ship` answers, for a ship named by item id or in-game name:
+Name an item by its item id, by its in-game name (ships and containers are
+named; modules and blueprints are not), or by its type name ("Vexor
+Blueprint", "my Vexor BPO"). A type name must pick out one held item; when
+the user holds several of the type the tool lists them by item id with what
+tells them apart (a blueprint's ME/TE, a module's slot and hull), and you ask
+the user which.
+
+`recall_item` answers `kind` — `ship`, `blueprint`, `module`, `container` or
+`item` — and, for a ship named by item id or in-game name:
 
 - The dossier: the first sighting, where the hull came from (built,
   contracted, bought or unpacked, inferred and marked with a confidence, or
@@ -562,6 +576,37 @@ Two tools: `recall_ship` reads the facts, `remember_ship` stores the text.
   corporation hangar).
 - The voice: an accent from the hull's faction or race, with voice notes,
   and a register from its hull class.
+
+For a blueprint the `dossier` keeps the parts any item has (first sighting,
+owners, where it has sat) and a `blueprint` section carries its ledger, all
+recorded against the blueprint's own item id, so none of it is inferred:
+
+- `research`: the current ME/TE, each step as a change between two
+  sightings with the research job that produced it when one is on record,
+  and the research job counts.
+- `building`: manufacturing jobs run with this blueprint — total, delivered,
+  runs over the delivered ones (one run makes the product's per-run
+  quantity: one hull for a ship), by product, by facility, by installer, the
+  install cost paid, first and last job. "How many Vexors has this BPO
+  built" is `building.by_product[].runs_at_least`.
+- `copying` and `invention`: the same tallies, with licensed runs and
+  successful runs.
+- `runs_remaining` for a copy.
+
+Every count is "at least": the record begins when the job extract first ran
+for the owner, and ESI keeps about 90 days of jobs.
+
+For a container the `dossier` carries `contents`, what has passed through
+it, as at-least quantities. For a module or any other item it carries the
+first sighting, the owners and where it has sat.
+
+The voice for every kind is in `voice`: a ship's accent and register; a
+blueprint is a patient clerk who counts in runs, whose register is its
+research (a pristine original is a novice, ME 10 / TE 20 has seen
+everything); a module is a robotic droid with a limited vocabulary, and a
+module fitted in a high slot is a brutish one that calls the pilot "boss"; a
+container is a warehouse foreman. Write in the voice named, in the first
+person.
 - The memory the ship has now, with its `version_id`, and `before_you`: whether
   the current text was written by an earlier owner.
 - Who reads the memory: every share that reaches the hull, a container above
@@ -577,17 +622,20 @@ Two tools: `recall_ship` reads the facts, `remember_ship` stores the text.
   user which packed hull this is before you carry one; a wrong pick gives the
   hull another ship's past.
 
-### Writing a ship's memory
+### Writing an item's memory
 
-1. Call `recall_ship`.
-2. Write in the accent and register it names. The ship speaks in the first
+1. Call `recall_item` (or `recall_ship` for a hull).
+2. Write in the voice it names — for a ship the accent and register, for
+   anything else the native voice in `voice`. The item speaks in the first
    person.
 3. Keep what the old memory said unless the facts contradict it. Add, don't
    rewrite. The new text replaces the old one whole, so carry forward what
    should stay.
 4. Use "at least" where the data is sampled: cargo, docks, pilots and refits
    all are.
-5. Never invent battles, cargo or places. Combat is not in the data.
+5. Never invent battles, cargo, places, jobs or pilots. Combat is not in the
+   data; a blueprint's jobs and a module's hulls are, so use only the ones
+   listed.
 6. The memory is read by everyone the ship is shared with, and by whoever
    owns it next. Before naming places or pilots, read `readers` and tell the
    user when the ship is shared publicly. A buyer inherits the text, not the
@@ -595,19 +643,20 @@ Two tools: `recall_ship` reads the facts, `remember_ship` stores the text.
 7. On a hull with an earlier owner (`before_you.inherited`), keep that owner's
    chapters as the ship's past ("Before you, I hauled for…"). Don't erase
    them.
-8. Call `remember_ship` with the whole text and `based_on` set to the
-   `version_id` from step 1 (null when the ship had no memory). If it answers
-   that the memory changed since you read it, call `recall_ship` again and
-   write on top of the new text. Never merge the two yourself.
+8. Call `remember_item` (or `remember_ship`) with the whole text and
+   `based_on` set to the `version_id` from step 1 (null when the item had no
+   memory). If it answers that the memory changed since you read it, call
+   `recall_item` again and write on top of the new text. Never merge the two
+   yourself.
 9. When step 1 listed `inherit_candidates` and the user confirmed which
    packed hull this is, pass its `pack_id` as `inherit_from` with `based_on`
    null: the packed memory is carried onto this hull first and your text is
    written on top of it, so write as the same ship continuing. Never pass
    `inherit_from` without asking when there is more than one candidate.
 
-`remember_ship` changes nothing in the game. It needs no confirmation
-beyond the user asking for the memory to be written: every version is kept,
-and a later write can restore any earlier text.
+`remember_item` and `remember_ship` change nothing in the game. They need no
+confirmation beyond the user asking for the memory to be written: every
+version is kept, and a later write can restore any earlier text.
 
 ## Public contracts
 
@@ -800,8 +849,8 @@ Five tools change data. None of them changes the game. `send_mail` queues an
 EVE mail on the site for a person to send later (see "Sending mail"). The
 other four change only the user's own rows on this site:
 
-- `remember_ship` stores the next version of a held ship's memory (see "A
-  ship's memory"). Every version is kept.
+- `remember_item` (and `remember_ship` for hulls) stores the next version of a held item's memory (see "An
+  item's memory"). Every version is kept.
 
 - `create_link` saves a Data Link, and can share it.
 - `update_link` changes a Data Link. Its audience sees the change the next
@@ -835,8 +884,8 @@ other four change only the user's own rows on this site:
   one for a person to send later (see "EVE mail").
 - Characters, ships, clones: `list_clones`. Saved fits and the archive:
   `list_fittings`. Structures: `list_structures`. A ship's memory:
-  `recall_ship` reads the facts, `remember_ship` stores the text (see "A
-  ship's memory").
+  `recall_item` reads the facts, `remember_item` stores the text; `recall_ship`/`remember_ship` are the same for hulls alone (see "An
+  item's memory").
 - Mercenary dens: `list_mercenary_dens`. Planets and planet types:
   `list_planets`.
 - Where to buy reaction gas for C-J6MT: `appraise_items` in `jita` and
