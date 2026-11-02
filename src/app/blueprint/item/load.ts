@@ -8,7 +8,7 @@
 // No ESI, no new scope. Every table read here is one an extract already
 // writes.
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { chain, concat, filter, map, splitEvery, uniq } from 'ramda'
+import { chain, concat, filter, forEach, map, uniq } from 'ramda'
 
 import { getBlueprintsByTypeIDs, type Blueprint } from '@/sdeBlueprints'
 import { getSdeType, type SdeType } from '@/sdeTypes'
@@ -18,6 +18,7 @@ import { fetchOwners } from '../../owners'
 import type { Owner, Owners } from '../../ownerFilter'
 import { readShipMemory, type ShipMemory } from '../../ship/memory/read'
 import { fetchStationNames } from '../../stationNames'
+import { isPriceable, type Bill } from '../../structure/eiv'
 import { fetchTypeNames } from '../../typeNames'
 import {
   ACTIVITY,
@@ -26,6 +27,7 @@ import {
   type HistoryJob,
   type HistoryPricing,
   type HistoryTotals,
+  type PricePoint,
   type RunRow,
 } from './history'
 import { inferCopyOrigin, type Origin, type OriginJob } from './origin'
@@ -85,9 +87,6 @@ export type BlueprintPageData = {
     owners: Record<string, string>
   }
   owners: Owners
-  // When CCP's adjusted prices were last pulled: the moment the EIVs are
-  // priced at (docs/item-pages.md, "EIV at that time").
-  pricedAt: string | null
 }
 
 const BLUEPRINT_COLUMNS =
@@ -151,31 +150,48 @@ const fetchJobs = async (
   )
 }
 
-const ADJUSTED_PRICE_BATCH = 500
-
 // How far back before a copy's debut its job could have ended: a finished
 // job waits in "ready" until delivered, so this is wider than the delivery
 // window the pure rule applies (ORIGIN_WINDOW_MS).
 const ORIGIN_READ_WINDOW_MS = 30 * 24 * 60 * 60 * 1000
 
-// CCP's adjusted prices for a set of types, latest only (docs/item-pages.md
-// defers the history to PR 4), with the newest capture's clock.
-const adjustedPrices = async (
+// A (type, moment) pair as the price map keys it. The moment is normalised
+// through Date because Postgres formats the timestamp its own way on the way
+// back, and the fold asks with the job's start_date as PostgREST gave it.
+const priceKey = (typeId: number, atIso: string) => `${typeId}|${new Date(atIso).toISOString()}`
+
+// CCP's adjusted price of every material at every install the priceable
+// runs need, through market_adjusted_price_at() (migration 20261102235206):
+// the version in effect at that moment, or — for a run installed before the
+// price record began — the earliest version on record, flagged inexact so the
+// page can say so. The price at the install is what the run's EIV meant when
+// the game charged for it, and the history is append-only, so the figure
+// never moves afterwards (docs/item-pages.md "Adjusted-price history").
+const adjustedPricesAt = async (
   supabase: SupabaseClient,
-  typeIds: number[]
-): Promise<{ prices: Map<number, number>; recordedAt: string | null }> => {
-  const batches = await Promise.all(
+  jobs: HistoryJob[],
+  bill: Bill
+): Promise<Map<string, PricePoint>> => {
+  const probes = new Map<string, { type_id: number; as_of: string }>()
+  forEach((job: HistoryJob) => {
+    if (!isPriceable(job)) return
+    const asOf = new Date(job.start_date).toISOString()
+    forEach((m) => probes.set(priceKey(m.typeID, asOf), { type_id: m.typeID, as_of: asOf }), bill)
+  }, jobs)
+  if (probes.size === 0) return new Map()
+  const { data, error } = await supabase.rpc('market_adjusted_price_at', { probes: [...probes.values()] })
+  if (error) {
+    console.error(`[blueprint] market_adjusted_price_at failed: ${error.message}`)
+    return new Map()
+  }
+  type Row = { type_id: number | string; as_of: string; adjusted_price: number | string; exact: boolean }
+  return new Map(
     map(
-      (batch: number[]) =>
-        supabase.from('market_adjusted_price').select('type_id, adjusted_price, recorded_at').in('type_id', batch),
-      splitEvery(ADJUSTED_PRICE_BATCH, typeIds)
+      (r: Row) =>
+        [priceKey(Number(r.type_id), r.as_of), { price: Number(r.adjusted_price), exact: r.exact === true }] as const,
+      (data ?? []) as Row[]
     )
   )
-  type Row = { type_id: number | string; adjusted_price: number | string; recorded_at: string }
-  const rows = chain(({ data }) => (data ?? []) as Row[], batches)
-  const prices = new Map(map((r: Row) => [Number(r.type_id), Number(r.adjusted_price)] as const, rows))
-  const recordedAt = rows.reduce<string | null>((m, r) => (m == null || r.recorded_at > m ? r.recorded_at : m), null)
-  return { prices, recordedAt }
 }
 
 export const loadBlueprintPage = async (
@@ -227,18 +243,15 @@ export const loadBlueprintPage = async (
   const jobs = dedupeJobs(characterJobs, corpJobs)
   const product: Blueprint | null = blueprints[item.typeId] ?? null
 
-  const { prices, recordedAt } = await adjustedPrices(
-    supabase,
-    product == null ? [] : map((m) => m.typeID, product.materials)
-  )
+  const prices = await adjustedPricesAt(supabase, jobs, product == null ? [] : product.materials)
   const pricing: HistoryPricing = {
     bills: product == null ? {} : { [item.typeId]: product.materials },
     products:
       product == null
         ? {}
         : { [item.typeId]: { productTypeID: product.productTypeID, productQuantity: product.productQuantity } },
-    // Latest-only today; PR 4 prices at the moment.
-    priceAt: (typeId) => prices.get(typeId) ?? null,
+    // The adjusted price in effect at the run's install, never today's.
+    priceAt: (typeId, atIso) => prices.get(priceKey(typeId, atIso)) ?? null,
   }
   const { rows, totals } = foldHistory(jobs, pricing)
 
@@ -300,7 +313,6 @@ export const loadBlueprintPage = async (
     memory,
     names: { types, locations, owners: ownerNames },
     owners,
-    pricedAt: recordedAt,
   }
 }
 

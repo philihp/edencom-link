@@ -147,7 +147,8 @@ the folds were right, they were just reading an empty table. Run on
 
 - **The window is whole UTC days.** Days from the one `now − N days` falls on,
   so up to a day wider than the exact instant the page used.
-- **Pricing freezes at compute time.** `market_adjusted_price` is latest-only,
+- **Pricing freezes at compute time.** `market_adjusted_price` (the view of
+  current rows over `market_adjusted_price_over_time`) is read latest-only here,
   so the page used to price every job in the window at today's adjusted
   prices; a rollup row keeps the prices of the run that computed it (the
   backfill prices history at today's). The cost index is now the sample in
