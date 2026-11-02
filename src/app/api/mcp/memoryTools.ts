@@ -20,7 +20,7 @@ import { resolveLocations, type LocationRef } from '@/app/resolveLocations'
 import { SHIP_CATEGORY_ID } from '@/app/ship/[itemId]/shipRows'
 import { voiceOf } from '@/app/ship/memory/accent'
 import { dossier, type Dossier, type Owner, type Place } from '@/app/ship/memory/dossier'
-import { pendingPacksOfType } from '@/app/ship/memory/inherit'
+import { inheritMemory, pendingPacksOfType } from '@/app/ship/memory/inherit'
 import { loadDossierInput } from '@/app/ship/memory/load'
 import { registerOf } from '@/app/ship/memory/register'
 import { getSdeType, getSdeTypeFaction, getSdeTypeNames, getSdeTypes } from '@/sdeTypes'
@@ -373,7 +373,7 @@ export const registerMemoryTools = (server: McpServer): void => {
     {
       title: "Write a ship's memory",
       description:
-        "Store the next version of one of the user's ships' memory: the whole text, in markdown, in the ship's own voice (call recall_ship first for the facts, the accent and register, the current text and who will read it). Pass based_on as the version_id recall_ship returned, or null when the ship has no memory yet; if the memory changed since it was read, this refuses and says to recall again — it never merges. Only the character or corporation holding the ship now can write; every version is kept, and the memory goes with the hull if it is sold. Nothing in the game changes and no ESI call is made.",
+        "Store the next version of one of the user's ships' memory: the whole text, in markdown, in the ship's own voice (call recall_ship first for the facts, the accent and register, the current text and who will read it). Pass based_on as the version_id recall_ship returned, or null when the ship has no memory yet; if the memory changed since it was read, this refuses and says to recall again — it never merges. On a hull with no memory, inherit_from names one of recall_ship's inherit_candidates (a repackaged hull's memory waiting for its reassembly): that memory is carried onto this hull first and the new text written on top of it. Only the character or corporation holding the ship now can write; every version is kept, and the memory goes with the hull if it is sold. Nothing in the game changes and no ESI call is made.",
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
       inputSchema: z.object({
         ship: z
@@ -398,9 +398,17 @@ export const registerMemoryTools = (server: McpServer): void => {
           .max(200)
           .optional()
           .describe('The name of the client writing, e.g. "Claude" or "Aura" (default "mcp"); provenance only'),
+        inherit_from: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe(
+            "The pack_id of one of recall_ship's inherit_candidates: the packed hull this one was assembled from. Its memory is carried here before the write, so based_on must be null. Ask the player which candidate it is when there is more than one."
+          ),
       }),
     },
-    async ({ ship, memory, based_on, author }, ctx): Promise<ToolResult> => {
+    async ({ ship, memory, based_on, author, inherit_from }, ctx): Promise<ToolResult> => {
       const supabase = clientFor(ctx)
       if (!supabase) return textResult('Missing bearer token.')
       const owners = await fetchOwnerContext(supabase)
@@ -423,19 +431,44 @@ export const registerMemoryTools = (server: McpServer): void => {
         )
       }
 
+      // A carry settles an ambiguous reassembly before the write: the packed
+      // hull's memory becomes this hull's first version, and the new text is
+      // written on top of it, so the lineage is one chain. inheritMemory
+      // refuses a hull that already has a memory, so based_on must be null.
+      let basedOn = based_on
+      let inherited: { pack_id: number; from_item_id: number; version_id: number } | undefined
+      if (inherit_from != null) {
+        if (based_on != null) {
+          return textResult(
+            'inherit_from carries a packed memory onto a hull that has none; this call also passes based_on. Pass based_on null to inherit, or drop inherit_from to write on top of the current memory.'
+          )
+        }
+        const carried = await inheritMemory(supabase, owners, { itemId, packId: inherit_from })
+        if (!carried.ok) return textResult(carried.message)
+        basedOn = carried.versionId
+        inherited = { pack_id: inherit_from, from_item_id: carried.fromItemId, version_id: carried.versionId }
+      }
+
       const { data, error } = await supabase.rpc('item_memory_write', {
         p_item_id: itemId,
         p_body: valid.body,
-        p_based_on: based_on,
+        p_based_on: basedOn,
         p_author: authorOf(author),
       })
-      if (error) return textResult(writeFailure(error, itemId))
+      if (error) {
+        return textResult(
+          inherited == null
+            ? writeFailure(error, itemId)
+            : `${writeFailure(error, itemId)} The packed memory of item #${inherited.from_item_id} was carried onto this hull first (version ${inherited.version_id}) and stays; call recall_ship and write on top of it.`
+        )
+      }
 
       const readers = await readersOf(supabase, itemId)
       return textResult({
         ship: { item_id: itemId, type: type.name, url: `/ship/${itemId}` },
         version_id: Number(data),
-        replaced_version_id: based_on,
+        replaced_version_id: basedOn,
+        ...(inherited == null ? {} : { inherited }),
         characters: valid.body.length,
         readers: {
           note:
