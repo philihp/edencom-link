@@ -1,0 +1,109 @@
+/* /blueprint/[itemId] — one blueprint's page (docs/item-pages.md). The
+   identity strip echoes the ship page's (identity.module.css): accent rule
+   down the left edge, the name and its facts stacked beside the icon. */
+
+.identity {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 14px 0 16px 16px;
+  border-left: 3px solid var(--accent);
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.main {
+  flex: 1;
+  min-width: 0;
+}
+
+.titleRow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.title {
+  margin: 0;
+  font-size: 21px;
+}
+
+.badge {
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 10.5px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.subtitle {
+  margin: 5px 0 0;
+  font-size: 12.5px;
+  color: var(--ink-soft);
+}
+
+.gone {
+  color: var(--danger);
+}
+
+/* The totals strip: four readouts in a row, each a label over a figure. */
+.totals {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 8px;
+  margin: 16px 0;
+}
+
+.stat {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--paper-raised);
+  min-width: 0;
+}
+
+.statLabel {
+  font-size: 10.5px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.statValue {
+  margin-top: 4px;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 18px;
+}
+
+.statOf {
+  font-size: 12px;
+  color: var(--ink-faint);
+}
+
+.statNote {
+  margin-top: 2px;
+  font-size: 11.5px;
+  color: var(--ink-soft);
+}
+
+.block {
+  margin: 20px 0;
+}
+
+.blockHeading {
+  margin: 0 0 8px;
+  font-size: 15px;
+}
+
+.blockBody {
+  margin: 0;
+  font-size: 13px;
+}
+
+/* A cancelled or reverted run: listed, dimmed, never counted. */
+.uncounted td {
+  color: var(--ink-faint);
+}

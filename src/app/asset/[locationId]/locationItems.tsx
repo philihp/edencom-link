@@ -4,7 +4,8 @@ import { getSdeTypes } from '@/sdeTypes'
 import { typeFacts } from '../../assetTypeFacts'
 import type { Owners } from '../../ownerFilter'
 import { fetchTypeNames } from '../../typeNames'
-import { SHIP_CATEGORY_ID, type Asset } from './locationData'
+import { type Asset } from './locationData'
+import { itemHref } from '../itemHref'
 import { LocationAssets, type ItemRow } from './locationAssets'
 
 // The item table, as its own async server component so the page can stream it.
@@ -49,17 +50,10 @@ export const LocationItems = async ({
     }
   }
 
-  // One bulk SDE lookup for every type in play. It feeds three things: the set
-  // of Ship-category type ids, so the per-row ship test stays a sync Set.has;
-  // each row's volume/group/category columns; and which image variation its
-  // icon has.
+  // One bulk SDE lookup for every type in play. It feeds three things: each
+  // row's category, which the link rule (itemHref) branches on; its
+  // volume/group/category columns; and which image variation its icon has.
   const itemTypes = await getSdeTypes(rootItems.map((a) => Number(a.type_id)))
-  const shipTypeIds = new Set(
-    Object.values(itemTypes)
-      .filter((t) => t.categoryID === SHIP_CATEGORY_ID)
-      .map((t) => t.typeID)
-  )
-  const isShip = (typeId: number | string) => shipTypeIds.has(Number(typeId))
 
   // Resolve type names without blocking render: fire the lookup and let each
   // TypeName stream in (Suspense), falling back to #id. A big hangar can hold
@@ -81,7 +75,9 @@ export const LocationItems = async ({
         flag: a.location_flag,
         contents,
         isCurrentShip: currentShipItemIds.has(String(a.item_id)),
-        href: !linkable ? null : isShip(a.type_id) ? `/ship/${a.item_id}` : contents > 0 ? `/asset/${a.item_id}` : null,
+        href: !linkable
+          ? null
+          : itemHref({ itemId: a.item_id, categoryId: type?.categoryID, isSingleton: a.is_singleton, contents }),
         ...typeFacts(type, a.is_blueprint_copy),
       }
     })

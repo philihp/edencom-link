@@ -3,21 +3,17 @@ import { fetchTypeNames } from '../../typeNames'
 import { fetchType, resolveProductTypeID } from '../api'
 import { rigsForProduct } from '../rigs'
 
-type BlueprintTypeParams = {
-  params: Promise<{ typeID: string }>
-}
-
-const BlueprintType = async ({ params }: BlueprintTypeParams) => {
-  const { typeID } = await params
-
-  // The route param is the blueprint's typeID. Resolve the item it manufactures,
-  // then that product's group/category, which determine the applicable rigs.
-  const blueprint = await fetchType(Number(typeID))
+// The rig page for a blueprint TYPE: which Upwell rigs bonus what it builds.
+// Rendered by /blueprint/[id] when the id is a type id (page.tsx).
+export const BlueprintTypePage = async ({ typeId }: { typeId: number }) => {
+  // Resolve the item the blueprint manufactures, then that product's
+  // group/category, which determine the applicable rigs.
+  const blueprint = await fetchType(typeId)
   const productTypeID = blueprint?.name != null ? await resolveProductTypeID(blueprint.name) : null
   const product = productTypeID != null ? await fetchType(productTypeID) : null
 
   if (blueprint?.name == null) {
-    return <h1>#{typeID}</h1>
+    return <h1>#{typeId}</h1>
   }
 
   if (product?.groupID == null) {
@@ -58,5 +54,3 @@ const BlueprintType = async ({ params }: BlueprintTypeParams) => {
     </>
   )
 }
-
-export default BlueprintType

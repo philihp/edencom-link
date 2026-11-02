@@ -1,6 +1,6 @@
 // Which Upwell rigs give a blueprint a material bonus, and the inverse test —
 // does *this* rig cover *that* product. Both read the vendored eveship.fit
-// modifier tables under [typeID]/: a rig's material modifier carries a
+// modifier tables under [id]/: a rig's material modifier carries a
 // filterID, and each filter enumerates the group/category ids it covers, so a
 // rig applies to a product exactly when one of the product's filters lists it.
 //
@@ -12,8 +12,8 @@ import { flatten, map, uniq, values } from 'ramda'
 // Explicit .ts extensions (allowed by allowImportingTsExtensions): they let
 // `node --test` resolve this module under Node's own TypeScript stripping, the
 // same way the tests reach blueprintQuery/structureQuery.
-import { filtersUsed } from './[typeID]/filters.ts'
-import { filtersForRigs, rigsForFilter } from './[typeID]/modifiers.ts'
+import { filtersUsed } from './[id]/filters.ts'
+import { filtersForRigs, rigsForFilter } from './[id]/modifiers.ts'
 
 // Every rig type id that gives a material bonus to a product in this
 // group/category. Pass the *product's* ids, not the blueprint's.
