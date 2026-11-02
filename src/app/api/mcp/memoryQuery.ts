@@ -133,3 +133,49 @@ export const inheritance = (
     your_first_sighting: yourFirstSighting,
   }
 }
+
+// ── writing ───────────────────────────────────────────────────────────────
+
+// The storage's own limits (the check constraint on item_memory_over_time),
+// tested here so the tool can say what is wrong instead of relaying a
+// constraint name.
+export const MAX_MEMORY_LENGTH = 20_000
+export const MAX_AUTHOR_LENGTH = 200
+
+export type Validated = { ok: true; body: string } | { ok: false; message: string }
+
+export const validateMemory = (memory: string): Validated => {
+  if (memory.trim() === '') return { ok: false, message: "The memory is blank. Write the ship's text, in markdown." }
+  if (memory.length > MAX_MEMORY_LENGTH) {
+    return {
+      ok: false,
+      message: `The memory is ${memory.length.toLocaleString('en-US')} characters; the most a ship keeps is ${MAX_MEMORY_LENGTH.toLocaleString('en-US')}. Shorten it (the older chapters can be summarised, not dropped).`,
+    }
+  }
+  return { ok: true, body: memory }
+}
+
+// The author stamped on the version: the client's name where it gives one,
+// else 'mcp' (the function's own default).
+export const authorOf = (author: string | undefined): string => {
+  const trimmed = (author ?? '').trim()
+  return trimmed === '' ? 'mcp' : trimmed.slice(0, MAX_AUTHOR_LENGTH)
+}
+
+export type WriteError = { code?: string | null; message?: string | null; hint?: string | null }
+
+// What item_memory_write()'s refusals mean to the caller, by SQLSTATE: 42501
+// is "not held", PT409 is "changed since you read it" (read again; never
+// merge), 23514 is the body constraint. Anything else is relayed as is.
+export const writeFailure = (error: WriteError, itemId: number): string => {
+  switch (error.code) {
+    case '42501':
+      return `You do not hold item #${itemId} now, so you cannot write its memory. Only the character or corporation holding a ship writes it; a ship that was sold or given away took its memory with it.`
+    case 'PT409':
+      return `The memory of item #${itemId} changed since you read it. Call recall_ship again, read the current text, and write on top of it with its version_id as based_on. Do not merge the two texts yourself.`
+    case '23514':
+      return `The memory was refused by the storage: it must not be blank and must be at most ${MAX_MEMORY_LENGTH.toLocaleString('en-US')} characters.`
+    default:
+      return `Writing the memory failed: ${error.message ?? 'unknown error'}${error.hint ? ` (${error.hint})` : ''}`
+  }
+}
