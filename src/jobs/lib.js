@@ -409,9 +409,14 @@ export const recordReassembly = async (tag, owner, changes, now) => {
   try {
     const { vanished, debuts, changed } = changes
     const memories = vanished.length > 0 ? await memoriesAmong(map(prop('itemId'), vanished)) : new Map()
-    const anyDebutHull = debuts.some((d) => d.isSingleton === true)
-    if (memories.size === 0 && !anyDebutHull) return
-    const packs = anyDebutHull ? await pendingPacks() : []
+    // An assembly is a changed row whose is_singleton turned true (EVE keeps
+    // the packaged row's id, measured 2026-11-02) or, for a repackage and
+    // reassembly inside one interval, a singleton debut.
+    const anyAssembled =
+      debuts.some((d) => d.isSingleton === true) ||
+      changed.some((c) => c.isSingleton === true && c.previousSingleton === false)
+    if (memories.size === 0 && !anyAssembled) return
+    const packs = anyAssembled ? await pendingPacks() : []
     if (memories.size === 0 && packs.length === 0) return
 
     const ownerRef =
@@ -439,7 +444,9 @@ export const recordReassembly = async (tag, owner, changes, now) => {
 
     const carried = []
     await forEachSequential(events.carries, async (carry) => {
-      if (!(await isNewId(carry.toItemId))) {
+      // A debut with closed rows under any owner is a hull back from a trip,
+      // not a new id. A flip's closed rows are its own stack versions.
+      if (carry.via === 'debut' && !(await isNewId(carry.toItemId))) {
         console.log(
           `[${tag}] reassembly: item ${carry.toItemId} has a history of its own; not carrying ${carry.fromItemId}`
         )

@@ -107,7 +107,7 @@ const reconcile = async (corporation_id, fetched) => {
       } else {
         if (cur) {
           acc.closeIds.push(cur.id)
-          acc.changed.push({ ...shapeOf(a), previousQuantity: cur.quantity })
+          acc.changed.push({ ...shapeOf(a), previousQuantity: cur.quantity, previousSingleton: cur.isSingleton })
         } else acc.debuts.push(shapeOf(a))
         acc.inserts.push({
           item_id: a.item_id,

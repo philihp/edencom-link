@@ -44,7 +44,7 @@ closed the seam the parallel build left — `remember_ship` now takes
 `inherit_from` and calls `inheritMemory` — and ran the measurement: **EVE
 replaces a hull's id when it is repackaged and keeps the packaged row's id
 when a hull is assembled from it** (see Reassembly, which also says what that
-means for the matcher as built).
+meant for the matcher, re-shaped the same day).
 
 ## Decisions (owner, 2026-11-01)
 
@@ -340,19 +340,18 @@ id became the hull and the remainder went on under another id. Separately,
 53 single-unit packaged ids were seen under two of our registrations, so a
 stack of one keeps its id through a transfer, as rule 2 hoped.
 
-That has a consequence the plan did not foresee. The unpack event as built is
-_an assembled hull made its debut_, and `carriesOf` considers `debuts` alone,
-but a hull assembled from a packed stack is not a debut: it is the stack's own
-id flipping `is_singleton`, which the reconcile hands over as a `changed` row.
-Rule 2 likewise waits for the pack's stack to _shrink or vanish_, and a
-flipped id does neither. So under the measured behaviour the automatic carry
-never fires; every reassembly waits for the owner to settle it through
-`inherit_from`, which `recall_ship` offers whenever a pending pack of the type
-exists. The fix is a matcher change, its own PR: treat a `changed` row whose
-`is_singleton` turned true as the unpack, and match it against pending packs
-by `stack_item_id` first — the pack's stack _is_ the new hull's id, so a pack
-alone in its stack is carried with certainty, and several packs in one stack
-are the ambiguous case the owner settles.
+That had a consequence the plan did not foresee. The unpack event as first
+built was _an assembled hull made its debut_, and `carriesOf` considered
+`debuts` alone, but a hull assembled from a packed stack is not a debut: it is
+the stack's own id flipping `is_singleton`, which the reconcile hands over as
+a `changed` row. Rule 2 likewise waited for the pack's stack to _shrink or
+vanish_, and a flipped id does neither. So as shipped on 2026-11-01 the
+automatic carry could never fire. **The matcher was re-shaped the next day**
+(the PR after the `inherit_from` follow-up): the reconciles now hand each
+changed row its `previousSingleton` beside `previousQuantity`, a **flip** —
+`is_singleton` false a run ago, true now — is the unpack event, and rule 2 on
+a flip is identity: the pack's `stack_item_id` _is_ the hull's id. The
+paragraphs below describe the matcher as it stands.
 
 **The events.** Each asset run's reconcile already knows which item ids
 vanished from the listing and which made their debut. Every closed row is not
@@ -368,21 +367,38 @@ is that the item id is _gone_. From those sets the run derives two events:
   of the type grew at that place in one run, the pack records the place and
   **no stack** (`stack_item_id` null): rule 3 can still find the hull again,
   rule 2 cannot.
-- **Unpack**: an assembled hull of type T made its debut with no earlier
-  version under any owner, so it is a new id and not a hull back from a trip.
+- **Unpack**: a hull of type T was assembled. Two shapes. A **flip**: a
+  changed row that was a stack a run ago and is a singleton now — the
+  measured shape, since EVE gives the assembled hull the packaged row's id,
+  whether that row held one unit or thirty-one (the remainder of a larger
+  stack goes on under a new id, debuting as a stack, which is nothing to
+  carry into). A **debut**: a singleton with no earlier version under any
+  owner, the one shape a flip cannot show — a hull repackaged and reassembled
+  inside one interval, whose fresh stack id was never seen as a stack. A
+  debut with a closed asset row under any owner is a hull back from a trip,
+  not a new id, and is never carried into (`isNewId` in `lib.js`); a flip's
+  closed rows are its own packaged past, so the test is skipped for it.
 
 **The matching**, in order. The first rule that yields exactly one candidate
 wins:
 
-1. **Within one interval.** A memory-bearing hull of type T vanished in the
-   same run, at the same place, under the same owner, and no stack changed: it
-   was repackaged and reassembled between two extracts.
-2. **The stack it went into.** A pending pack whose stack shrank or vanished in
-   this run. This rule matches on the stack's item id under any owner, so if a
-   stack keeps its id through a trade, a hull sold packaged still takes its
-   personality to the buyer, as an assembled one does.
-3. **Same owner and place.** A pending pack of type T under the same owner at
-   the same place.
+1. **Within one interval** (a debut only). A memory-bearing hull of type T
+   vanished in the same run, at the same place, under the same owner, and no
+   stack of the type there changed — a stack that flipped counts as changed:
+   it was repackaged and reassembled between two extracts.
+2. **The stack it went into.** For a flip, every pending pack naming the
+   flipped id as its stack: the pack's stack _is_ the hull, so one pack is
+   carried with certainty and two are the ambiguous case. For either shape,
+   a pending pack whose stack shrank or vanished in this run (the fallback
+   should EVE ever hand the remainder the old id). Both match under any
+   owner, so a stack keeping its id through a trade — measured: 53 single-unit
+   packaged ids seen under two of our registrations — takes the memory to the
+   buyer, as an assembled hull does.
+3. **Same owner and place** (a flip only). A pending pack of type T under the
+   same owner at the same place: the pack that could name no stack because
+   several grew at once. Never for a debut — a hull bought on contract or
+   delivered from a build debuts too, and the first build matched it here,
+   which would have given a new hull another ship's past.
 
 If no rule yields a candidate, the hull starts blank. If a rule yields several
 candidates (two named hulls of one type packed into one stack, which the game
@@ -557,7 +573,9 @@ HTML is never rendered, with `skipHtml` so its text is dropped too.
    lib `inherit.ts` plus `recall_ship`'s `inherit_candidates`; the parameter
    on `remember_ship` landed in the follow-up of 2026-11-02, which also ran
    the measurement (see Reassembly) and found the matcher's unpack event
-   needs re-shaping — its own PR.
+   needed re-shaping; the PR after it re-shaped it around the singleton
+   flip, with `previousSingleton` on the reconciles' changed rows and `via`
+   on every carry.
 
 ## Open questions
 

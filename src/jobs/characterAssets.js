@@ -135,7 +135,7 @@ const reconcile = async (registration_id, fetched, names) => {
       } else {
         if (cur) {
           acc.closeIds.push(cur.id)
-          acc.changed.push({ ...shapeOf(a), previousQuantity: cur.quantity })
+          acc.changed.push({ ...shapeOf(a), previousQuantity: cur.quantity, previousSingleton: cur.isSingleton })
         } else acc.debuts.push(shapeOf(a))
         // valid_from is left to its `default now()` so it marks this version's debut.
         acc.inserts.push({
