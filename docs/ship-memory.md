@@ -28,8 +28,7 @@ noted where it lands (see Where it came from, and the MCP tools). PR 4
 (`remember_ship` and the skill section) was built the same day, in
 `memoryTools.ts` beside the read tool, with the write seam in
 `memoryQuery.ts` (tested) and "Writing a ship's memory" in
-`docs/edencom-industry-SKILL.md`. `inherit_from` wires PR 6's `inherit.ts` in a
-follow-up once both have landed. PR 6
+`docs/edencom-industry-SKILL.md`. PR 6
 (reassembly) was built the same day, beside PRs 4 and 5 still in review:
 migration `20261101220500_item_memory_reassembly` (`carried_from_item_id`,
 `item_memory_pack`, `item_memory_carry()`, and the trigger that copies the
@@ -37,11 +36,15 @@ lineage pointer forward), `test/sql/item_memory_reassembly.sql`, the pure fold
 `src/jobs/reassembly.js` with `test/reassembly.test.ts`, the writer
 `recordReassembly` in `src/jobs/lib.js` called by both asset extracts, the
 lineage walk in `load.ts`/`dossier.ts`, `inherit_candidates` on `recall_ship`,
-and `src/app/ship/memory/inherit.ts`, the `inherit_from` check-and-carry that
-`remember_ship` wires in once PR 4 lands. **The id measurement it was meant to
-start with did not run**: the session had no production read, so the matcher
-ships written for either outcome, as the plan says it must be, and the
-measurement stays owed (see Reassembly). PRs 4 and 5 are in review.
+and `src/app/ship/memory/inherit.ts`, the `inherit_from` check-and-carry.
+**The id measurement it was meant to start with did not run** in that
+session (no production read), so the matcher shipped written for either
+outcome. All six PRs merged on 2026-11-01. **The follow-up of 2026-11-02**
+closed the seam the parallel build left — `remember_ship` now takes
+`inherit_from` and calls `inheritMemory` — and ran the measurement: **EVE
+replaces a hull's id when it is repackaged and keeps the packaged row's id
+when a hull is assembled from it** (see Reassembly, which also says what that
+means for the matcher as built).
 
 ## Decisions (owner, 2026-11-01)
 
@@ -324,6 +327,33 @@ it rarely fires. As built it never reads a vanished row's singleton flag: a
 memory on a packaged row of one unit (the first outcome, before the row
 merges into a stack) is treated as the hull it is.
 
+**Measured on production, 2026-11-02**, over every ship-category item id in
+`character_asset_version` (10,961 ids): 8,055 were only ever seen assembled,
+2,804 only ever packaged, and 102 in both states. Ordering each id's versions
+by `valid_from`, **all 102 flips go packaged → assembled and none goes
+assembled → packaged**. So the second outcome holds for a repackage: the
+assembled id is gone and the packaged stack is a new id, which is exactly the
+_vanish_ the pack event is built on. But assembly is not the mirror image:
+**the assembled hull keeps the packaged row's id**. 85 of the 102 came out of
+a stack of one, and 17 out of a larger stack (2 to 31 units), where the stack
+id became the hull and the remainder went on under another id. Separately,
+53 single-unit packaged ids were seen under two of our registrations, so a
+stack of one keeps its id through a transfer, as rule 2 hoped.
+
+That has a consequence the plan did not foresee. The unpack event as built is
+_an assembled hull made its debut_, and `carriesOf` considers `debuts` alone,
+but a hull assembled from a packed stack is not a debut: it is the stack's own
+id flipping `is_singleton`, which the reconcile hands over as a `changed` row.
+Rule 2 likewise waits for the pack's stack to _shrink or vanish_, and a
+flipped id does neither. So under the measured behaviour the automatic carry
+never fires; every reassembly waits for the owner to settle it through
+`inherit_from`, which `recall_ship` offers whenever a pending pack of the type
+exists. The fix is a matcher change, its own PR: treat a `changed` row whose
+`is_singleton` turned true as the unpack, and match it against pending packs
+by `stack_item_id` first — the pack's stack _is_ the new hull's id, so a pack
+alone in its stack is carried with certainty, and several packs in one stack
+are the ambiguous case the owner settles.
+
 **The events.** Each asset run's reconcile already knows which item ids
 vanished from the listing and which made their debut. Every closed row is not
 a vanish: a rename, a move or a quantity change also closes a row, so the test
@@ -371,7 +401,8 @@ the hull has no memory and is in the hangar — and the check-and-carry behind
 `inherit_from` is `src/app/ship/memory/inherit.ts` (`inheritMemory`: the pack
 is the caller's and pending, the hull is held and of the pack's type and has
 no memory, all on the bearer client; then `item_memory_carry()` on the
-service role). PR 4 adds the `remember_ship` parameter that calls it.
+service role). The `remember_ship` parameter that calls it landed in the
+2026-11-02 follow-up, after PRs 4 and 6 had both merged.
 
 **The carry.** The service role opens a version under the new id with the old
 body, keeps `written_by`, sets `author` to `reassembly` and
@@ -417,7 +448,7 @@ on the caller's bearer client.
   another account, and the hull's earliest version in the caller's own data
   is later than the memory's first write.
   Annotations: `readOnlyHint: true`, `openWorldHint: false`.
-- **`remember_ship(ship, memory, based_on, author?)`**: a write tool. It
+- **`remember_ship(ship, memory, based_on, author?, inherit_from?)`**: a write tool. It
   stores the whole new text through `item_memory_write`. On a stale
   `based_on` it answers "the memory changed since you read it; call
   `recall_ship` again", and it never merges. An unheld hull is refused with
@@ -427,9 +458,11 @@ on the caller's bearer client.
   since the server context carries none; default `mcp`. The answer repeats
   who reads the text (the same `readers` as `recall_ship`). With
   `inherit_from` (a pending pack of the caller's, of the same type, on a hull
-  that has no memory yet) it will settle an ambiguous reassembly, running the
-  carry first and then writing the new text on top: **PR 6**, with the packs
-  it reads. Annotations: `readOnlyHint: false`, `destructiveHint: false`
+  that has no memory yet) it settles an ambiguous reassembly, running the
+  carry first and then writing the new text on top of the carried version
+  (`based_on` must be null; the answer carries `inherited`). The check-and-carry
+  is **PR 6**'s `inherit.ts`; the parameter landed in the 2026-11-02
+  follow-up. Annotations: `readOnlyHint: false`, `destructiveHint: false`
   (every version is kept), `idempotentHint: false`.
 
 The procedure goes in `docs/edencom-industry-SKILL.md`, which `get_skill`
@@ -511,7 +544,8 @@ HTML is never rendered, with `skipHtml` so its text is dropped too.
    owner's earliest asset version rather than a heartbeat: the first extract
    wrote every item at once, and heartbeats are not kept forever.
 4. **`remember_ship` and the skill section.** Built 2026-11-01, without
-   `inherit_from` (PR 6).
+   `inherit_from` (PR 6); the parameter landed in the follow-up of
+   2026-11-02.
 5. **Display.** The Memory panel, the share-loader read, the `show_as_main`
    rule, the Share-dialog line, and the markdown dependency. Built
    2026-11-01.
@@ -521,7 +555,9 @@ HTML is never rendered, with `skipHtml` so its text is dropped too.
    lineage. Built 2026-11-01, without the measurement (no production read in
    that session; it is owed after the merge). `inherit_from` shipped as the
    lib `inherit.ts` plus `recall_ship`'s `inherit_candidates`; the parameter
-   on `remember_ship` lands with PR 4, which was in review at the time.
+   on `remember_ship` landed in the follow-up of 2026-11-02, which also ran
+   the measurement (see Reassembly) and found the matcher's unpack event
+   needs re-shaping — its own PR.
 
 ## Open questions
 

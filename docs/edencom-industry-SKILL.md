@@ -599,6 +599,11 @@ Two tools: `recall_ship` reads the facts, `remember_ship` stores the text.
    `version_id` from step 1 (null when the ship had no memory). If it answers
    that the memory changed since you read it, call `recall_ship` again and
    write on top of the new text. Never merge the two yourself.
+9. When step 1 listed `inherit_candidates` and the user confirmed which
+   packed hull this is, pass its `pack_id` as `inherit_from` with `based_on`
+   null: the packed memory is carried onto this hull first and your text is
+   written on top of it, so write as the same ship continuing. Never pass
+   `inherit_from` without asking when there is more than one candidate.
 
 `remember_ship` changes nothing in the game. It needs no confirmation
 beyond the user asking for the memory to be written: every version is kept,
