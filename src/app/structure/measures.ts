@@ -226,29 +226,32 @@ export const loadStructureMeasures = async (supabase: Supabase, input: Structure
       installerRows
     )
   )
-  const directoryEntryBatches = await Promise.all(
-    map(
-      (batch: string[]) =>
-        supabase
-          .from('character_directory')
-          .select('registration_id, name, character_id')
-          .in('registration_id', batch)
-          .returns<DirectoryEntry[]>(),
-      splitEvery(RPC_BATCH, foreignRegistrationIds)
-    )
-  )
-  chain(({ data }) => data ?? [], directoryEntryBatches).forEach((entry: DirectoryEntry) => {
-    registrationsById.set(entry.registration_id, { name: entry.name, characterId: String(entry.character_id) })
-  })
   const jobCorporationIds = uniq(
     chain((r: InstallerWindowRow) => (r.corporation_id != null ? [Number(r.corporation_id)] : []), installerRows)
   )
-  const corporationNameBatches = await Promise.all(
-    map(
-      (batch: number[]) => supabase.from('corporation').select('corporation_id, name').in('corporation_id', batch),
-      splitEvery(RPC_BATCH, jobCorporationIds)
-    )
-  )
+  // Both name lookups want only the installer rows, so they go together.
+  const [directoryEntryBatches, corporationNameBatches] = await Promise.all([
+    Promise.all(
+      map(
+        (batch: string[]) =>
+          supabase
+            .from('character_directory')
+            .select('registration_id, name, character_id')
+            .in('registration_id', batch)
+            .returns<DirectoryEntry[]>(),
+        splitEvery(RPC_BATCH, foreignRegistrationIds)
+      )
+    ),
+    Promise.all(
+      map(
+        (batch: number[]) => supabase.from('corporation').select('corporation_id, name').in('corporation_id', batch),
+        splitEvery(RPC_BATCH, jobCorporationIds)
+      )
+    ),
+  ])
+  chain(({ data }) => data ?? [], directoryEntryBatches).forEach((entry: DirectoryEntry) => {
+    registrationsById.set(entry.registration_id, { name: entry.name, characterId: String(entry.character_id) })
+  })
   const jobCorporationNames = new Map<string, string>(
     chain(
       (r: { corporation_id: number | string; name: string | null }) =>
