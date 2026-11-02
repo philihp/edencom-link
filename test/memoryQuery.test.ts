@@ -11,6 +11,7 @@ import {
   inheritance,
   MAX_MEMORY_LENGTH,
   parseItemId,
+  pickHeldOfType,
   pickHull,
   subjectOf,
   validateMemory,
@@ -116,11 +117,39 @@ test('authorOf: the client name, trimmed and capped, else mcp', () => {
 test('writeFailure: the three SQLSTATEs the function raises read as what they mean', () => {
   assert.match(writeFailure({ code: '42501' }, 7), /do not hold item #7/)
   assert.match(writeFailure({ code: 'PT409' }, 7), /changed since you read it/)
-  assert.match(writeFailure({ code: 'PT409' }, 7), /recall_ship/)
+  assert.match(writeFailure({ code: 'PT409' }, 7), /recall_item/)
   assert.match(writeFailure({ code: '23514' }, 7), /blank|20,000/)
   assert.equal(
     writeFailure({ code: 'XX000', message: 'boom', hint: 'try later' }, 7),
     'Writing the memory failed: boom (try later)'
   )
   assert.equal(writeFailure({}, 7), 'Writing the memory failed: unknown error')
+})
+
+test('pickHeldOfType: one held item of the type is the item; several are listed by id; none is a refusal', () => {
+  const one = pickHeldOfType('Vexor Blueprint', [
+    { item_id: 1011382969076, type_name: 'Vexor Blueprint', detail: 'original, ME 10 TE 20' },
+  ])
+  assert.deepEqual(one, { ok: true, id: '1011382969076' })
+
+  const several = pickHeldOfType('Vexor Blueprint', [
+    { item_id: 1, type_name: 'Vexor Blueprint', detail: 'original, ME 10 TE 20' },
+    { item_id: 2, type_name: 'Vexor Blueprint', detail: 'original, ME 8 TE 16' },
+  ])
+  assert.equal(several.ok, false)
+  if (!several.ok) {
+    assert.match(several.message, /matches 2 items/)
+    assert.match(several.message, /#1 Vexor Blueprint \(original, ME 10 TE 20\)/)
+    assert.match(several.message, /#2 Vexor Blueprint \(original, ME 8 TE 16\)/)
+  }
+
+  const none = pickHeldOfType('Vexor Blueprint', [])
+  assert.equal(none.ok, false)
+  if (!none.ok) assert.match(none.message, /names no item of yours/)
+})
+
+test('pickHull takes the noun its refusal uses', () => {
+  const picked = pickHull('Kettle', [], 'item')
+  assert.equal(picked.ok, false)
+  if (!picked.ok) assert.match(picked.message, /not one of your items/)
 })

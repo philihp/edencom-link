@@ -1,6 +1,7 @@
-// The pure seams of the ship-memory tools (memoryTools.ts; docs/ship-memory.md
-// "MCP tools"): which hull a name picks out, how far a share row reaches, and
-// whether the memory a caller holds was written before their time. No I/O.
+// The pure seams of the item-memory tools (memoryTools.ts; docs/ship-memory.md
+// "MCP tools" and "Extension: every singleton"): which item a name picks out,
+// how far a share row reaches, and whether the memory a caller holds was
+// written before their time. No I/O.
 import { pickOne, type Picked } from '../../link/match.ts'
 import { latestPerItem } from '../../ship/[itemId]/lastSeen.ts'
 import type { OwnerKind } from '../../ship/memory/dossier.ts'
@@ -26,16 +27,43 @@ export type HullRow = {
 // An item id typed as a number, or a number-like string, is the hull itself.
 export const parseItemId = (ship: string): number | null => (/^\d{5,}$/.test(ship.trim()) ? Number(ship.trim()) : null)
 
-// A name over the caller's own hulls, current and dead: one version per item
-// (the newest), then the link tools' rule — id, exact name, unique substring,
-// ambiguity refused. The candidates are already name-filtered by the loader's
-// ilike, so the substring step is what decides between "Kettle" and "Rusty
-// Kettle II".
-export const pickHull = (query: string, rows: HullRow[]): Picked => {
+// A name over the caller's own named items, current and dead: one version
+// per item (the newest), then the link tools' rule — id, exact name, unique
+// substring, ambiguity refused. The candidates are already name-filtered by
+// the loader's ilike, so the substring step is what decides between "Kettle"
+// and "Rusty Kettle II". `kind` is the noun the refusal uses.
+export const pickHull = (query: string, rows: HullRow[], kind = 'ship'): Picked => {
   const candidates = latestPerItem(rows)
     .filter((r) => r.name != null && r.name.trim() !== '')
     .map((r) => ({ id: String(r.item_id), name: `${r.name}${r.is_current ? '' : ' (no longer held)'}` }))
-  return pickOne(query, candidates, 'ship')
+  return pickOne(query, candidates, kind)
+}
+
+// ── which item, by its type ───────────────────────────────────────────────
+
+// A held singleton whose type matched the query ("my Vexor BPO"): the row
+// plus what tells two of a type apart in a listing — a blueprint's research,
+// a module's slot and hull, a place.
+export type HeldOfType = {
+  item_id: number | string
+  type_name: string
+  detail: string | null
+}
+
+// One held item of the named type is the item; several are listed for the
+// user to pick by id, since nothing in the name tells them apart; none is a
+// refusal that says so.
+export const pickHeldOfType = (query: string, rows: HeldOfType[]): Picked => {
+  if (rows.length === 1) return { ok: true, id: String(rows[0].item_id) }
+  if (rows.length === 0) return { ok: false, message: `"${query}" names no item of yours by name or by type.` }
+  const listed = rows
+    .slice(0, 20)
+    .map((r) => `#${r.item_id} ${r.type_name}${r.detail ? ` (${r.detail})` : ''}`)
+    .join('; ')
+  return {
+    ok: false,
+    message: `"${query}" matches ${rows.length} items you hold. Say which by its item id: ${listed}${rows.length > 20 ? '; …' : ''}.`,
+  }
 }
 
 // ── who can read ──────────────────────────────────────────────────────────
@@ -145,11 +173,11 @@ export const MAX_AUTHOR_LENGTH = 200
 export type Validated = { ok: true; body: string } | { ok: false; message: string }
 
 export const validateMemory = (memory: string): Validated => {
-  if (memory.trim() === '') return { ok: false, message: "The memory is blank. Write the ship's text, in markdown." }
+  if (memory.trim() === '') return { ok: false, message: "The memory is blank. Write the item's text, in markdown." }
   if (memory.length > MAX_MEMORY_LENGTH) {
     return {
       ok: false,
-      message: `The memory is ${memory.length.toLocaleString('en-US')} characters; the most a ship keeps is ${MAX_MEMORY_LENGTH.toLocaleString('en-US')}. Shorten it (the older chapters can be summarised, not dropped).`,
+      message: `The memory is ${memory.length.toLocaleString('en-US')} characters; the most an item keeps is ${MAX_MEMORY_LENGTH.toLocaleString('en-US')}. Shorten it (the older chapters can be summarised, not dropped).`,
     }
   }
   return { ok: true, body: memory }
@@ -170,9 +198,9 @@ export type WriteError = { code?: string | null; message?: string | null; hint?:
 export const writeFailure = (error: WriteError, itemId: number): string => {
   switch (error.code) {
     case '42501':
-      return `You do not hold item #${itemId} now, so you cannot write its memory. Only the character or corporation holding a ship writes it; a ship that was sold or given away took its memory with it.`
+      return `You do not hold item #${itemId} now, so you cannot write its memory. Only the character or corporation holding an item writes it; one that was sold or given away took its memory with it.`
     case 'PT409':
-      return `The memory of item #${itemId} changed since you read it. Call recall_ship again, read the current text, and write on top of it with its version_id as based_on. Do not merge the two texts yourself.`
+      return `The memory of item #${itemId} changed since you read it. Call recall_item again, read the current text, and write on top of it with its version_id as based_on. Do not merge the two texts yourself.`
     case '23514':
       return `The memory was refused by the storage: it must not be blank and must be at most ${MAX_MEMORY_LENGTH.toLocaleString('en-US')} characters.`
     default:
