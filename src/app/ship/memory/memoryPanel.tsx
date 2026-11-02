@@ -22,7 +22,9 @@ const Link = ({ href, children }: ComponentProps<'a'>) => (
   </a>
 )
 
-export const MemoryPanel = ({ memory }: { memory: ShipMemory | null }) => {
+// `keeps` names what the memory belongs to, for the standing note: a ship by
+// default, a blueprint on /blueprint/[itemId] (docs/item-pages.md).
+export const MemoryPanel = ({ memory, keeps = 'ship' }: { memory: ShipMemory | null; keeps?: string }) => {
   if (memory == null) return null
   return (
     <section className={styles.memory} aria-labelledby="ship-memory-heading">
@@ -40,7 +42,7 @@ export const MemoryPanel = ({ memory }: { memory: ShipMemory | null }) => {
           {memory.body}
         </Markdown>
       </div>
-      <p className={styles.note}>Goes with the ship if you sell it.</p>
+      <p className={styles.note}>Goes with the {keeps} if you sell it.</p>
     </section>
   )
 }

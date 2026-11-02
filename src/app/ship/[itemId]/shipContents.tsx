@@ -6,7 +6,8 @@ import { typeFacts } from '../../assetTypeFacts'
 import { fetchOwners } from '../../owners'
 import type { Owners } from '../../ownerFilter'
 import { fetchTypeNames } from '../../typeNames'
-import { SHIP_CATEGORY_ID, fittingOrder, hullRow, nestedCount, type ChildRow, type Hull } from './shipRows'
+import { itemHref } from '../../asset/itemHref'
+import { fittingOrder, hullRow, nestedCount, type ChildRow, type Hull } from './shipRows'
 
 // Everything the ship holds, as the sortable table the asset browser uses, in
 // its own async server component so the page can stream it.
@@ -52,15 +53,10 @@ export const ShipContents = async ({
   )
 
   // One bulk SDE lookup → set of Ship-category type ids among the cargo, so the
-  // per-row drill-in link test stays a sync Set.has. The hull's own type rides
-  // along for its row's volume/group/category columns. Already resolved by the
-  // page's own lookup, so this is a process-cache hit.
+  // per-row link rule (itemHref) reads each child's category. The hull's own type
+  // rides along for its row's volume/group/category columns. Already resolved
+  // by the page's own lookup, so this is a process-cache hit.
   const childTypes = await getSdeTypes([Number(self.type_id), ...childRows.map((c) => Number(c.type_id))])
-  const childShipTypeIds = new Set(
-    Object.values(childTypes)
-      .filter((t) => t.categoryID === SHIP_CATEGORY_ID)
-      .map((t) => t.typeID)
-  )
 
   const typeNamesPromise = fetchTypeNames([Number(self.type_id), ...childRows.map((c) => Number(c.type_id))])
   const rows: ItemRow[] = fittingOrder(
@@ -76,11 +72,12 @@ export const ShipContents = async ({
         flag: c.location_flag,
         contents,
         isCurrentShip: false,
-        href: childShipTypeIds.has(Number(c.type_id))
-          ? `/ship/${c.item_id}`
-          : contents > 0
-            ? `/asset/${c.item_id}`
-            : null,
+        href: itemHref({
+          itemId: c.item_id,
+          categoryId: childTypes[Number(c.type_id)]?.categoryID,
+          isSingleton: c.is_singleton,
+          contents,
+        }),
         ...typeFacts(childTypes[Number(c.type_id)], c.is_blueprint_copy),
       }
     })

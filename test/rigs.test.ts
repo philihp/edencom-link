@@ -1,5 +1,5 @@
 // Rig applicability: which Upwell rigs bonus which products. This is the seam
-// behind /blueprint/[typeID], the rigs_for_blueprint MCP tool, and — the reason
+// behind /blueprint/[id], the rigs_for_blueprint MCP tool, and — the reason
 // it needs testing — the structure_id path in blueprint_for_product, which used
 // to apply whichever fitted ME rig had the highest tier regardless of whether
 // it covered the product at all.
@@ -8,7 +8,7 @@ import { test } from 'node:test'
 
 import { isMaterialRig, rigAppliesToProduct, rigsForProduct } from '../src/app/blueprint/rigs.ts'
 
-// Stable SDE ids, taken from src/app/blueprint/[typeID]/filters.ts.
+// Stable SDE ids, taken from src/app/blueprint/[id]/filters.ts.
 const SHIP_CATEGORY = 6
 const FRIGATE_GROUP = 25 // also carries the 'Small T1 Ships' filter
 const CHARGE_CATEGORY = 8

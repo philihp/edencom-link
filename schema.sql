@@ -2562,6 +2562,8 @@ create index character_industry_job_over_time_registration_id_idx on public.char
 create unique index character_industry_job_over_time_current_job_idx on public.character_industry_job_over_time (job_id) where is_current;
 -- Time-travel lookups walking a job's version history.
 create index character_industry_job_over_time_job_id_idx on public.character_industry_job_over_time (job_id, valid_until desc);
+-- A blueprint's run history (/blueprint/[itemId], docs/item-pages.md).
+create index character_industry_job_over_time_blueprint_idx on public.character_industry_job_over_time (blueprint_id) where is_current;
 
 alter table public.character_industry_job_over_time enable row level security;
 create policy "Users read own industry jobs"
@@ -8774,6 +8776,8 @@ create index corp_industry_job_over_time_corporation_id_idx on public.corp_indus
 create unique index corp_industry_job_over_time_current_job_idx on public.corp_industry_job_over_time (job_id) where is_current;
 -- Time-travel lookups walking a job's version history.
 create index corp_industry_job_over_time_job_id_idx on public.corp_industry_job_over_time (job_id, valid_until desc);
+-- A blueprint's run history (/blueprint/[itemId], docs/item-pages.md).
+create index corp_industry_job_over_time_blueprint_idx on public.corp_industry_job_over_time (blueprint_id) where is_current;
 -- A registration's EIV covers the corp jobs its character installed, so the
 -- structure-measure rollup asks the table by installer.
 create index corp_industry_job_over_time_installer_idx

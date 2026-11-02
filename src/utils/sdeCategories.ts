@@ -6,6 +6,10 @@
 // it), /asset/search, and the appraisal line builder — which is unit-tested and
 // so can pull in no I/O at all.
 
+// Ships. The asset browser links an assembled hull to /ship/[itemId]; the
+// location page's own SHIP_CATEGORY_ID re-exports this one.
+export const SHIP_CATEGORY_ID = 6
+
 // Blueprints: BPOs, BPCs and reaction formulas alike. Asset search excludes them
 // by default, and an appraisal never prices them — an asset row carries no way
 // to tell an original from a worthless copy.
