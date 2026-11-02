@@ -3,7 +3,15 @@ import { forEach, reduce, splitEvery } from 'ramda'
 import { corpAssets } from '../esi.js'
 import { sudoSupabase } from '../supabase.js'
 import { STUB_STRUCTURE_ID_BASE } from './gezSheet.js'
-import { claimRows, cli, fetchAllPages, forEachCorporation, forEachSequential, refreshAssetSummary } from './lib.js'
+import {
+  claimRows,
+  cli,
+  fetchAllPages,
+  forEachCorporation,
+  forEachSequential,
+  recordReassembly,
+  refreshAssetSummary,
+} from './lib.js'
 
 const TAG = 'corp-assets'
 export const SCOPE = 'esi-assets.read_corporation_assets.v1'
@@ -37,7 +45,18 @@ const signature = (a) =>
 // a compact item_id → { id, sig } map as it arrives and then discarded — the
 // classify step only ever compares signatures, so holding every current row's
 // full columns just multiplied peak memory (see the character-assets twin).
+// The four facts kept beside the signature are what the reassembly step
+// needs of a row that vanished or changed.
 const PAGE = 1000
+
+// The few facts of a row the reassembly fold reads (src/jobs/reassembly.js).
+const shapeOf = (a) => ({
+  itemId: Number(a.item_id),
+  typeId: Number(a.type_id),
+  locationId: a.location_id == null ? null : Number(a.location_id),
+  quantity: a.quantity == null ? 1 : Number(a.quantity),
+  isSingleton: a.is_singleton ?? null,
+})
 
 const fetchCurrentByItem = async (corporation_id) => {
   const cols =
@@ -53,7 +72,7 @@ const fetchCurrentByItem = async (corporation_id) => {
       .range(from, from + PAGE - 1)
     if (error) throw error
     const page = data ?? []
-    forEach((c) => byItem.set(Number(c.item_id), { id: c.id, sig: signature(c) }), page)
+    forEach((c) => byItem.set(Number(c.item_id), { id: c.id, sig: signature(c), ...shapeOf(c) }), page)
     if (page.length === PAGE) await fetchPage(from + PAGE)
   }
   await fetchPage(0)
@@ -80,13 +99,16 @@ const reconcile = async (corporation_id, fetched) => {
   // accumulator mutated via push — a corp can hold tens of thousands of items,
   // and rebuilding immutable arrays on every iteration here would turn an
   // O(n) pass into O(n²).
-  const { unchanged, closeIds, inserts } = reduce(
+  const { unchanged, closeIds, inserts, debuts, changed } = reduce(
     (acc, a) => {
       const cur = currentByItem.get(Number(a.item_id))
       if (cur && cur.sig === signature(a)) {
         acc.unchanged += 1
       } else {
-        if (cur) acc.closeIds.push(cur.id)
+        if (cur) {
+          acc.closeIds.push(cur.id)
+          acc.changed.push({ ...shapeOf(a), previousQuantity: cur.quantity })
+        } else acc.debuts.push(shapeOf(a))
         acc.inserts.push({
           item_id: a.item_id,
           corporation_id,
@@ -102,14 +124,24 @@ const reconcile = async (corporation_id, fetched) => {
       }
       return acc
     },
-    { unchanged: 0, closeIds: [], inserts: [] },
+    { unchanged: 0, closeIds: [], inserts: [], debuts: [], changed: [] },
     [...fetchedByItem.values()]
   )
 
   // Anything still open but not seen this run has left the corp's assets.
   const vanishedIds = []
-  currentByItem.forEach(({ id }, itemId) => {
-    if (!fetchedByItem.has(itemId)) vanishedIds.push(id)
+  const vanished = []
+  currentByItem.forEach((cur, itemId) => {
+    if (!fetchedByItem.has(itemId)) {
+      vanishedIds.push(cur.id)
+      vanished.push({
+        itemId,
+        typeId: cur.typeId,
+        locationId: cur.locationId,
+        quantity: cur.quantity,
+        isSingleton: cur.isSingleton,
+      })
+    }
   })
   const allCloseIds = [...closeIds, ...vanishedIds]
 
@@ -128,7 +160,7 @@ const reconcile = async (corporation_id, fetched) => {
   // changing hands looks like and what a plain insert collided with.
   const opened = await claimRows('corp_asset_claim', inserts)
 
-  return { unchanged, opened, closed: allCloseIds.length }
+  return { unchanged, opened, closed: allCloseIds.length, changes: { vanished, debuts, changed }, reconciledAt: now }
 }
 
 export const runCorpAssets = ({ registrationIds } = {}) =>
@@ -144,10 +176,15 @@ export const runCorpAssets = ({ registrationIds } = {}) =>
     const structureIds = new Set((ownStructures ?? []).map((s) => Number(s.structure_id)))
 
     const assets = await fetchAllPages((page) => corpAssets(access_token, corporation_id, page))
-    const { unchanged, opened, closed } = await reconcile(corporation_id, assets)
+    const { unchanged, opened, closed, changes, reconciledAt } = await reconcile(corporation_id, assets)
     console.log(
       `[${TAG}] ${ctx}: corp ${corporation_id} ${assets.length} asset(s); ${unchanged} unchanged, ${opened} opened, ${closed} closed`
     )
+
+    // A repackaged hull's memory follows it into the hull assembled from it
+    // (docs/ship-memory.md "Reassembly"); best-effort, after the claim has
+    // opened the debut rows the carry writes against.
+    await recordReassembly(TAG, { corporation_id }, changes, reconciledAt)
 
     // Corp assets sit in the same /asset rollup as the character ones, and a
     // corp's holdings show on the page of every account with a character in it
