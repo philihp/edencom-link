@@ -20,13 +20,24 @@ import { uniq } from 'ramda'
 import { z } from 'zod'
 
 import { resolveLocations, type LocationRef } from '@/app/resolveLocations'
+import { voiceOf } from '@/app/ship/memory/accent'
+import { ACCENT_FULL_DAYS, accentBlend, attachments, hullTenures } from '@/app/ship/memory/accentBlend'
 import { blueprintDossier, type BlueprintDossier } from '@/app/ship/memory/blueprintDossier'
-import { dossier, type Dossier, type Owner, type Place } from '@/app/ship/memory/dossier'
+import { type Cargo, dossier, type Dossier, type HullVersion, type Owner, type Place } from '@/app/ship/memory/dossier'
 import { inheritMemory, pendingPacksOfType } from '@/app/ship/memory/inherit'
 import { loadDossierInput } from '@/app/ship/memory/load'
 import { loadBlueprintInput } from '@/app/ship/memory/loadBlueprint'
+import { loadHullIdentities } from '@/app/ship/memory/loadModule'
 import { BLUEPRINT_CATEGORY_ID, type ItemKind, kindOf, nativeVoiceOf } from '@/app/ship/memory/nativeVoice'
-import { getSdeType, getSdeTypeFaction, getSdeTypeNames, getSdeTypes, searchSdeTypes, type SdeType } from '@/sdeTypes'
+import {
+  getSdeType,
+  getSdeTypeFaction,
+  getSdeTypeFactions,
+  getSdeTypeNames,
+  getSdeTypes,
+  searchSdeTypes,
+  type SdeType,
+} from '@/sdeTypes'
 import { escapeLike } from '@/utils/escapeLike'
 import { createBearerClient } from '@/utils/supabase/bearer'
 
@@ -260,7 +271,7 @@ const describe = async (supabase: SupabaseClient, owners: OwnerContext, d: Dossi
     resolveLocations(placeRefs, supabase),
     getSdeTypeNames([
       d.typeId,
-      ...d.cargo.lines.map((l) => l.typeId),
+      ...(kind === 'container' ? d.contents : d.cargo).lines.map((l) => l.typeId),
       ...d.fit.current.map((l) => l.typeId),
       ...(d.fuel?.fuelTypeId == null ? [] : [d.fuel.fuelTypeId]),
     ]),
@@ -311,13 +322,15 @@ const describe = async (supabase: SupabaseClient, owners: OwnerContext, d: Dossi
       distinct_places: uniq(d.itinerary.map((s) => s.place?.id ?? `item:${s.parentId}`)).length,
     },
   }
-  const contents = {
+  const carried = (c: Cargo) => ({
     note: 'At-least figures: each item counts once at the most of it ever seen inside, and anything loaded and unloaded between two extracts is missed.',
-    volume_m3_at_least: d.cargo.volumeAtLeast,
-    distinct_types: d.cargo.distinctTypes,
-    lines: d.cargo.lines.slice(0, 40).map((l) => ({ item: nameOf(l.typeId), quantity: l.maxQuantity, m3: l.volume })),
-  }
-  if (kind === 'container') return { ...common, contents }
+    volume_m3_at_least: c.volumeAtLeast,
+    distinct_types: c.distinctTypes,
+    lines: c.lines.slice(0, 40).map((l) => ({ item: nameOf(l.typeId), quantity: l.maxQuantity, m3: l.volume })),
+  })
+  // A container's children carry Unlocked / Locked / AutoFit, never a hold
+  // flag, so its contents are every child rather than the ship's holds.
+  if (kind === 'container') return { ...common, contents: carried(d.contents) }
   if (kind !== 'ship') return common
   return {
     ...common,
@@ -328,7 +341,7 @@ const describe = async (supabase: SupabaseClient, owners: OwnerContext, d: Dossi
       last_left: p.last,
       hours_aboard_at_least: hours(p.hours),
     })),
-    cargo: contents,
+    cargo: carried(d.cargo),
     fuel:
       d.fuel == null
         ? null
@@ -414,12 +427,70 @@ const describeBlueprint = async (supabase: SupabaseClient, owners: OwnerContext,
   }
 }
 
+// A module's attachments and the accents it acquired from them
+// (docs/ship-memory.md "Acquired accents"): the hulls it has been fitted to,
+// named and typed from the caller's own record, days per hull, and the
+// blend — min(1, days / 365) of each hull's accent, high slots only,
+// computed here from the history and stored nowhere.
+const describeModule = async (
+  supabase: SupabaseClient,
+  owners: OwnerContext,
+  hull: HullVersion[],
+  lastSeen: string
+) => {
+  const list = attachments(hull.map((v) => ({ ...v, flag: v.flag ?? null })))
+  const tenures = hullTenures(list, lastSeen)
+  const hullIds = tenures.map((t) => t.hullItemId)
+  const identities = await loadHullIdentities(supabase, owners, hullIds)
+  const typeIds = uniq([...identities.values()].map((i) => i.typeId))
+  const [types, factions] = await Promise.all([getSdeTypes(typeIds), getSdeTypeFactions(typeIds)])
+  const voiceOfHull = (hullItemId: number) => {
+    const identity = identities.get(hullItemId)
+    if (identity == null) return null
+    return voiceOf({ factionId: factions[identity.typeId] ?? null, raceId: types[identity.typeId]?.raceID ?? null })
+  }
+  const hullName = (hullItemId: number) => {
+    const identity = identities.get(hullItemId)
+    const typeName = identity == null ? null : (types[identity.typeId]?.name ?? `Type #${identity.typeId}`)
+    return identity?.name ?? typeName ?? `item #${hullItemId}`
+  }
+  const blend = accentBlend(list, lastSeen, voiceOfHull)
+  return {
+    attachments: {
+      note: 'Every hull this module has been fitted to in the record, longest first; days are sampled at each extract, so a swap between two runs is missed.',
+      hulls: tenures.map((t) => ({
+        hull: hullName(t.hullItemId),
+        hull_item_id: t.hullItemId,
+        hull_type:
+          identities.get(t.hullItemId) == null ? null : (types[identities.get(t.hullItemId)!.typeId]?.name ?? null),
+        slots: t.slots,
+        times_fitted: t.attachments,
+        days_at_least: Math.round(t.days * 10) / 10,
+        fitted_now: t.current,
+      })),
+      fitted_now: tenures.some((t) => t.current),
+    },
+    acquired_accents: {
+      note: `High slots only: a module takes on the accent of each hull it is fitted to, linearly, reaching 1.0 after ${ACCENT_FULL_DAYS} days on hulls of that accent. At 0 it speaks only its native voice; at 1.0 it speaks that hull's accent as fully as the hull does. Blend them in proportion; several are several.`,
+      accents: blend.map((b) => ({
+        accent: b.accent,
+        origin: b.label,
+        placed_by: b.from,
+        voice_notes: b.notes,
+        weight: b.weight,
+        days: b.days,
+        hulls: b.hulls.map(hullName),
+      })),
+    },
+  }
+}
+
 const HOW: Record<ItemKind, string> = {
   ship: 'Write in the accent and register above. Keep what the old memory says unless the facts contradict it; add, do not rewrite. Use "at least" where the data is sampled. Never invent battles, cargo or places. On a hull with an earlier owner, keep their chapters as the ship\'s past.',
   blueprint:
     'Write as the clerk above, in the first person, in its research register. Its ledger is the blueprint section: runs built by product, the research steps as promotions, the copies made. Every count is "at least" from when the record began. Never invent a job, a pilot or a facility that is not listed.',
   module:
-    'Write as the droid above: short lines, status words, numbers. A high-slot module is the thug and says so. Keep what the old memory says unless the facts contradict it. Never invent kills, targets or hulls it was not fitted to.',
+    "Write as the droid above: short lines, status words, numbers. A high-slot module is the thug and says so. Blend in the acquired_accents by weight — a 0.3 Minmatar accent is a few borrowed words and a turn of phrase, a 1.0 is the hull's own voice — and let the module name the hulls it learned them from. Keep what the old memory says unless the facts contradict it. Never invent kills, targets or hulls it was not fitted to.",
   container:
     'Write as the foreman above, in the first person. Talk about what passed through (the contents section) and where it has sat. Use "at least" for every quantity; never invent cargo.',
   item: 'Write as the droid above: short lines, status words, numbers. Use only the facts in the dossier; say "no record" where there is none.',
@@ -457,6 +528,7 @@ const recall = async (ctx: ServerCtx, query: string, scope: Scope): Promise<Tool
       ? await loadBlueprintInput(supabase, owners, itemId).then((b) => (b == null ? null : blueprintDossier(b)))
       : null
   const held = kind === 'module' ? await heldType(supabase, owners, itemId) : null
+  const moduleFacts = kind === 'module' ? await describeModule(supabase, owners, input?.hull ?? [], d.lastSeen) : null
 
   const [factionId, facts, blueprintFacts, readers, { data: memoryRow }, { data: versionRows }, data_refreshed] =
     await Promise.all([
@@ -512,9 +584,11 @@ const recall = async (ctx: ServerCtx, query: string, scope: Scope): Promise<Tool
       voice_notes: voice.notes,
       register: voice.register,
       register_class: voice.register_class,
+      ...(moduleFacts == null ? {} : { acquired_accents: moduleFacts.acquired_accents }),
     },
     dossier: facts,
     ...(blueprintFacts == null ? {} : { blueprint: blueprintFacts }),
+    ...(moduleFacts == null ? {} : { module: moduleFacts.attachments }),
     memory:
       memory == null
         ? null
