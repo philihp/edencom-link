@@ -1,11 +1,12 @@
 import { randomInt } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
-import { map, range, reduce, splitEvery, sum } from 'ramda'
+import { forEach, map, prop, range, reduce, splitEvery, sum } from 'ramda'
 
 import { character as fetchCharacter, isRoleDenial } from '../esi.js'
 import { recordHeartbeat, sudoSupabase } from '../supabase.js'
 import { refreshAccessToken } from '../tokenRefresh.js'
 import { ranRecently } from './ranRecently.js'
+import { reassemblyEvents } from './reassembly.js'
 import { RECENT_RUN_MS } from './recentRun.js'
 import { tenancyFromJobs } from './structureTenancy.js'
 
@@ -327,6 +328,145 @@ export const recordStructureTenancy = async (tag, owner, jobs) => {
     if (error) throw error
   } catch (e) {
     console.warn(`[${tag}] structure_tenant bookkeeping failed: ${e?.message ?? e}`)
+  }
+}
+
+// Ship memory's reassembly step (docs/ship-memory.md "Reassembly"), run
+// best-effort after each asset reconcile the way recordStructureTenancy runs
+// after the job reconciles: a failure here never fails the extract. The pure
+// fold is src/jobs/reassembly.js; this is the I/O around it.
+//
+// `changes` is what the reconcile saw: the item ids that vanished from the
+// listing (with the row they had), the ids that made their debut, and the
+// rows that changed (with their previous quantity). Two indexed probes, both
+// almost always empty, decide whether there is anything to fold at all: the
+// memories among the vanished ids, and the pending packs. A run with neither
+// writes nothing.
+//
+// `owner` is `{ registration_id }` or `{ corporation_id }`, as the pack row
+// and the heartbeat carry it.
+
+const PROBE_CHUNK = 500
+const LINEAGE_PROBE_TABLES = ['character_asset_version', 'corp_asset_version']
+
+// item id → type id, for the vanished ids that hold a current memory.
+const memoriesAmong = async (itemIds) => {
+  const found = new Map()
+  await forEachSequential(splitEvery(PROBE_CHUNK, itemIds), async (chunk) => {
+    const { data, error } = await sudoSupabase.from('item_memory').select('item_id, type_id').in('item_id', chunk)
+    if (error) throw error
+    forEach((row) => found.set(Number(row.item_id), Number(row.type_id)), data ?? [])
+  })
+  return found
+}
+
+// Every pending pack, in the fold's shape. The table is tiny — a row needs a
+// memory-bearing hull to have been repackaged — so one read is the whole set.
+const pendingPacks = async () => {
+  const { data, error } = await sudoSupabase
+    .from('item_memory_pack')
+    .select('id, item_id, type_id, registration_id, corporation_id, stack_item_id, location_id')
+    .is('resolved_at', null)
+    .limit(1000)
+  if (error) throw error
+  return map(
+    (row) => ({
+      id: Number(row.id),
+      itemId: Number(row.item_id),
+      typeId: Number(row.type_id),
+      owner:
+        row.registration_id != null
+          ? { kind: 'character', id: String(row.registration_id) }
+          : { kind: 'corporation', id: String(row.corporation_id) },
+      stackItemId: row.stack_item_id == null ? null : Number(row.stack_item_id),
+      locationId: row.location_id == null ? null : Number(row.location_id),
+    }),
+    data ?? []
+  )
+}
+
+// An unpack is a hull with a *new* id: one with a closed row under any owner
+// is a hull back from a trip (sold and bought back, lent and returned), and
+// its own history, not a stack, is its past. One lookup per table on the
+// (item_id, valid_until) index, for the handful of carries a run can have.
+const isNewId = async (itemId) => {
+  const hits = await Promise.all(
+    map(async (table) => {
+      const { data, error } = await sudoSupabase
+        .from(table)
+        .select('id')
+        .eq('item_id', itemId)
+        .eq('is_current', false)
+        .limit(1)
+      if (error) throw error
+      return (data ?? []).length > 0
+    }, LINEAGE_PROBE_TABLES)
+  )
+  return !hits.some(Boolean)
+}
+
+export const recordReassembly = async (tag, owner, changes, now) => {
+  try {
+    const { vanished, debuts, changed } = changes
+    const memories = vanished.length > 0 ? await memoriesAmong(map(prop('itemId'), vanished)) : new Map()
+    const anyDebutHull = debuts.some((d) => d.isSingleton === true)
+    if (memories.size === 0 && !anyDebutHull) return
+    const packs = anyDebutHull ? await pendingPacks() : []
+    if (memories.size === 0 && packs.length === 0) return
+
+    const ownerRef =
+      owner.registration_id != null
+        ? { kind: 'character', id: String(owner.registration_id) }
+        : { kind: 'corporation', id: String(owner.corporation_id) }
+    const events = reassemblyEvents({ owner: ownerRef, vanished, debuts, changed, memories, pendingPacks: packs, now })
+
+    if (events.packs.length > 0) {
+      const { error } = await sudoSupabase.from('item_memory_pack').insert(
+        map(
+          (p) => ({
+            item_id: p.itemId,
+            type_id: p.typeId,
+            ...owner,
+            stack_item_id: p.stackItemId,
+            location_id: p.locationId,
+            packed_at: p.packedAt,
+          }),
+          events.packs
+        )
+      )
+      if (error) throw error
+    }
+
+    const carried = []
+    await forEachSequential(events.carries, async (carry) => {
+      if (!(await isNewId(carry.toItemId))) {
+        console.log(
+          `[${tag}] reassembly: item ${carry.toItemId} has a history of its own; not carrying ${carry.fromItemId}`
+        )
+        return
+      }
+      const { error } = await sudoSupabase.rpc('item_memory_carry', {
+        p_from_item_id: carry.fromItemId,
+        p_to_item_id: carry.toItemId,
+        p_pack_id: carry.packId,
+      })
+      // One failed carry (a race with another run, a hull that gained a memory
+      // meanwhile) leaves the others alone and the pack pending.
+      if (error)
+        console.warn(`[${tag}] reassembly: carry ${carry.fromItemId} → ${carry.toItemId} failed: ${error.message}`)
+      else carried.push(carry)
+    })
+
+    if (events.packs.length > 0 || carried.length > 0 || events.ambiguous.length > 0) {
+      const packed = map((p) => p.itemId, events.packs)
+      const moved = map((c) => `${c.fromItemId}→${c.toItemId} (${c.rule})`, carried)
+      const open = map((a) => `${a.toItemId}?[${a.candidates.join(',')}]`, events.ambiguous)
+      console.log(
+        `[${tag}] reassembly: packed ${packed.length} [${packed.join(',')}], carried ${moved.length} [${moved.join(' ')}], ambiguous ${open.length} [${open.join(' ')}]`
+      )
+    }
+  } catch (e) {
+    console.warn(`[${tag}] reassembly bookkeeping failed: ${e?.message ?? e}`)
   }
 }
 

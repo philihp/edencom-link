@@ -38,6 +38,7 @@
     "import-jeve-journal": "node src/jobs/importJeveJournal.js",
     "import-jeve-transactions": "node src/jobs/importJeveTransactions.js",
     "import-gez-structures": "node src/jobs/importGezStructures.js",
+    "import-inferred-structures": "node src/jobs/importInferredStructures.js",
     "character-contracts": "node src/jobs/characterContracts.js",
     "character-industry-jobs": "node src/jobs/characterIndustryJobs.js",
     "character-mercenary-dens": "node src/jobs/characterMercenaryDens.js",
