@@ -1,59 +1,38 @@
 # Ship memory
 
-A text a ship keeps about itself. Any item a player holds can carry one
-markdown document. The first chapters here are about ships; the extension
-at the end widens the same mechanism to every singleton we track. The player's AI companion
-(Aura, Claude, ChatGPT, over MCP) writes it in the ship's own voice: where it
-came from, where it has docked, what it has hauled, how it keeps its fuel, who
-has flown it. The AI rewrites it as the ship's history grows, so the memory
-accumulates, and every version is kept.
+A text an item keeps about itself. Every singleton a player holds — an
+assembled ship, a blueprint, a fitted module, a container — can carry one
+markdown document, written in the item's own voice by the player's AI
+companion (Aura, Claude, ChatGPT, over MCP) from the facts the extracts
+already hold, and rewritten as its history grows. Every version is kept, the
+text belongs to the item id, so it passes to a buyer and follows a share, and
+nothing is written until someone speaks to the item.
 
-**Status:** 🔨 in progress. PR 1 (one holder per item id) was built on
-2026-11-01: migration `20261101065555_asset_claim_cross_hangar` and
-`test/sql/asset_claim_cross_hangar.sql`. Its production measurement found
-only handoffs waiting on a pull, so it is safe to merge (see One holder per
-item id). PR 2 (storage and accent) was built the same day: migrations
-`20261101090426_item_memory` and `20261101090428_sde_type_faction`,
-`test/sql/item_memory.sql`, and `src/app/ship/memory/accent.ts` with
-`test/shipMemoryAccent.test.ts`. It differs from this plan in two places,
-both noted where they land: the table gains `closed_by` (see Storage), and the
-accent is keyed on the SDE's ids rather than its names (see Accent). PR 3 (the
-dossier and `recall_ship`) was built the same day: `src/app/ship/memory/dossier.ts`
-(the pure fold, `test/shipMemoryDossier.test.ts`), `register.ts` (the hull-class
-register, pinned against the chart below like the accent), `load.ts` (the one
-loader, both hangars), `src/sdeDogma.ts` (the fuel-bay capacity, dogma
-attribute 1549), `src/app/api/mcp/memoryTools.ts` with its pure seam
-`memoryQuery.ts` (tested), and a first "A ship's memory" section in the skill
-doc, since `get_skill` must name every tool. Where it differs from the plan is
-noted where it lands (see Where it came from, and the MCP tools). PR 4
-(`remember_ship` and the skill section) was built the same day, in
-`memoryTools.ts` beside the read tool, with the write seam in
-`memoryQuery.ts` (tested) and "Writing a ship's memory" in
-`docs/edencom-industry-SKILL.md`. PR 6
-(reassembly) was built the same day, beside PRs 4 and 5 still in review:
-migration `20261101220500_item_memory_reassembly` (`carried_from_item_id`,
-`item_memory_pack`, `item_memory_carry()`, and the trigger that copies the
-lineage pointer forward), `test/sql/item_memory_reassembly.sql`, the pure fold
-`src/jobs/reassembly.js` with `test/reassembly.test.ts`, the writer
-`recordReassembly` in `src/jobs/lib.js` called by both asset extracts, the
-lineage walk in `load.ts`/`dossier.ts`, `inherit_candidates` on `recall_ship`,
-and `src/app/ship/memory/inherit.ts`, the `inherit_from` check-and-carry.
-**The id measurement it was meant to start with did not run** in that
-session (no production read), so the matcher shipped written for either
-outcome. All six PRs merged on 2026-11-01. **The follow-up of 2026-11-02**
-closed the seam the parallel build left — `remember_ship` now takes
-`inherit_from` and calls `inheritMemory` — and ran the measurement: **EVE
-replaces a hull's id when it is repackaged and keeps the packaged row's id
-when a hull is assembled from it** (see Reassembly, which also says what that
-meant for the matcher, re-shaped the same day). **The extension** to every
-singleton — blueprints, modules, containers — was planned the same day (see
-Extension: every singleton, and PRs 7–11). PR 7 (the generic tools and the
-blueprint dossier) was built the same day: `recall_item`/`remember_item` in
-`memoryTools.ts` with the ship tools as aliases, the resolver widened to a
-type name over what the caller holds, `src/app/ship/memory/nativeVoice.ts`
-(the kind and native voice per category, tested), the blueprint fold
-`blueprintDossier.ts` (tested) with its loader `loadBlueprint.ts`, and the
-skill doc's section renamed "An item's memory".
+**Ships came first.** The chapters from "What the ship knows" to "Display"
+are the ship case, written when ships were the only kind; "Extension: every
+singleton" (2026-11-02) generalises each of them, and each ship chapter opens
+with a line saying which general rule it is the case of. Read the extension
+for the rules and the ship chapters for the worked example. Blueprints also
+have a page of their own, from the parallel docs/item-pages.md plan, which
+this document reconciles with where the two meet (PR 10).
+
+**Status:** PRs 1–11 built. One line each — the PRs section at the end has
+the detail and every deviation from the plan.
+
+| PR  | Built      | What                                                                                                                                                                                                 |
+| --- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | 2026-11-01 | One holder per item id across both hangar tables (`20261101065555`)                                                                                                                                  |
+| 2   | 2026-11-01 | `item_memory_over_time`, `holds_item()`, `item_memory_write()`, `faction_id` on `sde_published_type`, `accent.ts`                                                                                      |
+| 3   | 2026-11-01 | The dossier fold (`dossier.ts`), the register chart, the loader over both hangars, MCP `recall_ship`                                                                                                |
+| 4   | 2026-11-01 | MCP `remember_ship`, the skill doc section                                                                                                                                                            |
+| 5   | 2026-11-01 | The Memory panel on `/ship/[itemId]`, the share read, the `show_as_main` rule                                                                                                                       |
+| 6   | 2026-11-01 | Reassembly: `item_memory_pack`, `carried_from_item_id`, `item_memory_carry()`, the matcher; `inherit_from` wired and the id measurement run 2026-11-02, the matcher re-shaped around the singleton flip |
+| 7   | 2026-11-02 | `recall_item`/`remember_item` with the ship tools as aliases, the type-name resolver, `nativeVoice.ts`, the blueprint dossier                                                                         |
+| 8   | 2026-11-02 | The module dossier and acquired accents (`accentBlend.ts`), the container contents fold                                                                                                              |
+| 9   | 2026-11-03 | Highsec lingo (`lingo.ts`), `faction_id` on `sde_region` (`20261103000614`)                                                                                                                          |
+| —   | 2026-11-03 | Speaking to an item writes its first memory at once (`first_memory`), rooted in its `surroundings` when the record is thin                                                                            |
+| 10  | 2026-11-03 | Every singleton links to a page with its Memory panel (`itemHref`, `/asset/[itemId]`); no `/item` route, per docs/item-pages.md                                                                    |
+| 11  | 2026-11-03 | This reread                                                                                                                                                                                           |
 
 ## Decisions (owner, 2026-11-01)
 
@@ -66,6 +45,11 @@ skill doc's section renamed "An item's memory".
 | Accents      | A draft chart is below (faction or race → accent), for the owner to edit.                                                                                                                                                                |
 
 ## What the ship knows
+
+_The ship case of "What each kind of item knows" in the extension: the same
+fold (`dossier.ts`) serves every kind, and the ship parts below are the ones
+only a hull has._
+
 
 Every fact comes from tables the extracts already write. **This plan adds no ESI
 call and no new scope.**
@@ -95,6 +79,12 @@ It is a deliberate, authored channel, and the raw history stays with whoever
 recorded it.
 
 ## The voice
+
+_The ship case of "The voice, generalised": a ship's voice is an accent
+from its faction or race and a register from its hull class; other kinds
+have a native voice from the chart there, a high-slot module acquires its
+hulls' accents, and a ship picks up highsec lingo._
+
 
 ### Accent
 
@@ -186,6 +176,11 @@ Two pilots. The first one babied me. The second one keeps me light.
 ```
 
 ## Storage
+
+_Already general: the table is keyed on `item_id` and names no category.
+The extension's "What the data already does" confirms what below applies to
+any item._
+
 
 `item_memory_over_time`, SCD-2 like the rest of the schema, with the view
 `item_memory` showing the current rows:
@@ -313,6 +308,10 @@ sighting, the buyer gains both, and the seller's old versions stay theirs
 alone.
 
 ## Reassembly
+
+_The ship case of "Reassembly for other categories": the matcher is
+type-agnostic, and a blueprint never re-stacks, so it mostly fires for hulls._
+
 
 A repackaged hull's personality goes back into the hull that is assembled from
 it, wherever the extract can tie the two together.
@@ -455,6 +454,12 @@ and ambiguity. The carry runs after the claim has opened the debut rows, since
 
 ## MCP tools
 
+_The ship case of the extension's "MCP tools": `recall_ship` and
+`remember_ship` are today aliases of `recall_item` and `remember_item`,
+restricted to hulls. Everything below about the dossier, the memory, the
+readers and the write rules holds for every kind._
+
+
 Both tools live in a new module, `src/app/api/mcp/memoryTools.ts`, and both run
 on the caller's bearer client.
 
@@ -507,6 +512,11 @@ serves, as a section called "Writing a ship's memory":
 
 ## Display
 
+_The ship case of the extension's "Display": every singleton has a page
+that draws the same Memory panel — `/ship` for a hull, `/blueprint` for a
+blueprint, `/asset` for everything else._
+
+
 On `/ship/[itemId]`, a **Memory** panel below the fitting stack renders the
 markdown with raw HTML disabled, and opens links with
 `rel="nofollow noopener"`. The panel shows "written N times, last on …", and
@@ -544,7 +554,7 @@ Markdown rendering needs a dependency, because the repo had no markdown
 renderer. PR 5 added `react-markdown` (10.x) without `rehype-raw`, so raw
 HTML is never rendered, with `skipHtml` so its text is dropped too.
 
-## Extension: every singleton (planned 2026-11-02)
+## Extension: every singleton (planned 2026-11-02; PRs 7–10 built)
 
 The storage was built per item id rather than per ship, and on 2026-11-02 the
 owner set the goal that **every singleton item we track can carry a memory
@@ -952,7 +962,11 @@ The extension (planned 2026-11-02; PRs 7 and 8 built the same day, PR 9 the next
     containers.
 11. **Docs.** This document's early chapters are reread as the ship case of
     the general rules, and the skill doc's "A ship's memory" becomes "An
-    item's memory".
+    item's memory". **Built 2026-11-03.** The skill doc's rename had already
+    landed with PR 7; this PR rewrote the opening (the status is a table, one
+    line per PR), put a one-line pointer under each ship chapter naming the
+    general rule it is the case of, and tightened CLAUDE.md's `memoryTools.ts`
+    bullet, which had grown by accretion across PRs 3–10.
 
 ## Open questions
 
