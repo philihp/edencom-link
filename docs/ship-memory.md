@@ -792,10 +792,10 @@ factions in the SDE too (Curse is Angel, Venal is Guristas, Stain is
 Sansha's); the owner decided highsec only, and the fold takes the band as a
 parameter so that can change in one place.
 
-The region's faction needs one read the app does not have today: the
-`sde_region` view exposes `region_id` and `name` only. PR 9 adds
-`faction_id` to the view (a `schema.sql` change plus a migration, since the
-mirror job defines no views) and a `getSdeRegionFactions` reader in
+The region's faction needed one read the app did not have: the `sde_region`
+view exposed `region_id` and `name` only. PR 9 added `faction_id` to the view
+(migration `20261103000614`; a `schema.sql` change plus a migration, since the
+mirror job defines no views) and the `getSdeRegionFactions` reader in
 `src/sdeRegions.ts`.
 
 **Why computed, not accrued.** The owner's rule that nothing is written until
@@ -897,7 +897,7 @@ Blueprints never reach it. Nothing to build.
    flip, with `previousSingleton` on the reconciles' changed rows and `via`
    on every carry.
 
-The extension (planned 2026-11-02; PRs 7 and 8 built the same day):
+The extension (planned 2026-11-02; PRs 7 and 8 built the same day, PR 9 the next):
 
 7. **Generic tools and the blueprint dossier.** `recall_item` /
    `remember_item` with the ship tools as aliases, the widened resolver
@@ -932,7 +932,22 @@ The extension (planned 2026-11-02; PRs 7 and 8 built the same day):
    the dossier now carries `contents` over every child beside the ship's
    hold-only `cargo`.
 9. **Lingo.** `sde_region.faction_id` (view + migration), the region reader,
-   the dwell fold, `LINGO_CAP`.
+   the dwell fold, `LINGO_CAP`. **Built 2026-11-03.** Migration
+   `20261103000614` adds `faction_id` to the view (36 of the ~70 k-space
+   regions carry one: every highsec region and the pirate homelands);
+   `getSdeRegionFactions` in `src/sdeRegions.ts` reads it, and
+   `sde_kspace_system` already carried `region_id`, so `getSdeSystems` now
+   returns `regionID` too. The fold is `src/app/ship/memory/lingo.ts`
+   (tested): dwell per region over the itinerary's stops that resolve to a
+   system in the band, regions of one empire added, weight
+   `min(LINGO_CAP, days / 365 × LINGO_CAP)`; `LINGO_CAP` is 0.1 and
+   `HIGHSEC_MIN_SECURITY` 0.45 (the lowest true security a system shown as
+   0.5 can have), both parameters. `recall_item` answers it as `voice.lingo`
+   for a ship, each empire with its weight, days and regions, and the ship's
+   `how` paragraph says a tenth is a word here and there, never a change of
+   accent. Docks resolve to systems through `resolveLocations` (station →
+   `sde_station`, structure → `universe_structure`), the same path the
+   dossier's place names take.
 10. **Pages.** `/item/[itemId]` and its card; the panel on `/asset/[id]` for
     containers.
 11. **Docs.** This document's early chapters are reread as the ship case of

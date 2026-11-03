@@ -14,6 +14,7 @@ export type SdeSystem = {
   name: string
   security: number
   constellationName: string | null
+  regionID: number | null
   regionName: string | null
   // True position in the galaxy, in metres (migration 20260902092205). x/z are
   // the top-down galaxy-map plane the in-game star map draws on; y is galactic
@@ -26,13 +27,15 @@ type SystemRow = {
   name: string
   security: number
   constellation_name: string | null
+  region_id: number | null
   region_name: string | null
   position_x: number | null
   position_y: number | null
   position_z: number | null
 }
 
-const COLUMNS = 'system_id, name, security, constellation_name, region_name, position_x, position_y, position_z'
+const COLUMNS =
+  'system_id, name, security, constellation_name, region_id, region_name, position_x, position_y, position_z'
 
 const cache = createByIdCache<SdeSystem>()
 
@@ -41,6 +44,7 @@ const rowToSystem = (r: SystemRow): SdeSystem => ({
   name: r.name,
   security: r.security,
   constellationName: r.constellation_name,
+  regionID: r.region_id,
   regionName: r.region_name,
   position:
     r.position_x != null && r.position_y != null && r.position_z != null

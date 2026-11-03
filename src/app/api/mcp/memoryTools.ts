@@ -28,6 +28,7 @@ import { inheritMemory, pendingPacksOfType } from '@/app/ship/memory/inherit'
 import { loadDossierInput } from '@/app/ship/memory/load'
 import { loadBlueprintInput } from '@/app/ship/memory/loadBlueprint'
 import { loadHullIdentities } from '@/app/ship/memory/loadModule'
+import { HIGHSEC_MIN_SECURITY, LINGO_CAP, LINGO_FULL_DAYS, lingo } from '@/app/ship/memory/lingo'
 import { BLUEPRINT_CATEGORY_ID, type ItemKind, kindOf, nativeVoiceOf } from '@/app/ship/memory/nativeVoice'
 import {
   getSdeType,
@@ -39,6 +40,8 @@ import {
   type SdeType,
 } from '@/sdeTypes'
 import { escapeLike } from '@/utils/escapeLike'
+import { getSdeRegionFactions, getSdeRegionNames } from '@/sdeRegions'
+import { getSdeSystems } from '@/sdeSystems'
 import { createBearerClient } from '@/utils/supabase/bearer'
 
 import { dataFreshness, fetchOwnerContext, textResult, type OwnerContext, type ToolResult } from './lib'
@@ -485,8 +488,44 @@ const describeModule = async (
   }
 }
 
+// The lingo a ship picked up in highsec (docs/ship-memory.md "Ships in
+// highsec"): its docks resolved to systems (station → system through the SDE,
+// structure → system through universe_structure, as /structure does), the
+// systems in the band to their regions, the regions to their empires. Stored
+// nowhere; computed from the itinerary at recall.
+const describeLingo = async (supabase: SupabaseClient, d: Dossier) => {
+  const places = uniq(d.itinerary.map((s) => s.place).filter((p): p is Place => p != null))
+  const locations = await resolveLocations(places.map(placeRef), supabase)
+  const systemOf = (p: Place) => locations.systemIdFor(placeRef(p)) ?? null
+  const systemIds = uniq(places.map(systemOf).filter((id): id is number => id != null))
+  const systems = await getSdeSystems(systemIds)
+  const regionIds = uniq(
+    Object.values(systems)
+      .map((s) => s.regionID)
+      .filter((id): id is number => id != null)
+  )
+  const [factions, regionNames] = await Promise.all([getSdeRegionFactions(regionIds), getSdeRegionNames(regionIds)])
+  const picked = lingo(
+    d.itinerary,
+    systemOf,
+    (id) => (systems[id] == null ? null : { security: systems[id].security, regionId: systems[id].regionID }),
+    (regionId) => factions[regionId] ?? null
+  )
+  return {
+    note: `A ship that docks in highsec borrows a few phrases from the empire whose space it is in — a seasoning on the hull's own accent, never a second voice. Each weight is min(${LINGO_CAP}, days / ${LINGO_FULL_DAYS} × ${LINGO_CAP}) over the ship's days docked in that empire's highsec (security ≥ ${HIGHSEC_MIN_SECURITY}); at ${LINGO_CAP} it is a turn of phrase here and there.`,
+    empires: picked.map((l) => ({
+      empire: l.label,
+      accent: l.accent,
+      voice_notes: l.notes,
+      weight: l.weight,
+      days: l.days,
+      regions: l.regionIds.map((id) => regionNames[id] ?? `Region #${id}`),
+    })),
+  }
+}
+
 const HOW: Record<ItemKind, string> = {
-  ship: 'Write in the accent and register above. Keep what the old memory says unless the facts contradict it; add, do not rewrite. Use "at least" where the data is sampled. Never invent battles, cargo or places. On a hull with an earlier owner, keep their chapters as the ship\'s past.',
+  ship: 'Write in the accent and register above. Where voice.lingo lists an empire, let a phrase or two of its turn of speech in, in proportion to the weight — a tenth is a word here and there, never a change of accent. Keep what the old memory says unless the facts contradict it; add, do not rewrite. Use "at least" where the data is sampled. Never invent battles, cargo or places. On a hull with an earlier owner, keep their chapters as the ship\'s past.',
   blueprint:
     'Write as the clerk above, in the first person, in its research register. Its ledger is the blueprint section: runs built by product, the research steps as promotions, the copies made. Every count is "at least" from when the record began. Never invent a job, a pilot or a facility that is not listed.',
   module:
@@ -529,6 +568,7 @@ const recall = async (ctx: ServerCtx, query: string, scope: Scope): Promise<Tool
       : null
   const held = kind === 'module' ? await heldType(supabase, owners, itemId) : null
   const moduleFacts = kind === 'module' ? await describeModule(supabase, owners, input?.hull ?? [], d.lastSeen) : null
+  const shipLingo = kind === 'ship' ? await describeLingo(supabase, d) : null
 
   const [factionId, facts, blueprintFacts, readers, { data: memoryRow }, { data: versionRows }, data_refreshed] =
     await Promise.all([
@@ -585,6 +625,7 @@ const recall = async (ctx: ServerCtx, query: string, scope: Scope): Promise<Tool
       register: voice.register,
       register_class: voice.register_class,
       ...(moduleFacts == null ? {} : { acquired_accents: moduleFacts.acquired_accents }),
+      ...(shipLingo == null ? {} : { lingo: shipLingo }),
     },
     dossier: facts,
     ...(blueprintFacts == null ? {} : { blueprint: blueprintFacts }),
