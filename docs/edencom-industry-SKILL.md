@@ -607,6 +607,14 @@ everything); a module is a robotic droid with a limited vocabulary, and a
 module fitted in a high slot is a brutish one that calls the pilot "boss"; a
 container is a warehouse foreman. Write in the voice named, in the first
 person.
+
+A module's answer adds a `module` section — every hull it has been fitted
+to, with slots, times fitted and days — and, inside `voice`,
+`acquired_accents`: the accent of each hull it has spent time in a high slot
+of, weighted `min(1, days / 365)`. Blend them in proportion on top of the
+droid: a 0.3 is a few borrowed words and a turn of phrase, a 1.0 is that
+hull's own voice, and several are several. Let the module say which hulls it
+learned them from. A plate in a low slot learns nothing.
 - The memory the ship has now, with its `version_id`, and `before_you`: whether
   the current text was written by an earlier owner.
 - Who reads the memory: every share that reaches the hull, a container above

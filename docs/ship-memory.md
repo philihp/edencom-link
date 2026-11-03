@@ -715,8 +715,11 @@ dossier does). The fold answers:
 CCP files cargo and secure containers under category Celestial. A container's
 dossier is its places and what it has held: every item whose `location_id`
 was the container, as spans, with at-least quantities — the ship dossier's
-cargo fold applied to a different parent. Containers are named in ESI, so
-they resolve by name like hulls.
+cargo fold applied to a different parent, **and to different flags**: an
+item inside a container carries `Unlocked`, `Locked` or `AutoFit`, never a
+hold flag, so the fold takes the flags to keep as a parameter (the holds for
+a ship, everything for a container). Containers are named in ESI, so they
+resolve by name like hulls.
 
 #### Everything else
 
@@ -886,7 +889,7 @@ Blueprints never reach it. Nothing to build.
    flip, with `previousSingleton` on the reconciles' changed rows and `via`
    on every carry.
 
-The extension (planned 2026-11-02, nothing built):
+The extension (planned 2026-11-02; PRs 7 and 8 built the same day):
 
 7. **Generic tools and the blueprint dossier.** `recall_item` /
    `remember_item` with the ship tools as aliases, the widened resolver
@@ -907,7 +910,19 @@ The extension (planned 2026-11-02, nothing built):
    `nativeVoice.ts` with the chart above, `accentBlend.ts` for high-slot
    modules (tested against hand-built histories: one hull for 100 days is
    0.27, two hulls, a year on each, are two accents at 1.0). The container
-   fold rides along, being the cargo fold with a different parent.
+   fold rides along, being the cargo fold with a different parent. **Built
+   2026-11-02.** `accentBlend.ts` holds the attachment fold too
+   (`attachments` over the module's own version rows, which now carry their
+   `flag`; `hullTenures` per hull; `accentBlend`), `loadModule.ts` names and
+   types the hulls from the caller's own record (any version — a dead hull
+   still taught its accent), and `recall_item` answers a `module` section
+   (hulls, slots, times fitted, days) plus `acquired_accents` inside
+   `voice`. The container fold turned out to be a fix rather than a
+   rename: items inside a container carry `Unlocked`, `Locked` or `AutoFit`
+   (measured: 196,824 AutoFit, 59,414 Unlocked, 6 Locked, nothing else of
+   note), none of them a hold flag, so PR 7's `contents` was always empty;
+   the dossier now carries `contents` over every child beside the ship's
+   hold-only `cargo`.
 9. **Lingo.** `sde_region.faction_id` (view + migration), the region reader,
    the dwell fold, `LINGO_CAP`.
 10. **Pages.** `/item/[itemId]` and its card; the panel on `/asset/[id]` for

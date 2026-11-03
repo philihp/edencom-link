@@ -273,6 +273,22 @@ test('hold flags: cargo, fleet hangar and specialised holds; not slots, drones, 
   assert.equal(isSlotFlag('Cargo'), false)
 })
 
+test("a container's contents count every child: items inside one carry Unlocked, Locked or AutoFit, never a hold flag", () => {
+  const children = [
+    child({ itemId: 1, typeId: 34, flag: 'Unlocked', quantity: 100 }),
+    child({ itemId: 2, typeId: 34, flag: 'AutoFit', quantity: 50 }),
+    child({ itemId: 3, typeId: 3699, flag: 'Locked', quantity: 2 }),
+  ]
+  assert.equal(cargo(children, () => undefined).distinctTypes, 0) // the ship's holds see nothing
+  const all = cargo(
+    children,
+    () => undefined,
+    () => true
+  )
+  assert.equal(all.distinctTypes, 2)
+  assert.equal(all.lines.find((l) => l.typeId === 34)?.maxQuantity, 150)
+})
+
 test('cargo counts each item once at its largest quantity, adds stacks of one type, and never skips a volume', () => {
   const TRIT = 34
   const QUAFE = 3699

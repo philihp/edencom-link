@@ -128,6 +128,7 @@ const hullVersions = async (supabase: SupabaseClient, hangar: Hangar, itemId: nu
     name: r.name ?? null,
     place: r.location_id == null ? (places.get(String(r.id)) ?? null) : null,
     parentId: r.location_id == null ? null : Number(r.location_id),
+    flag: r.location_flag,
     isCurrent: r.is_current,
     validFrom: r.valid_from,
     validUntil: r.valid_until,

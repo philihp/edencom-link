@@ -35,6 +35,9 @@ export type HullVersion = {
   name: string | null
   place: Place | null
   parentId: number | null
+  // The slot or hold the item sits in inside its parent (a module's HiSlot0,
+  // a crate's Cargo); null on a root item. Optional for fixtures that predate it.
+  flag?: string | null
   isCurrent: boolean
   validFrom: string
   validUntil: string
@@ -177,7 +180,13 @@ export type Dossier = {
   tenures: Tenure[]
   itinerary: Stop[]
   pilots: Pilot[]
+  // What the hull carried in its holds (isHoldFlag).
   cargo: Cargo
+  // Everything ever inside the item, whatever its flag: a container's
+  // contents. Items in a container carry Unlocked / Locked / AutoFit, which
+  // are not hold flags (measured 2026-11-02: 196,824 AutoFit, 59,414
+  // Unlocked, 6 Locked, nothing else of note).
+  contents: Cargo
   fuel: Fuel | null
   fit: Fit
   inHangar: boolean
@@ -297,11 +306,17 @@ export const pilots = (boardings: BoardingRow[], lastSeen: string): Pilot[] =>
 // ── what it has carried ───────────────────────────────────────────────────
 
 // Each child item id counts once, at the largest quantity ever seen aboard:
+// (`keep` picks the flags that count: the holds for a ship, everything for a
+// container.)
 // the same crate listed by forty extracts is one crate. Lines of one type
 // then add up, so two stacks of Tritanium in the hold are one line. Volume
 // is null when a type has no volume in the SDE, never silently skipped.
-export const cargo = (children: ChildVersion[], volumeOf: (typeId: number) => number | undefined): Cargo => {
-  const held = children.filter((c) => isHoldFlag(c.flag))
+export const cargo = (
+  children: ChildVersion[],
+  volumeOf: (typeId: number) => number | undefined,
+  keep: (flag: string | null) => boolean = isHoldFlag
+): Cargo => {
+  const held = children.filter((c) => keep(c.flag))
   const maxByItem = held.reduce<Map<number, ChildVersion>>((acc, c) => {
     const seen = acc.get(c.itemId)
     if (!seen || c.quantity > seen.quantity) acc.set(c.itemId, c)
@@ -538,6 +553,7 @@ export const dossier = (input: DossierInput): Dossier | null => {
     itinerary: itinerary(hull, input.lastSeen),
     pilots: pilots(input.boardings, input.lastSeen),
     cargo: cargo(input.children, input.volumeOf),
+    contents: cargo(input.children, input.volumeOf, () => true),
     fuel: fuel(input.children, input.fuelBayCapacity, input.volumeOf, input.lastSeen),
     fit: fit(input.children, input.lastSeen),
     inHangar: newest.isCurrent,
