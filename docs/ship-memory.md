@@ -784,11 +784,11 @@ factions in the SDE too (Curse is Angel, Venal is Guristas, Stain is
 Sansha's); the owner decided highsec only, and the fold takes the band as a
 parameter so that can change in one place.
 
-The region's faction needs one read the app does not have today: the
-`sde_region` view exposed `region_id` and `name` only. PR 9 added
-`faction_id` to the view (migration `20261103000614`; a `schema.sql` change
-plus a migration, since the mirror job defines no views) and the
-`getSdeRegionFactions` reader in `src/sdeRegions.ts`.
+The region's faction needed one read the app did not have: the `sde_region`
+view exposed `region_id` and `name` only. PR 9 added `faction_id` to the view
+(migration `20261103000614`; a `schema.sql` change plus a migration, since the
+mirror job defines no views) and the `getSdeRegionFactions` reader in
+`src/sdeRegions.ts`.
 
 **Why computed, not accrued.** The owner's rule that nothing is written until
 asked means a module might be asked about for the first time after a year on
