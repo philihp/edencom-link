@@ -8,6 +8,7 @@ import { createClient } from '@/utils/supabase/server'
 import { createServiceClient } from '@/utils/supabase/service'
 
 import { establishedUser } from '../../account/lib/establishedUser'
+import { resolvePublicShare } from '../../asset/access'
 import { AppraisalPanel } from '../../asset/[locationId]/appraisalPanel'
 import { AssetShareDialog } from '../../asset/assetShareDialog'
 import { fetchCorpShareDialogData, fetchShareDialogData } from '../../asset/shareData'
@@ -37,10 +38,11 @@ import { ShipViewDynamic } from './shipViewDynamic'
 // still stands at /item/[itemId] until stage 4 phase 3 deletes it.
 //
 // Reachable authenticated (RLS scopes everything to the caller), or anonymously
-// with a valid share token — the token path uses the service-role client, so
-// every query there is explicitly filtered to the sharing user's
-// characters/corps, and location is deliberately omitted (a share link
-// shouldn't broadcast where the ship is).
+// with a valid share token, or on the bare URL when the ship is shared with
+// everyone — the share paths use the service-role client, so every query
+// there is explicitly filtered to the sharing user's characters/corps, and
+// location is deliberately omitted (a share link shouldn't broadcast where
+// the ship is).
 
 // Where the hull sits, as the identity strip says it: the nearest named place
 // and the system holding it ("Cold Storage, C-J6MT"). The breadcrumb above
@@ -94,7 +96,13 @@ const ShipPage = async ({ params, searchParams }: ShipPageProps) => {
 
   const supabase = await createClient()
   const user = await establishedUser(supabase)
-  if (!user) redirect('/')
+  if (!user) {
+    // No session and no link: the bare URL is itself the link when the ship
+    // (or a container above it) is shared with everyone. Anything else sends
+    // the visitor home, as it always did.
+    if (!(await resolvePublicShare(itemId))) redirect('/')
+    return <SharedShipPage itemId={itemId} shareParams={{}} />
+  }
 
   // The ship row, from whichever hangar owns it. Both hangars are probed at
   // once and the character row wins: an item lives in exactly one of them, so
@@ -236,7 +244,7 @@ const ContentsFallback = () => (
 // drawn as it was last seen, with the sighting line saying how long ago. All queries run on the service client,
 // explicitly filtered to the sharer's characters/corps. Accepts both link
 // generations — the signed ?share= param (recursive over the shared subtree)
-// and the legacy ?token= (exact id).
+// and the legacy ?token= (exact id) — and, with neither, a fully public share.
 const SharedShipPage = async ({
   itemId,
   shareParams,

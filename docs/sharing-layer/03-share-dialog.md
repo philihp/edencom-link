@@ -32,7 +32,9 @@ Contents, mapping 1:1 to the share row:
   rotates the secret (old URLs die); toggling off nulls it.
 - **Public** — a toggle explained honestly ("anyone can see this"). On =
   clear both lists and the secret (the empty row _is_ the public share, per
-  phase 1); the dialog greys the other controls while set.
+  phase 1); the dialog greys the other controls while set, and shows the
+  page's own URL as the copyable link — a public share carries no token, so
+  the bare URL is what opens it (01-asset-share-table.md, state (d)).
 - **Stop sharing** — deletes the row.
 
 One share row per item (`unique (registration_id, item_id)`), so the dialog

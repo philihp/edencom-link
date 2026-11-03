@@ -21,7 +21,7 @@ import { kindOf } from '../../ship/memory/nativeVoice'
 import { readShipMemory } from '../../ship/memory/read'
 import { hideHolder, PRESENTED_OWNER_ID, UNNAMED_OWNER } from '../../ship/[itemId]/presentedOwner'
 import { TypeIcon } from '../../typeIcon'
-import { resolveShareParams } from '../access'
+import { resolvePublicShare, resolveShareParams } from '../access'
 import { AssetShareDialog } from '../assetShareDialog'
 import { sharePath } from '../shareHint'
 import { subjectGrantors } from '../placeShare'
@@ -135,11 +135,12 @@ export const generateViewport = async ({ params, searchParams }: AssetLocationPa
 
 // Directory browsing for a location's contents. Ships are their own thing —
 // navigating to a ship's id redirects to /ship/[itemId]. Reachable
-// authenticated (RLS scopes everything), or anonymously with a hangar share
-// token (?token=…, no UI mints these yet): that path uses the service-role
-// client, so every query is explicitly filtered to the sharing user's
-// characters/corps — a shared station view must never reveal other users'
-// items parked in the same station.
+// authenticated (RLS scopes everything), or anonymously with a share link
+// (?share=, or the legacy ?token=) or on the bare URL of something shared with
+// everyone: those paths use the service-role client, so every query is
+// explicitly filtered to the sharing user's characters/corps — a shared
+// station view must never reveal other users' items parked in the same
+// station.
 //
 // The page is deliberately split in two. What runs before the first byte is
 // only what the answer depends on: the share/auth check, the root items, who
@@ -151,16 +152,17 @@ const AssetLocationPage = async ({ params, searchParams }: AssetLocationPageProp
   const { locationId } = await params
   const { token, share } = await searchParams
 
-  const scope = token || share ? await resolveShareParams({ token, share }, locationId) : null
-  if ((token || share) && !scope) notFound()
+  const linked = token || share ? await resolveShareParams({ token, share }, locationId) : null
+  if ((token || share) && !linked) notFound()
 
-  const supabase = scope ? createServiceClient() : await createClient()
-  if (!scope) {
-    const user = await establishedUser(supabase)
-    if (!user) {
-      redirect('/')
-    }
-  }
+  // No link: the caller's own session reads under RLS. No session either: the
+  // bare URL is itself the link when the container or place is shared with
+  // everyone (resolvePublicShare); anything else sends the visitor home.
+  const session = linked ? null : await createClient()
+  const signedIn = session ? (await establishedUser(session)) != null : false
+  const scope = linked ?? (session && !signedIn ? await resolvePublicShare(locationId) : null)
+  if (!scope && !signedIn) redirect('/')
+  const supabase = scope || !session ? createServiceClient() : session
 
   // In the token path every query must stay inside the sharer's scope; an
   // empty corp list still needs a filter that matches nothing.

@@ -4,8 +4,9 @@ import { shipCardResponse } from '../../../../ship/[itemId]/card/cardImage'
 import { loadFittingCard } from './loadCard'
 
 // A saved fitting's link-preview image: the ship card, drawn for the fit. The
-// page's og:image points here. Reached only with the same signed ?share= the
-// page takes, and a 404 for anything that link does not open.
+// page's og:image points here. Takes the same signed ?share= the page takes
+// — or none, for a fit shared with everyone — and a 404 for anything the
+// link does not open.
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ characterId: string; fittingId: string }> }

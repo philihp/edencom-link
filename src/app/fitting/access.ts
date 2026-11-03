@@ -8,6 +8,8 @@
 import { parseShareParam, tokenSalt, verifyShareToken } from '@/shareToken'
 import { createServiceClient } from '@/utils/supabase/service'
 
+import { isPublicShare } from '../asset/publicShare'
+
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 export const verifySignedFittingShare = async (
@@ -43,3 +45,26 @@ export const verifySignedFittingShare = async (
   if (!share?.secret) return false
   return verifyShareToken(share.id, share.secret, salt, signature)
 }
+
+// Whether the fit is shared with everyone: its share row names nobody
+// (docs/sharing-layer/01-asset-share-table.md, state (d)). A public share has
+// no signature to carry, so the fit's own URL is its link and a signed-out
+// visitor is let in on this alone.
+export const isPublicFittingShare = async (registrationId: string, fittingId: string): Promise<boolean> => {
+  const { data: share } = await createServiceClient()
+    .from('character_fitting_share')
+    .select('corporation_ids, alliance_ids, secret')
+    .eq('registration_id', registrationId)
+    .eq('fitting_id', fittingId)
+    .maybeSingle<{ corporation_ids: number[] | null; alliance_ids: number[] | null; secret: string | null }>()
+  return share != null && isPublicShare(share)
+}
+
+// Whether a signed-out visitor may open the fit: through the signed link they
+// carry, or with none through a public share.
+export const fittingShareOpens = async (
+  share: string | undefined,
+  registrationId: string,
+  fittingId: string
+): Promise<boolean> =>
+  share ? verifySignedFittingShare(share, registrationId, fittingId) : isPublicFittingShare(registrationId, fittingId)

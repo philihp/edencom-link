@@ -7,6 +7,8 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 
 import { signShare, tokenSalt } from '@/shareToken'
 
+import { isPublicShare } from './publicShare'
+
 export type ShareAudienceOption = { id: number; name: string }
 
 export type ShareState = {
@@ -118,7 +120,7 @@ export const shareRowToState = (row: ShareRowLike | null): ShareState | null => 
     allianceIds,
     hasLink: row.secret != null,
     shareParam,
-    isPublic: row.secret == null && corporationIds.length === 0 && allianceIds.length === 0,
+    isPublic: isPublicShare(row),
     showAsMain: row.show_as_main === true,
   }
 }
