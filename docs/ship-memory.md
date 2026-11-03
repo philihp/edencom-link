@@ -568,11 +568,19 @@ in the list below; PR 7 is built, the rest are not.
   the dossier chosen by the item's SDE category. `recall_ship` and
   `remember_ship` stay as aliases of the same handlers so every client and
   the skill doc keep working.
-- **Nothing is written until someone asks.** No job seeds memories. The first
-  `recall` of an item assembles its formative dossier from the history on its
-  id — the research steps a blueprint has had, the hulls a module has been
-  bolted to, the docks a ship has made — and the companion writes the first
-  version from that. The acquired accents below are therefore **computed at
+- **Nothing is written until someone asks — and asking is speaking to it.**
+  No job seeds memories, so most items have none; a catch-up job that
+  backfills them slowly may come someday. The first `recall` of an item
+  assembles its formative dossier from the history on its id — the research
+  steps a blueprint has had, the hulls a module has been bolted to, the
+  docks a ship has made — and the companion writes the first version from
+  that **at once, in the same turn, without asking**: the player spoke to
+  the item, and that is the request (decided 2026-11-03). The tool says so
+  itself — a recall that finds no memory carries a `first_memory` note in
+  its `writing` section — and the skill doc's "The first time an item is
+  spoken to" makes it the procedure. The one hold is a hull with
+  `inherit_candidates`, which waits for the player to say which packed hull
+  it is. The acquired accents below are therefore **computed at
   recall from the history, never accrued in a table**: there is no growth
   state to maintain, and an item asked about for the first time after two
   years sounds exactly as it would have if asked every day.

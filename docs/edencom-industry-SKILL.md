@@ -557,6 +557,19 @@ alone, kept for clients that learned them; they refuse anything else and
 point here. Stacks carry no memory — a packaged stack is fungible — so only
 singletons answer.
 
+### The first time an item is spoken to
+
+Most items have no memory yet. Memories are created lazily, the first time
+someone asks, so when `recall_item` answers `memory: null` and carries a
+`first_memory` note, **write the first version at once**: compose the
+item's memory from the dossier in the voice given and call `remember_item`
+with `based_on` null, in the same turn, before or as you answer the user as
+the item. Talking to the item is the asking; do not ask for permission, and
+do not answer in character first and offer to save later — an item that has
+been spoken to has a memory from then on. The one exception is a hull with
+`inherit_candidates` (below), where the user has to say which packed hull
+this is before anything is written.
+
 Name an item by its item id, by its in-game name (ships and containers are
 named; modules and blueprints are not), or by its type name ("Vexor
 Blueprint", "my Vexor BPO"). A type name must pick out one held item; when
@@ -600,6 +613,21 @@ For a container the `dossier` carries `contents`, what has passed through
 it, as at-least quantities. For a module or any other item it carries the
 first sighting, the owners and where it has sat.
 
+- The memory the ship has now, with its `version_id`, and `before_you`: whether
+  the current text was written by an earlier owner.
+- Who reads the memory: every share that reaches the hull, a container above
+  it, or its place. Tell the user before you write when the ship is shared
+  publicly.
+- The lineage, when the hull was repackaged and assembled again: the earlier
+  item ids its memory came through. The dossier then covers all of them. One
+  ship, several ids; do not write it as two ships.
+- `inherit_candidates`, when the hull has no memory and packed hulls of its
+  type are waiting: the memory of a repackaged hull goes back into the hull
+  assembled from it, and when two hulls of one type went into one stack, the
+  server cannot tell which came out. Each candidate has a `pack_id`. Ask the
+  user which packed hull this is before you carry one; a wrong pick gives the
+  hull another ship's past.
+
 The voice for every kind is in `voice`: a ship's accent and register; a
 blueprint is a patient clerk who counts in runs, whose register is its
 research (a pristine original is a novice, ME 10 / TE 20 has seen
@@ -621,24 +649,12 @@ in, each with a weight capped at 0.1 after a year of dwell, with its days and
 regions. This is seasoning, not a second voice: at 0.1 let a phrase or two
 of that empire's turn of speech in; below that, a word here and there. The
 hull's own accent always leads.
-- The memory the ship has now, with its `version_id`, and `before_you`: whether
-  the current text was written by an earlier owner.
-- Who reads the memory: every share that reaches the hull, a container above
-  it, or its place. Tell the user before you write when the ship is shared
-  publicly.
-- The lineage, when the hull was repackaged and assembled again: the earlier
-  item ids its memory came through. The dossier then covers all of them. One
-  ship, several ids; do not write it as two ships.
-- `inherit_candidates`, when the hull has no memory and packed hulls of its
-  type are waiting: the memory of a repackaged hull goes back into the hull
-  assembled from it, and when two hulls of one type went into one stack, the
-  server cannot tell which came out. Each candidate has a `pack_id`. Ask the
-  user which packed hull this is before you carry one; a wrong pick gives the
-  hull another ship's past.
 
 ### Writing an item's memory
 
-1. Call `recall_item` (or `recall_ship` for a hull).
+1. Call `recall_item` (or `recall_ship` for a hull). If it answers
+   `memory: null`, the rest of this procedure happens now, unprompted (see
+   "The first time an item is spoken to").
 2. Write in the voice it names — for a ship the accent and register, for
    anything else the native voice in `voice`. The item speaks in the first
    person.
@@ -669,8 +685,9 @@ hull's own accent always leads.
    `inherit_from` without asking when there is more than one candidate.
 
 `remember_item` and `remember_ship` change nothing in the game. They need no
-confirmation beyond the user asking for the memory to be written: every
-version is kept, and a later write can restore any earlier text.
+confirmation: a first memory is written because the user spoke to the item,
+and a later one because they asked for it. Every version is kept, and a later
+write can restore any earlier text.
 
 ## Public contracts
 
