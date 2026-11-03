@@ -50,3 +50,22 @@ export const getSdeRegionNames = async (regionIDs: Iterable<number>): Promise<Re
   }
   return Object.fromEntries(((data ?? []) as RegionRow[]).flatMap((r) => (r.name ? [[r.region_id, r.name]] : [])))
 }
+
+// The empire each region belongs to in the SDE (faction_id on the view since
+// migration 20261103000614): set on every highsec region and the pirate
+// homelands, null for sovereign null and anything the SDE leaves unowned.
+// Backs ship memory's highsec lingo. Absent from the result when null.
+export const getSdeRegionFactions = async (regionIDs: Iterable<number>): Promise<Record<number, number>> => {
+  const ids = [...new Set(regionIDs)]
+  if (ids.length === 0) return {}
+  const { data, error } = await sdeSupabase().from('sde_region').select('region_id, faction_id').in('region_id', ids)
+  if (error) {
+    console.error(`[sdeRegions] faction lookup failed: ${error.message}`)
+    return {}
+  }
+  return Object.fromEntries(
+    ((data ?? []) as Array<{ region_id: number; faction_id: number | null }>).flatMap((r) =>
+      r.faction_id == null ? [] : [[r.region_id, r.faction_id]]
+    )
+  )
+}

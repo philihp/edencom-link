@@ -622,7 +622,11 @@ create view public.sde_region
 with (security_invoker = true) as
 select
   _key as region_id,
-  data -> 'name' ->> 'en' as name
+  data -> 'name' ->> 'en' as name,
+  -- The empire the region belongs to (migration 20261103000614): set on every
+  -- highsec region and the pirate homelands, null in sovereign null. Ship
+  -- memory's highsec lingo keys on it.
+  (data ->> 'factionID')::bigint as faction_id
 from public.sde_map_regions
 where _key >= 10000000
   and _key < 11000000

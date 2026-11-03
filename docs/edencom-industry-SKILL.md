@@ -615,6 +615,12 @@ of, weighted `min(1, days / 365)`. Blend them in proportion on top of the
 droid: a 0.3 is a few borrowed words and a turn of phrase, a 1.0 is that
 hull's own voice, and several are several. Let the module say which hulls it
 learned them from. A plate in a low slot learns nothing.
+
+A ship's `voice` may carry `lingo`: the empires whose highsec it has docked
+in, each with a weight capped at 0.1 after a year of dwell, with its days and
+regions. This is seasoning, not a second voice: at 0.1 let a phrase or two
+of that empire's turn of speech in; below that, a word here and there. The
+hull's own accent always leads.
 - The memory the ship has now, with its `version_id`, and `before_you`: whether
   the current text was written by an earlier owner.
 - Who reads the memory: every share that reaches the hull, a container above
