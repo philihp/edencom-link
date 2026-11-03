@@ -1,24 +1,24 @@
 import type { Metadata, Viewport } from 'next'
 
-import { shareCardMetadata, shareQuery } from '../../../../shareCardMetadata'
+import { shareCardMetadata, shareCardPath } from '../../../../shareCardMetadata'
 import { CARD_HEIGHT, CARD_WIDTH } from '../../../../ship/[itemId]/card/cardModel'
 import { loadFittingCard } from './loadCard'
 
-// A signed fitting share link's preview tags. Empty for anything else: the
-// signed-in page is the owner's or an audience's, and a chat client is
-// neither.
+// A fitting share's preview tags: a signed link's, or the bare URL's for a fit
+// shared with everyone. Empty for anything else: the signed-in page is the
+// owner's or an audience's, and a chat client is neither.
 export const fittingShareMetadata = async (
   characterId: string,
   fittingId: string,
   share?: string
 ): Promise<Metadata> => {
   const card = await loadFittingCard(characterId, fittingId, share)
-  if (!card || !share) return {}
+  if (!card) return {}
   return shareCardMetadata({
     title: card.title,
     typeName: card.typeName,
     description: card.description,
-    imagePath: `/fitting/${characterId}/${fittingId}/card?${shareQuery({ share })}`,
+    imagePath: shareCardPath(`/fitting/${characterId}/${fittingId}/card`, { share }),
     width: CARD_WIDTH,
     height: CARD_HEIGHT,
   })

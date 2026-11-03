@@ -12,7 +12,7 @@ import { Name } from '../../../names'
 import { getSdeTypes } from '@/sdeTypes'
 import { ShareDialog } from '../../../asset/shareDialog'
 import { ShareUrlCleanup } from '../../../shareUrlCleanup'
-import { verifySignedFittingShare } from '../../access'
+import { isPublicFittingShare, verifySignedFittingShare } from '../../access'
 import { saveFittingShare, revokeFittingShare } from '../../actions'
 import { EftExport } from '../../eftExport'
 import { toEft, type EftType } from '../../eft'
@@ -61,22 +61,25 @@ export const generateViewport = async ({ params, searchParams }: FittingPageProp
 // account matches no fitting row, *unless* a character_fitting_share row
 // widens it to the caller (schema.sql's "Audience reads shared fittings"
 // policy — pinned corp/alliance audiences to current mates, a public share to
-// any signed-in user). A signed ?share= link is the one path that works
-// without any of that — including signed out: it verifies against the share
-// row's secret + TOKEN_SALT and then reads the exact subject fit through the
-// service role.
+// any signed-in user). Two paths work without any of that, signed out
+// included: a signed ?share= link, which verifies against the share row's
+// secret + TOKEN_SALT, and the bare URL of a fit shared with everyone; both
+// then read the exact subject fit through the service role.
 const FittingDetailPage = async ({ params, searchParams }: FittingPageProps) => {
   const { characterId, fittingId } = await params
   const { share } = await searchParams
 
   const supabase = await createClient()
   const user = await establishedUser(supabase)
-  // Anonymous visitors may still open a signed share link; anyone else signs in.
-  if (!user && !share) redirect('/')
 
   // Resolves for anon too: character_directory is world-readable.
   const owner = await resolveFittingOwner(supabase, characterId)
   if (!owner) notFound()
+
+  // Anonymous visitors may still open a signed share link, or on the bare URL
+  // a fit shared with everyone; anyone else signs in.
+  const openToAll = !user && !share && (await isPublicFittingShare(owner.registrationId, fittingId))
+  if (!user && !share && !openToAll) redirect('/')
 
   let { data: fit } = await supabase
     .from('character_fitting')
@@ -86,9 +89,10 @@ const FittingDetailPage = async ({ params, searchParams }: FittingPageProps) => 
     .maybeSingle<FittingRow>()
 
   // Not RLS-visible (signed out, or no membership share aims at this caller):
-  // a valid signed link still opens exactly this fit, via the service role
-  // explicitly scoped to the share's subject.
-  if (!fit && share && (await verifySignedFittingShare(share, owner.registrationId, fittingId))) {
+  // a valid signed link, or a public share for a signed-out visitor, still
+  // opens exactly this fit, via the service role explicitly scoped to the
+  // share's subject.
+  if (!fit && (openToAll || (share && (await verifySignedFittingShare(share, owner.registrationId, fittingId))))) {
     const service = createServiceClient()
     const { data: linkedFit } = await service
       .from('character_fitting')

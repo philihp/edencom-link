@@ -19,6 +19,11 @@ export const requestOrigin = async (): Promise<string> => {
 export const shareQuery = ({ share, token }: { share?: string; token?: string }): string =>
   new URLSearchParams(share ? { share } : { token: token ?? '' }).toString()
 
+// The card route for a page, carrying the page's share parameter — or bare,
+// for a public share, whose URL is the path itself.
+export const shareCardPath = (path: string, params: { share?: string; token?: string }): string =>
+  params.share || params.token ? `${path}?${shareQuery(params)}` : path
+
 export const shareCardMetadata = async (card: {
   // The item's own name where it has one, else its type's.
   title: string

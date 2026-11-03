@@ -44,6 +44,19 @@ alter table public.character_asset_share enable row level security;
 '{}' and alliance_ids = '{}'` — a public share is represented as a share
 that names no one. There is no `is_public` flag to drift out of sync.
 
+A public share therefore has no URL of its own: there is no signature to
+carry, so the item's bare URL — `/ship/<id>`, `/asset/<id>`, a fit's page —
+is the link. Signed in, RLS answers (the public clause below). Signed out,
+the page asks `resolvePublicShare()` (`src/app/asset/access.ts`; the fitting
+twin is `isPublicFittingShare()`) before sending the visitor home: the same
+ancestry walk as a signed link, with the pure `publicShare.ts` picking the
+covering row instead of a signature — the nearest subject wins, and a place
+covered by public shares of more than one grantor opens for nobody, since
+the one URL cannot show two hangars. The cards and link previews follow the
+same rule, so a public share unfurls on its bare URL. Until 2026-11-03 the
+pages demanded a session before looking, and a public share was reachable
+only by whoever could already see it.
+
 The audiences compose: a row may carry corporation ids _and_ a secret; each
 grant path is independent.
 

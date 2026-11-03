@@ -11,10 +11,10 @@ import { type AssetCard, loadAssetCard } from './loadCard'
 // ship card's twin (ship/[itemId]/card/route.tsx), for anything that is not a
 // ship, or for a place a share names (a station, structure or solar system).
 //
-// Reached only with the same ?share= (or legacy ?token=) the page takes, and
-// it answers 404 for anything that link does not open, so the image can never
-// show more than the page does. Like the share page, it has no location —
-// unless the location is what was shared.
+// Takes the same ?share= (or legacy ?token=) the page takes — or none, for a
+// container shared with everyone — and answers 404 for anything the link
+// does not open, so the image can never show more than the page does. Like
+// the share page, it has no location — unless the location is what was shared.
 
 // The line under the title: type and group, without repeating a title that
 // already is the type name.
@@ -48,7 +48,6 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const { searchParams } = new URL(request.url)
   const share = searchParams.get('share') ?? undefined
   const token = searchParams.get('token') ?? undefined
-  if (!share && !token) return new Response('Not found', { status: 404 })
 
   const card = await loadAssetCard(locationId, share, token)
   if (!card) return new Response('Not found', { status: 404 })

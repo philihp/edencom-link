@@ -7,9 +7,10 @@ import { loadShipCard } from './loadCard'
 // posted share link (the page's og:image points here). next/og draws the JSX
 // in ./cardImage with Satori (JSX → SVG) and Resvg (SVG → PNG).
 //
-// Reached only with the same ?share= (or legacy ?token=) the page takes, and
-// it answers 404 for anything that link does not open, so the image can never
-// show more than the page does. Like the share page, it has no location.
+// Takes the same ?share= (or legacy ?token=) the page takes — or none, for a
+// ship shared with everyone — and answers 404 for anything the link does not
+// open, so the image can never show more than the page does. Like the share
+// page, it has no location.
 
 // A card with no stored appraisal asks the provider, waits a few seconds, and
 // lets the request finish after the response (loadCard.ts). The provider's
@@ -21,7 +22,6 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const { searchParams } = new URL(request.url)
   const share = searchParams.get('share') ?? undefined
   const token = searchParams.get('token') ?? undefined
-  if (!share && !token) return new Response('Not found', { status: 404 })
 
   // The one caller allowed to ask the appraisal provider (see loadCard.ts).
   const card = await loadShipCard(itemId, share, token, true)

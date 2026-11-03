@@ -58,6 +58,8 @@ export const ShareForm = ({
     share?.shareParam && typeof window !== 'undefined'
       ? `${window.location.origin}${urlPath}?share=${share.shareParam}`
       : null
+  // A public share has no token to carry: the page's own URL is the link.
+  const publicUrl = share?.isPublic && typeof window !== 'undefined' ? `${window.location.origin}${urlPath}` : null
 
   const toggle = (set: Set<number>, id: number): Set<number> => {
     const next = new Set(set)
@@ -104,9 +106,9 @@ export const ShareForm = ({
       }
     })
 
-  const copy = async () => {
-    if (!shareUrl) return
-    await navigator.clipboard.writeText(shareUrl)
+  const copy = async (url: string | null) => {
+    if (!url) return
+    await navigator.clipboard.writeText(url)
     setCopied(true)
   }
 
@@ -123,6 +125,14 @@ export const ShareForm = ({
         <input type="checkbox" checked={isPublic} onChange={(e) => setIsPublic(e.target.checked)} />
         Public
       </label>
+      {publicUrl && isPublic ? (
+        <p className={styles.linkRow}>
+          <code>{publicUrl}</code>{' '}
+          <button type="button" onClick={() => copy(publicUrl)} disabled={pending}>
+            {copied ? 'copied' : 'copy'}
+          </button>
+        </p>
+      ) : null}
 
       <fieldset className={styles.audience} disabled={isPublic}>
         <legend>People with characters in Corporations</legend>
@@ -179,7 +189,7 @@ export const ShareForm = ({
         {shareUrl && link ? (
           <p className={styles.linkRow}>
             <code>{shareUrl}</code>{' '}
-            <button type="button" onClick={copy} disabled={pending}>
+            <button type="button" onClick={() => copy(shareUrl)} disabled={pending}>
               {copied ? 'copied' : 'copy'}
             </button>{' '}
             <button type="button" onClick={() => save(true)} disabled={pending} title="Old links stop working">

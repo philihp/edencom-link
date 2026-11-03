@@ -19,8 +19,17 @@
 //    resolving through a deprecation window (no UI mints these any more;
 //    saving a share from the dialog retires the item's legacy row). Exact-id
 //    only, as it always was.
+//  - resolvePublicShare: no link at all. A fully public share is the row
+//    naming nobody (docs/sharing-layer/01-asset-share-table.md, state (d)),
+//    so it has no signature to carry and the bare /ship/<id> or /asset/<id> is
+//    its URL. The same walk as the signed link, over the same candidate rows,
+//    with the pure ./publicShare.ts picking the row instead of a signature.
+import { cache } from 'react'
+
 import { parseShareParam, tokenSalt, verifyShareToken } from '@/shareToken'
 import { createServiceClient } from '@/utils/supabase/service'
+
+import { pickPublicShare } from './publicShare'
 
 export type ShareScope = {
   userId: string
@@ -85,6 +94,69 @@ const accountRegistrations = async (
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
+type Service = ReturnType<typeof createServiceClient>
+
+type CharacterShareRow = {
+  id: string
+  registration_id: string
+  item_id: number | string
+  secret: string | null
+  show_as_main: boolean
+  corporation_ids: number[] | null
+  alliance_ids: number[] | null
+}
+
+type CorpShareRow = {
+  id: string
+  corporation_id: number | string
+  item_id: number | string
+  created_by: string | null
+  secret: string | null
+  corporation_ids: number[] | null
+  alliance_ids: number[] | null
+}
+
+// Every character share that covers the requested item — its subject is the
+// item or one of its ancestors — and the chain they were found on. A share
+// covers its grantor's account's character-owned items, so when the item is a
+// character's, only shares by that holder's account are candidates — a place
+// share by another account at the same place never opens it. A share row is
+// anchored on one registration, but a place share reaches every registration
+// of its account (docs/sharing-layer/15-place-share.md). A legacy link's id
+// narrows the set to that one row.
+const characterCandidates = async (
+  supabase: Service,
+  itemId: string,
+  shareId: string | null
+): Promise<{ chain: string[]; rows: CharacterShareRow[] }> => {
+  const { chain, holder } = await ancestryChain(supabase, 'character_asset_over_time', itemId)
+  const candidates = supabase
+    .from('character_asset_share')
+    .select('id, registration_id, item_id, secret, show_as_main, corporation_ids, alliance_ids')
+    .in('item_id', chain)
+  const holderAccount = holder === null ? null : await accountRegistrations(supabase, holder)
+  const byHolder = holderAccount === null ? candidates : candidates.in('registration_id', holderAccount.ids)
+  const { data } = await (shareId === null ? byHolder : byHolder.eq('id', shareId))
+  return { chain, rows: (data ?? []) as CharacterShareRow[] }
+}
+
+// The corp arm of the same question (phase 14 PR 4): the corp shares covering
+// the item, narrowed to the holding corporation when the item is a corp's.
+const corpCandidates = async (
+  supabase: Service,
+  itemId: string,
+  shareId: string | null
+): Promise<{ chain: string[]; rows: CorpShareRow[] }> => {
+  const { chain, holder } = await ancestryChain(supabase, 'corp_asset_over_time', itemId)
+  const candidates = supabase
+    .from('corp_asset_share')
+    .select('id, corporation_id, item_id, created_by, secret, corporation_ids, alliance_ids')
+    .in('item_id', chain)
+  const byHolder = holder === null ? candidates : candidates.eq('corporation_id', holder)
+  const { data } = await (shareId === null ? byHolder : byHolder.eq('id', shareId))
+  return { chain, rows: (data ?? []) as CorpShareRow[] }
+}
+
 export const resolveSignedShare = async (param: string, itemId: string): Promise<ShareScope | null> => {
   const { shareId, signature } = parseShareParam(param)
   if (signature === '') return null
@@ -100,35 +172,19 @@ export const resolveSignedShare = async (param: string, itemId: string): Promise
   }
 
   // Every share that covers the requested item, then the signature says which
-  // one (if any) minted this link. A legacy link's id narrows it to one row.
+  // one (if any) minted this link.
   const supabase = createServiceClient()
-  // A share covers its grantor's account's character-owned items, so when the
-  // item is a character's, only shares by that holder's account are candidates
-  // — a place share by another account at the same place never opens it. A
-  // share row is anchored on one registration, but a place share reaches every
-  // registration of its account (docs/sharing-layer/15-place-share.md).
-  const { chain, holder } = await ancestryChain(supabase, 'character_asset_over_time', itemId)
-  const candidates = supabase
-    .from('character_asset_share')
-    .select('id, registration_id, item_id, secret, show_as_main')
-    .in('item_id', chain)
-  const holderAccount = holder === null ? null : await accountRegistrations(supabase, holder)
-  const byHolder = holderAccount === null ? candidates : candidates.in('registration_id', holderAccount.ids)
-  const { data: covering } = await (shareId === null ? byHolder : byHolder.eq('id', shareId))
-  const share = (
-    (covering ?? []) as Array<{
-      id: string
-      registration_id: string
-      item_id: number | string
-      secret: string | null
-      show_as_main: boolean
-    }>
-  ).find((row) => row.secret != null && verifyShareToken(row.id, row.secret, salt, signature))
+  const { rows } = await characterCandidates(supabase, itemId, shareId)
+  const share = rows.find((row) => row.secret != null && verifyShareToken(row.id, row.secret, salt, signature))
   // Not a character item (or no character share minted this link): the item may
   // be a corporation's. An item is in exactly one hangar, so this is the other
   // half of the same question, not a second guess at the first.
   if (!share) return resolveSignedCorpShare(supabase, shareId, signature, salt, itemId)
+  return characterShareScope(supabase, share)
+}
 
+// The scope a character share row opens, link or public alike.
+const characterShareScope = async (supabase: Service, share: CharacterShareRow): Promise<ShareScope | null> => {
   const account = await accountRegistrations(supabase, share.registration_id)
   if (!account) return null
 
@@ -176,28 +232,20 @@ export const resolveSignedShare = async (param: string, itemId: string): Promise
 // ShareScope carries it; nothing in the corp path keys off it (the rows are the
 // corporation's, not an account's).
 const resolveSignedCorpShare = async (
-  supabase: ReturnType<typeof createServiceClient>,
+  supabase: Service,
   shareId: string | null,
   signature: string,
   salt: string,
   itemId: string
 ): Promise<ShareScope | null> => {
-  const { chain, holder } = await ancestryChain(supabase, 'corp_asset_over_time', itemId)
-  const candidates = supabase
-    .from('corp_asset_share')
-    .select('id, corporation_id, created_by, secret')
-    .in('item_id', chain)
-  const byHolder = holder === null ? candidates : candidates.eq('corporation_id', holder)
-  const { data: covering } = await (shareId === null ? byHolder : byHolder.eq('id', shareId))
-  const share = (
-    (covering ?? []) as Array<{
-      id: string
-      corporation_id: number | string
-      created_by: string | null
-      secret: string | null
-    }>
-  ).find((row) => row.secret != null && verifyShareToken(row.id, row.secret, salt, signature))
-  if (!share?.created_by) return null
+  const { rows } = await corpCandidates(supabase, itemId, shareId)
+  const share = rows.find((row) => row.secret != null && verifyShareToken(row.id, row.secret, salt, signature))
+  return share ? corpShareScope(supabase, share) : null
+}
+
+// The scope a corp share row opens, link or public alike.
+const corpShareScope = async (supabase: Service, share: CorpShareRow): Promise<ShareScope | null> => {
+  if (!share.created_by) return null
 
   // The share is made on behalf of created_by, and works only while that
   // character is still in the corporation — the service role reads past the
@@ -249,9 +297,41 @@ export const resolveShareToken = async (token: string, itemId: string): Promise<
   }
 }
 
-// The one entry point pages use: signed links first, then legacy tokens.
+// The account behind each registration, for telling one grantor's rows from
+// another's where the item is a place and no holder narrowed the candidates.
+const accountsOf = async (supabase: Service, registrationIds: string[]): Promise<Map<string, string>> => {
+  if (registrationIds.length === 0) return new Map()
+  const { data } = await supabase.from('registration').select('id, user_id').in('id', registrationIds)
+  return new Map(((data ?? []) as Array<{ id: string; user_id: string }>).map((r) => [r.id, r.user_id]))
+}
+
+// The bare URL's door: a fully public share covering the item, character
+// hangar first, then the corp's. Null when nothing covering it is public, or
+// when public shares from more than one grantor cover a place (./publicShare.ts
+// says why that is nobody's rather than the first one's). Per request: the
+// page, its metadata and its card each ask, and one walk answers all three.
+export const resolvePublicShare = cache(async (itemId: string): Promise<ShareScope | null> => {
+  const supabase = createServiceClient()
+  const character = await characterCandidates(supabase, itemId, null)
+  const accounts = await accountsOf(
+    supabase,
+    character.rows.map((row) => row.registration_id)
+  )
+  const share = pickPublicShare(
+    character.rows,
+    character.chain,
+    (row) => accounts.get(row.registration_id) ?? row.registration_id
+  )
+  if (share) return characterShareScope(supabase, share)
+  const corp = await corpCandidates(supabase, itemId, null)
+  const corpShare = pickPublicShare(corp.rows, corp.chain, (row) => String(row.corporation_id))
+  return corpShare ? corpShareScope(supabase, corpShare) : null
+})
+
+// The one entry point pages use: signed links first, then legacy tokens, and
+// with neither the public share, if the item has one.
 export const resolveShareParams = async (
   { share, token }: { share?: string; token?: string },
   itemId: string
 ): Promise<ShareScope | null> =>
-  share ? resolveSignedShare(share, itemId) : token ? resolveShareToken(token, itemId) : null
+  share ? resolveSignedShare(share, itemId) : token ? resolveShareToken(token, itemId) : resolvePublicShare(itemId)

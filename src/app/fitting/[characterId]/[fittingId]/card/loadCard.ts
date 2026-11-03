@@ -11,31 +11,31 @@ import { applyHullPrices } from '../../../../api/appraisal/pricedLines'
 import { cardRows, cardValue, metaColor, type CardChild } from '../../../../ship/[itemId]/card/cardModel'
 import { PRICE_MARKET, type ShipCard } from '../../../../ship/[itemId]/card/loadCard'
 import { characterPortrait } from '../../../../ship/[itemId]/shipHeading'
-import { verifySignedFittingShare } from '../../../access'
+import { fittingShareOpens } from '../../../access'
 import type { FittingRow } from '../../../fit'
 import { resolveFittingOwner } from '../../../resolveCharacter'
 import { fittingDescription } from './cardModel'
 
-// Everything the link-preview card says about a saved fitting a signed share
-// link opens: the hull, the fit slot by slot, who saved it and what it costs
+// Everything the link-preview card says about a saved fitting a share opens
+// — a signed link, or the bare URL of a fit shared with everyone: the hull, the fit slot by slot, who saved it and what it costs
 // at Jita. The page's generateMetadata and the image route both read it, so
 // the preview never shows more than the link opens.
 //
-// Only a signed ?share= link gets a card. A chat client fetching a preview is
-// signed out, and every other way to see someone's fit (a corporation,
-// alliance or public share) needs a session, which the page asks for too.
+// Only what a signed-out visitor could open gets a card: a signed ?share=
+// link, or a public share. A chat client fetching a preview is signed out,
+// and every other way to see someone's fit (a corporation or alliance share)
+// needs a session, which the page asks for too.
 //
 // Prices are our own hourly Jita capture, never the appraisal provider: its
 // request budget is deployment-wide, and a chat client must not spend it.
 export const loadFittingCard = cache(
   async (characterId: string, fittingId: string, share?: string): Promise<ShipCard | null> => {
-    if (!share) return null
     const service = createServiceClient()
     // The service client reads every registration, so this resolves the URL's
-    // character to its registration whoever asks. The signature check below is
-    // what decides whether the link opens anything.
+    // character to its registration whoever asks. The share check below is
+    // what decides whether the URL opens anything.
     const owner = await resolveFittingOwner(service, characterId)
-    if (!owner || !(await verifySignedFittingShare(share, owner.registrationId, fittingId))) return null
+    if (!owner || !(await fittingShareOpens(share, owner.registrationId, fittingId))) return null
 
     const { data: fit } = await service
       .from('character_fitting')
