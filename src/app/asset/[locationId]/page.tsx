@@ -16,6 +16,9 @@ import { fetchOwners } from '../../owners'
 import type { Owners } from '../../ownerFilter'
 import { SkeletonTable } from '../../skeleton'
 import { mainOwnerOf } from '../../ship/[itemId]/mainOwner'
+import { MemoryPanel } from '../../ship/memory/memoryPanel'
+import { kindOf } from '../../ship/memory/nativeVoice'
+import { readShipMemory } from '../../ship/memory/read'
 import { hideHolder, PRESENTED_OWNER_ID, UNNAMED_OWNER } from '../../ship/[itemId]/presentedOwner'
 import { TypeIcon } from '../../typeIcon'
 import { resolveShareParams } from '../access'
@@ -276,7 +279,23 @@ const AssetLocationPage = async ({ params, searchParams }: AssetLocationPageProp
     }
   }
 
-  const [characterShareData, placeShares] = await Promise.all([shareDataPromise, placeSharesPromise])
+  // The item's memory (docs/ship-memory.md "Extension: every singleton"): a
+  // container's, a module's, any held singleton's, read as the ship page
+  // reads a hull's — on the holder's own session, or on the service role once
+  // the share resolved (the item having come through the share scope is the
+  // proof it reaches the viewer). Never on a share that shows the account's
+  // main: that share promises nothing leads to the holder, and no code can
+  // check free text for that. A place has no memory.
+  const memoryPromise =
+    self == null || presented != null
+      ? Promise.resolve(null)
+      : readShipMemory(scope ? createServiceClient() : supabase, locationId)
+
+  const [characterShareData, placeShares, memory] = await Promise.all([
+    shareDataPromise,
+    placeSharesPromise,
+    memoryPromise,
+  ])
 
   // A corp item nobody else roots at — a can, an office — keeps the plain item
   // dialog it had before phase 17: its one grantor is the corporation holding
@@ -343,7 +362,9 @@ const AssetLocationPage = async ({ params, searchParams }: AssetLocationPageProp
         </p>
       ) : null}
 
-      {isSolarSystem ? (
+      {/* A singleton with nothing inside — a fitted module, an empty can — is
+          here for its memory; an empty contents table would only say so twice. */}
+      {self != null && rootItems.length === 0 ? null : isSolarSystem ? (
         <>
           {!scope && systemId != null ? (
             <Suspense fallback={<SystemLocationsFallback />}>
@@ -362,6 +383,7 @@ const AssetLocationPage = async ({ params, searchParams }: AssetLocationPageProp
       ) : (
         items
       )}
+      {self != null ? <MemoryPanel memory={memory} keeps={selfType == null ? 'item' : kindOf(selfType)} /> : null}
     </>
   )
 }

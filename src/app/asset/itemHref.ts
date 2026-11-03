@@ -8,8 +8,11 @@
 // however many are in it. A blueprint is always a singleton in ESI, original
 // or copy, so the category alone would do — is_singleton is tested anyway, so
 // a packaged blueprint stack, should CCP ever ship one, falls through to the
-// stack rule. Anything holding items is a container (/asset). A plain stack
-// goes nowhere.
+// stack rule. Every other singleton — a container, a fitted module, a drone
+// in a bay — is /asset, where its contents (if any) and its memory are read
+// (docs/ship-memory.md "Extension: every singleton": any singleton can carry
+// a memory, and this is the page it is read on). A plain stack goes nowhere,
+// unless it holds items, which makes it a container.
 import { BLUEPRINT_CATEGORY_ID, SHIP_CATEGORY_ID } from '../../utils/sdeCategories.ts'
 
 export type ItemHrefInput = {
@@ -26,6 +29,7 @@ export const itemHref = ({ itemId, categoryId, isSingleton, contents }: ItemHref
   if (isSingleton) {
     if (categoryId === SHIP_CATEGORY_ID) return `/ship/${itemId}`
     if (categoryId === BLUEPRINT_CATEGORY_ID) return `/blueprint/${itemId}`
+    return `/asset/${itemId}`
   }
   return contents > 0 ? `/asset/${itemId}` : null
 }

@@ -822,14 +822,26 @@ Modules and blueprints have no ESI name, so `recall_item` widens the resolver:
 
 ### Display
 
-- The Memory panel is drawn by `/asset/[locationId]` for a container, read
-  the way the ship page reads it (holder's session, else service role once a
-  share proved reachable).
-- Blueprints and modules have no page. `/item/:itemId` is today a redirect to
-  `/ship/:itemId`; PR 10 makes `/item/[itemId]` the generic item page — the
-  item's identity strip, its dossier facts and the Memory panel — and keeps
-  redirecting ships to `/ship`. A share link to one unfurls through the
-  generic `summaryCard`, per the "every share link unfurls" rule.
+- The Memory panel is drawn by `/asset/[locationId]` for **any held
+  singleton that is not a ship or a blueprint** — a container, a fitted
+  module, a drone in a bay — read the way the ship page reads it (holder's
+  session, else service role once a share proved reachable; never on a
+  `show_as_main` share). Built in PR 10 (2026-11-03). A singleton with
+  nothing inside draws no empty contents table, only its heading, crumb and
+  memory.
+- Blueprints have their own page, `/blueprint/[itemId]`, with the panel
+  (`keeps="blueprint"`) — docs/item-pages.md PR 1, built by another
+  session on 2026-11-02, which also writes a copy's inferred origin as its
+  first memory version (author `origin`).
+- **There is no `/item/[itemId]`.** The plan here first said PR 10 would add
+  one; docs/item-pages.md decided instead that each kind keeps its route
+  (ship → `/ship`, blueprint → `/blueprint`, everything else → `/asset`), and
+  PR 10 followed that. `/item/:itemId` stays the legacy redirect to `/ship`.
+  The link rule is `src/app/asset/itemHref.ts`: every singleton has a page,
+  a stack none unless it holds items. A share link to a container unfurls
+  through the asset card as before; a module's page is holder-only (an asset
+  share covers the item and its tree, so a shared module reaches its
+  recipient the same way a shared can does).
 - `/bpos/[name]` could link each original to its item page; not in this plan.
 
 ### MCP tools
@@ -897,7 +909,7 @@ Blueprints never reach it. Nothing to build.
    flip, with `previousSingleton` on the reconciles' changed rows and `via`
    on every carry.
 
-The extension (planned 2026-11-02; PRs 7 and 8 built the same day, PR 9 the next):
+The extension (planned 2026-11-02; PRs 7 and 8 built the same day, PRs 9 and 10 the next):
 
 7. **Generic tools and the blueprint dossier.** `recall_item` /
    `remember_item` with the ship tools as aliases, the widened resolver
@@ -949,7 +961,13 @@ The extension (planned 2026-11-02; PRs 7 and 8 built the same day, PR 9 the next
    `sde_station`, structure → `universe_structure`), the same path the
    dossier's place names take.
 10. **Pages.** `/item/[itemId]` and its card; the panel on `/asset/[id]` for
-    containers.
+    containers. **Built 2026-11-03, reconciled with docs/item-pages.md**: no
+    `/item/[itemId]` route (see Display); `itemHref` sends every singleton
+    that is not a ship or blueprint to `/asset/[itemId]`, and that page draws
+    the Memory panel for any own item (`keeps` from `kindOf`), hiding the
+    empty contents table of a module or an empty can. No new card: the asset
+    card already serves a shared container, and a module's page is
+    holder-only.
 11. **Docs.** This document's early chapters are reread as the ship case of
     the general rules, and the skill doc's "A ship's memory" becomes "An
     item's memory".
