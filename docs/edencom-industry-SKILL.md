@@ -204,6 +204,107 @@ name, `blueprints_using_material` returns nothing. Compressed forms are for
 freight, at a tenth of the volume. In a `shipping_quote` `items` manifest,
 name the form you will haul.
 
+## Where salvage comes from
+
+Salvage is the material that a Salvager module or a salvage drone takes from
+a wreck. Rig blueprints consume it. The SDE does not say which wreck gives
+which salvage, and no tool of this server knows it. The two tables below are
+the source. They come from the EVE University wiki, page "Salvaging", section
+"Salvage Distribution" (last edited 2025-12-27). The names in the tables are
+the SDE names. The wiki writes "Broken Drone Transceivers", but the type is
+"Broken Drone Transceiver".
+
+- The faction of the destroyed NPC sets the salvage in its wreck. Skills,
+  modules and rigs change only how fast a wreck is salvaged. They never change
+  what it gives.
+- For Tech 1 salvage, an empire navy gives the same types as the pirates of
+  its space: Amarr as Blood Raiders and Sansha's Nation, Minmatar as Angel
+  Cartel, Caldari as Guristas, Gallente as Serpentis.
+- Rogue drones give 18 of the 19 Tech 1 types. Only Damaged Artificial Neural
+  Network does not come from them.
+- The Tech 2 table names the five pirate factions only. It has no column for
+  the empire navies or for rogue drones. The wiki does not say which NPCs of a
+  faction leave Tech 2 salvage, so do not tell the user that every wreck of
+  the faction does.
+- Tech 1 salvage builds Tech 1 rigs (ship rigs and Standup rigs). Tech 2
+  salvage builds Tech 2 rigs. The SDE puts both tiers in the group
+  `Salvaged Materials` and gives neither a meta group. Read the tier from
+  these tables, not from the type. The bill from `blueprint_for_product` is
+  the authority for what one rig takes.
+
+Tech 1 salvage:
+
+| Salvage                           | Amarr, Blood Raiders, Sansha's Nation | Minmatar, Angel Cartel | Caldari, Guristas | Gallente, Serpentis | Rogue drones |
+| :-------------------------------- | :-----------------------------------: | :--------------------: | :---------------: | :-----------------: | :----------: |
+| Alloyed Tritanium Bar             |                                       |           x            |                   |                     |      x       |
+| Armor Plates                      |                   x                   |           x            |                   |          x          |      x       |
+| Broken Drone Transceiver          |                                       |                        |                   |          x          |      x       |
+| Burned Logic Circuit              |                   x                   |           x            |         x         |          x          |      x       |
+| Charred Micro Circuit             |                   x                   |           x            |         x         |          x          |      x       |
+| Conductive Polymer                |                                       |                        |         x         |          x          |      x       |
+| Contaminated Lorentz Fluid        |                                       |                        |                   |          x          |      x       |
+| Contaminated Nanite Compound      |                   x                   |           x            |                   |          x          |      x       |
+| Damaged Artificial Neural Network |                                       |                        |         x         |          x          |              |
+| Defective Current Pump            |                   x                   |                        |                   |                     |      x       |
+| Fried Interface Circuit           |                   x                   |           x            |         x         |          x          |      x       |
+| Malfunctioning Shield Emitter     |                                       |           x            |         x         |                     |      x       |
+| Melted Capacitor Console          |                   x                   |                        |                   |                     |      x       |
+| Scorched Telemetry Processor      |                                       |                        |         x         |                     |      x       |
+| Smashed Trigger Unit              |                                       |           x            |                   |                     |      x       |
+| Tangled Power Conduit             |                   x                   |                        |                   |                     |      x       |
+| Thruster Console                  |                                       |           x            |                   |                     |      x       |
+| Tripped Power Circuit             |                   x                   |           x            |         x         |          x          |      x       |
+| Ward Console                      |                                       |                        |         x         |                     |      x       |
+
+Tech 2 salvage:
+
+| Salvage                          | Angel Cartel (Minmatar space) | Blood Raiders (Amarr space) | Guristas (Caldari space) | Sansha's Nation (Amarr space) | Serpentis (Gallente space) |
+| :------------------------------- | :---------------------------: | :-------------------------: | :----------------------: | :---------------------------: | :------------------------: |
+| Artificial Neural Network        |               x               |              x              |            x             |               x               |                            |
+| Capacitor Console                |                               |              x              |                          |                               |                            |
+| Conductive Thermoplastic         |                               |                             |                          |                               |             x              |
+| Current Pump                     |                               |                             |                          |               x               |                            |
+| Drone Transceiver                |                               |                             |                          |                               |             x              |
+| Enhanced Ward Console            |                               |                             |            x             |                               |                            |
+| Impetus Console                  |               x               |                             |                          |                               |                            |
+| Intact Armor Plates              |                               |                             |                          |               x               |                            |
+| Intact Shield Emitter            |                               |                             |            x             |                               |                            |
+| Interface Circuit                |               x               |              x              |            x             |               x               |             x              |
+| Logic Circuit                    |               x               |              x              |            x             |               x               |             x              |
+| Lorentz Fluid                    |                               |                             |                          |                               |             x              |
+| Micro Circuit                    |               x               |              x              |            x             |               x               |             x              |
+| Nanite Compound                  |                               |                             |                          |               x               |                            |
+| Power Circuit                    |               x               |              x              |            x             |               x               |             x              |
+| Power Conduit                    |                               |              x              |                          |                               |                            |
+| Single-crystal Superalloy I-beam |               x               |                             |                          |                               |                            |
+| Telemetry Processor              |                               |                             |            x             |                               |                            |
+| Trigger Unit                     |               x               |                             |                          |                               |                            |
+
+Two kinds of salvage are in neither table:
+
+- Sleeper wrecks give the group `Ancient Salvage` (19 types), which goes into
+  Tech 3 strategic cruisers. The wiki has no table for it. The types of the
+  category `Ancient Relics` are a different thing, not salvage.
+- The group `Salvaged Materials` holds three more types: Electromagnetic
+  Metaprismatic Sheeting, Hyperbolic Metatransistor Array and Ultraconducting
+  Ablative Nanocable. They build EDENCOM items: Vorton projectors, condenser
+  packs, and the Skybreaker, Stormbringer and Thunderchild. This manual does
+  not know which wrecks give them. Tell the user so. Do not guess.
+
+When the user asks which NPCs to hunt for the salvage of one or more rigs:
+
+1. Call `blueprint_for_product` for each rig. Keep the salvage materials of
+   each bill, with their quantities.
+2. Find the row of each salvage material in the table of its tier.
+3. For each faction, list the materials of the bill that it gives. Name first
+   the faction that gives the most of them. A material that only one faction
+   gives decides one place the user must go.
+4. If the user can buy instead of hunt, price the salvage with
+   `appraise_items`.
+
+To find what a salvage material builds, call `blueprints_using_material` with
+its SDE name.
+
 ## Buying gas for C-J6MT
 
 When the user gives a list of Fullerite, Mykoserocin or Cytoserocin gases and
@@ -932,6 +1033,8 @@ other four change only the user's own rows on this site:
   `list_planets`.
 - Where to buy reaction gas for C-J6MT: `appraise_items` in `jita` and
   `cj6mt`, then `shipping_quote` (see "Buying gas for C-J6MT").
+- Which wrecks give a salvage material, and which NPCs to hunt for a rig:
+  `blueprint_for_product`, then the tables in "Where salvage comes from".
 - The variants of a module and their meta levels: `module_variants`.
 - Upgrades for a fit: `list_fittings`, `module_variants`, `appraise_items`,
   `search_public_contracts` and `blueprint_for_product` (see "Upgrading a
