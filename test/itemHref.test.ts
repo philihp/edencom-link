@@ -34,7 +34,12 @@ test('a container is anything holding items', () => {
 
 test('a plain stack goes nowhere', () => {
   assert.equal(itemHref({ itemId: 1007, categoryId: MODULE, isSingleton: false, contents: 0 }), null)
-  assert.equal(itemHref({ itemId: 1008, categoryId: MODULE, isSingleton: true, contents: 0 }), null)
+  assert.equal(itemHref({ itemId: 1007, categoryId: null, isSingleton: null, contents: 0 }), null)
+})
+
+test('every other singleton — a fitted module, an empty can — is /asset, where its memory is read', () => {
+  assert.equal(itemHref({ itemId: 1008, categoryId: MODULE, isSingleton: true, contents: 0 }), '/asset/1008')
+  assert.equal(itemHref({ itemId: 1009, categoryId: 2, isSingleton: true, contents: 0 }), '/asset/1009')
 })
 
 test('string ids pass through unchanged', () => {

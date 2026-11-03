@@ -15,7 +15,7 @@ inference stored as the item's first memory). PRs 2–4 planned.
 
 | Question                  | Decision                                                                                                                                                                                                                                                                                                                                             |
 | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| What gets a page          | **Assembled ships** at `/ship/[itemId]` (a packaged hull is a stack; it gets no page). **Every blueprint**, original or copy, at `/blueprint/[itemId]`. **Mutated modules** at `/asset/[itemId]` (PR 3). Containers keep `/asset/[itemId]`.                                                                                                       |
+| What gets a page          | **Assembled ships** at `/ship/[itemId]` (a packaged hull is a stack; it gets no page). **Every blueprint**, original or copy, at `/blueprint/[itemId]`. **Mutated modules** at `/asset/[itemId]` (PR 3). Containers keep `/asset/[itemId]`, and since ship-memory PR 10 (2026-11-03) so does **every other singleton** — a fitted module, a drone — where the page draws its Memory panel; `itemHref` links them.                                                                                                       |
 | One route, two ids        | `/blueprint/[typeID]` already exists (the rig page). The segment becomes `/blueprint/[id]` and the page dispatches on magnitude: a type id is below `ITEM_ID_FLOOR` (10⁹; the SDE's type ids are six digits), an item id is above it (a player item's id is thirteen digits). Pure seam `src/app/blueprint/blueprintRoute.ts`, tested.                 |
 | Storage                   | **`item_memory_over_time` as it stands.** It is keyed on `item_id` and takes any item, and `holds_item()` is true for a blueprint the caller holds (blueprints are asset rows). No new memory table, no new write path.                                                                                                                               |
 | Who writes                | The AI over MCP, as for ships (PR 2). **One exception:** a copy's origin is a single fact the server can state, so the page writes it as the item's first memory version the first time its holder opens the page (author `origin`). The AI rewrites on top of it later.                                                                            |
@@ -192,7 +192,12 @@ runs the migration itself against the old table's shape.
    `history.ts`, `origin.ts` (both tested); the blueprint-id index
    migration; the `MemoryPanel` note. Built 2026-11-02.
 2. **MCP.** `recall_blueprint`, `remember_item`, the product-category
-   register, the skill section.
+   register, the skill section. **Shipped as ship-memory PR 7**
+   (docs/ship-memory.md "Extension: every singleton", 2026-11-02): one
+   generic `recall_item`/`remember_item` over every kind, with the blueprint
+   dossier (research steps, build/copy/invention tallies) and the clerk
+   voice whose register is the blueprint's research; the product-category
+   register idea was not taken.
 3. **Mutated modules.** The `item-dynamic` extract and table, the
    personality seam, the `/asset/[itemId]` branch, `recall_module`.
 4. **Adjusted-price history.** The SCD-2 table and the per-moment pricing.
