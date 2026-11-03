@@ -29,6 +29,7 @@ import { loadDossierInput } from '@/app/ship/memory/load'
 import { loadBlueprintInput } from '@/app/ship/memory/loadBlueprint'
 import { loadHullIdentities } from '@/app/ship/memory/loadModule'
 import { HIGHSEC_MIN_SECURITY, LINGO_CAP, LINGO_FULL_DAYS, lingo } from '@/app/ship/memory/lingo'
+import { homeSystemOf, pickSurroundings } from '@/app/ship/memory/surroundings'
 import { BLUEPRINT_CATEGORY_ID, type ItemKind, kindOf, nativeVoiceOf } from '@/app/ship/memory/nativeVoice'
 import {
   getSdeType,
@@ -40,6 +41,9 @@ import {
   type SdeType,
 } from '@/sdeTypes'
 import { escapeLike } from '@/utils/escapeLike'
+import { getSystemJumpGraph } from '@/sdeJumps'
+import { getNpcCharactersAt, getNpcCorporations, getSystemNpcStations } from '@/sdeNpc'
+import { getSystemPlanets, TEMPERATE_PLANET_TYPE_ID } from '@/sdePlanets'
 import { getSdeRegionFactions, getSdeRegionNames } from '@/sdeRegions'
 import { getSdeSystems } from '@/sdeSystems'
 import { createBearerClient } from '@/utils/supabase/bearer'
@@ -524,6 +528,49 @@ const describeLingo = async (supabase: SupabaseClient, d: Dossier) => {
   }
 }
 
+// What stands around a ship's home, for a first memory with a thin record
+// (docs/ship-memory.md "Surroundings"): the home system (the debut's, else
+// the longest dwell), its NPC stations with the corporations that run them
+// and the named people the SDE places there, and the temperate planets in
+// that system and one jump out. Every name exists in the game, so a memory
+// rooted here is one a later visit can land on. Read only when the ship has
+// no memory yet; nothing is stored.
+const describeSurroundings = async (supabase: SupabaseClient, d: Dossier) => {
+  const places = uniq([d.debut.place, ...d.itinerary.map((s) => s.place)].filter((p): p is Place => p != null))
+  const locations = await resolveLocations(places.map(placeRef), supabase)
+  const systemOf = (p: Place) => locations.systemIdFor(placeRef(p)) ?? null
+  const home = homeSystemOf(d.debut.place, d.itinerary, systemOf)
+  if (home == null) return null
+  const [graph, systems, stations] = await Promise.all([
+    getSystemJumpGraph(),
+    getSdeSystems([home]),
+    getSystemNpcStations([home]),
+  ])
+  const neighbours = graph.get(home) ?? []
+  const [planets, corporations, people] = await Promise.all([
+    getSystemPlanets([home, ...neighbours]),
+    getNpcCorporations(stations.flatMap((s) => (s.ownerCorporationID == null ? [] : [s.ownerCorporationID]))),
+    getNpcCharactersAt(stations.map((s) => s.stationID)),
+  ])
+  const picked = pickSurroundings({
+    stations,
+    corporations,
+    people,
+    planets: planets
+      .filter((p) => p.typeID === TEMPERATE_PLANET_TYPE_ID)
+      .map((p) => ({ name: p.name, systemName: p.systemName, jumps: p.systemID === home ? 0 : 1 })),
+  })
+  const system = systems[home]
+  return {
+    note: 'For a first memory with little on record: root the backstory here rather than inventing. A crew can hail from one of these temperate planets (name it, so a later visit there lands); the ship can know a face at one of these stations — the people listed exist in the game, at those stations, for those corporations. Use only what is listed.',
+    home_system:
+      system == null
+        ? { system_id: home }
+        : { name: system.name, security: system.security, region: system.regionName },
+    ...picked,
+  }
+}
+
 const HOW: Record<ItemKind, string> = {
   ship: 'Write in the accent and register above. Where voice.lingo lists an empire, let a phrase or two of its turn of speech in, in proportion to the weight — a tenth is a word here and there, never a change of accent. Keep what the old memory says unless the facts contradict it; add, do not rewrite. Use "at least" where the data is sampled. Never invent battles, cargo or places. On a hull with an earlier owner, keep their chapters as the ship\'s past.',
   blueprint:
@@ -599,6 +646,9 @@ const recall = async (ctx: ServerCtx, query: string, scope: Scope): Promise<Tool
   // type are the candidates (docs/ship-memory.md "Reassembly");
   // remember_item's inherit_from settles it.
   const candidates = memory == null && d.inHangar ? await pendingPacksOfType(supabase, owners, d.typeId) : []
+  // A ship's first memory may have little to go on; what stands around its
+  // home gives the companion real names to root it in.
+  const surroundings = memory == null && kind === 'ship' ? await describeSurroundings(supabase, d) : null
   const before = inheritance(memory, (versionRows ?? []) as MemoryVersionLike[], d.debut.at, userIdOf(ctx))
   const currentName = d.names[d.names.length - 1]?.name ?? null
 
@@ -671,6 +721,7 @@ const recall = async (ctx: ServerCtx, query: string, scope: Scope): Promise<Tool
       ...(memory == null && candidates.length === 0
         ? {
             first_memory: `This ${noun(scope)} has no memory yet. Write its first version now, from the dossier above and in the voice above, and store it with remember_${noun(scope)} (based_on null) in this same turn — then answer the user as the ${noun(scope)}. Speaking to it is the request; no further confirmation is needed.`,
+            ...(surroundings == null ? {} : { surroundings }),
           }
         : {}),
     },
