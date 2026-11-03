@@ -22,6 +22,11 @@
 // session. The path refuses a character not on that account, validates the
 // draft (src/mailCompose.ts), and uses each request id once.
 //
+// The one exception is the experimental `auto-send-eve-mail` Vercel flag
+// (src/app/mail/autoSend.ts), off in production: while it is on, the call
+// sends the mail it just queued through sendQueuedMail, and its answer says
+// sent or failed rather than queued.
+//
 // Pure seams: mailQuery.ts (which character, label, recipient; the shape of a
 // mail) and src/mailText.ts (EVE markup to text and back), both tested.
 import { randomUUID } from 'node:crypto'
@@ -31,7 +36,8 @@ import { splitEvery, uniq, uniqBy } from 'ramda'
 import { z } from 'zod'
 
 import { callerForUser, isFailure } from '@/app/api/fittings/lib'
-import { enqueueMail, sendGrantHeld } from '@/app/mail/lib'
+import { autoSendEnabled } from '@/app/mail/autoSend'
+import { enqueueMail, sendGrantHeld, sendQueuedMail } from '@/app/mail/lib'
 import { MAX_RECIPIENTS, RECIPIENT_TYPES, validateDraft } from '@/mailCompose'
 import { textToMailBody } from '@/mailText'
 import { escapeLike } from '@/utils/escapeLike'
@@ -688,6 +694,32 @@ export const registerMailTools = (server: McpServer): void => {
           ...summary,
         })
       }
+
+      if (await autoSendEnabled()) {
+        // The row is claimed queued → pending and closed ok/error, exactly as
+        // a send from the CLI; a failure leaves it closed, not queued again.
+        const sent = await sendQueuedMail(caller, outcome.logId)
+        if ('error' in sent) {
+          return textResult({
+            sent: false,
+            queued: false,
+            log_id: outcome.logId,
+            status: sent.status,
+            error: sent.error,
+            ...sent.detail,
+            ...summary,
+          })
+        }
+        return textResult({
+          sent: true,
+          queued: false,
+          log_id: sent.logId,
+          mail_id: sent.mailId,
+          ...summary,
+          note: "Sent through ESI, not queued: auto-send is on for this deployment while a person watches. Tell the user the mail was sent. The copy on this site picks it up under the sender's Sent label on a later character-mail extract.",
+        })
+      }
+
       return textResult({
         sent: false,
         queued: true,
