@@ -155,7 +155,17 @@ const RunsTable = ({ rows, names }: { rows: RunRow[]; names: BlueprintPageData['
               <DateTime value={r.end} />
             </td>
             <td>{r.status}</td>
-            <td className={retro.num}>{r.eiv == null ? '—' : formatIsk(r.eiv)}</td>
+            <td className={retro.num}>
+              {r.eiv == null ? (
+                '—'
+              ) : r.eivExact ? (
+                formatIsk(r.eiv)
+              ) : (
+                <span title="Installed before the price record began; priced at the earliest adjusted price on record">
+                  ≈ {formatIsk(r.eiv)}
+                </span>
+              )}
+            </td>
           </tr>
         ))}
       </tbody>
@@ -170,7 +180,7 @@ export const BlueprintItemPage = async ({ itemId }: { itemId: number }) => {
   const loaded = await loadBlueprintPage(supabase, itemId)
   if (loaded == null) notFound()
   const data = await storeOriginMemory(supabase, loaded)
-  const { item, rows, totals, product, origin, memory, names, pricedAt } = data
+  const { item, rows, totals, product, origin, memory, names } = data
 
   const typeName = names.types[item.typeId] ?? `#${item.typeId}`
   const productName = product == null ? null : (names.types[product.productTypeID] ?? `#${product.productTypeID}`)
@@ -218,12 +228,10 @@ export const BlueprintItemPage = async ({ itemId }: { itemId: number }) => {
           <div className={styles.statNote}>
             {totals.pricedRuns} {totals.pricedRuns === 1 ? 'run' : 'runs'}
             {totals.unpricedRuns > 0 ? `, ${totals.unpricedRuns} unpriced` : ''}
-            {pricedAt != null ? (
-              <>
-                {' '}
-                · at adjusted prices of <DateTime value={pricedAt} />
-              </>
-            ) : null}
+            {' · '}at CCP's adjusted prices as each run was installed
+            {totals.approximateRuns > 0
+              ? `; ${totals.approximateRuns} from before the price record began, at its earliest price`
+              : ''}
           </div>
         </div>
         <div className={styles.stat}>

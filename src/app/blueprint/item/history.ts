@@ -1,9 +1,10 @@
 // What one blueprint has done (docs/item-pages.md, "/blueprint/[itemId]"): the
 // jobs it ran, folded into the page's rows and totals. Pure — jobs and a
 // pricing function in, rows and totals out — so it is unit-tested, and the
-// loader can later price a run at its install day's adjusted price (PR 4)
-// without the fold changing. Relative imports with the extension: the test
-// runner is plain Node, with no '@/*' alias.
+// loader decides where a price comes from (the adjusted price in effect at
+// the run's install, through market_adjusted_price_at()) without the fold
+// knowing. Relative imports with the extension: the test runner is plain
+// Node, with no '@/*' alias.
 import { ACTIVITY_NAMES } from '../../industry/jobFields.ts'
 import { isPriceable, type Bill } from '../../structure/eiv.ts'
 
@@ -68,6 +69,10 @@ export type RunRow = {
   // The run's EIV, for a manufacturing or reaction job the pricing could
   // price; null otherwise.
   eiv: number | null
+  // Whether every price behind eiv was the version in effect at the install.
+  // False when some material's price predates the record and the earliest
+  // version on record stood in for it.
+  eivExact: boolean
 }
 
 export type HistoryTotals = {
@@ -77,6 +82,10 @@ export type HistoryTotals = {
   eivProduced: number
   pricedRuns: number
   unpricedRuns: number
+  // Of the priced runs, how many were installed before the price record
+  // began and so carry the earliest price on record rather than the one in
+  // effect.
+  approximateRuns: number
   // Copies made (one per copy-job run) and the licensed runs they carried.
   copies: number
   licensedRuns: number
@@ -85,6 +94,11 @@ export type HistoryTotals = {
   researchLevels: number
 }
 
+// A price at a moment: the figure, and whether it was the version in effect
+// then (false when the moment predates the record and the earliest version
+// stood in).
+export type PricePoint = { price: number; exact: boolean }
+
 export type HistoryPricing = {
   // blueprint type id → ME0 bill (sde_blueprint_product).
   bills: Readonly<Record<number, Bill>>
@@ -92,7 +106,7 @@ export type HistoryPricing = {
   products: Readonly<Record<number, { productTypeID: number; productQuantity: number }>>
   // A type's adjusted price at a moment (the run's install), or null when
   // unpriced.
-  priceAt: (typeId: number, atIso: string) => number | null
+  priceAt: (typeId: number, atIso: string) => PricePoint | null
 }
 
 const UNCOUNTED = new Set(['cancelled', 'reverted'])
@@ -137,24 +151,28 @@ const madeBy = (job: HistoryJob, pricing: HistoryPricing): Made => {
 
 // EIV of one run: the ME0 bill priced at the install, scaled by runs. Any
 // unpriced material refuses the whole run rather than under-pricing it —
-// the posture src/app/structure/eiv.ts takes.
-const runEiv = (job: HistoryJob, pricing: HistoryPricing): number | null => {
+// the posture src/app/structure/eiv.ts takes. The run is exact only when
+// every material's price was.
+const runEiv = (job: HistoryJob, pricing: HistoryPricing): { eiv: number; exact: boolean } | null => {
   if (!isPriceable(job)) return null
   const bill = pricing.bills[Number(job.blueprint_type_id)]
   const runs = num(job.runs)
   if (bill == null || runs == null || runs <= 0) return null
   let sum = 0
+  let exact = true
   for (const { typeID, quantity } of bill) {
-    const price = pricing.priceAt(typeID, job.start_date)
-    if (price == null || !Number.isFinite(price)) return null
-    sum += quantity * price
+    const point = pricing.priceAt(typeID, job.start_date)
+    if (point == null || !Number.isFinite(point.price)) return null
+    sum += quantity * point.price
+    exact = exact && point.exact
   }
-  return sum * runs
+  return { eiv: sum * runs, exact }
 }
 
 const toRow = (job: HistoryJob, pricing: HistoryPricing): RunRow => {
   const activityId = Number(job.activity_id)
   const location = job.station_id ?? job.facility_id
+  const priced = runEiv(job, pricing)
   return {
     jobId: String(job.job_id),
     ownerId: job.owner_id,
@@ -166,7 +184,8 @@ const toRow = (job: HistoryJob, pricing: HistoryPricing): RunRow => {
     end: job.end_date,
     status: job.status,
     counted: !UNCOUNTED.has(job.status),
-    eiv: runEiv(job, pricing),
+    eiv: priced?.eiv ?? null,
+    eivExact: priced?.exact ?? true,
   }
 }
 
@@ -175,6 +194,7 @@ const EMPTY_TOTALS: HistoryTotals = {
   eivProduced: 0,
   pricedRuns: 0,
   unpricedRuns: 0,
+  approximateRuns: 0,
   copies: 0,
   licensedRuns: 0,
   inventionAttempts: 0,
@@ -189,7 +209,12 @@ const addRow = (t: HistoryTotals, row: RunRow): HistoryTotals => {
     case 'units':
       return row.eiv == null
         ? { ...next, unpricedRuns: t.unpricedRuns + 1 }
-        : { ...next, eivProduced: t.eivProduced + row.eiv, pricedRuns: t.pricedRuns + 1 }
+        : {
+            ...next,
+            eivProduced: t.eivProduced + row.eiv,
+            pricedRuns: t.pricedRuns + 1,
+            approximateRuns: t.approximateRuns + (row.eivExact ? 0 : 1),
+          }
     case 'copies':
       return {
         ...next,

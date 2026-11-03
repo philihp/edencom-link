@@ -111,7 +111,8 @@ drop table if exists public.character_affiliation         cascade;
 drop table if exists public.character_directory   cascade;
 drop materialized view if exists public.industry_system_index_bucket cascade;
 drop table if exists public.industry_system_index cascade;
-drop table if exists public.market_adjusted_price cascade;
+drop view  if exists public.market_adjusted_price cascade;
+drop table if exists public.market_adjusted_price_over_time cascade;
 drop table if exists public.hull_price            cascade;
 drop table if exists public.ship_appraisal        cascade;
 drop view  if exists public.market_price               cascade;
@@ -5367,37 +5368,116 @@ $$;
 revoke execute on function public.refresh_industry_index_buckets() from public, anon, authenticated;
 grant execute on function public.refresh_industry_index_buckets() to service_role;
 
--- ── market_adjusted_price ───────────────────────────────────────────────
+-- ── market_adjusted_price_over_time (SCD type 2) ──────────────────────────
 -- CCP's adjusted prices, from public ESI GET /markets/prices/ — the price base
 -- the game itself uses to compute an industry job's Estimated Item Value, and
 -- so the missing multiplier in every job-cost breakdown (docs/cost-avoidance.md
 -- derived cost avoidance from tax receipts precisely because nothing ingested
--- this feed). One row per type, upserted daily by the market-adjusted-prices
--- job: adjusted_price is a slow-moving smoothed average, so latest-only is a
--- deliberate approximation — recovering a tax rate divides a job's cost by its
--- EIV, and days of drift move that figure by less than the rounding on a
--- 0.25–1% rate. recorded_at says how stale the approximation is.
+-- this feed). Versioned since migration 20261102235206 because
+-- /blueprint/[itemId] prices every run a blueprint made at the adjusted price
+-- in effect when the run was installed, and that figure must never move
+-- afterwards (docs/item-pages.md "Adjusted-price history"). The daily
+-- market-adjusted-prices job reconciles like market-prices does: an unchanged
+-- price bumps valid_until, a moved one closes its row and opens the next, a
+-- type CCP stopped publishing is closed with no replacement. Adjusted prices
+-- are a smoothed daily average, so most types move a little every day —
+-- ~15k rows a day, a fraction of market_price_over_time's hourly captures.
 --
 -- World-readable like industry_system_index: game-wide public data with no
--- player in it.
-create table public.market_adjusted_price (
-  type_id bigint primary key,
+-- player in it. Writes stay service-role (the cron).
+create table public.market_adjusted_price_over_time (
+  type_id bigint not null,
+  valid_from timestamptz not null default now(),
+  valid_until timestamptz not null default now(),
   adjusted_price double precision not null,
   -- ESI omits average_price for ~13% of types; null means "not published",
   -- which is different from zero.
   average_price double precision,
-  recorded_at timestamptz not null default now()
+  is_current boolean not null default true
 );
 
-alter table public.market_adjusted_price enable row level security;
-create policy "Everyone reads adjusted prices"
-  on public.market_adjusted_price
+-- Row identity and the reconcile's handle: one open row per type.
+create unique index market_adjusted_price_over_time_current_idx
+  on public.market_adjusted_price_over_time (type_id) where is_current;
+
+-- Per-type history in order: the one probe market_adjusted_price_at() makes
+-- per (type, moment).
+create index market_adjusted_price_over_time_type_history_idx
+  on public.market_adjusted_price_over_time (type_id, valid_from);
+
+-- The latest-only shape every other reader wants (/structure's EIV, the
+-- rollup, /sheets/adjusted-prices, the hull-price page): one row per type,
+-- recorded_at being the open version's valid_until — the last run that saw
+-- the price.
+create view public.market_adjusted_price as
+  select type_id, adjusted_price, average_price, valid_from, valid_until as recorded_at
+  from public.market_adjusted_price_over_time
+  where is_current;
+
+alter table public.market_adjusted_price_over_time enable row level security;
+create policy "Everyone reads adjusted price history"
+  on public.market_adjusted_price_over_time
   for select
   to anon, authenticated
   using (true);
 
-grant select on public.market_adjusted_price to anon, authenticated;
-grant all    on public.market_adjusted_price to service_role;
+grant select on public.market_adjusted_price_over_time to anon, authenticated;
+grant all    on public.market_adjusted_price_over_time to service_role;
+grant select on public.market_adjusted_price to anon, authenticated, service_role;
+
+-- market_adjusted_price_at: the adjusted price of many (type, moment) pairs in
+-- one call — market_price_at()'s shape over this table. Each probe takes the
+-- version whose valid_from is the latest at or before its moment; a moment
+-- before the capture began (the job started 2026-08-26, and a job on record
+-- can be older) takes the EARLIEST version instead, with exact = false so the
+-- caller can say so rather than present a guess as a reading. One index probe
+-- per (type, moment) over market_adjusted_price_over_time_type_history_idx;
+-- the LIMIT over the UNION ALL reads the fallback only when nothing came
+-- before. json rather than setof so PostgREST's max_rows never truncates an
+-- answer. SECURITY INVOKER; safe because the table is world-readable.
+create or replace function public.market_adjusted_price_at(probes jsonb)
+returns json
+language sql
+stable
+as $$
+  select coalesce(
+    json_agg(
+      json_build_object(
+        'type_id',        q.type_id,
+        'as_of',          q.as_of,
+        'adjusted_price', p.adjusted_price,
+        'since',          p.valid_from,
+        'exact',          (p.valid_from <= q.as_of)
+      )
+      order by q.type_id, q.as_of
+    ),
+    '[]'::json
+  )
+  from (
+    select distinct type_id, as_of
+    from jsonb_to_recordset(probes) as x(type_id bigint, as_of timestamptz)
+  ) q
+  cross join lateral (
+    (
+      select v.adjusted_price, v.valid_from
+      from public.market_adjusted_price_over_time v
+      where v.type_id = q.type_id and v.valid_from <= q.as_of
+      order by v.valid_from desc
+      limit 1
+    )
+    union all
+    (
+      select v.adjusted_price, v.valid_from
+      from public.market_adjusted_price_over_time v
+      where v.type_id = q.type_id and v.valid_from > q.as_of
+      order by v.valid_from asc
+      limit 1
+    )
+    limit 1
+  ) p;
+$$;
+
+grant execute on function public.market_adjusted_price_at(jsonb) to anon, authenticated, service_role;
 
 -- ── hull_price ────────────────────────────────────────────────────────────
 -- Prices for hulls no market prices: supercarriers and titans cannot enter

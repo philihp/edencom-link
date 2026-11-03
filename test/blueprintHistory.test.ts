@@ -31,9 +31,37 @@ const pricing: HistoryPricing = {
   },
   products: { [RIFTER_BP]: { productTypeID: RIFTER, productQuantity: 1 } },
   // Tritanium 5 ISK, pyerite 10 ISK, at every moment but the one the
-  // "at that time" test asks about.
-  priceAt: (typeId, at) => (at.startsWith('2025') ? null : typeId === TRITANIUM ? 5 : typeId === PYERITE ? 10 : null),
+  // "at that time" test asks about; a 2024 install predates the record, so
+  // its price is the earliest on record rather than the one in effect.
+  priceAt: (typeId, at) => {
+    if (at.startsWith('2025')) return null
+    const price = typeId === TRITANIUM ? 5 : typeId === PYERITE ? 10 : null
+    return price == null ? null : { price, exact: !at.startsWith('2024') }
+  },
 }
+
+test('a run from before the price record is priced at the earliest price, marked approximate', () => {
+  const { rows, totals } = foldHistory(
+    [
+      job({
+        job_id: 1,
+        activity_id: 1,
+        runs: 10,
+        start_date: '2024-06-01T00:00:00Z',
+        end_date: '2024-06-01T01:00:00Z',
+      }),
+      job({ job_id: 2, activity_id: 1, runs: 1 }),
+    ],
+    pricing
+  )
+  const [recent, old] = rows
+  assert.equal(recent.eivExact, true)
+  assert.equal(old.eiv, 6000)
+  assert.equal(old.eivExact, false)
+  assert.equal(totals.pricedRuns, 2)
+  assert.equal(totals.approximateRuns, 1)
+  assert.equal(totals.eivProduced, 6600)
+})
 
 test('a manufacturing run makes runs × product quantity and carries its EIV', () => {
   const { rows, totals } = foldHistory([job({ job_id: 1, activity_id: 1, runs: 10 })], pricing)

@@ -19,7 +19,7 @@ inference stored as the item's first memory). PRs 2–4 planned.
 | One route, two ids        | `/blueprint/[typeID]` already exists (the rig page). The segment becomes `/blueprint/[id]` and the page dispatches on magnitude: a type id is below `ITEM_ID_FLOOR` (10⁹; the SDE's type ids are six digits), an item id is above it (a player item's id is thirteen digits). Pure seam `src/app/blueprint/blueprintRoute.ts`, tested.                 |
 | Storage                   | **`item_memory_over_time` as it stands.** It is keyed on `item_id` and takes any item, and `holds_item()` is true for a blueprint the caller holds (blueprints are asset rows). No new memory table, no new write path.                                                                                                                               |
 | Who writes                | The AI over MCP, as for ships (PR 2). **One exception:** a copy's origin is a single fact the server can state, so the page writes it as the item's first memory version the first time its holder opens the page (author `origin`). The AI rewrites on top of it later.                                                                            |
-| EIV "at that time"        | EIV is the ME0 bill at CCP's **adjusted** price. `market_adjusted_price` is latest-only, so PR 1 prices every run at today's adjusted prices and says so on the page. PR 4 makes the table SCD-2 so a run can be priced at the adjusted price of its install day; the page's fold already takes a price-per-moment function, so only the loader changes. |
+| EIV "at that time"        | EIV is the ME0 bill at CCP's **adjusted** price, and the price that matters is the one in effect when the run was installed — how the game valued the job — so it must never be re-evaluated at today's prices. `market_adjusted_price` is SCD-2 (`market_adjusted_price_over_time`, migration `20261102235206`) and `market_adjusted_price_at(probes)` answers each (material, install) pair; a run older than the record takes the earliest price on record, marked approximate. The history is append-only, so freezing the fold's inputs fixes its outputs without storing them. |
 | Mutated modules' maker    | `GET /dogma/dynamic/items/{type_id}/{item_id}/` is public (no scope). It names `created_by`, the source type, the mutaplasmid and the mutated attributes. A new extract reads it once per item, since a mutation never changes (PR 3).                                                                                                              |
 
 ## The link rule (PR 1)
@@ -160,14 +160,30 @@ source module and the mutaplasmid, with the voice the traits give it.
 contents, so the page gains a branch for an item with an `item_dynamic` row:
 the roll table, the maker, and the Memory panel.
 
-## Adjusted-price history (PR 4)
+## Adjusted-price history (PR 4, folded into PR 1)
 
-`market_adjusted_price` becomes `market_adjusted_price_over_time` with the
-view keeping the name; the daily job reconciles like `market-prices` does.
-`market_adjusted_price_at(probes)` in the shape of `market_price_at()`. The
-blueprint page's loader prices each run at its install day; `/structure`'s
-EIV keeps today's prices (its window is recent). ~13k published types × one
-row per change, so the table grows only when CCP's prices move.
+`market_adjusted_price` is the SCD-2 pair every versioned table here uses:
+`market_adjusted_price_over_time` (one open row per type, `(type_id,
+valid_from)` btree for the per-moment probe) behind a like-named view of the
+current rows that keeps the old columns, `recorded_at` being the open
+version's `valid_until`, so every other reader (`/structure`'s EIV, the
+rollup, `/sheets/adjusted-prices`, the hull-price page) is unchanged. The
+daily job reconciles like `market-prices` does over the pure seam
+`src/jobs/adjustedPriceReconcile.js` (tested): touch, close-and-reopen,
+close on vanishing; it refuses a listing under `MIN_PLAUSIBLE_TYPES`, since
+a short answer is a truncated response, not a mass delisting. Both prices
+are rounded to ISK precision before comparison. Adjusted prices move a
+little for most types every day, so expect ~15k rows a day.
+
+`market_adjusted_price_at(probes)` is `market_price_at()`'s shape without
+the market: the version in effect at each moment, or the earliest on record
+flagged `exact: false` for a moment before the capture began (2026-08-26;
+the migration seeds each type's first version at its last sighting). The
+blueprint loader probes every material at every priceable run's `start_date`
+and the fold's `priceAt` answers a `PricePoint { price, exact }`; a run is
+exact only when every material was, the row shows `≈` otherwise, and the
+totals strip counts `approximateRuns`. `test/sql/market_adjusted_price_at.sql`
+runs the migration itself against the old table's shape.
 
 ## PRs
 
@@ -180,6 +196,8 @@ row per change, so the table grows only when CCP's prices move.
 3. **Mutated modules.** The `item-dynamic` extract and table, the
    personality seam, the `/asset/[itemId]` branch, `recall_module`.
 4. **Adjusted-price history.** The SCD-2 table and the per-moment pricing.
+   Folded into PR 1 on 2026-11-02: the price at the install is what a run
+   meant, so the page never shipped at today's prices.
 
 ## Open questions
 
