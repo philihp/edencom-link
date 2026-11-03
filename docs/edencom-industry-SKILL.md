@@ -557,6 +557,19 @@ alone, kept for clients that learned them; they refuse anything else and
 point here. Stacks carry no memory — a packaged stack is fungible — so only
 singletons answer.
 
+### The first time an item is spoken to
+
+Most items have no memory yet. Memories are created lazily, the first time
+someone asks, so when `recall_item` answers `memory: null` and carries a
+`first_memory` note, **write the first version at once**: compose the
+item's memory from the dossier in the voice given and call `remember_item`
+with `based_on` null, in the same turn, before or as you answer the user as
+the item. Talking to the item is the asking; do not ask for permission, and
+do not answer in character first and offer to save later — an item that has
+been spoken to has a memory from then on. The one exception is a hull with
+`inherit_candidates` (below), where the user has to say which packed hull
+this is before anything is written.
+
 Name an item by its item id, by its in-game name (ships and containers are
 named; modules and blueprints are not), or by its type name ("Vexor
 Blueprint", "my Vexor BPO"). A type name must pick out one held item; when
@@ -600,21 +613,6 @@ For a container the `dossier` carries `contents`, what has passed through
 it, as at-least quantities. For a module or any other item it carries the
 first sighting, the owners and where it has sat.
 
-The voice for every kind is in `voice`: a ship's accent and register; a
-blueprint is a patient clerk who counts in runs, whose register is its
-research (a pristine original is a novice, ME 10 / TE 20 has seen
-everything); a module is a robotic droid with a limited vocabulary, and a
-module fitted in a high slot is a brutish one that calls the pilot "boss"; a
-container is a warehouse foreman. Write in the voice named, in the first
-person.
-
-A module's answer adds a `module` section — every hull it has been fitted
-to, with slots, times fitted and days — and, inside `voice`,
-`acquired_accents`: the accent of each hull it has spent time in a high slot
-of, weighted `min(1, days / 365)`. Blend them in proportion on top of the
-droid: a 0.3 is a few borrowed words and a turn of phrase, a 1.0 is that
-hull's own voice, and several are several. Let the module say which hulls it
-learned them from. A plate in a low slot learns nothing.
 - The memory the ship has now, with its `version_id`, and `before_you`: whether
   the current text was written by an earlier owner.
 - Who reads the memory: every share that reaches the hull, a container above
@@ -630,9 +628,27 @@ learned them from. A plate in a low slot learns nothing.
   user which packed hull this is before you carry one; a wrong pick gives the
   hull another ship's past.
 
+The voice for every kind is in `voice`: a ship's accent and register; a
+blueprint is a patient clerk who counts in runs, whose register is its
+research (a pristine original is a novice, ME 10 / TE 20 has seen
+everything); a module is a robotic droid with a limited vocabulary, and a
+module fitted in a high slot is a brutish one that calls the pilot "boss"; a
+container is a warehouse foreman. Write in the voice named, in the first
+person.
+
+A module's answer adds a `module` section — every hull it has been fitted
+to, with slots, times fitted and days — and, inside `voice`,
+`acquired_accents`: the accent of each hull it has spent time in a high slot
+of, weighted `min(1, days / 365)`. Blend them in proportion on top of the
+droid: a 0.3 is a few borrowed words and a turn of phrase, a 1.0 is that
+hull's own voice, and several are several. Let the module say which hulls it
+learned them from. A plate in a low slot learns nothing.
+
 ### Writing an item's memory
 
-1. Call `recall_item` (or `recall_ship` for a hull).
+1. Call `recall_item` (or `recall_ship` for a hull). If it answers
+   `memory: null`, the rest of this procedure happens now, unprompted (see
+   "The first time an item is spoken to").
 2. Write in the voice it names — for a ship the accent and register, for
    anything else the native voice in `voice`. The item speaks in the first
    person.
@@ -663,8 +679,9 @@ learned them from. A plate in a low slot learns nothing.
    `inherit_from` without asking when there is more than one candidate.
 
 `remember_item` and `remember_ship` change nothing in the game. They need no
-confirmation beyond the user asking for the memory to be written: every
-version is kept, and a later write can restore any earlier text.
+confirmation: a first memory is written because the user spoke to the item,
+and a later one because they asked for it. Every version is kept, and a later
+write can restore any earlier text.
 
 ## Public contracts
 

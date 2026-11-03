@@ -624,6 +624,14 @@ const recall = async (ctx: ServerCtx, query: string, scope: Scope): Promise<Tool
     writing: {
       based_on: memory == null ? null : Number(memory.id),
       how: HOW[kind],
+      // Memories are created lazily, the first time someone asks: this
+      // recall is that moment, so the companion writes the first version
+      // now rather than waiting to be asked a second time.
+      ...(memory == null && candidates.length === 0
+        ? {
+            first_memory: `This ${noun(scope)} has no memory yet. Write its first version now, from the dossier above and in the voice above, and store it with remember_${noun(scope)} (based_on null) in this same turn — then answer the user as the ${noun(scope)}. Speaking to it is the request; no further confirmation is needed.`,
+          }
+        : {}),
     },
     data_refreshed,
   })
@@ -761,7 +769,7 @@ export const registerMemoryTools = (server: McpServer): void => {
     {
       title: 'Recall what an item knows about itself',
       description:
-        "Everything one of the user's held singleton items knows about itself, for writing its memory in its own voice. For a ship: where it first appeared and where it came from (built, contracted, bought or unpacked, inferred with a confidence), every dock and how long it stayed, who has flown it, what it has carried, its fuel, its fit and refits. For a blueprint: its research steps, every manufacturing job run with it and the hulls built by product, its copies and inventions — all recorded against its own item id, so nothing is inferred. For a container: what has passed through it. For a module or anything else: where it has been and whose it was. Also the native voice its memory should be written in (a ship's accent and register; a blueprint is a clerk; a module a droid, a high-slot one a thug), the memory it already carries with the version id a later write builds on, who can read it (every share reaching the item, a container above it or its place), and whether the current text was written by someone who held it before. Every figure is an at-least figure from the extracts' samples. Give the item as its item id, its in-game name (ships and containers), or a type name (e.g. \"Vexor Blueprint\"); a type name must pick out one held item, else the matches are listed by id.",
+        "Everything one of the user's held singleton items knows about itself, for writing its memory in its own voice. For a ship: where it first appeared and where it came from (built, contracted, bought or unpacked, inferred with a confidence), every dock and how long it stayed, who has flown it, what it has carried, its fuel, its fit and refits. For a blueprint: its research steps, every manufacturing job run with it and the hulls built by product, its copies and inventions — all recorded against its own item id, so nothing is inferred. For a container: what has passed through it. For a module or anything else: where it has been and whose it was. Also the native voice its memory should be written in (a ship's accent and register; a blueprint is a clerk; a module a droid, a high-slot one a thug), the memory it already carries with the version id a later write builds on (or, when it has none yet, a first_memory note: memories are created the first time an item is spoken to, so write the first version at once), who can read it (every share reaching the item, a container above it or its place), and whether the current text was written by someone who held it before. Every figure is an at-least figure from the extracts' samples. Give the item as its item id, its in-game name (ships and containers), or a type name (e.g. \"Vexor Blueprint\"); a type name must pick out one held item, else the matches are listed by id.",
       annotations: RECALL_ANNOTATIONS,
       inputSchema: z.object({ item: z.string().min(1).describe(SUBJECT_DESCRIPTION.item) }),
     },
@@ -773,7 +781,7 @@ export const registerMemoryTools = (server: McpServer): void => {
     {
       title: 'Recall what a ship knows about itself',
       description:
-        "recall_item for hulls alone: everything one of the user's ships knows about itself — where it first appeared and where it came from (built, contracted, bought or unpacked, inferred and marked with a confidence), every dock and how long it stayed, who has flown it, what it has carried, how it keeps its fuel, its fit and how often it was refitted, and whether it is still in the hangar — plus the accent and register its memory should be written in, the memory it already carries with the version id a later write builds on, who can read that memory, and whether the current text was written by someone who owned the hull before. Every figure is an at-least figure from 6-hourly samples. Give the ship as its item id or its in-game name; a name must pick out one hull among the user's current and past ships. For a blueprint, module or container, call recall_item.",
+        "recall_item for hulls alone: everything one of the user's ships knows about itself — where it first appeared and where it came from (built, contracted, bought or unpacked, inferred and marked with a confidence), every dock and how long it stayed, who has flown it, what it has carried, how it keeps its fuel, its fit and how often it was refitted, and whether it is still in the hangar — plus the accent and register its memory should be written in, the memory it already carries with the version id a later write builds on (or, when it has none yet, a first_memory note: memories are created the first time an item is spoken to, so write the first version at once), who can read that memory, and whether the current text was written by someone who owned the hull before. Every figure is an at-least figure from 6-hourly samples. Give the ship as its item id or its in-game name; a name must pick out one hull among the user's current and past ships. For a blueprint, module or container, call recall_item.",
       annotations: RECALL_ANNOTATIONS,
       inputSchema: z.object({ ship: z.string().min(1).describe(SUBJECT_DESCRIPTION.ship) }),
     },
