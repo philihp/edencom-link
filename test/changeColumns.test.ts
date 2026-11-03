@@ -1,5 +1,5 @@
-// Unit coverage for the /account/registrations "show grants that change
-// things" filter: columns flagged `changes` drop out unless asked for, and the
+// Unit coverage for the /account/registrations "Show Mutable Grants"
+// filter: columns flagged `changes` drop out unless asked for, and the
 // cookie that remembers the choice reads '1' as on and anything else as off.
 import assert from 'node:assert/strict'
 import test from 'node:test'

@@ -1,4 +1,4 @@
-// The Registrations page's "show grants that change things" toggle: whether
+// The Registrations page's "Show Mutable Grants" toggle: whether
 // the matrix draws the columns flagged `changes` (changeColumns.ts). Remembered
 // in a plain (not httpOnly) cookie so the server render already draws the
 // chosen columns — the /indexes productionOnly.ts precedent. Per browser on

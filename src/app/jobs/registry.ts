@@ -40,7 +40,7 @@ export type JobEntry = {
   scopes: readonly string[]
   // A grant that lets this site CHANGE something in game rather than only read
   // it. /account/registrations hides these columns unless the viewer turns on
-  // "Show grants that change things" (changeColumns.ts).
+  // "Show Mutable Grants" (changeColumns.ts).
   changes?: boolean
   // How a multi-scope column's grant is read (matrix.ts columnGrant): 'any'
   // (the default — character-status runs whichever endpoints the token
