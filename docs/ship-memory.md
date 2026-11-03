@@ -580,7 +580,18 @@ in the list below; PR 7 is built, the rest are not.
   its `writing` section — and the skill doc's "The first time an item is
   spoken to" makes it the procedure. The one hold is a hull with
   `inherit_candidates`, which waits for the player to say which packed hull
-  it is. The acquired accents below are therefore **computed at
+  it is.
+  A first record is often thin, so a ship's first recall also answers
+  **`surroundings`** (`src/app/ship/memory/surroundings.ts`, pure, tested,
+  over `src/sdeNpc.ts`): the home system — the debut's, else the longest
+  dwell — its NPC stations with the corporations that run them (name and
+  the SDE blurb's first sentence) and the named NPC characters the SDE
+  places at each (`sde_npc_characters`, CEOs first, then agents), and the
+  temperate planets in that system and one jump out. The companion roots
+  the backstory in these — a crew from a named planet, a face at a station —
+  so nothing is invented and a later visit to that planet lands. The SDE
+  has no agent list beyond those characters; the mirror carries no
+  `sde_agents` file. The acquired accents below are therefore **computed at
   recall from the history, never accrued in a table**: there is no growth
   state to maintain, and an item asked about for the first time after two
   years sounds exactly as it would have if asked every day.

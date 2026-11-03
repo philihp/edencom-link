@@ -570,6 +570,17 @@ been spoken to has a memory from then on. The one exception is a hull with
 `inherit_candidates` (below), where the user has to say which packed hull
 this is before anything is written.
 
+A ship's first record is often thin: a debut, a dock or two, no pilots yet.
+When it is, root the backstory in `writing.surroundings` rather than
+inventing: the ship's home system (where it first appeared, or where it has
+sat longest), the NPC stations there with the corporations that run them and
+the named people the SDE places at each, and the temperate planets in that
+system and one jump out. Give the crew a home on one of those planets, by
+name, so a later visit there means something to the ship; let it know a face
+at one of those stations — those people exist in the game, at those
+stations, for those corporations. Use only what is listed; a name that is
+not there does not exist.
+
 Name an item by its item id, by its in-game name (ships and containers are
 named; modules and blueprints are not), or by its type name ("Vexor
 Blueprint", "my Vexor BPO"). A type name must pick out one held item; when
