@@ -109,6 +109,53 @@
 
   /* Fixed-width face — reserved for code and numbers. */
   --mono: 'SF Mono', 'JetBrains Mono', 'Fira Code', 'Cascadia Code', ui-monospace, 'Menlo', 'Consolas', monospace;
+
+  /* Chart scales — ColorBrewer 2.0 (colorbrewer2.org), copied exactly. Pick by
+     data type, never by taste (docs/design-system "Chart palettes"):
+       --cat-N   qualitative, unordered series (owners, corps): Dark2 here,
+                 Set2 in dark — the same eight hues at two lightnesses, so a
+                 series keeps its identity across themes. Teal/orange first,
+                 never red/green; past --cat-5 the set stops being
+                 colour-blind safe, so fold the tail into --cat-8 as "other".
+       --div-N   diverging, a measure with a meaningful middle (profit/loss,
+                 own vs public tax): PuOr, purple on the positive end.
+       --seq-N   sequential, one measure from little to much: Purples, the
+                 accent's own hue.
+       --heat-N  sequential multi-hue for dense heat maps: YlGnBu.
+     Use classes in order from 1; three to five for bars and lines, seven only
+     on a map. A single series on its own page keeps --accent. */
+  --cat-1: #1b9e77;
+  --cat-2: #d95f02;
+  --cat-3: #7570b3;
+  --cat-4: #e7298a;
+  --cat-5: #66a61e;
+  --cat-6: #e6ab02;
+  --cat-7: #a6761d;
+  --cat-8: #666666;
+
+  --div-1: #b35806;
+  --div-2: #f1a340;
+  --div-3: #fee0b6;
+  --div-4: #f7f7f7;
+  --div-5: #d8daeb;
+  --div-6: #998ec3;
+  --div-7: #542788;
+
+  --seq-1: #f2f0f7;
+  --seq-2: #dadaeb;
+  --seq-3: #bcbddc;
+  --seq-4: #9e9ac8;
+  --seq-5: #807dba;
+  --seq-6: #6a51a3;
+  --seq-7: #4a1486;
+
+  --heat-1: #ffffcc;
+  --heat-2: #c7e9b4;
+  --heat-3: #7fcdbb;
+  --heat-4: #41b6c4;
+  --heat-5: #1d91c0;
+  --heat-6: #225ea8;
+  --heat-7: #0c2c84;
 }
 
 /* Dark theme — the design system's native palette. */
@@ -131,6 +178,18 @@
     --warn: #e3b341;
     --danger: #f0555c;
     --info: #4f7cff;
+
+    /* Qualitative series swap to Set2, Dark2's pastel sibling, so they carry
+       on the dark canvas. The diverging and sequential scales are the same in
+       both themes. */
+    --cat-1: #66c2a5;
+    --cat-2: #fc8d62;
+    --cat-3: #8da0cb;
+    --cat-4: #e78ac3;
+    --cat-5: #a6d854;
+    --cat-6: #ffd92f;
+    --cat-7: #e5c494;
+    --cat-8: #b3b3b3;
   }
 }
 
