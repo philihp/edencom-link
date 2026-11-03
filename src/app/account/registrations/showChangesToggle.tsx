@@ -22,7 +22,7 @@ export const ShowChangesToggle = ({ on }: { on: boolean }) => {
       onClick={toggle}
       title="These grants let this site change something in game — save or delete fittings, send mail — rather than only read it"
     >
-      {on ? 'Hide grants that change things' : 'Show grants that change things'}
+      {on ? 'Hide Mutable Grants' : 'Show Mutable Grants'}
     </button>
   )
 }

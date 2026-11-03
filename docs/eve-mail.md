@@ -138,8 +138,8 @@ Placement and copy: in `.headerActions`, as the first child so it sits left
 of **↻ Refresh all** (which renders only when there is a character; the toggle
 renders always, since the template row exists before the first character).
 Default outline button per the clickable-vs-readout rule, `aria-pressed`,
-label **Show grants that change things** when off and **Hide grants that
-change things** when on, title explaining that these grants let this site
+label **Show Mutable Grants** when off and **Hide Mutable Grants** when on,
+title explaining that these grants let this site
 change something in game rather than only read it.
 
 ## Data model
