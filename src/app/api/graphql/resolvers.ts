@@ -42,6 +42,14 @@ import {
 import { fittingRoute, type FittingItem } from '@/app/fitting/fit'
 import { marshalledRoute } from '@/app/api/fittings/marshalledHandle'
 import { itemCount, moduleSummary } from './fittingSummary'
+import {
+  matchesNothing,
+  readWithinResult,
+  walksParents,
+  withinCall,
+  type AssetSide,
+  type WithinFilters,
+} from './assetWithin'
 import { excludeFlagsExpression, resolveHangarFilters, type HangarArgs } from './hangarFlags'
 import { resolveLocationByTokens, searchLocationCandidates } from './locationSearch'
 import { resolveTargets, restockLines, type Stack } from './restock'
@@ -140,7 +148,7 @@ const locationIdsFor = async (
 // drop, or nulls for no filter. No I/O: unlike the other dimensions there is
 // no directory to resolve against, so the catalog in hangarFlags.ts is the
 // directory (and the refusal list). Include and exclude are already reconciled
-// there, so at most one of the two comes back non-null.
+// there, so no flag is in both.
 type HangarClause = { include: string[] | null; exclude: string[] | null }
 
 const hangarClauseFor = (args: HangarArgs): HangarClause => {
@@ -149,8 +157,10 @@ const hangarClauseFor = (args: HangarArgs): HangarClause => {
   return { include: matched.include, exclude: matched.exclude }
 }
 
-// Both halves onto one builder. The exclusion goes through `or=` rather than
-// `.not.in()` so a row with no flag survives it — see excludeFlagsExpression.
+// Both halves onto one builder, for the lists that read a row's OWN flag
+// (blueprints). The asset lists follow the parent chain instead — see
+// readWithin. The exclusion goes through `or=` rather than `.not.in()` so a
+// row with no flag survives it — see excludeFlagsExpression.
 const applyHangar = (query: any, clause: HangarClause): any => {
   let q = query
   if (clause.include !== null) q = q.in('location_flag', clause.include)
@@ -174,6 +184,32 @@ const fetchCapped = async <T>(
   const rows = data ?? []
   acc.push(...rows)
   return acc.length >= cap || rows.length < to - from + 1 ? acc : fetchCapped(build, cap, from + PAGE_SIZE, acc)
+}
+
+// The two asset sources, one per owner side.
+const ASSET_SOURCE: Record<AssetSide, { table: string; ownerColumn: string }> = {
+  character: { table: 'character_asset', ownerColumn: 'registration_id' },
+  corporation: { table: 'corp_asset', ownerColumn: 'corporation_id' },
+}
+
+// One owner side of an asset list whose location or hangar filter follows the
+// parent chain: an item inside a container, a ship or a corporation Office
+// matches where the thing holding it matches (assetWithin.ts). The walk runs
+// in SQL, and one call answers the whole count and the first `cap` rows, so it
+// runs once rather than once per page.
+const readWithin = async <T>(
+  ctx: GraphqlContext,
+  side: AssetSide,
+  ownerIds: string[],
+  filters: WithinFilters,
+  cap: number
+): Promise<{ count: number; rows: T[] }> => {
+  if (ownerIds.length === 0 || matchesNothing(filters)) return { count: 0, rows: [] }
+  const { fn, args } = withinCall(side, ownerIds, filters, cap)
+  const { data, error } = await ctx.supabase.rpc(fn, args)
+  if (error) return queryFailed()
+  const { total, rows } = readWithinResult<T>(data)
+  return { count: total, rows }
 }
 
 // Batch-resolve the SDE rows behind a result set's type ids. This used to ask
@@ -547,29 +583,26 @@ export const resolvers = {
       const scopedCorporationIds = [...scopes.corporationIds, ...sharedCorporationIds]
       const typeIds = await typeIdsFor(args)
       const locationIds = await locationIdsFor(ctx, args)
-      const hangar = hangarClauseFor(args)
+      const filters: WithinFilters = { typeIds, locationIds, ...hangarClauseFor(args) }
       const cap = clampLimit(args.limit, ctx.caps.asset)
 
-      // The same filter set applies to the head-only count and the row pages,
-      // on both sides — only the owner column differs. The builder is untyped
-      // (no generated DB types in this repo), so `any`.
+      // Without a location or hangar filter the views are read directly: the
+      // type filter applies to the head-only count and the row pages, on both
+      // sides — only the owner column differs. The builder is untyped (no
+      // generated DB types in this repo), so `any`.
       const filtered = (query: any, ownerColumn: string, ownerIds: string[]): any => {
-        let q = query.in(ownerColumn, ownerIds)
-        if (typeIds !== null) q = q.in('type_id', typeIds)
-        if (locationIds !== null) q = q.in('location_id', locationIds)
-        q = applyHangar(q, hangar)
-        return q
+        const q = query.in(ownerColumn, ownerIds)
+        return typeIds === null ? q : q.in('type_id', typeIds)
       }
 
       // One source per owner side, each skipped entirely when the filters
       // excluded it. character_asset carries a player-assigned `name`;
-      // corp_asset has no such column, so those rows report null.
-      const read = async (
-        table: string,
-        ownerColumn: string,
-        ownerIds: string[]
-      ): Promise<{ count: number; rows: AssetRow[] }> => {
+      // corp_asset has no such column, so those rows report null. A location
+      // or hangar filter follows the parent chain, so it goes through the walk.
+      const read = async (side: AssetSide, ownerIds: string[]): Promise<{ count: number; rows: AssetRow[] }> => {
+        if (walksParents(filters)) return readWithin<AssetRow>(ctx, side, ownerIds, filters, cap)
         if (ownerIds.length === 0) return { count: 0, rows: [] }
+        const { table, ownerColumn } = ASSET_SOURCE[side]
         const { count, error } = await filtered(
           ctx.supabase.from(table).select('item_id', { count: 'exact', head: true }),
           ownerColumn,
@@ -584,10 +617,7 @@ export const resolvers = {
         return { count: count ?? 0, rows }
       }
 
-      const [own, corp] = await Promise.all([
-        read('character_asset', 'registration_id', scopedIds),
-        read('corp_asset', 'corporation_id', scopedCorporationIds),
-      ])
+      const [own, corp] = await Promise.all([read('character', scopedIds), read('corporation', scopedCorporationIds)])
       const totalCount = own.count + corp.count
       // The cap bounds the MERGED set, so a caller asking for 50 rows across
       // both sides gets 50 rows, not 50 of each.
@@ -676,34 +706,38 @@ export const resolvers = {
 
       const scopes = await ownerScopesFor(ctx, args)
       const locationIds = await locationIdsFor(ctx, args)
-      const hangar = hangarClauseFor(args)
+      // The location and hangar filters follow the parent chain exactly as on
+      // assets, so a stack in a container counts where the container sits.
+      const filters: WithinFilters = { typeIds: targetTypeIds, locationIds, ...hangarClauseFor(args) }
 
       // A TARGETED read: only the target types, only the two columns the sum
       // needs. Filtering by type keeps this far below the cap that paging the
       // whole hangar would hit — and a truncated read here wouldn't look
       // truncated, it would look like a smaller stockpile.
-      const filtered = (query: any, ownerColumn: string, ownerIds: string[]): any => {
-        let q = query.in(ownerColumn, ownerIds).in('type_id', targetTypeIds)
-        if (locationIds !== null) q = q.in('location_id', locationIds)
-        q = applyHangar(q, hangar)
-        return q
-      }
+      const filtered = (query: any, ownerColumn: string, ownerIds: string[]): any =>
+        query.in(ownerColumn, ownerIds).in('type_id', targetTypeIds)
 
-      const read = async (table: string, ownerColumn: string, ownerIds: string[]): Promise<Stack[]> => {
+      // Refuse rather than sum a truncated read: a wrong total here is a wrong
+      // number to buy, and nothing downstream could tell.
+      const tooMany = (count: number, side: AssetSide): never =>
+        badRequest(
+          `Too many stacks to sum reliably (${count} in ${ASSET_SOURCE[side].table}) — narrow the owner or location filter.`
+        )
+
+      const read = async (side: AssetSide, ownerIds: string[]): Promise<Stack[]> => {
         if (ownerIds.length === 0) return []
+        if (walksParents(filters)) {
+          const { count, rows } = await readWithin<Stack>(ctx, side, ownerIds, filters, ctx.caps.asset)
+          return count > ctx.caps.asset ? tooMany(count, side) : rows
+        }
+        const { table, ownerColumn } = ASSET_SOURCE[side]
         const { count, error } = await filtered(
           ctx.supabase.from(table).select('item_id', { count: 'exact', head: true }),
           ownerColumn,
           ownerIds
         )
         if (error) return queryFailed()
-        // Refuse rather than sum a truncated read: a wrong total here is a
-        // wrong number to buy, and nothing downstream could tell.
-        if ((count ?? 0) > ctx.caps.asset) {
-          return badRequest(
-            `Too many stacks to sum reliably (${count} in ${table}) — narrow the owner or location filter.`
-          )
-        }
+        if ((count ?? 0) > ctx.caps.asset) return tooMany(count ?? 0, side)
         return fetchCapped<Stack>(
           (from, to) =>
             filtered(ctx.supabase.from(table).select('type_id, quantity'), ownerColumn, ownerIds)
@@ -714,8 +748,8 @@ export const resolvers = {
       }
 
       const [own, corp] = await Promise.all([
-        read('character_asset', 'registration_id', scopes.registrationIds),
-        read('corp_asset', 'corporation_id', scopes.corporationIds),
+        read('character', scopes.registrationIds),
+        read('corporation', scopes.corporationIds),
       ])
 
       return restockLines(resolved.targets, [...own, ...corp], args.onlyBelowTarget !== false).map((line) => ({

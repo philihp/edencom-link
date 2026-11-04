@@ -6,6 +6,11 @@ in `schema.graphql.ts`/`resolvers.ts` over the pure seam
 `src/app/api/graphql/hangarFlags.ts`, with `test/graphqlHangar.test.ts` and the
 `test/graphqlSchema.test.ts` drift guard covering them.
 
+**Since 2026-11-04 the asset lists read the hangar through containers** — an
+item matches the hangar of any container above it, and the location filter
+works the same way. See [18-nested-asset-filters.md](18-nested-asset-filters.md).
+The `blueprints` list still reads each row's own flag, as described below.
+
 `hangar`/`hangars` was the original spelling of the include pair and still
 works verbatim — a Link is a **stored** query that runs untouched whenever a
 viewer opens it, so renaming it would have broken every link already saved.

@@ -168,9 +168,11 @@ export const matchHangarFilter = (
 //
 // The two compose, and composing is the useful case: `hangar: "deliveries",
 // excludeHangar: "corp deliveries"` is a character's delivery hangar alone.
-// Rather than hand the resolvers two clauses to AND, the overlap is settled
-// here — an include list comes back already narrowed, and `exclude` is only
-// non-null when there was nothing to narrow.
+// The overlap is settled here — a flag both named leaves the include list —
+// so no flag comes back in both halves. An exclusion the include list does not
+// name is kept: on the asset lists a hangar filter follows the parent chain
+// (assetWithin.ts), so `includeHangar: "division 3", excludeHangar: "cargo"`
+// is everything in division 3 except what sits in a ship's cargo hold there.
 export type HangarFilters =
   { ok: true; include: string[] | null; exclude: string[] | null } | { ok: false; message: string }
 
@@ -227,7 +229,9 @@ export const resolveHangarFilters = (args: HangarArgs): HangarFilters => {
       message: `Every hangar the filter included is also excluded (${included.flags.join(', ')}), so nothing could match.`,
     }
   }
-  return { ok: true, include: remaining, exclude: null }
+  const kept = new Set(included.flags)
+  const nested = excluded.flags.filter((flag) => !kept.has(flag))
+  return { ok: true, include: remaining, exclude: nested.length === 0 ? null : nested }
 }
 
 // The PostgREST `or=` expression that drops the excluded flags **without
