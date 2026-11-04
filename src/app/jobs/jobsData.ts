@@ -12,7 +12,16 @@ import { reduce } from 'ramda'
 
 import { isChancellor } from '../account/settings/chancellor/chancellor'
 import { jobsInSection } from './registry'
-import { type ActivityTask, type EntityRun, OVERLAY_MINUTES, activityRows, isAbandoned, statusOf } from './rows'
+import {
+  type ActivityTask,
+  type EntityRun,
+  OVERLAY_MINUTES,
+  activityRows,
+  corpCellBeat,
+  corpCells,
+  isAbandoned,
+  statusOf,
+} from './rows'
 
 export type Beat = {
   job: string
@@ -95,34 +104,17 @@ export const fetchJobsOverview = async (supabase: SupabaseClient, userId: string
 
   // latest_heartbeats returns one row per job per owner. Character- and
   // account-scoped rows are already unique per cell; corp rows can appear once
-  // per character that has ever run the corp's pull, so keep the newest — its
-  // registration_id is whose token the extract actually ran under last time.
-  const { charBeats, corpBeats, accountBeats, corpRunsAs } = reduce(
+  // per character that has ever run the corp's pull, so corpCells (./rows)
+  // keeps the newest pull and the newest refusal of each cell apart.
+  const corpBeats = corpCells(beats.filter((b): b is Beat & { corporation_id: number } => b.corporation_id != null))
+  const { charBeats, accountBeats } = reduce(
     (acc, b: Beat) => {
-      if (b.corporation_id != null) {
-        const key = `${b.job}:${b.corporation_id}`
-        const prev = acc.corpBeats.get(key)
-        if (!prev || prev.ended_at < b.ended_at) acc.corpBeats.set(key, b)
-        // Whose token *worked*. A skipped row names a character who was turned
-        // away for want of the in-game role, which is precisely who didn't run
-        // it, so those never claim the Runs as column.
-        if (b.skipped_reason == null) {
-          const prevRun = acc.corpRunsAs.get(b.corporation_id)
-          if (!prevRun || prevRun.ended_at < b.ended_at) acc.corpRunsAs.set(b.corporation_id, b)
-        }
-      } else if (b.registration_id != null) {
-        acc.charBeats.set(`${b.job}:${b.registration_id}`, b)
-      } else {
-        acc.accountBeats.set(b.job, b)
-      }
+      if (b.corporation_id != null) return acc
+      if (b.registration_id != null) acc.charBeats.set(`${b.job}:${b.registration_id}`, b)
+      else acc.accountBeats.set(b.job, b)
       return acc
     },
-    {
-      charBeats: new Map<string, Beat>(),
-      corpBeats: new Map<string, Beat>(),
-      accountBeats: new Map<string, Beat>(),
-      corpRunsAs: new Map<number, Beat>(),
-    },
+    { charBeats: new Map<string, Beat>(), accountBeats: new Map<string, Beat>() },
     beats
   )
 
@@ -188,7 +180,12 @@ export const fetchJobsOverview = async (supabase: SupabaseClient, userId: string
     jobsInSection('corporation').map((entry) => [
       entry.job,
       [...corporations.entries()].map(([corporationId, members]) => {
-        const runsAs = corpRunsAs.get(corporationId)
+        const cell = corpBeats.get(`${entry.job}:${corporationId}`)
+        // Whose token *worked*, for this job: a corp's assets and its contracts
+        // can run under different directors. A refusal names a character who
+        // was turned away for want of the in-game role, which is precisely who
+        // didn't run it, so it never claims the Runs as line.
+        const runsAs = cell?.pull
         const owned = members.find((m) => m.id === runsAs?.registration_id)
         // Kick new pulls as the character the last one succeeded under when
         // it's ours; the workflow target carries the whole corp group either
@@ -205,7 +202,7 @@ export const fetchJobsOverview = async (supabase: SupabaseClient, userId: string
           name: corpName.get(corporationId) ?? `#${corporationId}`,
           runsAs: runsAsCorpmate ? null : representative.name,
           runsAsCorpmate,
-          ...runFor(entry.job, String(corporationId), corpBeats.get(`${entry.job}:${corporationId}`)),
+          ...runFor(entry.job, String(corporationId), corpCellBeat(cell)),
         }
       }),
     ])

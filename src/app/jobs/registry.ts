@@ -9,7 +9,7 @@
 // live-state modules) is manual-only and says so.
 
 import vercel from '../../../vercel.json'
-import { cronsByJob, nextCronRunOf, previousCronRunOf } from './schedule'
+import { cronsByJob, firstSlotAfter, nextCronRunOf, nextSlotOf, previousCronRunOf } from './schedule'
 
 export type JobSection = 'character' | 'corporation' | 'universe'
 
@@ -231,6 +231,15 @@ export const cronsFor = (job: string): string[] => CRONS_BY_JOB[job] ?? []
 
 export const nextRunFor = (job: string, from: Date = new Date()): Date | null => nextCronRunOf(cronsFor(job), from)
 
+// A per-character job's next scheduled pull of any of these characters — the
+// ones whose tokens carry its grant, since the workflow enumerates by scope.
+// Their slots, not the cron fire (see slotAfter). With none, nothing of the
+// caller's is reached and the fire is all there is to show. The hourly
+// den-owners entry counts like any other cron here, as it did before: which
+// characters hold a den isn't something this page knows.
+export const nextPullFor = (job: string, registrationIds: readonly string[], from: Date = new Date()): Date | null =>
+  registrationIds.length === 0 ? nextRunFor(job, from) : nextSlotOf(cronsFor(job), registrationIds, from)
+
 // A run can start a little late and takes time to record its heartbeat, so a
 // missed fire is only called out once it's this far past due. Well under the
 // tightest cadence of any job listed here (1h, character-mercenary-dens) and
@@ -242,10 +251,22 @@ const MISSED_GRACE_MINUTES = 30
 // silent-cron failure mode that moved these jobs off GitHub Actions in the first
 // place. Heuristic, deliberately: for a fan-out job we only see the caller's own
 // characters, so this answers "my data missed its pull", not "the cron is down".
-export const isOverdue = (job: string, lastRunAt: string | null | undefined, from: Date = new Date()): boolean => {
+//
+// A per-character job passes the characters it reaches: its run comes to each
+// one only at that character's slot, up to an hour after the fire, so the
+// grace runs from the first of their slots. Measured from the fire alone, a
+// caller whose characters' slots all fall past the grace read "overdue" for
+// up to half an hour after every fire that was going fine.
+export const isOverdue = (
+  job: string,
+  lastRunAt: string | null | undefined,
+  from: Date = new Date(),
+  registrationIds: readonly string[] = []
+): boolean => {
   const previous = previousCronRunOf(cronsFor(job), from)
   if (previous === null) return false
-  const due = previous.getTime() + MISSED_GRACE_MINUTES * 60_000
+  const reached = firstSlotAfter(registrationIds, previous) ?? previous
+  const due = reached.getTime() + MISSED_GRACE_MINUTES * 60_000
   if (due > from.getTime()) return false
   return lastRunAt == null || new Date(lastRunAt).getTime() < previous.getTime()
 }

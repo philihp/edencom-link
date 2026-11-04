@@ -9,6 +9,8 @@ import test from 'node:test'
 import {
   type EntityRun,
   activityRows,
+  corpCellBeat,
+  corpCells,
   isAbandoned,
   laggingCount,
   newestRun,
@@ -176,4 +178,52 @@ test('the row reads skipped only when every entity is one', () => {
   const skipped = (id: string) => run({ id, lastRunAt: minutesAgo(30), status: 'skipped', error: 'no role' })
   assert.equal(rowStatus([skipped('a'), skipped('b')]), 'skipped')
   assert.equal(rowStatus([skipped('a'), run({ id: 'b', status: 'failed', error: 'boom' })]), 'failed')
+})
+
+const corpBeat = (over: {
+  job?: string
+  registration_id: string
+  ended_at: string
+  skipped_reason?: string | null
+}) => ({
+  job: 'corp-industry-jobs',
+  corporation_id: 667531913,
+  skipped_reason: null,
+  ...over,
+})
+
+test("a corpmate's refusal after the director's pull leaves the cell on the pull", () => {
+  // corp-industry-jobs on 2026-10-31: pulled at 18:48 under a director's token,
+  // then a corpmate's denial memory ran out and a refresh at 20:15 asked them.
+  const pull = corpBeat({ registration_id: 'director', ended_at: '2026-10-31T18:48:10Z' })
+  const refusal = corpBeat({
+    registration_id: 'corpmate',
+    ended_at: '2026-10-31T20:15:02Z',
+    skipped_reason: "Nebula doesn't hold the in-game role this corp endpoint requires",
+  })
+  const cell = corpCells([refusal, pull]).get('corp-industry-jobs:667531913')
+  assert.equal(cell?.pull, pull)
+  assert.equal(cell?.skip, refusal)
+  assert.equal(corpCellBeat(cell), pull)
+})
+
+test('a corp nobody pulled in the window reads as the newest refusal', () => {
+  const older = corpBeat({ registration_id: 'a', ended_at: '2026-10-30T00:00:00Z', skipped_reason: 'a refused' })
+  const newer = corpBeat({ registration_id: 'b', ended_at: '2026-10-31T00:00:00Z', skipped_reason: 'b refused' })
+  assert.equal(corpCellBeat(corpCells([newer, older]).get('corp-industry-jobs:667531913')), newer)
+  assert.equal(corpCellBeat(undefined), undefined)
+})
+
+test('each job of a corp keeps its own newest pull, and so its own runs-as', () => {
+  const contracts = corpBeat({ job: 'corp-contracts', registration_id: 'ours', ended_at: '2026-10-31T19:44:00Z' })
+  const industry = corpBeat({ registration_id: 'corpmate', ended_at: '2026-10-31T18:48:00Z' })
+  const cells = corpCells([contracts, industry])
+  assert.equal(cells.get('corp-contracts:667531913')?.pull?.registration_id, 'ours')
+  assert.equal(cells.get('corp-industry-jobs:667531913')?.pull?.registration_id, 'corpmate')
+})
+
+test('a failed pull is still a pull: newer than the last success, it is what the cell shows', () => {
+  const ok = corpBeat({ registration_id: 'director', ended_at: '2026-11-03T04:00:00Z' })
+  const failed = { ...corpBeat({ registration_id: 'director', ended_at: '2026-11-03T10:00:00Z' }), ok: false }
+  assert.equal(corpCellBeat(corpCells([ok, failed]).get('corp-industry-jobs:667531913')), failed)
 })

@@ -11,12 +11,15 @@ import test from 'node:test'
 
 import {
   cronsByJob,
+  firstSlotAfter,
   jobOfCronPath,
   nextCronRun,
   nextCronRunOf,
+  nextSlotOf,
   parseCron,
   previousCronRun,
   previousCronRunOf,
+  slotAfter,
 } from '../src/app/jobs/schedule.ts'
 
 const at = (iso: string) => new Date(iso)
@@ -150,4 +153,46 @@ test('a job with two crons runs next at the sooner, and is overdue only against 
   assert.equal(iso(previousCronRunOf(dens, at('2026-10-20T08:00:00Z'))), '2026-10-20T06:32:00.000Z')
   assert.equal(nextCronRunOf([], at('2026-10-20T08:00:00Z')), null)
   assert.equal(previousCronRunOf(['not a cron'], at('2026-10-20T08:00:00Z')), null)
+})
+
+// The per-character stagger (src/workflows/staggerDelay.ts): a registration
+// uuid read as a number, mod 3600, is the character's second of the hour.
+const ALICE = '00000000-0000-0000-0000-000000000e10' // second 0    → :00:00
+const BOB = '00000000-0000-0000-0000-00000000012c' // second 300  → :05:00
+const CAROL = '00000000-0000-0000-0000-000000000708' // second 1800 → :30:00
+const DAN = '00000000-0000-0000-0000-0000000003c0' // second 960  → :16:00
+const utc = (hour: number, minute: number) => new Date(Date.UTC(2026, 10, 4, hour, minute))
+
+test('a fire reaches each character at its own second of the hour, up to an hour on', () => {
+  assert.deepEqual(slotAfter(CAROL, utc(6, 26)), utc(6, 30))
+  assert.deepEqual(slotAfter(BOB, utc(6, 26)), utc(7, 5))
+  assert.deepEqual(slotAfter(ALICE, utc(6, 0)), utc(6, 0))
+})
+
+test("one character's jobs start together, whichever minute their crons fire", () => {
+  // status fires at :14 and assets at :26, and both reach DAN at :16 — the
+  // assets pull in the next hour. At 06:30 the assets cron's next fire is
+  // 12:26, but DAN's assets pull is 07:16, still asleep in the 06:26 run.
+  const from = utc(6, 30)
+  assert.deepEqual(nextSlotOf(['14 */6 * * *'], [DAN], from), utc(12, 16))
+  assert.deepEqual(nextSlotOf(['26 */6 * * *'], [DAN], from), utc(7, 16))
+  assert.deepEqual(nextCronRun('26 */6 * * *', from), utc(12, 26))
+})
+
+test("once a character's slot after the previous fire has passed, its next pull follows the next fire", () => {
+  assert.deepEqual(nextSlotOf(['26 */6 * * *'], [BOB], utc(6, 40)), utc(7, 5))
+  assert.deepEqual(nextSlotOf(['26 */6 * * *'], [BOB], utc(7, 10)), utc(13, 5))
+})
+
+test('the next pull is the soonest of every character and every cron', () => {
+  assert.deepEqual(nextSlotOf(['26 */6 * * *'], [BOB, CAROL], utc(6, 28)), utc(6, 30))
+  // character-mercenary-dens: den owners hourly at :30, everyone at :32 every 6h.
+  assert.deepEqual(nextSlotOf(['30 * * * *', '32 */6 * * *'], [BOB], utc(7, 10)), utc(8, 5))
+  assert.equal(nextSlotOf(['26 */6 * * *'], [], utc(7, 10)), null)
+})
+
+test('the first slot after a fire is when its run first reached any of the characters', () => {
+  assert.deepEqual(firstSlotAfter([BOB, ALICE], utc(6, 26)), utc(7, 0))
+  assert.deepEqual(firstSlotAfter([BOB, CAROL], utc(6, 26)), utc(6, 30))
+  assert.equal(firstSlotAfter([], utc(6, 26)), null)
 })

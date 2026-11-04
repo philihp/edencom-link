@@ -25,7 +25,7 @@ import { formatBisk } from '../../isk'
 import { type Registration, fetchJobsOverview } from '../../jobs/jobsData'
 import { NextRun } from '../../jobs/nextRun'
 import { RefreshPoller } from '../../jobs/poller'
-import { type JobEntry, isOverdue, jobsInSection, nextRunFor } from '../../jobs/registry'
+import { type JobEntry, isOverdue, jobsInSection, nextPullFor, nextRunFor } from '../../jobs/registry'
 import { type EntityRun, isAbandoned, newestRun } from '../../jobs/rows'
 import { Name } from '../../names'
 import {
@@ -170,20 +170,34 @@ const GrantCell = ({ label, grant }: { label: string; grant: GrantState }) => (
 )
 
 // A column's header: the job label over its sweep button and its next
-// scheduled fire (or the overdue flag when the previous one didn't happen).
-const ColumnHead = ({ entry, entities, sweep }: { entry: JobEntry; entities: EntityRun[]; sweep: boolean }) => (
+// scheduled run (or the overdue flag when the previous one didn't happen).
+// A per-character column passes the characters its job reaches, and counts
+// down to the first of their slots rather than to the cron fire — the run
+// reaches each character up to an hour after the fire (registry.ts
+// nextPullFor). Corp columns aren't staggered and leave it out.
+const ColumnHead = ({
+  entry,
+  entities,
+  sweep,
+  reaches,
+}: {
+  entry: JobEntry
+  entities: EntityRun[]
+  sweep: boolean
+  reaches?: readonly string[]
+}) => (
   <span className={styles.columnHead}>
     <span className={styles.columnLabel} title={entry.job}>
       {entry.label}
     </span>
     {sweep && <ColumnKick job={entry.job} label={entry.label} />}
-    {isOverdue(entry.job, newestRun(entities)) ? (
+    {isOverdue(entry.job, newestRun(entities), undefined, reaches) ? (
       <span className={styles.overdue} title="The previous scheduled fire didn't produce a run">
         overdue
       </span>
     ) : (
       <span className={styles.columnNext}>
-        <NextRun at={iso(nextRunFor(entry.job))} />
+        <NextRun at={iso(reaches === undefined ? nextRunFor(entry.job) : nextPullFor(entry.job, reaches))} />
       </span>
     )}
   </span>
@@ -221,6 +235,12 @@ const RegistrationPage = async () => {
   const cellsByJob = new Map(characterJobs.map((entry) => [entry.job, entityById(entry.job)]))
 
   const granted = (id: string) => grantedByRegistration.get(id) ?? new Set<string>()
+  // The characters a per-character job's scheduled run reaches: the ones whose
+  // tokens carry its grant, as the workflow enumerates them by scope.
+  const reachedBy = (entry: JobEntry) =>
+    jobs.registrations
+      .filter((r) => grantAllowsRun(columnGrant(entry.scopes, granted(r.id), template, entry.grantRule)))
+      .map((r) => r.id)
   // Everything a re-auth would catch up, per registration; non-empty = the
   // character's grants trail the template.
   const trailing = new Map(jobs.registrations.map((r) => [r.id, trailingScopes(template, granted(r.id))]))
@@ -233,9 +253,9 @@ const RegistrationPage = async () => {
     )
   )
 
-  // One countdown for the page: the soonest next fire across the per-character
-  // jobs (each column's own sits in its header).
-  const nextSweep = soonestNextRun(characterJobs.map((entry) => nextRunFor(entry.job)))
+  // One countdown for the page: the soonest next pull of any character across
+  // the per-character jobs (each column's own sits in its header).
+  const nextSweep = soonestNextRun(characterJobs.map((entry) => nextPullFor(entry.job, reachedBy(entry))))
 
   const requestedColumns = [...characterJobs, ...grantColumns].filter(
     (entry) => templateCheck(entry.scopes, template) === 'all'
@@ -348,6 +368,7 @@ const RegistrationPage = async () => {
                 entry={entry}
                 entities={jobs.characterEntities[entry.job] ?? []}
                 sweep={characters.length > 1 && entry.kickable === 'always'}
+                reaches={reachedBy(entry)}
               />
             ))}
             {grantColumns.map((column) => (
