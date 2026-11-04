@@ -80,9 +80,11 @@ export const trailingScopes = (template: ReadonlySet<string>, granted: ReadonlyS
 export const blockedCellCount = (cells: readonly GrantState[]): number =>
   cells.filter((state) => state === 'missing').length
 
-// The header's "next scheduled sweep" is the soonest next fire across the
-// given jobs' crons — one countdown for the page, where /jobs had one per row.
-// (The per-column next runs still live in each column header's title.)
+// The header's "next scheduled sweep" is the soonest of the given next runs —
+// one countdown for the page, where /jobs had one per row. The page hands it
+// each per-character job's next pull of any of the caller's characters
+// (registry.ts nextPullFor), not the bare cron fire. (The per-column next runs
+// still live in each column header.)
 export const soonestNextRun = (nexts: readonly (Date | null)[]): Date | null =>
   nexts.reduce<Date | null>(
     (soonest, next) => (next !== null && (soonest === null || next < soonest) ? next : soonest),

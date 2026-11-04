@@ -9,15 +9,22 @@
 export const RECENT_RUN_MS = 5 * 60 * 1000
 
 // A heartbeat row as the lookup reads it: when the run started, when it
-// ended (null while it is still going), and whether it ended well.
+// ended (null while it is still going), whether it ended well, and — for a
+// corp endpoint — the reason it was a permitted no-op.
 //
-// A run counts when it ended ok within the window (a skip is ok too — the
-// corp was answered, if only with "not a director"), or when it started
-// within the window and has not ended, which is a run in flight. A run that
-// ended in failure never counts: it did not do the work, and the next start
-// is the retry.
+// A run counts when it ended ok within the window, or when it started within
+// the window and has not ended, which is a run in flight. A run that ended in
+// failure never counts: it did not do the work, and the next start is the
+// retry. Nor does a skip, though it closes ok: it records that one character
+// was refused the corp, not that the corp was pulled. forEachCorporation
+// writes it and then offers the same corp to the next character in the group,
+// so counting it stopped the corp's director cold in the very run their
+// corpmate was refused (three missed 6-hour pulls in October for one corp).
+// The denial memory, not this rule, keeps the refused character from asking
+// again.
 export const recentlyRan = (rows, now, windowMs = RECENT_RUN_MS) =>
   rows.some((row) => {
+    if (row.skipped_reason != null) return false
     const started = Date.parse(row.started_at)
     const ended = row.ended_at == null ? null : Date.parse(row.ended_at)
     if (ended !== null) return row.ok === true && now - ended < windowMs

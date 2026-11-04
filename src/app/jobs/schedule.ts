@@ -14,6 +14,7 @@
 
 import {
   all,
+  chain,
   filter,
   find,
   findLast,
@@ -28,6 +29,8 @@ import {
   sortBy,
   uniq,
 } from 'ramda'
+
+import { slotSeconds } from '../../workflows/staggerDelay.ts'
 
 export type CronFields = {
   minutes: number[]
@@ -222,6 +225,57 @@ export const previousCronRunOf = (expressions: string[], from: Date = new Date()
     sortBy((at: Date) => at.getTime()),
     head<Date>
   )(expressions) ?? null
+
+// A cron fire is not when a per-character job reaches a given character. The
+// scheduled run starts each character at its own second of the hour
+// (src/workflows/staggerDelay.ts) — the first one at or after the run's start —
+// so a character is pulled anywhere up to an hour after the fire, often in the
+// next hour, and its jobs all start at that same second whichever minute their
+// crons fire at. The countdowns and the overdue check have to follow it, or a
+// column reads "in 5h 56m" while its character's pull is 46 minutes away.
+//
+// Measured from the fire rather than the run's real start, which a few seconds
+// of cron and workflow latency put later: a character whose second falls in
+// that gap is reached an hour later than this says. A few seconds of the hour,
+// so roughly one character in a thousand.
+export const slotAfter = (registrationId: string, fire: Date): Date =>
+  new Date(slotSeconds(registrationId, Math.floor(fire.getTime() / 1000)) * 1000)
+
+const soonest = (dates: readonly (Date | null)[]): Date | null =>
+  reduce((best: Date | null, at: Date | null) => (at !== null && (best === null || at < best) ? at : best), null, [
+    ...dates,
+  ])
+
+// When the run the previous fire started first reached any of these
+// characters; null with none.
+export const firstSlotAfter = (registrationIds: readonly string[], fire: Date): Date | null =>
+  soonest(map((id: string) => slotAfter(id, fire), [...registrationIds]))
+
+// One character's next scheduled pull under one cron: its slot after the
+// previous fire while that is still ahead — the run is asleep until then —
+// else its slot after the next fire. Slots only move forwards with the fire,
+// so nothing later can come sooner.
+const nextSlot = (expression: string, registrationId: string, from: Date): Date | null => {
+  const previous = previousCronRun(expression, from)
+  const pending = previous === null ? null : slotAfter(registrationId, previous)
+  if (pending !== null && pending.getTime() > from.getTime()) return pending
+  const next = nextCronRun(expression, from)
+  return next === null ? null : slotAfter(registrationId, next)
+}
+
+// The soonest scheduled pull of any of these characters across every cron
+// the job has: what a per-character column counts down to.
+export const nextSlotOf = (
+  expressions: string[],
+  registrationIds: readonly string[],
+  from: Date = new Date()
+): Date | null =>
+  soonest(
+    chain(
+      (expression: string) => map((id: string) => nextSlot(expression, id, from), [...registrationIds]),
+      expressions
+    )
+  )
 
 // vercel.json's cron paths are all /api/cron/<job>, so the last segment (less
 // any query string) is the job name the /account/registrations page keys

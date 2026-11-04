@@ -3,6 +3,8 @@
 // the page renders. No I/O and no React, so the arithmetic that decides "is my
 // data stale" and "is this job running" is testable on its own (test/jobsRows.test.ts).
 
+import { reduce } from 'ramda'
+
 import { freshnessLevel } from '../freshness.ts'
 
 // 'skipped' is a run that was allowed to do nothing: a corp endpoint the
@@ -87,6 +89,39 @@ export const rowStatus = (entities: readonly EntityRun[]): EntityStatus => {
   if (entities.length > 0 && entities.every((e) => e.status === 'skipped')) return 'skipped'
   return 'idle'
 }
+
+// One completed corp heartbeat, as the corp-cell fold reads it.
+export type CorpBeatRow = { job: string; corporation_id: number; ended_at: string; skipped_reason: string | null }
+
+// What one corp cell (job × corporation) has to draw from. latest_heartbeats()
+// answers one row per character that ever ran the corp's pull — ours and every
+// corpmate's — so a cell sees several, of two kinds:
+//   pull — the newest run that asked ESI for the corp, ok or failed. Its
+//          registration is whose token the extract last ran under.
+//   skip — the newest refusal: a character turned away for want of the role.
+export type CorpCell<B> = { pull?: B; skip?: B }
+
+export const corpCells = <B extends CorpBeatRow>(beats: readonly B[]): Map<string, CorpCell<B>> =>
+  reduce(
+    (acc, beat: B) => {
+      const key = `${beat.job}:${beat.corporation_id}`
+      const cell = acc.get(key) ?? {}
+      const kind = beat.skipped_reason == null ? 'pull' : 'skip'
+      const prev = cell[kind]
+      if (!prev || prev.ended_at < beat.ended_at) acc.set(key, { ...cell, [kind]: beat })
+      return acc
+    },
+    new Map<string, CorpCell<B>>(),
+    beats
+  )
+
+// The beat a corp cell shows: its newest pull, however many refusals came
+// after it. A corpmate refused this week says nothing about whether the corp's
+// data is fresh; the director's last pull does. Taking the newest row of either
+// kind flipped a pulled corp to "not a director" whenever a corpmate's denial
+// memory ran out, until the next pull landed. A cell reads as the refusal only
+// when no character, ours or a corpmate's, pulled it inside the window.
+export const corpCellBeat = <B>(cell: CorpCell<B> | undefined): B | undefined => cell?.pull ?? cell?.skip
 
 export type StatusInputs = {
   // The caller's most recent refresh_task for this job + entity, if recent.

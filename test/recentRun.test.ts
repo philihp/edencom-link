@@ -28,8 +28,16 @@ test('a failed run never counts: the next start is the retry', () => {
   assert.equal(recentlyRan([{ started_at: ago(90_000), ended_at: ago(60_000), ok: false }], NOW), false)
 })
 
-test('a skip counts as a run: the corp was answered', () => {
-  assert.equal(recentlyRan([{ started_at: ago(90_000), ended_at: ago(60_000), ok: true }], NOW), true)
+test('a skip does not count: the corp is still open to a corpmate who holds the role', () => {
+  const skip = {
+    started_at: ago(90_000),
+    ended_at: ago(60_000),
+    ok: true,
+    skipped_reason: "Ann doesn't hold the in-game role this corp endpoint requires",
+  }
+  assert.equal(recentlyRan([skip], NOW), false)
+  // ...while a real pull beside it still does.
+  assert.equal(recentlyRan([skip, { started_at: ago(30_000), ended_at: ago(10_000), ok: true }], NOW), true)
 })
 
 test('no rows, or unreadable stamps, mean it did not just run', () => {

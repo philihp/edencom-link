@@ -10,8 +10,9 @@ import { RECENT_RUN_MS, recentlyRan } from './recentRun.js'
 // The owner is a character (`{ registrationId }`), a corporation
 // (`{ corporationId }`), or the whole job (`{}`). Two indexed reads of the
 // heartbeat table (job + ended_at; job + open rows), judged by recentlyRan: a
-// run ended ok, or still going, within the last five minutes. A failed read
-// answers false — asking ESI again is the safe side.
+// run ended ok, or still going, within the last five minutes — a skip, which
+// pulled nothing, aside. A failed read answers false — asking ESI again is the
+// safe side.
 export const ranRecently = async (tag, { registrationId = null, corporationId = null } = {}) => {
   const now = Date.now()
   const since = new Date(now - RECENT_RUN_MS).toISOString()
@@ -21,7 +22,7 @@ export const ranRecently = async (tag, { registrationId = null, corporationId = 
     return registrationId == null ? noCorp.is('registration_id', null) : noCorp.eq('registration_id', registrationId)
   }
   try {
-    const columns = 'started_at, ended_at, ok'
+    const columns = 'started_at, ended_at, ok, skipped_reason'
     const [ended, open] = await Promise.all([
       scope(sudoSupabase.from('heartbeat').select(columns).eq('job', tag).gt('ended_at', since)).limit(20),
       scope(
