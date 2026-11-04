@@ -134,6 +134,26 @@ test('include and exclude compose into one narrowed include list', () => {
   assert.equal(result.exclude, null)
 })
 
+test('an exclusion the include list does not name is kept, for the nested reading', () => {
+  // On the asset lists a hangar filter follows the parent chain, so "division 3
+  // without what sits in a cargo hold there" drops a ship's cargo and keeps
+  // the ship. Folding the exclusion away would lose that.
+  const result = resolveHangarFilters({ includeHangar: 'division 3', excludeHangar: 'cargo hold' })
+  assert.ok(result.ok)
+  assert.deepEqual(result.include, ['CorpSAG3'])
+  assert.deepEqual(result.exclude, ['Cargo'])
+})
+
+test('a flag named on both sides leaves the include list and is not excluded twice', () => {
+  const result = resolveHangarFilters({
+    includeHangars: ['CorpSAG3', 'CorpSAG4'],
+    excludeHangars: ['CorpSAG4', 'Cargo'],
+  })
+  assert.ok(result.ok)
+  assert.deepEqual(result.include, ['CorpSAG3'])
+  assert.deepEqual(result.exclude, ['Cargo'])
+})
+
 test('excluding everything that was included is refused, not silently empty', () => {
   const result = resolveHangarFilters({ hangar: 'Deliveries', excludeHangars: ['Deliveries', 'CorpDeliveries'] })
   assert.ok(!result.ok)

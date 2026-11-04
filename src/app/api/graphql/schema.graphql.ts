@@ -39,7 +39,9 @@
 // dimension, since a row is owned by one or the other and asking "what do
 // these own" shouldn't care which. A HANGAR is the compartment a stack sits in
 // (ESI's location_flag) rather than the place it sits at, so "in a Deliveries
-// hangar" is a hangar filter and "at Jita" a location one. The singular is a
+// hangar" is a hangar filter and "at Jita" a location one. On the asset lists
+// both follow the parent chain: an item in a container, a ship or a corp
+// Office matches where its holder matches (assetWithin.ts). The singular is a
 // case-insensitive substring SEARCH over names; the plural is an EXACT list
 // whose entries are ids or whole names, mixed freely. The two are mutually
 // exclusive, an entry matching nothing is an error, and each entity type's
@@ -64,7 +66,23 @@ export const typeDefs = /* GraphQL */ `
     pair read the other way, for the hangars kept OUT — \`excludeHangar: "fuel
     bay"\` is everything except what is fuelling a structure. They compose
     (include first, then exclude), and a stack in no hangar at all survives an
-    exclusion. hangar/hangars is the older spelling of
+    exclusion.
+
+    THE LOCATION AND HANGAR FILTERS LOOK THROUGH CONTAINERS. An item inside a
+    container, a ship or a corporation Office matches where the thing holding
+    it matches, at any depth: \`location: "HFC-AQ", includeHangars: ["CorpSAG3",
+    "CorpSAG4"]\` is every item in corporation hangars 3 and 4 in HFC-AQ,
+    including everything inside the containers and ships in those hangars. A
+    solar system matches everything in its stations and structures. A
+    container's or ship's itemId as a location matches what is inside it (not
+    the container itself). An excluded hangar drops what is inside it too, so
+    \`includeHangar: "CorpSAG3", excludeHangar: "Cargo"\` keeps the ships in
+    hangar 3 and drops their cargo. The filters are read when the query runs, so
+    a new container is included and a container moved out takes its contents
+    with it. Each row still reports its own locationId and locationFlag — the
+    container it sits in, and its compartment there.
+
+    hangar/hangars is the older spelling of
     includeHangar/includeHangars, still honoured so saved links keep working;
     passing both spellings is an error. includeShared additionally
     returns rows other users have shared with you (session auth only — the
@@ -94,7 +112,8 @@ export const typeDefs = /* GraphQL */ `
     (across your characters AND their corporations, like assets) and reports
     what you're missing. location/locations, includeHangar/includeHangars,
     excludeHangar/excludeHangars and owner/owners narrow which hangars count as
-    "on hand", exactly as they do on assets; the types come from the targets, so
+    "on hand", exactly as they do on assets — so a stack inside a container
+    counts where the container sits; the types come from the targets, so
     there is no type filter here. Counting only what is sitting in a delivery
     hangar is \`includeHangar: "Deliveries"\`; not counting what is already
     committed to one is \`excludeHangar: "Deliveries"\`.
@@ -120,7 +139,7 @@ export const typeDefs = /* GraphQL */ `
     "Asset shares other users or their corporations have aimed at you (corporation/alliance/public). Session auth only."
     sharedWithMe: [ShareGrant!]!
 
-    "Current blueprint rows (BPOs and BPCs) across your characters and their corporations, filtered by item type, hangar and owner. includeHangar/includeHangars keep only the named hangars; excludeHangar/excludeHangars drop them instead. hangar/hangars is the older spelling of the include pair."
+    "Current blueprint rows (BPOs and BPCs) across your characters and their corporations, filtered by item type, hangar and owner. includeHangar/includeHangars keep only the named hangars; excludeHangar/excludeHangars drop them instead. hangar/hangars is the older spelling of the include pair. Unlike on assets, the hangar filter here reads each blueprint's OWN locationFlag: a blueprint inside a container carries the container's compartment (Unlocked, Locked), not the hangar the container sits in — use assets with a type filter to look through containers."
     blueprints(
       type: String
       types: [String!]
@@ -333,6 +352,11 @@ export const typeDefs = /* GraphQL */ `
   exact list of \`locationId\`s and whole names, mixed. Neither widens what you
   can read: a name you don't own resolves to an id none of your rows carry.
 
+  On assets and restock the filter looks through containers: a system matches
+  everything in its stations and structures, a station or structure everything
+  in it (a corporation's hangars included, through its Office), and a
+  container's or ship's id what is inside it, at any depth.
+
   A term that matches nothing that way gets read as a structure the way people
   say one: the first word is a prefix of the SOLAR SYSTEM, punctuation ignored
   ("TKD", "TK-D" and "TK-DLH" all reach TK-DLH), and the words after it pick the
@@ -382,7 +406,7 @@ export const typeDefs = /* GraphQL */ `
     typeName: String
     quantity: String!
     locationId: String
-    "Which hangar or bay the stack sits in, as ESI names it: Hangar, Deliveries, CorpDeliveries, CorpSAG1…7, DroneBay… What the hangar:/hangars: filter selects on."
+    "Which hangar or bay the stack sits in, as ESI names it: Hangar, Deliveries, CorpDeliveries, CorpSAG1…7, DroneBay… — for an item inside a container, the container's compartment (Unlocked, Cargo…). The includeHangar/excludeHangar filters match this flag OR the flag of any container above the item, so a container's contents follow it."
     locationFlag: String
     locationType: String
     locationName: String
