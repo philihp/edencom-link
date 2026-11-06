@@ -22,8 +22,9 @@
 // Runs on the service role (SUPABASE_URL + SUPABASE_SERVICE_KEY, plus the
 // EVE_* SSO vars for the token refresh), like the other CLI utilities, and
 // acts for whichever account owns the registration. Nothing on the site calls
-// it, no test does, and no job runs it: a queued mail waits until a person
-// runs this.
+// it, no test does, and no job runs it. While the auto-send-eve-mail flag is
+// on, the mail-queue-send cron sends the queue itself (src/app/mail/
+// sendQueue.ts); with it off, a queued mail waits until a person runs this.
 //
 // TypeScript run by plain `node` (type stripping), so the CLI and the MCP
 // tool share the lib rather than each carrying an ESI write.

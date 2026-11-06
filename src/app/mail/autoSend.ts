@@ -1,9 +1,10 @@
 // The experimental `auto-send-eve-mail` Vercel flag. On, MCP send_mail sends
 // the mail it has just queued at once, through the same sendQueuedMail a
-// person runs from `pnpm run mail-send --queued <id>`; off, it only queues.
-// Meant for a person watching the mails arrive: on in development, off in
-// production and preview. Only the mail of that one call is sent — rows
-// already waiting in the queue stay there.
+// person runs from `pnpm run mail-send --queued <id>`, and the mail-queue-send
+// cron sends every mail already waiting (src/app/mail/sendQueue.ts); off, the
+// tool only queues and the cron returns without starting anything. Meant for
+// a person watching the mails arrive: on in development, off in production
+// and preview.
 //
 // The flag is read with the default flagsClient: on Vercel it authenticates
 // with the deployment's OIDC token, locally with the VERCEL_OIDC_TOKEN that
