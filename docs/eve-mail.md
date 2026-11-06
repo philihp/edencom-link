@@ -7,8 +7,10 @@ first mailbox was copied on 2026-10-24. Still owed: the one real send through
 
 **Since 2026-11-01, MCP `send_mail` sends nothing.** It queues the draft on
 the site (`mail_send_log` status `queued`) and a person sends it later by hand
-with `pnpm run mail-send --queued <id>`. Nothing drains the queue on its own.
-See "Approval on the website".
+with `pnpm run mail-send --queued <id>`. The one exception is the
+`auto-send-eve-mail` Vercel flag: while it is on, `send_mail` sends its own
+mail at once and the `mail-queue-send` cron sends everything else queued (see
+"Auto-send" below). See "Approval on the website".
 
 A quiet launch: no page on the site shows a mail, and no page sends one. What
 ships is the two ESI grants, an extract job that keeps a copy of every
@@ -344,8 +346,9 @@ Nothing on the site calls it. `pnpm run mail-send` (`src/mailSend.ts`,
 beside `connect`/`ping`) is the owner's hand on the path: `--list-queued`
 prints every account's queued mails, `--queued <id>` sends one of them, and
 the flag form (registration, recipients, subject, body) sends a fresh draft at
-once, never queued — the end-to-end check. No job runs it; a queued mail waits
-for a person.
+once, never queued — the end-to-end check. No job runs it. With the
+`auto-send-eve-mail` flag off, a queued mail waits for a person; with it on,
+the `mail-queue-send` cron sends it (see "Auto-send").
 
 ## The MCP tools (PR 4, as built)
 
@@ -445,6 +448,27 @@ to report the mail as sent or on its way. A client no longer needs the user's
 confirmation before calling, since the call sends nothing. When the review
 page ships, update these surfaces to name it; do not let "sent" back in
 anywhere a send is not what happened.
+
+### Auto-send
+
+The experimental `auto-send-eve-mail` Vercel flag (`src/app/mail/autoSend.ts`,
+read through `@vercel/flags-core`; a flag that cannot be read counts as off)
+turns the queue into a send, for a person watching the mails arrive. While it
+is on:
+
+- MCP `send_mail` queues its mail and sends it at once through
+  `sendQueuedMail`, answering `sent: true` with the mail id (#1248).
+- The `mail-queue-send` cron (every 10 minutes) sends **every** mail already
+  queued, every account's, oldest first, one at a time through the same
+  `sendQueuedMail` (`src/app/mail/sendQueue.ts`, workflow
+  `src/workflows/mailQueueSend.ts`). So turning the flag on sends the whole
+  backlog within ten minutes. Clear out anything that should not go before
+  turning it on.
+
+With the flag off, the cron route returns before starting a workflow (the one
+check is there), so an off flag costs no workflow run and records no
+heartbeat. A failed send closes its row `error` and the sweep moves on. The
+row is never retried, as with a send by hand.
 
 ## Privacy
 

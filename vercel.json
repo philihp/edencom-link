@@ -120,6 +120,10 @@
     {
       "path": "/api/cron/public-contracts",
       "schedule": "7,22,37,52 * * * *"
+    },
+    {
+      "path": "/api/cron/mail-queue-send",
+      "schedule": "3,13,23,33,43,53 * * * *"
     }
   ],
   "functions": {

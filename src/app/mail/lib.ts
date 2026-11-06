@@ -9,8 +9,10 @@
 //
 //   enqueueMail  — validate the draft and hold it on the site as a 'queued'
 //                  mail_send_log row. Nothing reaches ESI. What the MCP
-//                  `send_mail` tool (src/app/api/mcp/mailTools.ts) does, and
-//                  all it does: a person sends the queue later, by hand.
+//                  `send_mail` tool (src/app/api/mcp/mailTools.ts) does. A
+//                  person sends the queue later, by hand — or, while the
+//                  auto-send-eve-mail flag is on, the mail-queue-send cron
+//                  does (src/app/mail/sendQueue.ts).
 //   sendMail     — the real send: log 'pending', call ESI, log ok/error.
 //                  Called by `pnpm run mail-send` (src/mailSend.ts) for a
 //                  fresh draft, and through sendQueuedMail for a queued row.
