@@ -78,7 +78,7 @@
     "db:new": "supabase migration new",
     "discord-notification-send": "node src/jobs/discordNotificationSend.js",
     "discord-register-commands": "node src/discordRegisterCommands.js",
-    "db:push": "supabase db push",
+    "db:push": "supabase db push --remote",
     "dev": "next dev",
     "heartbeat": "node src/heartbeat.js",
     "refresh": "node src/refresh.js",

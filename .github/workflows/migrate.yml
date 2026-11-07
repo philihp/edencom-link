@@ -37,4 +37,8 @@ jobs:
         # the whole batch with "found local migration files to be inserted
         # before the last migration on remote". The migrations here are
         # independent and additive, so applying them in filename order is safe.
-        run: supabase db push --include-all
+        # --remote and --yes are CLI v3: a bare `db push` targets the local
+        # stack (there is none here), not the project linked above, and every
+        # hosted change asks first, failing unattended with
+        # HostedMutationConsentRequiredError unless --yes is passed.
+        run: supabase db push --remote --include-all --yes

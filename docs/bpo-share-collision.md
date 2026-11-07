@@ -57,8 +57,10 @@ on conflict (version, name) do nothing;
 ```
 
 After that, local and remote agree on both entries at `20260822120000`, and the
-next `supabase db push --include-all` — the `Migrate` workflow, or a manual run
-— applies `20260823005000_create_bpo_share.sql` and creates the table.
+next `supabase db push --remote --include-all` — the `Migrate` workflow (which
+adds `--yes`), or a manual run — applies `20260823005000_create_bpo_share.sql`
+and creates the table. (On CLI v3 a `db push` without `--remote` targets the
+local stack.)
 
 To confirm:
 
