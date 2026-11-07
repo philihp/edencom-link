@@ -20,7 +20,7 @@ import { flowBuckets, type FlowBucket } from './flow'
 import { FlowChart, FlowLegend } from './flowChart'
 import { counterpartyImage, counterpartyShare, typeShare, type CounterpartyKind } from './shares'
 import { counterpartyLabel, SIDE_COPY, type SideCopy } from './sides'
-import type { Side, Trade } from './trade'
+import { isMarket, type Side, type Trade } from './trade'
 import { windowOption } from './windows'
 import styles from './market.module.css'
 
@@ -227,13 +227,16 @@ export const MarketOverview = ({
     const currentStart = now - windowDays * DAY_MS
     const previousStart = now - 2 * windowDays * DAY_MS
     // Every type and every counterparty in the window. The lists show the top
-    // rows; the donuts take all rows and put the rest into "other".
-    const types = topTypesByValue(trades, currentStart, now, Infinity)
+    // rows; the donuts take all rows and put the rest into "other". A contract
+    // has no price per item, so the item tiles use market trades only. The
+    // counterparty tiles use contracts too.
+    const market = filter(isMarket, trades)
+    const types = topTypesByValue(market, currentStart, now, Infinity)
     return {
       current: take(TOP_N, types),
       allTypes: types,
       counterparties: topCounterpartiesByValue(trades, currentStart, now, Infinity),
-      previous: topTypesByValue(trades, previousStart, currentStart, TOP_N),
+      previous: topTypesByValue(market, previousStart, currentStart, TOP_N),
     }
   }, [trades, now, windowDays])
 
@@ -254,19 +257,19 @@ export const MarketOverview = ({
       <TopItems
         wide
         title={`Top items ${copy.verb}`}
-        subtitle={`by ISK over the last ${opt.label}`}
+        subtitle={`market only · by ISK over the last ${opt.label}`}
         copy={copy}
         items={current}
         typeNamesPromise={typeNamesPromise}
       />
       <TopItems
         title="Previous period"
-        subtitle={`prior ${opt.label}`}
+        subtitle={`market only · prior ${opt.label}`}
         copy={copy}
         items={previous}
         typeNamesPromise={typeNamesPromise}
       />
-      <ShareTile title="ISK by item" subtitle={`top ${SHARE_SLICES} and other`}>
+      <ShareTile title="ISK by item" subtitle={`market only · top ${SHARE_SLICES} and other`}>
         <Suspense
           fallback={
             <Donut

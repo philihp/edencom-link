@@ -181,15 +181,48 @@ const tradeClientIds = (cutoff) => (table) =>
     )
   )
 
+// The two contract views. The market page shows a finished item exchange or
+// auction as a trade (src/app/market/contracts.ts), and its counterparty is
+// the issuer, the issuer's corporation or the acceptor.
+const CONTRACT_VIEWS = ['character_contract_with_status', 'corp_contract_with_status']
+const CONTRACT_PARTY_COLUMNS = ['issuer_id', 'issuer_corporation_id', 'acceptor_id']
+
+// Every party id of every row, as one flat list.
+const partyIdsOf = (rows) => unnest(map(props(CONTRACT_PARTY_COLUMNS), rows))
+
+// Positive party ids of the finished trade contracts of one view, accepted
+// since `cutoff`.
+const contractPartyIds = (cutoff) => (view) =>
+  selectAllRows((from, to) =>
+    sudoSupabase
+      .from(view)
+      .select(CONTRACT_PARTY_COLUMNS.join(', '))
+      .eq('status', 'finished')
+      .in('type', ['item_exchange', 'auction'])
+      .gte('date_accepted', cutoff)
+      .order('contract_id', { ascending: false })
+      .range(from, to)
+  ).then(
+    pipe(
+      partyIdsOf,
+      map(Number),
+      filter((n) => Number.isFinite(n) && n > 0)
+    )
+  )
+
 // Resolve and cache (in universe_name) the name of every counterparty of a
 // market trade in the last 180 days: the buyer of each sale and the seller of
-// each purchase, from both wallet transaction tables. The market page reads
+// each purchase, from both wallet transaction tables, and the parties of each
+// finished item exchange or auction contract. The market page reads
 // universe_name to name them. Only resolves missing ids, so steady-state runs
 // do nothing.
 export const resolveTradeCounterpartyNames = async () => {
   const cutoff = new Date(Date.now() - TRADE_LOOKBACK_MS).toISOString()
-  const perTable = await Promise.all(map(tradeClientIds(cutoff), TRADE_TABLES))
-  const ids = new Set(unnest(perTable))
+  const perSource = await Promise.all([
+    ...map(tradeClientIds(cutoff), TRADE_TABLES),
+    ...map(contractPartyIds(cutoff), CONTRACT_VIEWS),
+  ])
+  const ids = new Set(unnest(perSource))
   if (ids.size === 0) return
 
   const knownIds = await knownIdsAmong(ids)
