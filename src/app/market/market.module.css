@@ -47,10 +47,10 @@
   box-shadow: inset 0 -2px 0 var(--accent);
 }
 
-/* Four equal columns: the "Top items" tile spans two (50%), the bar chart and
- * the prior-period tile take one each (25%). Rows have a fixed height, so more
- * tiles (the counterparty and share tiles to come) flow into new rows of the
- * same height. Lists scroll inside their tiles instead of growing the page.
+/* Four equal columns. Row 1: "Top items" spans two (50%), the bar chart and
+ * the prior-period tile take one each (25%). Row 2: the counterparty tile
+ * spans two, the two share donuts take one each. Rows have a fixed height, so
+ * more tiles flow into new rows of the same height. Lists scroll inside their tiles instead of growing the page.
  * Collapses to a single column on narrow screens. */
 .overview {
   display: grid;
@@ -265,4 +265,27 @@
 .sales td:nth-child(4),
 .sales td:nth-child(5) {
   font-family: var(--mono);
+}
+
+/* A counterparty row has one more column than an item row: the portrait or
+ * logo between the rank and the name. An id of unknown kind keeps the empty
+ * slot, so the names stay in one column. */
+.whoRow {
+  grid-template-columns: auto auto 1fr auto auto;
+  align-items: center;
+}
+
+.whoImage {
+  display: block;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-sm);
+  background: var(--line-soft);
+}
+
+/* The donut tiles: the legend can be taller than the tile, so it scrolls. */
+.shareBody {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
 }
