@@ -8,8 +8,9 @@ import { flowAxis, flowMoment, flowTick, xTickEdges, type FlowBucket } from './f
 import type { Side } from './trade'
 import styles from './market.module.css'
 
-// The market flow chart: sales and purchases per bucket as two bars side by
-// side, and the cumulative net ISK flow (sales minus purchases) as a line.
+// The market flow chart: per bucket, a sales bar above zero and a purchases
+// bar below zero, and the cumulative net ISK flow (sales minus purchases) as
+// a line.
 // Hand-written SVG, like the lift chart on /industry. The SVG keeps a fixed
 // 1100×230 coordinate space and stretches to the width of its tile, so the
 // geometry below is in those units.
@@ -26,8 +27,8 @@ const PLOT_BOTTOM = 196
 const PLOT_WIDTH = PLOT_RIGHT - PLOT_LEFT
 const PLOT_HEIGHT = PLOT_BOTTOM - PLOT_TOP
 const X_TICKS = 6
-// Part of each bucket's slot that the two bars fill together.
-const BAR_FILL = 0.8
+// Part of each bucket's slot that its bars fill.
+const BAR_FILL = 0.7
 
 type FlowChartProps = {
   rows: FlowBucket[]
@@ -41,21 +42,23 @@ export const FlowChart = ({ rows, bucketHours, side }: FlowChartProps) => {
 
   const n = Math.max(1, rows.length)
   const slot = PLOT_WIDTH / n
-  const barW = (slot * BAR_FILL) / 2
+  const barW = slot * BAR_FILL
   const axis = flowAxis(rows)
   const ty = (v: number) => PLOT_BOTTOM - (PLOT_HEIGHT * (v - axis.lo)) / (axis.hi - axis.lo)
   const zeroY = ty(0)
   const edgeX = (i: number) => PLOT_LEFT + i * slot
 
-  // Bars stand on the zero line. A zero total draws no bar.
-  const bar = (i: number, offset: number, v: number, className: string, key: string) =>
-    v > 0 ? (
+  // Bars stand on the zero line: sales above it, purchases below it. A zero
+  // total draws no bar.
+  // A positive value goes up from zero and a negative value goes down.
+  const bar = (i: number, v: number, className: string, key: string) =>
+    v !== 0 ? (
       <rect
         key={key}
-        x={edgeX(i) + (slot * (1 - BAR_FILL)) / 2 + offset}
-        y={ty(v)}
+        x={edgeX(i) + (slot * (1 - BAR_FILL)) / 2}
+        y={Math.min(ty(v), zeroY)}
         width={barW}
-        height={zeroY - ty(v)}
+        height={Math.abs(zeroY - ty(v))}
         className={className}
       />
     ) : null
@@ -118,8 +121,8 @@ export const FlowChart = ({ rows, bucketHours, side }: FlowChartProps) => {
           <rect x={edgeX(hover)} y={PLOT_TOP} width={slot} height={PLOT_HEIGHT} className={styles.flowHoverBand} />
         )}
         {rows.map((r, i) => [
-          bar(i, 0, r.sales, salesClass, `s-${r.start}`),
-          bar(i, barW, r.purchases, purchasesClass, `p-${r.start}`),
+          bar(i, r.sales, salesClass, `s-${r.start}`),
+          bar(i, -r.purchases, purchasesClass, `p-${r.start}`),
         ])}
         <path d={netPath} className={styles.flowNet} />
         {hovered != null && hover != null && (

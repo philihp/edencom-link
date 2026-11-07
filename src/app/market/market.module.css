@@ -16,7 +16,7 @@
 .sideTabs {
   display: flex;
   gap: 4px;
-  margin-top: 8pt;
+  margin-top: 16pt;
   border-bottom: 1px solid var(--line-soft);
 }
 
@@ -47,10 +47,10 @@
   box-shadow: inset 0 -2px 0 var(--accent);
 }
 
-/* Four equal columns. Row 1: the flow chart spans all four. Row 2: "Top
- * items" spans two (50%), the prior-period tile and the item donut take one
- * each (25%). Row 3: the counterparty tile spans two, the counterparty donut
- * and the totals take one each. Rows have a fixed height, so
+/* Four equal columns, under the tabs. Row 1: "Top items" spans two (50%),
+ * the prior-period tile and the item donut take one each (25%). Row 2: the
+ * counterparty tile spans two, the counterparty donut and the totals take one
+ * each. Rows have a fixed height, so
  * more tiles flow into new rows of the same height. Lists scroll inside their tiles instead of growing the page.
  * Collapses to a single column on narrow screens. */
 .overview {
@@ -65,10 +65,6 @@
   grid-column: span 2;
 }
 
-.tileFull {
-  grid-column: 1 / -1;
-}
-
 @media (max-width: 720px) {
   .overview {
     grid-template-columns: 1fr;
@@ -76,8 +72,7 @@
     grid-auto-rows: auto;
   }
 
-  .tileWide,
-  .tileFull {
+  .tileWide {
     grid-column: auto;
   }
 }
@@ -266,6 +261,20 @@
 }
 
 /* ── Flow chart ──────────────────────────────────────────────────────── */
+
+/* The flow chart sits between the title and the tabs, a full row wide, at the
+ * height of one overview row. */
+.flowSection {
+  display: grid;
+  height: max(18rem, 45vh);
+  margin-top: 16pt;
+}
+
+@media (max-width: 720px) {
+  .flowSection {
+    height: auto;
+  }
+}
 
 /* The SVG keeps its aspect ratio and sits in the middle of the tile height. */
 .flowPlot {
