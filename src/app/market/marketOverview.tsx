@@ -5,7 +5,8 @@ import { useMemo } from 'react'
 import { formatIsk, formatIskValue } from '../isk'
 import { TypeName } from '../typeName'
 import { bucketTrades, topTypesByValue, type Bucket, type TypeTotal } from './aggregate'
-import type { Trade } from './trade'
+import { capitalize, SIDE_COPY, type SideCopy } from './sides'
+import type { Side, Trade } from './trade'
 import { windowOption } from './windows'
 import styles from './market.module.css'
 
@@ -16,23 +17,26 @@ const TOP_N = 16
 type MarketOverviewProps = {
   // Server-anchored "now" (epoch ms) so window math agrees across SSR/hydration.
   now: number
-  // Sells only: the view picks the side.
-  sales: Trade[]
+  // The active tab. The view gives only the trades on this side.
+  side: Side
+  trades: Trade[]
   windowDays: number
   typeNamesPromise: Promise<Record<number, string>>
 }
 
-// A titled card. The "Top sellers" tile is wide (spans two of the four columns,
+// A titled card. The "Top items" tile is wide (spans two of the four columns,
 // = 50%); the bar chart and the prior-period tile are one column each (= 25%).
 const TopItems = ({
   title,
   subtitle,
+  copy,
   items,
   typeNamesPromise,
   wide = false,
 }: {
   title: string
   subtitle: string
+  copy: SideCopy
   items: TypeTotal[]
   typeNamesPromise: Promise<Record<number, string>>
   wide?: boolean
@@ -50,7 +54,7 @@ const TopItems = ({
             <span className={styles.topName}>
               <TypeName id={it.typeId} promise={typeNamesPromise} />
             </span>
-            <span className={styles.topQty} title={`${it.quantity.toLocaleString('en-US')} sold`}>
+            <span className={styles.topQty} title={`${it.quantity.toLocaleString('en-US')} ${copy.verb}`}>
               ×{it.quantity.toLocaleString('en-US')}
             </span>
             <span className={styles.topValue} title={formatIsk(it.total)}>
@@ -60,7 +64,7 @@ const TopItems = ({
         ))}
       </ol>
     ) : (
-      <p className={styles.empty}>No sales in this period.</p>
+      <p className={styles.empty}>No {copy.noun} in this period.</p>
     )}
   </div>
 )
@@ -75,15 +79,19 @@ const bucketTip = (b: Bucket, bucketHours: number) => {
   return `${when} — ${formatIsk(b.total)}`
 }
 
-const SalesBars = ({ buckets, bucketHours }: { buckets: Bucket[]; bucketHours: number }) => {
+const TradeBars = ({ copy, buckets, bucketHours }: { copy: SideCopy; buckets: Bucket[]; bucketHours: number }) => {
   const max = Math.max(1, ...buckets.map((b) => b.total))
   return (
     <div className={styles.tile}>
       <div className={styles.tileHead}>
-        <h2 className={styles.tileTitle}>Sales over time</h2>
+        <h2 className={styles.tileTitle}>{capitalize(copy.noun)} over time</h2>
         <span className={styles.tileSub}>{granularityLabel(bucketHours)}</span>
       </div>
-      <div className={styles.bars} role="img" aria-label={`Total sales per ${granularityLabel(bucketHours)} period`}>
+      <div
+        className={styles.bars}
+        role="img"
+        aria-label={`Total ${copy.noun} per ${granularityLabel(bucketHours)} period`}
+      >
         {buckets.map((b) => (
           <div key={b.start} className={styles.barCol} title={bucketTip(b, bucketHours)}>
             <div className={styles.bar} style={{ height: `${(b.total / max) * 100}%` }} />
@@ -94,32 +102,35 @@ const SalesBars = ({ buckets, bucketHours }: { buckets: Bucket[]; bucketHours: n
   )
 }
 
-export const MarketOverview = ({ now, sales, windowDays, typeNamesPromise }: MarketOverviewProps) => {
+export const MarketOverview = ({ now, side, trades, windowDays, typeNamesPromise }: MarketOverviewProps) => {
   const opt = windowOption(windowDays)
+  const copy = SIDE_COPY[side]
 
   const { current, previous, buckets } = useMemo(() => {
     const currentStart = now - windowDays * DAY_MS
     const previousStart = now - 2 * windowDays * DAY_MS
     return {
-      current: topTypesByValue(sales, currentStart, now, TOP_N),
-      previous: topTypesByValue(sales, previousStart, currentStart, TOP_N),
-      buckets: bucketTrades(sales, currentStart, now, opt.bucketHours * HOUR_MS),
+      current: topTypesByValue(trades, currentStart, now, TOP_N),
+      previous: topTypesByValue(trades, previousStart, currentStart, TOP_N),
+      buckets: bucketTrades(trades, currentStart, now, opt.bucketHours * HOUR_MS),
     }
-  }, [sales, now, windowDays, opt.bucketHours])
+  }, [trades, now, windowDays, opt.bucketHours])
 
   return (
     <section className={styles.overview}>
       <TopItems
         wide
-        title="Top sellers"
-        subtitle={`per total sales volume (in ISK) over the last ${opt.label}`}
+        title={`Top items ${copy.verb}`}
+        subtitle={`by ISK over the last ${opt.label}`}
+        copy={copy}
         items={current}
         typeNamesPromise={typeNamesPromise}
       />
-      <SalesBars buckets={buckets} bucketHours={opt.bucketHours} />
+      <TradeBars copy={copy} buckets={buckets} bucketHours={opt.bucketHours} />
       <TopItems
         title="Previous period"
         subtitle={`prior ${opt.label}`}
+        copy={copy}
         items={previous}
         typeNamesPromise={typeNamesPromise}
       />
