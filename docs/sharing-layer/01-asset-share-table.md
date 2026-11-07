@@ -169,6 +169,6 @@ no env plumbing).
 
 ## Verification
 
-`pnpm run lint && pnpm test && pnpm run build`; `supabase db push` applies
+`pnpm run lint && pnpm test && pnpm run build`; `pnpm run db:push` applies
 cleanly; a hand-inserted share row is readable by a second account only when
 its affiliation overlaps, and by anon only when the row is fully public.

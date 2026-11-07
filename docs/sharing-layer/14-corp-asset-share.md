@@ -605,7 +605,7 @@ What phase 04 gave the character share, for corp rows.
 
 ## Verification (every PR)
 
-`pnpm run lint && pnpm test && pnpm run build`; `supabase db push` applies
+`pnpm run lint && pnpm test && pnpm run build`; `pnpm run db:push` applies
 cleanly; schema changes dual-written to `schema.sql` and a fresh
 `pnpm run db:new` migration (never a copied timestamp, never a rename);
 `pnpm run test:sql` against a throwaway database. The two-account leak test
