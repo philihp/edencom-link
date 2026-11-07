@@ -9,12 +9,29 @@
 //   has resolved it.
 // - A personal trade has `registration_id` and no `corporation_id`. A
 //   corporation trade has `corporation_id` and no `registration_id`.
+// - `source` says where the trade comes from: 'market' for a wallet
+//   transaction, 'contract' for a finished item exchange or auction (see
+//   contracts.ts). A contract has no single item type and no unit price, so it
+//   has `quantity` 1, `unit_price` = the ISK that moved, `type_id` 0, and its
+//   items in `contract`. `transaction_id` is the contract id. Item tiles use
+//   only market trades (`isMarket`).
 // - All numeric columns are numbers. PostgREST can send bigint and numeric
 //   columns as strings, so the mappers convert them here, one time.
 
 export type Side = 'sell' | 'buy'
 
+export type Source = 'market' | 'contract'
+
+// One included item of a contract: what the issuer handed over.
+export type ContractItem = { type_id: number; quantity: number }
+
+export type ContractDetail = {
+  title: string | null
+  items: ContractItem[]
+}
+
 export type Trade = {
+  source: Source
   transaction_id: number
   side: Side
   registration_id: string | null
@@ -26,6 +43,8 @@ export type Trade = {
   quantity: number
   unit_price: number
   seen_at: string
+  // Null for a market trade.
+  contract: ContractDetail | null
 }
 
 type Num = number | string
@@ -52,6 +71,8 @@ export const TRADE_COLUMNS =
 const sideOf = (isBuy: boolean): Side => (isBuy ? 'buy' : 'sell')
 
 const common = (r: CommonRow) => ({
+  source: 'market' as const,
+  contract: null,
   transaction_id: Number(r.transaction_id),
   side: sideOf(r.is_buy),
   client_id: Number(r.client_id),
@@ -74,3 +95,6 @@ export const fromCorpRow = (r: CorpTransactionRow): Trade => ({
   registration_id: null,
   corporation_id: Number(r.corporation_id),
 })
+
+// True for a wallet transaction, false for a contract.
+export const isMarket = (t: Trade): boolean => t.source === 'market'

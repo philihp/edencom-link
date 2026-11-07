@@ -9,8 +9,9 @@ import { Name } from '../names'
 import { TypeName } from '../typeName'
 import { usePersist } from '../usePersist'
 import { inWindow, tradeValue } from './aggregate'
+import { contractLabel } from './contracts'
 import { byWho, capitalize, counterpartyLabel, parseWho, SIDE_COPY, whoOptions } from './sides'
-import type { Side, Trade } from './trade'
+import type { ContractDetail, Side, Trade } from './trade'
 import styles from './market.module.css'
 
 type Character = {
@@ -35,6 +36,35 @@ type RecentTradesProps = {
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000
+// Item names under a contract label before the rest is a count.
+const CONTRACT_NAMES = 2
+
+// A contract row: "Contract · N items" with a tag, then the title, or else
+// the first item names.
+const ContractCell = ({
+  contract,
+  typeNamesPromise,
+}: {
+  contract: ContractDetail
+  typeNamesPromise: Promise<Record<number, string>>
+}) => {
+  const rest = contract.items.length - CONTRACT_NAMES
+  return (
+    <>
+      {contractLabel(contract.items)} <span className={styles.sourceTag}>[ contract ]</span>
+      <span className={styles.contractDetail}>
+        {contract.title ??
+          contract.items.slice(0, CONTRACT_NAMES).map((item, i) => (
+            <span key={`${item.type_id}-${i}`}>
+              {i > 0 ? ', ' : ''}
+              <TypeName id={item.type_id} promise={typeNamesPromise} />
+            </span>
+          ))}
+        {contract.title === null && rest > 0 ? ` and ${rest} more` : ''}
+      </span>
+    </>
+  )
+}
 
 const THRESHOLDS: Array<{ label: string; value: number }> = [
   { label: 'All', value: 0 },
@@ -141,15 +171,19 @@ export const RecentTrades = ({
           </thead>
           <tbody>
             {shown.map((t) => (
-              <tr key={`${side}-${t.transaction_id}`}>
+              <tr key={`${t.source}-${side}-${t.transaction_id}`}>
                 <td>
                   <Name name={nameOf(t.client_id)} />
                 </td>
                 <td>
-                  <TypeName id={t.type_id} promise={typeNamesPromise} />
+                  {t.contract === null ? (
+                    <TypeName id={t.type_id} promise={typeNamesPromise} />
+                  ) : (
+                    <ContractCell contract={t.contract} typeNamesPromise={typeNamesPromise} />
+                  )}
                 </td>
-                <td>{t.quantity}</td>
-                <td>{formatIskValue(t.unit_price)}</td>
+                <td>{t.contract === null ? t.quantity : '—'}</td>
+                <td>{t.contract === null ? formatIskValue(t.unit_price) : '—'}</td>
                 <td>{formatIskValue(tradeValue(t))}</td>
                 <td>
                   <DateTime value={t.date} />

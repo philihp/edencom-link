@@ -21,6 +21,8 @@ const at = (hours: number) => new Date(T0 + hours * HOUR).toISOString()
 
 let nextId = 1
 const trade = (over: Partial<Trade>): Trade => ({
+  source: 'market',
+  contract: null,
   transaction_id: nextId++,
   side: 'sell',
   registration_id: 'reg-a',

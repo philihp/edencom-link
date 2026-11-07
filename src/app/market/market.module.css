@@ -424,3 +424,20 @@
   font-weight: 400;
   color: var(--ink-faint);
 }
+
+/* A contract row in the table: the bracketed source tag, and the title or the
+   first item names on a second line. */
+.sourceTag {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  color: var(--accent);
+}
+
+.contractDetail {
+  display: block;
+  font-size: 12px;
+  color: var(--ink-faint);
+}
