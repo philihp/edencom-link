@@ -1,21 +1,25 @@
 'use client'
 
-import { take } from 'ramda'
+import { filter, take } from 'ramda'
 import { Suspense, use, useMemo, type ReactNode } from 'react'
 
 import { Donut } from '../charts/donut'
 import { formatIsk, formatIskValue } from '../isk'
 import { TypeName } from '../typeName'
 import {
-  bucketTrades,
+  inWindow,
+  onSide,
   topCounterpartiesByValue,
   topTypesByValue,
-  type Bucket,
+  totalsOf,
   type CounterpartyTotal,
+  type Totals,
   type TypeTotal,
 } from './aggregate'
+import { flowBuckets, type FlowBucket } from './flow'
+import { FlowChart, FlowLegend } from './flowChart'
 import { counterpartyImage, counterpartyShare, typeShare, type CounterpartyKind } from './shares'
-import { capitalize, counterpartyLabel, SIDE_COPY, type SideCopy } from './sides'
+import { counterpartyLabel, SIDE_COPY, type SideCopy } from './sides'
 import type { Side, Trade } from './trade'
 import { windowOption } from './windows'
 import styles from './market.module.css'
@@ -32,6 +36,8 @@ type MarketOverviewProps = {
   // The active tab. The view gives only the trades on this side.
   side: Side
   trades: Trade[]
+  // Both sides, for the flow chart and the totals.
+  allTrades: Trade[]
   windowDays: number
   // client_id → name. An id with no name shows its raw id.
   counterpartyNames: Record<number, string>
@@ -170,40 +176,45 @@ const TypeDonutNamed = ({
 const granularityLabel = (bucketHours: number) =>
   bucketHours === 1 ? 'hourly' : bucketHours < 24 ? `${bucketHours}-hour` : 'daily'
 
-const bucketTip = (b: Bucket, bucketHours: number) => {
-  const start = new Date(b.start)
-  // Sub-day buckets need the hour to disambiguate; daily buckets just the date.
-  const when = bucketHours < 24 ? start.toISOString().slice(0, 16).replace('T', ' ') : start.toISOString().slice(0, 10)
-  return `${when} — ${formatIsk(b.total)}`
-}
-
-const TradeBars = ({ copy, buckets, bucketHours }: { copy: SideCopy; buckets: Bucket[]; bucketHours: number }) => {
-  const max = Math.max(1, ...buckets.map((b) => b.total))
-  return (
-    <div className={styles.tile}>
-      <div className={styles.tileHead}>
-        <h2 className={styles.tileTitle}>{capitalize(copy.noun)} over time</h2>
-        <span className={styles.tileSub}>{granularityLabel(bucketHours)}</span>
-      </div>
-      <div
-        className={styles.bars}
-        role="img"
-        aria-label={`Total ${copy.noun} per ${granularityLabel(bucketHours)} period`}
-      >
-        {buckets.map((b) => (
-          <div key={b.start} className={styles.barCol} title={bucketTip(b, bucketHours)}>
-            <div className={styles.bar} style={{ height: `${(b.total / max) * 100}%` }} />
-          </div>
-        ))}
-      </div>
+// Sales and purchases over the window, on every tab. A full row wide.
+const FlowTile = ({ side, rows, bucketHours }: { side: Side; rows: FlowBucket[]; bucketHours: number }) => (
+  <div className={`${styles.tile} ${styles.tileFull}`}>
+    <div className={styles.tileHead}>
+      <h2 className={styles.tileTitle}>ISK flow</h2>
+      <FlowLegend side={side} />
+      <span className={styles.tileSub}>{granularityLabel(bucketHours)} · utc</span>
     </div>
-  )
-}
+    <FlowChart rows={rows} bucketHours={bucketHours} side={side} />
+  </div>
+)
+
+// The window in numbers: what we sold, what we bought, and the difference.
+const FlowTotals = ({ subtitle, sales, purchases }: { subtitle: string; sales: Totals; purchases: Totals }) => (
+  <div className={styles.tile}>
+    <div className={styles.tileHead}>
+      <h2 className={styles.tileTitle}>Totals</h2>
+      <span className={styles.tileSub}>{subtitle}</span>
+    </div>
+    <dl className={styles.totals}>
+      <dt>sales</dt>
+      <dd title={formatIsk(sales.total)}>
+        {formatIskValue(sales.total)} <span className={styles.totalsCount}>{plural(sales.count, 'trade')}</span>
+      </dd>
+      <dt>purchases</dt>
+      <dd title={formatIsk(purchases.total)}>
+        {formatIskValue(purchases.total)} <span className={styles.totalsCount}>{plural(purchases.count, 'trade')}</span>
+      </dd>
+      <dt>net</dt>
+      <dd title={formatIsk(sales.total - purchases.total)}>{formatIskValue(sales.total - purchases.total)}</dd>
+    </dl>
+  </div>
+)
 
 export const MarketOverview = ({
   now,
   side,
   trades,
+  allTrades,
   windowDays,
   counterpartyNames,
   counterpartyKinds,
@@ -212,7 +223,7 @@ export const MarketOverview = ({
   const opt = windowOption(windowDays)
   const copy = SIDE_COPY[side]
 
-  const { current, allTypes, counterparties, previous, buckets } = useMemo(() => {
+  const { current, allTypes, counterparties, previous } = useMemo(() => {
     const currentStart = now - windowDays * DAY_MS
     const previousStart = now - 2 * windowDays * DAY_MS
     // Every type and every counterparty in the window. The lists show the top
@@ -223,12 +234,23 @@ export const MarketOverview = ({
       allTypes: types,
       counterparties: topCounterpartiesByValue(trades, currentStart, now, Infinity),
       previous: topTypesByValue(trades, previousStart, currentStart, TOP_N),
-      buckets: bucketTrades(trades, currentStart, now, opt.bucketHours * HOUR_MS),
     }
-  }, [trades, now, windowDays, opt.bucketHours])
+  }, [trades, now, windowDays])
+
+  // The flow chart and the totals show both sides, whatever the tab.
+  const { flow, salesTotals, purchaseTotals } = useMemo(() => {
+    const currentStart = now - windowDays * DAY_MS
+    const inCurrent = filter(inWindow(currentStart, now), allTrades)
+    return {
+      flow: flowBuckets(allTrades, currentStart, now, opt.bucketHours * HOUR_MS),
+      salesTotals: totalsOf(onSide('sell')(inCurrent)),
+      purchaseTotals: totalsOf(onSide('buy')(inCurrent)),
+    }
+  }, [allTrades, now, windowDays, opt.bucketHours])
 
   return (
     <section className={styles.overview}>
+      <FlowTile side={side} rows={flow} bucketHours={opt.bucketHours} />
       <TopItems
         wide
         title={`Top items ${copy.verb}`}
@@ -237,7 +259,6 @@ export const MarketOverview = ({
         items={current}
         typeNamesPromise={typeNamesPromise}
       />
-      <TradeBars copy={copy} buckets={buckets} bucketHours={opt.bucketHours} />
       <TopItems
         title="Previous period"
         subtitle={`prior ${opt.label}`}
@@ -245,6 +266,21 @@ export const MarketOverview = ({
         items={previous}
         typeNamesPromise={typeNamesPromise}
       />
+      <ShareTile title="ISK by item" subtitle={`top ${SHARE_SLICES} and other`}>
+        <Suspense
+          fallback={
+            <Donut
+              data={typeShare({})(allTypes)}
+              limit={SHARE_SLICES}
+              unit="isk"
+              caption={`isk ${copy.verb}`}
+              title="ISK share by item"
+            />
+          }
+        >
+          <TypeDonutNamed rows={allTypes} caption={`isk ${copy.verb}`} promise={typeNamesPromise} />
+        </Suspense>
+      </ShareTile>
       <TopCounterparties
         copy={copy}
         subtitle={`by ISK over the last ${opt.label}`}
@@ -261,21 +297,7 @@ export const MarketOverview = ({
           title={`ISK share by ${copy.counterparty}`}
         />
       </ShareTile>
-      <ShareTile title="ISK by item" subtitle={`top ${SHARE_SLICES} and other`}>
-        <Suspense
-          fallback={
-            <Donut
-              data={typeShare({})(allTypes)}
-              limit={SHARE_SLICES}
-              unit="isk"
-              caption={`isk ${copy.verb}`}
-              title="ISK share by item"
-            />
-          }
-        >
-          <TypeDonutNamed rows={allTypes} caption={`isk ${copy.verb}`} promise={typeNamesPromise} />
-        </Suspense>
-      </ShareTile>
+      <FlowTotals subtitle={`last ${opt.label}`} sales={salesTotals} purchases={purchaseTotals} />
     </section>
   )
 }

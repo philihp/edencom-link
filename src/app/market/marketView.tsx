@@ -84,6 +84,7 @@ export const MarketView = ({
         now={nowMs}
         side={side}
         trades={onActiveSide}
+        allTrades={trades}
         windowDays={windowDays}
         counterpartyNames={counterpartyNames}
         counterpartyKinds={counterpartyKinds}
