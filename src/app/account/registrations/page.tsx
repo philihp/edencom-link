@@ -24,6 +24,7 @@ import { freshnessLevel, relativeTime } from '../../freshness'
 import { formatBisk } from '../../isk'
 import { type Registration, fetchJobsOverview } from '../../jobs/jobsData'
 import { NextRun } from '../../jobs/nextRun'
+import { RunBar } from './runBar'
 import { RefreshPoller } from '../../jobs/poller'
 import { type JobEntry, isOverdue, jobsInSection, nextPullFor, nextRunFor } from '../../jobs/registry'
 import { type EntityRun, isAbandoned, newestRun } from '../../jobs/rows'
@@ -680,7 +681,8 @@ const RegistrationPage = async () => {
                   {entry.label}
                   <code className={styles.jobName}>{entry.job}</code>
                 </td>
-                <td>
+                <td className={styles.runCell}>
+                  <RunBar at={entity.lastRunAt} side="since" />
                   {entity.lastRunAt === null ? '—' : relativeTime(entity.lastRunAt, jobs.now)}
                   {kick && <UniverseKick job={entry.job} label={entry.label} />}
                 </td>
@@ -689,13 +691,16 @@ const RegistrationPage = async () => {
                     {STATUS_LABEL[entity.status] ?? entity.status}
                   </span>
                 </td>
-                <td>
+                <td className={styles.runCell}>
                   {isOverdue(entry.job, entity.lastRunAt) ? (
                     <span className={styles.overdue} title="The previous scheduled fire didn't produce a run">
                       overdue
                     </span>
                   ) : (
-                    <NextRun at={iso(nextRunFor(entry.job))} />
+                    <>
+                      <RunBar at={iso(nextRunFor(entry.job))} side="until" />
+                      <NextRun at={iso(nextRunFor(entry.job))} />
+                    </>
                   )}
                 </td>
               </tr>

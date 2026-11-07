@@ -703,3 +703,38 @@
     display: block;
   }
 }
+
+/* ── Run-time bars ───────────────────────────────────────────────────── */
+
+/* A cell with a RunBar on its top border. The track covers the cell's top
+   border and stops at the cell's right padding, so two adjacent bars do not
+   join. */
+.runCell {
+  position: relative;
+}
+
+.runTrack {
+  position: absolute;
+  top: -1px;
+  left: 0;
+  right: 14pt;
+  height: 2px;
+  pointer-events: none;
+}
+
+.runBar {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: var(--accent);
+}
+
+/* Last run: anchored at the right edge, grows to the left. */
+.runBar[data-side='since'] {
+  right: 0;
+}
+
+/* Next run: anchored at the left edge, shrinks from the right. */
+.runBar[data-side='until'] {
+  left: 0;
+}
