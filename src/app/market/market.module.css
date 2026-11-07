@@ -11,17 +11,53 @@
   margin: 0;
 }
 
-/* Four equal columns: the "Top sellers" tile spans two (50%), the bar chart and
- * the prior-period tile take one each (25%). Collapses to a single column on
- * narrow screens. */
+/* Sales | purchases, under the title. The same quiet uppercase tabs as the
+ * structure tiles: they switch what the page shows, they do not act. */
+.sideTabs {
+  display: flex;
+  gap: 4px;
+  margin-top: 8pt;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.sideTab {
+  border: 0;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  background: none;
+  cursor: pointer;
+  padding: 6px 12px;
+  font-family: var(--sans);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.sideTab:hover {
+  color: var(--ink);
+  background: var(--paper-raised);
+}
+
+.sideTabActive,
+.sideTabActive:hover {
+  color: var(--ink);
+  font-weight: 700;
+  background: var(--accent-tint);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+/* Four equal columns: the "Top items" tile spans two (50%), the bar chart and
+ * the prior-period tile take one each (25%). Rows have a fixed height, so more
+ * tiles (the counterparty and share tiles to come) flow into new rows of the
+ * same height. Lists scroll inside their tiles instead of growing the page.
+ * Collapses to a single column on narrow screens. */
 .overview {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
+  grid-auto-rows: max(18rem, 45vh);
   gap: 12pt;
   margin: 16pt 0;
-  /* The overview pane is capped at half the viewport; lists scroll inside
-   * their tiles instead of growing the page. */
-  height: 50vh;
 }
 
 .tileWide {
@@ -31,8 +67,8 @@
 @media (max-width: 720px) {
   .overview {
     grid-template-columns: 1fr;
-    /* Stacked single-column tiles can't share 50vh; let them size naturally. */
-    height: auto;
+    /* Stacked single-column tiles size to their content. */
+    grid-auto-rows: auto;
   }
 
   .tileWide {
