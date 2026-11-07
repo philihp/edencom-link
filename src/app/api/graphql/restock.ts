@@ -14,7 +14,7 @@
 // once, is an error rather than a line summed over the wrong denominator; so
 // is naming one type twice, since the two targets would disagree about a
 // single sum.
-import { countBy, reduce, uniq } from 'ramda'
+import { countBy, reduce, reject, uniq } from 'ramda'
 
 import type { NamedRef } from './filters.ts'
 
@@ -90,8 +90,14 @@ export const resolveTargets = (
   return { ok: true, targets }
 }
 
-// An asset stack, narrowed to the two columns the sum needs.
-export type Stack = { type_id: number | string; quantity: number | null }
+// An asset stack, narrowed to the columns the sum needs. The item id lets a
+// stack in limbo (assetSafety.ts) be taken out before the sum.
+export type Stack = { item_id?: number | string; type_id: number | string; quantity: number | null }
+
+// The stacks minus the ones whose item id is in `excluded` — what is left is
+// available to plan with.
+export const withoutItems = (stacks: Stack[], excluded: ReadonlySet<string>): Stack[] =>
+  reject((stack: Stack) => stack.item_id != null && excluded.has(String(stack.item_id)), stacks)
 
 export type RestockLine = {
   typeId: number

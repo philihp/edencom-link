@@ -52,7 +52,8 @@ import {
 } from './assetWithin'
 import { excludeFlagsExpression, resolveHangarFilters, type HangarArgs } from './hangarFlags'
 import { resolveLocationByTokens, searchLocationCandidates } from './locationSearch'
-import { resolveTargets, restockLines, type Stack } from './restock'
+import { limboFilters } from './assetSafety'
+import { resolveTargets, restockLines, withoutItems, type Stack } from './restock'
 import type { NamedRef, OwnerScopes } from './filters'
 import type { GraphqlContext } from './context'
 
@@ -681,6 +682,7 @@ export const resolvers = {
         owner?: string | null
         owners?: readonly string[] | null
         onlyBelowTarget?: boolean | null
+        includeAssetSafety?: boolean | null
       },
       ctx: GraphqlContext
     ) => {
@@ -740,19 +742,35 @@ export const resolvers = {
         if ((count ?? 0) > ctx.caps.asset) return tooMany(count ?? 0, side)
         return fetchCapped<Stack>(
           (from, to) =>
-            filtered(ctx.supabase.from(table).select('type_id, quantity'), ownerColumn, ownerIds)
+            filtered(ctx.supabase.from(table).select('item_id, type_id, quantity'), ownerColumn, ownerIds)
               .order('item_id')
               .range(from, to),
           ctx.caps.asset
         )
       }
 
-      const [own, corp] = await Promise.all([
+      // Stock in asset safety, or delivered to an asset-safety system, is in
+      // limbo: it exists, but it is not available to plan with
+      // (assetSafety.ts). Find those stacks and take them out of the sum.
+      const readLimbo = async (side: AssetSide, ownerIds: string[]): Promise<Stack[]> => {
+        if (args.includeAssetSafety === true) return []
+        const reads = await Promise.all(
+          limboFilters(targetTypeIds).map((limbo) => readWithin<Stack>(ctx, side, ownerIds, limbo, ctx.caps.asset))
+        )
+        const over = reads.find(({ count }) => count > ctx.caps.asset)
+        return over !== undefined ? tooMany(over.count, side) : reads.flatMap(({ rows }) => rows)
+      }
+
+      const [own, corp, ownLimbo, corpLimbo] = await Promise.all([
         read('character', scopes.registrationIds),
         read('corporation', scopes.corporationIds),
+        readLimbo('character', scopes.registrationIds),
+        readLimbo('corporation', scopes.corporationIds),
       ])
+      const limbo = new Set([...ownLimbo, ...corpLimbo].map((stack) => String(stack.item_id)))
+      const available = withoutItems([...own, ...corp], limbo)
 
-      return restockLines(resolved.targets, [...own, ...corp], args.onlyBelowTarget !== false).map((line) => ({
+      return restockLines(resolved.targets, available, args.onlyBelowTarget !== false).map((line) => ({
         typeId: String(line.typeId),
         typeName: typeNameOf(types, line.typeId),
         groupName: types[line.typeId]?.groupName ?? null,

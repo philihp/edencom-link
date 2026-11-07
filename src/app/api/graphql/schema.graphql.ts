@@ -118,6 +118,13 @@ export const typeDefs = /* GraphQL */ `
     hangar is \`includeHangar: "Deliveries"\`; not counting what is already
     committed to one is \`excludeHangar: "Deliveries"\`.
 
+    Stock in limbo does not count as on hand: anything in asset safety (the
+    AssetSafety hangar, and what is inside an Asset Safety Wrap), and anything
+    in an asset-safety destination system such as Irmalin, even after
+    delivery to a station hangar there. It exists, but it is not available to
+    plan with. A location filter naming such a system does not change that;
+    includeAssetSafety: true counts it again.
+
     By default only lines below target come back; onlyBelowTarget: false keeps
     every target, including the covered ones.
     """
@@ -134,6 +141,7 @@ export const typeDefs = /* GraphQL */ `
       owner: String
       owners: [String!]
       onlyBelowTarget: Boolean = true
+      includeAssetSafety: Boolean = false
     ): [RestockLine!]!
 
     "Asset shares other users or their corporations have aimed at you (corporation/alliance/public). Session auth only."
@@ -473,7 +481,7 @@ export const typeDefs = /* GraphQL */ `
     groupName: String
     "The quantity you asked for, as given in targets."
     target: String!
-    "Sum of your matching stacks of this type, under the filters given."
+    "Sum of your matching stacks of this type, under the filters given, minus stock in asset-safety limbo."
     onHand: String!
     "onHand - target: NEGATIVE when you're short, positive when overstocked."
     delta: String!
