@@ -560,6 +560,9 @@ three cases.
 - An item with the flag `AssetSafety`, or inside an `Asset Safety Wrap`, is
   in asset safety: the game moved it out of a player structure. The player
   can deliver it to an NPC station in the game.
+- Stock in asset safety, or in an asset-safety destination system such as
+  Irmalin, is not available for supply planning, even after delivery to a
+  station there. The `restock` list does not count it as on hand.
 
 ## Saved fittings
 

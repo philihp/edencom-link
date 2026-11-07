@@ -8,7 +8,8 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { resolveTargets, restockLines, type NamedRef } from '../src/app/api/graphql/restock.ts'
+import { ASSET_SAFETY_FLAG, ASSET_SAFETY_SYSTEMS, limboFilters } from '../src/app/api/graphql/assetSafety.ts'
+import { resolveTargets, restockLines, withoutItems, type NamedRef } from '../src/app/api/graphql/restock.ts'
 
 // Stand-in for the ranked SDE search the resolver feeds in.
 const CANDIDATES: Record<string, NamedRef[]> = {
@@ -180,4 +181,30 @@ test('a stack of an untargeted type never leaks into a line', () => {
   )
   assert.equal(lines.length, 1)
   assert.equal(lines[0].onHand, 4)
+})
+
+test('withoutItems drops the stacks in limbo and keeps the rest', () => {
+  const stacks = [
+    { item_id: 1, type_id: 34, quantity: 100 },
+    { item_id: '2', type_id: 34, quantity: 50 },
+    { item_id: 3, type_id: 4051, quantity: 10 },
+    { type_id: 34, quantity: 7 },
+  ]
+  const available = withoutItems(stacks, new Set(['2', '3']))
+  assert.deepEqual(available, [
+    { item_id: 1, type_id: 34, quantity: 100 },
+    { type_id: 34, quantity: 7 },
+  ])
+  assert.deepEqual(
+    restockLines([{ typeId: 34, quantity: 200 }], available, false).map((l) => l.onHand),
+    [107]
+  )
+})
+
+test('limboFilters reads the asset-safety systems and the AssetSafety flag separately', () => {
+  const [bySystem, byFlag] = limboFilters([34])
+  assert.ok(bySystem.locationIds?.includes(String(30003935)), 'Irmalin is in the catalog')
+  assert.equal(bySystem.include, null)
+  assert.deepEqual(byFlag, { typeIds: [34], locationIds: null, include: [ASSET_SAFETY_FLAG], exclude: null })
+  assert.ok(ASSET_SAFETY_SYSTEMS.every(({ id }) => Number.isInteger(id) && id > 30000000 && id < 31000000))
 })
