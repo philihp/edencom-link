@@ -102,10 +102,17 @@ test('flowAxis goes below zero when the net does, and zero is a tick', () => {
     row({ sales: 10_000_000, net: 10_000_000, cumulative: -20_000_000 }),
   ])
   assert.ok(axis.lo <= -30_000_000)
-  assert.ok(axis.hi >= 30_000_000)
+  assert.ok(axis.hi >= 10_000_000)
   assert.ok(axis.ticks.includes(0))
   assert.ok(axis.ticks.every((t, i) => i === 0 || t - axis.ticks[i - 1] === axis.step))
   assert.ok(axis.ticks.length <= 6)
+})
+
+test('flowAxis goes below zero for a purchases bar, even when the net does not', () => {
+  const axis = flowAxis([row({ sales: 20_000_000, purchases: 12_000_000, net: 8_000_000, cumulative: 8_000_000 })])
+  assert.ok(axis.lo <= -12_000_000)
+  assert.ok(axis.hi >= 20_000_000)
+  assert.ok(axis.ticks.includes(0))
 })
 
 test('xTickEdges spaces the labels evenly from the window start', () => {

@@ -69,13 +69,14 @@ export type Axis = { lo: number; hi: number; step: number; ticks: number[] }
 // An idle window still has a scale of one million ISK.
 const MIN_SPAN = 1_000_000
 
-// The y axis of the flow chart. The bars go up from zero, and the net line can
-// go below zero, so the axis always holds zero, the tallest bar, and the
+// The y axis of the flow chart. Sales bars go up from zero, purchases bars go
+// down from zero, and the net line can be on either side, so the axis always
+// holds zero, the tallest sales bar, the deepest purchases bar, and the
 // highest and lowest net. The bounds are whole steps, and the step is a round
 // number, so about `count` ticks fit between them.
 export const flowAxis = (rows: FlowBucket[], count = 4): Axis => {
-  const high = reduce((m: number, r: FlowBucket) => Math.max(m, r.sales, r.purchases, r.cumulative), 0, rows)
-  const low = reduce((m: number, r: FlowBucket) => Math.min(m, r.cumulative), 0, rows)
+  const high = reduce((m: number, r: FlowBucket) => Math.max(m, r.sales, r.cumulative), 0, rows)
+  const low = reduce((m: number, r: FlowBucket) => Math.min(m, -r.purchases, r.cumulative), 0, rows)
   const top = Math.max(high, low + MIN_SPAN)
   const step = niceStep((top - low) / count)
   const lo = Math.floor(low / step) * step
