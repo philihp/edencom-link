@@ -8,6 +8,7 @@ import { WindowSelect } from '../windowSelect'
 import { onSide } from './aggregate'
 import { MarketOverview } from './marketOverview'
 import { RecentTrades } from './recentTrades'
+import type { CounterpartyKind } from './shares'
 import { DEFAULT_SIDE, parseSide, SIDE_COPY, SIDE_STORAGE_KEY, SIDES } from './sides'
 import type { Side, Trade } from './trade'
 import { DEFAULT_WINDOW_DAYS, WINDOW_STORAGE_KEY } from './windows'
@@ -31,6 +32,9 @@ type MarketViewProps = {
   // universe_name does not know yet is not in the record, and the page shows
   // the raw id.
   counterpartyNames: Record<number, string>
+  // client_id → character, corporation or alliance, for the image beside the
+  // name. An id of unknown kind is not in the record and shows no image.
+  counterpartyKinds: Record<number, CounterpartyKind>
   typeNamesPromise: Promise<Record<number, string>>
 }
 
@@ -43,6 +47,7 @@ export const MarketView = ({
   characters,
   corpNames,
   counterpartyNames,
+  counterpartyKinds,
   typeNamesPromise,
 }: MarketViewProps) => {
   const nowMs = Date.parse(now)
@@ -79,7 +84,10 @@ export const MarketView = ({
         now={nowMs}
         side={side}
         trades={onActiveSide}
+        allTrades={trades}
         windowDays={windowDays}
+        counterpartyNames={counterpartyNames}
+        counterpartyKinds={counterpartyKinds}
         typeNamesPromise={typeNamesPromise}
       />
       <RecentTrades
