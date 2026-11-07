@@ -6,6 +6,7 @@ import { createClient } from '@/utils/supabase/server'
 import { establishedUser } from '../account/lib/establishedUser'
 import { fetchTypeNames } from '../typeNames'
 import { MarketView } from './marketView'
+import { parseKind } from './shares'
 import {
   fromCharacterRow,
   fromCorpRow,
@@ -36,17 +37,21 @@ const fetchAllRows = async <T,>(
   return data.length < PAGE_SIZE ? acc : fetchAllRows(build, from + PAGE_SIZE, acc)
 }
 
-// id → name from universe_name (the universe-names job keeps it populated).
-// An id that universe_name does not know is not in the record; the UI then
-// shows the raw id.
+type UniverseName = { name: string; category: string }
+
+// id → name and category from universe_name (the universe-names job keeps it
+// populated). An id that universe_name does not know is not in the record; the
+// UI then shows the raw id.
 const fetchUniverseNames = async (
   supabase: Awaited<ReturnType<typeof createClient>>,
   ids: number[]
-): Promise<Record<number, string>> => {
+): Promise<Record<number, UniverseName>> => {
   const chunks = await Promise.all(
     splitEvery(NAME_CHUNK, ids).map(async (chunk) => {
-      const { data } = await supabase.from('universe_name').select('id, name').in('id', chunk)
-      return (data ?? []).map((r) => [Number(r.id), r.name as string] as const)
+      const { data } = await supabase.from('universe_name').select('id, name, category').in('id', chunk)
+      return (data ?? []).map(
+        (r) => [Number(r.id), { name: r.name as string, category: r.category as string }] as const
+      )
     })
   )
   return Object.fromEntries(chunks.flat())
@@ -103,7 +108,16 @@ const MarketPage = async () => {
   const corpIds = uniq(trades.flatMap((t) => (t.corporation_id == null ? [] : [t.corporation_id])))
   const clientIds = uniq(trades.map((t) => t.client_id))
   const names = await fetchUniverseNames(supabase, uniq([...corpIds, ...clientIds]))
-  const pickNames = (ids: number[]) => Object.fromEntries(ids.flatMap((id) => (id in names ? [[id, names[id]]] : [])))
+  const pickNames = (ids: number[]) =>
+    Object.fromEntries(ids.flatMap((id) => (id in names ? [[id, names[id].name]] : [])))
+  // character, corporation or alliance per counterparty, so the tile can show
+  // the right image. An id of another or unknown kind is not in the record.
+  const counterpartyKinds = Object.fromEntries(
+    clientIds.flatMap((id) => {
+      const kind = id in names ? parseKind(names[id].category) : undefined
+      return kind === undefined ? [] : [[id, kind]]
+    })
+  )
 
   const typeNamesPromise = fetchTypeNames(trades.map((t) => t.type_id))
 
@@ -114,6 +128,7 @@ const MarketPage = async () => {
       characters={sortedCharacters}
       corpNames={pickNames(corpIds)}
       counterpartyNames={pickNames(clientIds)}
+      counterpartyKinds={counterpartyKinds}
       typeNamesPromise={typeNamesPromise}
     />
   )
