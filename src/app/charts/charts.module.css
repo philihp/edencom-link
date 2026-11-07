@@ -1,0 +1,95 @@
+/* Shared chart primitives (src/app/charts/). The donut: the ring on the
+   left, the legend on the right; the legend drops under the ring on a
+   narrow screen. */
+
+.donut {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.ring {
+  display: block;
+  width: 180px;
+  max-width: 100%;
+  height: auto;
+  flex: 0 0 auto;
+}
+
+.slice {
+  stroke: var(--paper-raised);
+  stroke-width: 1;
+  transition: opacity 120ms;
+}
+
+.dim {
+  opacity: 0.35;
+}
+
+.sliceLabel {
+  font-family: var(--mono);
+  font-size: 10px;
+  fill: var(--ink);
+}
+
+.onAccent {
+  fill: var(--paper);
+}
+
+.centreValue {
+  font-family: var(--mono);
+  font-size: 18px;
+  fill: var(--ink);
+}
+
+.centreCaption {
+  font-size: 11px;
+  fill: var(--ink-faint);
+}
+
+.legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  flex: 1 1 200px;
+  min-width: 0;
+  font-size: 13px;
+}
+
+.legendRow {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr) auto 3.5em;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 4px;
+  border-radius: var(--radius-sm);
+}
+
+.legendActive {
+  background: var(--accent-tint);
+}
+
+.swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+.legendLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.legendValue,
+.legendShare {
+  font-family: var(--mono);
+  text-align: right;
+  color: var(--ink-soft);
+}
+
+.empty {
+  color: var(--ink-faint);
+  margin: 0;
+}
