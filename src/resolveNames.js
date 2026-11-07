@@ -154,6 +154,59 @@ export const resolveKnownCorpNames = async () => {
   console.log(`[names] upserted ${rows.length} corp name(s)`)
 }
 
+// The market page reads trades back this far (twice its longest window; see
+// LOOKBACK_DAYS in src/app/market/windows.ts). A counterparty of an older
+// trade is not shown, so the resolver does not look further back.
+const TRADE_LOOKBACK_MS = 180 * 24 * 60 * 60 * 1000
+
+// The two wallet transaction tables. client_id is the other side of each
+// trade: a character, a player corporation or an NPC corporation.
+const TRADE_TABLES = ['character_wallet_transaction', 'corp_wallet_transaction']
+
+// Positive client_id values of one table's rows since `cutoff`. Newest
+// transaction ids first: the recent rows come at the start of the primary key
+// scan, so each page does not first walk over the old rows.
+const tradeClientIds = (cutoff) => (table) =>
+  selectAllRows((from, to) =>
+    sudoSupabase
+      .from(table)
+      .select('client_id')
+      .gte('date', cutoff)
+      .order('transaction_id', { ascending: false })
+      .range(from, to)
+  ).then(
+    pipe(
+      map(pipe(prop('client_id'), Number)),
+      filter((n) => Number.isFinite(n) && n > 0)
+    )
+  )
+
+// Resolve and cache (in universe_name) the name of every counterparty of a
+// market trade in the last 180 days: the buyer of each sale and the seller of
+// each purchase, from both wallet transaction tables. The market page reads
+// universe_name to name them. Only resolves missing ids, so steady-state runs
+// do nothing.
+export const resolveTradeCounterpartyNames = async () => {
+  const cutoff = new Date(Date.now() - TRADE_LOOKBACK_MS).toISOString()
+  const perTable = await Promise.all(map(tradeClientIds(cutoff), TRADE_TABLES))
+  const ids = new Set(unnest(perTable))
+  if (ids.size === 0) return
+
+  const knownIds = await knownIdsAmong(ids)
+  const toResolve = reject((id) => knownIds.has(id), [...ids])
+  console.log(`[names] trade counterparties: ${ids.size} seen in last 180d, ${toResolve.length} to resolve`)
+  if (toResolve.length === 0) return
+
+  const resolved = await resolveAllIds(toResolve)
+  if (resolved.length === 0) return
+
+  const rows = map(toNameRow, resolved)
+  const { error: upErr } = await sudoSupabase.from('universe_name').upsert(rows, { onConflict: 'id' })
+  if (upErr) throw upErr
+  const characterCount = filter(propEq('character', 'category'), rows).length
+  console.log(`[names] upserted ${rows.length} counterparty name(s) (${characterCount} character)`)
+}
+
 // Cache (in universe_name) the name of every NPC station that currently holds
 // one of our assets. ESI marks those asset rows with location_type 'station',
 // and their names resolve via universe/names (category 'station') — no docking

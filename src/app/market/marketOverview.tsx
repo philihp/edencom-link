@@ -4,8 +4,8 @@ import { useMemo } from 'react'
 
 import { formatIsk, formatIskValue } from '../isk'
 import { TypeName } from '../typeName'
-import { bucketSales, topTypesByValue, type Bucket, type TypeTotal } from './aggregate'
-import type { Sale } from './recentSales'
+import { bucketTrades, topTypesByValue, type Bucket, type TypeTotal } from './aggregate'
+import type { Trade } from './trade'
 import { windowOption } from './windows'
 import styles from './market.module.css'
 
@@ -16,7 +16,8 @@ const TOP_N = 16
 type MarketOverviewProps = {
   // Server-anchored "now" (epoch ms) so window math agrees across SSR/hydration.
   now: number
-  sales: Sale[]
+  // Sells only: the view picks the side.
+  sales: Trade[]
   windowDays: number
   typeNamesPromise: Promise<Record<number, string>>
 }
@@ -102,7 +103,7 @@ export const MarketOverview = ({ now, sales, windowDays, typeNamesPromise }: Mar
     return {
       current: topTypesByValue(sales, currentStart, now, TOP_N),
       previous: topTypesByValue(sales, previousStart, currentStart, TOP_N),
-      buckets: bucketSales(sales, currentStart, now, opt.bucketHours * HOUR_MS),
+      buckets: bucketTrades(sales, currentStart, now, opt.bucketHours * HOUR_MS),
     }
   }, [sales, now, windowDays, opt.bucketHours])
 

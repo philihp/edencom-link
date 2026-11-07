@@ -6,19 +6,7 @@ import { Name } from '../names'
 import { TypeName } from '../typeName'
 import styles from './market.module.css'
 import { usePersist } from '../usePersist'
-
-export type Sale = {
-  transaction_id: string | number
-  // Personal sales carry the owning character; corp sales have no character and
-  // carry a corporation_id instead.
-  registration_id: string | null
-  corporation_id?: number | string | null
-  date: string
-  type_id: number | string
-  quantity: number | string
-  unit_price: number | string
-  seen_at: string
-}
+import type { Trade } from './trade'
 
 type Character = {
   id: string
@@ -29,7 +17,8 @@ type RecentSalesProps = {
   // Server-anchored "now" (epoch ms) shared with the overview, so the table and
   // the tiles cover exactly the same window.
   now: number
-  sales: Sale[]
+  // Sells only: the view picks the side.
+  sales: Trade[]
   characters: Character[]
   // corporation_id → name, for labelling corp sales (falls back to a raw id).
   corpNames: Record<number, string>
@@ -64,7 +53,7 @@ export const RecentSales = ({ now, sales, characters, corpNames, typeNamesPromis
     (a, b) => corpName(a).localeCompare(corpName(b))
   )
 
-  const sellerLabel = (s: Sale): string | null => {
+  const sellerLabel = (s: Trade): string | null => {
     if (s.registration_id) return characterName[s.registration_id] ?? null
     if (s.corporation_id != null) return corpName(Number(s.corporation_id))
     return null
@@ -81,7 +70,7 @@ export const RecentSales = ({ now, sales, characters, corpNames, typeNamesPromis
     return undefined
   })
 
-  const matchesSeller = (s: Sale) => {
+  const matchesSeller = (s: Trade) => {
     if (sellerId === ALL_SELLERS) return true
     if (sellerId.startsWith(CORP_PREFIX)) return String(s.corporation_id ?? '') === sellerId.slice(CORP_PREFIX.length)
     return s.registration_id === sellerId
