@@ -177,7 +177,7 @@ unclassified. The `amount` of the entry is always one leg against Cash; the
 | `contract_auction_bid`, `contract_auction_bid_refund`, `contract_auction_sold` | ±amount | `1400 Receivables` while the auction runs; `1200`/`4100` when sold |
 | `industry_job_tax`                                 | −amount | `5210 Industry: facility tax`                                           |
 | `manufacturing`, `researching_*`, `copying`, `reaction`, `reprocessing_tax` | −amount | `5200 Industry: install fees` (the job sub-ledger moves it into `1210 WIP`) |
-| `player_donation`, `player_trading`, `corporation_account_withdrawal` | ±amount | `3100 Intercompany` when the other party is in the group; else `4900`/`5900`; a donation PR 7 of the market plan tied to a gift contract posts as a contract sale |
+| `player_donation`, `player_trading`, `corporation_account_withdrawal` | ±amount | `3100 Intercompany` when the other party is in the group; `1400 Receivables` when it applies to an open receivable of that party (see Contracts); else `4900`/`5900` |
 | `bounty_prizes`, `agent_mission_reward`, `agent_mission_time_bonus_reward`, `ess_escrow_transfer`, `corporate_reward_payout` | +amount | `4300 Bounties and loot` |
 | `insurance`                                        | ±amount | `4400 Insurance` (payout) or `5900` (premium)                           |
 | `office_rental_fee`, `structure_gate_jump`, `infrastructure_hub_maintenance`, `upkeep_adjustment_fee` | −amount | `5500 Office and rent` |
@@ -205,10 +205,33 @@ A finished item exchange or auction. `contractDirection`
 included items are the inventory leg: on a purchase, one lot per item line
 with the contract's price spread by the items' Jita value at the time
 (a contract of ten things has one price); on a sale, FIFO consumption and
-COGS as for a transaction. A gift matched to a donation (market plan PR 7)
-posts as a contract sale at the donation amount. A contract between two
-group members is intercompany: the items move between the two entities'
-inventories at book cost, and no revenue is recognised.
+COGS as for a transaction. A contract between two group members is
+intercompany: the items move between the two entities' inventories at book
+cost, and no revenue is recognised.
+
+**A zero-price contract to an outsider is a sale on credit**, not a gift
+and not a match. It posts two entries joined by a receivable:
+
+1. On completion (source `contract`): `1400 Receivables` is debited and
+   `4100 Revenue: contract sales` credited at the **estimated** value, the
+   Jita split of the items at that moment; `5000 COGS` and `1200 Inventory`
+   move the lots out as for any sale. The entry carries `estimated: true`.
+2. When ISK arrives (source `journal`, a `player_donation` whose first party
+   is the acceptor): `1000 Cash` is debited, the receivable credited in
+   full, and the difference between the estimate and the cash posts to
+   `4100` on the same entry, so the sale ends at what was paid. The cash
+   is **applied** to the open receivable of that counterparty whose
+   estimate is nearest the amount, then nearest in time; one journal entry
+   settles one receivable.
+
+A receivable nobody pays stays on the balance sheet and the page lists it
+as unpaid. Past `WRITE_OFF_DAYS` (30) it is written off: `5900 Other
+expense` debited, `1400` credited. A true gift ends there.
+
+This replaces the time-window match of the market plan's PR 7: a late
+payment still finds its receivable, the balance sheet shows what is owed,
+and the amount test the owner asked for ("an approximate value") is the
+application rule itself.
 
 ### Industry jobs (`src/ledger/jobs.ts`)
 
@@ -343,8 +366,8 @@ are untouched, so a rebuild is always safe.
 ### PR 5 — `/market` on the sub-ledger
 - `ledger_sales()`; `/market` reads it: margin per trade, per counterparty
   and per item beside the turnover it shows today; the feeds' direct reads
-  go. The gift-contract match (market plan PR 7) moves into the contract
-  fold.
+  go. The gift-contract match (market plan PR 7) is retired in favour of the
+  receivable (PR 3).
 
 ### PR 6 — MCP and GraphQL
 - `ledger_statement` / `ledger_sales` tools; a `ledger` GraphQL field for
