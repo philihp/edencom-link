@@ -6,7 +6,7 @@ import { isTimeWindowDays } from '../timeWindow'
 import { usePersist } from '../usePersist'
 import { WindowSelect } from '../windowSelect'
 import { onSide } from './aggregate'
-import { MarketOverview } from './marketOverview'
+import { MarketFlow, MarketOverview } from './marketOverview'
 import { RecentTrades } from './recentTrades'
 import type { CounterpartyKind } from './shares'
 import { DEFAULT_SIDE, parseSide, SIDE_COPY, SIDE_STORAGE_KEY, SIDES } from './sides'
@@ -39,8 +39,8 @@ type MarketViewProps = {
 }
 
 // Owns the page-level time window and the active tab. The dropdown floats to
-// the right of the "Market" title. The tab bar under the title picks sales or
-// purchases. Both controls re-scope the overview tiles and the table below.
+// the right of the "Market" title. The ISK flow chart (both sides) comes next,
+// and the tab bar under it picks sales or purchases. Both controls re-scope the overview tiles and the table below.
 export const MarketView = ({
   now,
   trades,
@@ -66,6 +66,7 @@ export const MarketView = ({
         <h1>Market</h1>
         <WindowSelect days={windowDays} onChange={setWindowDays} />
       </div>
+      <MarketFlow now={nowMs} side={side} allTrades={trades} windowDays={windowDays} />
       <div role="tablist" aria-label="Trade side" className={styles.sideTabs}>
         {SIDES.map((s) => (
           <button

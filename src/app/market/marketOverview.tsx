@@ -36,7 +36,7 @@ type MarketOverviewProps = {
   // The active tab. The view gives only the trades on this side.
   side: Side
   trades: Trade[]
-  // Both sides, for the flow chart and the totals.
+  // Both sides, for the totals.
   allTrades: Trade[]
   windowDays: number
   // client_id → name. An id with no name shows its raw id.
@@ -176,9 +176,33 @@ const TypeDonutNamed = ({
 const granularityLabel = (bucketHours: number) =>
   bucketHours === 1 ? 'hourly' : bucketHours < 24 ? `${bucketHours}-hour` : 'daily'
 
-// Sales and purchases over the window, on every tab. A full row wide.
+// Sales and purchases over the window, both sides whatever the tab. The page
+// shows it above the tabs, a full row wide.
+export const MarketFlow = ({
+  now,
+  side,
+  allTrades,
+  windowDays,
+}: {
+  now: number
+  side: Side
+  allTrades: Trade[]
+  windowDays: number
+}) => {
+  const { bucketHours } = windowOption(windowDays)
+  const rows = useMemo(
+    () => flowBuckets(allTrades, now - windowDays * DAY_MS, now, bucketHours * HOUR_MS),
+    [allTrades, now, windowDays, bucketHours]
+  )
+  return (
+    <section className={styles.flowSection}>
+      <FlowTile side={side} rows={rows} bucketHours={bucketHours} />
+    </section>
+  )
+}
+
 const FlowTile = ({ side, rows, bucketHours }: { side: Side; rows: FlowBucket[]; bucketHours: number }) => (
-  <div className={`${styles.tile} ${styles.tileFull}`}>
+  <div className={styles.tile}>
     <div className={styles.tileHead}>
       <h2 className={styles.tileTitle}>ISK flow</h2>
       <FlowLegend side={side} />
@@ -240,20 +264,17 @@ export const MarketOverview = ({
     }
   }, [trades, now, windowDays])
 
-  // The flow chart and the totals show both sides, whatever the tab.
-  const { flow, salesTotals, purchaseTotals } = useMemo(() => {
-    const currentStart = now - windowDays * DAY_MS
-    const inCurrent = filter(inWindow(currentStart, now), allTrades)
+  // The totals show both sides, whatever the tab.
+  const { salesTotals, purchaseTotals } = useMemo(() => {
+    const inCurrent = filter(inWindow(now - windowDays * DAY_MS, now), allTrades)
     return {
-      flow: flowBuckets(allTrades, currentStart, now, opt.bucketHours * HOUR_MS),
       salesTotals: totalsOf(onSide('sell')(inCurrent)),
       purchaseTotals: totalsOf(onSide('buy')(inCurrent)),
     }
-  }, [allTrades, now, windowDays, opt.bucketHours])
+  }, [allTrades, now, windowDays])
 
   return (
     <section className={styles.overview}>
-      <FlowTile side={side} rows={flow} bucketHours={opt.bucketHours} />
       <TopItems
         wide
         title={`Top items ${copy.verb}`}
