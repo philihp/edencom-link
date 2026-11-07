@@ -441,3 +441,10 @@
   font-size: 12px;
   color: var(--ink-faint);
 }
+
+/* A value inferred from a journal entry (a paid gift contract). The hover
+   names the entry. */
+.inferred {
+  cursor: help;
+  border-bottom: 1px dotted var(--ink-faint);
+}

@@ -23,6 +23,7 @@ let nextId = 1
 const trade = (over: Partial<Trade>): Trade => ({
   source: 'market',
   contract: null,
+  payment: null,
   transaction_id: nextId++,
   side: 'sell',
   registration_id: 'reg-a',

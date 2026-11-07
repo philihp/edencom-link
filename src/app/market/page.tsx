@@ -12,10 +12,20 @@ import {
   contractTrades,
   FINISHED,
   itemsByContract,
+  oneRowPerContract,
   TRADE_KINDS,
   type ContractTradeRow,
 } from './contracts'
 import { MarketView } from './marketView'
+import {
+  fromCharacterJournal,
+  fromCorpJournal,
+  isGift,
+  JOURNAL_COLUMNS,
+  matchPayments,
+  PAYMENT_WINDOW_MS,
+  PLAYER_DONATION,
+} from './payments'
 import { parseKind } from './shares'
 import {
   fromCharacterRow,
@@ -53,6 +63,9 @@ type ContractViewRow = Omit<ContractTradeRow, 'owner'>
 type CharacterContractRow = ContractViewRow & { registration_id: string }
 type CorpContractRow = ContractViewRow & { corporation_id: Num }
 type ContractItemRow = { contract_id: Num; type_id: Num; quantity: Num }
+type JournalRow = { entry_id: Num; date: string; amount: Num | null; first_party_id: Num | null }
+type CharacterJournalRow = JournalRow & { registration_id: string }
+type CorpJournalRow = JournalRow & { corporation_id: Num }
 
 // Contract ids per item .in() request, so that the request URL stays short.
 const CONTRACT_CHUNK = 200
@@ -195,22 +208,58 @@ const MarketPage = async () => {
     characterIds: new Set(characterIds.map(String)),
     corporationIds: new Set(ourCorporationIds),
   }
+  const parties = accountParties(
+    characterIds,
+    directorships.map((d) => d.corporationId)
+  )
+  // A gift (a zero-price exchange to an outsider) is a sale when a
+  // player_donation from the acceptor paid for it (payments.ts). Read the
+  // donations into our wallets for the lookback, plus the window before it.
+  // RLS scopes both journals to the wallets the user may see.
+  const gifts = oneRowPerContract(contractRows).filter(isGift(ours, parties))
+  const journalSince = new Date(Date.parse(since) - PAYMENT_WINDOW_MS).toISOString()
+  const characterIdOf = (registrationId: string): Num | undefined =>
+    registrations.find((r) => r.id === registrationId)?.character_id as Num | undefined
   const contractIdsOf = (rows: { contract_id: Num }[]) => uniq(rows.map((r) => Number(r.contract_id)))
-  const [characterItems, corpItems] = await Promise.all([
+  const [characterItems, corpItems, characterJournal, corpJournal] = await Promise.all([
     fetchContractItems(supabase, 'character_contract_item', contractIdsOf(characterContracts)),
     fetchContractItems(supabase, 'corp_contract_item', contractIdsOf(corpContracts)),
+    gifts.length === 0
+      ? []
+      : fetchAllRows<CharacterJournalRow>((from, to) =>
+          supabase
+            .from('character_wallet_journal')
+            .select(`registration_id, ${JOURNAL_COLUMNS}`)
+            .eq('ref_type', PLAYER_DONATION)
+            .gt('amount', 0)
+            .gte('date', journalSince)
+            .order('registration_id')
+            .order('entry_id')
+            .range(from, to)
+        ),
+    gifts.length === 0
+      ? []
+      : fetchAllRows<CorpJournalRow>((from, to) =>
+          supabase
+            .from('corp_wallet_journal')
+            .select(`corporation_id, ${JOURNAL_COLUMNS}`)
+            .eq('ref_type', PLAYER_DONATION)
+            .gt('amount', 0)
+            .gte('date', journalSince)
+            .order('corporation_id')
+            .order('division')
+            .order('entry_id')
+            .range(from, to)
+        ),
+  ])
+  const payments = matchPayments(gifts, [
+    ...fromCharacterJournal(characterIdOf)(characterJournal),
+    ...fromCorpJournal(corpJournal),
   ])
   // A contract seen by a character and by a corporation has the same items in
   // both tables; keep one copy of each contract's list.
   const items = new Map([...itemsByContract(corpItems), ...itemsByContract(characterItems)])
-  const contracts = contractTrades({
-    ours,
-    parties: accountParties(
-      characterIds,
-      directorships.map((d) => d.corporationId)
-    ),
-    items,
-  })(contractRows)
+  const contracts = contractTrades({ ours, parties, items, payments })(contractRows)
 
   const trades: Trade[] = [...personalRows.map(fromCharacterRow), ...corpRows.map(fromCorpRow), ...contracts]
 

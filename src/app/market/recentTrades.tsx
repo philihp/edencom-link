@@ -10,6 +10,7 @@ import { TypeName } from '../typeName'
 import { usePersist } from '../usePersist'
 import { inWindow, tradeValue } from './aggregate'
 import { contractLabel } from './contracts'
+import { paymentNote } from './payments'
 import { byWho, capitalize, counterpartyLabel, parseWho, SIDE_COPY, whoOptions } from './sides'
 import type { ContractDetail, Side, Trade } from './trade'
 import styles from './market.module.css'
@@ -184,7 +185,15 @@ export const RecentTrades = ({
                 </td>
                 <td>{t.contract === null ? t.quantity : '—'}</td>
                 <td>{t.contract === null ? formatIskValue(t.unit_price) : '—'}</td>
-                <td>{formatIskValue(tradeValue(t))}</td>
+                <td>
+                  {t.payment === null ? (
+                    formatIskValue(tradeValue(t))
+                  ) : (
+                    <span className={styles.inferred} title={paymentNote(t.payment)}>
+                      ≈ {formatIskValue(tradeValue(t))}
+                    </span>
+                  )}
+                </td>
                 <td>
                   <DateTime value={t.date} />
                 </td>
