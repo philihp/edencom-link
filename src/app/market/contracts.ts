@@ -1,6 +1,7 @@
 import { filter, groupBy, map, pipe, reduce, values } from 'ramda'
 
 import { contractDirection, contractSide, type ContractRow, type OurIds } from '../api/graphql/contracts.ts'
+import type { Payment } from './payments.ts'
 import type { ContractItem, Side, Trade } from './trade.ts'
 
 // Finished item exchanges and auctions as market trades. Pure: the page reads
@@ -118,14 +119,19 @@ export type ContractTradeInput = {
   parties: ReadonlySet<string>
   // contract id → its included items.
   items: Map<string, ContractItem[]>
+  // contract id → the journal entry that paid for a gift (payments.ts). A
+  // gift with an entry here is a sale; its value is the amount of the entry.
+  payments?: Map<string, Payment>
 }
 
 // One contract row as a trade, or null when it is not a trade.
 export const contractTrade =
-  ({ ours, parties, items }: ContractTradeInput) =>
+  ({ ours, parties, items, payments }: ContractTradeInput) =>
   (row: ContractTradeRow): Trade | null => {
     if (row.status !== FINISHED || !TRADE_KINDS.includes(row.type)) return null
     if (isInternal(parties)(row)) return null
+    const payment = payments?.get(String(row.contract_id))
+    if (payment !== undefined) return paidGift(row, payment, ours, items)
     const direction = contractDirection(row, ours)
     const side = contractSide(row, ours)
     const date = row.date_completed ?? row.date_accepted
@@ -147,8 +153,37 @@ export const contractTrade =
       unit_price: value,
       seen_at: row.seen_at,
       contract: { title: row.title || null, items: items.get(String(row.contract_id)) ?? [] },
+      payment: null,
     }
   }
+
+// A gift that a journal entry paid for: a sale to the acceptor, with the
+// amount of the entry as its value. The value is inferred, so the trade
+// carries the entry.
+const paidGift = (
+  row: ContractTradeRow,
+  payment: Payment,
+  ours: OurIds,
+  items: Map<string, ContractItem[]>
+): Trade | null => {
+  const date = row.date_completed ?? row.date_accepted
+  if (date == null || row.acceptor_id == null) return null
+  return {
+    source: 'contract',
+    transaction_id: Number(row.contract_id),
+    side: 'sell',
+    ...ourWallet(row, 'issuer', ours),
+    client_id: Number(row.acceptor_id),
+    location_id: Number(row.start_location_id ?? 0),
+    date,
+    type_id: 0,
+    quantity: 1,
+    unit_price: payment.amount,
+    seen_at: row.seen_at,
+    contract: { title: row.title || null, items: items.get(String(row.contract_id)) ?? [] },
+    payment,
+  }
+}
 
 // Every row as a trade: one row per contract, then the trades only.
 export const contractTrades =

@@ -18,6 +18,8 @@
 // - All numeric columns are numbers. PostgREST can send bigint and numeric
 //   columns as strings, so the mappers convert them here, one time.
 
+import type { Payment } from './payments.ts'
+
 export type Side = 'sell' | 'buy'
 
 export type Source = 'market' | 'contract'
@@ -30,6 +32,8 @@ export type ContractDetail = {
   items: ContractItem[]
 }
 
+// A non-null `payment` means the value is inferred: the trade is a gift
+// contract, and a player_donation journal entry paid for it (payments.ts).
 export type Trade = {
   source: Source
   transaction_id: number
@@ -45,6 +49,9 @@ export type Trade = {
   seen_at: string
   // Null for a market trade.
   contract: ContractDetail | null
+  // The journal entry that paid for a gift contract. Null for every other
+  // trade.
+  payment: Payment | null
 }
 
 type Num = number | string
@@ -73,6 +80,7 @@ const sideOf = (isBuy: boolean): Side => (isBuy ? 'buy' : 'sell')
 const common = (r: CommonRow) => ({
   source: 'market' as const,
   contract: null,
+  payment: null,
   transaction_id: Number(r.transaction_id),
   side: sideOf(r.is_buy),
   client_id: Number(r.client_id),
@@ -98,3 +106,6 @@ export const fromCorpRow = (r: CorpTransactionRow): Trade => ({
 
 // True for a wallet transaction, false for a contract.
 export const isMarket = (t: Trade): boolean => t.source === 'market'
+
+// True when the value of the trade is inferred from a journal entry.
+export const isInferred = (t: Trade): boolean => t.payment !== null

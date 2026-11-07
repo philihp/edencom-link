@@ -102,6 +102,7 @@ test('contractTrade: we issued, a stranger paid the price: a sale to the strange
         { type_id: 35, quantity: 5 },
       ],
     },
+    payment: null,
   })
 })
 

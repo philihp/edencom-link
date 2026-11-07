@@ -24,6 +24,7 @@ let nextId = 1
 const trade = (over: Partial<Trade>): Trade => ({
   source: 'market',
   contract: null,
+  payment: null,
   transaction_id: nextId++,
   side: 'sell',
   registration_id: 'reg-a',
@@ -54,6 +55,7 @@ test('fromCharacterRow maps is_buy to side and converts numeric strings', () => 
   assert.deepEqual(t, {
     source: 'market',
     contract: null,
+    payment: null,
     transaction_id: 6123456789,
     side: 'buy',
     registration_id: 'reg-a',

@@ -18,6 +18,7 @@ import type { Trade } from '../src/app/market/trade.ts'
 const trade = (over: Partial<Trade>): Trade => ({
   source: 'market',
   contract: null,
+  payment: null,
   transaction_id: 1,
   side: 'sell',
   registration_id: 'r1',
