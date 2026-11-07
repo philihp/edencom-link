@@ -25,8 +25,11 @@ export const ASSET_SAFETY_FLAG = 'AssetSafety'
 export type AssetSafetySystem = { id: number; name: string; region: string }
 
 export const ASSET_SAFETY_SYSTEMS: readonly AssetSafetySystem[] = [
-  // Lowsec destination for structures lost in and near Delve.
+  // Lowsec destinations where the owner's asset safety lands.
   { id: 30003935, name: 'Irmalin', region: 'Khanid' },
+  { id: 30003897, name: 'Gehi', region: 'Khanid' },
+  { id: 30000019, name: 'Podion', region: 'Derelik' },
+  { id: 30000044, name: 'Faspera', region: 'Derelik' },
 ]
 
 // The two reads that find the limbo stacks of the target types. They are
