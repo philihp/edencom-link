@@ -47,9 +47,10 @@
   box-shadow: inset 0 -2px 0 var(--accent);
 }
 
-/* Four equal columns. Row 1: "Top items" spans two (50%), the bar chart and
- * the prior-period tile take one each (25%). Row 2: the counterparty tile
- * spans two, the two share donuts take one each. Rows have a fixed height, so
+/* Four equal columns. Row 1: the flow chart spans all four. Row 2: "Top
+ * items" spans two (50%), the prior-period tile and the item donut take one
+ * each (25%). Row 3: the counterparty tile spans two, the counterparty donut
+ * and the totals take one each. Rows have a fixed height, so
  * more tiles flow into new rows of the same height. Lists scroll inside their tiles instead of growing the page.
  * Collapses to a single column on narrow screens. */
 .overview {
@@ -64,6 +65,10 @@
   grid-column: span 2;
 }
 
+.tileFull {
+  grid-column: 1 / -1;
+}
+
 @media (max-width: 720px) {
   .overview {
     grid-template-columns: 1fr;
@@ -71,7 +76,8 @@
     grid-auto-rows: auto;
   }
 
-  .tileWide {
+  .tileWide,
+  .tileFull {
     grid-column: auto;
   }
 }
@@ -171,37 +177,6 @@
   color: var(--ink-faint);
 }
 
-/* Total-sales bar chart. Bars fill the tile height (stretching to match the
- * neighbouring list tiles) and grow up from a shared baseline. */
-.bars {
-  display: flex;
-  align-items: flex-end;
-  gap: 1px;
-  flex: 1 1 auto;
-  min-height: 160px;
-  width: 100%;
-}
-
-.barCol {
-  display: flex;
-  align-items: flex-end;
-  flex: 1 1 0;
-  min-width: 0;
-  height: 100%;
-}
-
-.bar {
-  width: 100%;
-  min-height: 0;
-  background: var(--accent);
-  border-radius: 1px 1px 0 0;
-  transition: height 0.12s ease;
-}
-
-.barCol:hover .bar {
-  background: var(--accent-strong);
-}
-
 .salesHeader {
   display: flex;
   align-items: center;
@@ -288,4 +263,164 @@
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
+}
+
+/* ── Flow chart ──────────────────────────────────────────────────────── */
+
+/* The SVG keeps its aspect ratio and sits in the middle of the tile height. */
+.flowPlot {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+}
+
+.flowChart {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 100%;
+  cursor: crosshair;
+  overflow: visible;
+}
+
+.flowGrid {
+  stroke: var(--line-soft);
+  stroke-width: 1;
+}
+
+.flowZero,
+.flowTick {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+
+.flowAxisLabel {
+  font-family: var(--mono);
+  font-size: 10px;
+  fill: var(--ink-faint);
+}
+
+/* The series of the active tab wears the accent; the other one is gray. The
+ * same classes colour the keys in the legend and the hover card. */
+.flowBarActive {
+  fill: var(--accent);
+  background: var(--accent);
+}
+
+.flowBarOther {
+  fill: var(--ink-faint);
+  background: var(--ink-faint);
+}
+
+.flowNet {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+}
+
+.flowNetDot {
+  fill: var(--paper-raised);
+  stroke: var(--ink);
+  stroke-width: 1.5;
+}
+
+.flowHoverBand {
+  fill: var(--ink-faint);
+  fill-opacity: 0.12;
+}
+
+.flowLegend {
+  display: flex;
+  gap: 12pt;
+  margin-right: auto;
+  font-size: 9pt;
+  color: var(--ink-soft);
+}
+
+.flowKey {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 1px;
+  vertical-align: baseline;
+}
+
+.flowKeyLine {
+  height: 2px;
+  width: 12px;
+  vertical-align: middle;
+  background: var(--ink);
+}
+
+/* The hover card: the one place a shadow is allowed (overlays only). */
+.flowCard {
+  position: absolute;
+  top: 10px;
+  width: 220px;
+  max-width: calc(100% - 28px);
+  background: var(--paper-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  padding: 8px 10px;
+  pointer-events: none;
+  font-size: 11px;
+  color: var(--ink);
+  z-index: 1;
+}
+
+.flowCardMoment {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--ink-soft);
+}
+
+.flowCardRows {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 3px 10px;
+  margin: 6px 0 0;
+}
+
+.flowCardRows dt {
+  color: var(--ink-soft);
+}
+
+.flowCardRows dd {
+  margin: 0;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* The totals tile: label above value. */
+.totals {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+}
+
+.totals dt {
+  font-size: 9pt;
+  color: var(--ink-faint);
+}
+
+.totals dd {
+  margin: 2px 0 0;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.totalsCount {
+  font-family: var(--sans);
+  font-size: 9pt;
+  font-weight: 400;
+  color: var(--ink-faint);
 }
