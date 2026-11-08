@@ -351,3 +351,13 @@ test('every filter dimension is a singular/plural pair, and the old names are go
     }
   }
 })
+
+test('AssetPage.truncated names the interactive cap and the CSV export cap', async () => {
+  const { ASSET_CAP, EXPORT_CAP } = await import('../src/app/api/graphql/filters.ts')
+  const page = typeDefs.slice(
+    typeDefs.indexOf('type AssetPage'),
+    typeDefs.indexOf('truncated: Boolean!', typeDefs.indexOf('type AssetPage'))
+  )
+  assert.match(page, new RegExp(`at most ${ASSET_CAP}`))
+  assert.match(page, new RegExp(`up to ${EXPORT_CAP}`))
+})

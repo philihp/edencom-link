@@ -25,7 +25,8 @@ import { z } from 'zod'
 import { typeDefs } from '@/app/api/graphql/schema.graphql'
 import type { ShareState } from '@/app/asset/shareData'
 import { resolveAudience, type AudienceResolution, type OwnAudiences } from '@/app/link/audience'
-import { linkRows } from '@/app/link/flatten'
+import { ASSET_CAP, EXPORT_CAP } from '@/app/api/graphql/filters'
+import { linkRows, truncationOf } from '@/app/link/flatten'
 import { linkEdits, resolveLinkRef } from '@/app/link/linkRef'
 import { runLink } from '@/app/link/run'
 import { applyLinkShare, fetchOwnAudiences } from '@/app/link/share'
@@ -63,6 +64,18 @@ const RUN_ROWS = 200
 // the human that the query answers what they asked, not enough to make a tool
 // result into a data dump — the link's own page and CSV are where the rows live.
 const PREVIEW_ROWS = 5
+
+// Where the rest of a cut-short page is. An interactive run caps a list
+// (ASSET_CAP for assets, whatever its `limit:`), while the link's CSV runs under
+// EXPORT_CAP. Without this a model reads `truncated: true` at 5000 rows as the
+// end of the road and tells the human a full export is impossible.
+const truncationNote = (data: unknown) => {
+  const cut = truncationOf(data)
+  if (!cut) return {}
+  return {
+    truncated_note: `The query matched ${cut.totalCount} rows and this run returned ${cut.returned}. An interactive run returns at most ${ASSET_CAP} asset rows (fewer for other lists, or the query's own smaller limit). A saved link's CSV URL runs the same query and returns up to ${EXPORT_CAP} rows in one file — save it with create_link and give the human csv_url (or link_csv_url when shared) for Google Sheets =IMPORTDATA().`,
+  }
+}
 
 // Worked examples beat prose for query shape. Derived from the shared template
 // list (src/app/link/templates.ts) — the same prewritten queries the /link
@@ -123,6 +136,7 @@ const preview = async (userId: string, query: string, variables: Record<string, 
       ...(rows.length > PREVIEW_ROWS && {
         note: `Showing ${PREVIEW_ROWS} of ${rows.length} rows; the link itself returns all of them.`,
       }),
+      ...truncationNote(result.data),
       ...(result.errors.length > 0 && { errors: result.errors }),
     },
   }
@@ -197,6 +211,7 @@ const RULES = [
   } and the ${SESSION_ONLY_ARGUMENTS.map((a) => `"${a}"`).join(', ')} argument are rejected — a link already runs as its creator.`,
   'Variables are fixed by the creator when the link is saved; whoever opens the link cannot change them.',
   'A link reads current data only. There is no history in this schema.',
+  `An interactive run (run_query, /graphql, the link's page) returns at most ${ASSET_CAP} asset rows whatever the limit; the link's CSV URL returns up to ${EXPORT_CAP} rows, so a large export is a saved link's csv_url.`,
 ]
 
 export const registerLinkTools = (server: McpServer): void => {
@@ -268,6 +283,7 @@ export const registerLinkTools = (server: McpServer): void => {
         ...(rows.length > RUN_ROWS && {
           note: `Showing the first ${RUN_ROWS} of ${rows.length} rows. Save the query with create_link for a CSV of all of them.`,
         }),
+        ...truncationNote(result.data),
         ...(result.errors.length > 0 && { errors: result.errors }),
       })
     }

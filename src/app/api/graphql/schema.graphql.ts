@@ -46,6 +46,8 @@
 // whose entries are ids or whole names, mixed freely. The two are mutually
 // exclusive, an entry matching nothing is an error, and each entity type's
 // description says which of its fields the pair accepts. See filters.ts.
+import { ASSET_CAP, EXPORT_CAP } from './filters.ts'
+
 export const typeDefs = /* GraphQL */ `
   type Query {
     "Your linked characters — what characterId/characterName on a row below name, and what an owner filter accepts."
@@ -449,6 +451,12 @@ export const typeDefs = /* GraphQL */ `
     rows: [Asset!]!
     "Rows matching the filters, before the limit."
     totalCount: Int!
+    """
+    True when totalCount is more than the rows returned. An interactive run
+    (/graphql, the MCP run_query tool, a Link's page) returns at most ${ASSET_CAP}
+    asset rows, whatever the limit. A saved Link's CSV URL returns up to ${EXPORT_CAP}
+    rows in one file, which is the way to get them all into a spreadsheet.
+    """
     truncated: Boolean!
   }
 
