@@ -1,7 +1,7 @@
 'use client'
 
 import { filter, pipe } from 'ramda'
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 
 import { DateTime } from '../DateTime'
 import { formatIskValue } from '../isk'
@@ -75,6 +75,11 @@ const THRESHOLDS: Array<{ label: string; value: number }> = [
   { label: '≥ 1B ISK', value: 1_000_000_000 },
 ]
 
+// Rows the table shows at first, and the rows each "show more" adds. A long
+// window can hold thousands of trades; to render all of them made the page
+// slow to load and slow to change tab or window.
+export const TABLE_ROWS = 100
+
 const THRESHOLD_STORAGE_KEY = 'market.recentSales.threshold'
 // One saved "Who" per side: a buyer is not a seller.
 const whoStorageKey = (side: Side) => `market.recentTrades.who.${side}`
@@ -118,10 +123,19 @@ export const RecentTrades = ({
   // the select never shows a value it has no option for.
   const who = savedWho !== null && options.some((o) => o.clientId === savedWho) ? savedWho : null
 
-  const shown = pipe(
-    byWho(who),
-    filter((t: Trade) => tradeValue(t) >= threshold)
-  )(inView)
+  const matching = useMemo(
+    () =>
+      pipe(
+        byWho(who),
+        filter((t: Trade) => tradeValue(t) >= threshold)
+      )(inView),
+    [who, threshold, inView]
+  )
+  // A change of window or filter starts the table again at the first rows.
+  const [limit, setLimit] = useState({ rows: TABLE_ROWS, of: matching })
+  const rows = limit.of === matching ? limit.rows : TABLE_ROWS
+  const shown = matching.slice(0, rows)
+  const hidden = matching.length - shown.length
 
   return (
     <section>
@@ -207,9 +221,16 @@ export const RecentTrades = ({
             ))}
           </tbody>
         </table>
-      ) : (
-        <p>No {copy.noun} match this filter.</p>
-      )}
+      ) : null}
+      {hidden > 0 ? (
+        <p className={styles.moreRows}>
+          {shown.length} of {matching.length} {copy.noun}.{' '}
+          <button type="button" className="quiet" onClick={() => setLimit({ rows: rows + TABLE_ROWS, of: matching })}>
+            show {Math.min(TABLE_ROWS, hidden)} more
+          </button>
+        </p>
+      ) : null}
+      {shown.length > 0 ? null : <p>No {copy.noun} match this filter.</p>}
     </section>
   )
 }
