@@ -1,0 +1,10 @@
+/* /industry/planner — the planner's own styles. The header and panel chrome
+   are /industry's (industry.module.css), so the two pages read as one. */
+
+.empty {
+  margin: 0;
+  padding: 24px 16px;
+  font-size: 12px;
+  color: var(--ink-faint);
+  text-align: center;
+}

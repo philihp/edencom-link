@@ -29,6 +29,16 @@
   color: var(--ink-faint);
 }
 
+/* Secondary pages off this one, the way /structure links its tax-revenue
+   events and the mercenary dens. */
+.headerLinks {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
 /* Top-right of the header: the time-window dropdown (the Market/Structures
    control) above the pricing caption. */
 .headerRight {
