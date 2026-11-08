@@ -212,17 +212,28 @@ const RegistrationPage = async () => {
     redirect('/')
   }
 
-  const [{ characters, status, statusText, error }, noOptionalScopes, jobs, cookieStore] = await Promise.all([
+  // The grant read needs the registrations the jobs read finds, and nothing
+  // else, so it starts when they arrive rather than after every read here.
+  const jobsPromise = fetchJobsOverview(supabase, user.id)
+  const [
+    { characters, status, statusText, error },
+    noOptionalScopes,
+    jobs,
+    { grantedByRegistration, template },
+    cookieStore,
+  ] = await Promise.all([
     fetchCharacterOverviews(supabase),
     hasNoOptionalScopes(supabase, user.id),
-    fetchJobsOverview(supabase, user.id),
+    jobsPromise,
+    jobsPromise.then((overview) =>
+      fetchGrantOverview(
+        supabase,
+        user.id,
+        overview.registrations.map((r) => r.id)
+      )
+    ),
     cookies(),
   ])
-  const { grantedByRegistration, template } = await fetchGrantOverview(
-    supabase,
-    user.id,
-    jobs.registrations.map((r) => r.id)
-  )
 
   // Grants that change things in game are drawn only when the viewer asked
   // (showChangesToggle.tsx). Filtered here, before anything counts or draws a
