@@ -178,6 +178,9 @@ export const IndustryView = ({
           </div>
         </div>
         <div className={styles.headerRight}>
+          <span className={styles.headerLinks}>
+            <Link href="/industry/planner">planner &raquo;</Link>
+          </span>
           <span className={styles.headerControl}>
             <span className={styles.headerControlLabel}>Window</span>
             <WindowSelect days={windowDays} custom={custom} onChange={selectWindow} />
