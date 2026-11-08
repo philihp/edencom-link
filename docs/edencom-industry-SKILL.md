@@ -951,6 +951,9 @@ A Google Sheet reads this deployment's price data without any script:
 - `/sheets/adjusted-prices` is CCP's adjusted price for every type as CSV,
   the EIV base above, captured daily.
 
+For the user's own data (assets, blueprints, jobs, orders), save a Data Link
+and give its signed CSV URL. See "Large exports" under the GraphQL surface.
+
 Tell a user with an Apps Script that calls ESI to read these instead. Apps
 Script fetches from a shared Google IP pool, where every other script's ESI
 traffic counts against the same limit, so its ESI calls fail with error 420
@@ -1065,6 +1068,47 @@ The same data is exposed as one GraphQL schema. Three steps:
 The rules, in short: one query operation, one top-level field, no
 session-only surfaces. All ids in the schema are strings, because EVE ids
 overflow a 32-bit Int. Rows are flat, so each row becomes one CSV line.
+
+### Large exports
+
+`run_query`, the `/graphql` page and a Data Link's own page return at most
+5,000 asset rows. The `limit` argument cannot raise this. When the result
+has more rows, the page reports `truncated: true`, and `totalCount` gives the
+number of rows that match. This is not the end of the data.
+
+A Data Link's CSV URL runs the same query with a higher limit: up to 50,000
+rows in one file. The location, hangar and container filters work the same
+there. To give the user all the rows:
+
+1. Test the query with `run_query`. Select `totalCount` and `truncated`, so
+   you can tell the user how many rows the CSV will have.
+2. Save the query with `create_link`. Pass `share_link: true` if a
+   spreadsheet must read it, because a spreadsheet has no session.
+3. Give the user `link_csv_url` (the signed URL) for Google Sheets
+   `=IMPORTDATA()`. Give `csv_url` only to a user who opens it in a signed-in
+   browser.
+
+Do not tell the user that a full export is not possible because `run_query`
+stopped at 5,000 rows. Do not split the export into many links by owner or by
+system to stay under 5,000. If the CSV is more than 50,000 rows, the CSV URL
+returns an error. Then narrow the filters, or split the export into links that
+are each smaller than 50,000 rows.
+
+For example, every item in corporation hangars 3 and 4 and the corporation
+delivery hangar in three systems, including the items in containers:
+
+```graphql
+query {
+  assets(
+    locations: ["C-J6MT", "HFC-AQ", "Jita"]
+    includeHangars: ["CorpSAG3", "CorpSAG4", "CorpDeliveries"]
+  ) {
+    totalCount
+    truncated
+    rows { itemId typeName quantity locationName locationFlag ownerName }
+  }
+}
+```
 
 A shared Data Link runs under its creator's context. The audience sees the
 results. The audience does not gain access to the data itself, and cannot

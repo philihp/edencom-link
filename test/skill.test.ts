@@ -43,4 +43,12 @@ describe('edencom-industry-SKILL.md', () => {
     const missing = tools.filter((tool) => !text.includes(`\`${tool}\``))
     assert.deepEqual(missing, [], `tools the skill document never names: ${missing.join(', ')}`)
   })
+
+  // The "Large exports" section names the two caps in prose. Pin them to the
+  // constants so a change to either cap fails here, not in a user's sheet.
+  it('names the interactive and export row caps as they stand', async () => {
+    const { ASSET_CAP, EXPORT_CAP } = await import('../src/app/api/graphql/filters.ts')
+    assert.ok(text.includes(`at most\n${ASSET_CAP.toLocaleString('en-US')} asset rows`))
+    assert.ok(text.includes(`up to ${EXPORT_CAP.toLocaleString('en-US')}\nrows in one file`))
+  })
 })
