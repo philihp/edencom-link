@@ -457,3 +457,9 @@
   cursor: help;
   border-bottom: 1px dotted var(--ink-faint);
 }
+
+/* The count under a table that shows only its first rows. */
+.moreRows {
+  color: var(--ink-soft);
+  font-size: 10pt;
+}
