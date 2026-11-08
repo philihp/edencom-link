@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { csvRows, flattenRow, linkRows, primaryRows } from '../src/app/link/flatten.ts'
+import { csvRows, flattenRow, linkRows, primaryRows, truncationOf } from '../src/app/link/flatten.ts'
 
 test('a root list field is the primary list', () => {
   const data = {
@@ -90,4 +90,20 @@ test('csvRows keeps false rather than nulling it', () => {
 
 test('csvRows yields nothing when there is no single row list', () => {
   assert.deepEqual(csvRows({ a: [], b: [] }), [])
+})
+
+test('truncationOf reports a cut-short page with its total', () => {
+  const data = { assets: { totalCount: 16464, truncated: true, rows: [{ itemId: '1' }, { itemId: '2' }] } }
+  assert.deepEqual(truncationOf(data), { totalCount: 16464, returned: 2 })
+})
+
+test('truncationOf is null for a whole page, a list root, or no truncated field', () => {
+  assert.equal(truncationOf({ assets: { totalCount: 1, truncated: false, rows: [{}] } }), null)
+  assert.equal(truncationOf({ walletBalances: [{ balance: 1 }] }), null)
+  assert.equal(truncationOf({ assets: { rows: [{}] } }), null)
+  assert.equal(truncationOf(null), null)
+})
+
+test('truncationOf falls back to the rows returned when totalCount is not selected', () => {
+  assert.deepEqual(truncationOf({ assets: { truncated: true, rows: [{}, {}, {}] } }), { totalCount: 3, returned: 3 })
 })

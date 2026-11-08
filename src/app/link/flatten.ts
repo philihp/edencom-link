@@ -33,6 +33,20 @@ export const primaryRows = (data: unknown): Row[] => {
   return []
 }
 
+// A page object (assets, blueprints, …) that came back cut short: how many
+// rows the filters matched and how many came back. Null when the root value is
+// not a page, is not truncated, or the query did not select `truncated`.
+// The MCP tools read it to say where the rest of the rows are.
+export const truncationOf = (data: unknown): { totalCount: number; returned: number } | null => {
+  const values = isPlainObject(data) ? Object.values(data) : []
+  if (values.length !== 1) return null
+  const [page] = values
+  if (!isPlainObject(page) || page.truncated !== true) return null
+  const returned = Array.isArray(page.rows) ? page.rows.length : 0
+  const totalCount = typeof page.totalCount === 'number' ? page.totalCount : returned
+  return { totalCount, returned }
+}
+
 const flattenEntry = ([key, value]: [string, unknown]): Array<[string, unknown]> => {
   if (isPlainObject(value)) {
     return toPairs(value).map(([nested, nestedValue]): [string, unknown] => [`${key}.${nested}`, nestedValue])
