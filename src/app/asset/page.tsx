@@ -42,7 +42,7 @@ const Locations = async ({ supabase }: { supabase: SupabaseClient }) => {
   // joins the same batch as everything else the page needs.
   const [summary, owners, { data: lastRun }, { data: mainCharacter }] = await Promise.all([
     fetchLocationSummary(supabase),
-    fetchOwners(),
+    fetchOwners(supabase),
     supabase
       .from('heartbeat')
       .select('ended_at, run_url')
@@ -76,7 +76,10 @@ const Locations = async ({ supabase }: { supabase: SupabaseClient }) => {
     summary
   )
 
-  const { nameFor, systemFor } = await resolveLocations(map(({ root }) => root, [...byLocation.values()]))
+  const { nameFor, systemFor } = await resolveLocations(
+    map(({ root }) => root, [...byLocation.values()]),
+    supabase
+  )
 
   const locations: Location[] = map(
     ({ root, counts }) => ({

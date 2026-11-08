@@ -29,11 +29,21 @@ export const resolveLocations = async (
     map((l: LocationRef) => Number(l.id), locations)
   )
 
-  const [{ data: corpStructures }, { data: playerStructures }] = await Promise.all([
+  // NPC station names come from the universe_name DB cache; player structures
+  // aren't there, so those still resolve via corp_structure below. The station
+  // lookups need only the input, so they go out with the structure reads
+  // rather than after them.
+  const stationIds = pipe(
+    filter((l: LocationRef) => l.type === 'station'),
+    map((l: LocationRef) => Number(l.id))
+  )(locations)
+  const [{ data: corpStructures }, { data: playerStructures }, stationNames, stationSystems] = await Promise.all([
     supabase.from('corp_structure').select('structure_id, name, system_id'),
     locationIds.length
       ? supabase.from('universe_structure').select('structure_id, name, system_id').in('structure_id', locationIds)
       : Promise.resolve({ data: [] }),
+    fetchStationNames(stationIds, supabase),
+    fetchStationSystems(stationIds),
   ])
 
   // Own-corp structures override the ESI-resolved cache (later entries win).
@@ -41,17 +51,6 @@ export const resolveLocations = async (
   const structureById = new Map<string, Structure>([
     ...byStructureId((playerStructures ?? []) as Structure[]),
     ...byStructureId((corpStructures ?? []) as Structure[]),
-  ])
-
-  // NPC station names come from the universe_name DB cache; player structures
-  // aren't there, so those still resolve via corp_structure above.
-  const stationIds = pipe(
-    filter((l: LocationRef) => l.type === 'station'),
-    map((l: LocationRef) => Number(l.id))
-  )(locations)
-  const [stationNames, stationSystems] = await Promise.all([
-    fetchStationNames(stationIds, supabase),
-    fetchStationSystems(stationIds),
   ])
 
   const systemIds = new Set<number>(
