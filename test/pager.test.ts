@@ -1,9 +1,9 @@
-// Unit coverage for the market page's pager (src/app/market/pager.ts): the
+// Unit coverage for the shared pager (src/app/pager.ts): the
 // page ranges after the first page, and the read of all pages with a count.
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { fetchAllRows, PAGE_SIZE, restRanges, type BuildPage } from '../src/app/market/pager.ts'
+import { fetchAllRows, PAGE_SIZE, restRanges, type BuildPage } from '../src/app/pager.ts'
 
 test('restRanges: no pages after the first when the rows fit in one page', () => {
   assert.deepEqual(restRanges(0, 10), [])
