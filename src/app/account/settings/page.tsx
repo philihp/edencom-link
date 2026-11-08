@@ -44,35 +44,50 @@ const SettingsPage = async ({ searchParams }: { searchParams: Promise<{ gice?: s
     redirect('/account/login')
   }
 
-  const { data: settings } = await supabase.from('user_settings').select('api_token').maybeSingle()
-  const { data: characters } = await supabase
-    .from('registration')
-    .select('id, name, character_id, is_main')
-    .order('is_main', { ascending: false })
-    .order('name', { ascending: true })
+  // Every read on this page needs only the session, and none needs another, so
+  // they go out together. They used to run one after the other: nine round
+  // trips in series, one of them to the Auth server.
+  //
+  // The Supabase profile record (getUser) is wanted for two things, and one
+  // call covers both: the providers this account can sign in with — Supabase
+  // owns that list (EVE SSO isn't on it; that's a registration row, not an
+  // identity), so ask rather than infer — and `created_at`, which the access
+  // token does not carry and establishedUser() therefore no longer returns.
+  // This replaces the getUserIdentities() call that used to sit here, so the
+  // page still makes exactly one Auth-server request.
+  const [
+    { data: settings },
+    { data: characters },
+    chancellor,
+    { data: giceAccount },
+    {
+      data: { user: profile },
+    },
+    { data: discordChannels },
+    enabledScopes,
+    rates,
+    { data: inviteCodes },
+  ] = await Promise.all([
+    supabase.from('user_settings').select('api_token').maybeSingle(),
+    supabase
+      .from('registration')
+      .select('id, name, character_id, is_main')
+      .order('is_main', { ascending: false })
+      .order('name', { ascending: true }),
+    isChancellor(user.id),
+    supabase.from('gice_account').select('gice_id, name').maybeSingle(),
+    supabase.auth.getUser(),
+    supabase
+      .from('discord_channel')
+      .select('id, guild_id, channel_id, guild_name, channel_name, created_at, disabled_at')
+      .order('created_at', { ascending: true }),
+    getEnabledScopes(supabase, user.id),
+    fetchTaxRates(supabase, user.id),
+    supabase.from('invite_code').select('code, redeemed_by'),
+  ])
   const main = characters?.find((c) => c.is_main) ?? characters?.[0] ?? null
-  const chancellor = await isChancellor(user.id)
-  const { data: giceAccount } = await supabase.from('gice_account').select('gice_id, name').maybeSingle()
   const placeholderEmail = isSsoPlaceholderEmail(user.email)
-  // The Supabase profile record. Two things need it, and one call covers both:
-  // the providers this account can sign in with — Supabase owns that list (EVE
-  // SSO isn't on it; that's a registration row, not an identity), so ask rather
-  // than infer — and `created_at`, which the access token does not carry and
-  // establishedUser() therefore no longer returns. This replaces the
-  // getUserIdentities() call that used to sit here, so the page still makes
-  // exactly one Auth-server request.
-  const {
-    data: { user: profile },
-  } = await supabase.auth.getUser()
   const discordLinked = (profile?.identities ?? []).some(({ provider }) => provider === 'discord')
-  const { data: discordChannels } = await supabase
-    .from('discord_channel')
-    .select('id, guild_id, channel_id, guild_name, channel_name, created_at, disabled_at')
-    .order('created_at', { ascending: true })
-
-  const enabledScopes = await getEnabledScopes(supabase, user.id)
-  const rates = await fetchTaxRates(supabase, user.id)
-  const { data: inviteCodes } = await supabase.from('invite_code').select('code, redeemed_by')
   const unclaimedCodes = (inviteCodes ?? []).filter((c) => !c.redeemed_by).length
 
   const optional = esiScopes.filter((s) => !s.required)
