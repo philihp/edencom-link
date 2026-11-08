@@ -32,10 +32,13 @@ const FittingPage = async () => {
   if (!user) redirect('/')
 
   const [{ data: fittings }, { data: marshalled }] = await Promise.all([
+    // Only what the matrix draws. The modules (`items`, a jsonb list per fit)
+    // and the description are read on the fit's own page; reading them here
+    // for every fit the session can see sent the whole library for nothing.
     supabase
       .from('character_fitting')
-      .select('registration_id, fitting_id, name, description, ship_type_id, items')
-      .returns<FittingRow[]>(),
+      .select('registration_id, fitting_id, name, ship_type_id')
+      .returns<Array<Pick<FittingRow, 'registration_id' | 'fitting_id' | 'name' | 'ship_type_id'>>>(),
     supabase
       .from('marshalled_fitting')
       .select('content_hash, name, ship_type_id')
