@@ -70,18 +70,53 @@ export const resolveLibraries = async (): Promise<Libraries> => {
 
   const service = createServiceClient()
 
-  // Our characters: the main names our own showcase, and their corporations are
-  // the ones we have a character in.
-  const { data: ownRegistrations } = await supabase
-    .from('registration')
-    .select('name, is_main, created_at, corporation_id')
   type OwnReg = {
     name: string
     is_main: boolean | null
     created_at: string | null
     corporation_id: number | string | null
   }
-  const ownRegs = (ownRegistrations ?? []) as OwnReg[]
+  type CorpShare = { corporation_id: number | string; created_by: string | null }
+
+  // The four reads below need only the caller, so they go out together; the
+  // director read follows its token read alone. The page used to make all of
+  // these reads one after the other.
+  const [{ data: ownRegistrations }, directorRegs, { data: corpShares }, { data: accountShares }] = await Promise.all([
+    // Our characters: the main names our own showcase, and their corporations
+    // are the ones we have a character in.
+    supabase.from('registration').select('name, is_main, created_at, corporation_id').returns<OwnReg[]>(),
+    // Corporations we hold a DIRECTOR in. `token` is service-role-only (those
+    // are live EVE refresh tokens), so the read is explicitly scoped to the
+    // caller. The scope is our only signal, and it is the grant that fills
+    // corp_blueprint in the first place.
+    service
+      .from('token')
+      .select('registration_id')
+      .eq('user_id', user.id)
+      .contains('scope', [CORP_BLUEPRINTS_SCOPE])
+      .returns<Array<{ registration_id: string }>>()
+      .then(async ({ data: tokens }) => {
+        const registrationIds = uniq(map((t: { registration_id: string }) => t.registration_id, tokens ?? []))
+        if (registrationIds.length === 0) return []
+        const { data } = await service
+          .from('registration')
+          .select('corporation_id')
+          .in('id', registrationIds)
+          .not('corporation_id', 'is', null)
+          .returns<Array<{ corporation_id: number | string }>>()
+        return data ?? []
+      }),
+    // Published corporation libraries. Asked as the VIEWER, so corp_bpo_share's
+    // own policies answer it: a member sees their corporation's row, and the
+    // audience policy adds rows aimed at their corp or alliance plus any that
+    // are fully public. A link-only share matches nobody, which is right — its
+    // URL is the only way in.
+    supabase.from('corp_bpo_share').select('corporation_id, created_by').returns<CorpShare[]>(),
+    // Other players' account libraries, published to us the same way.
+    supabase.from('bpo_share').select('user_id').returns<Array<{ user_id: string }>>(),
+  ])
+
+  const ownRegs = ownRegistrations ?? []
   const main = pickMain(ownRegs)
   const memberCorpIds = new Set(
     map(
@@ -92,40 +127,10 @@ export const resolveLibraries = async (): Promise<Libraries> => {
       )
     )
   )
-
-  // Corporations we hold a DIRECTOR in. `token` is service-role-only (those are
-  // live EVE refresh tokens), so the read is explicitly scoped to the caller.
-  // The scope is our only signal, and it is the grant that fills corp_blueprint
-  // in the first place.
-  const { data: tokens } = await service
-    .from('token')
-    .select('registration_id')
-    .eq('user_id', user.id)
-    .contains('scope', [CORP_BLUEPRINTS_SCOPE])
-    .returns<Array<{ registration_id: string }>>()
-  const registrationIds = uniq(map((t: { registration_id: string }) => t.registration_id, tokens ?? []))
-  const { data: directorRegs } = registrationIds.length
-    ? await service
-        .from('registration')
-        .select('corporation_id')
-        .in('id', registrationIds)
-        .not('corporation_id', 'is', null)
-        .returns<Array<{ corporation_id: number | string }>>()
-    : { data: [] }
   const directorCorpIds = new Set(
-    map((r: { corporation_id: number | string }) => Number(r.corporation_id), directorRegs ?? [])
+    map((r: { corporation_id: number | string }) => Number(r.corporation_id), directorRegs)
   )
 
-  // Published corporation libraries. Asked as the VIEWER, so corp_bpo_share's
-  // own policies answer it: a member sees their corporation's row, and the
-  // audience policy adds rows aimed at their corp or alliance plus any that are
-  // fully public. A link-only share matches nobody, which is right — its URL is
-  // the only way in.
-  type CorpShare = { corporation_id: number | string; created_by: string | null }
-  const { data: corpShares } = await supabase
-    .from('corp_bpo_share')
-    .select('corporation_id, created_by')
-    .returns<CorpShare[]>()
   const sharedCorpIds = uniq(map((r: CorpShare) => Number(r.corporation_id), corpShares ?? []))
   const publisherByCorp = new Map(
     chain(
@@ -134,13 +139,8 @@ export const resolveLibraries = async (): Promise<Libraries> => {
     )
   )
 
-  // Other players' account libraries, published to us the same way. Our own row
-  // is visible here too and is dropped: that library is already the first entry
-  // of the list above.
-  const { data: accountShares } = await supabase
-    .from('bpo_share')
-    .select('user_id')
-    .returns<Array<{ user_id: string }>>()
+  // Our own account row is visible among the shares too and is dropped: that
+  // library is already the first entry of the list above.
   const sharedUserIds = reject(
     (id: string) => id === user.id,
     uniq(map((r: { user_id: string }) => r.user_id, accountShares ?? []))
@@ -149,15 +149,32 @@ export const resolveLibraries = async (): Promise<Libraries> => {
   // Names. A corporation the directory hasn't backfilled can't be addressed by
   // slug, so it is left out rather than linking nowhere; an account is
   // addressed by its main, resolved the same way our own is.
+  // The corporations' names and the sharers' mains, at once.
+  //
+  // One registration read covers both the accounts that shared a library with
+  // us and the people who published a corporation's — each is named by their
+  // own main, the same way ours is.
   const corpIds = uniq([...directorCorpIds, ...sharedCorpIds])
-  const { data: corps } = corpIds.length
-    ? await service
-        .from('corporation')
-        .select('corporation_id, name')
-        .in('corporation_id', corpIds)
-        .not('name', 'is', null)
-        .returns<Array<{ corporation_id: number | string; name: string }>>()
-    : { data: [] }
+  const namedUserIds = uniq([...sharedUserIds, ...publisherByCorp.values()])
+  const [{ data: corps }, { data: sharerRegs }] = await Promise.all([
+    corpIds.length
+      ? service
+          .from('corporation')
+          .select('corporation_id, name')
+          .in('corporation_id', corpIds)
+          .not('name', 'is', null)
+          .returns<Array<{ corporation_id: number | string; name: string }>>()
+      : Promise.resolve({ data: [] as Array<{ corporation_id: number | string; name: string }> }),
+    namedUserIds.length
+      ? service
+          .from('registration')
+          .select('user_id, name, is_main, created_at')
+          .in('user_id', namedUserIds)
+          .returns<Array<{ user_id: string; name: string; is_main: boolean | null; created_at: string | null }>>()
+      : Promise.resolve({
+          data: [] as Array<{ user_id: string; name: string; is_main: boolean | null; created_at: string | null }>,
+        }),
+  ])
   const corpName = new Map(
     map(
       (c: { corporation_id: number | string; name: string }) => [Number(c.corporation_id), c.name] as [number, string],
@@ -165,17 +182,6 @@ export const resolveLibraries = async (): Promise<Libraries> => {
     )
   )
 
-  // One registration read covers both the accounts that shared a library with
-  // us and the people who published a corporation's — each is named by their
-  // own main, the same way ours is.
-  const namedUserIds = uniq([...sharedUserIds, ...publisherByCorp.values()])
-  const { data: sharerRegs } = namedUserIds.length
-    ? await service
-        .from('registration')
-        .select('user_id, name, is_main, created_at')
-        .in('user_id', namedUserIds)
-        .returns<Array<{ user_id: string; name: string; is_main: boolean | null; created_at: string | null }>>()
-    : { data: [] }
   const mainByUser = new Map(
     chain(
       ([userId, regs = []]) => {
