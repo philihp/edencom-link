@@ -48,3 +48,68 @@
   color: var(--ink-faint);
   text-align: center;
 }
+
+/* ── Stock types ─────────────────────────────────────────────────────── */
+
+/* The total in the panel head, beside the title; the count pushed right. */
+.panelStat {
+  font-size: 12px;
+}
+
+.panelCount {
+  margin-left: auto;
+  font-size: 11.5px;
+  color: var(--ink-faint);
+}
+
+.typeCell {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* A quantity cell: a narrow numeric field, right-aligned like the readouts
+   around it. The native spinner stays, since stepping is the point. */
+.quantity {
+  width: 7em;
+  text-align: right;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  padding: 3px 6px;
+}
+
+.quantityBad {
+  border-color: var(--danger);
+}
+
+/* The add box under the table, with its suggestions dropped below it. */
+.addBox {
+  position: relative;
+  padding: 10px 14px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.addBox input {
+  width: min(100%, 28em);
+}
+
+.suggestions {
+  position: absolute;
+  z-index: 2;
+  left: 14px;
+  margin: 2px 0 0;
+  padding: 4px 0;
+  list-style: none;
+  min-width: 20em;
+  background: var(--paper-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+
+.suggestions li button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+}
