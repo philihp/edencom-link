@@ -46,22 +46,84 @@ export type CharacterOverviews = {
   statusText: string
 }
 
-export const fetchCharacterOverviews = async (supabase: SupabaseClient): Promise<CharacterOverviews> => {
-  const { data: characters, status, statusText, error } = await supabase.from('registration').select()
+type WalletRow = { balance: string | null }
 
-  const { data: wallets } = await supabase
+// The latest balance of one character. character_wallet is append-only (one
+// row per extract run), so this is one probe of the (registration_id,
+// recorded_at desc) index, as in MCP wallet_summary. The page used to read the
+// whole history of every character and keep the newest row of each: that read
+// grew with every run, and PostgREST cut it at 1000 rows, so a character whose
+// last balance was older than the newest 1000 rows showed no balance.
+const latestBalanceOf = async (supabase: SupabaseClient, registrationId: string): Promise<[string, string | null]> => {
+  const { data } = await supabase
     .from('character_wallet')
-    .select('registration_id, balance, recorded_at')
+    .select('balance')
+    .eq('registration_id', registrationId)
     .order('recorded_at', { ascending: false })
+    .limit(1)
+    .maybeSingle<WalletRow>()
+  return [registrationId, data?.balance ?? null]
+}
 
-  const latestBalance = reduce(
-    (acc, w) => (acc.has(w.registration_id) ? acc : acc.set(w.registration_id, w.balance)),
-    new Map<string, string>(),
-    wallets ?? []
+export const fetchCharacterOverviews = async (supabase: SupabaseClient): Promise<CharacterOverviews> => {
+  // Every read below needs only the session, except the balances, which need
+  // the registration ids. So all of them start at once, and the balances start
+  // when the registrations arrive. The page used to make these reads one after
+  // the other: about a dozen round trips in series.
+  const charactersPromise = supabase.from('registration').select()
+  const balancesPromise = Promise.resolve(charactersPromise).then(({ data }) =>
+    Promise.all((data ?? []).map((c) => latestBalanceOf(supabase, c.id as string)))
   )
 
-  const { data: locations } = await supabase.from('character_location').select('registration_id, solar_system_id')
-  const systemNames = await fetchSystemNames((locations ?? []).map((l) => Number(l.solar_system_id)))
+  // Jobs that still hold a slot: running (status 'active') or ready to deliver
+  // (status 'ready'). Corp jobs count against the installing character's slots
+  // as well, so both listings feed the shared fold; RLS already scopes the corp
+  // view to the caller's corporations.
+  const [
+    { data: characters, status, statusText, error },
+    balances,
+    { data: locations },
+    { data: clones },
+    { data: implantRows },
+    { data: shipRows },
+    { data: industryJobs },
+    { data: corpIndustryJobs },
+    { data: skillRows },
+  ] = await Promise.all([
+    charactersPromise,
+    balancesPromise,
+    supabase.from('character_location').select('registration_id, solar_system_id'),
+    supabase.from('character_clone').select('registration_id, system_id'),
+    supabase.from('character_implant').select('registration_id, type_ids'),
+    supabase.from('character_ship').select('registration_id, ship_item_id, ship_type_id, ship_name'),
+    supabase
+      .from('character_industry_job')
+      .select('job_id, registration_id, activity_id, status, end_date')
+      .in('status', ['active', 'ready']),
+    supabase
+      .from('corp_industry_job')
+      .select('job_id, installer_id, activity_id, status, end_date')
+      .in('status', ['active', 'ready']),
+    // Per-character slot ceilings, derived from the two skills behind each family.
+    supabase
+      .from('character_skill')
+      .select('registration_id, skill_id, active_skill_level')
+      .in('skill_id', SLOT_SKILL_IDS),
+  ])
+
+  const latestBalance = new Map(balances.filter((b): b is [string, string] => b[1] != null))
+
+  // The names, all from the SDE mirror, also at once. One type lookup covers
+  // the implants and the ships.
+  const [systemNames, cloneSystemPaths, typeNames] = await Promise.all([
+    fetchSystemNames((locations ?? []).map((l) => Number(l.solar_system_id))),
+    fetchSystemPaths((clones ?? []).map((c) => Number(c.system_id))),
+    fetchTypeNames([
+      ...(implantRows ?? []).flatMap((r) => (r.type_ids ?? []).map(Number)),
+      ...(shipRows ?? []).map((r) => Number(r.ship_type_id)),
+    ]),
+  ])
+
   const locationSystem = new Map(
     (locations ?? []).map((l) => [
       l.registration_id as string,
@@ -69,8 +131,6 @@ export const fetchCharacterOverviews = async (supabase: SupabaseClient): Promise
     ])
   )
 
-  const { data: clones } = await supabase.from('character_clone').select('registration_id, system_id')
-  const cloneSystemPaths = await fetchSystemPaths((clones ?? []).map((c) => Number(c.system_id)))
   const cloneSystemsByCharacter = reduce(
     (acc, c) => {
       const system =
@@ -92,22 +152,16 @@ export const fetchCharacterOverviews = async (supabase: SupabaseClient): Promise
     ])
   )
 
-  const { data: implantRows } = await supabase.from('character_implant').select('registration_id, type_ids')
-  const implantTypeNames = await fetchTypeNames((implantRows ?? []).flatMap((r) => (r.type_ids ?? []).map(Number)))
   const implantsByCharacter = new Map(
     (implantRows ?? []).map((r) => [
       r.registration_id as string,
-      (r.type_ids ?? []).map((id: number) => implantTypeNames[id] ?? `Type #${id}`),
+      (r.type_ids ?? []).map((id: number) => typeNames[id] ?? `Type #${id}`),
     ])
   )
 
-  const { data: shipRows } = await supabase
-    .from('character_ship')
-    .select('registration_id, ship_item_id, ship_type_id, ship_name')
-  const shipTypeNames = await fetchTypeNames((shipRows ?? []).map((r) => Number(r.ship_type_id)))
   const currentShip = new Map(
     (shipRows ?? []).map((r) => {
-      const typeName = shipTypeNames[Number(r.ship_type_id)] ?? `Type #${r.ship_type_id}`
+      const typeName = typeNames[Number(r.ship_type_id)] ?? `Type #${r.ship_type_id}`
       return [
         r.registration_id as string,
         {
@@ -118,20 +172,6 @@ export const fetchCharacterOverviews = async (supabase: SupabaseClient): Promise
     })
   )
 
-  // Jobs that still hold a slot: running (status 'active') or ready to deliver
-  // (status 'ready'). Corp jobs count against the installing character's slots
-  // as well, so both listings feed the shared fold; RLS already scopes the corp
-  // view to the caller's corporations.
-  const [{ data: industryJobs }, { data: corpIndustryJobs }] = await Promise.all([
-    supabase
-      .from('character_industry_job')
-      .select('job_id, registration_id, activity_id, status, end_date')
-      .in('status', ['active', 'ready']),
-    supabase
-      .from('corp_industry_job')
-      .select('job_id, installer_id, activity_id, status, end_date')
-      .in('status', ['active', 'ready']),
-  ])
   const jobSlotCounts = countJobSlots({
     characterJobs: (industryJobs ?? []) as CharacterJobRow[],
     corpJobs: (corpIndustryJobs ?? []) as CorpJobRow[],
@@ -140,11 +180,6 @@ export const fetchCharacterOverviews = async (supabase: SupabaseClient): Promise
     ),
   })
 
-  // Per-character slot ceilings, derived from the two skills behind each family.
-  const { data: skillRows } = await supabase
-    .from('character_skill')
-    .select('registration_id, skill_id, active_skill_level')
-    .in('skill_id', SLOT_SKILL_IDS)
   const slotMax = reduce(
     (acc, r) => {
       const family = SKILL_FAMILY[Number(r.skill_id)]

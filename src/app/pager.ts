@@ -1,4 +1,5 @@
-// Read every row of a select past PostgREST's max_rows cap (1000).
+// Read every row of a select past PostgREST's max_rows cap (1000). Shared by
+// the pages that read a long history (/market, /industry, /structure).
 //
 // The old pager read one page, waited, then read the next. A long history
 // thus cost one round trip per 1000 rows, one after the other. This pager

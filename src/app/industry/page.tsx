@@ -10,6 +10,7 @@ import { fetchStationNames } from '../stationNames'
 import { fetchTypeNames } from '../typeNames'
 import { IndustryView } from './industryView'
 import { jobLift, liftFamily, liftRate, splitPrice, type LiftJob } from './lift'
+import { fetchAllRows } from '../pager'
 
 // The whole job history, not just what is active: the lift-rate chart digs
 // back to the oldest job on record, and a scoped moment lists the jobs that
@@ -36,7 +37,6 @@ type JobRow = {
 const JOB_COLUMNS =
   'job_id, activity_id, blueprint_id, blueprint_type_id, product_type_id, runs, cost, status, start_date, end_date, station_id, facility_id'
 
-const PAGE_SIZE = 1000
 const RPC_BATCH = 500
 // Blueprint rows come back one per *version*, so a batch of items has to leave
 // room under max_rows for a few versions each.
@@ -47,20 +47,6 @@ const BLUEPRINT_BATCH = 200
 const MARKET = 'jita'
 
 const HOUR = 3_600_000
-
-// Drain a select past PostgREST's max_rows cap by recursing to the next page
-// until a short page signals the end — the house shape for an unbounded pull
-// (cf. src/app/structure/page.tsx).
-const fetchAllRows = async <T,>(
-  build: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: unknown }>,
-  from = 0,
-  acc: readonly T[] = []
-): Promise<T[]> => {
-  const { data, error } = await build(from, from + PAGE_SIZE - 1)
-  if (error || !data || data.length === 0) return [...acc]
-  const rows = concat(acc, data)
-  return data.length < PAGE_SIZE ? rows : fetchAllRows(build, from + PAGE_SIZE, rows)
-}
 
 type PriceAt = {
   type_id: number | string
@@ -88,22 +74,33 @@ const IndustryPage = async () => {
   }
 
   const fetchJobs = (table: 'character_industry_job' | 'corp_industry_job') =>
-    fetchAllRows<JobRow>((from, to) =>
-      supabase
-        .from(table)
-        .select(`${JOB_COLUMNS}, ${table === 'corp_industry_job' ? 'corporation_id' : 'registration_id'}`)
-        .order('job_id', { ascending: true })
-        .range(from, to)
-        // The typed query parser gives up past a dozen columns; the shape is
-        // pinned explicitly instead.
-        .returns<JobRow[]>()
+    // The first page carries a count, and the other pages then go out at
+    // once (../pager.ts): a long history costs two round trips, not one per
+    // thousand jobs.
+    fetchAllRows<JobRow>(
+      (from, to, count) =>
+        supabase
+          .from(table)
+          .select(`${JOB_COLUMNS}, ${table === 'corp_industry_job' ? 'corporation_id' : 'registration_id'}`, { count })
+          .order('job_id', { ascending: true })
+          .range(from, to)
+          // The typed query parser gives up past a dozen columns; the shape is
+          // pinned explicitly instead.
+          .returns<JobRow[]>(),
+      (j) => String(j.job_id)
     )
 
   // Our hidden jobs, to draw the menu's state (industry_job_hidden shows only
   // the caller's own rows; docs/sharing-layer/16-industry-job-share.md).
   const fetchHidden = () =>
-    fetchAllRows<{ job_id: number | string }>((from, to) =>
-      supabase.from('industry_job_hidden').select('job_id').order('job_id', { ascending: true }).range(from, to)
+    fetchAllRows<{ job_id: number | string }>(
+      (from, to, count) =>
+        supabase
+          .from('industry_job_hidden')
+          .select('job_id', { count })
+          .order('job_id', { ascending: true })
+          .range(from, to),
+      (h) => String(h.job_id)
     )
 
   const [characterJobs, corpJobs, owners, hidden] = await Promise.all([
@@ -139,8 +136,13 @@ const IndustryPage = async () => {
   // product; both are priced at the install hour by market_price_at(). ME
   // comes from the blueprint item the job ran, looked up through the blueprint
   // history (a consumed copy has a closed row, never a current one).
+  //
+  // The reads from here on need only the jobs: the blueprint bills, the ME
+  // history and the names. They go out together, and the price lookup starts
+  // as soon as the bills arrive. They used to run as four stages, one after
+  // the other.
   const measurable = filter((j: OwnedJob) => liftFamily(Number(j.activity_id)) !== 'research', rows)
-  const blueprints = await getBlueprintsByTypeIDs(map((j: OwnedJob) => Number(j.blueprint_type_id), measurable))
+  const blueprintsPromise = getBlueprintsByTypeIDs(map((j: OwnedJob) => Number(j.blueprint_type_id), measurable))
 
   const blueprintItemIds = uniq(
     map(
@@ -148,25 +150,86 @@ const IndustryPage = async () => {
       filter((j: OwnedJob) => liftFamily(Number(j.activity_id)) === 'manufacturing', measurable)
     )
   ).filter(Number.isFinite)
-  const versionBatches = blueprintItemIds.length
-    ? await Promise.all(
-        chain(
-          (batch: number[]) => [
-            supabase
-              .from('character_blueprint_over_time')
-              .select('item_id, material_efficiency, valid_until')
-              .in('item_id', batch)
-              .order('valid_until', { ascending: false }),
-            supabase
-              .from('corp_blueprint_over_time')
-              .select('item_id, material_efficiency, valid_until')
-              .in('item_id', batch)
-              .order('valid_until', { ascending: false }),
-          ],
-          splitEvery(BLUEPRINT_BATCH, blueprintItemIds)
-        )
+  const versionBatchesPromise = Promise.all(
+    chain(
+      (batch: number[]) => [
+        supabase
+          .from('character_blueprint_over_time')
+          .select('item_id, material_efficiency, valid_until')
+          .in('item_id', batch)
+          .order('valid_until', { ascending: false }),
+        supabase
+          .from('corp_blueprint_over_time')
+          .select('item_id, material_efficiency, valid_until')
+          .in('item_id', batch)
+          .order('valid_until', { ascending: false }),
+      ],
+      splitEvery(BLUEPRINT_BATCH, blueprintItemIds)
+    )
+  )
+
+  // One probe per (type, install hour) across every measurable job's product
+  // and bill; the Map de-duplicates jobs installed in the same hour.
+  type Priced = { data: PriceAt[] | null; error: { message: string } | null }
+  const pricedPromise = blueprintsPromise.then(async (blueprints): Promise<Priced> => {
+    const probes = new Map<string, { type_id: number; as_of: string }>()
+    forEach((j: OwnedJob) => {
+      const bp: Blueprint | undefined = blueprints[Number(j.blueprint_type_id)]
+      if (!bp) return
+      const asOf = probeMoment(j.start_date)
+      forEach(
+        (typeId: number) => {
+          probes.set(probeKey(typeId, asOf), { type_id: typeId, as_of: asOf })
+        },
+        [bp.productTypeID, ...map((m) => m.typeID, bp.materials)]
       )
-    : []
+    }, measurable)
+    if (probes.size === 0) return { data: [], error: null }
+    const { data, error } = await supabase.rpc('market_price_at', { market_id: MARKET, probes: [...probes.values()] })
+    return { data: (data ?? null) as PriceAt[] | null, error }
+  })
+
+  // ── Names ─────────────────────────────────────────────────────────────────
+  // Products for the list and the hover card, blueprints for the research
+  // jobs that have no product; stations the way the assets page resolves them
+  // (our corp's structures win, then ESI-resolved player structures, then the
+  // NPC station cache).
+  const typeIds = uniq(
+    concat(
+      chain((j: OwnedJob) => (j.product_type_id != null ? [Number(j.product_type_id)] : []), rows),
+      map((j: OwnedJob) => Number(j.blueprint_type_id), rows)
+    )
+  )
+  const stationIds = uniq(
+    chain((j: OwnedJob) => {
+      const id = j.station_id ?? j.facility_id
+      return id != null ? [Number(id)] : []
+    }, rows)
+  ).filter(Number.isFinite)
+
+  const [
+    blueprints,
+    versionBatches,
+    priced,
+    typeNames,
+    { data: corpStructures },
+    playerStructureBatches,
+    npcStationNames,
+  ] = await Promise.all([
+    blueprintsPromise,
+    versionBatchesPromise,
+    pricedPromise,
+    fetchTypeNames(typeIds),
+    supabase.from('corp_structure').select('structure_id, name'),
+    Promise.all(
+      map(
+        (batch: number[]) => supabase.from('universe_structure').select('structure_id, name').in('structure_id', batch),
+        splitEvery(RPC_BATCH, stationIds)
+      )
+    ),
+    fetchStationNames(stationIds),
+  ])
+
   // Latest version per item wins (each batch arrived newest first); a
   // blueprint we never held reads as ME 0.
   const meOf = new Map<string, number>()
@@ -178,24 +241,6 @@ const IndustryPage = async () => {
     chain(({ data }) => (data ?? []) as BlueprintVersion[], versionBatches)
   )
 
-  // One probe per (type, install hour) across every measurable job's product
-  // and bill; the Map de-duplicates jobs installed in the same hour.
-  const probes = new Map<string, { type_id: number; as_of: string }>()
-  forEach((j: OwnedJob) => {
-    const bp: Blueprint | undefined = blueprints[Number(j.blueprint_type_id)]
-    if (!bp) return
-    const asOf = probeMoment(j.start_date)
-    forEach(
-      (typeId: number) => {
-        probes.set(probeKey(typeId, asOf), { type_id: typeId, as_of: asOf })
-      },
-      [bp.productTypeID, ...map((m) => m.typeID, bp.materials)]
-    )
-  }, measurable)
-  const priced =
-    probes.size > 0
-      ? await supabase.rpc('market_price_at', { market_id: MARKET, probes: [...probes.values()] })
-      : { data: [] as PriceAt[], error: null }
   // A failed lookup is told apart from a bill the market cannot price: the
   // first is reported as such, the second as the unpriced count.
   const pricingFailed = priced.error != null
@@ -246,31 +291,6 @@ const IndustryPage = async () => {
     }
   }, rows)
 
-  // ── Names ─────────────────────────────────────────────────────────────────
-  // Products for the list and the hover card, blueprints for the research
-  // jobs that have no product; stations the way the assets page resolves them
-  // (our corp's structures win, then ESI-resolved player structures, then the
-  // NPC station cache).
-  const typeIds = uniq(
-    concat(
-      chain((j: LiftJob) => (j.productTypeId != null ? [j.productTypeId] : []), jobs),
-      map((j) => j.blueprintTypeId, jobs)
-    )
-  )
-  const stationIds = uniq(chain((j: LiftJob) => (j.stationId != null ? [Number(j.stationId)] : []), jobs)).filter(
-    Number.isFinite
-  )
-  const [typeNames, { data: corpStructures }, playerStructureBatches, npcStationNames] = await Promise.all([
-    fetchTypeNames(typeIds),
-    supabase.from('corp_structure').select('structure_id, name'),
-    Promise.all(
-      map(
-        (batch: number[]) => supabase.from('universe_structure').select('structure_id, name').in('structure_id', batch),
-        splitEvery(RPC_BATCH, stationIds)
-      )
-    ),
-    fetchStationNames(stationIds),
-  ])
   type Named = { structure_id: number | string; name: string | null }
   const structureNames = Object.fromEntries(
     map(

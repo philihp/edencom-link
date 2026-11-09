@@ -16,6 +16,7 @@ import { chain, isNil, map, reject, splitEvery, uniq } from 'ramda'
 
 import type { createClient } from '@/utils/supabase/server'
 
+import { fetchAllRows } from '../pager'
 import type { TaxRates } from '../settings/tax/rates'
 import { costAvoidance } from './costAvoidance'
 import { journalCoveredStructures } from './journalCoverage'
@@ -23,26 +24,9 @@ import { foldInstallerWindow, foldMeasureWindow, type InstallerWindowRow, type M
 
 type Supabase = Awaited<ReturnType<typeof createClient>>
 
-const PAGE_SIZE = 1000
-
 // Ids per `in` filter: a long list is a URL a proxy is entitled to refuse, and
 // a select is capped at max_rows like any other.
 export const RPC_BATCH = 500
-
-// Drain a PostgREST select past its max_rows (1000) cap by recursing to the
-// next page until a short (or empty/errored) page signals the end — an
-// unbounded pull written as tail recursion rather than a mutable loop, per the
-// house style (cf. src/app/structure/revenue/page.tsx).
-export const fetchAllRows = async <T>(
-  build: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: unknown }>,
-  from = 0,
-  acc: readonly T[] = []
-): Promise<T[]> => {
-  const { data, error } = await build(from, from + PAGE_SIZE - 1)
-  if (error || !data || data.length === 0) return [...acc]
-  const rows = [...acc, ...data]
-  return data.length < PAGE_SIZE ? rows : fetchAllRows(build, from + PAGE_SIZE, rows)
-}
 
 // What the measures need to know about a structure: who owns it. (Its system
 // and hull mattered when the page priced jobs itself; the rollup did that.)
@@ -72,6 +56,17 @@ export const fetchJobStructureIds = async (supabase: Supabase): Promise<string[]
   const { data } = await supabase.rpc('structure_measure_structure_ids')
   return map(String, (data ?? []) as Array<number | string>)
 }
+
+// A rollup row's identity: (structure_id, owner_key, utc_day) is the primary
+// key of both rollup tables, and owner_key folds the registration xor the
+// corporation. The shared pager (../pager.ts) reads the pages after the first
+// at once and drops a row two pages both hold by this key.
+const rollupKey = (r: {
+  structure_id: number | string
+  registration_id: string | null
+  corporation_id: number | string | null
+  utc_day: string
+}) => `${r.structure_id}:${r.registration_id ?? ''}:${r.corporation_id ?? ''}:${r.utc_day}`
 
 export const loadStructureMeasures = async (supabase: Supabase, input: StructureMeasuresInput) => {
   const { list, ownRegistrationIds, ownCorporationIds, windowStart, taxRates, structureId } = input
@@ -112,11 +107,12 @@ export const loadStructureMeasures = async (supabase: Supabase, input: Structure
   // start together and are awaited where first needed, rather than each
   // waiting its turn behind the one before (the shape #1208 gave the old fold).
   const measureRowsPromise = ownerFilter
-    ? fetchAllRows<MeasureWindowRow>((from, to) => {
+    ? fetchAllRows<MeasureWindowRow>((from, to, count) => {
         const query = supabase
           .from('structure_measure_day')
           .select(
-            'structure_id, registration_id, corporation_id, utc_day, jobs, revenue, revenue_by_payer, tax_paid, tax_paid_by_landlord, own_job_tax, own_job_tax_jobs, eiv, eiv_jobs, recovered_tax, recovered_eiv, recovered_jobs, unpriced_jobs'
+            'structure_id, registration_id, corporation_id, utc_day, jobs, revenue, revenue_by_payer, tax_paid, tax_paid_by_landlord, own_job_tax, own_job_tax_jobs, eiv, eiv_jobs, recovered_tax, recovered_eiv, recovered_jobs, unpriced_jobs',
+            { count }
           )
           .gte('utc_day', windowDay)
           .or(ownerFilter)
@@ -128,7 +124,7 @@ export const loadStructureMeasures = async (supabase: Supabase, input: Structure
           .order('owner_key', { ascending: true })
           .range(from, to)
           .returns<MeasureWindowRow[]>()
-      })
+      }, rollupKey)
     : Promise.resolve([] as MeasureWindowRow[])
 
   // The Characters tab: our rows and every co-tenant's at the structures on
@@ -136,19 +132,22 @@ export const loadStructureMeasures = async (supabase: Supabase, input: Structure
   const installerBatchesPromise = Promise.all(
     map(
       (batch: string[]) =>
-        fetchAllRows<InstallerWindowRow>((from, to) =>
-          supabase
-            .from('structure_installer_day')
-            .select(
-              'structure_id, registration_id, corporation_id, character_id, jobs, eiv, installer_ids, hidden_jobs, hidden_eiv, hidden_installer_ids'
-            )
-            .gte('utc_day', windowDay)
-            .in('structure_id', batch)
-            .order('utc_day', { ascending: true })
-            .order('structure_id', { ascending: true })
-            .order('owner_key', { ascending: true })
-            .range(from, to)
-            .returns<InstallerWindowRow[]>()
+        fetchAllRows<InstallerWindowRow & { utc_day: string }>(
+          (from, to, count) =>
+            supabase
+              .from('structure_installer_day')
+              .select(
+                'structure_id, registration_id, corporation_id, utc_day, character_id, jobs, eiv, installer_ids, hidden_jobs, hidden_eiv, hidden_installer_ids',
+                { count }
+              )
+              .gte('utc_day', windowDay)
+              .in('structure_id', batch)
+              .order('utc_day', { ascending: true })
+              .order('structure_id', { ascending: true })
+              .order('owner_key', { ascending: true })
+              .range(from, to)
+              .returns<Array<InstallerWindowRow & { utc_day: string }>>(),
+          rollupKey
         ),
       splitEvery(RPC_BATCH, [...onPage])
     )

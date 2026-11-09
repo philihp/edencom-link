@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { Suspense } from 'react'
 
 import { resolveLibraries, type Library } from './libraries'
 import { SharedSearchBox } from './sharedSearchBox'
@@ -53,7 +54,11 @@ const BlueprintPage = () => (
     <h1>Blueprint</h1>
     <p>Given a blueprint, this tool will tell you which Upwell rigs give it a bonus.</p>
     <TypeSearch />
-    <BposLibraries />
+    {/* The rig search needs no data from the server, so it paints at once;
+        the library lists stream in behind it. */}
+    <Suspense fallback={null}>
+      <BposLibraries />
+    </Suspense>
   </>
 )
 

@@ -17,7 +17,7 @@ import {
   type ContractTradeRow,
 } from './contracts'
 import { MarketView } from './marketView'
-import { fetchAllRows, type BuildPage } from './pager'
+import { fetchAllRows, type BuildPage } from '../pager'
 import {
   fromCharacterJournal,
   fromCorpJournal,

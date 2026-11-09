@@ -60,8 +60,6 @@ export type JobsOverview = {
 }
 
 export const fetchJobsOverview = async (supabase: SupabaseClient, userId: string): Promise<JobsOverview> => {
-  const chancellor = await isChancellor(userId)
-
   const now = Date.now()
   const openFloor = new Date(now - 60 * 60_000).toISOString()
   // Recent activity keeps a day; the per-cell overlay is much tighter, so an
@@ -70,8 +68,11 @@ export const fetchJobsOverview = async (supabase: SupabaseClient, userId: string
   const activityFloor = new Date(now - 24 * 60 * 60_000).toISOString()
   const overlayFloor = new Date(now - OVERLAY_MINUTES * 60_000).toISOString()
 
-  const [{ data: registrationsData }, { data: beatsData }, { data: openData }, { data: tasksData }] = await Promise.all(
-    [
+  // The Chancellor check is one more independent read, so it joins the batch
+  // rather than wait in front of it.
+  const [chancellor, { data: registrationsData }, { data: beatsData }, { data: openData }, { data: tasksData }] =
+    await Promise.all([
+      isChancellor(userId),
       supabase
         .from('registration')
         .select('id, name, corporation_id, is_main')
@@ -92,8 +93,7 @@ export const fetchJobsOverview = async (supabase: SupabaseClient, userId: string
         .select('id, batch_id, job, registration_id, character_name, status, error, created_at, started_at, ended_at')
         .gte('created_at', activityFloor)
         .order('created_at', { ascending: true }),
-    ]
-  )
+    ])
 
   const registrations = (registrationsData ?? []) as Registration[]
   const beats = (beatsData ?? []) as Beat[]

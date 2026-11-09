@@ -47,7 +47,8 @@ import { Sparkline } from './sparkline'
 import { UrlWindowSelect } from '../windowSelect'
 import { indexBucketHours, structureWindowDays } from './windows'
 import { MeasureFields } from './measureFields'
-import { fetchAllRows, fetchJobStructureIds, loadStructureMeasures, RPC_BATCH } from './measures'
+import { fetchAllRows } from '../pager'
+import { fetchJobStructureIds, loadStructureMeasures, RPC_BATCH } from './measures'
 import styles from './structures.module.css'
 
 type Structure = {
@@ -120,14 +121,26 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
   //
   // Revenue from structure clone bays (jump clone installation and activation
   // fees), over the same window as the tax revenue.
-  const cloneJournalPromise = fetchAllRows<{ amount: number | string | null }>((from, to) =>
-    supabase
-      .from('corp_wallet_journal')
-      .select('amount')
-      .in('ref_type', ['jump_clone_installation_fee', 'jump_clone_activation_fee'])
-      .gte('date', windowStart)
-      .order('date', { ascending: false })
-      .range(from, to)
+  type CloneJournalRow = {
+    corporation_id: number | string
+    division: number
+    entry_id: number | string
+    amount: number | string | null
+  }
+  const cloneJournalPromise = fetchAllRows<CloneJournalRow>(
+    (from, to, count) =>
+      supabase
+        .from('corp_wallet_journal')
+        .select('corporation_id, division, entry_id, amount', { count })
+        .in('ref_type', ['jump_clone_installation_fee', 'jump_clone_activation_fee'])
+        .gte('date', windowStart)
+        .order('date', { ascending: false })
+        // A tie on date would let a row move between pages.
+        .order('entry_id', { ascending: false })
+        .range(from, to)
+        .returns<CloneJournalRow[]>(),
+    // The journal's primary key, so a row two pages hold counts once.
+    (r) => `${r.corporation_id}:${r.division}:${r.entry_id}`
   )
   // When the Structures background job last finished. Each scheduled run writes a
   // public.heartbeat row stamped with ended_at and a link to the workflow run; we
