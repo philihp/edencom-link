@@ -319,41 +319,64 @@ gas in C-J6MT, ready to react. There are four sources for each gas:
 
 - Decompression gives back 95% of the units, so only the compressed sources
   need N ÷ 0.95 units, rounded up.
-- The compressed name is "Compressed " and the gas name. Take `volume_m3`
-  from `appraise_items`, not from memory: a Fullerite is 1 to 10 m³ a unit, a
-  Mykoserocin or Cytoserocin 10 m³, and the compressed form a tenth of that.
+- The compressed name is "Compressed " and the gas name. A Fullerite is 1 to
+  10 m³ a unit, a Mykoserocin or Cytoserocin 10 m³, and the compressed form a
+  tenth of that. Do not use these numbers from memory: the tools give them.
 - `rate × m³` is the freight for one unit. `shipping_quote` with no arguments
   lists the Jita → C-J6MT lane and its tiers.
 
+**Market depth.** The user buys large quantities. A large purchase walks up
+the sell orders, so each next unit costs more than the last. `sell_price`
+from `appraise_items` is only the lowest order. Thus the form that is cheaper
+at the lowest order is often not cheaper for the whole quantity: after the
+cheap orders of one form are bought, the other form becomes cheaper, and the
+rest of the purchase must change to it. Do not choose one form for the whole
+quantity of a gas from `sell_price`. `gas_purchase_plan` reads the whole Jita
+sell book of both forms and does this split.
+
 The procedure:
 
-1. Call `appraise_items` twice, with `market` `jita` and with `market`
-   `cj6mt`, each with every gas in raw and compressed form. Use `sell_price`,
-   what the user pays now. A `sell_price` of 0 or null means nobody sells
-   there: that source is not available, not free.
-2. For each gas, pick the cheaper Jita source per usable unit. Decide gas by
-   gas, never on the total: the 95% yield often makes the raw form cheaper.
-   That cost is the gas's **C-J6 ceiling**.
-3. C-J6MT supply is often thin, and `sell_price` is only its lowest order,
-   not how many units are on sale. So do not plan the whole quantity there.
-   Tell the user to buy in C-J6MT as much as they can at or below the ceiling
-   for raw gas, or 0.95 × the ceiling for compressed gas, and the rest in
-   Jita in the form from step 2.
-4. Call `shipping_quote` (origin `Jita`, destination `C-J6MT`) with the
-   volume and Jita sell value of the whole quantity bought in Jita, and say
-   that the haul shrinks by what they buy in C-J6MT.
-5. Freight is billed per haul, by tier. At this time the tier up to
-   4,000 m³ costs nothing, and a larger load costs 700 ISK for each m³ of
-   the whole load. If compressing a gas puts the haul under a cheaper tier,
-   compare a quote for each plan. Rates change, so quote; do not assume.
+1. Call `shipping_quote` with no arguments to get the Jita → C-J6MT tiers.
+   Make an estimate of the haul volume and take the rate of its tier (ISK for
+   each m³ of the whole load; 0 for a load in the free tier).
+2. Call `gas_purchase_plan` with every gas, the usable quantity of each, and
+   that rate as `freight_isk_per_m3`. For each gas it gives:
+   - `buy`: the units of each form to buy in Jita. A gas can need both forms.
+   - `legs`: the order of the purchase, and the price where it changes from
+     one form to the other.
+   - `cj6_ceiling_raw` and `cj6_ceiling_compressed`: the landed cost of the
+     last usable unit of the plan. This is the most a unit is worth in
+     C-J6MT, raw or compressed.
+   - `short`: the units that the Jita book cannot supply.
+3. Look at `haul.volume_m3`. If it is in a different tier from your
+   estimate, call `shipping_quote` for that volume and do step 2 again with
+   the new rate. If a smaller haul can come down to a cheaper tier (for
+   example, all under 4,000 m³), compare the two plans with a quote for each.
+   Rates change, so quote; do not assume.
+4. Call `appraise_items` with `market` `cj6mt` and every gas in raw and
+   compressed form. A `sell_price` of 0 or null means nobody sells there. C-J6MT
+   supply is often thin, and `sell_price` is only its lowest order, not how many
+   units are on sale. Tell the user to buy in C-J6MT as much as they can at or
+   below `cj6_ceiling_raw` for raw gas, or `cj6_ceiling_compressed` for
+   compressed gas, and the rest in Jita as the plan says. Units bought in
+   C-J6MT come from the top of the Jita plan (the most expensive legs), so
+   the haul shrinks.
+5. Call `shipping_quote` (origin `Jita`, destination `C-J6MT`) with the
+   volume and Jita sell value of the whole quantity bought in Jita.
 
-Give the answer as a table: for each gas, the C-J6 ceiling (raw and
-compressed), the Jita form, the units to buy in Jita and the cost per usable
-unit. Then give the haul: volume, freight, and the reward and collateral for
-the courier contract. If the buy-sell spread is wide, say that a buy order at
-`buy_price` can cost less, if the user can wait. For the game's Multibuy
-window, give one line per item, `<type name> <units to buy>`, with the
-compressed quantities already divided by 0.95.
+`gas_purchase_plan` reads a snapshot of the Jita book that a job takes each
+hour (`book_captured_at`). If the tool says the book is old or missing, tell
+the user, and use `appraise_items` in `jita` with the four sources above.
+Then say that the split does not include market depth.
+
+Give the answer as a table: for each gas, the units of each form to buy in
+Jita, the price where the plan changes form (if it does), the C-J6 ceiling
+(raw and compressed) and the average cost per usable unit. Then give the haul:
+volume, freight, and the reward and collateral for the courier contract. If
+the buy-sell spread is wide, say that a buy order at `buy_price` can cost
+less, if the user can wait. For the game's Multibuy window, give the
+`multibuy` lines of the tool: one line per item, `<type name> <units to
+buy>`, with the compressed quantities already divided by 0.95.
 
 ## Capital hulls have no market price
 
@@ -1031,8 +1054,9 @@ user's own rows on this site:
   item's memory").
 - Mercenary dens: `list_mercenary_dens`. Planets and planet types:
   `list_planets`.
-- Where to buy reaction gas for C-J6MT: `appraise_items` in `jita` and
-  `cj6mt`, then `shipping_quote` (see "Buying gas for C-J6MT").
+- Where and in which form to buy reaction gas for C-J6MT, with market
+  depth: `shipping_quote`, `gas_purchase_plan`, then `appraise_items` in
+  `cj6mt` (see "Buying gas for C-J6MT").
 - Which wrecks give a salvage material, and which NPCs to hunt for a rig:
   `blueprint_for_product`, then the tables in "Where salvage comes from".
 - The variants of a module and their meta levels: `module_variants`.

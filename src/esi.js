@@ -468,6 +468,16 @@ export const marketPrices = () =>
     label: `marketPrices`,
   })
 
+// Public (no token): one page of a region's sell orders for one type. Each
+// entry is { order_id, type_id, location_id, price, volume_remain, issued,
+// is_buy_order, ... }; the second value is the x-pages header. Feeds the
+// market-depth job.
+export const regionSellOrders = (regionID, typeID, page = 1) =>
+  esiPaged(`/markets/${regionID}/orders/`, {
+    params: { type_id: typeID, order_type: 'sell', page },
+    label: `regionSellOrders ${regionID} type=${typeID} page=${page}`,
+  })
+
 export const universeNames = (ids) =>
   esiJson(`/universe/names/`, {
     method: 'POST',

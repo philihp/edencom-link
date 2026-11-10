@@ -211,6 +211,9 @@ export const JOBS: readonly JobEntry[] = [
   // goodwill with someone else's bandwidth.
   { job: 'market-prices', label: 'market prices', section: 'universe', kickable: 'chancellor', scopes: [] },
   { job: 'market-adjusted-prices', label: 'adjusted prices', section: 'universe', kickable: 'chancellor', scopes: [] },
+  // Hourly Jita sell books of reaction gas, raw and compressed, for the MCP
+  // gas_purchase_plan tool. Public ESI, no tokens.
+  { job: 'market-depth', label: 'gas order books', section: 'universe', kickable: 'chancellor', scopes: [] },
   // Every 15 minutes: every region's public contracts, and the contracts that
   // dropped out of them. No tokens; docs/public-contracts.md.
   { job: 'public-contracts', label: 'public contracts', section: 'universe', kickable: 'chancellor', scopes: [] },

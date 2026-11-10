@@ -15,6 +15,7 @@ import { createMcpHandler, withMcpAuth } from 'mcp-handler'
 import { verifySupabaseToken } from './auth'
 import { registerEstateTools } from './estateTools'
 import { registerExploreTools } from './exploreTools'
+import { registerGasTools } from './gasTools'
 import { registerIndustryTools } from './industryTools'
 import { registerLinkTools } from './linkTools'
 import { registerMailTools } from './mailTools'
@@ -39,6 +40,7 @@ const handler = createMcpHandler(
     registerIndustryTools(server)
     registerExploreTools(server)
     registerShippingTools(server)
+    registerGasTools(server)
     registerPublicContractTools(server)
     registerLinkTools(server)
     registerSkillTools(server)
