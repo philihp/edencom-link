@@ -5,14 +5,14 @@
 // that is used once, so a client that lost a response can retry without the
 // mail going out twice.
 //
-// Two verbs (docs/eve-mail.md "Approval on the website"):
+// Two verbs (docs/eve-mail.md "The send path"):
 //
-//   enqueueMail  — validate the draft and hold it on the site as a 'queued'
-//                  mail_send_log row. Nothing reaches ESI. What the MCP
-//                  `send_mail` tool (src/app/api/mcp/mailTools.ts) does. A
-//                  person sends the queue later, by hand — or, while the
-//                  auto-send-eve-mail flag is on, the mail-queue-send cron
-//                  does (src/app/mail/sendQueue.ts).
+//   enqueueMail  — validate the draft and write it to mail_send_log as a
+//                  'queued' row. What the MCP `send_mail` tool
+//                  (src/app/api/mcp/mailTools.ts) does. The mail-queue-send
+//                  cron sends each queued row within 10 minutes
+//                  (src/app/mail/sendQueue.ts); to the user, the mail is
+//                  sent when the tool answers.
 //   sendMail     — the real send: log 'pending', call ESI, log ok/error.
 //                  Called by `pnpm run mail-send` (src/mailSend.ts) for a
 //                  fresh draft, and through sendQueuedMail for a queued row.
@@ -35,7 +35,7 @@ export const SEND_SCOPE = 'esi-mail.send_mail.v1'
 export type SendOutcome = { ok: true; mailId: number; logId: number } | Failure
 export type EnqueueOutcome = { ok: true; logId: number; requestId: string } | Failure
 
-/** One row of the queue: a mail a person still has to send. */
+/** One row of the queue: a mail the mail-queue-send cron still has to send. */
 export type QueuedMail = {
   id: number
   registration_id: string
@@ -155,7 +155,7 @@ const closerOf = (caller: Caller, id: number) => {
 // Open the mail_send_log row. The insert is the point: the draft is on our
 // side before CCP has it, so a crash after this leaves a 'pending' row saying
 // exactly what may or may not have gone out — or a 'queued' one that is simply
-// still waiting for a person.
+// still waiting for the next mail-queue-send run.
 const openLog = async (
   caller: Caller,
   registration: Registration,
@@ -276,11 +276,12 @@ export const sendMail = async (
 }
 
 /**
- * Hold one mail on the site for a person to send later. Same gate as sendMail
+ * Accept one mail for the mail-queue-send cron to send. Same gate as sendMail
  * — own character, valid draft, use-once request id — plus the send grant,
  * checked from our own token row so the queue never holds a mail nobody could
  * send. Then the whole draft goes into mail_send_log as 'queued', and the
- * call is over: no token refresh, no ESI, nothing in anyone's inbox.
+ * call is over: the token refresh and the ESI call happen in the next run of
+ * the cron, at most 10 minutes later.
  */
 export const enqueueMail = async (
   caller: Caller,
@@ -304,24 +305,11 @@ export const enqueueMail = async (
   return { ok: true, logId, requestId: admitted.draft.requestId }
 }
 
-/** The caller's mails still waiting to be sent, oldest first. */
-export const listQueuedMail = async (caller: Caller): Promise<QueuedMail[]> => {
-  const { data, error } = await caller.supabase
-    .from('mail_send_log')
-    .select('id, registration_id, request_id, recipients, subject, body, approved_cost, source, created_at')
-    .eq('user_id', caller.userId)
-    .eq('status', 'queued')
-    .order('created_at', { ascending: true })
-    .returns<QueuedMail[]>()
-  if (error) throw new Error(`mail_send_log read failed: ${error.message}`)
-  return data ?? []
-}
-
 /**
  * Send one queued mail, by its mail_send_log id. The row is claimed by
- * flipping it queued → pending in one conditional update, so two people
- * sending the same queue at once cannot both deliver it: the second finds no
- * queued row and is told so. Then the ESI call, exactly as sendMail does it.
+ * flipping it queued → pending in one conditional update, so two runs of the
+ * cron at once cannot both deliver it: the second finds no queued row and is
+ * told so. Then the ESI call, exactly as sendMail does it.
  */
 export const sendQueuedMail = async (caller: Caller, logId: number): Promise<SendOutcome> => {
   const { data: claimed, error } = await caller.supabase

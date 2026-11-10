@@ -1,31 +1,24 @@
 // MCP tools over EVE mail (docs/eve-mail.md PR 4): list_mail and read_mail
 // read the copy of each character's mailbox the character-mail extract keeps,
-// and send_mail queues a mail on the site for a person to send later.
+// and send_mail sends a mail as one of the caller's characters.
 //
 // The two readers run on the caller's bearer client like every other read
 // tool. character_mail's only policy is the owner's, so a tool cannot read
 // another account's mail, nor a character shared in from someone else.
 //
-// **send_mail changes nothing in the game and never calls ESI.** It resolves
-// the sender and the recipients, then hands the draft to enqueueMail in
-// src/app/mail/lib.ts, which validates it, checks the character holds the
-// send grant, and stores the whole draft in mail_send_log as 'queued'. That
-// is the end of the call. A person on the site sends the queue by hand later
-// (`pnpm run mail-send --queued <id>`, docs/eve-mail.md "Approval on the
-// website"); nothing automatic drains it, and there is no promise about when,
-// or whether, a queued mail goes out. So the tool's copy must never say or
-// imply that the mail is sent, delivered, or on its way — only that it is
-// queued, and that a person decides. The queue needs the account's token
-// rows, which only the service role reads, so the enqueue runs on the
-// service-role Caller of callerForUser — the user id comes from the verified
-// bearer, as src/app/fitting/marshalActions.ts takes it from the cookie
-// session. The path refuses a character not on that account, validates the
-// draft (src/mailCompose.ts), and uses each request id once.
-//
-// The one exception is the experimental `auto-send-eve-mail` Vercel flag
-// (src/app/mail/autoSend.ts), off in production: while it is on, the call
-// sends the mail it just queued through sendQueuedMail, and its answer says
-// sent or failed rather than queued.
+// **send_mail answers "sent", and the mail goes out within 10 minutes.** It
+// resolves the sender and the recipients, then hands the draft to
+// enqueueMail in src/app/mail/lib.ts, which validates it, checks the
+// character holds the send grant, and stores the whole draft in
+// mail_send_log as 'queued'. The mail-queue-send cron sends every queued row
+// within 10 minutes (src/app/mail/sendQueue.ts). The queue is a detail of
+// this deployment, not of the tool: to the user and the client the mail is
+// sent when the call answers, and nothing in the answer says queued. The
+// write needs the account's token rows, which only the service role reads,
+// so it runs on the service-role Caller of callerForUser — the user id comes
+// from the verified bearer, as src/app/fitting/marshalActions.ts takes it
+// from the cookie session. The path refuses a character not on that account,
+// validates the draft (src/mailCompose.ts), and uses each request id once.
 //
 // Pure seams: mailQuery.ts (which character, label, recipient; the shape of a
 // mail) and src/mailText.ts (EVE markup to text and back), both tested.
@@ -36,8 +29,7 @@ import { splitEvery, uniq, uniqBy } from 'ramda'
 import { z } from 'zod'
 
 import { callerForUser, isFailure } from '@/app/api/fittings/lib'
-import { autoSendEnabled } from '@/app/mail/autoSend'
-import { enqueueMail, sendGrantHeld, sendQueuedMail } from '@/app/mail/lib'
+import { enqueueMail, sendGrantHeld } from '@/app/mail/lib'
 import { MAX_RECIPIENTS, RECIPIENT_TYPES, validateDraft } from '@/mailCompose'
 import { textToMailBody } from '@/mailText'
 import { escapeLike } from '@/utils/escapeLike'
@@ -553,15 +545,16 @@ export const registerMailTools = (server: McpServer): void => {
   server.registerTool(
     'send_mail',
     {
-      title: 'Queue an EVE mail',
+      title: 'Send an EVE mail',
       description:
-        'Queue an EVE mail on edencom.link, to be sent later as one of the user\'s own characters. This does NOT send the mail: the call records the draft on the site, where a person reviews the queue and sends each mail by hand, or discards it. There is no schedule for that review, so never tell the user the mail has been sent, is on its way, or will arrive by any time — say it is queued and that someone will send it later. The character needs the opt-in "Send in-game mail" grant. approved_cost is the most ISK the user agrees to pay in CSPA charges (default 0) when the mail is eventually sent; a recipient who charges more makes EVE refuse it then, and nothing is retried. Every draft is logged on the site in full. To retry after a lost answer, call again with the same request_id: a used request_id is refused, so the mail is never queued twice. Because nothing is sent by this call, you do not need the user\'s confirmation before calling it.',
+        'Send an EVE mail as one of the user\'s own characters. The character needs the opt-in "Send in-game mail" grant. approved_cost is the most ISK the user agrees to pay in CSPA charges (default 0); a recipient who charges more makes EVE refuse the mail, and nothing is retried. Every mail is logged on the site in full. To retry after a lost answer, call again with the same request_id: a used request_id is refused, so the mail is never sent twice. Use preview to check the recipients and the draft without sending.',
       annotations: {
         readOnlyHint: false,
         destructiveHint: false,
-        // A call without request_id mints a fresh one, so a repeat queues again.
+        // A call without request_id mints a fresh one, so a repeat sends again.
         idempotentHint: false,
-        openWorldHint: false,
+        // The mail reaches EVE (through the mail-queue-send cron).
+        openWorldHint: true,
       },
       inputSchema: z.object({
         character: z.string().describe("The user's character to send as, by name or EVE id."),
@@ -610,7 +603,7 @@ export const registerMailTools = (server: McpServer): void => {
           .boolean()
           .optional()
           .describe(
-            'Resolve the recipients and check the draft, and queue nothing. Its request_id can then be passed to the call that queues it.'
+            'Resolve the recipients and check the draft, and send nothing. Its request_id can then be passed to the call that sends it.'
           ),
       }),
     },
@@ -640,7 +633,7 @@ export const registerMailTools = (server: McpServer): void => {
         )
       )
       const problems = picks.flatMap((p) => (p.ok ? [] : [p.message]))
-      if (problems.length > 0) return textResult({ sent: false, queued: false, problems })
+      if (problems.length > 0) return textResult({ sent: false, problems })
       const resolved = uniqBy(
         (p) => `${p.recipient.recipient_type}:${p.recipient.recipient_id}`,
         picks.flatMap((p) => (p.ok ? [p] : []))
@@ -678,16 +671,17 @@ export const registerMailTools = (server: McpServer): void => {
           ...summary,
           body_characters: draft.body.length,
           ...(reasons.length > 0 && { problems: reasons }),
-          can_queue: reasons.length === 0,
-          note: 'Nothing was queued. To queue this draft, call send_mail again without preview and with this request_id.',
+          can_send: reasons.length === 0,
+          note: 'Nothing was sent. To send this draft, call send_mail again without preview and with this request_id.',
         })
       }
 
+      // The cron sends the row within 10 minutes (src/app/mail/sendQueue.ts);
+      // the answer is the user's view of it: sent.
       const outcome = await enqueueMail(caller, sender.character.registrationId, draft, 'mcp')
       if ('error' in outcome) {
         return textResult({
           sent: false,
-          queued: false,
           status: outcome.status,
           error: outcome.error,
           ...outcome.detail,
@@ -695,37 +689,11 @@ export const registerMailTools = (server: McpServer): void => {
         })
       }
 
-      if (await autoSendEnabled()) {
-        // The row is claimed queued → pending and closed ok/error, exactly as
-        // a send from the CLI; a failure leaves it closed, not queued again.
-        const sent = await sendQueuedMail(caller, outcome.logId)
-        if ('error' in sent) {
-          return textResult({
-            sent: false,
-            queued: false,
-            log_id: outcome.logId,
-            status: sent.status,
-            error: sent.error,
-            ...sent.detail,
-            ...summary,
-          })
-        }
-        return textResult({
-          sent: true,
-          queued: false,
-          log_id: sent.logId,
-          mail_id: sent.mailId,
-          ...summary,
-          note: "Sent through ESI, not queued: auto-send is on for this deployment while a person watches. Tell the user the mail was sent. The copy on this site picks it up under the sender's Sent label on a later character-mail extract.",
-        })
-      }
-
       return textResult({
-        sent: false,
-        queued: true,
+        sent: true,
         log_id: outcome.logId,
         ...summary,
-        note: "Queued on edencom.link, not sent. A person reviews the queue and sends each mail by hand later; there is no set time for that. Tell the user the mail is queued for review, never that it has been sent. Once it is sent, the copy on this site picks it up under the sender's Sent label on a later character-mail extract.",
+        note: "Sent. The copy on this site shows it under the sender's Sent label after a later character-mail extract.",
       })
     }
   )

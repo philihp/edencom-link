@@ -3116,8 +3116,8 @@ grant all    on public.fitting_write_log to service_role;
 -- retries under the same id and is refused by the unique index rather than
 -- sending the mail twice. Any row spends its id, whatever its status.
 --
--- Append-only in practice. A row is inserted 'queued' (the draft is held on
--- the site for a person to send by hand later; nothing reaches ESI) or
+-- Append-only in practice. A row is inserted 'queued' (MCP send_mail's draft,
+-- sent by the mail-queue-send cron within 10 minutes) or
 -- 'pending' (the send is in flight — written just before the ESI call), and
 -- updated once to 'ok' (with ESI's mail_id) or 'error'. Sending a queued row
 -- moves it queued → pending → ok/error. Nothing deletes from here except the

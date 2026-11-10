@@ -168,8 +168,8 @@ insert into public.mail_send_log (user_id, registration_id, request_id, recipien
 values (:'alice', :'areg', '55555555-5555-5555-5555-555555555555', '[]', 'next', 'next', 'pending');
 
 -- ── A queued row is accepted, and the owner reads it like any other ──────
--- MCP send_mail stores the draft 'queued' and calls nothing; a person sends it
--- later by hand. The owner can see what is waiting; nobody else can.
+-- MCP send_mail stores the draft 'queued'; the mail-queue-send cron sends it.
+-- The owner can see what is waiting; nobody else can.
 insert into public.mail_send_log (user_id, registration_id, request_id, recipients, subject, body, source, status)
 values (:'alice', :'areg', '77777777-7777-7777-7777-777777777777', '[]', 'later', 'later', 'mcp', 'queued');
 set local role authenticated;
