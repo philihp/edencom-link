@@ -63,6 +63,7 @@
     "industry-systems": "node src/jobs/industrySystems.js",
     "market-prices": "node src/jobs/marketPrices.js",
     "market-adjusted-prices": "node src/jobs/marketAdjustedPrices.js",
+    "market-depth": "node src/jobs/marketDepth.js",
     "public-contracts": "node src/jobs/publicContracts.js",
     "universe-names": "node src/jobs/universeNames.js",
     "structure-directory": "node src/jobs/structureDirectory.js",

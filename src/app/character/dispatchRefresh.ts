@@ -106,6 +106,7 @@ const JOB_WORKFLOWS: Record<string, () => Promise<(target?: OnDemandTarget) => P
   'industry-systems': async () => (await import('@/workflows/industrySystems')).industrySystemsWorkflow,
   'market-prices': async () => (await import('@/workflows/marketPrices')).marketPricesWorkflow,
   'market-adjusted-prices': async () => (await import('@/workflows/marketAdjustedPrices')).marketAdjustedPricesWorkflow,
+  'market-depth': async () => (await import('@/workflows/marketDepth')).marketDepthWorkflow,
   'corp-structures': async () => (await import('@/workflows/corpStructures')).corpStructuresWorkflow,
   'structure-directory': async () => (await import('@/workflows/structureDirectory')).structureDirectoryWorkflow,
   'public-contracts': async () => (await import('@/workflows/publicContracts')).publicContractsWorkflow,
