@@ -219,13 +219,12 @@ const SECTIONS: Section[] = [
     body: (
       <>
         <p>
-          Most tools only read. Four change something, and none of them changes the game. <code>create_link</code> and{' '}
-          <code>update_link</code> save a query as a Data Link under your account, and <code>edit_watched_systems</code>{' '}
-          edits the watch list on your <a href="/indexes">cost indices</a> page. <code>send_mail</code> does not send a
-          mail. It queues one on this site, as one of your characters and only from a character you gave the opt-in{' '}
-          <a href="/settings/grants">Send in-game mail</a> grant, where a person reviews it and sends it by hand later,
-          or throws it away. There is no set time for that, and nothing sends it on its own. Every queued mail is logged
-          under your account in full. Nothing here can delete a fitting or change anything else in your EVE account.
+          Most tools only read. Four change something. <code>create_link</code> and <code>update_link</code> save a
+          query as a Data Link under your account, and <code>edit_watched_systems</code> edits the watch list on your{' '}
+          <a href="/indexes">cost indices</a> page. <code>send_mail</code> sends an EVE mail as one of your characters,
+          and only from a character you gave the opt-in <a href="/settings/grants">Send in-game mail</a> grant. Every
+          mail it sends is logged under your account in full. Nothing here can delete a fitting or change anything else
+          in your EVE account.
         </p>
         <dl className={styles.tools}>
           {map(
@@ -241,8 +240,8 @@ const SECTIONS: Section[] = [
         <p>
           Three tools leave the site to price things: the two appraisal tools and <code>shipping_quote</code> send item
           names and quantities, or route and cargo figures, to <a href="https://innomin.at">innomin.at</a> or KumGo.
-          Nothing from your account goes with them. <code>send_mail</code> does not leave the site: a queued mail waits
-          here until a person sends it. No other tool leaves the site.
+          Nothing from your account goes with them. <code>send_mail</code> sends the mail to EVE. No other tool leaves
+          the site.
         </p>
       </>
     ),

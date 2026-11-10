@@ -1,7 +1,7 @@
 // mail-queue-send as a Vercel Workflow — sends every queued EVE mail
 // (src/app/mail/sendQueue.ts). Single step, the discord-notification-send
 // shape: runJobWithHeartbeat wraps the sweep in the start/end heartbeat pair.
-// Only started while the auto-send-eve-mail flag is on (the cron route checks).
+// Started only when a mail is queued (the cron route checks).
 //
 // Safe to retry: a sent or failed row is no longer 'queued', so a retry only
 // picks up what is still waiting.

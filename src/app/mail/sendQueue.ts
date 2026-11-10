@@ -1,13 +1,14 @@
 // mail-queue-send: every mail waiting in mail_send_log as 'queued', across
-// every account, sent oldest first through sendQueuedMail — the same claim
-// (queued → pending) and ESI call as `pnpm run mail-send --queued <id>`, so a
-// person sending the same row by hand at the same moment cannot double it.
+// every account, sent oldest first through sendQueuedMail. MCP send_mail
+// writes those rows and tells the user the mail is sent; this sweep, every
+// 10 minutes, is what makes that true. The claim (queued → pending) means two
+// overlapping runs cannot send one row twice.
 //
-// Runs only while the `auto-send-eve-mail` flag is on: the cron route
-// (src/app/api/cron/mail-queue-send/route.ts) returns before starting the
-// workflow otherwise. A send that fails closes its row 'error' (sendQueuedMail
-// does that) and the sweep moves on; a row whose account cannot be read is
-// never claimed, so it stays queued for the next run.
+// The cron route (src/app/api/cron/mail-queue-send/route.ts) starts the
+// workflow only when a row is queued. A send that fails closes its row
+// 'error' (sendQueuedMail does that) and the sweep moves on; a row whose
+// account cannot be read is never claimed, so it stays queued for the next
+// run.
 import { reduce } from 'ramda'
 
 import { callerForUser, isFailure } from '@/app/api/fittings/lib'
