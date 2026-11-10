@@ -152,6 +152,11 @@
   padding-right: 0;
 }
 
+/* The select-all box sits over a column of 24px item icons; centred on them. */
+th.checkCell {
+  text-align: center;
+}
+
 /* The hitbox. Padded far past the box itself and pulled back by the same
    amount, so the clickable area covers most of the cell without any of the
    columns beside it moving — the checkboxes are small and the rows are dense,

@@ -13,6 +13,7 @@ import { TypeName } from '../../typeName'
 import styles from '../assets.module.css'
 import { OWNER_STORAGE_KEY } from '../filterKey'
 import { AppraisalPanel } from './appraisalPanel'
+import { IconCheckbox } from './iconCheckbox'
 import { Quantity } from './quantity'
 import { applyMarquee, boxBetween, isDrag, type Box } from './selectionMarquee'
 
@@ -320,17 +321,15 @@ export const LocationAssets = ({ rows, owners, typeNamesPromise, canAppraise }: 
                 >
                   {canAppraise && (
                     <td className={styles.checkCell}>
-                      {/* The label is the hitbox: padded well past the box
-                          itself and pulled back by the same amount, so the
-                          target is generous without the row getting taller. */}
-                      <label className={styles.checkSlop}>
-                        <input
-                          type="checkbox"
-                          checked={selected.includes(row.itemId)}
-                          onChange={(event) => toggleRow(row.itemId, event.target.checked)}
-                          aria-label="Select this item"
-                        />
-                      </label>
+                      {/* The item's icon is the checkbox: it turns into one
+                          under the pointer and stays one while checked. */}
+                      <IconCheckbox
+                        typeId={row.typeId}
+                        prefer={row.icon}
+                        checked={selected.includes(row.itemId)}
+                        onChange={(checked) => toggleRow(row.itemId, checked)}
+                        label="Select this item"
+                      />
                     </td>
                   )}
                   {/* A singleton has no stack size to speak of — left blank
@@ -342,9 +341,11 @@ export const LocationAssets = ({ rows, owners, typeNamesPromise, canAppraise }: 
                     {/* Icon first, then the name — one line, the icon never
                         wrapping away from the text it belongs to. It sits
                         outside the link so a click always lands on the name,
-                        and it renders immediately (no name lookup). */}
+                        and it renders immediately (no name lookup). Where
+                        rows can be selected, the icon is the checkbox in the
+                        first column instead. */}
                     <span className={styles.item}>
-                      <TypeIcon id={row.typeId} prefer={row.icon} />
+                      {canAppraise ? null : <TypeIcon id={row.typeId} prefer={row.icon} />}
                       {row.href ? (
                         // Ships open their own /ship page; containers drill into /asset.
                         <Link href={row.href}>

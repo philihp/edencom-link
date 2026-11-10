@@ -1,0 +1,117 @@
+/* The hitbox, as on the plain checkboxes: padded past the face and pulled back
+   by the same amount, so the target is generous and the row does not grow. */
+.slop {
+  display: inline-flex;
+  align-items: center;
+  padding: 10px;
+  margin: -10px;
+  cursor: pointer;
+}
+
+/* Icon, box and input share one 24px cell, stacked. */
+.face {
+  position: relative;
+  display: grid;
+  width: 24px;
+  height: 24px;
+}
+
+.face > * {
+  grid-area: 1 / 1;
+}
+
+.input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+  /* Over the icon and the box, so the click lands on the control itself. */
+  z-index: 1;
+}
+
+/* Resting state: the icon shows, the box does not. Leaving goes back here
+   with an ease-out over 300ms. */
+.icon {
+  margin: 0;
+  pointer-events: none;
+  opacity: 1;
+  transition: opacity 300ms ease-out;
+}
+
+.box {
+  width: 24px;
+  height: 24px;
+  opacity: 0;
+  transition: opacity 300ms ease-out;
+  pointer-events: none;
+}
+
+/* Under the pointer, under keyboard focus, or checked: the box shows. Arriving
+   here is an ease-in over 200ms. */
+.slop:hover .icon,
+.input:focus-visible ~ .icon,
+.input:checked ~ .icon {
+  opacity: 0;
+  transition: opacity 200ms ease-in;
+}
+
+.slop:hover .box,
+.input:focus-visible ~ .box,
+.input:checked ~ .box {
+  opacity: 1;
+  transition: opacity 200ms ease-in;
+}
+
+.frame {
+  fill: var(--paper-raised);
+  stroke: var(--ink-soft);
+  stroke-width: 1.5;
+  transition:
+    fill 150ms ease-out,
+    stroke 150ms ease-out;
+}
+
+.input:checked ~ .box .frame {
+  fill: var(--accent);
+  stroke: var(--accent);
+}
+
+.input:focus-visible ~ .box .frame {
+  stroke: var(--info);
+  stroke-width: 2;
+}
+
+/* The tick draws itself on check and stays. On uncheck it goes at once: the
+   box is empty again, so nothing should linger. */
+.tick {
+  fill: none;
+  stroke: var(--paper-raised);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+}
+
+.input:checked ~ .box .tick {
+  stroke-dashoffset: 0;
+  transition: stroke-dashoffset 250ms ease-out 50ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .icon,
+  .box,
+  .frame,
+  .slop:hover .icon,
+  .slop:hover .box,
+  .input:focus-visible ~ .icon,
+  .input:focus-visible ~ .box,
+  .input:checked ~ .icon,
+  .input:checked ~ .box,
+  .input:checked ~ .box .tick {
+    transition: none;
+  }
+}
