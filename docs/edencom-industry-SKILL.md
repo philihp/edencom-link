@@ -941,10 +941,16 @@ the user's private data: no share, Data Link or GraphQL field shows it.
 - When the call answers `sent: true`, tell the user that the mail is sent.
 - To check the recipients and the draft first, call with `preview: true`.
   The preview sends nothing.
-- A corporation does not get the mail. The tool drops each corporation from
-  the recipients and lists it under `not_sent_to`. To reply to a corporation
-  mail, send the reply to its sender and to the other characters on it. If
-  every recipient is a corporation, the tool sends nothing.
+- To reply to all the people on a mail, give its `mail_id` as
+  `reply_all_to`, as the character that received it. The tool addresses the
+  reply to the sender of that mail first, and then to all the others it went
+  to, but not to the replying character. The subject is "Re: " and the old
+  subject, unless you give one. `recipients` adds more people. Always use
+  `reply_all_to` for a reply-all. Do not copy the recipients by hand.
+- A corporation does not get the mail, with one exception: a corporation
+  that sent the mail you reply to with `reply_all_to`. The tool drops each
+  other corporation and lists it under `not_sent_to`. If no recipient
+  remains, the tool sends nothing.
 
 - A recipient is a character, a corporation, an alliance or a mailing list.
   Give its exact name, or its EVE id and type. The tool knows the names of the

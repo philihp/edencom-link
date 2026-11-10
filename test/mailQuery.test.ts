@@ -19,7 +19,9 @@ import {
   parseMailIds,
   pickCharacter,
   pickRecipient,
-  stripCorporations,
+  replyAllRecipients,
+  replySubject,
+  withoutCorporations,
   recipientTypeOf,
   referencedIds,
   resolveLabel,
@@ -371,25 +373,64 @@ test('a body not yet fetched, or deleted before it was, says so', () => {
   assert.match(deleted.note ?? '', /deleted in game/)
 })
 
-const pick = (recipient_id: number, recipient_type: 'character' | 'corporation' | 'alliance' | 'mailing_list') => ({
-  ok: true as const,
-  recipient: { recipient_id, recipient_type },
-  name: null,
+const r = (recipient_id: number, recipient_type: 'character' | 'corporation' | 'alliance' | 'mailing_list') => ({
+  recipient_id,
+  recipient_type,
+})
+const ME = r(90000009, 'character')
+
+test('a reply-all goes to the sender first, then everyone else, without corporations', () => {
+  const from = r(90000001, 'character')
+  const to = [ME, r(98000001, 'corporation'), r(90000002, 'character'), r(99000001, 'alliance')]
+  assert.deepEqual(replyAllRecipients(false)({ from, to, self: ME }), {
+    recipients: [from, r(90000002, 'character'), r(99000001, 'alliance')],
+    stripped: [r(98000001, 'corporation')],
+  })
 })
 
-test('allow-corp-spam off strips every corporation from a reply-all', () => {
-  const picks = [pick(90000001, 'character'), pick(98000001, 'corporation'), pick(99000001, 'alliance')]
-  const { kept, stripped } = stripCorporations(false)(picks)
-  assert.deepEqual(kept, [picks[0], picks[2]])
-  assert.deepEqual(stripped, [picks[1]])
+test('a corporation that sent the mail stays as the first recipient', () => {
+  const from = r(98000001, 'corporation')
+  const to = [ME, r(98000002, 'corporation'), r(90000002, 'character')]
+  assert.deepEqual(replyAllRecipients(false)({ from, to, self: ME }), {
+    recipients: [from, r(90000002, 'character')],
+    stripped: [r(98000002, 'corporation')],
+  })
 })
 
-test('allow-corp-spam on keeps every recipient', () => {
-  const picks = [pick(90000001, 'character'), pick(98000001, 'corporation')]
-  assert.deepEqual(stripCorporations(true)(picks), { kept: picks, stripped: [] })
+test('allow-corp-spam on keeps every corporation the mail went to', () => {
+  const from = r(90000001, 'character')
+  const to = [ME, r(98000001, 'corporation')]
+  assert.deepEqual(replyAllRecipients(true)({ from, to, self: ME }), {
+    recipients: [from, r(98000001, 'corporation')],
+    stripped: [],
+  })
 })
 
-test('a mail only to corporations keeps nothing when corp spam is not allowed', () => {
-  const picks = [pick(98000001, 'corporation'), pick(98000002, 'corporation')]
-  assert.deepEqual(stripCorporations(false)(picks), { kept: [], stripped: picks })
+test('a reply-all names nobody twice and never the replying character', () => {
+  const from = r(90000001, 'character')
+  const to = [from, ME, r(90000002, 'character'), r(90000002, 'character')]
+  assert.deepEqual(replyAllRecipients(false)({ from, to, self: ME }).recipients, [from, r(90000002, 'character')])
+})
+
+test('a reply-all to my own sent mail goes to the people I sent it to', () => {
+  const to = [r(90000002, 'character'), r(98000001, 'corporation')]
+  assert.deepEqual(replyAllRecipients(false)({ from: ME, to, self: ME }), {
+    recipients: [r(90000002, 'character')],
+    stripped: [r(98000001, 'corporation')],
+  })
+})
+
+test('a reply subject gets one Re:', () => {
+  assert.equal(replySubject('Fuel'), 'Re: Fuel')
+  assert.equal(replySubject('RE: Fuel'), 'RE: Fuel')
+  assert.equal(replySubject(null), 'Re: ')
+})
+
+test('recipients named outside a reply-all lose their corporations unless the flag is on', () => {
+  const to = [r(90000002, 'character'), r(98000001, 'corporation'), r(99000001, 'alliance')]
+  assert.deepEqual(withoutCorporations(false)(to), {
+    recipients: [r(90000002, 'character'), r(99000001, 'alliance')],
+    stripped: [r(98000001, 'corporation')],
+  })
+  assert.deepEqual(withoutCorporations(true)(to), { recipients: to, stripped: [] })
 })

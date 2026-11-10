@@ -31,7 +31,7 @@ import { z } from 'zod'
 import { callerForUser, isFailure } from '@/app/api/fittings/lib'
 import { corpSpamAllowed } from '@/app/mail/corpSpam'
 import { enqueueMail, sendGrantHeld } from '@/app/mail/lib'
-import { MAX_RECIPIENTS, RECIPIENT_TYPES, validateDraft } from '@/mailCompose'
+import { MAX_RECIPIENTS, type Recipient, RECIPIENT_TYPES, type RecipientType, validateDraft } from '@/mailCompose'
 import { textToMailBody } from '@/mailText'
 import { escapeLike } from '@/utils/escapeLike'
 import { createBearerClient } from '@/utils/supabase/bearer'
@@ -57,12 +57,15 @@ import {
   pickRecipient,
   type RecipientPick,
   type RecipientSpec,
+  recipientKey,
   recipientTypeOf,
+  replyAllRecipients,
+  replySubject,
   referencedIds,
-  stripCorporations,
   resolveLabel,
   shapeHeader,
   shapeMail,
+  withoutCorporations,
 } from './mailQuery'
 
 type SupabaseClient = ReturnType<typeof createBearerClient>
@@ -364,6 +367,88 @@ const describeRecipient = (pick: Extract<RecipientPick, { ok: true }>) => ({
   name: pick.name,
 })
 
+const isRecipientType = (value: unknown): value is RecipientType =>
+  typeof value === 'string' && (RECIPIENT_TYPES as readonly string[]).includes(value)
+
+// The names of a reply-all's recipients, in two reads: the character-mail
+// extract resolves every sender and recipient into universe_name, except
+// mailing lists, which are the sender's own lists.
+const recipientNames = async (
+  supabase: SupabaseClient,
+  sender: OwnCharacter,
+  recipients: Recipient[]
+): Promise<Map<string, string | null>> => {
+  const ids = uniq(recipients.map((r) => r.recipient_id))
+  if (ids.length === 0) return new Map()
+  const [universe, lists] = await Promise.all([
+    supabase.from('universe_name').select('id, name, category').in('id', ids),
+    supabase
+      .from('character_mailing_list')
+      .select('mailing_list_id, name')
+      .eq('registration_id', sender.registrationId)
+      .in('mailing_list_id', ids),
+  ])
+  return new Map([
+    ...rowsOf<{ id: number | string; name: string; category: string }>(universe, 'names').map(
+      (u): [string, string | null] => [`${u.category}:${Number(u.id)}`, u.name]
+    ),
+    ...rowsOf<{ mailing_list_id: number | string; name: string | null }>(lists, 'mailing lists').map(
+      (l): [string, string | null] => [`mailing_list:${Number(l.mailing_list_id)}`, l.name]
+    ),
+  ])
+}
+
+type ReplySource = { ok: true; from: Extract<RecipientPick, { ok: true }>; to: Recipient[]; subject: string | null }
+
+// The mail a reply-all answers, as the sending character's copy holds it:
+// a character can only reply to a mail it received or sent. The copy keeps
+// the sender as a bare id, so its type comes from the directories.
+const loadReplySource = async (
+  supabase: SupabaseClient,
+  mailRef: string | number,
+  sender: OwnCharacter,
+  characters: OwnCharacter[]
+): Promise<ReplySource | { ok: false; message: string }> => {
+  const mailId = parseId(mailRef)
+  if (mailId == null) return { ok: false, message: `reply_all_to ${JSON.stringify(mailRef)} is not a mail id.` }
+  const { data, error } = await supabase
+    .from('character_mail')
+    .select('from_id, subject, recipients')
+    .eq('registration_id', sender.registrationId)
+    .eq('mail_id', mailId)
+    .maybeSingle()
+  if (error) throw new Error(`reading mail ${mailId} failed: ${error.message}`)
+  if (!data) {
+    return {
+      ok: false,
+      message: `Mail ${mailId} is not in the copy of ${sender.name}'s mail. Reply as the character that received it (list_mail shows which), or wait for the next character-mail extract.`,
+    }
+  }
+  const row = data as {
+    from_id: number | string
+    subject: string | null
+    recipients: Array<{ recipient_id: number | string; recipient_type: string }> | null
+  }
+  const fromSpec = { id: row.from_id }
+  const from = pickRecipient(fromSpec, await recipientCandidates(supabase, fromSpec, sender, characters))
+  if (!from.ok) {
+    return {
+      ok: false,
+      message: `The sender of mail ${mailId} (id ${row.from_id}) is not known to this site, so the reply cannot be addressed. Name the recipients instead.`,
+    }
+  }
+  return {
+    ok: true,
+    from,
+    to: (row.recipients ?? []).flatMap((r): Recipient[] =>
+      isRecipientType(r.recipient_type)
+        ? [{ recipient_id: Number(r.recipient_id), recipient_type: r.recipient_type }]
+        : []
+    ),
+    subject: row.subject,
+  }
+}
+
 // ── Tools ─────────────────────────────────────────────────────────────────
 
 export const registerMailTools = (server: McpServer): void => {
@@ -549,7 +634,7 @@ export const registerMailTools = (server: McpServer): void => {
     {
       title: 'Send an EVE mail',
       description:
-        'Send an EVE mail as one of the user\'s own characters. The character needs the opt-in "Send in-game mail" grant. approved_cost is the most ISK the user agrees to pay in CSPA charges (default 0); a recipient who charges more makes EVE refuse the mail, and nothing is retried. Every mail is logged on the site in full. To retry after a lost answer, call again with the same request_id: a used request_id is refused, so the mail is never sent twice. Use preview to check the recipients and the draft without sending. A corporation in the recipients does not get the mail: it is dropped, and the answer lists it under not_sent_to. To reply to a corporation mail, send to its sender and the other people on it.',
+        'Send an EVE mail as one of the user\'s own characters. The character needs the opt-in "Send in-game mail" grant. approved_cost is the most ISK the user agrees to pay in CSPA charges (default 0); a recipient who charges more makes EVE refuse the mail, and nothing is retried. Every mail is logged on the site in full. To retry after a lost answer, call again with the same request_id: a used request_id is refused, so the mail is never sent twice. Use preview to check the recipients and the draft without sending. To reply to everyone on a mail, pass its id as reply_all_to: the reply goes to the sender first (a corporation that sent it too) and then to everyone else the mail went to, without the sending character. A corporation among those others does not get the reply, and neither does a corporation named in recipients: it is dropped, and the answer lists it under not_sent_to.',
       annotations: {
         readOnlyHint: false,
         destructiveHint: false,
@@ -576,10 +661,23 @@ export const registerMailTools = (server: McpServer): void => {
                 ),
             })
           )
-          .min(1)
           .max(MAX_RECIPIENTS)
-          .describe(`Who receives the mail, 1 to ${MAX_RECIPIENTS}.`),
-        subject: z.string().describe('The subject line, at most 1000 characters.'),
+          .optional()
+          .describe(
+            `Who receives the mail, up to ${MAX_RECIPIENTS} in all. Needed unless reply_all_to is given; with it, these are added to the reply.`
+          ),
+        reply_all_to: z
+          .union([z.string(), z.number()])
+          .optional()
+          .describe(
+            "The id of a mail the sending character received or sent (list_mail shows it). The reply goes to that mail's sender and everyone else on it, corporations dropped."
+          ),
+        subject: z
+          .string()
+          .optional()
+          .describe(
+            'The subject line, at most 1000 characters. Needed unless reply_all_to is given; then the default is "Re: " and the subject of that mail.'
+          ),
         body: z.string().describe('The text of the mail, at most 10000 characters once encoded for EVE.'),
         body_format: z
           .enum(['text', 'eve_markup'])
@@ -610,7 +708,7 @@ export const registerMailTools = (server: McpServer): void => {
       }),
     },
     async (
-      { character, recipients, subject, body, body_format, approved_cost, request_id, preview },
+      { character, recipients, reply_all_to, subject, body, body_format, approved_cost, request_id, preview },
       ctx: ServerCtx
     ): Promise<ToolResult> => {
       const bearer = bearerOf(ctx)
@@ -629,41 +727,71 @@ export const registerMailTools = (server: McpServer): void => {
       const sender = pickCharacter(character, characters)
       if (!sender.ok) return textResult(sender.message)
 
+      if (reply_all_to == null && (recipients ?? []).length === 0) {
+        return textResult({ sent: false, problems: ['Name the recipients, or give reply_all_to.'] })
+      }
+      if (reply_all_to == null && subject == null) {
+        return textResult({ sent: false, problems: ['Give a subject, or give reply_all_to.'] })
+      }
+      const source =
+        reply_all_to == null ? null : await loadReplySource(supabase, reply_all_to, sender.character, characters)
+      if (source && !source.ok) return textResult({ sent: false, problems: [source.message] })
+
       const picks = await Promise.all(
-        recipients.map(async (spec) =>
+        (recipients ?? []).map(async (spec) =>
           pickRecipient(spec, await recipientCandidates(supabase, spec, sender.character, characters))
         )
       )
       const problems = picks.flatMap((p) => (p.ok ? [] : [p.message]))
       if (problems.length > 0) return textResult({ sent: false, problems })
-      // allow-corp-spam off (the default): no corporation receives the mail,
-      // so a reply-all to a corporation mail answers its people only.
-      const { kept: resolved, stripped } = stripCorporations(await corpSpamAllowed())(
-        uniqBy(
-          (p) => `${p.recipient.recipient_type}:${p.recipient.recipient_id}`,
-          picks.flatMap((p) => (p.ok ? [p] : []))
-        )
-      )
-      const notSentTo = stripped.length > 0 ? { not_sent_to: stripped.map(describeRecipient) } : {}
-      if (resolved.length === 0) {
+      const named = picks.flatMap((p) => (p.ok ? [p] : []))
+
+      // allow-corp-spam off (the default): no corporation gets the mail,
+      // except the one that sent the mail a reply-all answers.
+      const allowCorpSpam = await corpSpamAllowed()
+      const reply = source
+        ? replyAllRecipients(allowCorpSpam)({
+            from: source.from.recipient,
+            to: source.to,
+            self: { recipient_id: Number(sender.character.characterId), recipient_type: 'character' },
+          })
+        : { recipients: [], stripped: [] }
+      const extra = withoutCorporations(allowCorpSpam)(named.map((p) => p.recipient))
+      const finalRecipients = uniqBy(recipientKey, [...reply.recipients, ...extra.recipients])
+      const strippedRecipients = uniqBy(recipientKey, [...reply.stripped, ...extra.stripped])
+      const names = new Map([
+        ...(await recipientNames(supabase, sender.character, [...reply.recipients, ...reply.stripped])),
+        ...(source ? [[recipientKey(source.from.recipient), source.from.name] as [string, string | null]] : []),
+        ...named.map((p): [string, string | null] => [recipientKey(p.recipient), p.name]),
+      ])
+      const describe = (r: Recipient) =>
+        describeRecipient({ ok: true, recipient: r, name: names.get(recipientKey(r)) ?? null })
+      const notSentTo = strippedRecipients.length > 0 ? { not_sent_to: strippedRecipients.map(describe) } : {}
+      if (finalRecipients.length === 0) {
         return textResult({
           sent: false,
           ...notSentTo,
-          problems: ['Every recipient is a corporation, and this site does not send mail to corporations.'],
+          problems: [
+            strippedRecipients.length > 0
+              ? 'Every recipient is a corporation, and this site does not send mail to corporations.'
+              : 'Nobody is left to send the reply to.',
+          ],
         })
       }
+      const mailSubject = subject ?? replySubject(source?.subject)
 
       const draft = {
         requestId: request_id?.trim() || randomUUID(),
-        recipients: resolved.map((p) => p.recipient),
-        subject,
+        recipients: finalRecipients,
+        subject: mailSubject,
         body: body_format === 'eve_markup' ? body : textToMailBody(body),
         approvedCost: approved_cost ?? 0,
       }
       const summary = {
         from: sender.character.name,
-        recipients: resolved.map(describeRecipient),
-        subject,
+        ...(source && { reply_all_to: String(reply_all_to) }),
+        recipients: finalRecipients.map(describe),
+        subject: mailSubject,
         approved_cost: draft.approvedCost,
         request_id: draft.requestId,
         ...notSentTo,
