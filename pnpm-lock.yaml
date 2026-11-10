@@ -184,6 +184,9 @@ importers:
       '@vercel/analytics':
         specifier: 2.0.1
         version: 2.0.1(next@16.4.5(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(react@19.3.1)
+      '@vercel/flags-core':
+        specifier: 1.11.0
+        version: 1.11.0(@aws-sdk/credential-provider-web-identity@3.972.49)(next@16.4.5(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(ws@8.22.1)
       '@vercel/queue':
         specifier: ^0.11.0
         version: 0.11.0
@@ -1565,6 +1568,17 @@ packages:
     resolution: {integrity: sha512-g9XerViJ/paZujufXYcu5XYI2vU2rtB4sgdpjUHde5RnOkdmpu0ngH46LCFGHoPXO/C+qDPSczIHIRN+8Q2YKQ==}
     engines: {node: '>= 18'}
 
+  '@vercel/flags-core@1.11.0':
+    resolution: {integrity: sha512-QUeTQb9uC9cZEPK1B5PQjNezXi890V5OeteCg+IE29Wz/J6RPybkmdTf636EPZMtG75bb1z0S8SquSuIkMLFKA==}
+    peerDependencies:
+      '@openfeature/server-sdk': 1.18.0
+      next: '*'
+    peerDependenciesMeta:
+      '@openfeature/server-sdk':
+        optional: true
+      next:
+        optional: true
+
   '@vercel/functions@3.10.6':
     resolution: {integrity: sha512-E6oojSTJALDq703E0R1ijZzX2ibZYYwRwLCq/9+FIdArpjJzQEy2nT3rGCV8H3mgU45wbjCd8iSdjpLtGjGvrw==}
     engines: {node: '>= 20'}
@@ -1579,6 +1593,10 @@ packages:
 
   '@vercel/oidc@3.2.0':
     resolution: {integrity: sha512-UycprH3T6n3jH0k44NHMa7pnFHGu/N05MjojYr+Mc6I7obkoLIJujSWwin1pCvdy/eOxrI/l3uDLQsmcrOb4ug==}
+    engines: {node: '>= 20'}
+
+  '@vercel/oidc@3.5.0':
+    resolution: {integrity: sha512-jo7GgeJx2YMkjg9A28pFM5p88n5SnSHvDeNlf9898bRWiG9jPxwedj/gn/2XTw4UOTyQ50uHlrTGSlf/XU5tgw==}
     engines: {node: '>= 20'}
 
   '@vercel/oidc@3.8.10':
@@ -2451,6 +2469,10 @@ packages:
 
   jose@6.2.15:
     resolution: {integrity: sha512-qdF6ewcZARtef63fJ9AKKZPgxw+t7USH6HLXYcD4CrdmSvDp79rpJSPFEKc90QBeGS63u1KQtN2MZQHC0yDIzA==}
+
+  js-xxhash@4.0.0:
+    resolution: {integrity: sha512-3Q2eIqG6s1KEBBmkj9tGM9lef8LJbuRyTVBdI3GpTnrvtytunjLPO0wqABp5qhtMzfA32jYn1FlnIV7GH1RAHQ==}
+    engines: {node: '>=18.0.0'}
 
   json5@2.2.3:
     resolution: {integrity: sha512-XmOWe7eyHYH14cLdVPoyg+GOH3rYX++KpzrylJwSW98t3Nk+U8XOl8FWKOgwtzdb8lXGf6zYwDUzeHMWfxasyg==}
@@ -4322,6 +4344,19 @@ snapshots:
     dependencies:
       execa: 5.1.1
 
+  '@vercel/flags-core@1.11.0(@aws-sdk/credential-provider-web-identity@3.972.49)(next@16.4.5(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(ws@8.22.1)':
+    dependencies:
+      '@vercel/functions': 3.10.6(@aws-sdk/credential-provider-web-identity@3.972.49)(ws@8.22.1)
+      '@vercel/oidc': 3.5.0
+      dequal: 2.0.3
+      jose: 5.10.0
+      js-xxhash: 4.0.0
+    optionalDependencies:
+      next: 16.4.5(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+    transitivePeerDependencies:
+      - '@aws-sdk/credential-provider-web-identity'
+      - ws
+
   '@vercel/functions@3.10.6(@aws-sdk/credential-provider-web-identity@3.972.49)(ws@8.22.1)':
     dependencies:
       '@vercel/oidc': 4.0.6
@@ -4330,6 +4365,8 @@ snapshots:
       ws: 8.22.1
 
   '@vercel/oidc@3.2.0': {}
+
+  '@vercel/oidc@3.5.0': {}
 
   '@vercel/oidc@3.8.10':
     dependencies:
@@ -5400,6 +5437,8 @@ snapshots:
   jose@5.10.0: {}
 
   jose@6.2.15: {}
+
+  js-xxhash@4.0.0: {}
 
   json5@2.2.3: {}
 

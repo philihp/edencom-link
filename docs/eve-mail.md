@@ -427,6 +427,17 @@ count and records no heartbeat. A failed send closes its row `error` and the
 sweep moves on; the row is never retried. The user was told "sent", so a
 failure shows only in `mail_send_log` and the job's log line.
 
+**No mail to a corporation, by default.** The `allow-corp-spam` Vercel flag
+(`src/app/mail/corpSpam.ts`, read through `@vercel/flags-core`; off by
+default, and a flag that cannot be read counts as off) guards against the
+auto-responder answering reply-all to a corporation mail and so mailing the
+whole corporation again. While it is off, `send_mail` drops every
+`corporation` recipient before it queues the mail (`stripCorporations` in
+`mailQuery.ts`, tested), lists them in the answer under `not_sent_to`, and
+refuses a mail whose recipients were all corporations. The tool cannot tell a
+reply-all from a new mail, so the rule applies to every call. While it is on,
+nothing changes: the recipients go as given.
+
 What the tool refuses is unchanged: a name it cannot resolve, a draft over
 ESI's limits, a character without the "Send in-game mail" grant, a used
 `request_id`. So are the logging of the whole draft and the CSPA rule (a
