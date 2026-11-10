@@ -5,8 +5,8 @@
 first mailbox was copied on 2026-10-24. Still owed: the one real send through
 `pnpm run mail-send` that PR 3's verify step asks for (the owner's, by hand).
 
-**Since 2026-11-10, MCP `send_mail` sends, and says so.** CCP approved the
-auto-responder sending EVE mail through the API with no person in the loop.
+**Since 2026-11-10, MCP `send_mail` sends, and says so.** We chose to let
+the tool send EVE mail through the API with no person reviewing each one.
 The tool writes the draft to `mail_send_log` as `queued`, the
 `mail-queue-send` cron sends every queued row within 10 minutes, and the tool
 answers `sent: true` at once. The queue is a detail of the deployment; no
@@ -411,8 +411,8 @@ Three departures from the sketch in the delivery table:
 
 ## Sending through the queue (2026-11-10)
 
-CCP approved the auto-responder sending EVE mail through the API with no
-person approving each one. So `send_mail` sends, and every surface a user or
+We chose to let `send_mail` send EVE mail through the API with no person
+approving each one. So `send_mail` sends, and every surface a user or
 an MCP client reads says so: the tool title (**Send an EVE mail**) and
 description, its answer (`sent: true`), the skill doc's "Sending mail",
 `/mcp-server`, and the "Send in-game mail" grant's _why_.
@@ -436,7 +436,7 @@ ESI's limits, a character without the "Send in-game mail" grant, a used
 to send by hand with `pnpm run mail-send --queued <id>`, and every surface
 said _queued, not sent_. The `auto-send-eve-mail` Vercel flag (#1248) turned
 the queue into a send for a person watching. The CLI's queue modes, the flag
-and `@vercel/flags-core` went when CCP's approval came.
+and `@vercel/flags-core` went when the review step was removed.
 
 ## Privacy
 
