@@ -3,7 +3,7 @@
 // I/O: the tools read character_mail and the name directories, and hand the
 // rows here — so which character, label and recipient a call names, and what
 // a mail looks like in the answer, are unit-testable (test/mailQuery.test.ts).
-import { all, any, ascend, chain, filter, map, pipe, sortBy, sortWith, uniq, uniqBy } from 'ramda'
+import { all, any, ascend, chain, filter, map, partition, pipe, propEq, sortBy, sortWith, uniq, uniqBy } from 'ramda'
 
 import type { Recipient, RecipientType } from '../../../mailCompose.ts'
 import { mailText } from '../../../mailText.ts'
@@ -248,6 +248,24 @@ export const pickRecipient = (spec: RecipientSpec, candidates: Candidate[]): Rec
     name: known[0].name,
   }
 }
+
+/** The recipients a send keeps, and the ones the allow-corp-spam rule drops. */
+export type RecipientSplit<T> = { kept: T[]; stripped: T[] }
+
+const isCorporation = <T extends { recipient: Recipient }>(pick: T) =>
+  propEq('corporation', 'recipient_type', pick.recipient)
+
+/**
+ * The allow-corp-spam rule (src/app/mail/corpSpam.ts). Allowed, every
+ * recipient is kept. Not allowed (the default), every corporation is
+ * stripped, so a reply-all to a corporation mail goes to its people only.
+ */
+export const stripCorporations =
+  (allowCorpSpam: boolean) =>
+  <T extends { recipient: Recipient }>(picks: T[]): RecipientSplit<T> =>
+    allowCorpSpam
+      ? { kept: picks, stripped: [] }
+      : (([stripped, kept]) => ({ kept, stripped }))(partition(isCorporation<T>, picks))
 
 // ── Mails as the tools answer them ────────────────────────────────────────
 

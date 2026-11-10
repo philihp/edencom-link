@@ -29,6 +29,7 @@ import { splitEvery, uniq, uniqBy } from 'ramda'
 import { z } from 'zod'
 
 import { callerForUser, isFailure } from '@/app/api/fittings/lib'
+import { corpSpamAllowed } from '@/app/mail/corpSpam'
 import { enqueueMail, sendGrantHeld } from '@/app/mail/lib'
 import { MAX_RECIPIENTS, RECIPIENT_TYPES, validateDraft } from '@/mailCompose'
 import { textToMailBody } from '@/mailText'
@@ -58,6 +59,7 @@ import {
   type RecipientSpec,
   recipientTypeOf,
   referencedIds,
+  stripCorporations,
   resolveLabel,
   shapeHeader,
   shapeMail,
@@ -547,7 +549,7 @@ export const registerMailTools = (server: McpServer): void => {
     {
       title: 'Send an EVE mail',
       description:
-        'Send an EVE mail as one of the user\'s own characters. The character needs the opt-in "Send in-game mail" grant. approved_cost is the most ISK the user agrees to pay in CSPA charges (default 0); a recipient who charges more makes EVE refuse the mail, and nothing is retried. Every mail is logged on the site in full. To retry after a lost answer, call again with the same request_id: a used request_id is refused, so the mail is never sent twice. Use preview to check the recipients and the draft without sending.',
+        'Send an EVE mail as one of the user\'s own characters. The character needs the opt-in "Send in-game mail" grant. approved_cost is the most ISK the user agrees to pay in CSPA charges (default 0); a recipient who charges more makes EVE refuse the mail, and nothing is retried. Every mail is logged on the site in full. To retry after a lost answer, call again with the same request_id: a used request_id is refused, so the mail is never sent twice. Use preview to check the recipients and the draft without sending. A corporation in the recipients does not get the mail: it is dropped, and the answer lists it under not_sent_to. To reply to a corporation mail, send to its sender and the other people on it.',
       annotations: {
         readOnlyHint: false,
         destructiveHint: false,
@@ -634,10 +636,22 @@ export const registerMailTools = (server: McpServer): void => {
       )
       const problems = picks.flatMap((p) => (p.ok ? [] : [p.message]))
       if (problems.length > 0) return textResult({ sent: false, problems })
-      const resolved = uniqBy(
-        (p) => `${p.recipient.recipient_type}:${p.recipient.recipient_id}`,
-        picks.flatMap((p) => (p.ok ? [p] : []))
+      // allow-corp-spam off (the default): no corporation receives the mail,
+      // so a reply-all to a corporation mail answers its people only.
+      const { kept: resolved, stripped } = stripCorporations(await corpSpamAllowed())(
+        uniqBy(
+          (p) => `${p.recipient.recipient_type}:${p.recipient.recipient_id}`,
+          picks.flatMap((p) => (p.ok ? [p] : []))
+        )
       )
+      const notSentTo = stripped.length > 0 ? { not_sent_to: stripped.map(describeRecipient) } : {}
+      if (resolved.length === 0) {
+        return textResult({
+          sent: false,
+          ...notSentTo,
+          problems: ['Every recipient is a corporation, and this site does not send mail to corporations.'],
+        })
+      }
 
       const draft = {
         requestId: request_id?.trim() || randomUUID(),
@@ -652,6 +666,7 @@ export const registerMailTools = (server: McpServer): void => {
         subject,
         approved_cost: draft.approvedCost,
         request_id: draft.requestId,
+        ...notSentTo,
       }
 
       if (preview) {

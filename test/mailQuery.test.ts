@@ -19,6 +19,7 @@ import {
   parseMailIds,
   pickCharacter,
   pickRecipient,
+  stripCorporations,
   recipientTypeOf,
   referencedIds,
   resolveLabel,
@@ -368,4 +369,27 @@ test('a body not yet fetched, or deleted before it was, says so', () => {
   const deleted = shapeMail([row({ body: null })], book)
   assert.equal(deleted.body_state, 'deleted')
   assert.match(deleted.note ?? '', /deleted in game/)
+})
+
+const pick = (recipient_id: number, recipient_type: 'character' | 'corporation' | 'alliance' | 'mailing_list') => ({
+  ok: true as const,
+  recipient: { recipient_id, recipient_type },
+  name: null,
+})
+
+test('allow-corp-spam off strips every corporation from a reply-all', () => {
+  const picks = [pick(90000001, 'character'), pick(98000001, 'corporation'), pick(99000001, 'alliance')]
+  const { kept, stripped } = stripCorporations(false)(picks)
+  assert.deepEqual(kept, [picks[0], picks[2]])
+  assert.deepEqual(stripped, [picks[1]])
+})
+
+test('allow-corp-spam on keeps every recipient', () => {
+  const picks = [pick(90000001, 'character'), pick(98000001, 'corporation')]
+  assert.deepEqual(stripCorporations(true)(picks), { kept: picks, stripped: [] })
+})
+
+test('a mail only to corporations keeps nothing when corp spam is not allowed', () => {
+  const picks = [pick(98000001, 'corporation'), pick(98000002, 'corporation')]
+  assert.deepEqual(stripCorporations(false)(picks), { kept: [], stripped: picks })
 })
