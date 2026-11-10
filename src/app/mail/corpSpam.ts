@@ -1,8 +1,9 @@
 // The `allow-corp-spam` Vercel flag. Off (the default), MCP send_mail drops
-// every corporation from a mail's recipients before it queues it, so an
-// auto-responder that answers reply-all to a corporation mail writes back to
-// the people on it, not to the whole corporation again. On, the recipients
-// are sent as given.
+// every corporation from a mail's recipients before it queues it, except the
+// corporation that sent the mail a reply_all_to answers. So an auto-responder
+// that answers reply-all to a corporation mail writes back to the sender and
+// the people on it, not to the whole corporation again. On, nothing is
+// dropped.
 //
 // The flag is read with the default flagsClient: on Vercel it authenticates
 // with the deployment's OIDC token, locally with the VERCEL_OIDC_TOKEN that

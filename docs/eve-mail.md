@@ -431,12 +431,17 @@ failure shows only in `mail_send_log` and the job's log line.
 (`src/app/mail/corpSpam.ts`, read through `@vercel/flags-core`; off by
 default, and a flag that cannot be read counts as off) guards against the
 auto-responder answering reply-all to a corporation mail and so mailing the
-whole corporation again. While it is off, `send_mail` drops every
-`corporation` recipient before it queues the mail (`stripCorporations` in
-`mailQuery.ts`, tested), lists them in the answer under `not_sent_to`, and
-refuses a mail whose recipients were all corporations. The tool cannot tell a
-reply-all from a new mail, so the rule applies to every call. While it is on,
-nothing changes: the recipients go as given.
+whole corporation again. A reply-all is its own argument, `reply_all_to` (a
+`mail_id` in the sending character's copy): the reply goes to that mail's
+sender first, then to everyone else it went to, without the replying
+character and without repeats (`replyAllRecipients` in `mailQuery.ts`,
+tested). EVE mail has no CC, so they are all plain recipients, the sender
+listed first. The sender stays even when it is a corporation: a corporation
+that wrote to us is one we may answer. While the flag is off, every other
+`corporation` recipient is dropped before the mail is queued, the ones the
+mail went to and the ones named in `recipients` alike (`withoutCorporations`),
+listed in the answer under `not_sent_to`; a mail left with nobody is refused.
+While it is on, nothing is dropped.
 
 What the tool refuses is unchanged: a name it cannot resolve, a draft over
 ESI's limits, a character without the "Send in-game mail" grant, a used

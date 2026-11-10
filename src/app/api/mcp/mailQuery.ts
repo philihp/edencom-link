@@ -3,7 +3,7 @@
 // I/O: the tools read character_mail and the name directories, and hand the
 // rows here — so which character, label and recipient a call names, and what
 // a mail looks like in the answer, are unit-testable (test/mailQuery.test.ts).
-import { all, any, ascend, chain, filter, map, partition, pipe, propEq, sortBy, sortWith, uniq, uniqBy } from 'ramda'
+import { all, any, ascend, chain, filter, map, partition, pipe, reject, sortBy, sortWith, uniq, uniqBy } from 'ramda'
 
 import type { Recipient, RecipientType } from '../../../mailCompose.ts'
 import { mailText } from '../../../mailText.ts'
@@ -249,23 +249,48 @@ export const pickRecipient = (spec: RecipientSpec, candidates: Candidate[]): Rec
   }
 }
 
-/** The recipients a send keeps, and the ones the allow-corp-spam rule drops. */
-export type RecipientSplit<T> = { kept: T[]; stripped: T[] }
+/** A reply-all's recipients, and the ones the allow-corp-spam rule drops. */
+export type ReplyAll = { recipients: Recipient[]; stripped: Recipient[] }
 
-const isCorporation = <T extends { recipient: Recipient }>(pick: T) =>
-  propEq('corporation', 'recipient_type', pick.recipient)
+export const recipientKey = (r: Recipient) => `${r.recipient_type}:${r.recipient_id}`
 
 /**
- * The allow-corp-spam rule (src/app/mail/corpSpam.ts). Allowed, every
- * recipient is kept. Not allowed (the default), every corporation is
- * stripped, so a reply-all to a corporation mail goes to its people only.
+ * Recipients with every corporation stripped, unless allow-corp-spam is on
+ * (src/app/mail/corpSpam.ts). Order is kept.
  */
-export const stripCorporations =
+export const withoutCorporations =
   (allowCorpSpam: boolean) =>
-  <T extends { recipient: Recipient }>(picks: T[]): RecipientSplit<T> =>
-    allowCorpSpam
-      ? { kept: picks, stripped: [] }
-      : (([stripped, kept]) => ({ kept, stripped }))(partition(isCorporation<T>, picks))
+  (recipients: Recipient[]): ReplyAll => {
+    const [stripped, kept]: [Recipient[], Recipient[]] = allowCorpSpam
+      ? [[], recipients]
+      : partition((r: Recipient) => r.recipient_type === 'corporation', recipients)
+    return { recipients: kept, stripped }
+  }
+
+/**
+ * The recipients of a reply-all (src/app/mail/corpSpam.ts). The sender of
+ * the mail comes first and always stays, a corporation too: a corporation
+ * that wrote to us is one we may answer. Everyone else the mail went to
+ * follows, without the replying character and without repeats. Unless
+ * allow-corp-spam is on, every corporation among them is stripped, so a
+ * reply to a corporation mail answers its people and not the whole
+ * corporation again. EVE mail has no CC: all of them are recipients.
+ */
+export const replyAllRecipients =
+  (allowCorpSpam: boolean) =>
+  ({ from, to, self }: { from: Recipient; to: Recipient[]; self: Recipient }): ReplyAll => {
+    const isSelf = (r: Recipient) => recipientKey(r) === recipientKey(self)
+    const others = uniqBy(
+      recipientKey,
+      reject((r: Recipient) => isSelf(r) || recipientKey(r) === recipientKey(from), to)
+    )
+    const { recipients, stripped } = withoutCorporations(allowCorpSpam)(others)
+    return { recipients: [...(isSelf(from) ? [] : [from]), ...recipients], stripped }
+  }
+
+/** The subject of a reply: "Re: " once, never "Re: Re: ". */
+export const replySubject = (subject: string | null | undefined): string =>
+  /^re:/i.test((subject ?? '').trim()) ? (subject ?? '').trim() : `Re: ${(subject ?? '').trim()}`
 
 // ── Mails as the tools answer them ────────────────────────────────────────
 
