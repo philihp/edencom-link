@@ -24,8 +24,9 @@ of each compressed gas, four gases were cheaper raw, and the error cost about
 ## What this server is
 
 EDENCOM Link extracts EVE Online data and saves it in a database. The tools of
-this server read that database. The tools never read from ESI. `send_mail`
-is the one tool that changes the game: it sends an EVE mail (see "EVE mail").
+this server read that database. The tools never call ESI. `send_mail` does not
+either: it puts a mail in the outbox on the site for a person to send later
+(see "EVE mail").
 
 Extract jobs read the EVE ESI endpoints for each registered character and
 corporation: assets, blueprints, industry jobs, orders, wallets, skills,
@@ -934,23 +935,25 @@ the user's private data: no share, Data Link or GraphQL field shows it.
 
 ### Sending mail
 
-`send_mail` sends an EVE mail as one of the user's characters.
+`send_mail` puts an EVE mail in the outbox on the site, to be sent later as
+one of the user's characters. **It does not send the mail.** A person sends
+each mail in the outbox by hand. There is no schedule for that.
 
-- Send a mail only when the user asks for it, or when the user's instructions
-  tell you to send it. A sent mail cannot be taken back.
-- When the call answers `sent: true`, tell the user that the mail is sent.
+- Tell the user the mail is **in the outbox**. Do not say that it was sent,
+  that it is on its way, or that it will arrive by a time. You cannot know
+  when, or if, a person sends it.
 - To check the recipients and the draft first, call with `preview: true`.
-  The preview sends nothing.
+  The preview puts nothing in the outbox.
 - To reply to all the people on a mail, give its `mail_id` as
   `reply_all_to`, as the character that received it. The tool addresses the
   reply to the sender of that mail first, and then to all the others it went
   to, but not to the replying character. The subject is "Re: " and the old
   subject, unless you give one. `recipients` adds more people. Always use
   `reply_all_to` for a reply-all. Do not copy the recipients by hand.
-- A corporation does not get the mail, with one exception: a corporation
-  that sent the mail you reply to with `reply_all_to`. The tool drops each
-  other corporation and lists it under `not_sent_to`. If no recipient
-  remains, the tool sends nothing.
+- A corporation is not a recipient, with one exception: a corporation that
+  sent the mail you reply to with `reply_all_to`. The tool drops each other
+  corporation and lists it under `not_sent_to`. If no recipient remains, the
+  tool puts nothing in the outbox.
 
 - A recipient is a character, a corporation, an alliance or a mailing list.
   Give its exact name, or its EVE id and type. The tool knows the names of the
@@ -958,14 +961,17 @@ the user's private data: no share, Data Link or GraphQL field shows it.
   alliances in the site's directories, and of the sender's own mailing lists.
   It refuses any other name. Then ask the user for the id. Do not guess one.
 - The character needs the opt-in "Send in-game mail" grant. Without it, the
-  preview says `can_send: false`, and the call refuses to send.
+  preview says `can_queue: false`, and the call refuses to put the mail in
+  the outbox.
 - Keep `approved_cost` at 0 unless the user gives you a CSPA charge to pay.
-  If a recipient charges more, EVE refuses the mail, and nobody tries again.
+  It applies when a person sends the mail: if a recipient charges more, EVE
+  refuses the mail then, and nobody tries again.
 - If a call gives no answer, call again with the same `request_id`. A used
-  `request_id` is refused, so the mail is not sent two times. For a new
-  mail, use a new `request_id`.
-- The site logs each mail in full. The sent mail comes into the copy under
-  the Sent label on a later extract.
+  `request_id` is refused, so the mail does not go in the outbox two times.
+  For a new mail, use a new `request_id`.
+- The site logs each mail in full when it goes in the outbox. After a person
+  sends it, the mail comes into the copy under the Sent label on a later
+  extract.
 
 ## Spreadsheets
 
@@ -1021,9 +1027,9 @@ see them only in these ways:
 
 ## Tools that write
 
-Five tools change data. `send_mail` sends an EVE mail, which is the one
-change to the game (see "Sending mail"). The other four change only the
-user's own rows on this site:
+Five tools change data. None of them changes the game. `send_mail` puts an
+EVE mail in the outbox on the site for a person to send later (see "Sending
+mail"). The other four change only the user's own rows on this site:
 
 - `remember_item` (and `remember_ship` for hulls) stores the next version of a held item's memory (see "An
   item's memory"). Every version is kept.
@@ -1056,8 +1062,8 @@ user's own rows on this site:
 - Balances: `wallet_summary`. Trades: `search_transactions`. Open orders:
   `list_market_orders`. The user's own contracts: `run_query` on `contracts`.
   Anyone's public contracts: `search_public_contracts`.
-- EVE mail: `list_mail` finds it, `read_mail` reads it, `send_mail` sends
-  one (see "EVE mail").
+- EVE mail: `list_mail` finds it, `read_mail` reads it, `send_mail` puts
+  one in the outbox for a person to send later (see "EVE mail").
 - Characters, ships, clones: `list_clones`. Saved fits and the archive:
   `list_fittings`. Structures: `list_structures`. A ship's memory:
   `recall_item` reads the facts, `remember_item` stores the text; `recall_ship`/`remember_ship` are the same for hulls alone (see "An
