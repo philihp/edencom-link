@@ -4,12 +4,11 @@
 // /.well-known/oauth-protected-resource). Tools are read-only queries over
 // the extracted DB — see tools.ts — with four exceptions: linkTools.ts can
 // create and share a link, watchedSystemTools.ts can edit the caller's
-// /indexes watch list, mailTools.ts's send_mail sends an EVE mail (it writes
-// the mail to mail_send_log, and the mail-queue-send cron hands it to ESI
-// within 10 minutes), and memoryTools.ts's remember_ship writes the next
-// version of a held ship's memory (all four write only rows the caller owns
-// or holds; none calls ESI itself, and send_mail is the only one whose
-// effect reaches the game).
+// /indexes watch list, mailTools.ts's send_mail puts an EVE mail in the
+// outbox for a person to send by hand later, and memoryTools.ts's
+// remember_ship writes the next version of a held ship's memory (all four
+// write only rows the caller owns or holds; none calls ESI or changes the
+// game).
 import { createMcpHandler, withMcpAuth } from 'mcp-handler'
 
 import { verifySupabaseToken } from './auth'

@@ -1,24 +1,25 @@
 // MCP tools over EVE mail (docs/eve-mail.md PR 4): list_mail and read_mail
 // read the copy of each character's mailbox the character-mail extract keeps,
-// and send_mail sends a mail as one of the caller's characters.
+// and send_mail puts a mail in the site's outbox for a person to send later.
 //
 // The two readers run on the caller's bearer client like every other read
 // tool. character_mail's only policy is the owner's, so a tool cannot read
 // another account's mail, nor a character shared in from someone else.
 //
-// **send_mail answers "sent", and the mail goes out within 10 minutes.** It
-// resolves the sender and the recipients, then hands the draft to
+// **send_mail puts a mail in the outbox on the site; it never calls ESI.**
+// It resolves the sender and the recipients, then hands the draft to
 // enqueueMail in src/app/mail/lib.ts, which validates it, checks the
 // character holds the send grant, and stores the whole draft in
-// mail_send_log as 'queued'. The mail-queue-send cron sends every queued row
-// within 10 minutes (src/app/mail/sendQueue.ts). The queue is a detail of
-// this deployment, not of the tool: to the user and the client the mail is
-// sent when the call answers, and nothing in the answer says queued. The
-// write needs the account's token rows, which only the service role reads,
-// so it runs on the service-role Caller of callerForUser — the user id comes
-// from the verified bearer, as src/app/fitting/marshalActions.ts takes it
-// from the cookie session. The path refuses a character not on that account,
-// validates the draft (src/mailCompose.ts), and uses each request id once.
+// mail_send_log as 'queued'. That is the end of the call. A person sends the
+// outbox by hand later; there is no promise about when, or whether, a mail in
+// it goes out. So the tool's copy must never say or imply that the mail is
+// sent, delivered, or on its way: only that it is in the outbox, and that a
+// person sends it. The write needs the account's token rows, which only the
+// service role reads, so it runs on the service-role Caller of callerForUser
+// — the user id comes from the verified bearer, as
+// src/app/fitting/marshalActions.ts takes it from the cookie session. The
+// path refuses a character not on that account, validates the draft
+// (src/mailCompose.ts), and uses each request id once.
 //
 // Pure seams: mailQuery.ts (which character, label, recipient; the shape of a
 // mail) and src/mailText.ts (EVE markup to text and back), both tested.
@@ -632,16 +633,15 @@ export const registerMailTools = (server: McpServer): void => {
   server.registerTool(
     'send_mail',
     {
-      title: 'Send an EVE mail',
+      title: 'Put an EVE mail in the outbox',
       description:
-        'Send an EVE mail as one of the user\'s own characters. The character needs the opt-in "Send in-game mail" grant. approved_cost is the most ISK the user agrees to pay in CSPA charges (default 0); a recipient who charges more makes EVE refuse the mail, and nothing is retried. Every mail is logged on the site in full. To retry after a lost answer, call again with the same request_id: a used request_id is refused, so the mail is never sent twice. Use preview to check the recipients and the draft without sending. To reply to everyone on a mail, pass its id as reply_all_to: the reply goes to the sender first (a corporation that sent it too) and then to everyone else the mail went to, without the sending character. A corporation among those others does not get the reply, and neither does a corporation named in recipients: it is dropped, and the answer lists it under not_sent_to.',
+        'Put an EVE mail in the outbox on edencom.link, to be sent later as one of the user\'s own characters. This does NOT send the mail: the call stores the draft in the outbox, where a person sends each mail by hand later. There is no schedule for that, so never tell the user the mail has been sent, is on its way, or will arrive by any time: say it is in the outbox and that a person will send it. The character needs the opt-in "Send in-game mail" grant. approved_cost is the most ISK the user agrees to pay in CSPA charges (default 0) when the mail is sent; a recipient who charges more makes EVE refuse it then, and nothing is retried. Every draft is logged on the site in full. To retry after a lost answer, call again with the same request_id: a used request_id is refused, so the mail is never put in the outbox twice. Use preview to check the recipients and the draft without putting anything in the outbox. To reply to everyone on a mail, pass its id as reply_all_to: the reply is addressed to the sender first (a corporation that sent it too) and then to everyone else the mail went to, without the sending character. A corporation among those others is left off the reply, and so is a corporation named in recipients; the answer lists it under not_sent_to.',
       annotations: {
         readOnlyHint: false,
         destructiveHint: false,
-        // A call without request_id mints a fresh one, so a repeat sends again.
+        // A call without request_id mints a fresh one, so a repeat queues again.
         idempotentHint: false,
-        // The mail reaches EVE (through the mail-queue-send cron).
-        openWorldHint: true,
+        openWorldHint: false,
       },
       inputSchema: z.object({
         character: z.string().describe("The user's character to send as, by name or EVE id."),
@@ -697,13 +697,13 @@ export const registerMailTools = (server: McpServer): void => {
           .string()
           .optional()
           .describe(
-            'A uuid naming this one send. Reuse it only to retry a send whose answer was lost. Omit and one is minted (and returned).'
+            'A uuid naming this one mail. Reuse it only to retry a call whose answer was lost. Omit and one is minted (and returned).'
           ),
         preview: z
           .boolean()
           .optional()
           .describe(
-            'Resolve the recipients and check the draft, and send nothing. Its request_id can then be passed to the call that sends it.'
+            'Resolve the recipients and check the draft, and put nothing in the outbox. Its request_id can then be passed to the call that puts it there.'
           ),
       }),
     },
@@ -728,14 +728,14 @@ export const registerMailTools = (server: McpServer): void => {
       if (!sender.ok) return textResult(sender.message)
 
       if (reply_all_to == null && (recipients ?? []).length === 0) {
-        return textResult({ sent: false, problems: ['Name the recipients, or give reply_all_to.'] })
+        return textResult({ sent: false, queued: false, problems: ['Name the recipients, or give reply_all_to.'] })
       }
       if (reply_all_to == null && subject == null) {
-        return textResult({ sent: false, problems: ['Give a subject, or give reply_all_to.'] })
+        return textResult({ sent: false, queued: false, problems: ['Give a subject, or give reply_all_to.'] })
       }
       const source =
         reply_all_to == null ? null : await loadReplySource(supabase, reply_all_to, sender.character, characters)
-      if (source && !source.ok) return textResult({ sent: false, problems: [source.message] })
+      if (source && !source.ok) return textResult({ sent: false, queued: false, problems: [source.message] })
 
       const picks = await Promise.all(
         (recipients ?? []).map(async (spec) =>
@@ -743,7 +743,7 @@ export const registerMailTools = (server: McpServer): void => {
         )
       )
       const problems = picks.flatMap((p) => (p.ok ? [] : [p.message]))
-      if (problems.length > 0) return textResult({ sent: false, problems })
+      if (problems.length > 0) return textResult({ sent: false, queued: false, problems })
       const named = picks.flatMap((p) => (p.ok ? [p] : []))
 
       // allow-corp-spam off (the default): no corporation gets the mail,
@@ -770,6 +770,7 @@ export const registerMailTools = (server: McpServer): void => {
       if (finalRecipients.length === 0) {
         return textResult({
           sent: false,
+          queued: false,
           ...notSentTo,
           problems: [
             strippedRecipients.length > 0
@@ -811,20 +812,20 @@ export const registerMailTools = (server: McpServer): void => {
         return textResult({
           preview: true,
           sent: false,
+          queued: false,
           ...summary,
           body_characters: draft.body.length,
           ...(reasons.length > 0 && { problems: reasons }),
-          can_send: reasons.length === 0,
-          note: 'Nothing was sent. To send this draft, call send_mail again without preview and with this request_id.',
+          can_queue: reasons.length === 0,
+          note: 'Nothing was put in the outbox. To put this draft there, call send_mail again without preview and with this request_id.',
         })
       }
 
-      // The cron sends the row within 10 minutes (src/app/mail/sendQueue.ts);
-      // the answer is the user's view of it: sent.
       const outcome = await enqueueMail(caller, sender.character.registrationId, draft, 'mcp')
       if ('error' in outcome) {
         return textResult({
           sent: false,
+          queued: false,
           status: outcome.status,
           error: outcome.error,
           ...outcome.detail,
@@ -833,10 +834,11 @@ export const registerMailTools = (server: McpServer): void => {
       }
 
       return textResult({
-        sent: true,
+        sent: false,
+        queued: true,
         log_id: outcome.logId,
         ...summary,
-        note: "Sent. The copy on this site shows it under the sender's Sent label after a later character-mail extract.",
+        note: "In the outbox on edencom.link, not sent. A person sends each mail in the outbox by hand later; there is no set time for that. Tell the user the mail is in the outbox, never that it has been sent. Once it is sent, the copy on this site picks it up under the sender's Sent label on a later character-mail extract.",
       })
     }
   )
