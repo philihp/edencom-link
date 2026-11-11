@@ -2,6 +2,8 @@
 // "MCP tools" and "Extension: every singleton"): which item a name picks out,
 // how far a share row reaches, and whether the memory a caller holds was
 // written before their time. No I/O.
+import { uniq } from 'ramda'
+
 import { pickOne, type Picked } from '../../link/match.ts'
 import { latestPerItem } from '../../ship/[itemId]/lastSeen.ts'
 import type { OwnerKind } from '../../ship/memory/dossier.ts'
@@ -195,15 +197,80 @@ export type WriteError = { code?: string | null; message?: string | null; hint?:
 // What item_memory_write()'s refusals mean to the caller, by SQLSTATE: 42501
 // is "not held", PT409 is "changed since you read it" (read again; never
 // merge), 23514 is the body constraint. Anything else is relayed as is.
-export const writeFailure = (error: WriteError, itemId: number): string => {
+export const writeFailure = (error: WriteError, itemId: number, recallTool = 'recall_item'): string => {
   switch (error.code) {
     case '42501':
       return `You do not hold item #${itemId} now, so you cannot write its memory. Only the character or corporation holding an item writes it; one that was sold or given away took its memory with it.`
     case 'PT409':
-      return `The memory of item #${itemId} changed since you read it. Call recall_item again, read the current text, and write on top of it with its version_id as based_on. Do not merge the two texts yourself.`
+      return `The memory of item #${itemId} changed since you read it. Call ${recallTool} again, read the current text, and write on top of it with its version_id as based_on. Do not merge the two texts yourself.`
     case '23514':
       return `The memory was refused by the storage: it must not be blank and must be at most ${MAX_MEMORY_LENGTH.toLocaleString('en-US')} characters.`
     default:
       return `Writing the memory failed: ${error.message ?? 'unknown error'}${error.hint ? ` (${error.hint})` : ''}`
+  }
+}
+
+// ── speaking for a mail's sender ──────────────────────────────────────────
+//
+// recall_item_for_sender / remember_item_for_sender act for the character who
+// sent a mail in the caller's own mail copy (docs/ship-memory.md "Speaking
+// for a mail's sender"). EVE sets a mail's sender, so it is the identity; the
+// text of the mail is never read for one.
+
+// A registration of the sender's character, read on the service role. One
+// character is normally on one account, but registration is unique per
+// (account, owner hash), so a character that changed hands can be on two.
+export type SenderRegistration = {
+  id: string
+  user_id: string
+  name: string | null
+  corporation_id: number | string | null
+}
+
+export type SenderOwners = {
+  registrationIds: string[]
+  corporationIds: string[]
+  // The accounts whose writes are the sender's own.
+  userIds: string[]
+  name: string | null
+}
+
+// The owners the sender acts as: that character's registrations and the
+// corporations they are in. Never another character of the same account.
+export const senderOwners = (rows: SenderRegistration[]): SenderOwners => ({
+  registrationIds: uniq(rows.map((r) => r.id)),
+  corporationIds: uniq(rows.flatMap((r) => (r.corporation_id == null ? [] : [String(r.corporation_id)]))),
+  userIds: uniq(rows.map((r) => r.user_id)),
+  name: rows.find((r) => r.name != null && r.name !== '')?.name ?? null,
+})
+
+// The author stamped on a version written for a mail's sender: the mail it
+// came from, after the client's name when the client gives one. The mail id
+// is kept whole; the client's name is cut to fit the 200-character column.
+export const mailAuthor = (author: string | undefined, mailId: number): string => {
+  const mail = `EVE mail ${mailId}`
+  const client = (author ?? '').trim()
+  if (client === '') return mail
+  const join = ' via '
+  return `${client.slice(0, Math.max(0, MAX_AUTHOR_LENGTH - join.length - mail.length)).trim()}${join}${mail}`
+}
+
+export type SenderRefusal =
+  | { reason: 'not_in_mail_copy'; mailId: number }
+  | { reason: 'not_registered'; mailId: number; characterId: number }
+  | { reason: 'not_held'; itemId: number; characterId: number; name: string | null }
+
+// Why the tool will not act for the sender, in words the responder can pass
+// on. None of them names anything the sender does not already know.
+export const senderRefusal = (refusal: SenderRefusal): string => {
+  switch (refusal.reason) {
+    case 'not_in_mail_copy':
+      return `Mail ${refusal.mailId} is not in the mail copy of any of this account's characters. Only a mail one of your characters received names a sender this tool can act for; call list_mail to find it (the copy is refreshed every 6 hours).`
+    case 'not_registered':
+      return `The sender of mail ${refusal.mailId} (character ${refusal.characterId}) is not registered on edencom.link, so nothing is known about what they hold. Do not recall or remember anything for them.`
+    case 'not_held': {
+      const who = refusal.name ?? `character ${refusal.characterId}`
+      return `${who} does not hold item #${refusal.itemId} now, and neither does a corporation ${who} is in, so this tool cannot read or write its memory for them. Only the holder speaks for an item; an alt of the same account does not count.`
+    }
   }
 }

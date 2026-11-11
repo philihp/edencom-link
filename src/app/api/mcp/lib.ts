@@ -234,12 +234,27 @@ export const fetchAllRows = async <T>(
 // When the relevant extract jobs last completed for this user, so the model
 // can caveat answers with how fresh the underlying snapshot is (extracts run
 // on Vercel Cron, not on demand — see /jobs).
-export const dataFreshness = async (supabase: SupabaseClient, jobs: string[]): Promise<Record<string, string>> => {
+// `owners` narrows the stamps to those owners' runs, for a service-role
+// client, where RLS no longer does (the mail sender's item tools).
+export const dataFreshness = async (
+  supabase: SupabaseClient,
+  jobs: string[],
+  owners?: { registrationIds: string[]; corporationIds: string[] }
+): Promise<Record<string, string>> => {
   const { data } = await supabase.rpc('latest_heartbeats')
-  const rows = (data ?? []) as Array<{ job: string; ended_at: string }>
+  const rows = (data ?? []) as Array<{
+    job: string
+    ended_at: string
+    registration_id?: string | null
+    corporation_id?: number | string | null
+  }>
+  const ownsRun = (r: (typeof rows)[number]): boolean =>
+    owners == null ||
+    (r.registration_id != null && owners.registrationIds.includes(r.registration_id)) ||
+    (r.corporation_id != null && owners.corporationIds.includes(String(r.corporation_id)))
   const freshness: Record<string, string> = {}
   rows
-    .filter((r) => jobs.includes(r.job))
+    .filter((r) => jobs.includes(r.job) && ownsRun(r))
     .forEach((r) => {
       if (!freshness[r.job] || r.ended_at > freshness[r.job]) freshness[r.job] = r.ended_at
     })

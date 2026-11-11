@@ -888,6 +888,52 @@ pack table's `type_id` and the carry's type check hold for any category.
 Blueprints never reach it. Nothing to build.
 
 
+## Speaking for a mail's sender (2026-11-11)
+
+The mail auto-responder answers an EVE mail as the item the mail asks about.
+That item belongs to the mail's **sender**, not to the account running the
+responder, so the bearer's own tools cannot read or write it. Two tools act
+for the sender instead, in `memoryTools.ts`:
+
+- **`recall_item_for_sender(mail_id, item_id)`**: `recall_item`'s answer,
+  loaded from the sender's record, plus `for_sender` (character, mail).
+- **`remember_item_for_sender(mail_id, item_id, memory, based_on, author?)`**:
+  `remember_item`'s write, with no `inherit_from`.
+
+**The identity is the mail's sender.** EVE sets `from_id` on a mail, and the
+text cannot change it. The mail must be in the caller's own mail copy
+(`character_mail` on the bearer client, owner-only RLS), so a caller can act
+only for someone who wrote to them. Nothing in the mail's text names anyone.
+
+**The check**, before anything is read: the sender is a registered character
+(`registration.character_id`; a character on two accounts counts on both),
+and the item's one current asset row belongs to a registration of that
+character or to a corporation one of them is in (`registration.corporation_id`,
+the source `my_corporation_ids()` uses). Never an alt of the same account, and
+never an item the sender held once: a sold item is no longer theirs to speak
+for. Pure refusals in `memoryQuery.ts` (`senderRefusal`, tested).
+
+**Reads** run on the service role with the sender's owners in place of the
+bearer's. The dossier loaders already narrow every read to the owners they
+are given; the three reads RLS used to narrow are narrowed by hand
+(`Actor.narrowTo`): share rows to the sender's own, memory versions to the
+current one plus those the sender's account wrote or closed, and freshness
+stamps to the sender's runs.
+
+**The write** is `item_memory_write_for_character(p_character_id, …)`
+(migration `20261111101913`), service role only: `item_memory_write()` with
+the holder test narrowed to the one character, and the version written and
+closed **as the sender's account** (`written_by`/`closed_by`), so the sender
+reads it later as their own. The author names the mail: `mailAuthor` gives
+`"<client> via EVE mail <mail_id>"`, or `"EVE mail <mail_id>"` with no client.
+`test/sql/item_memory_write_for_character.sql`.
+
+**Not here:** the reassembly carry (`inherit_from`). Which packed hull an item
+is, only its holder decides, so the recall's `inherit_candidates` note tells
+the responder to leave it to the holder and to write no first memory. The
+dossier goes to the responder's AI to answer the sender with; the answer's
+`for_sender.note` says it is for that reply alone.
+
 ## PRs
 
 1. **One holder per item id.** Each `*_asset_claim()` also closes the other
