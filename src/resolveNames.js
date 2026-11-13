@@ -1,4 +1,4 @@
-import { filter, isNil, map, pick, pipe, prop, propEq, props, reduce, reject, splitEvery, unnest } from 'ramda'
+import { filter, isNil, map, pick, pipe, prop, propEq, reduce, reject, splitEvery, unnest } from 'ramda'
 
 import { universeNames } from './esi.js'
 import { sudoSupabase } from './supabase.js'
@@ -182,34 +182,14 @@ const tradeClientIds = (cutoff) => (table) =>
     )
   )
 
-// The two contract views. The market page shows a finished item exchange or
-// auction as a trade (src/app/market/contracts.ts), and its counterparty is
-// the issuer, the issuer's corporation or the acceptor.
-const CONTRACT_VIEWS = ['character_contract_with_status', 'corp_contract_with_status']
-const CONTRACT_PARTY_COLUMNS = ['issuer_id', 'issuer_corporation_id', 'acceptor_id']
-
-// Every party id of every row, as one flat list.
-const partyIdsOf = (rows) => unnest(map(props(CONTRACT_PARTY_COLUMNS), rows))
-
-// Positive party ids of the finished trade contracts of one view, accepted
-// since `cutoff`.
-const contractPartyIds = (cutoff) => (view) =>
-  selectAllRows((from, to) =>
-    sudoSupabase
-      .from(view)
-      .select(CONTRACT_PARTY_COLUMNS.join(', '))
-      .eq('status', 'finished')
-      .in('type', ['item_exchange', 'auction'])
-      .gte('date_accepted', cutoff)
-      .order('contract_id', { ascending: false })
-      .range(from, to)
-  ).then(
-    pipe(
-      partyIdsOf,
-      map(Number),
-      filter((n) => Number.isFinite(n) && n > 0)
-    )
-  )
+// Positive party ids of the finished trade contracts, accepted since `cutoff`.
+// The market page shows a finished item exchange or auction as a trade
+// (src/app/market/contracts.ts), and its counterparty is the issuer, the
+// issuer's corporation or the acceptor. trade_contract_party_ids() reads both
+// contract views and deduplicates in one statement: paging the rows here meant
+// one OFFSET request per 1,000 contracts, each re-running the whole join, and
+// was one of the database's two largest Disk IO consumers (schema.sql).
+const contractPartyIds = (cutoff) => harvestIds('trade_contract_party_ids', { p_since: cutoff })
 
 // Resolve and cache (in universe_name) the name of every counterparty of a
 // market trade in the last 180 days: the buyer of each sale and the seller of
@@ -219,10 +199,7 @@ const contractPartyIds = (cutoff) => (view) =>
 // do nothing.
 export const resolveTradeCounterpartyNames = async () => {
   const cutoff = new Date(Date.now() - TRADE_LOOKBACK_MS).toISOString()
-  const perSource = await Promise.all([
-    ...map(tradeClientIds(cutoff), TRADE_TABLES),
-    ...map(contractPartyIds(cutoff), CONTRACT_VIEWS),
-  ])
+  const perSource = await Promise.all([...map(tradeClientIds(cutoff), TRADE_TABLES), contractPartyIds(cutoff)])
   const ids = new Set(unnest(perSource))
   if (ids.size === 0) return
 

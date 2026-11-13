@@ -58,15 +58,19 @@ create table public.asset_location_summary_cache (
   primary key (user_id, owner_scope, owner_id, location_id)
 );
 
--- The function under test, verbatim from the migration.
+-- The function under test, verbatim from the latest migration that defines it
+-- (20261117013400_disk_io_hot_queries.sql), comments dropped.
 create or replace function public.refresh_asset_location_summary_cache(p_user_id uuid)
 returns integer
 language plpgsql
 security definer
 set search_path to 'public'
+set plan_cache_mode to 'force_custom_plan'
 as $$
 declare
   v_rows integer;
+  v_registration_ids uuid[];
+  v_corporation_ids bigint[];
 begin
   if p_user_id is null then
     return 0;
@@ -74,16 +78,19 @@ begin
 
   perform pg_advisory_xact_lock(hashtext('asset_location_summary_cache'), hashtext(p_user_id::text));
 
+  select coalesce(array_agg(r.id), '{}'),
+         coalesce(array_agg(distinct r.corporation_id) filter (where r.corporation_id is not null), '{}')
+    into v_registration_ids, v_corporation_ids
+    from public.registration r
+   where r.user_id = p_user_id;
+
   delete from public.asset_location_summary_cache where user_id = p_user_id;
 
   with recursive
-  mine as (
-    select id, corporation_id from public.registration where user_id = p_user_id
-  ),
   char_visible as (
     select a.item_id, a.location_id, a.location_type, a.registration_id, a.is_current, a.valid_until
     from public.character_asset_over_time a
-    where a.registration_id in (select id from mine)
+    where a.registration_id = any(v_registration_ids)
   ),
   char_parent as (
     select distinct on (item_id) item_id, location_id, location_type
@@ -115,7 +122,7 @@ begin
   corp_visible as (
     select a.item_id, a.location_id, a.location_type, a.corporation_id, a.is_current, a.valid_until
     from public.corp_asset_over_time a
-    where a.corporation_id in (select corporation_id from mine where corporation_id is not null)
+    where a.corporation_id = any(v_corporation_ids)
   ),
   corp_parent as (
     select distinct on (item_id) item_id, location_id, location_type

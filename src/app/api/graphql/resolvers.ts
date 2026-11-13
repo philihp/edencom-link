@@ -1441,14 +1441,20 @@ export const resolvers = {
       // costs one query rather than one per contract.
       const itemsOf = async (
         table: string,
-        ownerColumn: string,
+        ownerColumn: 'registration_id' | 'corporation_id',
         owned: ContractDbRow[]
       ): Promise<Map<string, ContractItemRow[]>> => {
         const ids = [...new Set(owned.map((r) => String(r.contract_id)))]
         if (ids.length === 0) return new Map()
+        // The owner too, not just the contract ids: both item tables are keyed
+        // (owner, contract_id, record_id), so contract_id alone can't use the
+        // key and a Link (service role, no RLS to narrow it) read the whole
+        // 228 MB corp_contract_item index per call — ~17s each (2026-11-13).
+        const owners = [...new Set(owned.map((r) => String(r[ownerColumn])))]
         const { data, error } = await ctx.supabase
           .from(table)
           .select(`contract_id, type_id, quantity, is_included, ${ownerColumn}`)
+          .in(ownerColumn, owners)
           .in('contract_id', ids)
           // Interpolated owner column, so the typed parser can't read the list.
           .returns<Array<ContractItemRow & { contract_id: number | string }>>()
