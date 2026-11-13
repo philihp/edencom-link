@@ -1,4 +1,5 @@
 import { cookies } from 'next/headers'
+import Link from 'next/link'
 import { redirect } from 'next/navigation'
 
 import { formatSecurity, getSdeSystems } from '@/sdeSystems'
@@ -79,6 +80,7 @@ const IndexesPage = async ({ searchParams }: { searchParams: Promise<{ days?: st
       <div className={styles.pageHeader}>
         <h1>Indexes</h1>
         <div className={styles.headerControls}>
+          <Link href="/indexes/mail">mail replies &raquo;</Link>
           <ProductionOnlyToggle on={productionOnly} />
           <UrlWindowSelect days={window.days} path="/indexes" />
         </div>

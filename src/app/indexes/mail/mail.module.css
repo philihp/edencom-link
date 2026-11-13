@@ -1,0 +1,87 @@
+/* Page header: title and counts left, window dropdown right — the Indexes
+ * page's arrangement. */
+.pageHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12pt;
+}
+
+.pageHeader h1 {
+  margin: 0;
+}
+
+.subtitle,
+.note,
+.meta {
+  font-size: 9pt;
+  color: var(--ink-soft);
+}
+
+.note {
+  color: var(--ink-faint);
+  max-width: 70ch;
+}
+
+.threads,
+.replies {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.thread {
+  padding: 8pt 0;
+  border-bottom: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+}
+
+.subject {
+  font-weight: 600;
+  margin: 2pt 0;
+}
+
+/* Replies hang under the mail they answer. */
+.replies {
+  margin: 6pt 0 0 16pt;
+  padding-left: 10pt;
+  border-left: 2px solid color-mix(in srgb, var(--link) 40%, transparent);
+}
+
+.reply + .reply {
+  margin-top: 6pt;
+}
+
+.body summary {
+  cursor: pointer;
+  font-size: 9pt;
+  color: var(--ink-faint);
+}
+
+.body pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: inherit;
+  margin: 4pt 0;
+}
+
+.noBody {
+  font-size: 9pt;
+  color: var(--ink-faint);
+}
+
+.unanswered,
+.status {
+  margin-left: 6pt;
+  padding: 0 4pt;
+  font-size: 8pt;
+  border: 1px solid currentColor;
+  border-radius: 2pt;
+}
+
+.unanswered {
+  color: var(--ink-faint);
+}
+
+.status[data-status='error'] {
+  color: var(--danger);
+}
