@@ -9,10 +9,14 @@ import {
   describeReader,
   EXTRACT_INTERVAL_MS,
   inheritance,
+  mailAuthor,
+  MAX_AUTHOR_LENGTH,
   MAX_MEMORY_LENGTH,
   parseItemId,
   pickHeldOfType,
   pickHull,
+  senderOwners,
+  senderRefusal,
   subjectOf,
   validateMemory,
   writeFailure,
@@ -152,4 +156,62 @@ test('pickHull takes the noun its refusal uses', () => {
   const picked = pickHull('Kettle', [], 'item')
   assert.equal(picked.ok, false)
   if (!picked.ok) assert.match(picked.message, /not one of your items/)
+})
+
+// ── speaking for a mail's sender ──────────────────────────────────────────
+
+test('senderOwners: the character registrations, their corporations and accounts, never an alt', () => {
+  const owners = senderOwners([
+    { id: 'r1', user_id: 'u1', name: 'Sir Cuddles', corporation_id: 98000001 },
+    { id: 'r2', user_id: 'u2', name: 'Sir Cuddles', corporation_id: '98000001' },
+  ])
+  assert.deepEqual(owners, {
+    registrationIds: ['r1', 'r2'],
+    corporationIds: ['98000001'],
+    userIds: ['u1', 'u2'],
+    name: 'Sir Cuddles',
+  })
+})
+
+test('senderOwners: no corporation on record, and no name', () => {
+  assert.deepEqual(senderOwners([{ id: 'r1', user_id: 'u1', name: null, corporation_id: null }]), {
+    registrationIds: ['r1'],
+    corporationIds: [],
+    userIds: ['u1'],
+    name: null,
+  })
+  assert.deepEqual(senderOwners([]).registrationIds, [])
+})
+
+test('mailAuthor: names the mail, after the client when one is given', () => {
+  assert.equal(mailAuthor(undefined, 371234567), 'EVE mail 371234567')
+  assert.equal(mailAuthor('  ', 371234567), 'EVE mail 371234567')
+  assert.equal(mailAuthor('Aura', 371234567), 'Aura via EVE mail 371234567')
+})
+
+test('mailAuthor: a long client name is cut, the mail id never', () => {
+  const author = mailAuthor('x'.repeat(500), 371234567)
+  assert.equal(author.length, MAX_AUTHOR_LENGTH)
+  assert.ok(author.endsWith(' via EVE mail 371234567'))
+})
+
+test('senderRefusal: each reason says what to do', () => {
+  assert.match(senderRefusal({ reason: 'not_in_mail_copy', mailId: 5 }), /Mail 5 is not in the mail copy/)
+  assert.match(
+    senderRefusal({ reason: 'not_registered', mailId: 5, characterId: 90000001 }),
+    /character 90000001\) is not registered on edencom\.link/
+  )
+  assert.match(
+    senderRefusal({ reason: 'not_held', itemId: 9001, characterId: 90000001, name: 'Sir Cuddles' }),
+    /^Sir Cuddles does not hold item #9001 now/
+  )
+  assert.match(
+    senderRefusal({ reason: 'not_held', itemId: 9001, characterId: 90000001, name: null }),
+    /^character 90000001 does not hold/
+  )
+})
+
+test('writeFailure: a stale write names the recall tool to call again', () => {
+  assert.match(writeFailure({ code: 'PT409' }, 9001), /Call recall_item again/)
+  assert.match(writeFailure({ code: 'PT409' }, 9001, 'recall_item_for_sender'), /Call recall_item_for_sender again/)
 })
