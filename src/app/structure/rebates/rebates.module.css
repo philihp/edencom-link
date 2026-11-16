@@ -1,0 +1,12 @@
+/* The how-it-counts note under the header. */
+.note {
+  max-width: 72ch;
+  margin: 8px 0 16px;
+  font-size: 9pt;
+  color: var(--ink-faint);
+}
+
+/* "×3" after a rebate total: how many contracts made it up. */
+.count {
+  opacity: 0.7;
+}
