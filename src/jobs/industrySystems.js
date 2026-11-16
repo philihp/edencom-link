@@ -1,8 +1,8 @@
-import { chain, filter, forEach, map, pipe, prop, splitEvery, uniq } from 'ramda'
+import { chain, filter, map, pipe, prop, uniq } from 'ramda'
 
 import { industrySystems } from '../esi.js'
 import { sudoSupabase } from '../supabase.js'
-import { cli, forEachSequential } from './lib.js'
+import { cli } from './lib.js'
 
 const TAG = 'industry-systems'
 
@@ -32,19 +32,6 @@ const collectSystemIds = async (table) =>
 // as src/jobs/universeStructures.js.
 const STRUCTURE_ID_FLOOR = 100_000_000_000
 
-// One industry-job table's location columns, drained past the row cap.
-const fetchJobLocationRows = async (table, from = 0) => {
-  const { data: rows, error } = await sudoSupabase
-    .from(table)
-    .select('station_id, facility_id')
-    .order('job_id', { ascending: true })
-    .range(from, from + SYSTEM_PAGE - 1)
-  if (error) throw error
-  const page = rows ?? []
-  if (page.length < SYSTEM_PAGE) return page
-  return [...page, ...(await fetchJobLocationRows(table, from + SYSTEM_PAGE))]
-}
-
 // Systems of the player structures our industry jobs run in — including the
 // rented ones no director of ours scans, which is the whole point: /structure
 // splits a job's cost into index fee / SCC / facility tax
@@ -53,29 +40,16 @@ const fetchJobLocationRows = async (table, from = 0) => {
 // corp_structure above; this adds the rest, resolved through the
 // universe_structure directory (a structure the directory hasn't resolved
 // contributes no system rather than blocking the run).
+//
+// One statement, industry_job_structure_system_ids() (schema.sql,
+// "One-statement id harvests"), in place of paging both job tables 1,000 rows
+// at a time: every OFFSET page re-read the rows before it, ~98 pages an hour.
 const collectJobStructureSystemIds = async () => {
-  const jobRows = [
-    ...(await fetchJobLocationRows('character_industry_job')),
-    ...(await fetchJobLocationRows('corp_industry_job')),
-  ]
-  const structureIds = pipe(
-    map((row) => Number(row.station_id ?? row.facility_id)),
-    filter((id) => Number.isFinite(id) && id >= STRUCTURE_ID_FLOOR),
-    uniq
-  )(jobRows)
-  if (structureIds.length === 0) return []
-
-  const systemIds = []
-  await forEachSequential(splitEvery(500, structureIds), async (chunk) => {
-    const { data, error } = await sudoSupabase
-      .from('universe_structure')
-      .select('system_id')
-      .in('structure_id', chunk)
-      .not('system_id', 'is', null)
-    if (error) throw error
-    forEach((row) => systemIds.push(Number(row.system_id)), data ?? [])
+  const { data, error } = await sudoSupabase.rpc('industry_job_structure_system_ids', {
+    p_floor: STRUCTURE_ID_FLOOR,
   })
-  return uniq(filter(Number.isFinite, systemIds))
+  if (error) throw error
+  return pipe(map(Number), filter(Number.isFinite), uniq)(data ?? [])
 }
 
 // Every system that has ever had an index recorded. Once a system is tracked
@@ -138,10 +112,12 @@ export const runIndustrySystems = async () => {
 
   // Roll the fresh readings into industry_system_index_bucket, the pre-averaged
   // history the /structure and /indexes sparklines read. Refreshing here is what
-  // keeps that view within an hour of the source table. Best-effort: the rows
-  // above are already committed, and failing the run over a stale sparkline
-  // would cost us the next hour's readings too — the following run refreshes
-  // again and catches up.
+  // keeps that table within an hour of the source table; the refresh recomputes
+  // only the buckets from the newest one it already wrote, so it costs one
+  // hour's readings rather than 91 days'. Best-effort: the rows above are
+  // already committed, and failing the run over a stale sparkline would cost us
+  // the next hour's readings too — the following run refreshes again and
+  // catches up.
   const { error: refreshErr } = await sudoSupabase.rpc('refresh_industry_index_buckets')
   if (refreshErr) console.error(`[${TAG}] bucket refresh FAILED (sparklines will lag): ${refreshErr.message}`)
   else console.log(`[${TAG}] refreshed industry index buckets`)

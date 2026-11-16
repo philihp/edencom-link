@@ -223,7 +223,7 @@ export type HistoryOptions = {
 // sometimes several times an hour, sometimes with multi-hour gaps — so raw
 // points would space unevenly across the sparkline's time axis. Readings are
 // bucketed into fixed UTC intervals (averaging any that share a bucket) by the
-// industry_system_index_bucket materialized view, which the pull job refreshes;
+// industry_system_index_bucket table, which the pull job refreshes;
 // here we carry the previous bucket's value across empty ones,
 // giving one evenly-spaced point per bucket from the first reading to the
 // last. Returning `updatedAt` alongside the values lets the sparkline surface

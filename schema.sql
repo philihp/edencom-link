@@ -109,7 +109,7 @@ drop view  if exists public.character_industry_job              cascade;
 drop table if exists public.character_industry_job_over_time    cascade;
 drop table if exists public.character_affiliation         cascade;
 drop table if exists public.character_directory   cascade;
-drop materialized view if exists public.industry_system_index_bucket cascade;
+drop table if exists public.industry_system_index_bucket cascade;
 drop table if exists public.industry_system_index cascade;
 drop view  if exists public.market_adjusted_price cascade;
 drop table if exists public.market_adjusted_price_over_time cascade;
@@ -233,6 +233,11 @@ drop table if exists public.registration         cascade;
 drop function if exists public.ensure_sde_mirror_table(text, text) cascade;
 drop function if exists public.refresh_industry_index_buckets()    cascade;
 drop function if exists public.industry_index_tracked_systems()    cascade;
+drop function if exists public.structure_location_candidate_ids(bigint)  cascade;
+drop function if exists public.industry_job_structure_system_ids(bigint) cascade;
+drop function if exists public.corp_journal_party_ids(timestamptz)       cascade;
+drop function if exists public.corp_industry_job_installer_ids()         cascade;
+drop function if exists public.asset_root_place_ids(text, boolean)       cascade;
 drop function if exists public.sde_refresh_views()                 cascade;
 drop function if exists public.sde_search_type(text, int)          cascade;
 drop function if exists public.sde_search_system(text, int)        cascade;
@@ -492,6 +497,15 @@ create index sde_map_solar_systems_name_trgm on public.sde_map_solar_systems
 -- 20261019070830_sde_type_variants).
 create index sde_types_variation_parent_idx
   on public.sde_types (((data ->> 'variationParentTypeID')::bigint));
+-- The types of one group, for sde_published_type / sde_named_type filtered by
+-- group_id — the market-depth job's gas types every hour, and
+-- getSdeTypesInGroups (src/sdeTypes.ts) on the anon client. Without it every
+-- such read detoasted the jsonb of all 54K types (most of sde_types' 235 MB is
+-- TOAST) to keep the few dozen in the group: 6.1 s and 189K buffers a call, past
+-- anon's 3 s statement_timeout (migration 20261116231119_disk_io_id_lookups,
+-- which also analyzes the table so the expression has statistics to plan with).
+create index sde_types_group_idx
+  on public.sde_types (((data ->> 'groupID')::bigint));
 
 -- ── App-shaped projections ──────────────────────────────────────────────────
 -- The tuple shapes the app's SDE loaders (src/sde*.ts) use today, as views
@@ -5326,49 +5340,141 @@ grant execute on function public.industry_index_tracked_systems() to service_rol
 -- kept, each only as far back as the widest window that uses it: 1h backs the
 -- 1/3/7-day windows, 6h the 14/30-day ones, 24h the 90-day one (see
 -- src/app/structure/windows.ts, which picks the granularity by the same rule).
--- That caps the whole view at ~60k rows no matter how long the source table
--- accumulates, so a page load is a bounded handful of pages forever.
+-- That caps the table at a few hundred buckets per series no matter how long
+-- the source table accumulates, so a page load is a bounded handful of pages
+-- forever (223K rows over ~630 series in 2026-11).
 --
 -- Buckets are epoch-aligned rather than date_trunc'd so they land exactly
 -- where the client's Math.floor(epochMs / bucketMs) puts them, and stay
 -- independent of the server's TimeZone setting. cost_index is the mean of the
 -- readings in the bucket; recorded_at is the newest reading in it, which is
 -- what the sparkline tooltip reports as "last updated".
-create materialized view public.industry_system_index_bucket as
-select
-  g.bucket_hours::smallint as bucket_hours,
-  i.system_id,
-  i.activity,
-  to_timestamp(floor(extract(epoch from i.recorded_at) / (g.bucket_hours * 3600)) * (g.bucket_hours * 3600)) as bucket_at,
-  avg(i.cost_index)::real as cost_index,
-  max(i.recorded_at) as recorded_at
-from public.industry_system_index i
-cross join (values (1, 8), (6, 31), (24, 91)) as g (bucket_hours, retention_days)
-where i.recorded_at >= now() - make_interval(days => g.retention_days)
-group by 1, 2, 3, 4;
+--
+-- A table the refresh below keeps current, not the materialized view it was
+-- until migration 20261116231117. REFRESH ... CONCURRENTLY recomputed all 223K
+-- buckets from 91 days of readings every hour and then diffed them against
+-- the old contents — two passes that spilled to disk at this instance's
+-- work_mem, 12.3 s, ~38K temp blocks written and ~13K blocks read a call, one
+-- of the database's largest Disk IO consumers. Columns are ordered widest
+-- first so no alignment padding opens between them.
+create table public.industry_system_index_bucket (
+  system_id bigint not null,
+  bucket_at timestamptz not null,
+  recorded_at timestamptz not null,
+  cost_index real not null,
+  bucket_hours smallint not null,
+  activity text not null,
+  -- The identity the refresh upserts on, and the access path for the page's
+  -- query (granularity, then the system ids it asks for, then the window's
+  -- lower bound).
+  constraint industry_system_index_bucket_uq primary key (bucket_hours, system_id, activity, bucket_at)
+) with (fillfactor = 90);
+-- fillfactor: each hour updates the current 6h and 24h bucket of every series
+-- in place, and the free tenth lets those updates stay on their page (HOT),
+-- since neither updated column is indexed.
 
--- Unique index required by REFRESH MATERIALIZED VIEW CONCURRENTLY; also the
--- access path for the page's query (granularity, then the system ids it asks
--- for, then the window's lower bound).
-create unique index industry_system_index_bucket_uq
-  on public.industry_system_index_bucket (bucket_hours, system_id, activity, bucket_at);
+-- The refresh's two questions by age: the newest hourly bucket (its
+-- watermark) and the buckets past retention.
+create index industry_system_index_bucket_age_idx
+  on public.industry_system_index_bucket (bucket_hours, bucket_at);
 
--- Materialized views can't carry RLS; a SELECT-only grant gives the same
--- world-readable, nobody-writes access as industry_system_index itself, whose
--- contents this only summarizes.
-grant select on public.industry_system_index_bucket to anon, authenticated, service_role;
+-- World-readable, nobody-writes, like industry_system_index itself, whose
+-- contents this only summarizes. The refresh writes as its definer.
+alter table public.industry_system_index_bucket enable row level security;
+create policy "Everyone reads industry index buckets"
+  on public.industry_system_index_bucket
+  for select
+  to anon, authenticated
+  using (true);
 
--- Refreshed at the end of every industry-systems run, right after the run's
--- rows land. Concurrent so the page keeps reading the previous contents while
--- the refresh runs.
+grant select on public.industry_system_index_bucket to anon, authenticated;
+grant all    on public.industry_system_index_bucket to service_role;
+
+-- Called at the end of every industry-systems run, right after the run's rows
+-- land (src/jobs/industrySystems.js). A run's readings change only the
+-- buckets they land in — for each series, the current 1h bucket and the
+-- current 6h and 24h ones — so the refresh recomputes from the newest hourly
+-- bucket already written onwards, less a three-hour margin for a run that
+-- committed after a later one refreshed. Each width starts at the bucket
+-- holding that moment, so every bucket it recomputes is complete: up to 27
+-- hours of readings for the 24h width, a few for the 1h one.
+--
+-- Only buckets whose mean or newest reading changed are written. A bucket
+-- that matches is filtered out before the upsert rather than left to ON
+-- CONFLICT DO UPDATE ... WHERE, which still locks — and so dirties — every
+-- row it visits. Buckets older than their width's retention are deleted. An
+-- empty table (the first call) recomputes every retained bucket.
+--
+-- force_custom_plan so the bounds reach the planner as constants: a generic
+-- plan cannot see that they select an hour of readings and joins every bucket
+-- instead. work_mem covers the first call's full recompute (1.35M rows into
+-- 223K groups); an hourly call needs ~1 MB. The advisory lock serializes two
+-- runs that finish together.
 create or replace function public.refresh_industry_index_buckets()
 returns void
 language plpgsql
 security definer
 set search_path = ''
+set plan_cache_mode = 'force_custom_plan'
+set work_mem = '16MB'
 as $$
+declare
+  -- The oldest bucket each width keeps: the one holding the moment 8, 31 and
+  -- 91 days ago.
+  v_keep_1  timestamptz := to_timestamp(floor(extract(epoch from now() - interval '8 days') / 3600) * 3600);
+  v_keep_6  timestamptz := to_timestamp(floor(extract(epoch from now() - interval '31 days') / 21600) * 21600);
+  v_keep_24 timestamptz := to_timestamp(floor(extract(epoch from now() - interval '91 days') / 86400) * 86400);
+  v_since   timestamptz;
+  v_from_1  timestamptz;
+  v_from_6  timestamptz;
+  v_from_24 timestamptz;
 begin
-  refresh materialized view concurrently public.industry_system_index_bucket;
+  perform pg_advisory_xact_lock(hashtext('public.refresh_industry_index_buckets'));
+
+  select max(b.bucket_at) - interval '3 hours'
+    into v_since
+    from public.industry_system_index_bucket b
+   where b.bucket_hours = 1;
+
+  v_from_1  := greatest(v_keep_1,  to_timestamp(floor(extract(epoch from v_since) / 3600) * 3600));
+  v_from_6  := greatest(v_keep_6,  to_timestamp(floor(extract(epoch from v_since) / 21600) * 21600));
+  v_from_24 := greatest(v_keep_24, to_timestamp(floor(extract(epoch from v_since) / 86400) * 86400));
+
+  insert into public.industry_system_index_bucket
+    (bucket_hours, system_id, activity, bucket_at, cost_index, recorded_at)
+  select f.bucket_hours, f.system_id, f.activity, f.bucket_at, f.cost_index, f.recorded_at
+  from (
+    select
+      g.bucket_hours,
+      i.system_id,
+      i.activity,
+      to_timestamp(floor(extract(epoch from i.recorded_at) / (g.bucket_hours * 3600)) * (g.bucket_hours * 3600)) as bucket_at,
+      avg(i.cost_index)::real as cost_index,
+      max(i.recorded_at) as recorded_at
+    from public.industry_system_index i
+    join (values (1::smallint, v_from_1), (6::smallint, v_from_6), (24::smallint, v_from_24)) as g (bucket_hours, from_at)
+      on i.recorded_at >= g.from_at
+    where i.recorded_at >= least(v_from_1, v_from_6, v_from_24)
+    group by 1, 2, 3, 4
+  ) f
+  where not exists (
+    select 1
+      from public.industry_system_index_bucket b
+     where b.bucket_hours = f.bucket_hours
+       and b.system_id = f.system_id
+       and b.activity = f.activity
+       and b.bucket_at = f.bucket_at
+       and b.cost_index = f.cost_index
+       and b.recorded_at = f.recorded_at
+  )
+  on conflict (bucket_hours, system_id, activity, bucket_at) do update
+    set cost_index = excluded.cost_index,
+        recorded_at = excluded.recorded_at;
+
+  delete from public.industry_system_index_bucket b
+   where (b.bucket_hours = 1 and b.bucket_at < v_keep_1)
+      or (b.bucket_hours = 6 and b.bucket_at < v_keep_6)
+      or (b.bucket_hours = 24 and b.bucket_at < v_keep_24);
 end
 $$;
 
@@ -9801,6 +9907,189 @@ as $$
 $$;
 
 grant execute on function public.structure_tax_revenue(bigint, timestamptz) to authenticated, service_role;
+
+-- ── One-statement id harvests ─────────────────────────────────────────────
+-- The distinct ids the extract jobs harvest from rows already in Postgres, one
+-- statement each, for the jobs to resolve or track. Each replaced a walk
+-- through PostgREST 1,000 rows at a time with OFFSET: every page re-reads (and,
+-- when the order is not an index's, re-sorts) everything before it, so a walk
+-- costs O(rows^2), and together they were among the database's largest Disk IO
+-- consumers (migration 20261116231119_disk_io_id_lookups;
+-- trade_contract_party_ids() is the same shape). Each returns one bigint[]
+-- rather than a set, so PostgREST's max-rows cap never truncates it. Invoker
+-- rights, service-role only: they read every account's rows, which only the
+-- jobs may, and the service role passes RLS.
+
+-- The universe-structures job's candidates (src/jobs/universeStructures.js):
+-- every location in the structure id range (p_floor) that one of our extracts
+-- records — a character or corp item's place, a current order, all four
+-- location columns of a current industry job, both ends of a contract, a
+-- wallet transaction, a clone parked in a structure — less our characters'
+-- current items, which are ships and containers rather than structures. The
+-- asset branches are the asset views' location_id read from the tables
+-- underneath, minus what the item filter drops anyway: a nested character
+-- item's location is a current character item, so only the roots' places can
+-- survive; a nested corp item's location is its container, which the item
+-- filter (characters' items only, as before) keeps — corp_asset_over_time has
+-- always handed the job those ids. Checked against the view-based union on
+-- production: 3,014 ids both ways. One run had paged eleven sources, 492 pages
+-- over corp_contract alone (2.05M blocks read, 1.68M temp blocks).
+create or replace function public.structure_location_candidate_ids(p_floor bigint)
+returns bigint[]
+language sql
+stable
+set search_path = public
+as $$
+  select coalesce(array_agg(d.id order by d.id), '{}')
+  from (
+    select distinct s.id
+    from (
+      select l.location_id as id
+        from public.character_asset_location l
+        join public.character_asset_version v on v.id = l.asset_id
+       where v.is_current and v.location_id is null
+      union all
+      select l.location_id
+        from public.corp_asset_location l
+        join public.corp_asset_version v on v.id = l.asset_id
+       where v.is_current and v.location_id is null
+      union all
+      select v.location_id
+        from public.corp_asset_version v
+       where v.is_current
+         and exists (
+           select 1 from public.corp_asset_version p
+            where p.item_id = v.location_id and p.is_current
+         )
+      union all
+      select o.location_id from public.character_order_over_time o where o.is_current
+      union all
+      select unnest(array[j.facility_id, j.station_id, j.blueprint_location_id, j.output_location_id])
+        from public.character_industry_job_over_time j
+       where j.is_current
+      union all
+      select unnest(array[j.facility_id, j.station_id, j.blueprint_location_id, j.output_location_id])
+        from public.corp_industry_job_over_time j
+       where j.is_current
+      union all
+      select unnest(array[c.start_location_id, c.end_location_id]) from public.character_contract c
+      union all
+      select unnest(array[c.start_location_id, c.end_location_id]) from public.corp_contract c
+      union all
+      select t.location_id from public.character_wallet_transaction t
+      union all
+      select t.location_id from public.corp_wallet_transaction t
+      union all
+      select k.location_id
+        from public.character_clone_over_time k
+       where k.is_current and k.location_type = 'structure'
+    ) s
+    where s.id >= p_floor
+  ) d
+  where not exists (
+    select 1 from public.character_asset_version i
+     where i.item_id = d.id and i.is_current
+  )
+$$;
+
+-- The industry-systems job's systems of the player structures our industry
+-- jobs run in (src/jobs/industrySystems.js): each current job's station, else
+-- its facility, at or above p_floor, named through universe_structure. A
+-- structure the directory has not placed contributes no system. Hourly; the
+-- walk it replaced paged both job tables, ~98 pages an hour.
+create or replace function public.industry_job_structure_system_ids(p_floor bigint)
+returns bigint[]
+language sql
+stable
+set search_path = public
+as $$
+  select coalesce(array_agg(distinct s.system_id order by s.system_id), '{}')
+  from public.universe_structure s
+  where s.system_id is not null
+    and s.structure_id >= p_floor
+    and s.structure_id in (
+      select coalesce(j.station_id, j.facility_id)
+        from public.character_industry_job_over_time j
+       where j.is_current
+      union all
+      select coalesce(j.station_id, j.facility_id)
+        from public.corp_industry_job_over_time j
+       where j.is_current
+    )
+$$;
+
+-- The universe-names job's corp wallet journal parties since p_since
+-- (resolveCorpJournalNames): 1,083 pages, 1.67M blocks read over 27.7 hours,
+-- each page re-reading the whole 30-day window through an index whose leading
+-- column is not the date.
+create or replace function public.corp_journal_party_ids(p_since timestamptz)
+returns bigint[]
+language sql
+stable
+set search_path = public
+as $$
+  select coalesce(array_agg(d.id order by d.id), '{}')
+  from (
+    select distinct t.id
+    from (
+      select unnest(array[j.first_party_id, j.second_party_id]) as id
+        from public.corp_wallet_journal j
+       where j.date >= p_since
+    ) t
+    where t.id > 0
+  ) d
+$$;
+
+-- The universe-names job's corp industry job installers
+-- (resolveCorpIndustryJobInstallerNames): whichever corp member ran each
+-- current job, not necessarily a character of ours.
+create or replace function public.corp_industry_job_installer_ids()
+returns bigint[]
+language sql
+stable
+set search_path = public
+as $$
+  select coalesce(array_agg(distinct j.installer_id order by j.installer_id), '{}')
+  from public.corp_industry_job_over_time j
+  where j.is_current and j.installer_id > 0
+$$;
+
+-- The universe-names job's places of our root items of one location_type
+-- (resolveAssetStationNames: 'station', characters only, as it always read;
+-- resolveAssetSystemNames: 'solar_system', corporations too). The asset views
+-- give a root item its place from the location tables; a nested item's
+-- location_type is 'item', so only roots can match.
+create or replace function public.asset_root_place_ids(p_location_type text, p_include_corp boolean default false)
+returns bigint[]
+language sql
+stable
+set search_path = public
+as $$
+  select coalesce(array_agg(distinct d.id order by d.id), '{}')
+  from (
+    select l.location_id as id
+      from public.character_asset_location l
+      join public.character_asset_version v on v.id = l.asset_id
+     where v.is_current and v.location_id is null and l.location_type = p_location_type
+    union all
+    select l.location_id
+      from public.corp_asset_location l
+      join public.corp_asset_version v on v.id = l.asset_id
+     where p_include_corp and v.is_current and v.location_id is null and l.location_type = p_location_type
+  ) d
+  where d.id > 0
+$$;
+
+revoke execute on function public.structure_location_candidate_ids(bigint) from public, anon, authenticated;
+revoke execute on function public.industry_job_structure_system_ids(bigint) from public, anon, authenticated;
+revoke execute on function public.corp_journal_party_ids(timestamptz) from public, anon, authenticated;
+revoke execute on function public.corp_industry_job_installer_ids() from public, anon, authenticated;
+revoke execute on function public.asset_root_place_ids(text, boolean) from public, anon, authenticated;
+grant execute on function public.structure_location_candidate_ids(bigint) to service_role;
+grant execute on function public.industry_job_structure_system_ids(bigint) to service_role;
+grant execute on function public.corp_journal_party_ids(timestamptz) to service_role;
+grant execute on function public.corp_industry_job_installer_ids() to service_role;
+grant execute on function public.asset_root_place_ids(text, boolean) to service_role;
 
 -- ── universe_name ─────────────────────────────────────────────────────────
 -- ESI /universe/names/, written by the universe-names job: cache of resolved
