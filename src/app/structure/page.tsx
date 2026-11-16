@@ -588,6 +588,7 @@ const StructuresPage = async ({ searchParams }: StructuresParams) => {
         <div className={styles.headerRight}>
           <span className={styles.headerLinks}>
             <Link href="/structure/revenue">tax revenue events &raquo;</Link>
+            <Link href="/structure/rebates">tax rebates &raquo;</Link>
             <Link href="/mercenary-dens">mercenary dens &raquo;</Link>
           </span>
           <span className={styles.headerControl}>
