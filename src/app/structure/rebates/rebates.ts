@@ -70,9 +70,11 @@ export type RebateInput = {
   // Item rows per contract id.
   itemCounts: ReadonlyMap<string, number>
   ours: OurIds
-  // The window's start (ISO). A paid rebate counts when it completed in the
-  // window; an outstanding one counts while it has not expired.
+  // The window, [since, until) as ISO instants. Tax counts when it arrived in
+  // the window and a paid rebate when it completed in it; an outstanding one
+  // counts while it has not expired at `now`, whatever the window.
   since: string
+  until: string
   now: string
 }
 
@@ -93,6 +95,13 @@ export const rebateContracts = (input: Omit<RebateInput, 'receipts'>): RebateCon
   })
 }
 
+// ISO instants from PostgREST and from rebateWindow are all UTC, but in two
+// spellings (`+00:00` and `Z`), so compare them as times, not strings.
+const inWindow = (w: { since: string; until: string }, iso: string): boolean => {
+  const t = Date.parse(iso)
+  return t >= Date.parse(w.since) && t < Date.parse(w.until)
+}
+
 type Acc = { paid: number; jobs: Set<string>; rebated: number; rebates: number; pending: number }
 const emptyAcc = (): Acc => ({ paid: 0, jobs: new Set(), rebated: 0, rebates: 0, pending: 0 })
 
@@ -107,7 +116,7 @@ export const foldRebates = (input: RebateInput): RebateRow[] => {
   }
 
   input.receipts
-    .filter((r) => r.first_party_id != null && isk(r.amount) > 0 && r.date >= input.since)
+    .filter((r) => r.first_party_id != null && isk(r.amount) > 0 && inWindow(input, r.date))
     .forEach((r) => {
       const acc = accFor(String(r.first_party_id))
       acc.paid += isk(r.amount)
@@ -116,7 +125,7 @@ export const foldRebates = (input: RebateInput): RebateRow[] => {
 
   rebateContracts(input).forEach((c) => {
     const payee = rebatePayee(c) as string
-    if (c.status === 'finished' && c.date_completed != null && c.date_completed >= input.since) {
+    if (c.status === 'finished' && c.date_completed != null && inWindow(input, c.date_completed)) {
       const acc = accFor(payee)
       acc.rebated += isk(c.reward)
       acc.rebates += 1

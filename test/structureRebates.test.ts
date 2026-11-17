@@ -14,6 +14,7 @@ import {
 const OURS = { characterIds: new Set(['100']), corporationIds: new Set(['900']) }
 const SINCE = '2026-11-01T00:00:00Z'
 const NOW = '2026-11-16T00:00:00Z'
+const UNTIL = NOW
 
 const contract = (over: Partial<RebateContract> = {}): RebateContract => ({
   contract_id: 1,
@@ -51,7 +52,7 @@ test('only an item exchange paying ISK with no price and no items is a payment',
 })
 
 test('a rebate must be issued by us, and each contract counts once', () => {
-  const base = { itemCounts: new Map<string, number>(), ours: OURS, since: SINCE, now: NOW }
+  const base = { itemCounts: new Map<string, number>(), ours: OURS, since: SINCE, until: UNTIL, now: NOW }
   assert.equal(rebateContracts({ ...base, contracts: [contract(), contract()] }).length, 1)
   assert.equal(rebateContracts({ ...base, contracts: [contract({ issuer_id: 555 })] }).length, 0)
   // Issued by someone else on behalf of our corporation still counts.
@@ -77,6 +78,7 @@ test('folds paid tax and rebates per payer, inside the window', () => {
     itemCounts: new Map(),
     ours: OURS,
     since: SINCE,
+    until: UNTIL,
     now: NOW,
   })
   assert.deepEqual(rows, [
@@ -92,7 +94,30 @@ test('a payer with nothing in the window is left out', () => {
     itemCounts: new Map(),
     ours: OURS,
     since: SINCE,
+    until: UNTIL,
     now: NOW,
   })
   assert.deepEqual(rows, [])
+})
+
+test('a fixed window leaves out tax and rebates after its end, but keeps open rebates', () => {
+  const rows = foldRebates({
+    receipts: [
+      { first_party_id: 7, context_id: 1, amount: 1_000, date: '2026-10-30T23:59:59+00:00' },
+      { first_party_id: 7, context_id: 2, amount: 9_000, date: '2026-10-31T00:00:00+00:00' }, // after the window
+    ],
+    contracts: [
+      contract({ contract_id: 1, date_completed: '2026-10-15T00:00:00Z' }),
+      contract({ contract_id: 2, date_completed: '2026-11-02T00:00:00Z' }), // after the window
+      contract({ contract_id: 3, status: 'outstanding', acceptor_id: null, reward: 500 }),
+    ],
+    itemCounts: new Map(),
+    ours: OURS,
+    since: '2026-10-01T00:00:00.000Z',
+    until: '2026-10-31T00:00:00.000Z',
+    now: NOW,
+  })
+  assert.deepEqual(rows, [
+    { partyId: '7', paid: 1_000, jobs: 1, rebated: 1_000_000, rebates: 1, pending: 500, net: -999_000 },
+  ])
 })
