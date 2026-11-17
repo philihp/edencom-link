@@ -140,6 +140,7 @@ drop table if exists public.character_contract_status_over_time cascade;
 drop table if exists public.corp_contract_status_over_time      cascade;
 drop function if exists public.character_contract_status_sync(uuid, jsonb) cascade;
 drop function if exists public.corp_contract_status_sync(bigint, jsonb)    cascade;
+drop function if exists public.trade_contract_party_ids(timestamptz)       cascade;
 drop table if exists public.corp_contract_item      cascade;
 drop table if exists public.corp_contract           cascade;
 drop view  if exists public.public_contract_status  cascade;
@@ -6402,6 +6403,47 @@ revoke execute on function public.corp_contract_status_sync(bigint, jsonb) from 
 grant execute on function public.character_contract_status_sync(uuid, jsonb) to service_role;
 grant execute on function public.corp_contract_status_sync(bigint, jsonb) to service_role;
 
+-- ── Trade counterparties, for the universe-names job ──────────────────────
+-- Every party id (issuer, issuer's corporation, acceptor) of a finished item
+-- exchange or auction accepted since p_since, across both contract views,
+-- deduplicated here and answered as one array. resolveTradeCounterpartyNames
+-- (src/resolveNames.js) names them so the market page can say who a trade was
+-- with. It used to page each view 1,000 rows at a time with OFFSET: 271K
+-- matching corp rows were 272 requests, each repeating the contract × status
+-- join from the top — ~343s of database time and ~13 GB of disk and temp IO
+-- per run, to find ~9.5K distinct ids. One pass is ~1.2s (2026-11-13,
+-- 20261117013400). An array rather than a set so PostgREST's 1,000-row
+-- max_rows cap never truncates it. Read-only, but service role only like the
+-- job that calls it.
+create or replace function public.trade_contract_party_ids(p_since timestamptz)
+returns bigint[]
+language sql
+stable
+set search_path = public
+as $$
+  select coalesce(array_agg(d.id), '{}')
+  from (
+    select distinct t.id
+    from (
+      select unnest(array[c.issuer_id, c.issuer_corporation_id, c.acceptor_id]) as id
+      from public.character_contract_with_status c
+      where c.status = 'finished'
+        and c.type in ('item_exchange', 'auction')
+        and c.date_accepted >= p_since
+      union all
+      select unnest(array[c.issuer_id, c.issuer_corporation_id, c.acceptor_id])
+      from public.corp_contract_with_status c
+      where c.status = 'finished'
+        and c.type in ('item_exchange', 'auction')
+        and c.date_accepted >= p_since
+    ) t
+    where t.id > 0
+  ) d
+$$;
+
+revoke execute on function public.trade_contract_party_ids(timestamptz) from public, anon, authenticated;
+grant execute on function public.trade_contract_party_ids(timestamptz) to service_role;
+
 
 -- ── public contracts ──────────────────────────────────────────────────────
 -- ESI /contracts/public/{region_id}/ and /contracts/public/items/{contract_id}/
@@ -7656,14 +7698,29 @@ grant select, insert, update, delete on public.asset_location_summary_cache to s
 -- character_asset_over_time never enters the plan — that policy ORs a recursive
 -- asset_share_covers() call alongside the ownership test, which makes the
 -- registration_id index unusable and costs ~2.3s per scan.
+--
+-- The account's owners are read into two arrays first and the views filtered
+-- with `= any(array)`, never `in (select … from registration)`. The views are
+-- UNION ALLs over the version table; a constant array is pushed into every
+-- branch as an index condition, while a semi-join against a subquery is not,
+-- so the IN form read all 599K character and 345K corp asset versions for
+-- every account and spilled the joins to disk — the largest single consumer
+-- of the database's Disk IO budget, 3.2s and ~9K temp blocks a call
+-- (2026-11-13; 20261117013400). force_custom_plan keeps it that way after
+-- plpgsql's fifth call: a generic plan cannot see the array's length and
+-- goes back to joining every current item rather than probing the few it
+-- needs (46ms custom vs 2.2s generic, measured on the 31-character account).
 create or replace function public.refresh_asset_location_summary_cache(p_user_id uuid)
 returns integer
 language plpgsql
 security definer
 set search_path to 'public'
+set plan_cache_mode to 'force_custom_plan'
 as $$
 declare
   v_rows integer;
+  v_registration_ids uuid[];
+  v_corporation_ids bigint[];
 begin
   if p_user_id is null then
     return 0;
@@ -7678,17 +7735,23 @@ begin
   -- namespaces the key against the table-name locks the *_claim() functions take.
   perform pg_advisory_xact_lock(hashtext('asset_location_summary_cache'), hashtext(p_user_id::text));
 
+  -- The account's characters, and the corporations they are in — exactly what
+  -- corp_asset_version's RLS keys off, so the corp rows match what the caller
+  -- could read live.
+  select coalesce(array_agg(r.id), '{}'),
+         coalesce(array_agg(distinct r.corporation_id) filter (where r.corporation_id is not null), '{}')
+    into v_registration_ids, v_corporation_ids
+    from public.registration r
+   where r.user_id = p_user_id;
+
   -- One transaction: the page must never observe a half-rebuilt account.
   delete from public.asset_location_summary_cache where user_id = p_user_id;
 
   with recursive
-  mine as (
-    select id, corporation_id from public.registration where user_id = p_user_id
-  ),
   char_visible as (
     select a.item_id, a.location_id, a.location_type, a.registration_id, a.is_current, a.valid_until
     from public.character_asset_over_time a
-    where a.registration_id in (select id from mine)
+    where a.registration_id = any(v_registration_ids)
   ),
   -- One best-known parent per item, so the walk can bridge a container that has
   -- momentarily dropped out of the current snapshot — one handed between the
@@ -7727,12 +7790,11 @@ begin
     group by w.registration_id, w.location_id
   ),
   -- Same shape over corp assets, scoped to the corporations this account has a
-  -- character in — exactly what corp_asset_version's RLS keys off, so the row
-  -- set matches what the caller could read live.
+  -- character in.
   corp_visible as (
     select a.item_id, a.location_id, a.location_type, a.corporation_id, a.is_current, a.valid_until
     from public.corp_asset_over_time a
-    where a.corporation_id in (select corporation_id from mine where corporation_id is not null)
+    where a.corporation_id = any(v_corporation_ids)
   ),
   corp_parent as (
     select distinct on (item_id) item_id, location_id, location_type
