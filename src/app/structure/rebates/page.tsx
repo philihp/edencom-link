@@ -217,6 +217,10 @@ const RebatesPage = async ({ searchParams }: RebatesParams) => {
         </div>
       </div>
       <p className={styles.note}>
+        This page shows how much facility tax each person or corporation paid to run industry jobs in our structures, so
+        that they can file for a tax return and we can see what we have already paid back.
+      </p>
+      <p className={styles.note}>
         <strong>Tax paid</strong> is the industry job tax our corporation wallets received from each payer in the
         window. A job installed as a corporation is paid by that corporation. <strong>Rebated</strong> counts the
         contracts we issued that pay only ISK (no items, no price) with &ldquo;tax&rdquo; and &ldquo;refund&rdquo; or
