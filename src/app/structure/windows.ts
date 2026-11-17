@@ -15,10 +15,11 @@ export const structureWindowDays = (raw: string | undefined): number =>
 
 // A sparkline is ~100px wide, so past roughly 180 points the extra readings are
 // invisible — and fetching them is what made the 90-day window time out. The
-// bucketed history (industry_system_index_bucket) is materialized at these three
+// bucketed history (industry_system_index_bucket) is kept at these three
 // granularities only, so this both sizes the series and names the rows to read.
-// Keep in step with the retention cuts in the materialized view: each width must
-// be kept back at least as far as the widest window that selects it.
+// Keep in step with the retention cuts in refresh_industry_index_buckets(): each
+// width must be kept back at least as far as the widest window that selects it
+// (test/sql/industry_index_bucket.sql checks it).
 export const INDEX_BUCKET_HOURS = [1, 6, 24]
 
 const MAX_SPARKLINE_POINTS = 180

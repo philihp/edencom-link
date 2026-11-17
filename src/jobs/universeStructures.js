@@ -1,4 +1,4 @@
-import { forEach, map, pipe, prop, reject } from 'ramda'
+import { map, pipe, prop, reject } from 'ramda'
 
 import { universeStructure } from '../esi.js'
 import { sudoSupabase } from '../supabase.js'
@@ -14,80 +14,24 @@ const SCOPE = 'esi-universe.read_structures.v1'
 // characters' own items is a ship/container, not a structure.
 const STRUCTURE_ID_FLOOR = 100_000_000_000
 
-// PostgREST caps a single select; page through the source tables so a large
-// hangar doesn't silently truncate the candidate/own-item sets.
-const ASSET_PAGE = 1000
-
-// Every table we already extract that records *where* something was, and the
-// columns holding that location. A structure id in any of them is proof one of
-// our characters has been there, which makes it worth a name — and it costs no
-// ESI calls to harvest, since the rows are already in Postgres
-// (docs/structure-universe/design.md).
+// The candidate structure ids: every location we already extract that sits in
+// the structure id range, from the asset hangars, orders, industry jobs,
+// contracts, wallet transactions and parked clones, less our characters' own
+// items (a ship or container, not a structure). A structure id in any of them is
+// proof one of our characters has been there, which makes it worth a name — and
+// it costs no ESI calls to harvest, since the rows are already in Postgres
+// (docs/structure-universe/design.md). Contracts are the quiet win: a courier
+// contract's start/end locations are often the only record of a structure a
+// character docks at but keeps nothing in.
 //
-// `orderBy` is the table's primary key (or its first component): range paging
-// without an explicit sort is unstable in PostgREST and can skip or repeat rows
-// across pages, silently dropping a structure from the candidate set.
-// `current` marks the SCD-2 tables, whose live snapshot is is_current rows.
-//
-// Contracts are the quiet win here: a courier contract's start/end locations
-// are often the only record of a structure a character docks at but keeps
-// nothing in.
-const LOCATION_SOURCES = [
-  { table: 'character_asset_over_time', columns: ['location_id'], orderBy: 'id', current: true },
-  { table: 'corp_asset_over_time', columns: ['location_id'], orderBy: 'id', current: true },
-  { table: 'character_order_over_time', columns: ['location_id'], orderBy: 'id', current: true },
-  {
-    table: 'character_industry_job_over_time',
-    columns: ['facility_id', 'station_id', 'blueprint_location_id', 'output_location_id'],
-    orderBy: 'id',
-    current: true,
-  },
-  {
-    table: 'corp_industry_job_over_time',
-    columns: ['facility_id', 'station_id', 'blueprint_location_id', 'output_location_id'],
-    orderBy: 'id',
-    current: true,
-  },
-  {
-    table: 'character_contract',
-    columns: ['start_location_id', 'end_location_id'],
-    orderBy: 'contract_id',
-    current: false,
-  },
-  { table: 'corp_contract', columns: ['start_location_id', 'end_location_id'], orderBy: 'contract_id', current: false },
-  { table: 'character_wallet_transaction', columns: ['location_id'], orderBy: 'transaction_id', current: false },
-  { table: 'corp_wallet_transaction', columns: ['location_id'], orderBy: 'transaction_id', current: false },
-]
-
-// One source table's location columns, drained past the PostgREST row cap by
-// recursing to the next page until a short page signals the end.
-const fetchLocationRows = async ({ table, columns, orderBy, current }, from = 0, acc = []) => {
-  let query = sudoSupabase.from(table).select(columns.join(', '))
-  if (current) query = query.eq('is_current', true)
-  const { data: rows, error } = await query.order(orderBy, { ascending: true }).range(from, from + ASSET_PAGE - 1)
-  if (error) throw new Error(`reading ${table} failed: ${error.message}`)
-  const page = rows ?? []
-  forEach((row) => acc.push(row), page)
-  if (page.length < ASSET_PAGE) return acc
-  return fetchLocationRows({ table, columns, orderBy, current }, from + ASSET_PAGE, acc)
-}
-
-// The item ids of everything our characters own. A location in the structure id
-// range that's also one of these is a ship or container, not a structure.
-const fetchOwnedItemIds = async (from = 0, acc = []) => {
-  // The version table, not the character_asset_over_time view: only item ids
-  // are wanted, and the view's place join is dead weight for them.
-  const { data: rows, error } = await sudoSupabase
-    .from('character_asset_version')
-    .select('item_id')
-    .eq('is_current', true)
-    .order('id', { ascending: true })
-    .range(from, from + ASSET_PAGE - 1)
-  if (error) throw error
-  const page = rows ?? []
-  forEach((row) => acc.push(Number(row.item_id)), page)
-  if (page.length < ASSET_PAGE) return acc
-  return fetchOwnedItemIds(from + ASSET_PAGE, acc)
+// One statement, structure_location_candidate_ids() (schema.sql, "One-statement
+// id harvests"). It replaced eleven 1,000-row OFFSET walks over the same
+// tables, each page re-reading every row before it — 492 pages over
+// corp_contract alone, 2.05M blocks read and 1.68M temp blocks for one run.
+const fetchCandidateIds = async () => {
+  const { data, error } = await sudoSupabase.rpc('structure_location_candidate_ids', { p_floor: STRUCTURE_ID_FLOOR })
+  if (error) throw new Error(`structure_location_candidate_ids failed: ${error.message}`)
+  return map(Number, data ?? [])
 }
 
 // GET /universe/structures/{id} → universe_structure. Resolves and caches the
@@ -120,41 +64,12 @@ export const runUniverseStructures = async () => {
     .not('name', 'is', null)
   const resolved = new Set(map(pipe(prop('structure_id'), Number), [...(corpStructs ?? []), ...(knownStructs ?? [])]))
 
-  // Pool candidate structure ids from every location column we already extract
-  // (LOCATION_SOURCES). itemIds is the union of all owned item ids across
-  // characters: a location in the structure range that's also someone's item is
-  // a ship/container, not a structure. Read the *_over_time base tables (what
-  // service_role can reach) filtered to live rows, rather than the views
-  // (granted to authenticated).
-  const itemIds = new Set(await fetchOwnedItemIds())
-  const locationIds = new Set()
-  await forEachSequential(LOCATION_SOURCES, async (source) => {
-    const before = locationIds.size
-    forEach(
-      (row) =>
-        forEach((column) => {
-          const id = Number(row[column])
-          if (Number.isFinite(id) && id >= STRUCTURE_ID_FLOOR) locationIds.add(id)
-        }, source.columns),
-      await fetchLocationRows(source)
-    )
-    console.log(`[${TAG}] ${source.table}: ${locationIds.size - before} new candidate id(s)`)
-  })
-
-  // Clones parked in player structures are candidates too — the character-clones
-  // job resolves what it can with each clone's own token, but only a character
-  // with docking access can resolve a given structure, and that's often a
-  // different character than the clone's owner.
-  const { data: cloneRows, error: clonesErr } = await sudoSupabase
-    .from('character_clone_over_time')
-    .select('location_id')
-    .eq('is_current', true)
-    .eq('location_type', 'structure')
-  if (clonesErr) throw clonesErr
-  forEach((r) => {
-    const id = Number(r.location_id)
-    if (Number.isFinite(id) && id >= STRUCTURE_ID_FLOOR) locationIds.add(id)
-  }, cloneRows ?? [])
+  // Clones parked in player structures are among the candidates — the
+  // character-clones job resolves what it can with each clone's own token, but
+  // only a character with docking access can resolve a given structure, and
+  // that's often a different character than the clone's owner.
+  const locationIds = await fetchCandidateIds()
+  console.log(`[${TAG}] ${locationIds.length} candidate id(s) seen in our locations`)
 
   // Structures a recent pass already established nobody can resolve. Re-asking
   // every token about each of these nightly is what pushed the job past its
@@ -169,7 +84,7 @@ export const runUniverseStructures = async () => {
   if (parkedErr) throw parkedErr
   const parkedIds = new Set(map(pipe(prop('structure_id'), Number), parkedRows ?? []))
 
-  const candidates = reject((id) => itemIds.has(id) || resolved.has(id) || parkedIds.has(id), [...locationIds])
+  const candidates = reject((id) => resolved.has(id) || parkedIds.has(id), locationIds)
   console.log(
     `[${TAG}] ${candidates.length} candidate player structure(s) to resolve ` +
       `(${parkedIds.size} parked as unresolvable within the last ${UNRESOLVED_TTL_DAYS} day(s))`

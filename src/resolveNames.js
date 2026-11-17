@@ -46,6 +46,20 @@ const knownIdsAmong = async (ids) => {
   return knownIdSet(known)
 }
 
+// The distinct positive ids one of the database's id-harvest functions answers
+// (schema.sql, "One-statement id harvests"). Each returns a single bigint[], so
+// PostgREST's max_rows cap cannot truncate it the way it would a set. They
+// replaced selectAllRows walks whose OFFSET pages each re-read every row before
+// them, among the database's largest Disk IO consumers.
+const harvestIds = async (fn, args) => {
+  const { data, error } = await sudoSupabase.rpc(fn, args)
+  if (error) throw error
+  return pipe(
+    map(Number),
+    filter((n) => Number.isFinite(n) && n > 0)
+  )(data ?? [])
+}
+
 // A resolved id/name/category row, trimmed down to the universe_name upsert shape.
 const toNameRow = pick(['id', 'name', 'category'])
 
@@ -82,24 +96,11 @@ export const resolveAllIds = (ids) =>
 // from universe_name, so steady-state runs resolve nothing.
 export const resolveCorpJournalNames = async () => {
   const cutoff = new Date(Date.now() - LOOKBACK_MS).toISOString()
-
-  const journal = await selectAllRows((from, to) =>
-    sudoSupabase
-      .from('corp_wallet_journal')
-      .select('first_party_id, second_party_id')
-      .gte('date', cutoff)
-      .order('corporation_id', { ascending: true })
-      .order('division', { ascending: true })
-      .order('entry_id', { ascending: true })
-      .range(from, to)
-  )
-
-  const journalPartyIds = pipe(map(props(['first_party_id', 'second_party_id'])), unnest, reject(isNil), map(Number))
-  const ids = new Set(journalPartyIds(journal))
+  const ids = new Set(await harvestIds('corp_journal_party_ids', { p_since: cutoff }))
 
   const knownIds = await knownIdsAmong(ids)
 
-  const toResolve = filter((n) => Number.isFinite(n) && n > 0 && !knownIds.has(n), [...ids])
+  const toResolve = reject((id) => knownIds.has(id), [...ids])
   console.log(`[names] corp journal: ${ids.size} unknown id(s) seen in last 30d, ${toResolve.length} to resolve`)
   if (toResolve.length === 0) return
 
@@ -248,23 +249,9 @@ export const resolveTradeCounterpartyNames = async () => {
 // steady-state runs do nothing. The assets page reads universe_name to label
 // NPC station locations instead of a raw id.
 export const resolveAssetStationNames = async () => {
-  // Page through live asset rows located directly in an NPC station. Order by the
-  // primary key so range paging is stable (an unordered .range() can skip rows).
-  const PAGE = 1000
-  const ids = new Set()
-  for (let from = 0; ; from += PAGE) {
-    const { data: rows, error } = await sudoSupabase
-      .from('character_asset_over_time')
-      .select('location_id')
-      .eq('is_current', true)
-      .eq('location_type', 'station')
-      .order('id', { ascending: true })
-      .range(from, from + PAGE - 1)
-    if (error) throw error
-    if (!rows || rows.length === 0) break
-    for (const r of rows) if (r.location_id != null) ids.add(Number(r.location_id))
-    if (rows.length < PAGE) break
-  }
+  // The NPC stations live character asset rows sit in directly: the places of
+  // the root items, the only rows whose location_type is 'station'.
+  const ids = new Set(await harvestIds('asset_root_place_ids', { p_location_type: 'station' }))
 
   const known = await selectAllRows((from, to) =>
     sudoSupabase
@@ -293,29 +280,6 @@ export const resolveAssetStationNames = async () => {
   console.log(`[names] upserted ${rows.length} station name(s)`)
 }
 
-// Page through live asset rows in `table` located directly in a solar system
-// (location_type 'solar_system' — the item is floating in space, not docked
-// anywhere), collecting distinct location_id values. Shared by
-// resolveAssetSystemNames for the character/corp asset tables, which are
-// otherwise identical here. Order by the primary key so range paging is
-// stable (an unordered .range() can skip rows).
-const collectFloatingSystemIds = async (table, ids) => {
-  const PAGE = 1000
-  for (let from = 0; ; from += PAGE) {
-    const { data: rows, error } = await sudoSupabase
-      .from(table)
-      .select('location_id')
-      .eq('is_current', true)
-      .eq('location_type', 'solar_system')
-      .order('id', { ascending: true })
-      .range(from, from + PAGE - 1)
-    if (error) throw error
-    if (!rows || rows.length === 0) break
-    for (const r of rows) if (r.location_id != null) ids.add(Number(r.location_id))
-    if (rows.length < PAGE) break
-  }
-}
-
 // Cache (in universe_name) the name of every solar system a character or corp
 // asset is currently floating in directly (location_type 'solar_system' — no
 // station/structure to resolve a name from otherwise). Only resolves ids
@@ -323,9 +287,9 @@ const collectFloatingSystemIds = async (table, ids) => {
 // pages read universe_name to label these roots instead of falling back to a
 // raw system_id.
 export const resolveAssetSystemNames = async () => {
-  const ids = new Set()
-  await collectFloatingSystemIds('character_asset_over_time', ids)
-  await collectFloatingSystemIds('corp_asset_over_time', ids)
+  const ids = new Set(
+    await harvestIds('asset_root_place_ids', { p_location_type: 'solar_system', p_include_corp: true })
+  )
 
   const known = await selectAllRows((from, to) =>
     sudoSupabase
@@ -361,15 +325,10 @@ export const resolveAssetSystemNames = async () => {
 // so needs no separate resolution. Only resolves ids missing from
 // universe_name, so steady-state runs do nothing.
 export const resolveCorpIndustryJobInstallerNames = async () => {
-  const rows = await selectAllRows((from, to) =>
-    sudoSupabase.from('corp_industry_job').select('installer_id').order('job_id', { ascending: true }).range(from, to)
-  )
-
-  const installerId = pipe(prop('installer_id'), Number)
-  const ids = new Set(map(installerId, reject(pipe(prop('installer_id'), isNil), rows)))
+  const ids = new Set(await harvestIds('corp_industry_job_installer_ids'))
 
   const knownIds = await knownIdsAmong(ids)
-  const toResolve = filter((n) => Number.isFinite(n) && n > 0 && !knownIds.has(n), [...ids])
+  const toResolve = reject((id) => knownIds.has(id), [...ids])
   console.log(`[names] corp industry job installers: ${toResolve.length} to resolve`)
   if (toResolve.length === 0) return
 
