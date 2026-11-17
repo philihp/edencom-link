@@ -217,11 +217,23 @@ const RebatesPage = async ({ searchParams }: RebatesParams) => {
         </div>
       </div>
       <p className={styles.note}>
+        This page shows how much facility tax each person or corporation paid to run industry jobs in our structures, so
+        that they can file for a tax return and we can see what we have already paid back.
+      </p>
+      <p className={styles.note}>
         <strong>Tax paid</strong> is the industry job tax our corporation wallets received from each payer in the
         window. A job installed as a corporation is paid by that corporation. <strong>Rebated</strong> counts the
         contracts we issued that pay only ISK (no items, no price) with &ldquo;tax&rdquo; and &ldquo;refund&rdquo; or
         &ldquo;rebate&rdquo; in the title, completed in the window. <strong>Pending</strong> is such contracts still
         open.
+      </p>
+      <p className={styles.note}>
+        <strong>To issue a tax rebate</strong>, create an item exchange contract to the payer (the character, or the
+        corporation for a corporation job) that gives them ISK and nothing else: put the amount in &ldquo;I will
+        pay&rdquo;, ask for no ISK and add no items. Give the contract a description with &ldquo;tax&rdquo; and
+        &ldquo;refund&rdquo; or &ldquo;rebate&rdquo; in it, for example &ldquo;Tax refund October&rdquo;. Issue it from
+        one of your registered characters or corporations. It shows here as pending until the payer accepts it, and the
+        page sees it after the next contract extract, which runs every 6 hours.
       </p>
       {rows.length > 0 ? (
         <table className={retro.retro}>
