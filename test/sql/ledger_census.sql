@@ -107,6 +107,8 @@ begin
   -- H2: one gap (filed under 14's ref_type), one null amount and balance.
   select sum(fails), sum(null_amount), sum(null_balance) into got from census_h2;
   assert got.sum = 1, format('H2 fails: %s', got);
+  select sum(fails_one_cent) into n from census_h2;
+  assert n = 0, 'H2: the 20 ISK gap is not rounding';
   select fails into n from census_h2 where ref_type = 'player_donation';
   assert n = 1, 'H2: the fail is filed under player_donation';
   select hold_percent into got from census_h2_wallet where wallet_label = 'character #1';
