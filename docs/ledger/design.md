@@ -1,5 +1,9 @@
 # Ledger: double-entry accounting over the extracted data
 
+> **Superseded for the approach and the PR order by [plan.md](plan.md)
+> (2026-11-17).** This file stays as the record of the chart of accounts and
+> the posting ideas. Do not build from the PR list below.
+
 Status: 📋 plan only, written 2026-11-07. Nothing is built. The owner asked
 how an actual company would do the accounting that `/market` does by hand
 (a sales report folded from two feeds, with contract payments matched in
