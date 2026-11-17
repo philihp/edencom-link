@@ -18,11 +18,11 @@ const nextConfig = {
   // pre-existing incompatibility between that route and the webpack build
   // path, so Turbopack is the only viable option here regardless.)
   turbopack: {},
-  // The MCP get_skill tool reads this markdown at request time; Next only
+  // The MCP get_skill and get_goon_voice tools read this markdown at request time; Next only
   // traces what the bundler sees imported, so without this the deployed
   // function has no copy of the file to read.
   outputFileTracingIncludes: {
-    '/api/mcp': ['docs/edencom-industry-SKILL.md'],
+    '/api/mcp': ['docs/edencom-industry-SKILL.md', 'docs/goon-voice-SKILL.md'],
     // The link-preview cards read their fonts from disk at request time.
     ...Object.fromEntries(
       [
