@@ -12,13 +12,13 @@ import { resolveLocations, type LocationRef } from '../../../resolveLocations'
 import { TypeIcon } from '../../../typeIcon'
 import industryStyles from '../../industry.module.css'
 import styles from '../planner.module.css'
+import { fetchPlannerSettings } from '../settings/read'
 import type { StockTarget } from '../stock-types/stockTargets'
 import { locationKind, marketLines, type Listing, type OpenJob, type Stack } from './marketRows'
 
-// The two markets the plan sells into. The home market is the sheet's
-// "Home Location" setting; until the settings tab holds it, it is C-J6MT.
-// Jita is a fixed system id (30000142), its region The Forge.
-const HOME_SYSTEM_NAME = 'C-J6MT'
+// The two markets the plan sells into. The home market is the settings tab's
+// "home market" (a system name). Jita is a fixed system id (30000142), its
+// region The Forge.
 const JITA_SYSTEM_ID = 30000142
 // The hourly price capture's market ids (TRACKED_MARKETS, src/gnfMarket.js).
 const JITA_MARKET = 'jita'
@@ -68,6 +68,7 @@ const formatCount = (n: number): string => n.toLocaleString('en-US')
 const MarketPage = async () => {
   const supabase = await createClient()
 
+  const { homeMarket } = await fetchPlannerSettings(supabase)
   const [{ data: targetRows }, { data: registrations }, homeMatches, jita] = await Promise.all([
     supabase
       .from('planner_stock_target')
@@ -75,7 +76,7 @@ const MarketPage = async () => {
       .order('created_at', { ascending: true })
       .returns<TargetRow[]>(),
     supabase.from('registration').select('id, character_id, corporation_id').returns<RegistrationRow[]>(),
-    searchSdeSystems(HOME_SYSTEM_NAME, 5),
+    searchSdeSystems(homeMarket, 5),
     getSdeSystem(JITA_SYSTEM_ID),
   ])
   const targets: StockTarget[] = map(
@@ -88,7 +89,7 @@ const MarketPage = async () => {
   const corporationIds = uniq(
     (registrations ?? []).map((r) => Number(r.corporation_id)).filter((id) => Number.isFinite(id) && id > 0)
   )
-  const homeSystem = homeMatches.find((s) => s.name === HOME_SYSTEM_NAME) ?? null
+  const homeSystem = homeMatches.find((s) => s.name === homeMarket) ?? null
   const home = homeSystem ? await getSdeSystem(homeSystem.systemID) : null
   const regions = { homeRegionId: home?.regionID ?? -1, jitaRegionId: jita?.regionID ?? -1 }
 
@@ -282,7 +283,7 @@ const MarketPage = async () => {
       <div className={industryStyles.panelHead}>
         <span className={industryStyles.panelTitle}>market</span>
         <span className={styles.panelCount}>
-          {home?.name ?? HOME_SYSTEM_NAME} · {home?.regionName ?? '?'} and {jita?.regionName ?? 'The Forge'}
+          {home?.name ?? homeMarket} · {home?.regionName ?? '?'} and {jita?.regionName ?? 'The Forge'}
         </span>
       </div>
       <div className={industryStyles.tableScroll}>
