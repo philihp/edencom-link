@@ -19,6 +19,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm run lint
       - run: pnpm test
+      # Guard C1 of docs/ledger/plan.md: no ledger file writes to a wallet source table.
+      - run: node .github/scripts/check-ledger-sources.mjs
 
   # The macOS FUSE client (fuse/), which is Go and has its own tests. Its pure
   # packages need nothing but a toolchain; the filesystem layer binds to libfuse

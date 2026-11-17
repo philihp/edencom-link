@@ -1,6 +1,7 @@
 # Ledger plan, version 2: prove the cash first, then widen
 
-Status: 📋 plan only, written 2026-11-17. Nothing is built. This plan
+Status: 🔧 stage 0 in progress (tools built 2026-11-17; the lab copy waits
+for the owner's OK). Section 10 has the status of each stage. This plan
 replaces the approach and the PR order of [design.md](design.md) (version 1,
 2026-11-07). Version 1 stays as the record of the chart of accounts and the
 posting ideas. Where the two differ, this file wins.
@@ -391,3 +392,53 @@ design.md are not needed now. The group rule (director proof) is kept.
 - It does not replace `/market`. It adds to it, behind a flag.
 - It does not value assets at market, and it does not cover corporation
   market orders, PI, LP or fuel as inventory (as in design.md).
+
+## 10. Stage status
+
+### Stage 0 — design note (step 1 of the protocol)
+
+**Ships (one PR, no migration, no production write):**
+
+- The lab: `src/ledger/labCopy.ts` (the read-only copy, as CSV files),
+  `src/ledger/lab.ts` (load and census), `docs/ledger/lab/schema.sql`. How to
+  use it: [lab.md](lab.md).
+- The census: `docs/ledger/census_views.sql` (H1 to H11 as temporary views)
+  and `docs/ledger/census.sql` (the report).
+- The chain proof in TypeScript: `src/ledger/chain.ts` (segments and
+  breaks, exact to the cent with `src/ledger/money.ts`). Stage 1's job uses
+  it. Its tests use the same cases as the census test, so the two agree.
+- Guard C8: `src/ledger/labGuard.ts`. Each lab command refuses a database
+  that is not on this computer.
+- Guard C1: `.github/scripts/check-ledger-sources.mjs`, a CI step in
+  `test.yml`. It refuses a ledger file that writes to one of the five
+  source tables.
+
+**Tests:** `test/ledgerChain.test.ts`, `test/ledgerLab.test.ts`,
+`test/checkLedgerSources.test.ts` (`node:test`); `test/sql/ledger_census.sql`
+(each census view on rows with known answers).
+
+**Assumptions:**
+
+- A wallet's chain order is entry id order. H1 measures if that is also
+  time order.
+- A row that came from the jEveAssets import is one first seen more than 31
+  days after its date (ESI keeps 30 days). H8 uses this.
+- H5 is measured from the journal alone: a `market_transaction` row names
+  its transaction in `context_id`. If that transaction is stored for another
+  of our wallets, the two sides share one `transaction_id`, and the key
+  `transaction_id` alone kept only one side.
+- H9 tolerance: a snapshot agrees if a journal row within one hour has that
+  balance before or after it.
+
+**Invariants added:** none in production. The census test proves the
+segment rule (I-2) on known rows.
+
+**Steps 5 to 8 do not apply** to stage 0: nothing is deployed.
+
+| Step | State |
+| :--- | :---- |
+| Tools and tests | ✅ built, PR open |
+| Lab copy | ⏳ waits for the owner's OK (decision 1) |
+| Census run | ⏳ after the copy |
+| `measurements.md` | ⏳ after the census |
+| Gate 0 | ⏳ owner reads the measurements |
