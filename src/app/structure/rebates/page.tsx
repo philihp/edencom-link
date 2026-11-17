@@ -14,15 +14,14 @@ import { formatIskValue } from '../../isk'
 import { Name } from '../../names'
 import { fetchAllRows } from '../../pager'
 import retro from '../../retro.module.css'
-import { timeWindowDays } from '../../timeWindow'
-import { UrlWindowSelect } from '../../windowSelect'
 import structureStyles from '../structures.module.css'
 import { foldRebates, type RebateContract, rebateContracts, type TaxReceipt } from './rebates'
 import styles from './rebates.module.css'
+import { RebateWindowSelect } from './rebateWindowSelect'
+import { rebateWindow } from './window'
 
 export const dynamic = 'force-dynamic'
 
-const DEFAULT_DAYS = 30
 const IN_CHUNK = 300
 
 type Supabase = Awaited<ReturnType<typeof createClient>>
@@ -120,21 +119,19 @@ const fetchPartyNames = async (supabase: Supabase, ids: readonly string[]): Prom
 }
 
 type RebatesParams = {
-  searchParams: Promise<{ days?: string }>
+  searchParams: Promise<{ days?: string; from?: string }>
 }
 
 const RebatesPage = async ({ searchParams }: RebatesParams) => {
-  const { days: daysParam } = await searchParams
-  const days = timeWindowDays(daysParam, DEFAULT_DAYS)
+  const now = new Date()
+  const span = rebateWindow(await searchParams, now)
+  const { days, since, until } = span
   const supabase = await createClient()
 
   const user = await establishedUser(supabase)
   if (!user) {
     redirect('/')
   }
-
-  const now = new Date()
-  const since = new Date(now.getTime() - days * 86_400_000).toISOString()
 
   const [{ data: registrations }, receipts, characterContracts, corpContracts] = await Promise.all([
     supabase.from('registration').select('character_id, corporation_id'),
@@ -146,6 +143,7 @@ const RebatesPage = async ({ searchParams }: RebatesParams) => {
           .eq('ref_type', 'industry_job_tax')
           .gt('amount', 0)
           .gte('date', since)
+          .lt('date', until)
           .order('date', { ascending: false })
           .order('entry_id', { ascending: false })
           .range(from, to) as never,
@@ -177,11 +175,11 @@ const RebatesPage = async ({ searchParams }: RebatesParams) => {
   const candidateIds = uniq(
     map(
       (c) => String(c.contract_id),
-      rebateContracts({ contracts, itemCounts: new Map(), ours, since, now: now.toISOString() })
+      rebateContracts({ contracts, itemCounts: new Map(), ours, since, until, now: now.toISOString() })
     )
   )
   const itemCounts = await fetchItemCounts(supabase, candidateIds)
-  const rows = foldRebates({ receipts, contracts, itemCounts, ours, since, now: now.toISOString() })
+  const rows = foldRebates({ receipts, contracts, itemCounts, ours, since, until, now: now.toISOString() })
 
   const landlordIds = uniq(map((r) => String(r.corporation_id), receipts))
   const names = await fetchPartyNames(supabase, uniq([...map((r) => r.partyId, rows), ...landlordIds]))
@@ -203,7 +201,8 @@ const RebatesPage = async ({ searchParams }: RebatesParams) => {
           <h1 className={structureStyles.title}>tax rebates</h1>
           <div className={structureStyles.subtitle}>
             facility tax paid to {landlords.length > 0 ? landlords.join(', ') : 'our corporations'} · tax refunds paid
-            back by contract
+            back by contract · {since.slice(0, 10)} to {span.lastDay}
+            {span.from == null && ' (up to now)'}
           </div>
         </div>
         <div className={structureStyles.headerRight}>
@@ -213,7 +212,7 @@ const RebatesPage = async ({ searchParams }: RebatesParams) => {
           </span>
           <span className={structureStyles.headerControl}>
             <span className={structureStyles.headerControlLabel}>window</span>
-            <UrlWindowSelect days={days} path="/structure/rebates" />
+            <RebateWindowSelect days={days} from={span.from} />
           </span>
         </div>
       </div>
@@ -274,7 +273,9 @@ const RebatesPage = async ({ searchParams }: RebatesParams) => {
           </tfoot>
         </table>
       ) : (
-        <p>No facility tax received and no tax refunds paid in the last {days === 1 ? 'day' : `${days} days`}.</p>
+        <p>
+          No facility tax received and no tax refunds paid from {since.slice(0, 10)} to {span.lastDay}.
+        </p>
       )}
     </>
   )
