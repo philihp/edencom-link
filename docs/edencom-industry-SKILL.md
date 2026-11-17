@@ -961,6 +961,9 @@ the user's private data: no share, Data Link or GraphQL field shows it.
 
 ### Sending mail
 
+To write a reply in the voice of a Goonswarm goon, call `get_goon_voice`
+first. It holds the slang, the history and the tone rules.
+
 `send_mail` puts an EVE mail in the outbox on the site, to be sent later as
 one of the user's characters. **It does not send the mail.** A person sends
 each mail in the outbox by hand. There is no schedule for that.
@@ -1113,6 +1116,8 @@ mail"). The other five change only rows on this site:
   `list_structures`, `blueprint_for_product`, `appraise_items` and
   `industry_cost_indices` (see "Cost to build an item").
 - This manual: `get_skill`.
+- How to write like a goon (culture, slang, cast, history, the tone rules), for a
+  mail reply in a goon's voice: `get_goon_voice`.
 
 If no fixed tool answers the question, use the GraphQL surface below.
 

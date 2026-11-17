@@ -52,3 +52,19 @@ describe('edencom-industry-SKILL.md', () => {
     assert.ok(text.includes(`up to ${EXPORT_CAP.toLocaleString('en-US')}\nrows in one file`))
   })
 })
+
+describe('goon-voice-SKILL.md', () => {
+  const text = readFileSync(join(process.cwd(), 'docs/goon-voice-SKILL.md'), 'utf-8')
+
+  it('exists and is substantial', () => {
+    assert.ok(text.length > 2_000, `expected more than 2,000 characters, got ${text.length}`)
+  })
+
+  // The wiki it was distilled from stops around 2022; these are the newer
+  // facts the owner gave, and a stale copy would answer with the old capital.
+  it('names the current home and year', () => {
+    assert.ok(text.includes('C-J6MT'))
+    assert.ok(text.includes('Insmother'))
+    assert.ok(text.includes('2026'))
+  })
+})
