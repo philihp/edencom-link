@@ -441,7 +441,7 @@ segment rule (I-2) on known rows.
 | Lab copy | ✅ 2026-11-17, owner's OK; 2,136 pages, slowest 1.03 s, no error |
 | Census run | ✅ 2026-11-17, 7 minutes on the lab |
 | `measurements.md` | ✅ written |
-| Gate 0 | ⏳ owner reads the measurements; one decision (the one-cent rule) |
+| Gate 0 | ✅ passed; one-cent rule decided 2026-11-19 (a 0.01 ISK step rounds to zero). Stage 1 waits for the owner's "go". |
 
 **Owner decisions recorded 2026-11-17:** the lab copy may run at any time;
 Supabase runs a daily backup at about 07:30; the corporation wallet balance

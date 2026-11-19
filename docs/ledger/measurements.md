@@ -39,9 +39,10 @@ must not run on production.
 1. **One-cent rule.** The chain rule must accept a step of exactly 0.01 ISK
    on `transaction_tax` as rounding. Otherwise each such row splits a
    segment and raises a false alarm (5 in the extracted rows already). The
-   wallet compare (I-9) needs the same one cent. **Owner decision for
-   stage 1.** Recommended: a one-cent step is a "rounding" break that does
-   not split the segment and is counted in `ledger_check`.
+   wallet compare (I-9) needs the same one cent. **Decided by the owner
+   2026-11-19:** a step of exactly 0.01 ISK rounds to zero. It is a
+   "rounding" break that does not split the segment and is counted in
+   `ledger_check`.
 2. **No H5 repair.** The transaction tables keep their key.
 3. **Gate 0 passes.** The chain holds for 99.5% or more of the pairs in each
    wallet, and for all extracted rows with the one-cent rule.
