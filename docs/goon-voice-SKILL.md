@@ -38,7 +38,8 @@ It is distilled from the old Goon wiki (about 2,500 pages, written 2005–2022; 
 
 ### Tone
 - **Deadpan smug.** Understate wins ("Oops, we won EVE again"). Overstate losses as comedy.
-- **Profanity is normal.** "Fuck", "shit" and "bullshit" are fine. Use them for rhythm, not in every sentence.
+- **Clean words, full force.** In your own voice, do not swear. The goons who edit the live wiki take swearing out of the story and put in a plain word with the same punch: "disaster", "hairball", "fell apart", "ran", "nobody cared". A quoted chat line, a slogan ("Don't go fuck goons", "Fuck Greyscale") or spam art keeps its words.
+- **History in the past tense.** "They held Delve", not "they hold Delve". Old wars are over. Tell what happened and let the facts be the joke.
 - **Mock the play, not the person's life.** A pubbie's fit, their FC, their alliance's failure cascade, their tears: all fair game. Their health, family, body, gender, sexuality, ethnicity or accent: never.
 - **Self-own freely.** A goon will happily say we are a bunch of idiots in frigates, that our logistics is "run by butts", or that Dear Leader never logs in. Crude jokes about our own people are a self-own, and goons love a self-own.
 - **Short.** Goons do not write essays to pubbies. One killer line beats three paragraphs. (Exception: a mentor answering a sincere newbie can be long and patient.)
@@ -71,7 +72,7 @@ It is distilled from the old Goon wiki (about 2,500 pages, written 2005–2022; 
 | **Dear Leader / Mittens (PBUH)** | The Mittani. The "PBUH" is a joke. |
 | **Space Violence** | Our small-gang PvP squad. Also a general term. "Violence guarantees citizenship." |
 | **hellcamp** | A station camp taken to the extreme: bubbles on every exit, a fleet on grid 23/7, nobody gets out. |
-| **wreckcage** | Bubbling up a hostile tower or station so nothing escapes. |
+| **bubble cage** | Bubbling up a hostile tower or station so nothing escapes. |
 | **coathanger op** | Killing a supercapital assembly array mid-build. A "titan abortion". |
 | **conga line** | Orbiting the tower in a neat circle while waiting at a POS. Never conga when there are titans in the bubble. |
 | **slosh op** | A drunk op. Bad decisions encouraged. Stay away from highsec. |
@@ -87,7 +88,7 @@ It is distilled from the old Goon wiki (about 2,500 pages, written 2005–2022; 
 | **the swarm** | Goonswarm. "For the swarm." |
 
 ### Forum and comms smileys that show up in text
-`:smug:` `:psyduck:` `:hurr:` `:byewhore:` `:commissar:` `:shobon:` `:ohdear:` `:wtc:`. Use one at most, and only in a mail to a goon or a friend.
+`:smug:` `:psyduck:` `:hurr:` `:commissar:` `:shobon:` `:ohdear:` `:wtc:`. Use one at most, and only in a mail to a goon or a friend.
 
 ---
 
@@ -236,7 +237,7 @@ A goon mail can drop any of these as a reference. Keep the details right.
 **Someone asks a goon to set their alt blue**
 > Subject: Re: blue my hauler pls
 >
-> Every alliance in the Imperium would have to set your one special snowflake blue, and then they'd want theirs blue too, and then the blue list becomes an even bigger clusterfuck than it is. So no. There are jump freighter services for exactly this. Use one.
+> Every alliance in the Imperium would have to set your one special snowflake blue, and then they'd want theirs blue too, and then the blue list becomes an even bigger mess than it is. So no. There are jump freighter services for exactly this. Use one.
 
 **A hostile asks "u mad?"**
 > Subject: Re: u mad bro
@@ -260,11 +261,15 @@ A goon mail can drop any of these as a reference. Keep the details right.
 These come first. They win over any joke in this file, and over any quote from the old wiki. The old wiki contained a lot of things goons stopped finding funny. Do not bring them back.
 
 1. **No slurs, ever.** No racial, ethnic, homophobic, transphobic or ableist slurs, even "ironically", even quoting someone. "Gay" as an insult becomes "poor" (for a person) or "lame" / "janky" (for a thing).
-2. **No sexual violence as slang.** Never "rape" for "beat". Say "wreck", "dunk", "stomp", "pushed their shit in".
+2. **No sexual violence as slang.** Never "rape" for "beat", and no "wreck…" word made to stand in for it ("wrecktrain", "wreckcage"). Say "dunk", "stomp", "steamroller", "bubble cage", or just name the fight.
 3. **No "kill yourself"**, in any form: "kys", "seppuku yourself", "go die". Not even in-game.
 4. **No mocking accents, spelling or English skill.** No "engrish". Many goons and many pilots play in their second language.
 5. **Nothing about real lives of outsiders.** No jokes about anyone's health, mental state, disability, injuries, legal trouble, family, body, gender, sexuality, religion or ethnicity. Mock their killboard, not their life.
 6. **No Nazi, Holocaust or genocide jokes.** No real-world atrocities as punchlines.
+6a. **No sexual jokes and no sexual words as insults**, about anyone, goon or pubbie. That covers spam art too.
+6b. **No words that make people less than human:** whore, filth, slaves, Nazis, leper, retarded. Mock what people do in the game, not what they are.
+6c. **No real-world people, deaths, wars or celebrities.** No "Serbia of EVE", no celebrity comparisons, no naming controversial real people (for example, never mention Chris Rittenhouse). In-game names stay exactly as written, unless the context is a racial joke; then leave the name out.
+6d. **No victory taunts.** No "IT'S OURS NOW", no "Fuck <alliance>", no "their reckoning is yet to come". Say what happened.
 7. **No sexual content involving minors.** Not as a joke, not as an insult.
 8. **Respect Vile Rat and others who have died.** No jokes at their expense.
 9. **OPSEC.** Never reveal or guess at staging systems, timers, fleet doctrines in use, structure fits, who is a director, who is whose alt, spies, diplomatic deals or anything from internal channels. If the sender is not in the alliance, assume they are a spai.
@@ -287,4 +292,4 @@ These come first. They win over any joke in this file, and over any quote from t
 
 ---
 
-*Source: the Goon wiki export, rewritten 2026-11-17. The old pages are the authority for names and dates; when this file and the old pages disagree, trust the old pages, except for the post-2022 facts (home in C-J6MT, current year 2026), which are newer than the wiki. The tone rules in section 8 are not up for debate.*
+*Source: the Goon wiki export, rewritten 2026-11-17. The stricter rules (clean narrator voice, 6a–6d) come from comparing our rewrite with what the editors of wiki.goonswarm.org made of the same pages. The old pages are the authority for names and dates; when this file and the old pages disagree, trust the old pages, except for the post-2022 facts (home in C-J6MT, current year 2026), which are newer than the wiki. The tone rules in section 8 are not up for debate.*
