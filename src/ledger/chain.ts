@@ -18,6 +18,12 @@
 // A row with no amount or no balance cannot be chained. It closes the segment
 // before it and belongs to no segment. It is reported as a break of kind
 // `unchainable`.
+//
+// ROUNDING. A step that is off by exactly one cent is rounding, not a missing
+// row: CCP rounds `transaction_tax` and the balance apart (measured in stage
+// 0, docs/ledger/measurements.md H2; the owner decided on 2026-11-19 that it
+// rounds to zero). Such a step stays in the segment and is counted in
+// `roundingSteps`. The segment's closing is still the journal's balance.
 import { reduce, sortBy } from 'ramda'
 
 import { type Isk, toCents } from './money.ts'
@@ -38,6 +44,8 @@ export type Segment = {
   opening: bigint
   closing: bigint
   rows: number
+  // Steps in the segment that were off by exactly one cent.
+  roundingSteps: number
 }
 
 export type Break =
@@ -63,15 +71,21 @@ const startAt = (row: JournalRow, amount: bigint, balance: bigint): Segment => (
   opening: balance - amount,
   closing: balance,
   rows: 1,
+  roundingSteps: 0,
 })
 
-const extend = (segment: Segment, row: JournalRow, balance: bigint): Segment => ({
+const extend = (segment: Segment, row: JournalRow, balance: bigint, rounding: boolean): Segment => ({
   ...segment,
   lastEntryId: row.entryId,
   lastDate: row.date,
   closing: balance,
   rows: segment.rows + 1,
+  roundingSteps: segment.roundingSteps + (rounding ? 1 : 0),
 })
+
+export const ROUNDING_CENTS = 1n
+
+const isRounding = (missing: bigint): boolean => missing === ROUNDING_CENTS || missing === -ROUNDING_CENTS
 
 // The accumulator is push-mutated (CLAUDE.md: a large array is not re-spread
 // per item). The state object itself is new on each step.
@@ -89,12 +103,13 @@ const step = (state: State, row: JournalRow): State => {
   }
   const { open } = state
   if (open === null) return { ...state, open: startAt(row, amount, balance) }
-  if (open.closing + amount === balance) return { ...state, open: extend(open, row, balance) }
+  const missing = balance - amount - open.closing
+  if (missing === 0n || isRounding(missing)) return { ...state, open: extend(open, row, balance, missing !== 0n) }
   state.breaks.push({
     kind: 'mismatch',
     afterEntryId: open.lastEntryId,
     atEntryId: row.entryId,
-    missing: balance - amount - open.closing,
+    missing,
   })
   return { segments: closeOpen(state), breaks: state.breaks, open: startAt(row, amount, balance) }
 }
@@ -102,13 +117,19 @@ const step = (state: State, row: JournalRow): State => {
 const byEntryId = sortBy((row: JournalRow) => row.entryId)
 
 // rows of one wallet, any order → its segments and breaks, in entry id order.
-export const chainOf = (rows: readonly JournalRow[]): Chain => {
-  const last = reduce(step, { segments: [], breaks: [], open: null } as State, byEntryId(rows as JournalRow[]))
+//
+// `from` continues a chain stored earlier: the wallet's last segment, which
+// the new rows extend or break from. Rows at or before its last entry id are
+// already in it and are ignored. The result then starts with `from` (extended,
+// or as it was), so the caller can store it under the same first entry id.
+export const chainOf = (rows: readonly JournalRow[], from: Segment | null = null): Chain => {
+  const after = from === null ? rows : rows.filter((row) => row.entryId > from.lastEntryId)
+  const last = reduce(step, { segments: [], breaks: [], open: from } as State, byEntryId(after as JournalRow[]))
   return { segments: closeOpen(last), breaks: last.breaks }
 }
 
-// The share of adjacent chainable pairs where the rule holds: the figure
-// gate 0 tests (stop if below 99% for a wallet pulled without a pause).
+// The share of adjacent chainable pairs where the rule holds (a rounding step
+// holds): the figure gate 0 tested.
 // A wallet with no pairs has nothing to disprove, so it reads as 1.
 export const chainHoldShare = ({ segments, breaks }: Chain): number => {
   const holds = reduce((sum, segment: Segment) => sum + segment.rows - 1, 0, segments)

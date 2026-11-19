@@ -407,6 +407,16 @@ export const corpWalletJournal = (access_token, corporationID, division, page = 
     label: `corpWalletJournal ${corporationID} div=${division} page=${page}`,
   })
 
+// Every wallet division's balance: [{ division, balance }]. Same scope and
+// in-game roles as the journal. The corp-wallet-journal job stores it in
+// corp_wallet, the independent control the ledger compares the journal's
+// running balance with (docs/ledger/plan.md, I-9).
+export const corpWallets = (access_token, corporationID) =>
+  esiJson(`/corporations/${corporationID}/wallets/`, {
+    access_token,
+    label: `corpWallets ${corporationID}`,
+  })
+
 // A corp wallet division's market transactions (buys and sells). Like the
 // character endpoint it is not page-numbered — ESI returns the most recent batch
 // in one response (older history is reachable via from_id, which we don't need

@@ -1,7 +1,8 @@
 import { filter, map, pipe, reduce } from 'ramda'
 
-import { corpWalletJournal, isRoleDenial } from '../esi.js'
+import { corpWalletJournal, corpWallets, isRoleDenial } from '../esi.js'
 import { sudoSupabase } from '../supabase.js'
+import { toWalletRows } from './corpWalletFields.js'
 import { cli, forEachCorporation, forEachSequential } from './lib.js'
 import { rollupAfterJournal } from './structureMeasures.js'
 
@@ -10,6 +11,22 @@ const SCOPE = 'esi-wallet.read_corporation_wallets.v1'
 
 const JOURNAL_LOOKBACK_MS = 30 * 24 * 60 * 60 * 1000
 const WALLET_DIVISIONS = [1, 2, 3, 4, 5, 6, 7]
+
+// GET /corporations/{id}/wallets/ → corp_wallet, one row per division: the
+// balance after the journal pull, which the ledger compares with the
+// journal's running balance (docs/ledger/plan.md, I-9). Best-effort (guard
+// C6): a failure is logged and never fails the journal pull.
+const recordWalletBalances = async (access_token, corporation_id, ctx) => {
+  try {
+    const rows = toWalletRows(corporation_id, await corpWallets(access_token, corporation_id))
+    if (rows.length === 0) return
+    const { error } = await sudoSupabase.from('corp_wallet').insert(rows)
+    if (error) throw error
+    console.log(`[${TAG}] ${ctx}: corp ${corporation_id} ${rows.length} wallet balances`)
+  } catch (e) {
+    console.error(`[${TAG}] ${ctx}: corp ${corporation_id} wallet balances FAILED message=${e?.message}`)
+  }
+}
 
 const toRow = (corporation_id, division) => (e) => ({
   corporation_id,
@@ -99,6 +116,10 @@ export const runCorpWalletJournal = ({ registrationIds } = {}) =>
     // the charges on the jobs the recent ones name. Best-effort, after the
     // upserts committed.
     if (taxRows.length > 0) await rollupAfterJournal(TAG, corporation_id, taxRows)
+
+    // Only when at least one division answered: a character without the
+    // in-game role asks ESI nothing more.
+    if (failures < WALLET_DIVISIONS.length) await recordWalletBalances(access_token, corporation_id, ctx)
 
     if (failures === WALLET_DIVISIONS.length) {
       if (lastDenial !== null) throw lastDenial

@@ -76,9 +76,32 @@ test('a row with no amount or balance belongs to no segment and is not a mismatc
   assert.equal(chainHoldShare(chain), 1)
 })
 
-test('a cent off is a break', () => {
-  const chain = chainOf([row(1, 100, 100), row(2, 1, '101.01')])
-  assert.deepEqual(chain.breaks, [{ kind: 'mismatch', afterEntryId: 1, atEntryId: 2, missing: 1n }])
+test('a step one cent off is rounding: it stays in the segment and is counted', () => {
+  const chain = chainOf([row(1, 100, 100), row(2, 1, '101.01'), row(3, '-0.01', '100.99'), row(4, 1, '101.98')])
+  assert.deepEqual(chain.breaks, [])
+  assert.equal(chain.segments.length, 1)
+  assert.equal(chain.segments[0].roundingSteps, 3)
+  assert.equal(chain.segments[0].closing, 10198n)
+  assert.equal(chainHoldShare(chain), 1)
+})
+
+test('two cents off is a break', () => {
+  const chain = chainOf([row(1, 100, 100), row(2, 1, '101.02')])
+  assert.deepEqual(chain.breaks, [{ kind: 'mismatch', afterEntryId: 1, atEntryId: 2, missing: 2n }])
+})
+
+test('a chain continues from the stored last segment', () => {
+  const whole = chainOf([row(1, 100, 100), row(2, 50, 150), row(4, 10, 200), row(5, 5, 205)])
+  const stored = chainOf([row(1, 100, 100), row(2, 50, 150)]).segments[0]
+  // The new pull repeats row 2; it is already in the stored segment.
+  const continued = chainOf([row(2, 50, 150), row(4, 10, 200), row(5, 5, 205)], stored)
+  assert.deepEqual(continued, whole)
+  assert.equal(continued.segments[0].firstEntryId, 1)
+})
+
+test('with nothing new, a continued chain is the stored segment', () => {
+  const stored = chainOf([row(1, 100, 100)]).segments[0]
+  assert.deepEqual(chainOf([row(1, 100, 100)], stored), { segments: [stored], breaks: [] })
 })
 
 test('an empty wallet has no segments and nothing to disprove', () => {
