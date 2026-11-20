@@ -24,6 +24,17 @@
 // 0, docs/ledger/measurements.md H2; the owner decided on 2026-11-19 that it
 // rounds to zero). Such a step stays in the segment and is counted in
 // `roundingSteps`. The segment's closing is still the journal's balance.
+//
+// HIDDEN CREDITS. When a corporation installs a job in its own structure, it
+// pays the facility tax to itself. CCP writes the outgoing
+// `industry_job_tax` row, but not the incoming one, although the balance
+// includes it (measured on production 2026-11-20: 10,372 of 10,372 breaks in
+// one corporation wallet closed this way, none left over). The caller marks
+// such a row with `hiddenCredit`, the ISK that comes back without a row. The
+// credits wait in a queue, oldest first. A step whose missing ISK equals the
+// sum of the oldest waiting credits takes them and stays in the segment; it
+// is counted in `hiddenCreditSteps`. Credits still waiting at the end of a
+// segment are stored on it (`pending`), so the next run continues exactly.
 import { reduce, sortBy } from 'ramda'
 
 import { type Isk, toCents } from './money.ts'
@@ -33,6 +44,8 @@ export type JournalRow = {
   date: string
   amount: Isk
   balance: Isk
+  // ISK that CCP adds to the balance after this row without a row of its own.
+  hiddenCredit?: Isk
 }
 
 export type Segment = {
@@ -46,6 +59,10 @@ export type Segment = {
   rows: number
   // Steps in the segment that were off by exactly one cent.
   roundingSteps: number
+  // Steps in the segment that took hidden credits.
+  hiddenCreditSteps: number
+  // Hidden credits not yet seen in the balance, oldest first, in cents.
+  pending: bigint[]
 }
 
 export type Break =
@@ -63,6 +80,11 @@ export type Chain = { segments: Segment[]; breaks: Break[] }
 
 type State = Chain & { open: Segment | null }
 
+const creditOf = (row: JournalRow): bigint[] => {
+  const credit = row.hiddenCredit === undefined ? null : toCents(row.hiddenCredit)
+  return credit === null || credit === 0n ? [] : [credit]
+}
+
 const startAt = (row: JournalRow, amount: bigint, balance: bigint): Segment => ({
   firstEntryId: row.entryId,
   lastEntryId: row.entryId,
@@ -72,16 +94,29 @@ const startAt = (row: JournalRow, amount: bigint, balance: bigint): Segment => (
   closing: balance,
   rows: 1,
   roundingSteps: 0,
+  hiddenCreditSteps: 0,
+  pending: creditOf(row),
 })
 
-const extend = (segment: Segment, row: JournalRow, balance: bigint, rounding: boolean): Segment => ({
+type Took = { rounding: boolean; credits: number }
+
+const extend = (segment: Segment, row: JournalRow, balance: bigint, took: Took): Segment => ({
   ...segment,
   lastEntryId: row.entryId,
   lastDate: row.date,
   closing: balance,
   rows: segment.rows + 1,
-  roundingSteps: segment.roundingSteps + (rounding ? 1 : 0),
+  roundingSteps: segment.roundingSteps + (took.rounding ? 1 : 0),
+  hiddenCreditSteps: segment.hiddenCreditSteps + (took.credits > 0 ? 1 : 0),
+  pending: [...segment.pending.slice(took.credits), ...creditOf(row)],
 })
+
+// How many of the oldest waiting credits sum to `missing` exactly, or null.
+export const creditsFor = (pending: readonly bigint[], missing: bigint): number | null => {
+  const take = (k: number, sum: bigint): number | null =>
+    sum === missing ? k : k >= pending.length || sum > missing ? null : take(k + 1, sum + pending[k])
+  return missing > 0n ? take(0, 0n) : null
+}
 
 export const ROUNDING_CENTS = 1n
 
@@ -104,7 +139,10 @@ const step = (state: State, row: JournalRow): State => {
   const { open } = state
   if (open === null) return { ...state, open: startAt(row, amount, balance) }
   const missing = balance - amount - open.closing
-  if (missing === 0n || isRounding(missing)) return { ...state, open: extend(open, row, balance, missing !== 0n) }
+  if (missing === 0n || isRounding(missing))
+    return { ...state, open: extend(open, row, balance, { rounding: missing !== 0n, credits: 0 }) }
+  const credits = creditsFor(open.pending, missing)
+  if (credits !== null) return { ...state, open: extend(open, row, balance, { rounding: false, credits }) }
   state.breaks.push({
     kind: 'mismatch',
     afterEntryId: open.lastEntryId,

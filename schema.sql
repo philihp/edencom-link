@@ -10778,6 +10778,8 @@ create table public.ledger_wallet_segment (
   closing numeric(20, 2) not null,
   row_count integer not null check (row_count > 0),
   rounding_steps integer not null default 0 check (rounding_steps >= 0),
+  hidden_credit_steps integer not null default 0 check (hidden_credit_steps >= 0),
+  pending_credits numeric(20, 2)[] not null default '{}',
   computed_at timestamptz not null default now(),
   constraint ledger_wallet_segment_one_owner check (
     (registration_id is not null and corporation_id is null and division is null)
@@ -10818,6 +10820,7 @@ create table public.ledger_check (
   segments integer not null check (segments >= 0),
   new_breaks integer not null check (new_breaks >= 0),
   rounding_steps integer not null default 0 check (rounding_steps >= 0),
+  hidden_credit_steps integer not null default 0 check (hidden_credit_steps >= 0),
   rows_read integer not null check (rows_read >= 0),
   rebuilt boolean not null default false,
   newest_entry_id bigint,

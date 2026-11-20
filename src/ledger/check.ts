@@ -64,7 +64,7 @@ export const nextChain = (stored: readonly Segment[], rows: readonly JournalRow[
 // the stored segments (by first entry id) the new chain no longer has.
 export const segmentWrites = (stored: readonly Segment[], chain: Chain): { upsert: Segment[]; remove: number[] } => {
   const key = (s: Segment) =>
-    `${s.firstEntryId}|${s.lastEntryId}|${s.opening}|${s.closing}|${s.rows}|${s.roundingSteps}`
+    `${s.firstEntryId}|${s.lastEntryId}|${s.opening}|${s.closing}|${s.rows}|${s.roundingSteps}|${s.hiddenCreditSteps}|${s.pending.join(',')}`
   const storedKeys = new Set(map(key, stored as Segment[]))
   return {
     upsert: filter((s: Segment) => !storedKeys.has(key(s)), chain.segments),
@@ -118,5 +118,38 @@ export const judgeWallet = (run: WalletRun): Verdict => {
 // planned before they are made; a wallet that would cross the budget is not
 // written, and the run stops there.
 export const fitsBudget = (written: number, planned: number, budget: number): boolean => written + planned <= budget
+
+// One journal row as the chain reads it. A corporation that pays facility
+// tax to itself (an `industry_job_tax` row whose two parties are the same)
+// gets the tax back without a row: that is the row's hidden credit
+// (src/ledger/chain.ts).
+export type JournalRecord = {
+  entry_id: number | string
+  date: string
+  amount: Isk
+  balance: Isk
+  ref_type?: string | null
+  first_party_id?: number | string | null
+  second_party_id?: number | string | null
+}
+
+const isSelfPaidTax = (r: JournalRecord): boolean =>
+  r.ref_type === 'industry_job_tax' &&
+  r.first_party_id !== null &&
+  r.first_party_id !== undefined &&
+  String(r.first_party_id) === String(r.second_party_id)
+
+export const toJournalRow = (r: JournalRecord): JournalRow => {
+  const amount = toCents(r.amount)
+  return {
+    entryId: Number(r.entry_id),
+    date: r.date,
+    amount: r.amount,
+    balance: r.balance,
+    ...(isSelfPaidTax(r) && amount !== null && amount < 0n ? { hiddenCredit: formatCents(-amount) } : {}),
+  }
+}
+
+export const hiddenCreditStepsOf = reduce((sum: number, s: Segment) => sum + s.hiddenCreditSteps, 0)
 
 export const roundingStepsOf = reduce((sum: number, s: Segment) => sum + s.roundingSteps, 0)

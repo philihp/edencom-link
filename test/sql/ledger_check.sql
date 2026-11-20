@@ -52,6 +52,7 @@ create table public.corp_wallet_journal (corporation_id bigint, division smallin
 insert into public.corp_wallet_journal values (98000001, 1, 1);
 
 \ir ../../supabase/migrations/20261119091512_ledger_check.sql
+\ir ../../supabase/migrations/20261120104657_ledger_hidden_credits.sql
 
 -- Account A: character a1 in corporation 98000001. Account B: b1 in 98000002.
 insert into public.registration values

@@ -108,3 +108,43 @@ test('an empty wallet has no segments and nothing to disprove', () => {
   assert.deepEqual(chainOf([]), { segments: [], breaks: [] })
   assert.equal(chainHoldShare(chainOf([])), 1)
 })
+
+// A corporation that pays facility tax to itself: the tax row goes out, the
+// credit comes back in the balance with no row (measured 2026-11-20).
+const tax = (entryId: number, amount: number, balance: number): JournalRow => ({
+  ...row(entryId, amount, balance),
+  hiddenCredit: -amount,
+})
+
+test('a self-paid tax comes back as a hidden credit and the chain holds', () => {
+  // 1000 → job fee −100 → 900 → tax −10 → 890; the next row (−50) lands at
+  // 850, so the 10 came back without a row.
+  const chain = chainOf([row(1, 1000, 1000), row(2, -100, 900), tax(3, -10, 890), row(4, -50, 850)])
+  assert.deepEqual(chain.breaks, [])
+  assert.equal(chain.segments[0].hiddenCreditSteps, 1)
+  assert.deepEqual(chain.segments[0].pending, [])
+})
+
+test('several credits are taken oldest first, as a prefix', () => {
+  // Two taxes of 10 and 20 wait; the next step is 10 off, then 20 off.
+  const chain = chainOf([row(1, 1000, 1000), tax(2, -10, 990), tax(3, -20, 970), row(4, -5, 975), row(5, -5, 990)])
+  assert.deepEqual(chain.breaks, [])
+  assert.equal(chain.segments[0].hiddenCreditSteps, 2)
+  // Both waiting at once is one step.
+  const both = chainOf([row(1, 1000, 1000), tax(2, -10, 990), tax(3, -20, 970), row(4, -5, 995)])
+  assert.deepEqual(both.breaks, [])
+  assert.equal(both.segments[0].hiddenCreditSteps, 1)
+})
+
+test('a step that matches no prefix of the waiting credits is a break', () => {
+  // Only the 20 (the second credit) fits; the oldest must come first.
+  const chain = chainOf([row(1, 1000, 1000), tax(2, -10, 990), tax(3, -20, 970), row(4, -5, 985)])
+  assert.deepEqual(chain.breaks, [{ kind: 'mismatch', afterEntryId: 3, atEntryId: 4, missing: 2000n }])
+})
+
+test('a credit still waiting at the end carries to the next run', () => {
+  const rows = [row(1, 1000, 1000), tax(2, -10, 990), row(3, -5, 995)]
+  const stored = chainOf(rows.slice(0, 2)).segments[0]
+  assert.deepEqual(stored.pending, [1000n])
+  assert.deepEqual(chainOf(rows.slice(2), stored), chainOf(rows))
+})

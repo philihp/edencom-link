@@ -13,6 +13,7 @@ import {
   needsRebuild,
   nextChain,
   segmentWrites,
+  toJournalRow,
 } from '../src/ledger/check.ts'
 
 const row = (entryId: number, amount: number | string, balance: number | string): JournalRow => ({
@@ -116,4 +117,21 @@ test('a rebuild that only closes a gap is a notice, not a failure', () => {
 test('the row budget stops before a wallet that would cross it', () => {
   assert.equal(fitsBudget(0, 10, 10), true)
   assert.equal(fitsBudget(5, 6, 10), false)
+})
+
+test('a self-paid industry job tax carries its hidden credit; others do not', () => {
+  const base = { entry_id: 7, date: '2026-01-01T00:00:00Z', amount: '-564681.00', balance: '100.00' }
+  assert.equal(
+    toJournalRow({ ...base, ref_type: 'industry_job_tax', first_party_id: 9, second_party_id: '9' }).hiddenCredit,
+    '564681.00'
+  )
+  assert.equal(
+    toJournalRow({ ...base, ref_type: 'industry_job_tax', first_party_id: 9, second_party_id: 8 }).hiddenCredit,
+    undefined
+  )
+  assert.equal(
+    toJournalRow({ ...base, ref_type: 'manufacturing', first_party_id: 9, second_party_id: 9 }).hiddenCredit,
+    undefined
+  )
+  assert.equal(toJournalRow({ ...base, ref_type: 'industry_job_tax' }).hiddenCredit, undefined)
 })

@@ -20,14 +20,17 @@ import { chain as flatMap, last, map, range, uniqBy } from 'ramda'
 
 import { type JournalRow, type Segment } from '../ledger/chain.ts'
 import {
+  type JournalRecord,
   type SnapshotCompare,
   compareSnapshot,
   fitsBudget,
+  hiddenCreditStepsOf,
   judgeWallet,
   needsRebuild,
   nextChain,
   roundingStepsOf,
   segmentWrites,
+  toJournalRow,
 } from '../ledger/check.ts'
 import { formatCents, toCents } from '../ledger/money.ts'
 import { groupRegistrationIdsByCorporation, selectRegistrationIdsWithScopes, sudoSupabase } from '../supabase.js'
@@ -103,6 +106,8 @@ const toSegment = (r: any): Segment => ({
   closing: toCents(r.closing) as bigint,
   rows: Number(r.row_count),
   roundingSteps: Number(r.rounding_steps),
+  hiddenCreditSteps: Number(r.hidden_credit_steps ?? 0),
+  pending: map((c: string | number) => toCents(c) as bigint, r.pending_credits ?? []),
 })
 
 const fromSegment = (w: Wallet) => (s: Segment) => ({
@@ -115,6 +120,8 @@ const fromSegment = (w: Wallet) => (s: Segment) => ({
   closing: formatCents(s.closing),
   row_count: s.rows,
   rounding_steps: s.roundingSteps,
+  hidden_credit_steps: s.hiddenCreditSteps,
+  pending_credits: map(formatCents, s.pending),
   computed_at: new Date().toISOString(),
 })
 
@@ -140,15 +147,15 @@ const journalCountUpTo = async (w: Wallet, entryId: number): Promise<number> => 
 
 // Tail-recursive keyset paging of the journal after `afterEntryId`.
 const readJournal = async (w: Wallet, afterEntryId: number | null, acc: JournalRow[] = []): Promise<JournalRow[]> => {
-  const base = whereWallet(db.from(journalOf(w)).select('entry_id, date, amount, balance'), w)
+  const base = whereWallet(
+    db.from(journalOf(w)).select('entry_id, date, amount, balance, ref_type, first_party_id, second_party_id'),
+    w
+  )
   const { data, error } = await (afterEntryId === null ? base : base.gt('entry_id', afterEntryId))
     .order('entry_id')
     .limit(PAGE)
   if (error) throw new Error(`journal page: ${error.message}`)
-  const rows = map(
-    (r: any): JournalRow => ({ entryId: Number(r.entry_id), date: r.date, amount: r.amount, balance: r.balance }),
-    (data ?? []) as any[]
-  )
+  const rows = map(toJournalRow, (data ?? []) as JournalRecord[])
   rows.forEach((row) => acc.push(row))
   if (rows.length < PAGE) return acc
   await sleep(PAUSE_MS)
@@ -257,6 +264,7 @@ export const runLedgerCheck = async ({ dryRun = false, budget = DEFAULT_BUDGET }
       segments: chain.segments.length,
       new_breaks: verdict.newBreaks,
       rounding_steps: roundingStepsOf(chain.segments),
+      hidden_credit_steps: hiddenCreditStepsOf(chain.segments),
       rows_read: rows.length,
       rebuilt: rebuild,
       newest_entry_id: newest?.lastEntryId ?? null,
@@ -282,7 +290,7 @@ export const runLedgerCheck = async ({ dryRun = false, budget = DEFAULT_BUDGET }
     // A label, not the id: the log is shared.
     console.log(
       `[${TAG}] ${w.kind} #${summary.checked}: read ${rows.length}, segments ${chain.segments.length}` +
-        ` (+${upsert.length} −${remove.length}), new breaks ${verdict.newBreaks}, rounding ${check.rounding_steps},` +
+        ` (+${upsert.length} −${remove.length}), new breaks ${verdict.newBreaks}, rounding ${check.rounding_steps}, hidden credits ${check.hidden_credit_steps},` +
         ` snapshot ${snapshot.compare}, ${verdict.ok ? 'ok' : `FAIL: ${verdict.reasons.join('; ')}`}`
     )
   })
