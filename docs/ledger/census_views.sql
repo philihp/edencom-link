@@ -146,7 +146,10 @@ select
   count(*) filter (where balance is null) as null_balance,
   count(*) filter (where chainable and prev_chainable) as chainable_pairs,
   count(*) filter (where holds) as holds,
-  count(*) filter (where mismatch) as fails
+  count(*) filter (where mismatch) as fails,
+  -- A gap of exactly one cent is rounding, not a missing row (measured on
+  -- transaction_tax: docs/ledger/measurements.md, H2).
+  count(*) filter (where mismatch and abs(prev_balance + amount - balance) = 0.01) as fails_one_cent
 from census_pair
 group by ref_type
 order by count(*) filter (where mismatch) desc, ref_type;
@@ -159,6 +162,7 @@ select
   count(*) filter (where p.chainable and p.prev_chainable) as chainable_pairs,
   count(*) filter (where p.holds) as holds,
   count(*) filter (where p.mismatch) as fails,
+  count(*) filter (where p.mismatch and abs(p.prev_balance + p.amount - p.balance) = 0.01) as fails_one_cent,
   round(
     100.0 * count(*) filter (where p.holds)
       / nullif(count(*) filter (where p.chainable and p.prev_chainable), 0),
@@ -211,6 +215,8 @@ from census_journal j;
 --   other_entry: no same entry id, but a row of the counterparty's wallets
 --     has the opposite amount at the same second.
 --   not_pulled: the counterparty has no journal here at all.
+--   before_counterparty_journal: the row is older than the counterparty's
+--     first journal row.
 --   missing: none of these.
 create or replace temp view census_h4_row as
 select
@@ -235,6 +241,8 @@ select
         and o.amount = -c.amount
     ) then 'other_entry'
     when not exists (select 1 from census_journal o where o.owner_id = c.counterparty_id) then 'not_pulled'
+    when c.date < (select min(o.date) from census_journal o where o.owner_id = c.counterparty_id)
+      then 'before_counterparty_journal'
     else 'missing'
   end as pairing
 from census_counterparty c
@@ -381,6 +389,7 @@ select
   case
     when journal_balance is null then 'no_journal_before'
     when journal_balance = snapshot then 'equal'
+    when abs(journal_balance - snapshot) = 0.01 then 'one_cent'
     when offset_seconds is not null then 'equal_within_1h'
     else 'differs'
   end as compare,

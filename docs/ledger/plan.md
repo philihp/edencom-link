@@ -1,7 +1,7 @@
 # Ledger plan, version 2: prove the cash first, then widen
 
-Status: 🔧 stage 0 in progress (tools built 2026-11-17; the lab copy waits
-for the owner's OK). Section 10 has the status of each stage. This plan
+Status: 🔧 stage 0 measured 2026-11-17 ([measurements.md](measurements.md));
+gate 0 waits for the owner. Section 10 has the status of each stage. This plan
 replaces the approach and the PR order of [design.md](design.md) (version 1,
 2026-11-07). Version 1 stays as the record of the chart of accounts and the
 posting ideas. Where the two differ, this file wins.
@@ -438,7 +438,11 @@ segment rule (I-2) on known rows.
 | Step | State |
 | :--- | :---- |
 | Tools and tests | ✅ built, PR open |
-| Lab copy | ⏳ waits for the owner's OK (decision 1) |
-| Census run | ⏳ after the copy |
-| `measurements.md` | ⏳ after the census |
-| Gate 0 | ⏳ owner reads the measurements |
+| Lab copy | ✅ 2026-11-17, owner's OK; 2,136 pages, slowest 1.03 s, no error |
+| Census run | ✅ 2026-11-17, 7 minutes on the lab |
+| `measurements.md` | ✅ written |
+| Gate 0 | ✅ passed; one-cent rule decided 2026-11-19 (a 0.01 ISK step rounds to zero). Stage 1 waits for the owner's "go". |
+
+**Owner decisions recorded 2026-11-17:** the lab copy may run at any time;
+Supabase runs a daily backup at about 07:30; the corporation wallet balance
+pull is approved for stage 1.
