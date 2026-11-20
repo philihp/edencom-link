@@ -34,15 +34,25 @@ on 2026-11-19. This note tells what ships, what is assumed, and the budget.
    was already checked, and the job rebuilds the whole chain.
 2. **One cent is rounding.** A step off by exactly 0.01 ISK stays in the
    segment and is counted in `rounding_steps` (owner decision 2026-11-19).
-3. **Snapshot compare (I-9).** The newest balance snapshot
+3. **Hidden credits.** When a corporation installs a job in its own
+   structure, it pays the facility tax to itself. CCP writes the outgoing
+   `industry_job_tax` row (both parties are the corporation), but not the
+   incoming one, although the balance includes it. The chain keeps these
+   credits in a queue, oldest first. A step whose missing ISK equals the sum
+   of the oldest waiting credits takes them and stays in the segment; it is
+   counted in `hidden_credit_steps`. Credits still due at the end of a run are
+   stored in `pending_credits`, so the next run continues exactly. Measured on
+   production on 2026-11-20: in one corporation wallet, 10,372 of 10,372
+   breaks closed this way, with no credit left over.
+4. **Snapshot compare (I-9).** The newest balance snapshot
    (`character_wallet`, or the new `corp_wallet`) against the journal balance
    at that moment: `equal`, `one_cent`, `differs` or `none`.
-4. **Pull age.** The newest heartbeat of `character-wallet-journal` or
+5. **Pull age.** The newest heartbeat of `character-wallet-journal` or
    `corp-wallet-journal` with `ok` and no skip. Older than 7 days fails.
-5. **Verdict.** A new break, a snapshot that `differs`, or a stale pull fails
+6. **Verdict.** A new break, a snapshot that `differs`, or a stale pull fails
    the wallet. A rebuild alone is a notice. The first run of a wallet is a
    baseline: its old gaps are recorded, not raised.
-6. **Writes.** Only new or changed segments are upserted; segments that a
+7. **Writes.** Only new or changed segments are upserted; segments that a
    rebuild merged away are deleted; one `ledger_check` row per wallet. A dry
    run writes nothing and prints the same summary.
 
