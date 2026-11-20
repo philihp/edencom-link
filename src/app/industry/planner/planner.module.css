@@ -113,3 +113,52 @@
   width: 100%;
   text-align: left;
 }
+
+/* ── Settings ────────────────────────────────────────────────────────── */
+
+/* The settings form: one row per setting, label then field then a faint line
+   saying what it does. */
+.settingsForm {
+  padding: 8px 14px 12px;
+}
+
+.settingsRow {
+  display: grid;
+  grid-template-columns: minmax(12em, 16em) minmax(10em, 14em) 1fr;
+  align-items: center;
+  gap: 4px 12px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 12.5px;
+}
+
+.settingsName {
+  color: var(--ink);
+}
+
+.settingsWhy {
+  font-size: 11.5px;
+  color: var(--ink-faint);
+}
+
+@media (max-width: 640px) {
+  .settingsRow {
+    grid-template-columns: 1fr auto;
+  }
+
+  .settingsWhy {
+    grid-column: 1 / -1;
+  }
+}
+
+.settingsActions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-top: 10px;
+  font-size: 12px;
+}
+
+.settingsError {
+  color: var(--danger);
+}

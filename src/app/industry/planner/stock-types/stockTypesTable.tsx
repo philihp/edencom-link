@@ -5,15 +5,14 @@
 // saves on its own when the cell is left. The rows are server state — every
 // write revalidates the page, and the parent remounts this table when the
 // server's list changes (the `key` in page.tsx).
-import { useEffect, useRef, useState, useTransition } from 'react'
+import { useState, useTransition } from 'react'
 
 import { TypeIcon } from '../../../typeIcon'
 import industryStyles from '../../industry.module.css'
 import styles from '../planner.module.css'
-import { addTarget, removeTarget, searchTypes, setQuantity } from './actions'
+import { AddType } from '../addType'
+import { addTarget, removeTarget, setQuantity } from './actions'
 import { QUANTITY_COLUMNS, type QuantityColumn, type StockTarget } from './stockTargets'
-
-const DEBOUNCE_MS = 300
 
 export type StockRow = StockTarget & { name: string; categoryID: number | null; price: number | null }
 
@@ -53,65 +52,6 @@ const QuantityCell = ({ row, column }: { row: StockRow; column: QuantityColumn }
         }}
       />
     </td>
-  )
-}
-
-const AddType = ({ listed }: { listed: ReadonlySet<number> }) => {
-  const [query, setQuery] = useState('')
-  const [results, setResults] = useState<[number, string][]>([])
-  const [, startTransition] = useTransition()
-  const latest = useRef('')
-
-  useEffect(() => {
-    const term = query.trim()
-    latest.current = term
-    if (term === '') {
-      setResults([])
-      return
-    }
-    const handle = window.setTimeout(() => {
-      searchTypes(term).then((found) => {
-        if (latest.current === term) setResults(found)
-      })
-    }, DEBOUNCE_MS)
-    return () => window.clearTimeout(handle)
-  }, [query])
-
-  const add = (typeId: number) => {
-    setQuery('')
-    setResults([])
-    startTransition(() => addTarget(typeId))
-  }
-
-  return (
-    <div className={styles.addBox}>
-      <input
-        type="search"
-        value={query}
-        placeholder="add an item type…"
-        aria-label="Add an item type"
-        onChange={(e) => setQuery(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' && results.length > 0) {
-            e.preventDefault()
-            add(results[0][0])
-          }
-        }}
-      />
-      {results.length > 0 && (
-        <ul className={styles.suggestions} role="listbox">
-          {results.map(([typeId, name]) => (
-            <li key={typeId}>
-              <button type="button" className="quiet" disabled={listed.has(typeId)} onClick={() => add(typeId)}>
-                <TypeIcon id={typeId} size={16} />
-                {name}
-                {listed.has(typeId) && <span className={industryStyles.faint}> · listed</span>}
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
   )
 }
 
@@ -166,7 +106,7 @@ export const StockTypesTable = ({ rows }: { rows: StockRow[] }) => {
       ) : (
         <p className={styles.empty}>No stock types yet. Add one below.</p>
       )}
-      <AddType listed={listed} />
+      <AddType listed={listed} onAdd={addTarget} />
     </>
   )
 }
