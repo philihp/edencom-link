@@ -17,13 +17,16 @@ on 2026-11-19. This note tells what ships, what is assumed, and the budget.
 | The lab run of the rules | `src/ledger/labCheck.ts`, `pnpm run ledger-lab-check` |
 | The page `/ledger/health`, Chancellor only, behind the `ledger` flag | `src/app/ledger/health/page.tsx`, `src/ledger/health.ts`, `src/ledger/flag.ts` |
 
-## What does NOT ship in this PR
+## The daily run (added after the production dry run)
 
-- No workflow, no cron route, no `vercel.json` entry. So when this PR
-  merges, nothing writes to the ledger tables. The only new live write is the
-  corp balance pull into `corp_wallet`.
-- A second PR adds the workflow and the cron, at a quiet minute, after the
-  dry run on production (protocol step 6).
+- `src/workflows/ledgerCheck.ts`: one single-step workflow that wraps the job
+  in the heartbeat pair.
+- `src/app/api/cron/ledger-check/route.ts` and a `vercel.json` cron at 09:43
+  UTC daily, a minute no other cron uses. Never on demand (`kickable:
+  'never'` in `src/app/jobs/registry.ts`): the row budget is sized for one run
+  a day.
+- The first live run was made by hand on 2026-11-21 (see "Production
+  result" below).
 
 ## The rules of a check (per wallet)
 
@@ -44,9 +47,13 @@ on 2026-11-19. This note tells what ships, what is assumed, and the budget.
    stored in `pending_credits`, so the next run continues exactly. Measured on
    production on 2026-11-20: in one corporation wallet, 10,372 of 10,372
    breaks closed this way, with no credit left over.
-4. **Snapshot compare (I-9).** The newest balance snapshot
-   (`character_wallet`, or the new `corp_wallet`) against the journal balance
-   at that moment: `equal`, `one_cent`, `differs` or `none`.
+4. **Snapshot compare (I-9).** A balance snapshot (`character_wallet`, or
+   the new `corp_wallet`) against the journal balance at that moment:
+   `equal`, `one_cent`, `differs` or `none`. ESI caches the journal longer
+   than the balance, so the newest snapshot can hold rows the journal does not
+   have yet. The check uses the newest snapshot only when it is older than the
+   journal's newest row, or already agrees with it; else the newest snapshot
+   taken before that row (`pickSnapshot`).
 5. **Pull age.** The newest heartbeat of `character-wallet-journal` or
    `corp-wallet-journal` with `ok` and no skip. Older than 7 days fails.
 6. **Verdict.** A new break, a snapshot that `differs`, or a stale pull fails
@@ -82,6 +89,19 @@ on 2026-11-19. This note tells what ships, what is assumed, and the budget.
 So the production budget for the first run is the lab figure plus 20%, about
 760 rows, well under the default 3,000. Other accounts add a few rows per
 wallet.
+
+## Production result (2026-11-20 and 2026-11-21)
+
+| Run | Wallets with rows | Rows read | Rows written | Time | Failing |
+| --- | --- | --- | --- | --- | --- |
+| Dry run, before hidden credits | 188 of 192, stopped at the budget | 783,210 | — | 6 m 26 s | — |
+| Dry run, with hidden credits | 192 | 840,935 | (1,020 planned) | 6 m 41 s | 1 |
+| First live run | 192 | 847,686 | 1,020 | 7 m 57 s | 5 |
+| Dry run, next day shape | 192 | 0 new | (192 planned) | 2 m 29 s | 1 |
+
+The four extra failures of the live run were snapshots newer than the
+journal (see rule 4); the snapshot rule removed them. The remaining failure
+is a real one: one character's journal was last pulled on 2026-11-11.
 
 ## The flag
 

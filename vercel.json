@@ -122,6 +122,10 @@
       "schedule": "52 11 * * *"
     },
     {
+      "path": "/api/cron/ledger-check",
+      "schedule": "43 9 * * *"
+    },
+    {
       "path": "/api/cron/public-contracts",
       "schedule": "7,22,37,52 * * * *"
     },
