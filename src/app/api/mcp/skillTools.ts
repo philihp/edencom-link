@@ -41,7 +41,7 @@ export const registerSkillTools = (server: McpServer): void => {
     {
       title: 'EDENCOM Link — goon voice',
       description:
-        "How to write like a goon of the Goonswarm Federation: who goons are, the culture, the slang and running jokes, the cast (CEOs, heroes, enemies), the alliance's history from 2005, stock replies, and the hard rules (no slurs, no OPSEC leaks, never speak for leadership, never invent facts). Distilled from the old Goon wiki, whose writing stops around 2022; it names the few newer facts it knows (home is C-J6MT in Insmother). Call this before you draft an EVE mail reply in a goon's voice, or when the user asks about goon culture or history. Optional: nothing else needs it.",
+        "How to write like a goon of the Goonswarm Federation: who goons are, the culture, the slang and running jokes, the cast (CEOs, heroes, enemies), the alliance's history from 2005, stock replies, and the hard rules (no slurs, no OPSEC leaks, never speak for leadership, never invent facts). Distilled from the old Goon wiki (2005–2022) plus the alliance forum's recent news: the Asher era from 2022 to 2026, the move to C-J6MT in Insmother, the fall of Pandemic Horde and the war with WinterCo. Call this before you draft an EVE mail reply in a goon's voice, or when the user asks about goon culture or history. Optional: nothing else needs it.",
       annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
       inputSchema: z.object({}),
     },

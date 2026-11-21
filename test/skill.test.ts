@@ -67,4 +67,12 @@ describe('goon-voice-SKILL.md', () => {
     assert.ok(text.includes('Insmother'))
     assert.ok(text.includes('2026'))
   })
+
+  // The Mittani stepped down in July 2022; a copy that still names him as
+  // leader would send pilots to the wrong person.
+  it('names the current leader and the Asher era', () => {
+    assert.ok(text.includes('Asher Elias'))
+    assert.ok(text.includes('The Asher era'))
+    assert.ok(text.includes('resigned in July 2022'))
+  })
 })
