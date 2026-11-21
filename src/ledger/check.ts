@@ -38,6 +38,30 @@ export const compareSnapshot = (
   return { compare: 'differs', difference: formatCents(diff) }
 }
 
+export type Snapshot = { balance: Isk; recorded_at: string }
+
+// Which snapshot to compare (I-9). ESI caches the journal longer than the
+// balance, so a snapshot can be newer than the journal's newest row: then the
+// journal may still lack rows the balance already holds, and a difference
+// proves nothing (measured 2026-11-21: four such false alarms on the first
+// live run). So: the newest snapshot, if it is not newer than the journal or
+// it already agrees with the journal's newest balance; else the newest
+// snapshot taken before the journal's newest row; else none yet.
+// `snapshots` is newest first.
+export const pickSnapshot = (
+  snapshots: readonly Snapshot[],
+  newest: { date: string; balance: Isk } | null
+): { snapshot: Snapshot; atNewest: boolean } | null => {
+  const [latest] = snapshots
+  if (latest === undefined || newest === null) return null
+  const newestMs = new Date(newest.date).getTime()
+  const before = (s: Snapshot) => new Date(s.recorded_at).getTime() < newestMs
+  if (before(latest)) return { snapshot: latest, atNewest: false }
+  if (compareSnapshot(latest.balance, newest.balance).compare !== 'differs') return { snapshot: latest, atNewest: true }
+  const older = snapshots.find(before)
+  return older === undefined ? null : { snapshot: older, atNewest: false }
+}
+
 const rowsIn = reduce((sum: number, s: Segment) => sum + s.rows, 0)
 
 // Rows arrived late inside the stored span when the journal now holds more
