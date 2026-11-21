@@ -213,7 +213,7 @@ importers:
         version: 17.1.0
       graphql-yoga:
         specifier: ^6.0.0
-        version: 6.0.1(graphql@17.1.0)
+        version: 6.1.0(graphql@17.1.0)
       mcp-handler:
         specifier: ^2.1.0
         version: 2.3.1(@modelcontextprotocol/server@2.4.0)(next@16.4.6(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))
@@ -351,16 +351,16 @@ packages:
   '@emnapi/runtime@1.11.3':
     resolution: {integrity: sha512-Xz4Tpyki7XyrpbUK1jR1AhdAdaXyhhY4lZ3neLodmhpuWfy2PAQN5B46sAiU4liOXGLkHypn/qU+jvfWSCYYLA==}
 
-  '@envelop/core@6.0.0':
-    resolution: {integrity: sha512-r/FPut3JaDJnH64Hn6umeqxlZNMJsFf2IJmZzmv6F1m+Mxfez1zKmKIOOFFO4DRc6ghqqzZMvIH9r2/LVLWxuw==}
+  '@envelop/core@6.0.1':
+    resolution: {integrity: sha512-wFH1atHzCeK+iFOpWOdbpybDh9SIujMsLMDxH4WvVGa/SIMZ4ktLxH4/7Zqr9d4pT7O1r6eDQd3j981OfusZtQ==}
     engines: {node: '>=22.15.0'}
 
-  '@envelop/instrumentation@2.0.0':
-    resolution: {integrity: sha512-nXW9DAHfJ7Fh5nTnvr0uDUvCvMw017Agvk3MiE58u8Eby6mTwuiCFp16as2sPVODLLeCBs6rmKs0F1tkpbAXYQ==}
+  '@envelop/instrumentation@2.0.1':
+    resolution: {integrity: sha512-BnHXPcYTGl6bskFwaeOwt7G2KwHhATOMfc2ojMno7QMFKBSxkmPs6o092LDJ+PTNHk7wv4pTIWhP4LsJkvHIew==}
     engines: {node: '>=22.15.0'}
 
-  '@envelop/types@6.0.0':
-    resolution: {integrity: sha512-og5ZFJtIvmQwa0Yb/5JarUT4XnpxxcPTpPi+5+cYnJaLT4qYvCVxNIkW+r6/JpTcbG++DuCQHSvt9fsTDRNNOA==}
+  '@envelop/types@6.0.1':
+    resolution: {integrity: sha512-3XOc8X4FRZdKFMmSVDlHJSBIK4jKtzBpnnoKwI7Qoq1k8aqpYHJg2IXnNKpdOubB9xKsWZvIlqSCOWtAg4td+A==}
     engines: {node: '>=22.15.0'}
 
   '@esbuild/aix-ppc64@0.28.2':
@@ -1673,12 +1673,12 @@ packages:
     resolution: {integrity: sha512-Ekx4MfF76yzQTphPf1Qr8N2hbxlTaI/hZ4TSmRGWqmEjQrRlkrtiIT107mS0gds4SisAtAXaU8jXhffipowlGw==}
     engines: {node: '>=22.15.0'}
 
-  '@whatwg-node/promise-helpers@2.0.1':
-    resolution: {integrity: sha512-ziVgm01A9irPLVBaUFei64qp771BrDXldbv5pY6kgFgNtA+7zq8ux6nj/6w8bELGH/+Ttnc76ox04HIjU8nqvg==}
+  '@whatwg-node/promise-helpers@2.0.2':
+    resolution: {integrity: sha512-RKVGTBAuYfObHxUFjlTFmlDndmuXBxkN56yj3z6EQpNpT55R/xaMhTi4+9yXZ5UoDXbKLAsZHCP8ycoWHM/Vdg==}
     engines: {node: '>=22.15.0'}
 
-  '@whatwg-node/server@0.13.2':
-    resolution: {integrity: sha512-Ujh+gD274sDqs3s8JbxdMMl8x7dhexFbuxoBAJgPZZMWP/uITAW4IqJuK8D83Yg93yQ5Kgq6jrpuhZqUV+bTlg==}
+  '@whatwg-node/server@0.13.3':
+    resolution: {integrity: sha512-Q5rweDuJ+ExmykRqnAFXv+V/hC6Rk4lQUsgaiYdmxrxBJqAv6isQtq7GgQyzbcS2VL09Ab4hwHyg8yI7QYrM3Q==}
     engines: {node: '>=22.15.0'}
 
   '@workflow/astro@5.0.9':
@@ -2294,8 +2294,8 @@ packages:
   graceful-fs@4.2.11:
     resolution: {integrity: sha512-RbJ5/jmFcNNCcDV5o9eTnBLJ/HszWV0P73bc+Ff4nS/rJj+YaS6IGyiOL0VoBYX+l1Wrl3k63h/KrH+nhJ0XvQ==}
 
-  graphql-yoga@6.0.1:
-    resolution: {integrity: sha512-uGfyZNivj4HaNvFi25ce9YLoywWLwxzlt9lM9dYETep00qsPOyGr5jR2Jeg/KxTCqOKMiyqS3oWuM0uhL8QgaQ==}
+  graphql-yoga@6.1.0:
+    resolution: {integrity: sha512-YID0cgrgx3oyh5fJA98414kU3x9cx88ZXGascBGrBkpibQkKRkkb4okMMCLx9n5HCMLiBdaWaFbi31D/7JvqPw==}
     engines: {node: '>=22.15.0'}
     peerDependencies:
       graphql: ^16.0.0 || ^17.0.0
@@ -3472,21 +3472,21 @@ snapshots:
       tslib: 2.9.1
     optional: true
 
-  '@envelop/core@6.0.0':
+  '@envelop/core@6.0.1':
     dependencies:
-      '@envelop/instrumentation': 2.0.0
-      '@envelop/types': 6.0.0
-      '@whatwg-node/promise-helpers': 2.0.1
+      '@envelop/instrumentation': 2.0.1
+      '@envelop/types': 6.0.1
+      '@whatwg-node/promise-helpers': 2.0.2
       tslib: 2.9.1
 
-  '@envelop/instrumentation@2.0.0':
+  '@envelop/instrumentation@2.0.1':
     dependencies:
-      '@whatwg-node/promise-helpers': 2.0.1
+      '@whatwg-node/promise-helpers': 2.0.2
       tslib: 2.9.1
 
-  '@envelop/types@6.0.0':
+  '@envelop/types@6.0.1':
     dependencies:
-      '@whatwg-node/promise-helpers': 2.0.1
+      '@whatwg-node/promise-helpers': 2.0.2
       tslib: 2.9.1
 
   '@esbuild/aix-ppc64@0.28.2':
@@ -3579,7 +3579,7 @@ snapshots:
       '@graphql-typed-document-node/core': 3.2.0(graphql@17.1.0)
       '@repeaterjs/repeater': 3.1.0
       '@whatwg-node/disposablestack': 0.1.0
-      '@whatwg-node/promise-helpers': 2.0.1
+      '@whatwg-node/promise-helpers': 2.0.2
       graphql: 17.1.0
       tslib: 2.9.1
 
@@ -3599,7 +3599,7 @@ snapshots:
   '@graphql-tools/utils@13.2.1(graphql@17.1.0)':
     dependencies:
       '@graphql-typed-document-node/core': 3.2.0(graphql@17.1.0)
-      '@whatwg-node/promise-helpers': 2.0.1
+      '@whatwg-node/promise-helpers': 2.0.2
       graphql: 17.1.0
       tslib: 2.9.1
 
@@ -4395,7 +4395,7 @@ snapshots:
 
   '@whatwg-node/disposablestack@0.1.0':
     dependencies:
-      '@whatwg-node/promise-helpers': 2.0.1
+      '@whatwg-node/promise-helpers': 2.0.2
       tslib: 2.9.1
 
   '@whatwg-node/events@0.1.2':
@@ -4411,19 +4411,19 @@ snapshots:
     dependencies:
       '@fastify/busboy': 3.2.4
       '@whatwg-node/disposablestack': 0.1.0
-      '@whatwg-node/promise-helpers': 2.0.1
+      '@whatwg-node/promise-helpers': 2.0.2
       tslib: 2.9.1
 
-  '@whatwg-node/promise-helpers@2.0.1':
+  '@whatwg-node/promise-helpers@2.0.2':
     dependencies:
       tslib: 2.9.1
 
-  '@whatwg-node/server@0.13.2':
+  '@whatwg-node/server@0.13.3':
     dependencies:
-      '@envelop/instrumentation': 2.0.0
+      '@envelop/instrumentation': 2.0.1
       '@whatwg-node/disposablestack': 0.1.0
       '@whatwg-node/fetch': 0.12.1
-      '@whatwg-node/promise-helpers': 2.0.1
+      '@whatwg-node/promise-helpers': 2.0.2
       tslib: 2.9.1
 
   '@workflow/astro@5.0.9(@swc/helpers@0.5.23)(supports-color@8.1.1)(ws@8.22.1)':
@@ -5315,18 +5315,18 @@ snapshots:
 
   graceful-fs@4.2.11: {}
 
-  graphql-yoga@6.0.1(graphql@17.1.0):
+  graphql-yoga@6.1.0(graphql@17.1.0):
     dependencies:
-      '@envelop/core': 6.0.0
-      '@envelop/instrumentation': 2.0.0
+      '@envelop/core': 6.0.1
+      '@envelop/instrumentation': 2.0.1
       '@graphql-hive/logger': 1.1.1
       '@graphql-tools/executor': 4.1.7(graphql@17.1.0)
       '@graphql-tools/schema': 11.0.8(graphql@17.1.0)
       '@graphql-tools/utils': 13.2.1(graphql@17.1.0)
       '@graphql-yoga/subscription': 6.0.0
       '@whatwg-node/fetch': 0.12.1
-      '@whatwg-node/promise-helpers': 2.0.1
-      '@whatwg-node/server': 0.13.2
+      '@whatwg-node/promise-helpers': 2.0.2
+      '@whatwg-node/server': 0.13.3
       graphql: 17.1.0
       lru-cache: 10.4.3
       tslib: 2.9.1
