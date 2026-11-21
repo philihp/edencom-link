@@ -11,6 +11,7 @@ import {
   fitsBudget,
   judgeWallet,
   needsRebuild,
+  pickSnapshot,
   nextChain,
   segmentWrites,
   toJournalRow,
@@ -134,4 +135,25 @@ test('a self-paid industry job tax carries its hidden credit; others do not', ()
     undefined
   )
   assert.equal(toJournalRow({ ...base, ref_type: 'industry_job_tax' }).hiddenCredit, undefined)
+})
+
+test('pickSnapshot never compares a balance the journal has not caught up with', () => {
+  const newest = { date: '2026-11-21T12:00:00Z', balance: '100.00' }
+  const snap = (recorded_at: string, balance: string) => ({ recorded_at, balance })
+  // Older than the newest row: compare it.
+  assert.deepEqual(pickSnapshot([snap('2026-11-21T11:00:00Z', '90.00')], newest), {
+    snapshot: snap('2026-11-21T11:00:00Z', '90.00'),
+    atNewest: false,
+  })
+  // Newer and agrees: compare it against the newest balance.
+  assert.equal(pickSnapshot([snap('2026-11-21T13:00:00Z', '100.00')], newest)?.atNewest, true)
+  // Newer and differs: fall back to the newest one before the newest row.
+  assert.deepEqual(
+    pickSnapshot([snap('2026-11-21T13:00:00Z', '150.00'), snap('2026-11-21T11:00:00Z', '90.00')], newest)?.snapshot,
+    snap('2026-11-21T11:00:00Z', '90.00')
+  )
+  // Newer, differs and nothing older: not yet comparable.
+  assert.equal(pickSnapshot([snap('2026-11-21T13:00:00Z', '150.00')], newest), null)
+  assert.equal(pickSnapshot([], newest), null)
+  assert.equal(pickSnapshot([snap('2026-11-21T13:00:00Z', '150.00')], null), null)
 })

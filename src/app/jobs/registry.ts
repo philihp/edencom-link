@@ -211,6 +211,9 @@ export const JOBS: readonly JobEntry[] = [
   // goodwill with someone else's bandwidth.
   { job: 'market-prices', label: 'market prices', section: 'universe', kickable: 'chancellor', scopes: [] },
   { job: 'market-adjusted-prices', label: 'adjusted prices', section: 'universe', kickable: 'chancellor', scopes: [] },
+  // Daily: the wallet-journal gap alarm (ledger stage 1, docs/ledger/stage-1.md).
+  // Never on demand: its row budget is sized for one run a day.
+  { job: 'ledger-check', label: 'ledger check', section: 'universe', kickable: 'never', scopes: [] },
   // Hourly Jita sell books of reaction gas, raw and compressed, for the MCP
   // gas_purchase_plan tool. Public ESI, no tokens.
   { job: 'market-depth', label: 'gas order books', section: 'universe', kickable: 'chancellor', scopes: [] },

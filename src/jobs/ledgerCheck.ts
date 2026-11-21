@@ -28,6 +28,7 @@ import {
   judgeWallet,
   needsRebuild,
   nextChain,
+  pickSnapshot,
   roundingStepsOf,
   segmentWrites,
   toJournalRow,
@@ -163,6 +164,8 @@ const readJournal = async (w: Wallet, afterEntryId: number | null, acc: JournalR
 }
 
 // The newest balance snapshot and the journal balance at its moment.
+const SNAPSHOTS = 20
+
 const snapshotOf = async (w: Wallet): Promise<{ compare: SnapshotCompare; difference: string | null }> => {
   const snapshots = rowsOrEmpty(
     w.kind === 'character'
@@ -171,26 +174,35 @@ const snapshotOf = async (w: Wallet): Promise<{ compare: SnapshotCompare; differ
           .select('balance, recorded_at')
           .eq('registration_id', w.registrationId)
           .order('recorded_at', { ascending: false })
-          .limit(1)
+          .limit(SNAPSHOTS)
       : await db
           .from('corp_wallet')
           .select('balance, recorded_at')
           .eq('corporation_id', w.corporationId)
           .eq('division', w.division)
           .order('recorded_at', { ascending: false })
-          .limit(1),
+          .limit(SNAPSHOTS),
     'balance snapshot'
   )
   if (snapshots.length === 0) return { compare: 'none', difference: null }
+  const [newest] = rowsOrEmpty(
+    await whereWallet(db.from(journalOf(w)).select('date, balance'), w)
+      .order('entry_id', { ascending: false })
+      .limit(1),
+    'newest journal row'
+  )
+  const picked = pickSnapshot(snapshots, newest ?? null)
+  if (picked === null) return { compare: 'none', difference: null }
+  if (picked.atNewest) return compareSnapshot(picked.snapshot.balance, newest.balance)
   const journal = rowsOrEmpty(
     await whereWallet(db.from(journalOf(w)).select('balance'), w)
-      .lte('date', snapshots[0].recorded_at)
+      .lte('date', picked.snapshot.recorded_at)
       .order('date', { ascending: false })
       .order('entry_id', { ascending: false })
       .limit(1),
     'journal balance'
   )
-  return compareSnapshot(snapshots[0].balance, journal[0]?.balance ?? null)
+  return compareSnapshot(picked.snapshot.balance, journal[0]?.balance ?? null)
 }
 
 // The newest successful journal pull of the wallet (a role-denial skip pulled
