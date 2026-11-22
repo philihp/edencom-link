@@ -380,5 +380,5 @@ export const REASON_TEXT: Record<NotProvenReason, string> = {
   break: 'a journal break inside the month',
   check_failed: 'the newest check of a wallet failed',
   no_check: 'a wallet has no check',
-  unpaired_transfer: 'an internal transfer has no other side',
+  unpaired_transfer: 'an internal transfer has no row on the other side (see Unpaired internal transfers)',
 }

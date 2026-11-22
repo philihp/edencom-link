@@ -286,6 +286,10 @@ const LedgerPage = async ({ searchParams }: LedgerParams) => {
           {statement !== null && statement.unpaired.length > 0 && (
             <>
               <h2>Unpaired internal transfers</h2>
+              <p>
+                A transfer between two wallets of the group with no row of the opposite amount in the other wallet. A
+                month with one is not proven. At most 100 are listed.
+              </p>
               <table className={retro.retro}>
                 <thead>
                   <tr>
@@ -294,7 +298,7 @@ const LedgerPage = async ({ searchParams }: LedgerParams) => {
                     <th>
                       <code>ref_type</code>
                     </th>
-                    <th className={retro.num}>ISK</th>
+                    <th className={retro.num}>Cash ISK</th>
                   </tr>
                 </thead>
                 <tbody>
