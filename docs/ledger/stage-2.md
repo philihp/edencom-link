@@ -51,9 +51,12 @@ One row for each `ref_type` that the stage 0 census found (H10, 61 values).
 | `verified boolean` | true only where stage 0 measured the behaviour (H3, H4, H6) |
 | `note text` | the reason |
 
-A `ref_type` with no row uses `9000`. A row with `amount = 0` uses
-`account_in`. The seed is made again from a new lab copy (H10), because the
-first copy is gone. The seed lives in the migration and in `schema.sql`, and
+A `ref_type` with no row uses `9000`, and so does a side with no account. A
+row with `amount = 0` uses `account_in`. The seed is made again from a new lab
+copy (H10), because the first copy is gone. Where the census saw only one
+side, the other side has the same account when the meaning is clear (a refund
+of a fee credits the fee's account), so that a zero row or a refund does not
+fall into Suspense. The seed lives in the migration and in `schema.sql`, and
 the pure module `src/ledger/chart.ts` holds the same list; a test proves that
 they agree.
 
@@ -70,6 +73,10 @@ Assumptions that the lab run must confirm or refute before the seed is fixed:
 - A hidden credit (stage 1, rule 3) has no journal row, so the cash view has
   no line for it. The cash proof (I-3) must count the hidden credits of the
   segment, as the chain does.
+
+The lab run of 2026-11-22 confirmed each of these (see "Lab result"), with
+one change: `corporation_account_withdrawal` stays `transfer = true` but is
+not `verified`, because no pair of it falls inside the corporation journal.
 
 ### `ledger_cash_line` (view, `security_invoker`)
 
@@ -151,7 +158,14 @@ not in the group (I-11).
   or a corporation of the group.
 - **Unpaired (I-7):** an internal transfer with no row of the opposite amount
   in the other wallet. The pair key is the entry id (H4). `unpaired` lists at
-  most 100.
+  most 100, oldest first; its `amount` is the journal amount (the cash side).
+  An `industry_job_tax` row out whose two parties are the same is paired by
+  its hidden credit (the rule of `src/ledger/check.ts`).
+- **Wallets:** in the group scope, each group wallet with a row in the window
+  or a stage 1 check. A corporation division with neither is not a wallet, as
+  in stage 1.
+- `suspense`: for each `ref_type` on `9000`, `isk_in` is the cash that came
+  in and `isk_out` the cash that went out, both positive.
 - **Proven:** a month of a wallet is proven when no segment of the wallet
   starts or ends inside the month except at the first and last row of the
   wallet, and the newest `ledger_check` row of the wallet is `ok`. A month of
@@ -177,7 +191,7 @@ built against the JSON above with a fixture; it does not wait for PR A.
 
 | ID | How stage 2 proves it |
 | :- | :-------------------- |
-| I-3 | Lab: for each segment, the sum of the cash lines plus the hidden credits equals closing minus opening. Gate. |
+| I-3 | Lab: for each segment, the sum of the cash lines plus the hidden credits equals closing minus opening, to within one cent for each rounding step of the segment. Gate. |
 | I-4 | `test/sql`: the two lines of each row sum to zero. |
 | I-5 | `test/sql`: exactly two lines for each journal row. Lab: the Suspense share of ISK moved. Gate: below 1%, or a decision for each `ref_type` left. |
 | I-7 | Lab: the count of unpaired internal transfers, by `ref_type`, with the cause. |
@@ -206,7 +220,107 @@ migration. It adds no job and no daily write.
 | Step | State |
 | :--- | :---- |
 | 1 Design note | ✅ this file |
-| 2 Lab | 🔧 |
-| 3 Tests | 🔧 |
+| 2 Lab | ✅ 2026-11-22, see "Lab result" |
+| 3 Tests | ✅ `test/sql/ledger_cash.sql`, `test/ledgerChart.test.ts` |
 | 4 PR, migration | waits for gate 1 to merge |
 | 5–9 | wait for gate 1 |
+
+## Lab result (2026-11-22)
+
+A new lab copy of the owner's account, read from production by
+`pnpm run ledger-lab-copy` (the wallet, transaction and ledger tables only:
+`--tables`). 414 pages, slowest page 0.94 s, no error. 9 characters, 3
+corporations; 10 wallets with a journal (9 characters, 1 corporation
+division). The stage 2 lab (`pnpm run ledger-lab-stage2`, see
+[lab.md](lab.md)) loads it into a local database with the production indexes
+and policies, cut from `schema.sql`, and runs the migration of this stage.
+
+### The seed (H10)
+
+61 `ref_type` values, the same 61 as stage 0. All 61 have a row in
+`ledger_ref_type`; 7 are `verified` (H3, H4, H6), 5 are `transfer`.
+`market_transaction` has no out row. `market_escrow` has 1,390 in rows (escrow
+returned), so both of its sides are `1100`.
+
+### Checks
+
+| ID | Result | Verdict |
+| :- | :----- | :------ |
+| I-4 | 614,588 lines for 307,294 rows; no row whose two lines do not sum to zero | ✅ |
+| I-5 | Exactly two lines for each row; 0 rows with a null amount | ✅ |
+| I-5 | Suspense: 0 rows and 0 ISK of 34.6T ISK moved (all history); 0 in the 12-month statement | ✅ below 1% |
+| I-3 | 618 of 618 segments: cash lines + hidden credits = closing − opening, to the cent but for 2.08 ISK of rounding over 488 one-cent steps. The corporation division of this copy has no self-paid tax, so 0 hidden credits | ✅ |
+| I-7 | See below | ✅ explained |
+| I-11 | `test/sql/ledger_cash.sql` | ✅ |
+
+**I-7, unpaired internal transfers, all history.** Every unpaired row is older
+than the first journal row of the wallet on its other side, so the other side
+was never pulled. None is newer.
+
+| `ref_type` | Internal rows | Paired | Unpaired | Unpaired, before the other journal starts |
+| :--------- | ------------: | -----: | -------: | ----------------------------------------: |
+| `contract_price` | 509 | 508 | 1 | 1 |
+| `corporation_account_withdrawal` | 8 | 0 | 8 | 8 |
+| `industry_job_tax` | 22,490 | 8,170 | 14,320 | 14,320 |
+| `player_donation` | 2,339 | 2,334 | 5 | 5 |
+| `player_trading` | 28,486 | 28,486 | 0 | 0 |
+
+So in the 12-month statement (2025-12 to 2026-11), the five months before the
+corporation journal starts (2026-05-02) are "not proven" with
+`unpaired_transfer` (595 to 941 rows a month), and the seven months from 2026-05
+are proven. No month has a `break`: the only segment that starts in the window
+starts at the first row of the corporation division. This is correct: a character's tax to the
+corporation before the corporation journal starts has no evidence of its
+other side.
+
+### Parallel runs (12 months, 2025-12-01 to 2026-12-01)
+
+**Account 4000 against the `/market` sales rule** (sells of
+`character_wallet_transaction` with `is_personal`, and of
+`corp_wallet_transaction`; quantity × unit price):
+
+| Months | 4000 | `/market` | Difference |
+| :----- | ---: | --------: | ---------: |
+| 2026-05 to 2026-11 | 996.5B | 996.5B | 0.00 in each month |
+| 2025-12 to 2026-04 | 821.8B | 0 | 821.8B |
+
+Cause of the difference: the transaction tables start on 2026-05-01. The 2,476
+journal sells of the five earlier months come from the jEveAssets journal
+import, and their transactions were never imported. No market sell is missing
+from the journal.
+
+**`industry_job_tax` income against the `/structure/revenue` rule** (the
+corporation journal's incoming `industry_job_tax` rows, by month; the journal
+starts 2026-05-02): in each of the seven months, the group statement's
+`industry_job_tax` income equals the revenue page less the tax that our own
+characters paid (internal: 1.23B of 12.18B over the seven months). The
+difference is that one cause and nothing else.
+
+### Read time
+
+The 12-month statement of the owner's group (75,755 rows in the window, 10
+wallets), on the lab (Postgres 16, 4 cores, `work_mem` 4 MB), as the
+`authenticated` role with RLS:
+
+| Read | Time |
+| :--- | ---: |
+| Group, first version | 4.1 s, of which JIT 3.4 s |
+| Group, with `set jit = off` on the function | 0.52 to 0.56 s (5 runs) |
+| One character wallet | 0.36 to 0.46 s |
+| One corporation division | 0.28 s |
+
+`explain` (auto_explain, the inner query): the character journal is read by a
+sequential scan with the RLS filter (21% of its rows are in the window, so the
+planner prefers it to `character_wallet_journal_registration_id_date_idx`);
+the corporation journal likewise. The load of the window is about half the
+time, the pairing (one hash aggregate of the transfer rows) and the JSON the
+rest. A first version that filtered the wallet in the same step as the pairing
+made the planner probe the pairs once per row (86 s for one wallet); the
+pairing now runs before the scope filter.
+
+The group read is just above the 500 ms line. As the contract says, the gate
+report proposes a day rollup (one row per wallet, day, account); it is not
+built in this stage. Two smaller options to weigh first: give the function a
+larger `work_mem` (the read spills to temp files at 4 MB), or read the
+`months` and `suspense` parts without the pairing when the scope is one
+wallet.

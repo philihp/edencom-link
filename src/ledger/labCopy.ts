@@ -1,6 +1,11 @@
 // The ledger lab copy (docs/ledger/plan.md, stage 0 step 1; docs/ledger/lab.md).
 //
 //   pnpm run ledger-lab-copy -- --user <account uuid> --confirm [--out lab/ledger-copy] [--pause-ms 300] [--dry-run]
+//                                [--tables a,b,c]
+//
+// --tables copies only the named tables. Each other table gets a file with the
+// header line only, so that the load still runs; the manifest lists them under
+// `skipped`.
 //
 // Reads the wallet, contract and industry job rows of ONE account from
 // production, read-only, through PostgREST with the service key, and writes
@@ -50,6 +55,8 @@ const userId = flag('--user')
 const outDir = flag('--out') ?? 'lab/ledger-copy'
 const pauseMs = Number(flag('--pause-ms') ?? 300)
 const dryRun = has('--dry-run')
+const only = flag('--tables')?.split(',')
+const wanted = (spec: TableSpec): boolean => only === undefined || only.includes(spec.table)
 
 const fail = (message: string): never => {
   console.error(message)
@@ -116,6 +123,7 @@ const copyThenPause = async (spec: TableSpec, partition: Partition, file: string
 const copyTable = async (spec: TableSpec, owners: Owners): Promise<[string, number]> => {
   const file = join(outDir, `${labTableOf(spec)}.csv`)
   writeFileSync(file, `${csvColumnsOf(spec).join(',')}\n`)
+  if (!wanted(spec)) return [spec.table, -1]
   const counts = await reduce(
     async (sum: Promise<number>, partition: Partition) => (await sum) + (await copyThenPause(spec, partition, file)),
     Promise.resolve(0),
@@ -140,7 +148,7 @@ const main = async () => {
   }
   console.log(
     `account: ${owners.registrationIds.length} characters, ${owners.corporationIds.length} corporations; ` +
-      `${reduce((n, spec) => n + partitionsOf(spec, owners).length, 0, TABLES)} partitions`
+      `${reduce((n, spec) => n + (wanted(spec) ? partitionsOf(spec, owners).length : 0), 0, TABLES)} partitions`
   )
   if (dryRun) return
   rmSync(outDir, { recursive: true, force: true })
@@ -165,7 +173,8 @@ const main = async () => {
         pauseMs,
         pages: stats.pages,
         slowestPageMs: stats.slowestMs,
-        rows: Object.fromEntries(counts),
+        rows: Object.fromEntries(counts.filter(([, n]) => n >= 0)),
+        skipped: counts.filter(([, n]) => n < 0).map(([table]) => table),
       },
       null,
       2

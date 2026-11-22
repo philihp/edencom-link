@@ -2,11 +2,13 @@
 // off production (guard C8), the CSV the copy writes, and the keyset paging
 // that keeps the copy's load on production flat.
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 
 import { csvCell, csvRows } from '../src/ledger/labCsv.ts'
 import { assertLocal, isLocalUrl } from '../src/ledger/labGuard.ts'
 import { DIVISIONS, TABLES, keysetAfter, loadScript, partitionsOf } from '../src/ledger/labSpec.ts'
+import { SOURCE_SHAPES, shapeOf, stage2Url } from '../src/ledger/labStage2.ts'
 
 test('the guard accepts a database on this computer', () => {
   assert.ok(isLocalUrl('postgresql://postgres:postgres@127.0.0.1:54322/postgres'))
@@ -80,4 +82,32 @@ test('the load script copies every file into the lab schema, quoted', () => {
   )
   assert.match(script, /\\copy ledger_lab\.raw_corp_contract \(doc\) from/)
   assert.equal(script.match(/\\copy /g)?.length, TABLES.length + 1)
+})
+
+test('a ledger table is read per registration, then per corporation', () => {
+  const owners = { registrationIds: ['r1'], corporationIds: [98000001] }
+  const segment = TABLES.find((spec) => spec.table === 'ledger_wallet_segment')
+  assert.ok(segment)
+  assert.deepEqual(partitionsOf(segment, owners), [{ registration_id: 'r1' }, { corporation_id: 98000001 }])
+})
+
+test('the stage 2 lab cuts each source table, its indexes and its policies from schema.sql', () => {
+  const schemaSql = readFileSync('schema.sql', 'utf8')
+  const journal = shapeOf(schemaSql, 'character_wallet_journal')
+  assert.ok(journal.some((s) => s.startsWith('create table public.character_wallet_journal (')))
+  assert.ok(journal.some((s) => s.startsWith('create index character_wallet_journal_registration_id_date_idx')))
+  assert.ok(journal.some((s) => s === 'alter table public.character_wallet_journal enable row level security;'))
+  assert.ok(journal.some((s) => s.startsWith('create policy "Users read own journal"')))
+  // character_wallet is a different table, not a prefix match.
+  assert.ok(!shapeOf(schemaSql, 'character_wallet').some((s) => s.includes('character_wallet_journal')))
+  SOURCE_SHAPES.forEach((table) => assert.ok(shapeOf(schemaSql, table).length >= 4, table))
+})
+
+test('the stage 2 lab refuses a database that is not local or not named ledger_', () => {
+  assert.throws(() => stage2Url('postgresql://postgres:pw@db.x.supabase.co:5432/ledger_stage2'))
+  assert.throws(() => stage2Url('postgresql://postgres@127.0.0.1:54322/postgres'))
+  assert.equal(
+    stage2Url('postgresql://postgres@127.0.0.1:54322/ledger_stage2'),
+    'postgresql://postgres@127.0.0.1:54322/ledger_stage2'
+  )
 })

@@ -1,7 +1,8 @@
 # The ledger lab
 
-Status: built 2026-11-17 (stage 0 of [plan.md](plan.md)). Not yet run on
-production data: each copy needs the owner's OK.
+Status: built 2026-11-17 (stage 0 of [plan.md](plan.md)); run on 2026-11-17
+(stage 0) and 2026-11-22 (stage 2). The owner decided on 2026-11-17 that a
+copy from production is OK at any time.
 
 The lab is a copy of one account's wallet, contract and industry job rows in
 a Postgres on the owner's computer. All heavy analysis of the ledger runs
@@ -20,11 +21,14 @@ wallet tables (guard C1).
 | `docs/ledger/census.sql` | The report: each view, with a heading. |
 | `src/ledger/labGuard.ts` | Refuses each lab command unless the database is on this computer (guard C8). |
 | `test/sql/ledger_census.sql` | Checks each census view on rows with known answers. |
+| `src/ledger/labStage2.ts` | Stage 2: makes a lab database with the production shape of the journals and runs the stage 2 migration on the copy. |
+| `docs/ledger/lab/stage-2-measure.sql` | Stage 2: the checks I-3, I-4, I-5, I-7, the parallel runs and the read time. Reads only. |
 
 ## Steps
 
-1. **Get the owner's OK.** Each copy from production needs it (plan section
-   8, decision 1). Run at a quiet hour. Do not run if the production
+1. **Check the conditions.** The owner said on 2026-11-17 that a copy from
+   production is OK at any time (plan section 8, decision 1); `--confirm`
+   records that. Run at a quiet hour. Do not run if the production
    database was restarted in the last 24 hours (the stop conditions of the
    plan).
 2. **Copy.** With `SUPABASE_URL` and `SUPABASE_SERVICE_KEY` of production
@@ -34,6 +38,13 @@ wallet tables (guard C1).
    pnpm run ledger-lab-copy -- --user <account uuid> --dry-run --confirm   # counts the partitions only
    pnpm run ledger-lab-copy -- --user <account uuid> --confirm
    ```
+
+   `--tables a,b,c` copies only those tables (the others get a file with the
+   header only). Stage 2 needs `character_wallet`,
+   `character_wallet_journal`, `corp_wallet_journal`,
+   `character_wallet_transaction`, `corp_wallet_transaction`,
+   `corp_job_access`, `ledger_wallet_segment` and `ledger_check`: about 410
+   pages instead of 2,100, because it skips the contract items.
 
    The files go to `lab/ledger-copy/` (in `.gitignore`; never commit them).
    `manifest.json` records the row counts, the number of pages and the
@@ -50,6 +61,24 @@ wallet tables (guard C1).
 
 5. **Write `docs/ledger/measurements.md`** from `lab/census.txt`: totals and
    counts only, the wallet labels as they are, no names.
+
+## Stage 2
+
+Stage 2 measures a view and two functions that read the journals through
+their production indexes and policies. So its lab is a database of its own,
+not the schema `ledger_lab`:
+
+```sh
+pnpm run ledger-lab-stage2 -- setup      # makes the database ledger_stage2 and loads lab/ledger-copy
+pnpm run ledger-lab-stage2 -- measure    # prints the stage 2 checks
+```
+
+The database is `LAB_STAGE2_DATABASE_URL`, else `ledger_stage2` on the
+Supabase local stack. `setup` drops and makes its schema `public`, so the
+runner refuses a database that is not on this computer or whose name does not
+start with `ledger_`. The journal tables, their indexes and their policies are
+cut from `schema.sql`, so the lab has the production shape of the day; the
+copy goes in with `\copy`, and one lab account owns every registration.
 
 ## Load on production
 

@@ -81,6 +81,7 @@
     "ledger-lab-copy": "node --env-file-if-exists=.env src/ledger/labCopy.ts",
     "ledger-lab": "node src/ledger/lab.ts",
     "ledger-lab-check": "node src/ledger/labCheck.ts",
+    "ledger-lab-stage2": "node src/ledger/labStage2.ts",
     "ledger-check": "node --env-file-if-exists=.env src/jobs/ledgerCheck.ts",
     "db:new": "supabase migration new",
     "discord-notification-send": "node src/jobs/discordNotificationSend.js",

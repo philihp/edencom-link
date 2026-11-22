@@ -16,7 +16,9 @@ import { chain, map, range } from 'ramda'
 
 export type Owners = { registrationIds: readonly string[]; corporationIds: readonly number[] }
 
-export type PartitionKind = 'registration' | 'corporation' | 'corporation-division'
+// 'owner' is a table that holds rows of both kinds of wallet (the ledger
+// tables): one partition for each registration, then one for each corporation.
+export type PartitionKind = 'registration' | 'corporation' | 'corporation-division' | 'owner'
 
 export type TableSpec = {
   table: string
@@ -58,6 +60,41 @@ const TRANSACTION = [
   'location_id',
   'journal_ref_id',
   'seen_at',
+]
+
+const LEDGER_OWNER = ['id', 'registration_id', 'corporation_id', 'division']
+
+const LEDGER_SEGMENT = [
+  ...LEDGER_OWNER,
+  'first_entry_id',
+  'last_entry_id',
+  'first_date',
+  'last_date',
+  'opening',
+  'closing',
+  'row_count',
+  'rounding_steps',
+  'hidden_credit_steps',
+  'pending_credits',
+  'computed_at',
+]
+
+const LEDGER_CHECK = [
+  ...LEDGER_OWNER,
+  'checked_at',
+  'ok',
+  'segments',
+  'new_breaks',
+  'rounding_steps',
+  'hidden_credit_steps',
+  'rows_read',
+  'rebuilt',
+  'newest_entry_id',
+  'newest_entry_date',
+  'last_pull_at',
+  'snapshot_compare',
+  'snapshot_difference',
+  'reasons',
 ]
 
 // The registration rows of the account: the first read, which finds the
@@ -103,6 +140,16 @@ export const TABLES: readonly TableSpec[] = [
   { table: 'corp_contract_status_over_time', columns: 'raw', partition: 'corporation', keys: ['id'] },
   { table: 'character_industry_job_over_time', columns: 'raw', partition: 'registration', keys: ['id'] },
   { table: 'corp_industry_job_over_time', columns: 'raw', partition: 'corporation', keys: ['id'] },
+  // Stage 2 (docs/ledger/stage-2.md): the director proof of ledger_group(),
+  // and the stage 1 evidence that a month is "proven" from.
+  {
+    table: 'corp_job_access',
+    columns: ['registration_id', 'corporation_id', 'job', 'observed_at'],
+    partition: 'registration',
+    keys: ['corporation_id', 'job'],
+  },
+  { table: 'ledger_wallet_segment', columns: LEDGER_SEGMENT, partition: 'owner', keys: ['id'] },
+  { table: 'ledger_check', columns: LEDGER_CHECK, partition: 'owner', keys: ['id'] },
 ]
 
 // A corporation has seven wallet divisions, 1 to 7.
@@ -111,6 +158,11 @@ export const DIVISIONS = range(1, 8)
 export const partitionsOf = (spec: TableSpec, { registrationIds, corporationIds }: Owners): Partition[] => {
   if (spec.partition === 'registration') return map((id) => ({ registration_id: id }), registrationIds)
   if (spec.partition === 'corporation') return map((id) => ({ corporation_id: id }), corporationIds)
+  if (spec.partition === 'owner')
+    return [
+      ...map((id) => ({ registration_id: id }), registrationIds),
+      ...map((id) => ({ corporation_id: id }), corporationIds),
+    ]
   return chain((id) => map((division) => ({ corporation_id: id, division }), DIVISIONS), corporationIds)
 }
 
