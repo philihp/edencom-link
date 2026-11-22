@@ -194,8 +194,8 @@ importers:
         specifier: 2.0.1
         version: 2.0.1(next@16.4.6(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(react@19.3.1)
       '@vercel/flags-core':
-        specifier: 1.11.0
-        version: 1.11.0(@aws-sdk/credential-provider-web-identity@3.972.88)(next@16.4.6(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(ws@8.22.1)
+        specifier: 1.11.1
+        version: 1.11.1(@aws-sdk/credential-provider-web-identity@3.972.88)(next@16.4.6(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(ws@8.22.1)
       '@vercel/queue':
         specifier: ^0.11.0
         version: 0.11.0
@@ -1574,8 +1574,8 @@ packages:
     resolution: {integrity: sha512-g9XerViJ/paZujufXYcu5XYI2vU2rtB4sgdpjUHde5RnOkdmpu0ngH46LCFGHoPXO/C+qDPSczIHIRN+8Q2YKQ==}
     engines: {node: '>= 18'}
 
-  '@vercel/flags-core@1.11.0':
-    resolution: {integrity: sha512-QUeTQb9uC9cZEPK1B5PQjNezXi890V5OeteCg+IE29Wz/J6RPybkmdTf636EPZMtG75bb1z0S8SquSuIkMLFKA==}
+  '@vercel/flags-core@1.11.1':
+    resolution: {integrity: sha512-b49nu0+AppkLbFV6MMpK/4VWHMz1ttz+uAJc6tRt3+Nw7c9FCoKuZbsKlxUPdAxPXcGalbT5TxEFhQc9GBULEg==}
     peerDependencies:
       '@openfeature/server-sdk': 1.18.0
       next: '*'
@@ -4281,7 +4281,7 @@ snapshots:
     dependencies:
       execa: 5.1.1
 
-  '@vercel/flags-core@1.11.0(@aws-sdk/credential-provider-web-identity@3.972.88)(next@16.4.6(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(ws@8.22.1)':
+  '@vercel/flags-core@1.11.1(@aws-sdk/credential-provider-web-identity@3.972.88)(next@16.4.6(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(ws@8.22.1)':
     dependencies:
       '@vercel/functions': 3.11.2(@aws-sdk/credential-provider-web-identity@3.972.88)(ws@8.22.1)
       '@vercel/oidc': 3.5.0
