@@ -210,3 +210,6 @@ export const itemsByContract = (rows: ItemRow[]): Map<string, ContractItem[]> =>
 // The label of a contract row in the table: "Contract · 3 items".
 export const contractLabel = (items: ContractItem[]): string =>
   `Contract · ${items.length} item${items.length === 1 ? '' : 's'}`
+
+// The page of one contract. A contract trade's transaction_id is its contract id.
+export const contractHref = (contractId: number): string => `/contract/${contractId}`

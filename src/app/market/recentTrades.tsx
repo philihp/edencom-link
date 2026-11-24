@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { filter, pipe } from 'ramda'
 import { useMemo, useState } from 'react'
 
@@ -9,7 +10,7 @@ import { Name } from '../names'
 import { TypeName } from '../typeName'
 import { usePersist } from '../usePersist'
 import { inWindow, tradeValue } from './aggregate'
-import { contractLabel } from './contracts'
+import { contractHref, contractLabel } from './contracts'
 import { paymentNote } from './payments'
 import { byWho, capitalize, counterpartyLabel, parseWho, SIDE_COPY, whoOptions } from './sides'
 import type { ContractDetail, Side, Trade } from './trade'
@@ -40,19 +41,22 @@ const DAY_MS = 24 * 60 * 60 * 1000
 // Item names under a contract label before the rest is a count.
 const CONTRACT_NAMES = 2
 
-// A contract row: "Contract · N items" with a tag, then the title, or else
-// the first item names.
+// A contract row: "Contract · N items", linked to the contract's page, with a
+// tag, then the title, or else the first item names.
 const ContractCell = ({
+  contractId,
   contract,
   typeNamesPromise,
 }: {
+  contractId: number
   contract: ContractDetail
   typeNamesPromise: Promise<Record<number, string>>
 }) => {
   const rest = contract.items.length - CONTRACT_NAMES
   return (
     <>
-      {contractLabel(contract.items)} <span className={styles.sourceTag}>[ contract ]</span>
+      <Link href={contractHref(contractId)}>{contractLabel(contract.items)}</Link>{' '}
+      <span className={styles.sourceTag}>[ contract ]</span>
       <span className={styles.contractDetail}>
         {contract.title ??
           contract.items.slice(0, CONTRACT_NAMES).map((item, i) => (
@@ -194,7 +198,11 @@ export const RecentTrades = ({
                   {t.contract === null ? (
                     <TypeName id={t.type_id} promise={typeNamesPromise} />
                   ) : (
-                    <ContractCell contract={t.contract} typeNamesPromise={typeNamesPromise} />
+                    <ContractCell
+                      contractId={t.transaction_id}
+                      contract={t.contract}
+                      typeNamesPromise={typeNamesPromise}
+                    />
                   )}
                 </td>
                 <td>{t.contract === null ? t.quantity : '—'}</td>
