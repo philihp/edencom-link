@@ -1,7 +1,8 @@
 # Ledger plan, version 2: prove the cash first, then widen
 
-Status: 🔧 stage 0 measured 2026-11-17 ([measurements.md](measurements.md));
-gate 0 waits for the owner. Section 10 has the status of each stage. This plan
+Status: 🔧 stage 1 is in its 14-day soak (2026-11-21 to 2026-12-05); stage 2
+is designed ([stage-2.md](stage-2.md)) and waits for gate 1. Section 10 has
+the status of each stage. This plan
 replaces the approach and the PR order of [design.md](design.md) (version 1,
 2026-11-07). Version 1 stays as the record of the chart of accounts and the
 posting ideas. Where the two differ, this file wins.
@@ -446,3 +447,28 @@ segment rule (I-2) on known rows.
 **Owner decisions recorded 2026-11-17:** the lab copy may run at any time;
 Supabase runs a daily backup at about 07:30; the corporation wallet balance
 pull is approved for stage 1.
+
+### Stage 1 — status
+
+Design note: [stage-1.md](stage-1.md). Shipped in #1312, #1313 and #1318.
+
+| Step | State |
+| :--- | :---- |
+| 1–4 Design, lab, tests, PR | ✅ merged 2026-11-20 |
+| 5 Dark | ✅ the flag `ledger` is not created, so `/ledger/health` is a 404 |
+| 6 Dry run in production | ✅ 2026-11-20, 192 wallets |
+| 7 Live, with a budget | ✅ 2026-11-21, 1,020 rows of a 3,000 budget |
+| 8 Soak | 🔧 14 days from the cron merge (2026-11-21 19:03 UTC), to 2026-12-05 |
+| 9 Gate 1 | waits for the soak |
+
+Soak log (from the job's log line; counts only):
+
+| Run (UTC) | Wallets checked | Failing | Rows read | Rows written | Time |
+| :-------- | --------------: | ------: | --------: | -----------: | :--- |
+| 2026-11-22 09:43 | 192 of 348 | 1 (known: one journal last pulled 2026-11-11) | 4,807 | 264 | about 1 min |
+
+### Stage 2 — status
+
+Design note: [stage-2.md](stage-2.md), written 2026-11-22. The lab build and
+the tests go on during the stage 1 soak. Nothing of stage 2 merges before
+gate 1.
