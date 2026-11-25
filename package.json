@@ -76,6 +76,7 @@
     "sheet-csv": "node src/jobs/sheetCsv.js",
     "connect": "node src/connect.js",
     "mail-send": "node src/mailSend.ts",
+    "goonwiki-import": "node --env-file-if-exists=.env src/goonwikiImport.ts",
     "ledger-lab-copy": "node --env-file-if-exists=.env src/ledger/labCopy.ts",
     "ledger-lab": "node src/ledger/lab.ts",
     "ledger-lab-check": "node src/ledger/labCheck.ts",

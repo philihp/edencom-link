@@ -8,7 +8,8 @@
 // outbox for a person to send by hand later, and memoryTools.ts's
 // remember_ship writes the next version of a held ship's memory (all four
 // write only rows the caller owns or holds; none calls ESI or changes the
-// game).
+// game). wikiTools.ts is admin-only: search_wiki and read_wiki_page answer a
+// Chancellor and say "not found" to everyone else.
 import { createMcpHandler, withMcpAuth } from 'mcp-handler'
 
 import { verifySupabaseToken } from './auth'
@@ -24,6 +25,7 @@ import { registerShippingTools } from './shippingTools'
 import { registerSkillTools } from './skillTools'
 import { registerTools } from './tools'
 import { registerWatchedSystemTools } from './watchedSystemTools'
+import { registerWikiTools } from './wikiTools'
 
 // mcp-handler 2.x serves the 2026-07-28 spec (stateless, no sessions), falling
 // back to stateless Streamable HTTP for 2025-era clients from the same handler.
@@ -46,6 +48,7 @@ const handler = createMcpHandler(
     registerWatchedSystemTools(server)
     registerMailTools(server)
     registerMemoryTools(server)
+    registerWikiTools(server)
   },
   {
     serverInfo: { name: 'edencom-link', version: '1.0.0' },
