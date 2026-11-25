@@ -21,7 +21,6 @@ import {
   partition,
   pipe,
   prop,
-  propEq,
   reject,
   sortWith,
   toPairs,
@@ -98,7 +97,7 @@ export const contentHash = ({ title, body }: Pick<WikiPage, 'title' | 'body'>): 
 
 export const duplicateSlugs = (pages: WikiPage[]): string[] =>
   pipe(
-    countBy(prop<string>('slug')) as (pages: WikiPage[]) => Record<string, number>,
+    countBy((p: WikiPage) => p.slug),
     toPairs,
     filter(([, n]: [string, number]) => n > 1),
     map(([slug]: [string, number]) => slug)
@@ -106,7 +105,7 @@ export const duplicateSlugs = (pages: WikiPage[]): string[] =>
 
 export type SyncPlan = { insert: WikiPage[]; update: WikiPage[]; unchanged: number; remove: string[] }
 
-const bySlug = sortWith<WikiPage>([ascend(prop('slug'))])
+const bySlug = sortWith<WikiPage>([ascend((p: WikiPage) => p.slug)])
 
 // What one run writes: a page the table lacks is inserted, a page whose hash
 // differs is updated, a row no page names is removed. Deterministic: every
@@ -140,13 +139,11 @@ export const removalRefusal = (
 
 // Split parsed files into pages and refusals.
 export const collect = (parsed: Parsed[]): { pages: WikiPage[]; problems: string[] } => {
-  const [good, bad] = partition(propEq(true, 'ok'), parsed) as [
-    Array<Extract<Parsed, { ok: true }>>,
-    Array<Extract<Parsed, { ok: false }>>,
-  ]
+  const isPage = (p: Parsed): p is Extract<Parsed, { ok: true }> => p.ok
+  const isRefusal = (p: Parsed): p is Extract<Parsed, { ok: false }> => !p.ok
   return {
-    pages: map(prop('page'), good),
-    problems: map((b) => `${b.path}: ${b.reason}`, bad),
+    pages: parsed.filter(isPage).map((p) => p.page),
+    problems: parsed.filter(isRefusal).map((b) => `${b.path}: ${b.reason}`),
   }
 }
 
