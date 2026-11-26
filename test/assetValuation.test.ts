@@ -11,13 +11,21 @@ import {
   valueSeries,
   windowChange,
   windowDays,
+  type ValueParts,
   type ValueRow,
+  zeroParts,
 } from '../src/app/asset/valuation.ts'
 
-const row = (ownerId: string, day: string, value: number, unpricedTypes = 0): ValueRow => ({
+const row = (
+  ownerId: string,
+  day: string,
+  hangar: number,
+  unpricedTypes = 0,
+  parts: Partial<ValueParts> = {}
+): ValueRow => ({
   ownerId,
   day,
-  value,
+  parts: { ...zeroParts(), hangar, ...parts },
   unpricedTypes,
 })
 
@@ -36,6 +44,20 @@ test('valueSeries sums every owner on a day, largest owner first', () => {
   )
   assert.equal(points[0].unpricedTypes, 2)
   assert.equal(points[0].t, Date.parse('2026-11-01T00:00:00Z'))
+})
+
+test('valueSeries adds every part of an owner to its total, and sums each part', () => {
+  const points = valueSeries(
+    [
+      row('a', '2026-11-01', 100, 0, { jobs: 40, market: 25, contracts: 10, cash: 5 }),
+      row('b', '2026-11-01', 300, 0, { cash: 20 }),
+    ],
+    ['2026-11-01']
+  )
+  assert.equal(points[0].total, 500)
+  assert.deepEqual(points[0].parts, { hangar: 400, jobs: 40, market: 25, contracts: 10, cash: 25 })
+  assert.equal(points[0].owners.find((o) => o.ownerId === 'a')?.value, 180)
+  assert.deepEqual(valueSeries([], ['2026-11-01'])[0].parts, zeroParts())
 })
 
 test('valueSeries carries a missed day forward, marked carried, for CARRY_DAYS only', () => {

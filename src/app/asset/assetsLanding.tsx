@@ -113,7 +113,10 @@ export const AssetsLanding = ({ now, values, locations, owners, children }: Asse
           </div>
         )}
         <div className={chart.panelFoot}>
-          <span>each item at the Jita split in effect that day · blueprints and unpriced items left out</span>
+          <span>
+            hangar, jobs (by % done, no fees), market orders, contracts and wallets · items at the Jita split that day ·
+            blueprints and unpriced items left out
+          </span>
         </div>
       </section>
 

@@ -8516,7 +8516,7 @@ $$;
 grant execute on function public.corp_assets(uuid[]) to service_role;
 
 -- ── asset_value_day ───────────────────────────────────────────────────────
--- What each owner's hangar was worth, one row per UTC day,
+-- What each owner was worth, one row per UTC day,
 -- for the valuation chart on the /asset landing page (docs/asset-valuation.md).
 --
 -- Every item is priced at the Jita split (the midpoint of best bid and best
@@ -8524,6 +8524,18 @@ grant execute on function public.corp_assets(uuid[]) to service_role;
 -- never today's price, so a day's value is what the hangar was worth that day.
 -- Blueprints are left out: a copy has no market, and an original's market
 -- price says nothing about its research.
+--
+-- Industry jobs in progress count too. Installing a job takes its inputs out
+-- of the hangar and delivering it puts the output back, so between the two
+-- the value sits in the job: the inputs' worth times the part not yet done,
+-- plus the output's worth times the part done. The install fee is not
+-- counted; it is a sunk cost.
+--
+-- So do the owner's other holdings outside the hangar: what its open sell
+-- orders still offer (at the same Jita split, not the order's price), the ISK
+-- held in escrow by its open buy orders, its contracts in flight (the items an
+-- unaccepted item exchange or auction offers; a courier's collateral), and its
+-- wallet. The row's total is the sum of every part.
 --
 -- Written by asset_value_day_compute(), which the two asset extracts call for
 -- today after each reconcile (src/jobs/assetValues.js), and which the
@@ -8545,6 +8557,26 @@ create table public.asset_value_day (
   -- empty book). Left out of `value`, so the page can say the value is a floor.
   unpriced_types  integer not null default 0,
   unpriced_units  bigint not null default 0,
+  -- Manufacturing and reaction jobs installed and not yet delivered at that
+  -- moment: (1 − done) × inputs + done × output, both at the same Jita split.
+  job_value       numeric(20, 2) not null default 0,
+  jobs            integer not null default 0,
+  -- Jobs left out of job_value because a line of their bill or their product
+  -- had no price (a partly priced job would read as a loss that never was).
+  unpriced_jobs   integer not null default 0,
+  -- Open sell orders: units left × Jita split. Open buy orders: their escrow.
+  -- Registrations only (corp orders reach us through the character that
+  -- placed them, is_corporation; there is no corp orders extract).
+  sell_order_value numeric(20, 2) not null default 0,
+  buy_escrow       numeric(20, 2) not null default 0,
+  -- Contracts in flight: the items an outstanding item exchange or auction of
+  -- ours offers, plus the collateral of a courier we issued (outstanding or
+  -- in progress) or accepted (in progress, issued by someone outside the
+  -- account, so an alt-to-alt haul counts once).
+  contract_value   numeric(20, 2) not null default 0,
+  -- The wallet balance last recorded by then: the character's, or the sum of
+  -- the corporation's divisions.
+  wallet           numeric(20, 2) not null default 0,
   computed_at     timestamptz not null default now(),
   owner_key text generated always as (coalesce(registration_id::text, 'corp:' || corporation_id::text)) stored,
   check ((registration_id is null) <> (corporation_id is null)),
@@ -8571,6 +8603,29 @@ create policy "Users read own asset values"
 grant select on public.asset_value_day to authenticated;
 grant all    on public.asset_value_day to service_role;
 
+-- The Jita split of one type in effect at a moment: the midpoint of best bid
+-- and best ask, one side when the book has one, null when nothing was
+-- captured by then. Never a later price. One probe on the per-type btree.
+create or replace function public.asset_value_price(p_type_id bigint, p_at timestamptz)
+returns numeric
+language sql
+stable
+set search_path to 'public'
+as $$
+  select case
+           when m.buy_max is null then m.sell_min
+           when m.sell_min is null then m.buy_max
+           else (m.buy_max + m.sell_min) / 2
+         end
+    from public.market_price_over_time m
+   where m.market = 'jita' and m.type_id = p_type_id and m.valid_from <= p_at
+   order by m.valid_from desc
+   limit 1
+$$;
+
+revoke execute on function public.asset_value_price(bigint, timestamptz) from public, anon, authenticated;
+grant execute on function public.asset_value_price(bigint, timestamptz) to service_role;
+
 -- Compute and store one owner's value for each UTC day in [p_from, p_to].
 -- Returns how many days it wrote.
 --
@@ -8585,6 +8640,18 @@ grant all    on public.asset_value_day to service_role;
 -- a later version (the item was still held, in some other state). The last
 -- test covers the versions closed before 2026-10, whose valid_until was the
 -- last sighting rather than the close. Today is the plain current snapshot.
+--
+-- The jobs at a moment: each manufacturing (activity 1) or reaction (9) job
+-- of the owner, read at its latest version, installed by then, and not yet
+-- delivered (a delivered job's output is in the hangar from completed_date).
+-- A cancelled or reverted job counts until its completed_date. A job that
+-- left ESI's listing before a terminal state was seen counts until its row
+-- was closed. A job both extracts list is the corporation's, as on /industry.
+-- The part done is the share of start → end elapsed, clamped to [0, 1]. The
+-- bill is the SDE's per-run quantities at the blueprint's ME, with the game's
+-- rounding — max(runs, ceil(round(runs × base × (1 − ME/100), 2))) — the rule
+-- src/app/industry/lift.ts applies. ME is the blueprint item's, from its
+-- latest version before the install, else 0; reactions have none.
 --
 -- Service role only. force_custom_plan, so the owner branch that does not
 -- apply is pruned as a constant rather than kept in a generic plan.
@@ -8605,10 +8672,27 @@ declare
   v_at      timestamptz;
   v_live    boolean;
   v_written integer := 0;
+  v_value          numeric;
+  v_priced_types   integer;
+  v_unpriced_types integer;
+  v_unpriced_units bigint;
+  v_job_value      numeric;
+  v_jobs           integer;
+  v_unpriced_jobs  integer;
+  v_sell_value     numeric;
+  v_unpriced_sell  integer;
+  v_escrow         numeric;
+  v_contract_value numeric;
+  v_wallet         numeric;
+  v_character_id   bigint;
+  v_user_id        uuid;
 begin
   if (p_registration_id is null) = (p_corporation_id is null) then
     raise exception 'asset_value_day_compute: name exactly one owner' using errcode = '22023';
   end if;
+
+  select r.character_id, r.user_id into v_character_id, v_user_id
+    from public.registration r where r.id = p_registration_id;
 
   for v_day in
     select d::date from generate_series(p_from, least(p_to, v_today), interval '1 day') d
@@ -8621,6 +8705,7 @@ begin
        where market = 'jita' and type_id = 34 and valid_from <= v_at
     );
 
+    -- ── The hangar ──────────────────────────────────────────────────────
     with versions as (
       select distinct on (v.item_id) v.item_id, v.type_id, v.quantity, v.is_current, v.valid_until
         from (
@@ -8650,41 +8735,226 @@ begin
        group by h.type_id
     ),
     priced as (
-      select h.units,
-             case
-               when p.buy_max is null then p.sell_min
-               when p.sell_min is null then p.buy_max
-               else (p.buy_max + p.sell_min) / 2
-             end as price
+      select h.units, public.asset_value_price(h.type_id, v_at) as price
         from held h
-        left join lateral (
-          select m.buy_max, m.sell_min
-            from public.market_price_over_time m
-           where m.market = 'jita' and m.type_id = h.type_id and m.valid_from <= v_at
-           order by m.valid_from desc
-           limit 1
-        ) p on true
        where not exists (
          select 1 from public.sde_published_type t where t.type_id = h.type_id and t.category_id = 9
        )
     )
-    insert into public.asset_value_day as d (
-      registration_id, corporation_id, utc_day, as_of,
-      value, priced_types, unpriced_types, unpriced_units, computed_at
-    )
-    select p_registration_id, p_corporation_id, v_day, v_at,
-           round(coalesce(sum(units * price), 0), 2),
+    select round(coalesce(sum(units * price), 0), 2),
            count(*) filter (where price is not null),
            count(*) filter (where price is null),
-           coalesce(sum(units) filter (where price is null), 0),
-           now()
-      from priced
+           coalesce(sum(units) filter (where price is null), 0)
+      into v_value, v_priced_types, v_unpriced_types, v_unpriced_units
+      from priced;
+
+    -- ── Jobs in progress ────────────────────────────────────────────────
+    with latest as (
+      select distinct on (j.job_id) j.*
+        from (
+          select job_id, activity_id, blueprint_id, blueprint_type_id, runs, status,
+                 start_date, end_date, completed_date, is_current, valid_from, valid_until
+            from public.character_industry_job_over_time c
+           where p_registration_id is not null
+             and c.registration_id = p_registration_id
+             and c.activity_id in (1, 9)
+             and c.start_date <= v_at
+             and not exists (select 1 from public.corp_industry_job_over_time o where o.job_id = c.job_id)
+          union all
+          select job_id, activity_id, blueprint_id, blueprint_type_id, runs, status,
+                 start_date, end_date, completed_date, is_current, valid_from, valid_until
+            from public.corp_industry_job_over_time c
+           where p_corporation_id is not null
+             and c.corporation_id = p_corporation_id
+             and c.activity_id in (1, 9)
+             and c.start_date <= v_at
+        ) j
+       order by j.job_id, j.valid_from desc
+    ),
+    running as (
+      select l.*,
+             least(1, greatest(0,
+               extract(epoch from (v_at - l.start_date))
+               / nullif(extract(epoch from (l.end_date - l.start_date)), 0)
+             ))::numeric as done
+        from latest l
+       where (l.completed_date is null or l.completed_date > v_at)
+         and (l.is_current or l.status in ('delivered', 'cancelled', 'reverted') or l.valid_until > v_at)
+    ),
+    billed as (
+      select r.job_id, coalesce(r.done, 1) as done, r.runs, b.product_type_id, b.product_quantity, b.materials,
+             case when r.activity_id = 1 then coalesce((
+               select me.material_efficiency
+                 from (
+                   select material_efficiency, valid_from from public.character_blueprint_over_time
+                    where item_id = r.blueprint_id
+                   union all
+                   select material_efficiency, valid_from from public.corp_blueprint_over_time
+                    where item_id = r.blueprint_id
+                 ) me
+                order by (me.valid_from <= r.start_date) desc, me.valid_from desc
+                limit 1
+             ), 0) else 0 end as me
+        from running r
+        join lateral (
+          select p.product_type_id, p.product_quantity, p.materials
+            from public.sde_blueprint_product p
+           where p.blueprint_type_id = r.blueprint_type_id
+             and p.activity_id = case when r.activity_id = 9 then 11 else 1 end
+           limit 1
+        ) b on true
+    ),
+    valued as (
+      select b.job_id, b.done,
+             b.runs * b.product_quantity * public.asset_value_price(b.product_type_id, v_at) as output_value,
+             (select sum(greatest(b.runs, ceil(round(b.runs * (m ->> 'quantity')::numeric * (1 - b.me / 100.0), 2)))
+                         * public.asset_value_price((m ->> 'typeID')::bigint, v_at))
+                from jsonb_array_elements(b.materials) m) as input_value,
+             (select count(*) from jsonb_array_elements(b.materials) m
+               where public.asset_value_price((m ->> 'typeID')::bigint, v_at) is null) as unpriced_inputs
+        from billed b
+    )
+    select round(coalesce(sum((1 - done) * coalesce(input_value, 0) + done * output_value)
+                          filter (where output_value is not null and unpriced_inputs = 0), 0), 2),
+           count(*) filter (where output_value is not null and unpriced_inputs = 0),
+           count(*) filter (where output_value is null or unpriced_inputs > 0)
+      into v_job_value, v_jobs, v_unpriced_jobs
+      from valued;
+
+    -- ── Market orders ───────────────────────────────────────────────────
+    -- Each order at its latest version begun by then, open while current,
+    -- not yet closed, or superseded later (the assets rule).
+    with ov as (
+      select distinct on (o.order_id) o.order_id, o.type_id, o.is_buy, o.volume_remain, o.escrow,
+             o.is_current, o.valid_until
+        from public.character_order_over_time o
+       where p_registration_id is not null
+         and o.registration_id = p_registration_id
+         and o.valid_from <= v_at
+         and (o.is_current or not v_live)
+       order by o.order_id, o.valid_from desc
+    ),
+    open_orders as (
+      select ov.*, case when ov.is_buy then null else public.asset_value_price(ov.type_id, v_at) end as price
+        from ov
+       where ov.is_current
+          or ov.valid_until > v_at
+          or exists (select 1 from public.character_order_over_time n where n.order_id = ov.order_id and n.valid_from > v_at)
+    )
+    select round(coalesce(sum(volume_remain * price) filter (where not is_buy), 0), 2),
+           count(*) filter (where not is_buy and price is null),
+           round(coalesce(sum(escrow) filter (where is_buy), 0), 2)
+      into v_sell_value, v_unpriced_sell, v_escrow
+      from open_orders;
+
+    -- ── Contracts in flight ─────────────────────────────────────────────
+    with k as (
+      select c.contract_id, c.type, c.collateral, c.issuer_id, c.issuer_corporation_id, c.acceptor_id,
+             c.for_corporation,
+             (not c.for_corporation and c.issuer_id = v_character_id) as ours_issued,
+             (c.acceptor_id = v_character_id) as ours_accepted,
+             (select s.status from public.character_contract_status_over_time s
+               where s.registration_id = c.registration_id and s.contract_id = c.contract_id and s.valid_from <= v_at
+               order by s.valid_from desc limit 1) as status,
+             (select sum(i.quantity * public.asset_value_price(i.type_id, v_at))
+                from public.character_contract_item i
+               where i.registration_id = c.registration_id and i.contract_id = c.contract_id and i.is_included
+                 and not exists (select 1 from public.sde_published_type t where t.type_id = i.type_id and t.category_id = 9)
+             ) as items_value
+        from public.character_contract c
+       where p_registration_id is not null
+         and c.registration_id = p_registration_id
+         and c.date_issued <= v_at
+      union all
+      select c.contract_id, c.type, c.collateral, c.issuer_id, c.issuer_corporation_id, c.acceptor_id,
+             c.for_corporation,
+             (c.for_corporation and c.issuer_corporation_id = p_corporation_id) as ours_issued,
+             (c.acceptor_id = p_corporation_id) as ours_accepted,
+             (select s.status from public.corp_contract_status_over_time s
+               where s.corporation_id = c.corporation_id and s.contract_id = c.contract_id and s.valid_from <= v_at
+               order by s.valid_from desc limit 1) as status,
+             (select sum(i.quantity * public.asset_value_price(i.type_id, v_at))
+                from public.corp_contract_item i
+               where i.corporation_id = c.corporation_id and i.contract_id = c.contract_id and i.is_included
+                 and not exists (select 1 from public.sde_published_type t where t.type_id = i.type_id and t.category_id = 9)
+             ) as items_value
+        from public.corp_contract c
+       where p_corporation_id is not null
+         and c.corporation_id = p_corporation_id
+         and c.date_issued <= v_at
+    ),
+    internal as (
+      -- An issuer inside the owner's own account (or, for a corporation, one
+      -- of its registered members or the corporation itself): that side
+      -- already counts the courier's stake.
+      select k.contract_id,
+             (p_registration_id is not null and (
+                (not k.for_corporation and k.issuer_id in (select r.character_id from public.registration r where r.user_id = v_user_id))
+                or (k.for_corporation and k.issuer_corporation_id in (
+                      select r.corporation_id from public.registration r where r.user_id = v_user_id and r.corporation_id is not null))))
+             or (p_corporation_id is not null and (
+                (k.for_corporation and k.issuer_corporation_id = p_corporation_id)
+                or (not k.for_corporation and k.issuer_id in (
+                      select r.character_id from public.registration r where r.corporation_id = p_corporation_id))))
+               as is_internal
+        from k
+       where k.ours_accepted
+    )
+    select round(coalesce(sum(
+             case
+               when k.ours_issued and k.type in ('item_exchange', 'auction') and k.status = 'outstanding'
+                 then coalesce(k.items_value, 0)
+               when k.ours_issued and k.type = 'courier' and k.status in ('outstanding', 'in_progress')
+                 then coalesce(k.collateral, 0)
+               when k.ours_accepted and not k.ours_issued and k.type = 'courier' and k.status = 'in_progress'
+                    and not coalesce((select i.is_internal from internal i where i.contract_id = k.contract_id), false)
+                 then coalesce(k.collateral, 0)
+               else 0
+             end), 0), 2)
+      into v_contract_value
+      from k;
+
+    -- ── Wallet ──────────────────────────────────────────────────────────
+    if p_registration_id is not null then
+      select w.balance into v_wallet
+        from public.character_wallet w
+       where w.registration_id = p_registration_id and w.recorded_at <= v_at
+       order by w.recorded_at desc
+       limit 1;
+    else
+      select sum(w.balance) into v_wallet
+        from (
+          select distinct on (division) balance
+            from public.corp_wallet
+           where corporation_id = p_corporation_id and recorded_at <= v_at
+           order by division, recorded_at desc
+        ) w;
+    end if;
+
+    insert into public.asset_value_day (
+      registration_id, corporation_id, utc_day, as_of,
+      value, priced_types, unpriced_types, unpriced_units,
+      job_value, jobs, unpriced_jobs,
+      sell_order_value, buy_escrow, contract_value, wallet, computed_at
+    ) values (
+      p_registration_id, p_corporation_id, v_day, v_at,
+      v_value, v_priced_types, v_unpriced_types + v_unpriced_sell, v_unpriced_units,
+      v_job_value, v_jobs, v_unpriced_jobs,
+      v_sell_value, v_escrow, v_contract_value, coalesce(v_wallet, 0), now()
+    )
     on conflict (owner_key, utc_day) do update
        set as_of          = excluded.as_of,
            value          = excluded.value,
            priced_types   = excluded.priced_types,
            unpriced_types = excluded.unpriced_types,
            unpriced_units = excluded.unpriced_units,
+           job_value      = excluded.job_value,
+           jobs           = excluded.jobs,
+           unpriced_jobs  = excluded.unpriced_jobs,
+           sell_order_value = excluded.sell_order_value,
+           buy_escrow     = excluded.buy_escrow,
+           contract_value = excluded.contract_value,
+           wallet         = excluded.wallet,
            computed_at    = excluded.computed_at;
 
     v_written := v_written + 1;
