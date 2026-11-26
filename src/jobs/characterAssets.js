@@ -11,6 +11,7 @@ import {
   recordReassembly,
   refreshAssetSummary,
 } from './lib.js'
+import { recordAssetValue } from './assetValues.js'
 
 const TAG = 'character-assets'
 const SCOPE = 'esi-assets.read_assets.v1'
@@ -212,6 +213,10 @@ export const runCharacterAssets = ({ registrationIds } = {}) =>
       // (docs/ship-memory.md "Reassembly"); best-effort, after the claim has
       // opened the debut rows the carry writes against.
       await recordReassembly(TAG, { registration_id }, changes, reconciledAt)
+
+      // Today's point on the /asset valuation chart (docs/asset-valuation.md);
+      // best-effort, after the claim so it values what this run saw.
+      await recordAssetValue(TAG, { registration_id })
 
       const dt = Date.now() - t0
       console.log(

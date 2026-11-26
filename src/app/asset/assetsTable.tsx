@@ -5,10 +5,9 @@ import { useEffect, useState } from 'react'
 import { reduce } from 'ramda'
 
 import { LinkSpinner } from '../linkSpinner'
-import { ALL_OWNERS, OwnerSelect, useOwnerFilter, type Owners } from '../ownerFilter'
+import { ALL_OWNERS } from '../ownerFilter'
 import retro from '../retro.module.css'
 import styles from './assets.module.css'
-import { OWNER_STORAGE_KEY } from './filterKey'
 
 export type Location = {
   id: string
@@ -21,7 +20,9 @@ export type Location = {
 
 type AssetsTableProps = {
   locations: Location[]
-  owners: Owners
+  // The page-level owner filter (AssetsLanding), shared with the valuation
+  // chart above the table.
+  ownerId: string
 }
 
 type LocationRow = { loc: Location; count: number }
@@ -35,8 +36,7 @@ type SystemGroup = { system: string; rows: LocationRow[]; total: number }
 // locations never split across a page boundary.
 const PAGE_SIZE = 25
 
-export const AssetsTable = ({ locations, owners }: AssetsTableProps) => {
-  const [ownerId, setOwnerId] = useOwnerFilter(OWNER_STORAGE_KEY, owners)
+export const AssetsTable = ({ locations, ownerId }: AssetsTableProps) => {
   const [page, setPage] = useState(0)
 
   const rows: LocationRow[] = locations
@@ -79,14 +79,7 @@ export const AssetsTable = ({ locations, owners }: AssetsTableProps) => {
   useEffect(() => setPage(0), [ownerId])
 
   return (
-    <section>
-      <div className={styles.header}>
-        <h1>Assets</h1>
-        <label className={styles.filter}>
-          Owner:&nbsp;
-          <OwnerSelect owners={owners} value={ownerId} onChange={setOwnerId} />
-        </label>
-      </div>
+    <section className={styles.locations}>
       {locations.length === 0 ? (
         <p>
           No assets visible. Link a character with the <code>esi-assets.read_assets.v1</code> scope on the{' '}

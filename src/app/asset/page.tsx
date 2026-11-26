@@ -11,8 +11,10 @@ import { fetchOwners } from '../owners'
 import { resolveLocations, type LocationRef } from '../resolveLocations'
 import { AssetSearchForm } from './assetSearchForm'
 import styles from './assets.module.css'
-import { AssetsTable, type Location } from './assetsTable'
+import { AssetsLanding } from './assetsLanding'
+import type { Location } from './assetsTable'
 import { fetchLocationSummary } from './locationSummary'
+import { fetchValueRows } from './valueRows'
 
 const AssetsPage = async () => {
   const supabase = await createClient()
@@ -40,9 +42,14 @@ const Locations = async ({ supabase }: { supabase: SupabaseClient }) => {
   // database time. The extract jobs now maintain that walk's result in
   // asset_location_summary_cache, so this is a small keyed read (0.2ms) and
   // joins the same batch as everything else the page needs.
-  const [summary, owners, { data: lastRun }, { data: mainCharacter }] = await Promise.all([
+  //
+  // The valuation chart reads asset_value_day, one stored row per owner per
+  // day that the same extracts write (docs/asset-valuation.md).
+  const now = Date.now()
+  const [summary, owners, values, { data: lastRun }, { data: mainCharacter }] = await Promise.all([
     fetchLocationSummary(supabase),
     fetchOwners(supabase),
+    fetchValueRows(supabase, now),
     supabase
       .from('heartbeat')
       .select('ended_at, run_url')
@@ -93,13 +100,14 @@ const Locations = async ({ supabase }: { supabase: SupabaseClient }) => {
 
   return (
     <>
-      {mainCharacterId != null && (
-        <p className={styles.corpses}>
-          <Link href={`/corpses/${mainCharacterId}`}>View frozen corpses</Link>
-        </p>
-      )}
-      <AssetSearchForm />
-      <AssetsTable locations={locations} owners={owners} />
+      <AssetsLanding now={now} values={values} locations={locations} owners={owners}>
+        {mainCharacterId != null && (
+          <p className={styles.corpses}>
+            <Link href={`/corpses/${mainCharacterId}`}>View frozen corpses</Link>
+          </p>
+        )}
+        <AssetSearchForm />
+      </AssetsLanding>
       <p className={styles.lastRun}>
         Assets last refreshed:{' '}
         {lastRun?.run_url ? (
