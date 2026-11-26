@@ -10,6 +10,7 @@ import { createServiceClient } from '@/utils/supabase/service'
 import { establishedUser } from '../../account/lib/establishedUser'
 import { resolvePublicShare } from '../../asset/access'
 import { AppraisalPanel } from '../../asset/[locationId]/appraisalPanel'
+import { cloakCrumbs } from '../../asset/cloak'
 import { AssetShareDialog } from '../../asset/assetShareDialog'
 import { fetchCorpShareDialogData, fetchShareDialogData } from '../../asset/shareData'
 import { sharePath } from '../../asset/shareHint'
@@ -155,7 +156,7 @@ const ShipPage = async ({ params, searchParams }: ShipPageProps) => {
       // current version (docs/ship-memory.md, "Display").
       readShipMemory(supabase, itemId),
     ])
-  const { owner, hiddenHolder } = ownerView
+  const { owner, hiddenHolder, cloaked } = ownerView
   // The memory follows the share. A signed-in recipient reads the hull's row
   // through the audience policy but holds nothing, so the owner-scoped read
   // above comes back empty for them; the hull row having come through RLS is
@@ -163,15 +164,20 @@ const ShipPage = async ({ params, searchParams }: ShipPageProps) => {
   // role, after the share resolved — answers the same way here. Never on a
   // share that shows the account's main: that share promises the page sends
   // nothing leading to the holder, and no code can check free text for that.
-  const memory = hiddenHolder != null ? null : (ownMemory ?? (await readShipMemory(createServiceClient(), itemId)))
+  // Nor on a share that cloaks the location: free text can name a place.
+  const memory =
+    hiddenHolder != null || cloaked ? null : (ownMemory ?? (await readShipMemory(createServiceClient(), itemId)))
   // A share that shows the account's main: the holder's registration uuid and
   // any name carrying theirs stay out of everything below (presentedOwner.ts).
   const shown = hiddenHolder == null ? identity : hideHolder(hiddenHolder)
   const hull = shown(self)
+  // A share that cloaks the location: no place, and no ship or container above
+  // the hull (../../asset/cloak.ts).
+  const placedCrumbs = cloaked ? cloakCrumbs(crumbs) : crumbs
   const shownCrumbs =
     hiddenHolder == null
-      ? crumbs
-      : map((crumb) => ({ ...crumb, label: labelWithoutHolder(hiddenHolder)(crumb.label) }), crumbs)
+      ? placedCrumbs
+      : map((crumb) => ({ ...crumb, label: labelWithoutHolder(hiddenHolder)(crumb.label) }), placedCrumbs)
   const children = map(shown, [...((characterChildren ?? []) as ChildRow[]), ...((corpChildren ?? []) as ChildRow[])])
   const rows = fitRows(children)
 
@@ -191,6 +197,7 @@ const ShipPage = async ({ params, searchParams }: ShipPageProps) => {
         itemId={itemId}
         owner={owner}
         location={locationLabel(shownCrumbs)}
+        cloaked={cloaked}
         actions={
           <>
             {/* The hull plus everything nested inside it — the same set the
@@ -254,7 +261,7 @@ const SharedShipPage = async ({
 }) => {
   const ship = await sharedShip(itemId, shareParams.share, shareParams.token)
   if (!ship) notFound()
-  const { self, selfType, children, owner, ownerId, ownerKind, sighting, memory } = ship
+  const { self, selfType, children, owner, ownerId, ownerKind, sighting, memory, cloaked } = ship
 
   const typeName = selfType?.name ?? `#${self.type_id}`
   const rows = fitRows(children)
@@ -268,8 +275,10 @@ const SharedShipPage = async ({
         groupName={selfType?.groupName ?? null}
         itemId={itemId}
         owner={owner}
-        // A share link says what the ship is, never where it is.
+        // A share link says what the ship is, never where it is — and a share
+        // that cloaks the location says so.
         location={null}
+        cloaked={cloaked}
         // ...but does say when: a link outlives the hull, and what the page
         // shows may be its last state.
         sighting={sighting}

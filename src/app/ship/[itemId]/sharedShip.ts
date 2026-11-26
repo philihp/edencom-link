@@ -54,6 +54,10 @@ export type SharedShip = {
   // share that shows the account's main, which promises the page sends
   // nothing that leads to the holder — no code can check free text for that.
   memory: ShipMemory | null
+  // The share cloaks the location (character_asset_share.cloak_location): the
+  // page says "Location cloaked" and the memory stays hidden, since free text
+  // can name a place.
+  cloaked: boolean
 }
 
 export type ShareParams = { token?: string; share?: string }
@@ -175,9 +179,10 @@ const loadSharedShip = async (itemId: string, share?: string, token?: string): P
   const hangar: Hangar = characterSelf
     ? { kind: 'character', ids: scope.registrationIds }
     : { kind: 'corporation', ids: corporationIds }
-  const memory = scope.showAsMain
-    ? null
-    : await readShipMemory(supabase, itemId, { asOf: self.is_current ? null : self.valid_until })
+  const memory =
+    scope.showAsMain || scope.cloakLocation
+      ? null
+      : await readShipMemory(supabase, itemId, { asOf: self.is_current ? null : self.valid_until })
   const children = !self.is_current
     ? await childrenAsOf(supabase, itemId, hangar, self.valid_until)
     : hangar.kind === 'character'
@@ -212,6 +217,7 @@ const loadSharedShip = async (itemId: string, share?: string, token?: string): P
         ownerKind: 'character',
         sighting,
         memory: null,
+        cloaked: scope.cloakLocation,
       }
     }
     // The share scope carries the sharer's name but not their EVE id, which is
@@ -234,6 +240,7 @@ const loadSharedShip = async (itemId: string, share?: string, token?: string): P
       ownerKind: 'character',
       sighting,
       memory,
+      cloaked: scope.cloakLocation,
     }
   }
 
@@ -252,6 +259,7 @@ const loadSharedShip = async (itemId: string, share?: string, token?: string): P
     ownerKind: 'corporation',
     sighting,
     memory,
+    cloaked: scope.cloakLocation,
   }
 }
 

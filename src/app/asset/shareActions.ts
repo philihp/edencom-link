@@ -21,6 +21,8 @@ export type SaveShareInput = {
   isPublic: boolean
   // Show the account's main character as the owner (asset shares only).
   showAsMain?: boolean
+  // Show "Location cloaked" in place of where the item is (item shares only).
+  cloakLocation?: boolean
   // The structure share's extra audience: everyone with a job at the structure
   // in the last 30 days (docs/sharing-layer/12-structure-share.md). Only the
   // structure writer reads it.
@@ -149,6 +151,7 @@ const writeAssetShare = async (
         alliance_ids: allianceIds,
         secret,
         show_as_main: input.showAsMain === true,
+        cloak_location: input.cloakLocation === true,
       },
       { onConflict: 'registration_id,item_id' }
     )
@@ -167,6 +170,7 @@ const writeAssetShare = async (
       shareParam: secret != null && salt != null ? signShare(saved.id, secret, salt) : null,
       isPublic: secret == null && corporationIds.length === 0 && allianceIds.length === 0,
       showAsMain: input.showAsMain === true,
+      cloakLocation: input.cloakLocation === true,
     },
   }
 }
@@ -197,7 +201,8 @@ export const savePlaceShare = async (placeId: string, input: SaveShareInput): Pr
   const grant = await placeGrantor(supabase, placeId)
   if (!grant) return { error: 'No characters on this account' }
 
-  return writeAssetShare(supabase, grant, placeId, { ...input, showAsMain: false })
+  // A place share's subject IS the place, so there is no location to cloak.
+  return writeAssetShare(supabase, grant, placeId, { ...input, showAsMain: false, cloakLocation: false })
 }
 
 // Stops the account's character place share, whichever registration anchors it.

@@ -283,6 +283,7 @@ type ShareRow = {
   alliance_ids: Array<number | string>
   secret: string | null
   show_as_main?: boolean
+  cloak_location?: boolean
 }
 
 // The share rows whose subject is the item, a container above it, or its
@@ -305,7 +306,7 @@ const readersOf = async (
   const none = Promise.resolve({ data: [] as ShareRow[] })
   const characterShares = supabase
     .from('character_asset_share')
-    .select('item_id, corporation_ids, alliance_ids, secret, show_as_main')
+    .select('item_id, corporation_ids, alliance_ids, secret, show_as_main, cloak_location')
     .in('item_id', subjects)
   const corpShares = supabase
     .from('corp_asset_share')

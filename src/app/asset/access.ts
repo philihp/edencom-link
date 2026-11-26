@@ -42,6 +42,10 @@ export type ShareScope = {
   // The share asks to show the account's main character as the owner
   // (character_asset_share.show_as_main). Legacy ?token= links never do.
   showAsMain: boolean
+  // The share cloaks the location (character_asset_share.cloak_location): the
+  // pages say "Location cloaked" (./cloak.ts). Legacy ?token= links, place
+  // shares and corp shares never do.
+  cloakLocation: boolean
 }
 
 // `from` itself followed by its enclosing containers and, last, the root's
@@ -102,6 +106,7 @@ type CharacterShareRow = {
   item_id: number | string
   secret: string | null
   show_as_main: boolean
+  cloak_location: boolean
   corporation_ids: number[] | null
   alliance_ids: number[] | null
 }
@@ -132,7 +137,7 @@ const characterCandidates = async (
   const { chain, holder } = await ancestryChain(supabase, 'character_asset_over_time', itemId)
   const candidates = supabase
     .from('character_asset_share')
-    .select('id, registration_id, item_id, secret, show_as_main, corporation_ids, alliance_ids')
+    .select('id, registration_id, item_id, secret, show_as_main, cloak_location, corporation_ids, alliance_ids')
     .in('item_id', chain)
   const holderAccount = holder === null ? null : await accountRegistrations(supabase, holder)
   const byHolder = holderAccount === null ? candidates : candidates.in('registration_id', holderAccount.ids)
@@ -204,6 +209,7 @@ const characterShareScope = async (supabase: Service, share: CharacterShareRow):
       characterNames: account.names,
       corporationIds: [],
       showAsMain: false,
+      cloakLocation: false,
     }
   }
 
@@ -218,6 +224,7 @@ const characterShareScope = async (supabase: Service, share: CharacterShareRow):
     // that opens corp rows.
     corporationIds: [],
     showAsMain: share.show_as_main === true,
+    cloakLocation: share.cloak_location === true,
   }
 }
 
@@ -268,6 +275,7 @@ const corpShareScope = async (supabase: Service, share: CorpShareRow): Promise<S
     characterNames: new Map(),
     corporationIds: [Number(share.corporation_id)],
     showAsMain: false,
+    cloakLocation: false,
   }
 }
 
@@ -294,6 +302,7 @@ export const resolveShareToken = async (token: string, itemId: string): Promise<
     characterNames: new Map(rows.map((r) => [r.id, r.name])),
     corporationIds: [...new Set(rows.filter((r) => r.corporation_id != null).map((r) => Number(r.corporation_id)))],
     showAsMain: false,
+    cloakLocation: false,
   }
 }
 

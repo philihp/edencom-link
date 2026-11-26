@@ -59,9 +59,15 @@ test('describeReader: audiences compose with a link, and show_as_main is carried
   assert.deepEqual(r.corporation_ids, [98000001])
   assert.equal(r.by_link, true)
   assert.equal(r.hides_holder, true)
+  assert.equal(r.cloaks_location, false)
   assert.equal(r.subject, 'container')
   const linkOnly = describeReader({ item_id: 1, corporation_ids: [], alliance_ids: [], secret: 's' }, 'place')
   assert.equal(linkOnly.reach, 'link_holders')
+  const cloaked = describeReader(
+    { item_id: 1, corporation_ids: [], alliance_ids: [], secret: null, cloak_location: true },
+    'ship'
+  )
+  assert.equal(cloaked.cloaks_location, true)
 })
 
 test('subjectOf: the hull, a container above it, its place, or nothing', () => {

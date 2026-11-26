@@ -3903,6 +3903,14 @@ create table public.character_asset_share (
   -- carry the holder's registration_id, so a signed-in recipient reading the
   -- data API directly can still find the holder.
   show_as_main boolean not null default false,
+  -- Cloak the location: the pages say "Location cloaked" where they would say
+  -- where the item sits, and leave out the ships and containers above it,
+  -- even where another share (a place share) would show them. The memory
+  -- panel is hidden too, since free text can name a place
+  -- (src/app/asset/shareFlags.ts). For an item share the data layer already
+  -- returns no place (character_asset_location is owner-only), so this is a
+  -- promise the pages keep, enforced in the app like show_as_main.
+  cloak_location boolean not null default false,
   unique (registration_id, item_id)
 );
 create index character_asset_share_item_id_idx on public.character_asset_share (item_id);

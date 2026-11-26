@@ -49,6 +49,7 @@ export const ShareForm = ({
   const [link, setLink] = useState(data.share?.hasLink ?? false)
   const [isPublic, setIsPublic] = useState(data.share?.isPublic ?? false)
   const [showAsMain, setShowAsMain] = useState(data.share?.showAsMain ?? false)
+  const [cloakLocation, setCloakLocation] = useState(data.share?.cloakLocation ?? false)
   const [tenants, setTenants] = useState(data.share?.tenants ?? false)
   const [copied, setCopied] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -78,6 +79,7 @@ export const ShareForm = ({
         rotateLink,
         isPublic,
         ...(data.mainName ? { showAsMain } : {}),
+        ...(data.canCloak ? { cloakLocation } : {}),
         ...(extraAudience ? { tenants } : {}),
       })
       if (result.error) setError(result.error)
@@ -101,6 +103,7 @@ export const ShareForm = ({
         setLink(false)
         setIsPublic(false)
         setShowAsMain(false)
+        setCloakLocation(false)
         setTenants(false)
         setCopied(false)
       }
@@ -203,6 +206,13 @@ export const ShareForm = ({
         <label className={styles.publicRow}>
           <input type="checkbox" checked={showAsMain} onChange={(e) => setShowAsMain(e.target.checked)} />
           Show the owner as {data.mainName}
+        </label>
+      ) : null}
+
+      {data.canCloak ? (
+        <label className={styles.publicRow}>
+          <input type="checkbox" checked={cloakLocation} onChange={(e) => setCloakLocation(e.target.checked)} />
+          Cloak the location (show &ldquo;Location cloaked&rdquo;)
         </label>
       ) : null}
 
