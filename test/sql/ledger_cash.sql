@@ -1,4 +1,4 @@
--- SQL-level coverage for migration 20261122221337_ledger_cash.sql (ledger
+-- SQL-level coverage for migration 20261126210114_ledger_cash.sql (ledger
 -- stage 2, docs/ledger/stage-2.md): ledger_account, ledger_ref_type, the view
 -- ledger_cash_line, ledger_group() and ledger_cash_statement().
 --
@@ -109,7 +109,7 @@ grant select on public.corp_job_access to authenticated;
 
 \ir ../../supabase/migrations/20261119091512_ledger_check.sql
 \ir ../../supabase/migrations/20261120104657_ledger_hidden_credits.sql
-\ir ../../supabase/migrations/20261122221337_ledger_cash.sql
+\ir ../../supabase/migrations/20261126210114_ledger_cash.sql
 
 -- Account A: characters a1 (char 9001) and a2 (char 9002), both in corp
 -- 98000001; a1 directs it. Account B: b1 (char 9101), a member of 98000001

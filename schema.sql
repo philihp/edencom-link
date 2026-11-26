@@ -11388,7 +11388,7 @@ revoke execute on function public.goonwiki_search(text, int) from public, anon, 
 grant execute on function public.goonwiki_search(text, int) to service_role;
 
 -- ── Ledger stage 2 (docs/ledger/stage-2.md) ────────────────────────────────
--- Same DDL as migration 20261122221337_ledger_cash.sql: the chart of accounts,
+-- Same DDL as migration 20261126210114_ledger_cash.sql: the chart of accounts,
 -- the ref_type map, the view ledger_cash_line, ledger_group() and
 -- ledger_cash_statement(). Rollback: docs/ledger/rollback-stage-2.sql.
 -- ── ledger_account ────────────────────────────────────────────────────────

@@ -113,7 +113,7 @@ const setupSql = (dir: string): string => {
     ...shapes,
     '\\i supabase/migrations/20261119091512_ledger_check.sql',
     '\\i supabase/migrations/20261120104657_ledger_hidden_credits.sql',
-    '\\i supabase/migrations/20261122221337_ledger_cash.sql',
+    '\\i supabase/migrations/20261126210114_ledger_cash.sql',
     // The copy, as stage 0 loads it, then into the production shapes.
     '\\i docs/ledger/lab/schema.sql',
     loadScript(resolve(dir)),
