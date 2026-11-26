@@ -1,0 +1,67 @@
+{
+  "window": { "from": "2026-09-01", "to": "2026-12-01" },
+  "scope": "group",
+  "wallets": [
+    {
+      "wallet_key": "00000000-0000-4000-8000-000000000001",
+      "kind": "character",
+      "registration_id": "00000000-0000-4000-8000-000000000001",
+      "corporation_id": null,
+      "division": null
+    },
+    {
+      "wallet_key": "98000001:1",
+      "kind": "corporation",
+      "registration_id": null,
+      "corporation_id": 98000001,
+      "division": 1
+    }
+  ],
+  "months": [
+    {
+      "month": "2026-10",
+      "lines": [
+        { "account_code": "4000", "amount": "-1000.00", "rows": 12 },
+        { "account_code": "5110", "amount": "40.00", "rows": 12 },
+        { "account_code": "5100", "amount": "10.00", "rows": 3 },
+        { "account_code": "1100", "amount": "500.00", "rows": 2 },
+        { "account_code": "9000", "amount": "-5.00", "rows": 1 }
+      ],
+      "isk_moved": "1565.00",
+      "suspense_isk": "5.00",
+      "internal_rows": 4,
+      "internal_isk": "200.00",
+      "unpaired_transfers": 0,
+      "proven": true,
+      "not_proven": []
+    },
+    {
+      "month": "2026-11",
+      "lines": [
+        { "account_code": "4200", "amount": "-200.00", "rows": 2 },
+        { "account_code": "5210", "amount": "20.50", "rows": 2 },
+        { "account_code": "1200", "amount": "100.00", "rows": 1 }
+      ],
+      "isk_moved": "320.50",
+      "suspense_isk": "0.00",
+      "internal_rows": 2,
+      "internal_isk": "60.00",
+      "unpaired_transfers": 1,
+      "proven": false,
+      "not_proven": ["break", "unpaired_transfer"]
+    }
+  ],
+  "suspense": [
+    { "ref_type": "unknown_small", "rows": 1, "isk_in": "1.00", "isk_out": "0.00" },
+    { "ref_type": "unknown_big", "rows": 2, "isk_in": "4.00", "isk_out": "0.00" }
+  ],
+  "unpaired": [
+    {
+      "date": "2026-11-03T12:00:00Z",
+      "wallet_key": "98000001:1",
+      "ref_type": "player_donation",
+      "amount": "-30.00",
+      "other_party_id": 90000001
+    }
+  ]
+}
