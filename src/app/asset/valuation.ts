@@ -9,7 +9,7 @@
 // character left) and adds nothing.
 //
 // Pure: no I/O, no Date.now(). The page feeds it rows and `now`.
-import { ascend, descend, filter, map, prop, reduce, sortWith } from 'ramda'
+import { add, ascend, descend, filter, map, mergeWith, prop, reduce, sortWith, sum, values } from 'ramda'
 
 import { niceStep } from '../market/flow.ts'
 
@@ -18,15 +18,42 @@ const DAY_MS = 86_400_000
 // An idle hangar still has a scale of one million ISK.
 const MIN_SPAN = 1_000_000
 
+// The parts of an owner's worth, in the order the hover card lists them.
+export const VALUE_PARTS = ['hangar', 'jobs', 'market', 'contracts', 'cash'] as const
+export type ValuePart = (typeof VALUE_PARTS)[number]
+export type ValueParts = Record<ValuePart, number>
+
+export const PART_LABEL: Record<ValuePart, string> = {
+  // Units × the day's Jita split.
+  hangar: 'Hangar',
+  // Manufacturing and reaction jobs not yet delivered: (1 − done) × inputs +
+  // done × output, at the same price. No install fees: those are spent.
+  jobs: 'Industry jobs',
+  // Units left on sell orders at the split, plus the escrow held by buy orders.
+  market: 'Market orders',
+  // Items in our outstanding exchanges and auctions, and the collateral of
+  // couriers out of our hands.
+  contracts: 'Contracts',
+  // Wallet balances.
+  cash: 'Wallet',
+}
+
+export const zeroParts = (): ValueParts => ({ hangar: 0, jobs: 0, market: 0, contracts: 0, cash: 0 })
+
+export const sumParts = (parts: ValueParts): number => sum(values(parts))
+
+const addParts = (a: ValueParts, b: ValueParts): ValueParts => mergeWith(add, a, b)
+
 export type ValueRow = {
   // A registration uuid or a corporation id, as fetchOwners() labels owners.
   ownerId: string
   // YYYY-MM-DD, UTC.
   day: string
-  value: number
+  parts: ValueParts
   unpricedTypes: number
 }
 
+// An owner's whole worth that day: every part summed.
 export type OwnerValue = { ownerId: string; value: number; carried: boolean }
 
 export type ValuePoint = {
@@ -35,6 +62,8 @@ export type ValuePoint = {
   t: number
   // Null when no kept owner has a value that day.
   total: number | null
+  // Of total, each part over the kept owners.
+  parts: ValueParts
   // Largest first.
   owners: OwnerValue[]
   // Types held that day that had no price, over the kept owners.
@@ -83,11 +112,14 @@ export const valueSeries = (
       const hit = rowOn(byDay, day)
       return hit ? [hit] : []
     })
-    const owners = byValue(map(({ row, carried }) => ({ ownerId: row.ownerId, value: row.value, carried }), hits))
+    const owners = byValue(
+      map(({ row, carried }) => ({ ownerId: row.ownerId, value: sumParts(row.parts), carried }), hits)
+    )
     return {
       day,
       t: dayStart(day),
       total: hits.length === 0 ? null : reduce((sum: number, o: OwnerValue) => sum + o.value, 0, owners),
+      parts: reduce((acc: ValueParts, h) => addParts(acc, h.row.parts), zeroParts(), hits),
       owners,
       unpricedTypes: reduce((sum: number, h) => sum + h.row.unpricedTypes, 0, hits),
     }

@@ -24,7 +24,8 @@ create or replace function auth.uid() returns uuid language sql stable as $$ sel
 create table public.registration (
   id uuid primary key,
   user_id uuid not null,
-  corporation_id bigint
+  corporation_id bigint,
+  character_id bigint
 );
 
 create or replace function public.my_corporation_ids()
@@ -69,9 +70,148 @@ create table public.sde_published_type (
   category_id bigint
 );
 
-\i supabase/migrations/20261126193342_asset_value_day.sql
+create table public.sde_blueprint_product (
+  blueprint_type_id bigint,
+  activity_id integer,
+  product_type_id bigint,
+  product_quantity bigint,
+  materials jsonb
+);
 
-insert into public.registration values ('00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-0000000000aa', 98000001);
+create table public.character_industry_job_over_time (
+  job_id bigint not null,
+  registration_id uuid not null,
+  activity_id smallint not null,
+  blueprint_id bigint not null,
+  blueprint_type_id bigint not null,
+  runs integer not null,
+  cost numeric(20, 2),
+  status text not null,
+  start_date timestamptz not null,
+  end_date timestamptz not null,
+  completed_date timestamptz,
+  is_current boolean not null default true,
+  valid_from timestamptz not null,
+  valid_until timestamptz not null
+);
+
+create table public.corp_industry_job_over_time (
+  job_id bigint not null,
+  corporation_id bigint not null,
+  activity_id smallint not null,
+  blueprint_id bigint not null,
+  blueprint_type_id bigint not null,
+  runs integer not null,
+  cost numeric(20, 2),
+  status text not null,
+  start_date timestamptz not null,
+  end_date timestamptz not null,
+  completed_date timestamptz,
+  is_current boolean not null default true,
+  valid_from timestamptz not null,
+  valid_until timestamptz not null
+);
+
+create table public.character_blueprint_over_time (
+  item_id bigint not null,
+  material_efficiency smallint,
+  valid_from timestamptz not null
+);
+
+create table public.corp_blueprint_over_time (
+  item_id bigint not null,
+  material_efficiency smallint,
+  valid_from timestamptz not null
+);
+
+create table public.character_order_over_time (
+  order_id bigint not null,
+  registration_id uuid not null,
+  type_id bigint not null,
+  is_buy boolean not null,
+  price numeric(20, 2) not null,
+  volume_remain bigint not null,
+  escrow numeric(20, 2),
+  is_current boolean not null default true,
+  valid_from timestamptz not null,
+  valid_until timestamptz not null
+);
+
+create table public.character_wallet (
+  registration_id uuid not null,
+  balance numeric(20, 2) not null,
+  recorded_at timestamptz not null
+);
+
+create table public.corp_wallet (
+  corporation_id bigint not null,
+  division smallint not null,
+  balance numeric(20, 2) not null,
+  recorded_at timestamptz not null
+);
+
+create table public.character_contract (
+  registration_id uuid not null,
+  contract_id bigint not null,
+  type text not null,
+  for_corporation boolean not null default false,
+  issuer_id bigint not null,
+  issuer_corporation_id bigint not null,
+  acceptor_id bigint,
+  collateral numeric(20, 2),
+  date_issued timestamptz not null,
+  primary key (registration_id, contract_id)
+);
+
+create table public.character_contract_status_over_time (
+  registration_id uuid not null,
+  contract_id bigint not null,
+  status text not null,
+  valid_from timestamptz not null
+);
+
+create table public.character_contract_item (
+  registration_id uuid not null,
+  contract_id bigint not null,
+  type_id bigint not null,
+  quantity bigint not null,
+  is_included boolean not null
+);
+
+create table public.corp_contract (
+  corporation_id bigint not null,
+  contract_id bigint not null,
+  type text not null,
+  for_corporation boolean not null default false,
+  issuer_id bigint not null,
+  issuer_corporation_id bigint not null,
+  acceptor_id bigint,
+  collateral numeric(20, 2),
+  date_issued timestamptz not null
+);
+
+create table public.corp_contract_status_over_time (
+  corporation_id bigint not null,
+  contract_id bigint not null,
+  status text not null,
+  valid_from timestamptz not null
+);
+
+create table public.corp_contract_item (
+  corporation_id bigint not null,
+  contract_id bigint not null,
+  type_id bigint not null,
+  quantity bigint not null,
+  is_included boolean not null
+);
+
+\i supabase/migrations/20261126193342_asset_value_day.sql
+\i supabase/migrations/20261126202934_asset_value_day_parts.sql
+
+insert into public.registration values
+  ('00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-0000000000aa', 98000001, 9001001),
+  -- An alt on the same account.
+  ('00000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-0000000000aa', null, 9001002);
 
 insert into public.sde_published_type values (34, 4), (35, 4), (36, 4), (999, 9);
 
@@ -103,6 +243,72 @@ insert into public.character_asset_version (item_id, registration_id, type_id, q
 -- A corporation hangar: 1,000 Tritanium.
 insert into public.corp_asset_version (item_id, corporation_id, type_id, quantity, is_current, valid_from, valid_until) values
   (50, 98000001, 34, 1000, true, '2026-09-01T00:00:00Z', '2026-09-01T00:00:00Z');
+
+-- Industry. Product 40 has split 1000 from the 1st; product 41 is never priced.
+insert into public.market_price_over_time (type_id, market, valid_from, valid_until, buy_max, sell_min, is_current) values
+  (40, 'jita', '2026-09-01T00:00:00Z', '2026-09-30T00:00:00Z', 900, 1100, true);
+-- Blueprint 400 makes one 40 from 10 Tritanium; reaction formula 500 makes 41.
+insert into public.sde_blueprint_product values
+  (400, 1, 40, 1, '[{"typeID": 34, "quantity": 10}]'),
+  (500, 11, 41, 1, '[{"typeID": 34, "quantity": 5}]');
+-- The blueprint item job 7001 ran: ME 10 before the install.
+insert into public.character_blueprint_over_time values (9001, 10, '2026-09-01T00:00:00Z');
+
+insert into public.character_industry_job_over_time
+  (job_id, registration_id, activity_id, blueprint_id, blueprint_type_id, runs, cost, status, start_date, end_date, completed_date, is_current, valid_from, valid_until) values
+  -- Two runs, 12th → 14th, still active, with a large fee that must not count.
+  (7001, '00000000-0000-0000-0000-000000000001', 1, 9001, 400, 2, 1e6, 'active',
+   '2026-09-12T00:00:00Z', '2026-09-14T00:00:00Z', null, true, '2026-09-12T04:00:00Z', '2026-09-12T04:00:00Z'),
+  -- One run, done at the end of the 2nd, delivered at noon on the 3rd.
+  (7002, '00000000-0000-0000-0000-000000000001', 1, 9002, 400, 1, 100, 'delivered',
+   '2026-09-02T00:00:00Z', '2026-09-03T00:00:00Z', '2026-09-03T12:00:00Z', true, '2026-09-03T12:00:00Z', '2026-09-03T12:00:00Z'),
+  -- A corp job this character installed: both extracts list it; it is the corporation's.
+  (7003, '00000000-0000-0000-0000-000000000001', 9, 9003, 500, 1, 100, 'active',
+   '2026-09-10T00:00:00Z', '2026-09-20T00:00:00Z', null, true, '2026-09-10T04:00:00Z', '2026-09-10T04:00:00Z');
+
+-- Market: 50 Tritanium on sale and a buy order holding 2,500 in escrow, both
+-- open from the 11th; a sell order that filled and closed on the 11th.
+insert into public.character_order_over_time (order_id, registration_id, type_id, is_buy, price, volume_remain, escrow, is_current, valid_from, valid_until) values
+  (8001, '00000000-0000-0000-0000-000000000001', 34, false, 12, 50, null, true, '2026-09-11T00:00:00Z', '2026-09-11T00:00:00Z'),
+  (8002, '00000000-0000-0000-0000-000000000001', 35, true, 90, 25, 2500, true, '2026-09-11T00:00:00Z', '2026-09-11T00:00:00Z'),
+  (8003, '00000000-0000-0000-0000-000000000001', 34, false, 12, 70, null, false, '2026-09-05T00:00:00Z', '2026-09-11T06:00:00Z');
+
+-- Wallets: the character's last balance before the moment; the
+-- corporation's divisions each at their last balance, summed.
+insert into public.character_wallet values
+  ('00000000-0000-0000-0000-000000000001', 1000, '2026-09-05T00:00:00Z'),
+  ('00000000-0000-0000-0000-000000000001', 5000, '2026-09-12T12:00:00Z');
+insert into public.corp_wallet values
+  (98000001, 1, 100, '2026-09-01T00:00:00Z'),
+  (98000001, 2, 200, '2026-09-01T00:00:00Z'),
+  (98000001, 1, 150, '2026-09-10T00:00:00Z');
+
+-- Contracts, all issued on the 11th:
+--   9101 our item exchange, outstanding: 100 Tritanium offered (1,000), and a
+--        line we ask for, which is not ours.
+--   9102 a courier we accepted from an outsider, in progress: collateral 3,000.
+--   9103 a courier we accepted from our own alt: the alt's side counts it.
+--   9104 our item exchange that finished: nothing left in flight.
+insert into public.character_contract values
+  ('00000000-0000-0000-0000-000000000001', 9101, 'item_exchange', false, 9001001, 98000001, null, null, '2026-09-11T00:00:00Z'),
+  ('00000000-0000-0000-0000-000000000001', 9102, 'courier', false, 7777, 1000001, 9001001, 3000, '2026-09-11T00:00:00Z'),
+  ('00000000-0000-0000-0000-000000000001', 9103, 'courier', false, 9001002, 1000001, 9001001, 4000, '2026-09-11T00:00:00Z'),
+  ('00000000-0000-0000-0000-000000000001', 9104, 'item_exchange', false, 9001001, 98000001, 7777, null, '2026-09-11T00:00:00Z');
+insert into public.character_contract_status_over_time values
+  ('00000000-0000-0000-0000-000000000001', 9101, 'outstanding', '2026-09-11T00:00:00Z'),
+  ('00000000-0000-0000-0000-000000000001', 9102, 'in_progress', '2026-09-11T00:00:00Z'),
+  ('00000000-0000-0000-0000-000000000001', 9103, 'in_progress', '2026-09-11T00:00:00Z'),
+  ('00000000-0000-0000-0000-000000000001', 9104, 'outstanding', '2026-09-11T00:00:00Z'),
+  ('00000000-0000-0000-0000-000000000001', 9104, 'finished', '2026-09-11T08:00:00Z');
+insert into public.character_contract_item values
+  ('00000000-0000-0000-0000-000000000001', 9101, 34, 100, true),
+  ('00000000-0000-0000-0000-000000000001', 9101, 35, 999, false),
+  ('00000000-0000-0000-0000-000000000001', 9104, 34, 500, true);
+
+insert into public.corp_industry_job_over_time
+  (job_id, corporation_id, activity_id, blueprint_id, blueprint_type_id, runs, cost, status, start_date, end_date, completed_date, is_current, valid_from, valid_until) values
+  (7003, 98000001, 9, 9003, 500, 1, 100, 'active',
+   '2026-09-10T00:00:00Z', '2026-09-20T00:00:00Z', null, true, '2026-09-10T04:00:00Z', '2026-09-10T04:00:00Z');
 
 do $$
 declare
@@ -174,6 +380,49 @@ begin
   select * into r from public.asset_value_day where registration_id = reg and utc_day = (now() at time zone 'utc')::date;
   if r.value <> 2000 then
     raise exception 'today: expected the current 200 Tritanium at 10, got %', row_to_json(r);
+  end if;
+
+  -- Jobs. End of the 12th: job 7001 is half done. Its bill at ME 10 is
+  -- max(2, ceil(2 × 10 × 0.9)) = 18 Tritanium at 10 = 180; its output 2 × 1000.
+  -- Half of each: 1090. The fee is not counted. Job 7003 is the corporation's.
+  select * into r from public.asset_value_day where registration_id = reg and utc_day = '2026-09-12';
+  if r.job_value <> 1090 or r.jobs <> 1 or r.unpriced_jobs <> 0 then
+    raise exception '12 Sep jobs: expected 1090 over one job, got %', row_to_json(r);
+  end if;
+  -- End of the 2nd: job 7002 is done but not yet delivered, so its whole
+  -- output counts (1000).
+  select * into r from public.asset_value_day where registration_id = reg and utc_day = '2026-09-02';
+  if r.job_value <> 1000 or r.jobs <> 1 then
+    raise exception '2 Sep jobs: a finished, undelivered job counts its whole output, got %', row_to_json(r);
+  end if;
+  -- End of the 3rd: delivered, so its output is in the hangar, not the job.
+  select * into r from public.asset_value_day where registration_id = reg and utc_day = '2026-09-03';
+  if r.job_value <> 0 or r.jobs <> 0 then
+    raise exception '3 Sep jobs: a delivered job no longer counts, got %', row_to_json(r);
+  end if;
+  -- The corporation's reaction makes an unpriced product: left out, counted.
+  select * into r from public.asset_value_day where corporation_id = 98000001 and utc_day = '2026-09-12';
+  if r.job_value <> 0 or r.jobs <> 0 or r.unpriced_jobs <> 1 then
+    raise exception 'corporation jobs: an unpriced job is left out and counted, got %', row_to_json(r);
+  end if;
+
+  -- Market, contracts and wallet, end of the 12th: 50 Tritanium on sale at
+  -- the split (500, not the order's 12), 2,500 escrow, contracts 1,000 +
+  -- 3,000, wallet 5,000.
+  select * into r from public.asset_value_day where registration_id = reg and utc_day = '2026-09-12';
+  if r.sell_order_value <> 500 or r.buy_escrow <> 2500 or r.contract_value <> 4000 or r.wallet <> 5000 then
+    raise exception '12 Sep market/contracts/wallet: expected 500/2500/4000/5000, got %', row_to_json(r);
+  end if;
+  -- End of the 6th: only the order that later filled was open (70 at split
+  -- 5), and the earlier balance.
+  select * into r from public.asset_value_day where registration_id = reg and utc_day = '2026-09-06';
+  if r.sell_order_value <> 350 or r.buy_escrow <> 0 or r.contract_value <> 0 or r.wallet <> 1000 then
+    raise exception '6 Sep market/contracts/wallet: expected 350/0/0/1000, got %', row_to_json(r);
+  end if;
+  -- The corporation's wallet: each division at its last balance.
+  select * into r from public.asset_value_day where corporation_id = 98000001 and utc_day = '2026-09-12';
+  if r.wallet <> 350 then
+    raise exception 'corporation wallet: expected 150 + 200, got %', row_to_json(r);
   end if;
 
   -- One owner, exactly.

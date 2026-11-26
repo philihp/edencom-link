@@ -4,7 +4,7 @@ import { forEach, map } from 'ramda'
 import { TIME_WINDOW_OPTIONS } from '../timeWindow'
 import { CARRY_DAYS, utcDayOf, type ValueRow } from './valuation'
 
-// Read the caller's stored daily values (asset_value_day) for the longest
+// Read the caller's stored daily values, every part (asset_value_day) for the longest
 // window the page offers, plus the carry's lookback so the first day of the
 // window can borrow from before it. RLS scopes the rows to the caller's own
 // registrations and corporations — the owners fetchOwners() lists.
@@ -17,13 +17,24 @@ type Stored = {
   corporation_id: number | string | null
   utc_day: string
   value: number | string
+  job_value: number | string
+  sell_order_value: number | string
+  buy_escrow: number | string
+  contract_value: number | string
+  wallet: number | string
   unpriced_types: number
 }
 
 const toRow = (r: Stored): ValueRow => ({
   ownerId: r.registration_id ?? String(r.corporation_id),
   day: r.utc_day,
-  value: Number(r.value),
+  parts: {
+    hangar: Number(r.value),
+    jobs: Number(r.job_value),
+    market: Number(r.sell_order_value) + Number(r.buy_escrow),
+    contracts: Number(r.contract_value),
+    cash: Number(r.wallet),
+  },
   unpricedTypes: Number(r.unpriced_types),
 })
 
@@ -34,7 +45,9 @@ export const fetchValueRows = async (supabase: SupabaseClient, now: number): Pro
   const readPage = async (from = 0, acc: ValueRow[] = []): Promise<ValueRow[]> => {
     const { data, error } = await supabase
       .from('asset_value_day')
-      .select('registration_id, corporation_id, utc_day, value, unpriced_types')
+      .select(
+        'registration_id, corporation_id, utc_day, value, job_value, sell_order_value, buy_escrow, contract_value, wallet, unpriced_types'
+      )
       .gte('utc_day', since)
       .order('owner_key', { ascending: true })
       .order('utc_day', { ascending: true })

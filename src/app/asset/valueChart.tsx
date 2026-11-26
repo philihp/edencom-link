@@ -5,12 +5,12 @@ import chart from '../industry/industry.module.css'
 import { formatCompactIsk } from '../industry/lift'
 import { formatIsk } from '../isk'
 import { xTickEdges } from '../market/flow'
-import { valueAxis, type ValuePoint } from './valuation'
+import { PART_LABEL, VALUE_PARTS, valueAxis, type ValuePoint } from './valuation'
 
 // The valuation chart: the hangar's total worth, one point per UTC day, as a
 // line over a faint area — the lift chart's marks and classes (industry
 // .module.css), so the three charts read as one family. Hover reads a day and
-// the owners that make it up. The SVG keeps the same fixed 1100×230
+// what it is made of and the owners that hold it. The SVG keeps the same fixed 1100×230
 // coordinate space as the lift and flow charts and stretches to its tile.
 
 const W = 1100
@@ -142,6 +142,16 @@ export const ValueChart = ({ points, ownerName, hover, onHover }: ValueChartProp
             <div className={chart.cardFamily}>
               {hovered.total >= previous.total ? '+' : ''}
               {formatCompactIsk(hovered.total - previous.total)} since {formatTick(previous.t, false)}
+            </div>
+          )}
+          {hovered.total != null && (
+            <div className={chart.cardJobs}>
+              {VALUE_PARTS.filter((k) => hovered.parts[k] !== 0).map((k) => (
+                <div key={k} className={chart.cardJob}>
+                  <span className={chart.cardProduct}>{PART_LABEL[k]}</span>
+                  <span title={formatIsk(hovered.parts[k])}>{formatCompactIsk(hovered.parts[k])}</span>
+                </div>
+              ))}
             </div>
           )}
           <div className={chart.cardJobs}>
