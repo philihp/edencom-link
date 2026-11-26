@@ -20,6 +20,32 @@
   margin: 0;
 }
 
+/* The page's owner filter and window, top-right of the title. Both drive the
+ * valuation chart; the owner filter drives the location table too. */
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 12pt;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+/* The valuation panel under the title, styled as the /industry lift panel. */
+.valuation {
+  margin: 12pt 0 16pt;
+}
+
+.valuationEmpty {
+  margin: 0;
+  padding: 24px 14px;
+  font-size: 12px;
+  color: var(--ink-faint);
+}
+
+.locations {
+  margin-top: 12pt;
+}
+
 .filters {
   display: flex;
   align-items: center;

@@ -12,6 +12,7 @@ import {
   recordReassembly,
   refreshAssetSummary,
 } from './lib.js'
+import { recordAssetValue } from './assetValues.js'
 
 const TAG = 'corp-assets'
 export const SCOPE = 'esi-assets.read_corporation_assets.v1'
@@ -185,6 +186,10 @@ export const runCorpAssets = ({ registrationIds } = {}) =>
     // (docs/ship-memory.md "Reassembly"); best-effort, after the claim has
     // opened the debut rows the carry writes against.
     await recordReassembly(TAG, { corporation_id }, changes, reconciledAt)
+
+    // Today's point on the /asset valuation chart (docs/asset-valuation.md);
+    // best-effort, after the claim so it values what this run saw.
+    await recordAssetValue(TAG, { corporation_id })
 
     // Corp assets sit in the same /asset rollup as the character ones, and a
     // corp's holdings show on the page of every account with a character in it
