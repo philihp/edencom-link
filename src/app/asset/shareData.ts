@@ -23,6 +23,8 @@ export type ShareState = {
   isPublic: boolean
   // Asset shares only: show the account's main character as the owner.
   showAsMain?: boolean
+  // Asset item shares only: show "Location cloaked" in place of where it is.
+  cloakLocation?: boolean
   // Structure shares only: the "people with jobs here" audience.
   tenants?: boolean
 }
@@ -35,6 +37,9 @@ export type ShareDialogData = {
   // The account's main character, when the item is held by another character
   // of the account: the dialog then offers to show the main as the owner.
   mainName?: string | null
+  // A character's item share: the dialog offers to cloak the location. Not a
+  // place share (its subject is the place) and not a corp share.
+  canCloak?: boolean
 }
 
 export type OwnRegistration = { id: string; corporation_id: number | string | null }
@@ -98,6 +103,7 @@ export type ShareRowLike = {
   alliance_ids: number[] | null
   secret: string | null
   show_as_main?: boolean | null
+  cloak_location?: boolean | null
 }
 
 // A share row → the dialog's view of it, with the signed ?share= param when a
@@ -122,6 +128,7 @@ export const shareRowToState = (row: ShareRowLike | null): ShareState | null => 
     shareParam,
     isPublic: isPublicShare(row),
     showAsMain: row.show_as_main === true,
+    cloakLocation: row.cloak_location === true,
   }
 }
 
@@ -199,13 +206,20 @@ const characterShareData = async (
     fetchShareAudiences(supabase, own),
     supabase
       .from('character_asset_share')
-      .select('id, corporation_ids, alliance_ids, secret, show_as_main')
+      .select('id, corporation_ids, alliance_ids, secret, show_as_main, cloak_location')
       .eq('registration_id', registrationId)
       .eq('item_id', subjectId)
       .maybeSingle<ShareRowLike>(),
   ])
 
-  return { share: shareRowToState(shareRow), corporations, alliances, hasLegacyToken: false, mainName }
+  return {
+    share: shareRowToState(shareRow),
+    corporations,
+    alliances,
+    hasLegacyToken: false,
+    mainName,
+    canCloak: true,
+  }
 }
 
 // The corp twin (docs/sharing-layer/14-corp-asset-share.md, PR 4). Returns

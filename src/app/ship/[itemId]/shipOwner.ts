@@ -1,5 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 
+import { NO_FLAGS } from '../../asset/cloak'
+import { recipientShareFlags } from '../../asset/shareFlags'
 import { mainOwnerOf } from './mainOwner'
 import { UNNAMED_OWNER } from './presentedOwner'
 import { characterPortrait, corporationLogo, type ShipOwner } from './shipHeading'
@@ -19,26 +21,16 @@ export type OwnedRow = { registration_id?: string; corporation_id?: number | str
 // asset columns misname.
 // A share recipient (the caller cannot read the holder's registration) sees
 // the account's main instead when a share covering the ship, or anything
-// holding it, asks for that. The share rows come through the recipient's own
-// RLS, which returns only shares aimed at them; `itemId` is the ship, to find
-// them by. The owner viewing their own ship always sees the true holder.
-const sharedAsMain = async (supabase: SupabaseClient, registrationId: string, itemId: string): Promise<boolean> => {
-  const { data: chain } = await supabase.rpc('asset_ancestors', { start_id: itemId })
-  const itemIds = [itemId, ...((chain ?? []) as Array<{ item_id: number | string }>).map((row) => String(row.item_id))]
-  const { data: shares } = await supabase
-    .from('character_asset_share')
-    .select('id')
-    .eq('registration_id', registrationId)
-    .eq('show_as_main', true)
-    .in('item_id', itemIds)
-    .limit(1)
-  return (shares ?? []).length > 0
-}
+// holding it, asks for that, and no location when one cloaks it
+// (../../asset/shareFlags.ts). The owner viewing their own ship always sees the
+// true holder and place.
 
 // hiddenHolder is the holding character's name when the page must not give
 // that character away (a share showing the main): the caller strips it, and
 // the holder's registration uuid, from everything it renders. Null otherwise.
-export type ShipOwnerView = { owner: ShipOwner; hiddenHolder: string | null }
+// cloaked: a share covering the ship cloaks its location, so the page draws
+// no place and no ship or container above it.
+export type ShipOwnerView = { owner: ShipOwner; hiddenHolder: string | null; cloaked: boolean }
 
 export const fetchShipOwner = async (
   supabase: SupabaseClient,
@@ -56,6 +48,7 @@ export const fetchShipOwner = async (
     return {
       owner: { name: corpName?.name ?? `Corporation #${corporationId}`, portrait: corporationLogo(corporationId) },
       hiddenHolder: null,
+      cloaked: false,
     }
   }
 
@@ -74,10 +67,13 @@ export const fetchShipOwner = async (
       .eq('registration_id', characterSelf.registration_id)
       .maybeSingle<{ name: string | null; character_id: number | string | null }>(),
   ])
-  if (!registration && itemId && (await sharedAsMain(supabase, characterSelf.registration_id, itemId))) {
+  const flags =
+    !registration && itemId ? await recipientShareFlags(supabase, characterSelf.registration_id, itemId) : NO_FLAGS
+  if (flags.showAsMain) {
     // No main set still hides the holder: the share asked for that.
     const main = await mainOwnerOf(characterSelf.registration_id)
-    if (!main?.isHolder) return { owner: main?.owner ?? UNNAMED_OWNER, hiddenHolder: directory?.name ?? '' }
+    if (!main?.isHolder)
+      return { owner: main?.owner ?? UNNAMED_OWNER, hiddenHolder: directory?.name ?? '', cloaked: flags.cloakLocation }
   }
   const eveCharacterId = registration?.character_id ?? directory?.character_id ?? null
   return {
@@ -86,5 +82,6 @@ export const fetchShipOwner = async (
       portrait: eveCharacterId == null ? null : characterPortrait(eveCharacterId),
     },
     hiddenHolder: null,
+    cloaked: flags.cloakLocation,
   }
 }

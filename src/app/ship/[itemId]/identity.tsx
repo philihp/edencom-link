@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 
+import { CLOAKED_LOCATION } from '../../asset/cloak'
 import { DateTime } from '../../DateTime'
 import { isOverdue, type Sighting, sightingText } from './lastSeen'
 import type { ShipOwner } from './shipHeading'
@@ -20,6 +21,9 @@ export type ShipIdentityProps = {
   // from the same breadcrumb above. Null when the location chain is unreadable
   // (an RLS gap on a container we can't see).
   location: string | null
+  // A share cloaks the location: the strip says so where the location would
+  // be (../../asset/cloak.ts), whatever `location` holds.
+  cloaked?: boolean
   // When the extract last saw the ship, on the share page: a link outlives
   // the hull, so the page says how old what it shows is, and raises an alert
   // once that passes a day (lastSeen.ts). The owner's own page has no need —
@@ -49,6 +53,7 @@ export const ShipIdentity = ({
   itemId,
   owner,
   location,
+  cloaked = false,
   sighting,
   actions,
 }: ShipIdentityProps) => (
@@ -77,7 +82,12 @@ export const ShipIdentity = ({
         ) : null}
         <span className="serif">{owner.name}</span> · item <code className={styles.itemId}>#{itemId}</code>
       </p>
-      {location ? (
+      {cloaked ? (
+        <p className={styles.location}>
+          <span className={styles.dot} aria-hidden="true" />
+          {CLOAKED_LOCATION}
+        </p>
+      ) : location ? (
         <p className={styles.location}>
           <span className={styles.dot} aria-hidden="true" />
           docked · {location}

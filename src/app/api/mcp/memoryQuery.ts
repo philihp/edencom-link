@@ -76,6 +76,7 @@ export type ShareRowLike = {
   alliance_ids: Array<number | string>
   secret: string | null
   show_as_main?: boolean
+  cloak_location?: boolean
 }
 
 export type Reader = {
@@ -90,6 +91,9 @@ export type Reader = {
   // The share hides the holder behind the account's main character; the
   // memory panel is hidden on such a share (docs/ship-memory.md, Display).
   hides_holder: boolean
+  // The share cloaks the item's location; the memory panel is hidden on such
+  // a share too, since free text can name a place.
+  cloaks_location: boolean
 }
 
 // How far one share row reaches, in the Revision 3 shape: fully public when
@@ -110,6 +114,7 @@ export const describeReader = (row: ShareRowLike, subject: Reader['subject']): R
     alliance_ids,
     by_link,
     hides_holder: row.show_as_main === true,
+    cloaks_location: row.cloak_location === true,
   }
 }
 

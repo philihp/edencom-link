@@ -22,6 +22,8 @@ import { readShipMemory } from '../../ship/memory/read'
 import { hideHolder, PRESENTED_OWNER_ID, UNNAMED_OWNER } from '../../ship/[itemId]/presentedOwner'
 import { TypeIcon } from '../../typeIcon'
 import { resolvePublicShare, resolveShareParams } from '../access'
+import { CLOAKED_LOCATION, cloakCrumbs } from '../cloak'
+import { recipientShareFlags } from '../shareFlags'
 import { AssetShareDialog } from '../assetShareDialog'
 import { sharePath } from '../shareHint'
 import { subjectGrantors } from '../placeShare'
@@ -48,7 +50,12 @@ const fetchSelf = async (
   locationId: string,
   characterScope: string[] | null,
   corpScope: number[] | null
-): Promise<{ self: Self | null; isOwnCharacterItem: boolean; selfCorporationId: number | null }> => {
+): Promise<{
+  self: Self | null
+  isOwnCharacterItem: boolean
+  selfCorporationId: number | null
+  holderId: string | null
+}> => {
   let selfQuery = supabase
     .from('character_asset')
     .select('item_id, registration_id, type_id, location_id, name')
@@ -72,6 +79,8 @@ const fetchSelf = async (
     // the corp owns is both an item and the place other owners park in, so
     // the share offer needs to know whose it is (subjectGrantors).
     selfCorporationId: !characterSelf && corpSelf ? Number(corpSelf.corporation_id) : null,
+    // The character holding it, for a recipient's share flags (cloak).
+    holderId: characterSelf?.registration_id ?? null,
   }
 }
 
@@ -172,7 +181,7 @@ const AssetLocationPage = async ({ params, searchParams }: AssetLocationPageProp
   // Nothing here depends on anything else here, so it all goes out at once.
   // These used to run one after another, each waiting on a round trip that had
   // no reason to wait.
-  const [{ rootItems, currentShipItemIds }, { self, isOwnCharacterItem, selfCorporationId }, owners] =
+  const [{ rootItems, currentShipItemIds }, { self, isOwnCharacterItem, selfCorporationId, holderId }, owners] =
     await Promise.all([
       fetchRootItems(supabase, locationId, characterScope, corpScope),
       fetchSelf(supabase, locationId, characterScope, corpScope),
@@ -190,6 +199,18 @@ const AssetLocationPage = async ({ params, searchParams }: AssetLocationPageProp
   const shownRootItems = presented ? map(presented.hide, rootItems) : rootItems
   const shownSelf = self && presented ? presented.hide(self) : self
   const shownOwners = presented ? presented.owners : owners
+
+  // A share that cloaks the location (character_asset_share.cloak_location):
+  // the page says "Location cloaked" and draws no place, ship or container
+  // above the item (../cloak.ts). A link or public share carries the flag in
+  // its scope; a signed-in recipient reads it off the share rows aimed at them.
+  // A holder of the caller's own (in the caller's owner list) is never
+  // cloaked from them.
+  const cloaked = scope
+    ? scope.cloakLocation
+    : holderId != null && !owners.characters.some((c) => c.id === holderId)
+      ? (await recipientShareFlags(supabase, holderId, locationId)).cloakLocation
+      : false
 
   // The self type answers two questions at once — what to call this container,
   // and whether it's a ship — off one process-cached SDE read.
@@ -260,7 +281,7 @@ const AssetLocationPage = async ({ params, searchParams }: AssetLocationPageProp
     const typeName = selfType?.name ?? `#${self.type_id}`
     const selfName = shownSelf?.name ?? null
     heading = selfName && selfName !== typeName ? `${selfName} (${typeName})` : typeName
-    if (!scope) crumbs = await fetchAssetPath(locationId, supabase)
+    if (!scope) crumbs = cloaked ? cloakCrumbs(crumbs) : await fetchAssetPath(locationId, supabase)
   } else {
     const place = await fetchPlace(supabase, locationId, corpScope, rootItems[0]?.location_type ?? null)
     heading = place.heading
@@ -289,7 +310,7 @@ const AssetLocationPage = async ({ params, searchParams }: AssetLocationPageProp
   // main: that share promises nothing leads to the holder, and no code can
   // check free text for that. A place has no memory.
   const memoryPromise =
-    self == null || presented != null
+    self == null || presented != null || cloaked
       ? Promise.resolve(null)
       : readShipMemory(scope ? createServiceClient() : supabase, locationId)
 
@@ -358,6 +379,7 @@ const AssetLocationPage = async ({ params, searchParams }: AssetLocationPageProp
           ) : null}
         </div>
       </div>
+      {cloaked ? <p>{CLOAKED_LOCATION}</p> : null}
       {systemName && systemName !== heading ? (
         <p>
           System: <span className="serif">{systemName}</span>
