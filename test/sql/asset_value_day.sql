@@ -207,6 +207,7 @@ create table public.corp_contract_item (
 
 \i supabase/migrations/20261126193342_asset_value_day.sql
 \i supabase/migrations/20261126202934_asset_value_day_parts.sql
+\i supabase/migrations/20261127091204_asset_value_day_owner_scope.sql
 
 insert into public.registration values
   ('00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-0000000000aa', 98000001, 9001001),
@@ -243,6 +244,15 @@ insert into public.character_asset_version (item_id, registration_id, type_id, q
 -- A corporation hangar: 1,000 Tritanium.
 insert into public.corp_asset_version (item_id, corporation_id, type_id, quantity, is_current, valid_from, valid_until) values
   (50, 98000001, 34, 1000, true, '2026-09-01T00:00:00Z', '2026-09-01T00:00:00Z');
+
+-- An item that changed owner: 300 Tritanium the alt held from the 1st and gave
+-- away on the 5th at 20:00, in another corporation's hangar only from the 10th
+-- (it sat in a contract between). The receiver's later version is no reason
+-- for the alt to keep counting it in the gap.
+insert into public.character_asset_version (item_id, registration_id, type_id, quantity, is_current, valid_from, valid_until) values
+  (60, '00000000-0000-0000-0000-000000000002', 34, 300, false, '2026-09-01T00:00:00Z', '2026-09-05T20:00:00Z');
+insert into public.corp_asset_version (item_id, corporation_id, type_id, quantity, is_current, valid_from, valid_until) values
+  (60, 98000002, 34, 300, true, '2026-09-10T04:00:00Z', '2026-09-10T04:00:00Z');
 
 -- Industry. Product 40 has split 1000 from the 1st; product 41 is never priced.
 insert into public.market_price_over_time (type_id, market, valid_from, valid_until, buy_max, sell_min, is_current) values
@@ -423,6 +433,22 @@ begin
   select * into r from public.asset_value_day where corporation_id = 98000001 and utc_day = '2026-09-12';
   if r.wallet <> 350 then
     raise exception 'corporation wallet: expected 150 + 200, got %', row_to_json(r);
+  end if;
+
+  -- An item that changed owner counts for the giver until it left, and for
+  -- the receiver from its debut; in the gap, for neither.
+  perform public.asset_value_day_compute('00000000-0000-0000-0000-000000000002', null, '2026-09-04', '2026-09-11');
+  perform public.asset_value_day_compute(null, 98000002, '2026-09-08', '2026-09-11');
+  if (select value from public.asset_value_day
+       where registration_id = '00000000-0000-0000-0000-000000000002' and utc_day = '2026-09-04') <> 1500 then
+    raise exception 'moved item: the giver holds it before it left';
+  end if;
+  if (select value from public.asset_value_day
+       where registration_id = '00000000-0000-0000-0000-000000000002' and utc_day = '2026-09-08') <> 0 then
+    raise exception 'moved item: another owner''s later version must not keep it with the giver';
+  end if;
+  if (select value from public.asset_value_day where corporation_id = 98000002 and utc_day = '2026-09-11') <> 3000 then
+    raise exception 'moved item: the receiver holds it from its debut';
   end if;
 
   -- One owner, exactly.

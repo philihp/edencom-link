@@ -12,9 +12,12 @@ For one owner (a registration, or a corporation) and one UTC day:
 - **Holdings** at the day's moment: the end of the day for a past day, the
   extract's run for today. For each item, its latest asset version that had
   begun by then, kept when it is still current, or not yet closed, or has a
-  later version (it was still held, in another state). The last test covers
-  the versions closed before 2026-10, whose `valid_until` is the last sighting
-  rather than the close.
+  later version of the same owner (it was still held, in another state). The
+  last test covers the versions closed before 2026-10, whose `valid_until` is
+  the last sighting rather than the close. Another owner's later version does
+  not count: the item left. Until 2026-11-27 it did, so an item that moved
+  between owners counted for the giver from when it left until the receiver
+  first held it (migration `20261127091204`).
 - **Price**: the Jita split (midpoint of best bid and best ask; one side when
   the book has one) from `market_price_over_time`, the version in effect at
   that moment. Never a later price: a type captured after the day is unpriced
