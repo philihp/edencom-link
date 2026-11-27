@@ -7,12 +7,12 @@ import chart from '../industry/industry.module.css'
 import { formatCompactIsk } from '../industry/lift'
 import { formatIsk } from '../isk'
 import { ALL_OWNERS, OwnerSelect, ownerNames, useOwnerFilter, type Owners } from '../ownerFilter'
-import { isTimeWindowDays } from '../timeWindow'
 import { usePersist } from '../usePersist'
 import { WindowSelect } from '../windowSelect'
 import styles from './assets.module.css'
 import { AssetsTable, type Location } from './assetsTable'
 import { OWNER_STORAGE_KEY } from './filterKey'
+import { ASSET_WINDOW_OPTIONS, DEFAULT_ASSET_WINDOW_DAYS, isAssetWindowDays, monthlyTicks } from './assetWindow'
 import { formatPct, valueSeries, windowChange, windowDays, type ValueRow } from './valuation'
 import { ValueChart } from './valueChart'
 
@@ -22,7 +22,6 @@ import { ValueChart } from './valueChart'
 // in. Market and Industry keep the same order: a chart of the whole, then the
 // rows behind it.
 
-export const DEFAULT_WINDOW_DAYS = 30
 export const WINDOW_STORAGE_KEY = 'asset.window.days'
 
 type AssetsLandingProps = {
@@ -38,9 +37,9 @@ type AssetsLandingProps = {
 
 export const AssetsLanding = ({ now, values, locations, owners, children }: AssetsLandingProps) => {
   const [ownerId, setOwnerId] = useOwnerFilter(OWNER_STORAGE_KEY, owners)
-  const [days, setDays] = usePersist<number>(WINDOW_STORAGE_KEY, DEFAULT_WINDOW_DAYS, (raw) => {
+  const [days, setDays] = usePersist<number>(WINDOW_STORAGE_KEY, DEFAULT_ASSET_WINDOW_DAYS, (raw) => {
     const parsed = Number(raw)
-    return isTimeWindowDays(parsed) ? parsed : undefined
+    return isAssetWindowDays(parsed) ? parsed : undefined
   })
   const [hover, setHover] = useState<number | null>(null)
 
@@ -64,7 +63,7 @@ export const AssetsLanding = ({ now, values, locations, owners, children }: Asse
             Owner:&nbsp;
             <OwnerSelect owners={owners} value={ownerId} onChange={setOwnerId} />
           </label>
-          <WindowSelect days={days} onChange={setDays} />
+          <WindowSelect days={days} onChange={setDays} options={ASSET_WINDOW_OPTIONS} />
         </div>
       </div>
 
@@ -90,7 +89,13 @@ export const AssetsLanding = ({ now, values, locations, owners, children }: Asse
           </p>
         ) : (
           <div className={chart.chartRow}>
-            <ValueChart points={points} ownerName={ownerName} hover={hover} onHover={setHover} />
+            <ValueChart
+              points={points}
+              ownerName={ownerName}
+              hover={hover}
+              onHover={setHover}
+              monthly={monthlyTicks(days)}
+            />
             <dl className={chart.summary} aria-label="Value over the window shown">
               <div>
                 <dt>change</dt>
