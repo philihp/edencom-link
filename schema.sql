@@ -8650,7 +8650,8 @@ grant execute on function public.asset_value_price(bigint, timestamptz) to servi
 --
 -- What the owner held at a moment: for each item, its latest version that had
 -- begun by then, kept when it is still current, or was not yet closed, or has
--- a later version (the item was still held, in some other state). The last
+-- a later version of the same owner (the item was still held, in some other
+-- state; another owner's later version means the item left). The last
 -- test covers the versions closed before 2026-10, whose valid_until was the
 -- last sighting rather than the close. Today is the plain current snapshot.
 --
@@ -8743,8 +8744,12 @@ begin
         from versions h
        where h.is_current
           or h.valid_until > v_at
-          or exists (select 1 from public.character_asset_version n where n.item_id = h.item_id and n.valid_from > v_at)
-          or exists (select 1 from public.corp_asset_version n where n.item_id = h.item_id and n.valid_from > v_at)
+          or exists (select 1 from public.character_asset_version n
+                      where p_registration_id is not null
+                        and n.item_id = h.item_id and n.registration_id = p_registration_id and n.valid_from > v_at)
+          or exists (select 1 from public.corp_asset_version n
+                      where p_corporation_id is not null
+                        and n.item_id = h.item_id and n.corporation_id = p_corporation_id and n.valid_from > v_at)
        group by h.type_id
     ),
     priced as (
@@ -8852,7 +8857,8 @@ begin
         from ov
        where ov.is_current
           or ov.valid_until > v_at
-          or exists (select 1 from public.character_order_over_time n where n.order_id = ov.order_id and n.valid_from > v_at)
+          or exists (select 1 from public.character_order_over_time n
+                      where n.order_id = ov.order_id and n.registration_id = p_registration_id and n.valid_from > v_at)
     )
     select round(coalesce(sum(volume_remain * price) filter (where not is_buy), 0), 2),
            count(*) filter (where not is_buy and price is null),
