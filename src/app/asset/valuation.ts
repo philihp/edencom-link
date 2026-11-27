@@ -106,8 +106,21 @@ export const valueSeries = (
   days: readonly string[],
   keep: (ownerId: string) => boolean = () => true
 ): ValuePoint[] => {
-  const index = indexRows(filter((r: ValueRow) => keep(r.ownerId), rows as ValueRow[]))
+  const kept = filter((r: ValueRow) => keep(r.ownerId), rows as ValueRow[])
+  const index = indexRows(kept)
+  // The 30-year window is mostly days before the record: those are empty
+  // without a look at each owner. YYYY-MM-DD orders as a string.
+  const firstDay = reduce((min: string, r: ValueRow) => (r.day < min ? r.day : min), '9999-12-31', kept)
+  const empty = (day: string): ValuePoint => ({
+    day,
+    t: dayStart(day),
+    total: null,
+    parts: zeroParts(),
+    owners: [],
+    unpricedTypes: 0,
+  })
   return map((day: string) => {
+    if (day < firstDay) return empty(day)
     const hits = [...index.values()].flatMap((byDay) => {
       const hit = rowOn(byDay, day)
       return hit ? [hit] : []

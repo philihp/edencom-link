@@ -3,7 +3,7 @@
 import { useRouter } from 'next/navigation'
 import { useTransition } from 'react'
 
-import { TIME_WINDOW_OPTIONS } from './timeWindow'
+import { TIME_WINDOW_OPTIONS, type TimeWindowOption } from './timeWindow'
 import styles from './windowSelect.module.css'
 
 // The trailing-days dropdown (timeWindow.ts), in the two ways a page holds
@@ -23,13 +23,21 @@ type WindowSelectProps = {
   // reads "custom" until the next pick.
   custom?: boolean
   pending?: boolean
+  // A page with its own spans (the /asset value chart); the shared list else.
+  options?: readonly TimeWindowOption[]
 }
 
-export const WindowSelect = ({ days, onChange, custom = false, pending = false }: WindowSelectProps) => (
+export const WindowSelect = ({
+  days,
+  onChange,
+  custom = false,
+  pending = false,
+  options = TIME_WINDOW_OPTIONS,
+}: WindowSelectProps) => (
   <label className={styles.windowSelect} data-pending={pending || undefined}>
     <span className={styles.srOnly}>Time window</span>
     <select value={custom ? CUSTOM : days} onChange={(e) => onChange(Number(e.target.value))}>
-      {TIME_WINDOW_OPTIONS.map((o) => (
+      {options.map((o) => (
         <option key={o.days} value={o.days}>
           {o.label}
         </option>

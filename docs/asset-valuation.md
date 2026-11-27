@@ -70,3 +70,8 @@ value for up to three days, marked "carried" in the hover card; past that it
 counts as gone. The chart (`valueChart.tsx`) uses the lift chart's marks and
 classes. One owner filter (the one the location pages share) and the shared
 window dropdown drive the chart; the owner filter drives the table too.
+
+The window dropdown is the shared control with the chart's own spans
+(`assetWindow.ts`): 7, 14, 30 and 90 days, 1, 2 and 30 years. The 1- and
+3-day spans the other pages offer are left out, since a hangar's worth moves
+slowly. Past 90 days the x axis is labelled by month.

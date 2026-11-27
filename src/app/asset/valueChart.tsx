@@ -30,9 +30,11 @@ type ValueChartProps = {
   ownerName: (ownerId: string) => string
   hover: number | null
   onHover: (index: number | null) => void
+  // Label the x axis by month ("Nov 2026") rather than by day.
+  monthly?: boolean
 }
 
-export const ValueChart = ({ points, ownerName, hover, onHover }: ValueChartProps) => {
+export const ValueChart = ({ points, ownerName, hover, onHover, monthly = false }: ValueChartProps) => {
   const n = points.length
   const axis = valueAxis(points)
   // One point per day, at the day's centre slot; a single day sits mid-plot.
@@ -99,7 +101,7 @@ export const ValueChart = ({ points, ownerName, hover, onHover }: ValueChartProp
             <line x1={tx(i)} x2={tx(i)} y1={BASELINE} y2={BASELINE + 6} className={chart.axisTick} />
             {points[i] && (
               <text x={tx(i)} y={BASELINE + 22} textAnchor="middle" className={chart.axisLabel}>
-                {formatTick(points[i].t, false)}
+                {formatTick(points[i].t, monthly)}
               </text>
             )}
           </g>

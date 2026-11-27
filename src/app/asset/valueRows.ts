@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { forEach, map } from 'ramda'
+import { forEach } from 'ramda'
 
-import { TIME_WINDOW_OPTIONS } from '../timeWindow'
+import { LONGEST_ASSET_WINDOW_DAYS } from './assetWindow'
 import { CARRY_DAYS, utcDayOf, type ValueRow } from './valuation'
 
 // Read the caller's stored daily values, every part (asset_value_day) for the longest
@@ -10,7 +10,7 @@ import { CARRY_DAYS, utcDayOf, type ValueRow } from './valuation'
 // registrations and corporations — the owners fetchOwners() lists.
 const PAGE = 1000
 const DAY_MS = 86_400_000
-const LOOKBACK_DAYS = Math.max(...map((o) => o.days, TIME_WINDOW_OPTIONS)) + CARRY_DAYS
+const LOOKBACK_DAYS = LONGEST_ASSET_WINDOW_DAYS + CARRY_DAYS
 
 type Stored = {
   registration_id: string | null

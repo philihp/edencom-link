@@ -116,3 +116,13 @@ test('formatPct signs the change and dashes a missing base', () => {
   assert.equal(formatPct(-0.004), '−0.4%')
   assert.equal(formatPct(null), '—')
 })
+
+test('valueSeries leaves the days before the record empty', () => {
+  const points = valueSeries([row('a', '2026-11-02', 100)], ['1996-11-02', '2026-11-01', '2026-11-02'])
+  assert.deepEqual(
+    points.map((p) => p.total),
+    [null, null, 100]
+  )
+  assert.deepEqual(points[0].parts, zeroParts())
+  assert.equal(points[0].t, Date.parse('1996-11-02T00:00:00Z'))
+})
