@@ -466,9 +466,26 @@ Soak log (from the job's log line; counts only):
 | Run (UTC) | Wallets checked | Failing | Rows read | Rows written | Time |
 | :-------- | --------------: | ------: | --------: | -----------: | :--- |
 | 2026-11-22 09:43 | 192 of 348 | 1 (known: one journal last pulled 2026-11-11) | 4,807 | 264 | about 1 min |
+| 2026-11-23 09:43 | 192 of 348 | 1 (the same) | 4,148 | 268 | about 1 min |
+| 2026-11-24 09:43 | 192 of 348 | 2 (a second journal, last pulled 2026-11-16, passed the 7-day limit) | 4,288 | 264 | about 1 min |
+| 2026-11-25 09:43 | 192 of 348 | 2 (the same two) | 4,984 | 268 | about 1 min |
+| 2026-11-26 09:43 | 194 of 348 | 2 (the same two) | 3,565 | 250 | about 1 min |
+
+No new break in five runs. The two failures are stale pulls (rule 5), each a
+character whose `character-wallet-journal` pull stopped; the cause (token or
+grant) is for the owner to check on `/account/registrations`.
 
 ### Stage 2 — status
 
-Design note: [stage-2.md](stage-2.md), written 2026-11-22. The lab build and
-the tests go on during the stage 1 soak. Nothing of stage 2 merges before
-gate 1.
+Design note: [stage-2.md](stage-2.md), written 2026-11-22. Lab and tests done
+2026-11-22.
+
+| Step | State |
+| :--- | :---- |
+| 1–3 Design, lab, tests | ✅ 2026-11-22 |
+| 4 PR, migration | ✅ #1328 and #1329 merged 2026-11-26 by the owner, before gate 1 (the owner's decision). Migration applied 2026-11-26 21:07 UTC |
+| 5 Dark | ✅ the flag `ledger` is not created; `/ledger` is a 404 |
+| 6 Check in production | waits for the flag. Stage 2 has no job, so the check is one read of `/ledger` by the owner: the read time, the Suspense share and the two parallel runs against the lab figures. The lab read used a sequential scan of the journal; production holds all accounts, so the plan and the time must be seen there before the soak starts |
+| 7 Live | does not apply (no stored rows) |
+| 8 Soak | 14 days from step 6 |
+| 9 Gate 2 | waits |

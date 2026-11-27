@@ -222,8 +222,10 @@ migration. It adds no job and no daily write.
 | 1 Design note | ✅ this file |
 | 2 Lab | ✅ 2026-11-22, see "Lab result" |
 | 3 Tests | ✅ `test/sql/ledger_cash.sql`, `test/ledgerChart.test.ts` |
-| 4 PR, migration | waits for gate 1 to merge |
-| 5–9 | wait for gate 1 |
+| 4 PR, migration | ✅ merged 2026-11-26 by the owner, before gate 1; migration applied |
+| 5 Dark | ✅ no `ledger` flag |
+| 6 Check in production | waits for the flag (see plan.md, section 10) |
+| 8–9 | wait for step 6 |
 
 ## Lab result (2026-11-22)
 
