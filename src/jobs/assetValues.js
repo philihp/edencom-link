@@ -10,26 +10,29 @@
 // `--since YYYY-MM-DD`) to today, skipping the days before the price record
 // begins: `pnpm run asset-values`. Recompute, never increment, so a re-run
 // only converges.
-import { map, splitEvery } from 'ramda'
+//
+// `--resume <ISO time>` skips every day already computed at or after that
+// time, so a run that stopped picks up where it left off. A call the API
+// gateway times out on is retried as two halves, down to one day; an owner
+// that still fails is reported at the end and the others go on.
+import { map } from 'ramda'
 
 import { sudoSupabase } from '../supabase.js'
+import { halve, pendingRuns, utcDay } from './assetValueDays.js'
 import { cli, forEachSequential } from './lib.js'
+
+export { daysBetween, utcDay } from './assetValueDays.js'
 
 const TAG = 'asset-values'
 
-const DAY_MS = 86_400_000
 // Days per RPC call in the backfill: each day is one walk over the owner's
-// asset history, so a week stays well under the service role's timeout.
-const CHUNK_DAYS = 7
+// asset history. The API gateway gives up on a call long before the service
+// role's statement timeout, so a call stays short and splits when it is not.
+const CHUNK_DAYS = 3
+const ATTEMPTS = 3
 const PAGE = 1000
 
-export const utcDay = (t) => new Date(t).toISOString().slice(0, 10)
-
-// Every UTC day from `from` to `to`, inclusive, as YYYY-MM-DD.
-export const daysBetween = (from, to) =>
-  Array.from({ length: Math.max(0, Math.round((Date.parse(to) - Date.parse(from)) / DAY_MS) + 1) }, (_, i) =>
-    utcDay(Date.parse(from) + i * DAY_MS)
-  )
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 const compute = async ({ registration_id = null, corporation_id = null }, from, to) => {
   const { data, error } = await sudoSupabase.rpc('asset_value_day_compute', {
@@ -40,6 +43,37 @@ const compute = async ({ registration_id = null, corporation_id = null }, from, 
   })
   if (error) throw error
   return Number(data ?? 0)
+}
+
+// One run of days, split in two when the call fails, down to one day, which is
+// tried ATTEMPTS times before the error stands.
+const computeRun = async (owner, days, attempt = 1) => {
+  try {
+    return await compute(owner, days[0], days.at(-1))
+  } catch (e) {
+    if (days.length > 1) {
+      const [a, b] = halve(days)
+      return (await computeRun(owner, a)) + (await computeRun(owner, b))
+    }
+    if (attempt >= ATTEMPTS) throw e
+    console.warn(`[${TAG}] ${days[0]} failed (${e?.message ?? e}), retrying`)
+    await sleep(attempt * 5_000)
+    return computeRun(owner, days, attempt + 1)
+  }
+}
+
+// The days of one owner already computed at or after `since`.
+const computedDays = async (owner, since, from = 0, acc = []) => {
+  const { data, error } = await sudoSupabase
+    .from('asset_value_day')
+    .select('utc_day')
+    .eq(owner.registration_id ? 'registration_id' : 'corporation_id', owner.id)
+    .gte('computed_at', since)
+    .order('utc_day')
+    .range(from, from + PAGE - 1)
+  if (error) throw error
+  acc.push(...map((r) => r.utc_day, data ?? []))
+  return (data ?? []).length < PAGE ? acc : computedDays(owner, since, from + PAGE, acc)
 }
 
 // Today's value for one owner, after its asset reconcile. Best-effort, like
@@ -86,6 +120,7 @@ const readAll = async (table, columns, from = 0, acc = []) => {
   const { data, error } = await sudoSupabase
     .from(table)
     .select(columns)
+    .order('id')
     .range(from, from + PAGE - 1)
   if (error) throw error
   acc.push(...(data ?? []))
@@ -113,7 +148,7 @@ const owners = async () => {
   ]
 }
 
-export const runAssetValues = async ({ since = null } = {}) => {
+export const runAssetValues = async ({ since = null, resume = null } = {}) => {
   const priceStart = await priceRecordStart()
   if (!priceStart) {
     console.log(`[${TAG}] no Jita prices on record; nothing to value`)
@@ -121,22 +156,39 @@ export const runAssetValues = async ({ since = null } = {}) => {
   }
   const today = utcDay(Date.now())
   const all = await owners()
-  console.log(`[${TAG}] valuing ${all.length} owner(s) from ${since ?? 'their first asset'}, prices from ${priceStart}`)
+  console.log(
+    `[${TAG}] valuing ${all.length} owner(s) from ${since ?? 'their first asset'}, prices from ${priceStart}` +
+      (resume ? `, skipping days computed since ${resume}` : '')
+  )
 
+  const failed = []
   await forEachSequential(all, async (owner) => {
-    const first = await firstAssetDay(owner.table, owner.column, owner.id)
-    if (!first) return
-    const from = [first, priceStart, since ?? first].sort().at(-1)
-    const chunks = splitEvery(CHUNK_DAYS, daysBetween(from, today))
-    const written = await chunks.reduce(
-      (total, days) => total.then(async (n) => n + (await compute(owner, days[0], days.at(-1)))),
-      Promise.resolve(0)
-    )
-    console.log(
-      `[${TAG}] ${owner.table === 'corp_asset_version' ? 'corp ' : ''}${owner.id}: ${written} day(s) from ${from}`
-    )
+    const label = `${owner.table === 'corp_asset_version' ? 'corp ' : ''}${owner.id}`
+    try {
+      const first = await firstAssetDay(owner.table, owner.column, owner.id)
+      if (!first) return
+      const from = [first, priceStart, since ?? first].sort().at(-1)
+      const done = resume ? await computedDays(owner, resume) : []
+      const runs = pendingRuns(from, today, done, CHUNK_DAYS)
+      const written = await runs.reduce(
+        (total, days) => total.then(async (n) => n + (await computeRun(owner, days))),
+        Promise.resolve(0)
+      )
+      console.log(
+        `[${TAG}] ${label}: ${written} day(s) from ${from}${done.length ? `, ${done.length} already done` : ''}`
+      )
+    } catch (e) {
+      failed.push(label)
+      console.error(`[${TAG}] ${label} FAILED:`, e?.message ?? e)
+    }
   })
+  if (failed.length) {
+    throw new Error(`${failed.length} owner(s) failed: ${failed.join(', ')}; run again with --resume to finish them`)
+  }
 }
 
-const sinceArg = process.argv.indexOf('--since')
-cli(import.meta.url, TAG, () => runAssetValues({ since: sinceArg >= 0 ? process.argv[sinceArg + 1] : null }))
+const arg = (name) => {
+  const i = process.argv.indexOf(name)
+  return i >= 0 ? process.argv[i + 1] : null
+}
+cli(import.meta.url, TAG, () => runAssetValues({ since: arg('--since'), resume: arg('--resume') }))
