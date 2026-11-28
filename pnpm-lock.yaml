@@ -192,16 +192,16 @@ importers:
         version: 2.119.2
       '@vercel/analytics':
         specifier: 2.0.1
-        version: 2.0.1(next@16.4.6(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(react@19.3.1)
+        version: 2.0.1(next@16.4.6(@types/node@26.6.10)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(react@19.3.1)
       '@vercel/flags-core':
         specifier: 1.11.1
-        version: 1.11.1(@aws-sdk/credential-provider-web-identity@3.972.88)(next@16.4.6(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(ws@8.22.1)
+        version: 1.11.1(@aws-sdk/credential-provider-web-identity@3.972.88)(next@16.4.6(@types/node@26.6.10)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(ws@8.22.1)
       '@vercel/queue':
         specifier: ^0.11.0
         version: 0.11.0
       '@vercel/speed-insights':
         specifier: 2.1.0
-        version: 2.1.0(next@16.4.6(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(react@19.3.1)
+        version: 2.1.0(next@16.4.6(@types/node@26.6.10)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(react@19.3.1)
       eve-industry:
         specifier: 0.1.0
         version: 0.1.0
@@ -216,10 +216,10 @@ importers:
         version: 6.1.1(graphql@17.1.0)
       mcp-handler:
         specifier: ^2.1.0
-        version: 2.4.0(@modelcontextprotocol/server@2.4.0)(next@16.4.6(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))
+        version: 2.4.0(@modelcontextprotocol/server@2.4.0)(next@16.4.6(@types/node@26.6.10)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))
       next:
         specifier: 16.4.6
-        version: 16.4.6(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+        version: 16.4.6(@types/node@26.6.10)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       protobufjs:
         specifier: ^8.7.0
         version: 8.8.1
@@ -234,13 +234,13 @@ importers:
         version: 19.3.1(react@19.3.1)
       react-markdown:
         specifier: ^10.1.0
-        version: 10.1.0(@types/react@19.3.0)(react@19.3.1)(supports-color@8.1.1)
+        version: 10.1.0(@types/react@19.3.3)(react@19.3.1)(supports-color@8.1.1)
       ts-pattern:
         specifier: ^5.9.0
         version: 5.9.2
       workflow:
         specifier: ^5.0.0
-        version: 5.7.1(@aws-sdk/credential-provider-web-identity@3.972.88)(@nestjs/common@12.3.3(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@8.1.1))(@nestjs/core@12.3.3(@nestjs/common@12.3.3(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@8.1.1))(reflect-metadata@0.2.2)(rxjs@7.8.2))(@swc/cli@0.8.2(@swc/core@1.15.3(@swc/helpers@0.5.23))(chokidar@5.0.0)(supports-color@8.1.1))(@swc/helpers@0.5.23)(confbox@0.3.2)(dotenv@17.4.2)(giget@3.3.1)(jiti@2.7.0)(magic-string@0.30.21)(mlly@1.8.2)(next@16.4.6(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(typescript@7.0.2)(ws@8.22.1)
+        version: 5.7.1(@aws-sdk/credential-provider-web-identity@3.972.88)(@nestjs/common@12.3.3(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@8.1.1))(@nestjs/core@12.3.3(@nestjs/common@12.3.3(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@8.1.1))(reflect-metadata@0.2.2)(rxjs@7.8.2))(@swc/cli@0.8.2(@swc/core@1.15.3(@swc/helpers@0.5.23))(chokidar@5.0.0)(supports-color@8.1.1))(@swc/helpers@0.5.23)(confbox@0.3.2)(dotenv@17.4.2)(giget@3.3.1)(jiti@2.7.0)(magic-string@0.30.21)(mlly@1.8.2)(next@16.4.6(@types/node@26.6.10)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(typescript@7.0.2)(ws@8.22.1)
       zod:
         specifier: ^4.4.3
         version: 4.6.7
@@ -249,17 +249,17 @@ importers:
         specifier: 1.0.0
         version: 1.0.0
       '@types/node':
-        specifier: 26.6.6
-        version: 26.6.6
+        specifier: 26.6.10
+        version: 26.6.10
       '@types/ramda':
         specifier: 0.32.0
         version: 0.32.0
       '@types/react':
-        specifier: 19.3.0
-        version: 19.3.0
+        specifier: 19.3.3
+        version: 19.3.3
       '@types/react-dom':
         specifier: 19.3.0
-        version: 19.3.0(@types/react@19.3.0)
+        version: 19.3.0(@types/react@19.3.3)
       husky:
         specifier: 9.1.7
         version: 9.1.7
@@ -1389,8 +1389,8 @@ packages:
   '@types/ms@2.1.0':
     resolution: {integrity: sha512-GsCCIZDE/p3i96vtEqx+7dBUGXrc7zeSK3wwPHIaRThS+9OhWIXRqzs4d6k1SVU8g91DrNRWxWUGhp5KXQb2VA==}
 
-  '@types/node@26.6.6':
-    resolution: {integrity: sha512-MzQj+8Kx3XI40OmUAE6Qoh58ZMNstNNMwn2nfd3qWsfe7nDNSqJNzes4njhz6AHwrSHOffSLwXU6yb474Q4aog==}
+  '@types/node@26.6.10':
+    resolution: {integrity: sha512-WJuPHoGB8WNQuTksNF7SOQpnH02PXeDYz4iueWbBT6/hTWnShY5F3T/hoJA3fY9+uYReDZ7pyTKKx83jQa7aGg==}
 
   '@types/ramda@0.32.0':
     resolution: {integrity: sha512-eTRIFYUxjVvZimlPNpXzXc3j4tnSYc7lBsD7X3zwtRvJML3qXclM4+m8vvmAZAHhBASKPmZAp6qu2C/DwJpBGQ==}
@@ -1400,8 +1400,8 @@ packages:
     peerDependencies:
       '@types/react': ^19.3.0
 
-  '@types/react@19.3.0':
-    resolution: {integrity: sha512-N0rFCuH9YoxG9/m61l9MfpJKfmLOVU0em7ipIz6TRgSSkvReLB9vL85GB+yr8Bs5leqpvg96JSwF4ZS1s4viQg==}
+  '@types/react@19.3.3':
+    resolution: {integrity: sha512-K8uWpJc4teiuOPdiP1umjeA9rGMgVPiXuoL66fcS1QlwBT1WMqY8PORmub9FadopIs+RCW6siYEs7Lpq+vDlog==}
 
   '@types/unist@2.0.11':
     resolution: {integrity: sha512-CmBKiL6NNo/OqgmMn95Fk9Whlp2mtvIv+KNpQKN2F4SjvrEesubTRWGYSg+BnWZOnlCaSTU1sMpsBOzgbYhnsA==}
@@ -4165,7 +4165,7 @@ snapshots:
   '@types/jsonwebtoken@9.0.10':
     dependencies:
       '@types/ms': 2.1.0
-      '@types/node': 26.6.6
+      '@types/node': 26.6.10
 
   '@types/mdast@4.0.4':
     dependencies:
@@ -4173,7 +4173,7 @@ snapshots:
 
   '@types/ms@2.1.0': {}
 
-  '@types/node@26.6.6':
+  '@types/node@26.6.10':
     dependencies:
       undici-types: 8.9.0
 
@@ -4181,11 +4181,11 @@ snapshots:
     dependencies:
       types-ramda: 0.32.0
 
-  '@types/react-dom@19.3.0(@types/react@19.3.0)':
+  '@types/react-dom@19.3.0(@types/react@19.3.3)':
     dependencies:
-      '@types/react': 19.3.0
+      '@types/react': 19.3.3
 
-  '@types/react@19.3.0':
+  '@types/react@19.3.3':
     dependencies:
       csstype: 3.2.3
 
@@ -4255,9 +4255,9 @@ snapshots:
 
   '@ungap/structured-clone@1.4.0': {}
 
-  '@vercel/analytics@2.0.1(next@16.4.6(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(react@19.3.1)':
+  '@vercel/analytics@2.0.1(next@16.4.6(@types/node@26.6.10)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(react@19.3.1)':
     optionalDependencies:
-      next: 16.4.6(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      next: 16.4.6(@types/node@26.6.10)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       react: 19.3.1
 
   '@vercel/cli-auth@0.0.1':
@@ -4281,7 +4281,7 @@ snapshots:
     dependencies:
       execa: 5.1.1
 
-  '@vercel/flags-core@1.11.1(@aws-sdk/credential-provider-web-identity@3.972.88)(next@16.4.6(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(ws@8.22.1)':
+  '@vercel/flags-core@1.11.1(@aws-sdk/credential-provider-web-identity@3.972.88)(next@16.4.6(@types/node@26.6.10)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(ws@8.22.1)':
     dependencies:
       '@vercel/functions': 3.11.2(@aws-sdk/credential-provider-web-identity@3.972.88)(ws@8.22.1)
       '@vercel/oidc': 3.5.0
@@ -4289,7 +4289,7 @@ snapshots:
       jose: 5.10.0
       js-xxhash: 4.0.0
     optionalDependencies:
-      next: 16.4.6(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      next: 16.4.6(@types/node@26.6.10)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
     transitivePeerDependencies:
       - '@aws-sdk/credential-provider-web-identity'
       - ws
@@ -4324,9 +4324,9 @@ snapshots:
       mixpart: 0.0.6
       picocolors: 1.1.1
 
-  '@vercel/speed-insights@2.1.0(next@16.4.6(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(react@19.3.1)':
+  '@vercel/speed-insights@2.1.0(next@16.4.6(@types/node@26.6.10)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(react@19.3.1)':
     optionalDependencies:
-      next: 16.4.6(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      next: 16.4.6(@types/node@26.6.10)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       react: 19.3.1
 
   '@whatwg-node/disposablestack@0.1.0':
@@ -4482,7 +4482,7 @@ snapshots:
       - utf-8-validate
       - ws
 
-  '@workflow/next@5.1.4(@aws-sdk/credential-provider-web-identity@3.972.88)(@swc/helpers@0.5.23)(next@16.4.6(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(ws@8.22.1)':
+  '@workflow/next@5.1.4(@aws-sdk/credential-provider-web-identity@3.972.88)(@swc/helpers@0.5.23)(next@16.4.6(@types/node@26.6.10)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(ws@8.22.1)':
     dependencies:
       '@swc/core': 1.15.3(@swc/helpers@0.5.23)
       '@workflow/builders': 5.1.4(@aws-sdk/credential-provider-web-identity@3.972.88)(@swc/helpers@0.5.23)(ws@8.22.1)
@@ -4492,7 +4492,7 @@ snapshots:
       semver: 7.8.6
       watchpack: 2.6.4
     optionalDependencies:
-      next: 16.4.6(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      next: 16.4.6(@types/node@26.6.10)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
     transitivePeerDependencies:
       - '@aws-sdk/credential-provider-web-identity'
       - '@opentelemetry/api'
@@ -5481,13 +5481,13 @@ snapshots:
       web-worker: 1.5.0
     optional: true
 
-  mcp-handler@2.4.0(@modelcontextprotocol/server@2.4.0)(next@16.4.6(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)):
+  mcp-handler@2.4.0(@modelcontextprotocol/server@2.4.0)(next@16.4.6(@types/node@26.6.10)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)):
     dependencies:
       '@modelcontextprotocol/server': 2.4.0
       chalk: 5.6.2
       commander: 11.1.0
     optionalDependencies:
-      next: 16.4.6(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      next: 16.4.6(@types/node@26.6.10)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
 
   mdast-util-from-markdown@2.1.0(supports-color@8.1.1):
     dependencies:
@@ -5761,7 +5761,7 @@ snapshots:
 
   nanoid@3.3.20: {}
 
-  next@16.4.6(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1):
+  next@16.4.6(@types/node@26.6.10)(react-dom@19.3.1(react@19.3.1))(react@19.3.1):
     dependencies:
       '@next/env': 16.4.6
       '@swc/helpers': 0.5.23
@@ -5780,7 +5780,7 @@ snapshots:
       '@next/swc-linux-x64-musl': 16.4.6
       '@next/swc-win32-arm64-msvc': 16.4.6
       '@next/swc-win32-x64-msvc': 16.4.6
-      sharp: 0.35.5(@types/node@26.6.6)
+      sharp: 0.35.5(@types/node@26.6.10)
     transitivePeerDependencies:
       - '@babel/core'
       - '@types/node'
@@ -5946,11 +5946,11 @@ snapshots:
       react: 19.3.1
       scheduler: 0.28.0
 
-  react-markdown@10.1.0(@types/react@19.3.0)(react@19.3.1)(supports-color@8.1.1):
+  react-markdown@10.1.0(@types/react@19.3.3)(react@19.3.1)(supports-color@8.1.1):
     dependencies:
       '@types/hast': 3.0.5
       '@types/mdast': 4.0.4
-      '@types/react': 19.3.0
+      '@types/react': 19.3.3
       devlop: 1.1.0
       hast-util-to-jsx-runtime: 2.3.7(supports-color@8.1.1)
       html-url-attributes: 3.0.1
@@ -6027,7 +6027,7 @@ snapshots:
 
   semver@7.8.6: {}
 
-  sharp@0.35.5(@types/node@26.6.6):
+  sharp@0.35.5(@types/node@26.6.10):
     dependencies:
       '@img/colour': 1.1.0
       detect-libc: 2.1.2
@@ -6058,7 +6058,7 @@ snapshots:
       '@img/sharp-win32-arm64': 0.35.5
       '@img/sharp-win32-ia32': 0.35.5
       '@img/sharp-win32-x64': 0.35.5
-      '@types/node': 26.6.6
+      '@types/node': 26.6.10
     optional: true
 
   shebang-command@2.0.0:
@@ -6386,14 +6386,14 @@ snapshots:
 
   wordwrap@1.0.0: {}
 
-  workflow@5.7.1(@aws-sdk/credential-provider-web-identity@3.972.88)(@nestjs/common@12.3.3(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@8.1.1))(@nestjs/core@12.3.3(@nestjs/common@12.3.3(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@8.1.1))(reflect-metadata@0.2.2)(rxjs@7.8.2))(@swc/cli@0.8.2(@swc/core@1.15.3(@swc/helpers@0.5.23))(chokidar@5.0.0)(supports-color@8.1.1))(@swc/helpers@0.5.23)(confbox@0.3.2)(dotenv@17.4.2)(giget@3.3.1)(jiti@2.7.0)(magic-string@0.30.21)(mlly@1.8.2)(next@16.4.6(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(typescript@7.0.2)(ws@8.22.1):
+  workflow@5.7.1(@aws-sdk/credential-provider-web-identity@3.972.88)(@nestjs/common@12.3.3(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@8.1.1))(@nestjs/core@12.3.3(@nestjs/common@12.3.3(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@8.1.1))(reflect-metadata@0.2.2)(rxjs@7.8.2))(@swc/cli@0.8.2(@swc/core@1.15.3(@swc/helpers@0.5.23))(chokidar@5.0.0)(supports-color@8.1.1))(@swc/helpers@0.5.23)(confbox@0.3.2)(dotenv@17.4.2)(giget@3.3.1)(jiti@2.7.0)(magic-string@0.30.21)(mlly@1.8.2)(next@16.4.6(@types/node@26.6.10)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(typescript@7.0.2)(ws@8.22.1):
     dependencies:
       '@workflow/astro': 5.0.13(@aws-sdk/credential-provider-web-identity@3.972.88)(@swc/helpers@0.5.23)(ws@8.22.1)
       '@workflow/cli': 5.3.1(@aws-sdk/credential-provider-web-identity@3.972.88)(@swc/helpers@0.5.23)(typescript@7.0.2)(ws@8.22.1)
       '@workflow/core': 5.7.1(@aws-sdk/credential-provider-web-identity@3.972.88)(ws@8.22.1)
       '@workflow/errors': 5.1.5
       '@workflow/nest': 5.1.11(@aws-sdk/credential-provider-web-identity@3.972.88)(@nestjs/common@12.3.3(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@8.1.1))(@nestjs/core@12.3.3(@nestjs/common@12.3.3(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@8.1.1))(reflect-metadata@0.2.2)(rxjs@7.8.2))(@swc/cli@0.8.2(@swc/core@1.15.3(@swc/helpers@0.5.23))(chokidar@5.0.0)(supports-color@8.1.1))(@swc/helpers@0.5.23)(ws@8.22.1)
-      '@workflow/next': 5.1.4(@aws-sdk/credential-provider-web-identity@3.972.88)(@swc/helpers@0.5.23)(next@16.4.6(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(ws@8.22.1)
+      '@workflow/next': 5.1.4(@aws-sdk/credential-provider-web-identity@3.972.88)(@swc/helpers@0.5.23)(next@16.4.6(@types/node@26.6.10)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(ws@8.22.1)
       '@workflow/nitro': 5.0.13(@aws-sdk/credential-provider-web-identity@3.972.88)(@swc/helpers@0.5.23)(ws@8.22.1)
       '@workflow/nuxt': 5.0.13(@aws-sdk/credential-provider-web-identity@3.972.88)(@swc/helpers@0.5.23)(confbox@0.3.2)(dotenv@17.4.2)(giget@3.3.1)(jiti@2.7.0)(magic-string@0.30.21)(mlly@1.8.2)(ws@8.22.1)
       '@workflow/rollup': 5.0.13(@aws-sdk/credential-provider-web-identity@3.972.88)(@swc/helpers@0.5.23)(ws@8.22.1)
