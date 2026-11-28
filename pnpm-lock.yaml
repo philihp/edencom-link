@@ -213,7 +213,7 @@ importers:
         version: 17.1.0
       graphql-yoga:
         specifier: ^6.0.0
-        version: 6.1.0(graphql@17.1.0)
+        version: 6.1.1(graphql@17.1.0)
       mcp-handler:
         specifier: ^2.1.0
         version: 2.4.0(@modelcontextprotocol/server@2.4.0)(next@16.4.6(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))
@@ -2280,8 +2280,8 @@ packages:
   graceful-fs@4.2.11:
     resolution: {integrity: sha512-RbJ5/jmFcNNCcDV5o9eTnBLJ/HszWV0P73bc+Ff4nS/rJj+YaS6IGyiOL0VoBYX+l1Wrl3k63h/KrH+nhJ0XvQ==}
 
-  graphql-yoga@6.1.0:
-    resolution: {integrity: sha512-YID0cgrgx3oyh5fJA98414kU3x9cx88ZXGascBGrBkpibQkKRkkb4okMMCLx9n5HCMLiBdaWaFbi31D/7JvqPw==}
+  graphql-yoga@6.1.1:
+    resolution: {integrity: sha512-N5LXp9W6o0sStOI7ILkhzYr4NSlf1PXgxHFH3/iCqaJDxm+xPT41nYOGtK+3brpUfVmjfDtJk1yd57qLshKj1w==}
     engines: {node: '>=22.15.0'}
     peerDependencies:
       graphql: ^16.0.0 || ^17.0.0
@@ -5213,7 +5213,7 @@ snapshots:
 
   graceful-fs@4.2.11: {}
 
-  graphql-yoga@6.1.0(graphql@17.1.0):
+  graphql-yoga@6.1.1(graphql@17.1.0):
     dependencies:
       '@envelop/core': 6.0.1
       '@envelop/instrumentation': 2.0.1
