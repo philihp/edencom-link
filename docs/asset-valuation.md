@@ -57,11 +57,17 @@ Service role only. Recompute, never increment: a re-run replaces the day.
   after their reconcile (`recordAssetValue` in `src/jobs/assetValues.js`).
   Best-effort: a failure is logged and the extract still succeeds. Today's row
   is overwritten by each run, so a past day keeps the value of its last run.
-- **Backfill.** `pnpm run asset-values [--since YYYY-MM-DD]` values every
-  owner from its first asset version (or `--since`) to today, a week of days
-  per call. Run it once after this ships, and again after migration
-  `20261126202934` (the jobs, orders, contracts and wallet parts), which
-  leaves the earlier rows at zero for those parts.
+- **Backfill.** `pnpm run asset-values [--since YYYY-MM-DD] [--resume <ISO time>]`
+  values every owner from its first asset version (or `--since`) to today,
+  three days per call. The API gateway gives up on a long call ("upstream
+  request timeout"), so a call that fails is retried as two halves, down to
+  one day tried three times; an owner that still fails is named at the end
+  and the others go on. `--resume` skips every day computed at or after that
+  time, so a run that stopped goes on where it left off. Run it once after
+  this ships, again after migration `20261126202934` (the jobs, orders,
+  contracts and wallet parts), which leaves the earlier rows at zero for
+  those parts, and again after `20261127091204` (a moved item counted for
+  the owner that gave it).
 
 ## The page
 
