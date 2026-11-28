@@ -107,7 +107,7 @@
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "husky": "9.1.7",
-    "lint-staged": "17.6.1",
+    "lint-staged": "17.6.2",
     "oxlint": "1.94.0",
     "prettier": "3.10.1",
     "supabase": "3.2.0",
