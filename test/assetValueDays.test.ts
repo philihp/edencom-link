@@ -1,33 +1,45 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { daysBetween, halve, pendingRuns } from '../src/jobs/assetValueDays.js'
+import { backfillPlan, daysBetween } from '../src/jobs/assetValueDays.js'
 
 test('daysBetween lists every day, inclusive', () => {
   assert.deepEqual(daysBetween('2026-11-28', '2026-12-01'), ['2026-11-28', '2026-11-29', '2026-11-30', '2026-12-01'])
   assert.deepEqual(daysBetween('2026-11-28', '2026-11-27'), [])
 })
 
-test('pendingRuns chunks the days when none are done', () => {
-  assert.deepEqual(pendingRuns('2026-11-01', '2026-11-05', [], 2), [
-    ['2026-11-01', '2026-11-02'],
-    ['2026-11-03', '2026-11-04'],
-    ['2026-11-05'],
+const owners = [
+  { key: 'a', first: '2026-11-01' },
+  { key: 'b', first: '2026-11-03' },
+]
+
+test('backfillPlan goes day by day, each day every owner with history by then', () => {
+  assert.deepEqual(backfillPlan({ owners, priceStart: '2026-10-01', today: '2026-11-04' }), [
+    { day: '2026-11-01', keys: ['a'] },
+    { day: '2026-11-02', keys: ['a'] },
+    { day: '2026-11-03', keys: ['a', 'b'] },
+    { day: '2026-11-04', keys: ['a', 'b'] },
   ])
 })
 
-test('pendingRuns skips the days already done and never spans one', () => {
-  assert.deepEqual(pendingRuns('2026-11-01', '2026-11-06', ['2026-11-02', '2026-11-03'], 3), [
-    ['2026-11-01'],
-    ['2026-11-04', '2026-11-05', '2026-11-06'],
+test('backfillPlan starts no owner before the price record or since', () => {
+  assert.deepEqual(backfillPlan({ owners, priceStart: '2026-11-02', since: '2026-11-04', today: '2026-11-04' }), [
+    { day: '2026-11-04', keys: ['a', 'b'] },
+  ])
+  assert.deepEqual(backfillPlan({ owners, priceStart: '2026-11-02', today: '2026-11-03' }), [
+    { day: '2026-11-02', keys: ['a'] },
+    { day: '2026-11-03', keys: ['a', 'b'] },
   ])
 })
 
-test('pendingRuns is empty when every day is done', () => {
-  assert.deepEqual(pendingRuns('2026-11-01', '2026-11-02', ['2026-11-01', '2026-11-02'], 3), [])
+test('backfillPlan leaves out owner-days already done, and days nobody needs', () => {
+  const done = new Set(['a|2026-11-01', 'a|2026-11-03'])
+  assert.deepEqual(backfillPlan({ owners, priceStart: '2026-10-01', today: '2026-11-03', done }), [
+    { day: '2026-11-02', keys: ['a'] },
+    { day: '2026-11-03', keys: ['b'] },
+  ])
 })
 
-test('halve splits a run, the first half the longer', () => {
-  assert.deepEqual(halve(['a', 'b', 'c']), [['a', 'b'], ['c']])
-  assert.deepEqual(halve(['a']), [['a'], []])
+test('backfillPlan is empty with no owners', () => {
+  assert.deepEqual(backfillPlan({ owners: [], priceStart: '2026-10-01', today: '2026-11-03' }), [])
 })
