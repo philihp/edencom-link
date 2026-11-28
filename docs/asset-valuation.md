@@ -58,11 +58,11 @@ Service role only. Recompute, never increment: a re-run replaces the day.
   Best-effort: a failure is logged and the extract still succeeds. Today's row
   is overwritten by each run, so a past day keeps the value of its last run.
 - **Backfill.** `pnpm run asset-values [--since YYYY-MM-DD] [--resume <ISO time>]`
-  values every owner from its first asset version (or `--since`) to today,
-  three days per call. The API gateway gives up on a long call ("upstream
-  request timeout"), so a call that fails is retried as two halves, down to
-  one day tried three times; an owner that still fails is named at the end
-  and the others go on. `--resume` skips every day computed at or after that
+  walks day-major: from the earliest asset version (or `--since`) to today,
+  each day for every owner whose history has begun by then, before the next
+  day. One call is one owner and one day, which the API gateway answers well
+  inside its timeout; a call that fails is tried three times, and a pair
+  that still fails is named at the end while the others go on. `--resume` skips every day computed at or after that
   time, so a run that stopped goes on where it left off. Run it once after
   this ships, again after migration `20261126202934` (the jobs, orders,
   contracts and wallet parts), which leaves the earlier rows at zero for

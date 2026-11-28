@@ -1,6 +1,6 @@
 // Pure day arithmetic for the asset value backfill (src/jobs/assetValues.js),
 // apart from it so a test can import it without a database client.
-import { difference, groupWith, splitAt, splitEvery } from 'ramda'
+import { difference, filter, groupWith, isEmpty, map, pipe, prop, reject, splitAt, splitEvery } from 'ramda'
 
 const DAY_MS = 86_400_000
 
@@ -22,3 +22,19 @@ export const pendingRuns = (from, to, done, size) =>
 
 // A run in two halves, the first the longer: what a timed-out call retries as.
 export const halve = (days) => splitAt(Math.ceil(days.length / 2), days)
+
+// The backfill's order: every day from the earliest owner's start to `to`, and
+// on each day every owner whose history has begun by then, less the
+// (owner, day) pairs already done. `owners` carry `key` and `from` (their first
+// day to value); `done` maps a key to the days already computed for it.
+export const dayMajorPlan = (owners, to, done = {}) => {
+  const start = owners.map((o) => o.from).sort()[0]
+  if (!start) return []
+  return pipe(
+    map((day) => ({
+      day,
+      owners: filter((o) => o.from <= day && !(done[o.key] ?? []).includes(day), owners),
+    })),
+    reject(pipe(prop('owners'), isEmpty))
+  )(daysBetween(start, to))
+}

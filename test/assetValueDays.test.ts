@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { daysBetween, halve, pendingRuns } from '../src/jobs/assetValueDays.js'
+import { dayMajorPlan, daysBetween, halve, pendingRuns } from '../src/jobs/assetValueDays.js'
 
 test('daysBetween lists every day, inclusive', () => {
   assert.deepEqual(daysBetween('2026-11-28', '2026-12-01'), ['2026-11-28', '2026-11-29', '2026-11-30', '2026-12-01'])
@@ -30,4 +30,26 @@ test('pendingRuns is empty when every day is done', () => {
 test('halve splits a run, the first half the longer', () => {
   assert.deepEqual(halve(['a', 'b', 'c']), [['a', 'b'], ['c']])
   assert.deepEqual(halve(['a']), [['a'], []])
+})
+
+test('dayMajorPlan walks days from the earliest, each with every owner begun by then', () => {
+  const a = { key: 'a', from: '2026-11-01' }
+  const b = { key: 'b', from: '2026-11-02' }
+  assert.deepEqual(dayMajorPlan([b, a], '2026-11-03'), [
+    { day: '2026-11-01', owners: [a] },
+    { day: '2026-11-02', owners: [b, a] },
+    { day: '2026-11-03', owners: [b, a] },
+  ])
+})
+
+test('dayMajorPlan leaves out pairs already done, and days with nobody left', () => {
+  const a = { key: 'a', from: '2026-11-01' }
+  const b = { key: 'b', from: '2026-11-01' }
+  assert.deepEqual(dayMajorPlan([a, b], '2026-11-02', { a: ['2026-11-01'], b: ['2026-11-01', '2026-11-02'] }), [
+    { day: '2026-11-02', owners: [a] },
+  ])
+})
+
+test('dayMajorPlan is empty with no owners', () => {
+  assert.deepEqual(dayMajorPlan([], '2026-11-02'), [])
 })

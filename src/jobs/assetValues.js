@@ -6,29 +6,26 @@
 //   character-assets → the registration, today, after each reconcile
 //   corp-assets      → the corporation, today, after each reconcile
 //
-// Run as a CLI it backfills every owner from its first asset version (or
-// `--since YYYY-MM-DD`) to today, skipping the days before the price record
-// begins: `pnpm run asset-values`. Recompute, never increment, so a re-run
+// Run as a CLI it backfills day by day, from the earliest asset version (or
+// `--since YYYY-MM-DD`) to today: each day, every owner whose history has
+// begun by then, before the next day. Days before the price record begins are
+// skipped: `pnpm run asset-values`. Recompute, never increment, so a re-run
 // only converges.
 //
 // `--resume <ISO time>` skips every day already computed at or after that
-// time, so a run that stopped picks up where it left off. A call the API
-// gateway times out on is retried as two halves, down to one day; an owner
-// that still fails is reported at the end and the others go on.
+// time, so a run that stopped picks up where it left off. One call is one
+// owner and one day, retried ATTEMPTS times; a pair that still fails is
+// reported at the end and the others go on.
 import { map } from 'ramda'
 
 import { sudoSupabase } from '../supabase.js'
-import { halve, pendingRuns, utcDay } from './assetValueDays.js'
+import { dayMajorPlan, halve, utcDay } from './assetValueDays.js'
 import { cli, forEachSequential } from './lib.js'
 
 export { daysBetween, utcDay } from './assetValueDays.js'
 
 const TAG = 'asset-values'
 
-// Days per RPC call in the backfill: each day is one walk over the owner's
-// asset history. The API gateway gives up on a call long before the service
-// role's statement timeout, so a call stays short and splits when it is not.
-const CHUNK_DAYS = 3
 const ATTEMPTS = 3
 const PAGE = 1000
 
@@ -148,6 +145,11 @@ const owners = async () => {
   ]
 }
 
+const labelOf = (owner) => `${owner.table === 'corp_asset_version' ? 'corp ' : ''}${owner.id}`
+
+// Day-major: the earliest day first, every owner whose history has begun by
+// then, then the next day. One call per (owner, day), so a day is finished for
+// everyone before the next one starts.
 export const runAssetValues = async ({ since = null, resume = null } = {}) => {
   const priceStart = await priceRecordStart()
   if (!priceStart) {
@@ -155,35 +157,50 @@ export const runAssetValues = async ({ since = null, resume = null } = {}) => {
     return
   }
   const today = utcDay(Date.now())
-  const all = await owners()
+  const failed = []
+
+  // Each owner's first day to value, read once before the walk.
+  const starts = []
+  await forEachSequential(await owners(), async (owner) => {
+    try {
+      const first = await firstAssetDay(owner.table, owner.column, owner.id)
+      if (first) starts.push({ ...owner, key: labelOf(owner), from: [first, priceStart, since ?? first].sort().at(-1) })
+    } catch (e) {
+      failed.push(labelOf(owner))
+      console.error(`[${TAG}] ${labelOf(owner)} FAILED reading its first asset:`, e?.message ?? e)
+    }
+  })
+
+  const done = {}
+  if (resume) {
+    await forEachSequential(starts, async (owner) => {
+      done[owner.key] = await computedDays(owner, resume)
+    })
+  }
+  const plan = dayMajorPlan(starts, today, done)
   console.log(
-    `[${TAG}] valuing ${all.length} owner(s) from ${since ?? 'their first asset'}, prices from ${priceStart}` +
+    `[${TAG}] valuing ${starts.length} owner(s) over ${plan.length} day(s) from ${plan[0]?.day ?? '-'}` +
+      `, prices from ${priceStart}` +
       (resume ? `, skipping days computed since ${resume}` : '')
   )
 
-  const failed = []
-  await forEachSequential(all, async (owner) => {
-    const label = `${owner.table === 'corp_asset_version' ? 'corp ' : ''}${owner.id}`
-    try {
-      const first = await firstAssetDay(owner.table, owner.column, owner.id)
-      if (!first) return
-      const from = [first, priceStart, since ?? first].sort().at(-1)
-      const done = resume ? await computedDays(owner, resume) : []
-      const runs = pendingRuns(from, today, done, CHUNK_DAYS)
-      const written = await runs.reduce(
-        (total, days) => total.then(async (n) => n + (await computeRun(owner, days))),
-        Promise.resolve(0)
-      )
-      console.log(
-        `[${TAG}] ${label}: ${written} day(s) from ${from}${done.length ? `, ${done.length} already done` : ''}`
-      )
-    } catch (e) {
-      failed.push(label)
-      console.error(`[${TAG}] ${label} FAILED:`, e?.message ?? e)
-    }
+  const totals = { calls: 0, written: 0 }
+  await forEachSequential(plan, async ({ day, owners: due }) => {
+    const before = totals.written
+    await forEachSequential(due, async (owner) => {
+      try {
+        totals.written += await computeRun(owner, [day])
+        totals.calls += 1
+      } catch (e) {
+        failed.push(`${owner.key} ${day}`)
+        console.error(`[${TAG}] ${owner.key} ${day} FAILED:`, e?.message ?? e)
+      }
+    })
+    console.log(`[${TAG}] ${day}: ${due.length} owner(s), ${totals.written - before} row(s) written`)
   })
+  console.log(`[${TAG}] done: ${totals.calls} call(s), ${totals.written} row(s) written`)
   if (failed.length) {
-    throw new Error(`${failed.length} owner(s) failed: ${failed.join(', ')}; run again with --resume to finish them`)
+    throw new Error(`${failed.length} failure(s): ${failed.join(', ')}; run again with --resume to finish them`)
   }
 }
 
